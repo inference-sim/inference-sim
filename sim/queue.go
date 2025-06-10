@@ -1,9 +1,7 @@
-// queue.go
-//
 // Implements the WaitQueue, which holds all requests waiting to be processed.
 // Requests are enqueued on arrival
 
-// TODO: Requests need to be re-enqueued on preemption.
+// TODO: Requests need to be re-queued on preemption.
 
 package sim
 
@@ -19,13 +17,13 @@ func (wq *WaitQueue) Enqueue(r *Request) {
 	wq.queue = append(wq.queue, r)
 }
 
-// DequeueBatch removes up to 'n' requests from the front of the queue.
+// DequeueBatch removes a request from the front of the queue.
 // This is used by the scheduler to construct a batch for processing.
-func (wq *WaitQueue) DequeueBatch(n int) []*Request {
-	if len(wq.queue) < n {
-		n = len(wq.queue)
+func (wq *WaitQueue) DequeueBatch() *Request {
+	if len(wq.queue) == 0 {
+		return nil
 	}
-	batch := wq.queue[:n]
-	wq.queue = wq.queue[n:]
+	batch := wq.queue[0]
+	wq.queue = wq.queue[1:]
 	return batch
 }
