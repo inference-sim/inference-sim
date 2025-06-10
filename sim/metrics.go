@@ -9,6 +9,7 @@ import "fmt"
 // and debugging behavior over time.
 type Metrics struct {
 	CompletedRequests int   // Number of requests completed
+	TotalOutputTokens int   // Total number of output tokens
 	TotalLatency      int64 // Sum of total latencies (completion - arrival)
 	KVBlocksUsed      int   // Cumulative number of KV blocks used
 	PeakKVBlocksUsed  int   // Max number of simultaneously used KV blocks
