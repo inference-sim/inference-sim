@@ -1,0 +1,84 @@
+package cmd
+
+import (
+	"os"
+
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+
+	sim "github.com/inference-sim/inference-sim/sim"
+)
+
+var (
+	// CLI flags for simulation configuration
+	totalKVBlocks     int     // Total number of KV blocks available on GPU
+	simulationHorizon int64   // Total simulation time (in µs)
+	rate              float64 // Poisson arrival rate (requests per second)
+	logLevel          string  // Log verbosity level
+	seed              int64   // Random seed for reproducibility
+	stepDuration      int64   // Duration of each forward pass step (in µs)
+	maxBatchSize      int64   // Maximum number of requests per batch
+	maxGPUAllocation  int64   // Max number of KV blocks usable in one batch
+	blockSize         int     // Number of tokens per KV block
+)
+
+// rootCmd is the base command for the CLI
+var rootCmd = &cobra.Command{
+	Use:   "inference-sim",
+	Short: "Discrete-event simulator for inference platforms",
+}
+
+// runCmd executes the simulation using parameters from CLI flags
+var runCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run the inference simulation",
+	Run: func(cmd *cobra.Command, args []string) {
+		// Set up logging
+		level, err := logrus.ParseLevel(logLevel)
+		if err != nil {
+			logrus.Fatalf("Invalid log level: %s", logLevel)
+		}
+		logrus.SetLevel(level)
+
+		// Log configuration
+		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dµs, rate=%.2f, step=%dµs",
+			totalKVBlocks, simulationHorizon, rate, stepDuration)
+
+		// Initialize and run the simulator
+		s := sim.NewSimulator(
+			totalKVBlocks,
+			simulationHorizon,
+			stepDuration,
+			maxBatchSize,
+			maxGPUAllocation,
+			blockSize,
+		)
+		s.GeneratePoissonArrivals(rate, simulationHorizon, seed)
+		s.Run()
+		s.Metrics.Print()
+
+		logrus.Info("Simulation complete.")
+	},
+}
+
+// Execute runs the CLI root command
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+// init sets up CLI flags and subcommands
+func init() {
+	runCmd.Flags().IntVar(&totalKVBlocks, "kv", 64, "Total number of KV cache blocks")
+	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", 1000000, "Total simulation horizon (in µs)")
+	runCmd.Flags().Float64Var(&rate, "rate", 0.4, "Poisson arrival rate (requests per second)")
+	runCmd.Flags().StringVar(&logLevel, "log", "info", "Log level (trace, debug, info, warn, error, fatal, panic)")
+	runCmd.Flags().Int64Var(&stepDuration, "step", 1000, "Forward pass step duration (in µs)")
+	runCmd.Flags().Int64Var(&maxBatchSize, "max-batch", 8, "Maximum batch size")
+	runCmd.Flags().Int64Var(&maxGPUAllocation, "max-gpu", 64, "Maximum GPU KV block allocation")
+	runCmd.Flags().IntVar(&blockSize, "block size", 16, "Number of tokens contained in a KV cache block")
+
+	// Attach `run` as a subcommand to `root`
+	rootCmd.AddCommand(runCmd)
+}
