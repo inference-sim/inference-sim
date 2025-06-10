@@ -1,6 +1,4 @@
-// main.go
-//
-// Minimal entry point that delegates CLI handling to the Cobra root command in cmd/root.go
+// Idiomatic entrypoint for Cobra CLI that deletes handling to the Cobra root command in cmd/root.go
 
 package main
 
