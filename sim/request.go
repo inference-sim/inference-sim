@@ -1,5 +1,3 @@
-// request.go
-//
 // Defines the Request struct that models an individual inference request in the simulation.
 // Tracks arrival time, input/output tokens, progress, and timestamps for TTFT/TPOT.
 
@@ -10,7 +8,7 @@ package sim
 // - input tokens (prompt)
 // - output tokens (pre-specified for simulation)
 // - state tracking
-// - progress index to track prefill/decode steps
+// - progress index to track prefill/decode progress
 // - TTFT and TPOT timestamps
 
 type Request struct {
@@ -21,7 +19,7 @@ type Request struct {
 	OutputTokens []string // Pre-specified output tokens (already known for the simulation)
 
 	State         string // "queued", "running", "completed"
-	ProgressIndex int    // Number of tokens already processed (input + output)
+	ProgressIndex int    // Total number of input tokens processed so far + number of output tokens generated so far
 
 	TTFTSet        bool  // Tracks whether TTFT has been set
 	FirstTokenTime int64 // Timestamp when first token was generated
