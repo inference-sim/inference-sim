@@ -12,11 +12,11 @@ import (
 var (
 	// CLI flags for simulation configuration
 	totalKVBlocks     int     // Total number of KV blocks available on GPU
-	simulationHorizon int64   // Total simulation time (in µs)
-	rate              float64 // Poisson arrival rate (requests per second)
+	simulationHorizon int64   // Total simulation time (in ticks)
+	rate              float64 // Poisson arrival rate (requests per tick)
 	logLevel          string  // Log verbosity level
 	seed              int64   // Random seed for reproducibility
-	stepDuration      int64   // Duration of each forward pass step (in µs)
+	stepDuration      int64   // Duration of each forward pass step (in ticks)
 	maxBatchSize      int64   // Maximum number of requests per batch
 	maxGPUAllocation  int64   // Max number of KV blocks usable in one batch
 	blockSize         int     // Number of tokens per KV block
@@ -41,7 +41,7 @@ var runCmd = &cobra.Command{
 		logrus.SetLevel(level)
 
 		// Log configuration
-		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dµs, rate=%.2f, step=%dµs",
+		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, rate=%.2f, step=%dticks",
 			totalKVBlocks, simulationHorizon, rate, stepDuration)
 
 		// Initialize and run the simulator
@@ -70,13 +70,13 @@ func Execute() {
 
 // init sets up CLI flags and subcommands
 func init() {
-	runCmd.Flags().IntVar(&totalKVBlocks, "kv", 64, "Total number of KV cache blocks")
-	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", 1000000, "Total simulation horizon (in µs)")
-	runCmd.Flags().Float64Var(&rate, "rate", 0.4, "Poisson arrival rate (requests per second)")
+	runCmd.Flags().IntVar(&totalKVBlocks, "kv", 8000000, "Total number of KV cache blocks")
+	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", 10000, "Total simulation horizon (in ticks)")
+	runCmd.Flags().Float64Var(&rate, "rate", 0.4, "Poisson arrival rate (requests per tick)")
 	runCmd.Flags().StringVar(&logLevel, "log", "info", "Log level (trace, debug, info, warn, error, fatal, panic)")
-	runCmd.Flags().Int64Var(&stepDuration, "step", 1000, "Forward pass step duration (in µs)")
+	runCmd.Flags().Int64Var(&stepDuration, "step", 100, "Forward pass step duration (in ticks)")
 	runCmd.Flags().Int64Var(&maxBatchSize, "max-batch", 8, "Maximum batch size")
-	runCmd.Flags().Int64Var(&maxGPUAllocation, "max-gpu", 64, "Maximum GPU KV block allocation")
+	runCmd.Flags().Int64Var(&maxGPUAllocation, "max-gpu", 6000000, "Maximum GPU KV block allocation")
 	runCmd.Flags().IntVar(&blockSize, "block size", 16, "Number of tokens contained in a KV cache block")
 
 	// Attach `run` as a subcommand to `root`
