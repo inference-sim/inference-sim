@@ -11,9 +11,8 @@ type Metrics struct {
 	CompletedRequests int   // Number of requests completed
 	TotalOutputTokens int   // Total number of output tokens
 	TotalLatency      int64 // Sum of total latencies (completion - arrival)
-	KVBlocksUsed      int   // Cumulative number of KV blocks used
+	KVBlocksUsed      int   // Integral of KVBlockUsage over time
 	PeakKVBlocksUsed  int   // Max number of simultaneously used KV blocks
-	PrefixCacheHits   int   // Count of prefix reuse operations
 
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	TPOTSum int64 // Total TPOT sum across requests (in ticks)
@@ -23,7 +22,7 @@ type Metrics struct {
 
 // Print displays aggregated metrics at the end of the simulation.
 // Includes average latency, TTFT, TPOT, KV usage, and prefix cache behavior.
-func (m *Metrics) Print() {
+func (m *Metrics) Print(step int64) {
 	fmt.Println("=== Simulation Metrics ===")
 	fmt.Printf("Completed Requests   : %d\n", m.CompletedRequests)
 	if m.CompletedRequests > 0 {
@@ -34,8 +33,7 @@ func (m *Metrics) Print() {
 		fmt.Printf("Average Latency      : %.2f ticks\n", avgLatency)
 		fmt.Printf("Average TTFT         : %.2f ticks\n", avgTTFT)
 		fmt.Printf("Average TPOT         : %.2f ticks\n", avgTPOT)
-		fmt.Printf("Total KV Blocks Used : %d\n", m.KVBlocksUsed)
+		fmt.Printf("Average KV Blocks Usage : %.2f\n", float64(m.KVBlocksUsed)/float64(step))
 		fmt.Printf("Peak KV Usage        : %d blocks\n", m.PeakKVBlocksUsed)
-		fmt.Printf("Prefix Cache Hits    : %d\n", m.PrefixCacheHits)
 	}
 }

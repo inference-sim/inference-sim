@@ -19,7 +19,7 @@ var (
 	stepDuration      int64   // Duration of each forward pass step (in ticks)
 	maxBatchSize      int64   // Maximum number of requests per batch
 	maxGPUAllocation  int64   // Max number of KV blocks usable in one batch
-	blockSize         int     // Number of tokens per KV block
+	blockSizeInTokens int     // Number of tokens per KV block
 )
 
 // rootCmd is the base command for the CLI
@@ -46,16 +46,16 @@ var runCmd = &cobra.Command{
 
 		// Initialize and run the simulator
 		s := sim.NewSimulator(
-			totalKVBlocks,
 			simulationHorizon,
 			stepDuration,
+			totalKVBlocks,
+			blockSizeInTokens,
 			maxBatchSize,
 			maxGPUAllocation,
-			blockSize,
 		)
 		s.GeneratePoissonArrivals(rate, simulationHorizon, seed)
 		s.Run()
-		s.Metrics.Print()
+		s.Metrics.Print(stepDuration)
 
 		logrus.Info("Simulation complete.")
 	},
@@ -77,7 +77,7 @@ func init() {
 	runCmd.Flags().Int64Var(&stepDuration, "step", 100, "Forward pass step duration (in ticks)")
 	runCmd.Flags().Int64Var(&maxBatchSize, "max-batch", 8, "Maximum batch size")
 	runCmd.Flags().Int64Var(&maxGPUAllocation, "max-gpu", 6000000, "Maximum GPU KV block allocation")
-	runCmd.Flags().IntVar(&blockSize, "block size", 16, "Number of tokens contained in a KV cache block")
+	runCmd.Flags().IntVar(&blockSizeInTokens, "block size in tokens", 16, "Number of tokens contained in a KV cache block")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
