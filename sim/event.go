@@ -23,7 +23,7 @@ func (e *ArrivalEvent) Timestamp() int64 {
 
 // Execute schedules the next ProcessBatchEvent, if no such event is scheduled
 func (e *ArrivalEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< Arrival: %s at %dticks", e.Request.ID, e.time)
+	logrus.Infof("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
 	// Enqueue the arriving request into the waiting queue
 	sim.EnqueueRequest(e.Request)
@@ -52,6 +52,6 @@ func (e *ProcessBatchEvent) Timestamp() int64 {
 
 // Execute the ProcessBatchEvent
 func (e *ProcessBatchEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< ProcessBatchEvent at %dticks", e.time)
+	logrus.Infof("<< ProcessBatchEvent at %d ticks", e.time)
 	sim.ProcessBatch(e.time)
 }
