@@ -101,18 +101,25 @@ func hashTokens(tokens []string) string {
 // GetCachedBlocks attempts to reuse previously cached full blocks.
 // It returns block IDs and the number of fully matched cached prefixes.
 // This is a pure method and does not modify kvcache state.
-func (kvc *KVCacheState) GetCachedBlocks(tokens []string) (blockIDs []int, matched int) {
+func (kvc *KVCacheState) GetCachedBlocks(tokens []string) (blockIDs []int) {
 	n := len(tokens) / kvc.BlockSizeTokens
 	for i := 0; i < n; i++ {
 		chunk := tokens[:(i+1)*kvc.BlockSizeTokens]
 		h := hashTokens(chunk)
-		bid, ok := kvc.HashToBlock[h]
+		blockId, ok := kvc.HashToBlock[h]
 		if !ok {
 			break
 		}
-		blockIDs = append(blockIDs, bid)
-		matched++
+		blockIDs = append(blockIDs, blockId)
 	}
+	return
+}
+
+// CacheStateFor returns the IDs of cached blocks, the remaining tokens, and blocks needed for remaining tokens, given a request
+func (kvc *KVCacheState) CacheStateFor(req *Request) (cachedBlocks []int, remainingTokens []string, numRemainingBlocks int) {
+	cachedBlocks = kvc.GetCachedBlocks(req.InputTokens)
+	remainingTokens = req.InputTokens[len(cachedBlocks)*kvc.BlockSizeTokens:]
+	numRemainingBlocks = (len(remainingTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
 	return
 }
 
@@ -120,37 +127,36 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []string) (blockIDs []int, match
 // It reuses cached blocks and allocates new ones from the free list as needed.
 // Each full block added is hashed and recorded in the prefix table.
 func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
-	cached, matched := kvc.GetCachedBlocks(req.InputTokens)
-	remaining := req.InputTokens[matched*kvc.BlockSizeTokens:]
-	needed := (len(remaining) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
-
-	if needed > kvc.countFreeBlocks() {
+	cachedBlocks, _, numRemainingBlocks := kvc.CacheStateFor(req)
+	if numRemainingBlocks > kvc.countFreeBlocks() {
 		return false
 	}
 
-	allocated := make([]int, 0, len(cached)+needed)
+	// allocated is the block IDs allocated for this request
+	allocated := make([]int, 0, len(cachedBlocks)+numRemainingBlocks)
 
 	// Reuse cached blocks (increment refcount, remove from free list if needed)
-	for _, bid := range cached {
-		blk := kvc.Blocks[bid]
+	for _, blockId := range cachedBlocks {
+		blk := kvc.Blocks[blockId]
 		blk.RefCount++
 		if !blk.InUse {
 			blk.InUse = true
 			kvc.UsedBlockCnt++
 			kvc.removeFromFreeList(blk)
 		}
-		allocated = append(allocated, bid)
+		// allocated is the block IDs allocated for this request
+		allocated = append(allocated, blockId)
 	}
 
 	// Allocate new blocks for the remaining (non-cached) portion of the request
-	for i := 0; i < needed; i++ {
+	for i := 0; i < numRemainingBlocks; i++ {
 		blk := kvc.popFreeBlock()
 		if blk == nil {
 			return false
 		}
 		// start and end are the range of tokens in blk
-		start := (matched + i) * kvc.BlockSizeTokens
-		end := (matched + i + 1) * kvc.BlockSizeTokens
+		start := (len(cachedBlocks) + i) * kvc.BlockSizeTokens
+		end := (len(cachedBlocks) + i + 1) * kvc.BlockSizeTokens
 		if end > len(req.InputTokens) {
 			end = len(req.InputTokens)
 		}
@@ -166,6 +172,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
 			blk.Hash = h
 			kvc.HashToBlock[h] = blk.ID
 		}
+		// allocated is the block IDs allocated for this request
 		allocated = append(allocated, blk.ID)
 	}
 	kvc.RequestMap[req.ID] = allocated
@@ -188,8 +195,8 @@ func (kvc *KVCacheState) AppendToken(reqID, token string) bool {
 		latestBlk.Tokens = append(latestBlk.Tokens, token)
 		if len(latestBlk.Tokens) == kvc.BlockSizeTokens {
 			fullTokens := []string{}
-			for _, bid := range ids {
-				fullTokens = append(fullTokens, kvc.Blocks[bid].Tokens...)
+			for _, blockId := range ids {
+				fullTokens = append(fullTokens, kvc.Blocks[blockId].Tokens...)
 			}
 			h := hashTokens(fullTokens)
 			latestBlk.Hash = h
@@ -249,8 +256,8 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *Request) {
 		As a result, it should be evicted first.
 	*/
 	for i := len(ids) - 1; i >= 0; i-- {
-		bid := ids[i]
-		blk := kvc.Blocks[bid]
+		blockId := ids[i]
+		blk := kvc.Blocks[blockId]
 		blk.RefCount--
 		if blk.RefCount == 0 {
 			blk.InUse = false

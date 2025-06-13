@@ -18,7 +18,6 @@ var (
 	seed              int64   // Random seed for reproducibility
 	stepDuration      int64   // Duration of each forward pass step (in ticks)
 	maxBatchSize      int64   // Maximum number of requests per batch
-	maxGPUAllocation  int64   // Max number of KV blocks usable in one batch
 	blockSizeTokens   int     // Number of tokens per KV block
 )
 
@@ -51,7 +50,6 @@ var runCmd = &cobra.Command{
 			totalKVBlocks,
 			blockSizeTokens,
 			maxBatchSize,
-			maxGPUAllocation,
 		)
 		s.GeneratePoissonArrivals(rate, simulationHorizon, seed)
 		s.Run()
@@ -76,7 +74,6 @@ func init() {
 	runCmd.Flags().StringVar(&logLevel, "log", "info", "Log level (trace, debug, info, warn, error, fatal, panic)")
 	runCmd.Flags().Int64Var(&stepDuration, "step", 100, "Forward pass step duration (in ticks)")
 	runCmd.Flags().Int64Var(&maxBatchSize, "max-batch", 35, "Maximum batch size")
-	runCmd.Flags().Int64Var(&maxGPUAllocation, "max-gpu", 6000000, "Maximum GPU KV block allocation")
 	runCmd.Flags().IntVar(&blockSizeTokens, "block size in tokens", 16, "Number of tokens contained in a KV cache block")
 
 	// Attach `run` as a subcommand to `root`
