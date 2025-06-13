@@ -106,11 +106,11 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []string) (blockIDs []int) {
 	for i := 0; i < n; i++ {
 		chunk := tokens[:(i+1)*kvc.BlockSizeTokens]
 		h := hashTokens(chunk)
-		bid, ok := kvc.HashToBlock[h]
+		blockId, ok := kvc.HashToBlock[h]
 		if !ok {
 			break
 		}
-		blockIDs = append(blockIDs, bid)
+		blockIDs = append(blockIDs, blockId)
 	}
 	return
 }
@@ -131,8 +131,8 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
 	allocated := make([]int, 0, len(blockIDs)+needed)
 
 	// Reuse cached blocks (increment refcount, remove from free list if needed)
-	for _, bid := range blockIDs {
-		blk := kvc.Blocks[bid]
+	for _, blockId := range blockIDs {
+		blk := kvc.Blocks[blockId]
 		blk.RefCount++
 		if !blk.InUse {
 			blk.InUse = true
@@ -140,7 +140,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
 			kvc.removeFromFreeList(blk)
 		}
 		// allocated is the block IDs allocated for this request
-		allocated = append(allocated, bid)
+		allocated = append(allocated, blockId)
 	}
 
 	// Allocate new blocks for the remaining (non-cached) portion of the request
@@ -190,8 +190,8 @@ func (kvc *KVCacheState) AppendToken(reqID, token string) bool {
 		latestBlk.Tokens = append(latestBlk.Tokens, token)
 		if len(latestBlk.Tokens) == kvc.BlockSizeTokens {
 			fullTokens := []string{}
-			for _, bid := range ids {
-				fullTokens = append(fullTokens, kvc.Blocks[bid].Tokens...)
+			for _, blockId := range ids {
+				fullTokens = append(fullTokens, kvc.Blocks[blockId].Tokens...)
 			}
 			h := hashTokens(fullTokens)
 			latestBlk.Hash = h
@@ -251,8 +251,8 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *Request) {
 		As a result, it should be evicted first.
 	*/
 	for i := len(ids) - 1; i >= 0; i-- {
-		bid := ids[i]
-		blk := kvc.Blocks[bid]
+		blockId := ids[i]
+		blk := kvc.Blocks[blockId]
 		blk.RefCount--
 		if blk.RefCount == 0 {
 			blk.InUse = false
