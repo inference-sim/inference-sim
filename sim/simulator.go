@@ -31,20 +31,25 @@ func (eq *EventQueue) Pop() any {
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
 type Simulator struct {
-	Clock             int64
-	Horizon           int64
-	Step              int64
-	EventQueue        EventQueue
-	WaitQ             *WaitQueue
-	KVCache           *KVCacheState
-	ActiveBatch       *Batch
+	Clock   int64
+	Horizon int64
+	Step    int64
+	// EventQueue has all the simulator events, like arrival and processbatch events
+	EventQueue EventQueue
+	// WaitQ aka request waiting queue before it is scheduled
+	WaitQ   *WaitQueue
+	KVCache *KVCacheState
+	// ActiveBatch aka running queue are the set of requests
+	// that go model.execute (includes forward pass)
+	ActiveBatch *Batch
+	// ToDo: We have a data structure, but this is where we need to
+	// make metrics calculations accurate
 	Metrics           *Metrics
 	MaxBatchSize      int64
-	MaxGPUAllocation  int64
 	ProcessBatchEvent Event
 }
 
-func NewSimulator(horizon int64, step int64, totalKVBlocks int, blockSizeTokens int, maxBatchSize int64, maxGPUAlloc int64) *Simulator {
+func NewSimulator(horizon int64, step int64, totalKVBlocks int, blockSizeTokens int, maxBatchSize int64) *Simulator {
 	s := &Simulator{
 		Clock:             0,
 		Horizon:           horizon,
@@ -55,7 +60,6 @@ func NewSimulator(horizon int64, step int64, totalKVBlocks int, blockSizeTokens 
 		ActiveBatch:       &Batch{},
 		Metrics:           &Metrics{RequestLatencies: make(map[string]int64)},
 		MaxBatchSize:      maxBatchSize,
-		MaxGPUAllocation:  maxGPUAlloc,
 		ProcessBatchEvent: nil,
 	}
 	return s
@@ -150,15 +154,14 @@ func (sim *Simulator) ProcessBatch(now int64) {
 
 		// estimate the number of new blocks needed for the next request
 		next := sim.WaitQ.queue[0]
-		_, matched := sim.KVCache.GetCachedBlocks(next.InputTokens)
-		remaining := next.InputTokens[matched*sim.KVCache.BlockSizeTokens:]
-		estimatedNewBlocks := (len(remaining) + sim.KVCache.BlockSizeTokens - 1) / sim.KVCache.BlockSizeTokens
+		blockIDs := sim.KVCache.GetCachedBlocks(next.InputTokens)
+		// remaining is the tail portion of the request that is not cached
+		remaining := next.InputTokens[len(blockIDs)*sim.KVCache.BlockSizeTokens:]
+		// this the number of blocks needed to hold the remaining tokens
+		numRemainingBlocks := (len(remaining) + sim.KVCache.BlockSizeTokens - 1) / sim.KVCache.BlockSizeTokens
 
 		// ToDo: verify if the following checks are used by vLLM to determine schedulability
-		if estimatedNewBlocks > sim.KVCache.countFreeBlocks() {
-			break
-		}
-		if sim.KVCache.UsedBlockCnt+estimatedNewBlocks > int(sim.MaxGPUAllocation) {
+		if numRemainingBlocks > sim.KVCache.countFreeBlocks() {
 			break
 		}
 		// note: in reality, some of the stuff like caching of newly created blocks
