@@ -115,8 +115,8 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []string) (blockIDs []int) {
 	return
 }
 
-// CacheState returns the IDs of cached blocks, the remaining tokens, and blocks needed for remaining tokens, given a request
-func (kvc *KVCacheState) CacheState(req *Request) (cachedBlocks []int, remainingTokens []string, numRemainingBlocks int) {
+// CacheStateFor returns the IDs of cached blocks, the remaining tokens, and blocks needed for remaining tokens, given a request
+func (kvc *KVCacheState) CacheStateFor(req *Request) (cachedBlocks []int, remainingTokens []string, numRemainingBlocks int) {
 	cachedBlocks = kvc.GetCachedBlocks(req.InputTokens)
 	remainingTokens = req.InputTokens[len(cachedBlocks)*kvc.BlockSizeTokens:]
 	numRemainingBlocks = (len(remainingTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
@@ -127,7 +127,7 @@ func (kvc *KVCacheState) CacheState(req *Request) (cachedBlocks []int, remaining
 // It reuses cached blocks and allocates new ones from the free list as needed.
 // Each full block added is hashed and recorded in the prefix table.
 func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
-	cachedBlocks, _, numRemainingBlocks := kvc.CacheState(req)
+	cachedBlocks, _, numRemainingBlocks := kvc.CacheStateFor(req)
 	if numRemainingBlocks > kvc.countFreeBlocks() {
 		return false
 	}

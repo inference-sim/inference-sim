@@ -154,7 +154,7 @@ func (sim *Simulator) ProcessBatch(now int64) {
 
 		// estimate the number of new blocks needed for the next request
 		next := sim.WaitQ.queue[0]
-		_, _, numRemainingBlocks := sim.KVCache.CacheState(next)
+		_, _, numRemainingBlocks := sim.KVCache.CacheStateFor(next)
 
 		// ToDo: verify if the following checks are used by vLLM to determine schedulability
 		if numRemainingBlocks > sim.KVCache.countFreeBlocks() {
