@@ -21,7 +21,7 @@ func (e *ArrivalEvent) Timestamp() int64 {
 	return e.time
 }
 
-// Execute schedules the next ProcessBatchEvent, if no such event is scheduled
+// Execute schedules the next StepEvent, if no such event is scheduled
 func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
@@ -29,29 +29,29 @@ func (e *ArrivalEvent) Execute(sim *Simulator) {
 	sim.EnqueueRequest(e.Request)
 
 	// If there's no forward pass scheduled, trigger one immediately
-	if sim.ProcessBatchEvent == nil {
-		sim.Schedule(&ProcessBatchEvent{
+	if sim.StepEvent == nil {
+		sim.Schedule(&StepEvent{
 			time: e.time,
 		})
 	}
 }
 
-// ProcessBatchEvent represents a simulation step where a forward pass is executed.
-// It encapsulates the vLLM scheduler step:
-//   - Batch formation (prefill + decode)
-//   - Forward pass
-//   - Handle processing post forward pass
-type ProcessBatchEvent struct {
+// StepEvent represents a simulation step.
+// It encapsulates the vLLM step function, consisting of the following:
+//   - scheduler.schedule()
+//   - execute_model()
+//   - scheduler.update_from_output()
+type StepEvent struct {
 	time int64 // Scheduled execution time (in ticks)
 }
 
-// Timestamp returns the scheduled time of the ProcessBatchEvent.
-func (e *ProcessBatchEvent) Timestamp() int64 {
+// Timestamp returns the scheduled time of the StepEvent.
+func (e *StepEvent) Timestamp() int64 {
 	return e.time
 }
 
-// Execute the ProcessBatchEvent
-func (e *ProcessBatchEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< ProcessBatchEvent at %d ticks", e.time)
-	sim.ProcessBatch(e.time)
+// Execute the StepEvent
+func (e *StepEvent) Execute(sim *Simulator) {
+	logrus.Infof("<< StepEvent at %d ticks", e.time)
+	sim.Step(e.time)
 }

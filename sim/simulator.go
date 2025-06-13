@@ -33,8 +33,9 @@ func (eq *EventQueue) Pop() any {
 type Simulator struct {
 	Clock   int64
 	Horizon int64
-	Step    int64
-	// EventQueue has all the simulator events, like arrival and processbatch events
+	// Advance estimates the per-batch model execution time
+	Advance int64
+	// EventQueue has all the simulator events, like arrival and step events
 	EventQueue EventQueue
 	// WaitQ aka request waiting queue before it is scheduled
 	WaitQ   *WaitQueue
@@ -44,27 +45,29 @@ type Simulator struct {
 	ActiveBatch *Batch
 	// ToDo: We have a data structure, but this is where we need to
 	// make metrics calculations accurate
-	Metrics           *Metrics
-	MaxBatchSize      int64
-	ProcessBatchEvent Event
+	Metrics      *Metrics
+	MaxBatchSize int64
+	StepEvent    Event
 }
 
-func NewSimulator(horizon int64, step int64, totalKVBlocks int, blockSizeTokens int, maxBatchSize int64) *Simulator {
+func NewSimulator(horizon int64, advance int64, totalKVBlocks int, blockSizeTokens int, maxBatchSize int64) *Simulator {
 	s := &Simulator{
-		Clock:             0,
-		Horizon:           horizon,
-		Step:              step,
-		EventQueue:        make(EventQueue, 0),
-		WaitQ:             &WaitQueue{},
-		KVCache:           NewKVCacheState(totalKVBlocks, blockSizeTokens),
-		ActiveBatch:       &Batch{},
-		Metrics:           &Metrics{RequestLatencies: make(map[string]int64)},
-		MaxBatchSize:      maxBatchSize,
-		ProcessBatchEvent: nil,
+		Clock:        0,
+		Horizon:      horizon,
+		Advance:      advance,
+		EventQueue:   make(EventQueue, 0),
+		WaitQ:        &WaitQueue{},
+		KVCache:      NewKVCacheState(totalKVBlocks, blockSizeTokens),
+		ActiveBatch:  &Batch{},
+		Metrics:      &Metrics{RequestLatencies: make(map[string]int64)},
+		MaxBatchSize: maxBatchSize,
+		StepEvent:    nil,
 	}
 	return s
 }
 
+// Pushes an event into the simulator's EventQueue.
+// Note, this has nothing to do with vLLM's scheduler.schedule().
 func (sim *Simulator) Schedule(ev Event) {
 	heap.Push(&sim.EventQueue, ev)
 }
@@ -86,6 +89,7 @@ func (sim *Simulator) Run() {
 	log.Printf("[tick %07d] Simulation ended", sim.Clock)
 }
 
+// Adds a newly arrived request to the waiting queue
 func (sim *Simulator) EnqueueRequest(r *Request) {
 	sim.WaitQ.Enqueue(r)
 }
@@ -127,7 +131,7 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 			OutputTokens: output,
 			State:        "queued",
 		}
-		// schedule the request for arrival
+		// push the request for arrival
 		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
 
 		// move on to the next request
@@ -135,11 +139,11 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 	}
 }
 
-// In vllm, the processing of a batch of requests proceeds iteratively in scheduler.steps
-// ProcessBatch simulates a single scheduler.step, which roughly corresponds to a single forward pass,
-// and pre- and post- processing that happens before and after the forward pass.
+// In vllm, the processing of requests proceeds iteratively in steps.
+// Step simulates a single vllm step(), which roughly corresponds to a single scheduler.schedule()
+// to construct a batch, model execution of the batch and scheduler.update().
 // ToDo: Understand and handle pre-emption logic, if need be.
-func (sim *Simulator) ProcessBatch(now int64) {
+func (sim *Simulator) Step(now int64) {
 
 	// Subprocess: BeforeForwardPass - fill active batch from wait queue
 
@@ -194,8 +198,8 @@ func (sim *Simulator) ProcessBatch(now int64) {
 			// this request goes through prefill phase in this batch
 			req.ProgressIndex = len(req.InputTokens)
 			req.TTFTSet = true
-			req.FirstTokenTime = now + sim.Step
-			sim.Metrics.TTFTSum += now + sim.Step - req.ArrivalTime
+			req.FirstTokenTime = now + sim.Advance
+			sim.Metrics.TTFTSum += now + sim.Advance - req.ArrivalTime
 
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
@@ -213,14 +217,14 @@ func (sim *Simulator) ProcessBatch(now int64) {
 		}
 	}
 
-	// Subprocess: AfterForwardPass - check completion and schedule next step
+	// Subprocess: AfterForwardPass - check completion and push next step event
 
 	// Write KVBlocks usage metrics
 
 	if sim.KVCache.UsedBlockCnt > sim.Metrics.PeakKVBlocksUsed {
 		sim.Metrics.PeakKVBlocksUsed = sim.KVCache.UsedBlockCnt
 	}
-	sim.Metrics.KVBlocksUsed += sim.KVCache.UsedBlockCnt * int(sim.Step)
+	sim.Metrics.KVBlocksUsed += sim.KVCache.UsedBlockCnt * int(sim.Advance)
 
 	// handle completed and remaining requests
 	remaining := []*Request{}
@@ -229,25 +233,25 @@ func (sim *Simulator) ProcessBatch(now int64) {
 			req.State = "completed"
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
-			lat := now + sim.Step - req.ArrivalTime
+			lat := now + sim.Advance - req.ArrivalTime
 			sim.Metrics.TotalLatency += lat
 			sim.Metrics.RequestLatencies[req.ID] = lat
 			if len(req.OutputTokens) > 0 {
-				sim.Metrics.TPOTSum += now + sim.Step - req.FirstTokenTime
+				sim.Metrics.TPOTSum += now + sim.Advance - req.FirstTokenTime
 			}
 		} else {
 			remaining = append(remaining, req)
 		}
 	}
 
-	// schedule next step as needed
+	// push the next step event as needed
 	if len(remaining) > 0 {
 		sim.ActiveBatch.Requests = remaining
-		pbe := ProcessBatchEvent{time: now + sim.Step}
+		pbe := StepEvent{time: now + sim.Advance}
 		sim.Schedule(&pbe)
-		sim.ProcessBatchEvent = &pbe
+		sim.StepEvent = &pbe
 	} else {
 		sim.ActiveBatch = nil
-		sim.ProcessBatchEvent = nil
+		sim.StepEvent = nil
 	}
 }
