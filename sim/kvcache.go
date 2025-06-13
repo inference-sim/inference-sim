@@ -115,23 +115,28 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []string) (blockIDs []int) {
 	return
 }
 
+// CacheState returns the IDs of cached blocks, the remaining tokens, and blocks needed for remaining tokens, given a request
+func (kvc *KVCacheState) CacheState(req *Request) (cachedBlocks []int, remainingTokens []string, numRemainingBlocks int) {
+	cachedBlocks = kvc.GetCachedBlocks(req.InputTokens)
+	remainingTokens = req.InputTokens[len(cachedBlocks)*kvc.BlockSizeTokens:]
+	numRemainingBlocks = (len(remainingTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
+	return
+}
+
 // AllocateKVBlocks reserves cache blocks for a request.
 // It reuses cached blocks and allocates new ones from the free list as needed.
 // Each full block added is hashed and recorded in the prefix table.
 func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
-	blockIDs := kvc.GetCachedBlocks(req.InputTokens)
-	remaining := req.InputTokens[len(blockIDs)*kvc.BlockSizeTokens:]
-	needed := (len(remaining) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
-
-	if needed > kvc.countFreeBlocks() {
+	cachedBlocks, _, numRemainingBlocks := kvc.CacheState(req)
+	if numRemainingBlocks > kvc.countFreeBlocks() {
 		return false
 	}
 
 	// allocated is the block IDs allocated for this request
-	allocated := make([]int, 0, len(blockIDs)+needed)
+	allocated := make([]int, 0, len(cachedBlocks)+numRemainingBlocks)
 
 	// Reuse cached blocks (increment refcount, remove from free list if needed)
-	for _, blockId := range blockIDs {
+	for _, blockId := range cachedBlocks {
 		blk := kvc.Blocks[blockId]
 		blk.RefCount++
 		if !blk.InUse {
@@ -144,14 +149,14 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
 	}
 
 	// Allocate new blocks for the remaining (non-cached) portion of the request
-	for i := 0; i < needed; i++ {
+	for i := 0; i < numRemainingBlocks; i++ {
 		blk := kvc.popFreeBlock()
 		if blk == nil {
 			return false
 		}
 		// start and end are the range of tokens in blk
-		start := (len(blockIDs) + i) * kvc.BlockSizeTokens
-		end := (len(blockIDs) + i + 1) * kvc.BlockSizeTokens
+		start := (len(cachedBlocks) + i) * kvc.BlockSizeTokens
+		end := (len(cachedBlocks) + i + 1) * kvc.BlockSizeTokens
 		if end > len(req.InputTokens) {
 			end = len(req.InputTokens)
 		}
