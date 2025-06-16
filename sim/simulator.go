@@ -40,8 +40,7 @@ type Simulator struct {
 	// WaitQ aka request waiting queue before it is scheduled
 	WaitQ   *WaitQueue
 	KVCache *KVCacheState
-	// ActiveBatch aka running queue are the set of requests
-	// that go model.execute (includes forward pass)
+	// ActiveBatch aka running queue are the set of requests that go into the model for execution
 	ActiveBatch *Batch
 	// ToDo: We have a data structure, but this is where we need to
 	// make metrics calculations accurate
@@ -145,7 +144,7 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 // ToDo: Understand and handle pre-emption logic, if need be.
 func (sim *Simulator) Step(now int64) {
 
-	// Subprocess: BeforeForwardPass - fill active batch from wait queue
+	// Subprocess: fill active batch from wait queue, similar to vLLM's scheduler.schedule()
 
 	if sim.ActiveBatch == nil {
 		sim.ActiveBatch = &Batch{}
@@ -166,7 +165,7 @@ func (sim *Simulator) Step(now int64) {
 		}
 		// note: in reality, some of the stuff like caching of newly created blocks
 		// that happens inside AllocateKVBlocks
-		// should really be happening inside the forward pass subprocess, or after
+		// should really be happening inside model execution, or after
 		// but we will take this shortcut for now
 		if ok := sim.KVCache.AllocateKVBlocks(next); !ok {
 			// this really should not happen
@@ -189,7 +188,7 @@ func (sim *Simulator) Step(now int64) {
 		return
 	}
 
-	// Subprocess: ForwardPass - this could be prefill or decode depending on the request
+	// Subprocess: Model Execution - this could be prefill or decode depending on the request
 	// We want to make this efficient so that the total simulation time is
 	// O(TT), where TT is the total number of input and output tokens
 	// across all requests
@@ -217,7 +216,8 @@ func (sim *Simulator) Step(now int64) {
 		}
 	}
 
-	// Subprocess: AfterForwardPass - check completion and push next step event
+	// Subprocess: check completion and push next step event, similar to vLLM's
+	// scheduler.update_from_output()
 
 	// Write KVBlocks usage metrics
 

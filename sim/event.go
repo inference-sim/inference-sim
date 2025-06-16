@@ -28,7 +28,7 @@ func (e *ArrivalEvent) Execute(sim *Simulator) {
 	// Enqueue the arriving request into the waiting queue
 	sim.EnqueueRequest(e.Request)
 
-	// If there's no forward pass scheduled, trigger one immediately
+	// If there's no Step scheduled, trigger one immediately
 	if sim.StepEvent == nil {
 		sim.Schedule(&StepEvent{
 			time: e.time,
