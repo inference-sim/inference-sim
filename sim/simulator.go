@@ -40,8 +40,12 @@ type Simulator struct {
 	// WaitQ aka request waiting queue before it is scheduled
 	WaitQ   *WaitQueue
 	KVCache *KVCacheState
-	// ActiveBatch aka running queue are the set of requests that go into the model for execution
-	ActiveBatch *Batch
+	// Running batch contains the set of requests that go into the model for execution per Step.
+	// In vLLM, running is a list (not queue) of requests, hence we don't call it RunningQ here.
+	// Requests are ordered by First-Come-First-Served in WaitQ, and the same order is maintained
+	// while adding requests to RunningBatch
+	// ToDo: Add vLLM logic for reordering requests in RunningBatch before model execution
+	RunningBatch *Batch
 	// ToDo: We have a data structure, but this is where we need to
 	// make metrics calculations accurate
 	Metrics      *Metrics
@@ -57,7 +61,7 @@ func NewSimulator(horizon int64, advance int64, totalKVBlocks int, blockSizeToke
 		EventQueue:   make(EventQueue, 0),
 		WaitQ:        &WaitQueue{},
 		KVCache:      NewKVCacheState(totalKVBlocks, blockSizeTokens),
-		ActiveBatch:  &Batch{},
+		RunningBatch: &Batch{},
 		Metrics:      &Metrics{RequestLatencies: make(map[string]int64)},
 		MaxBatchSize: maxBatchSize,
 		StepEvent:    nil,
@@ -65,7 +69,7 @@ func NewSimulator(horizon int64, advance int64, totalKVBlocks int, blockSizeToke
 	return s
 }
 
-// Pushes an event into the simulator's EventQueue.
+// Pushes an event (ArrivalEvent/StepEvent) into the simulator's EventQueue.
 // Note, this has nothing to do with vLLM's scheduler.schedule().
 func (sim *Simulator) Schedule(ev Event) {
 	heap.Push(&sim.EventQueue, ev)
@@ -144,14 +148,14 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 // ToDo: Understand and handle pre-emption logic, if need be.
 func (sim *Simulator) Step(now int64) {
 
-	// Subprocess: fill active batch from wait queue, similar to vLLM's scheduler.schedule()
+	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 
-	if sim.ActiveBatch == nil {
-		sim.ActiveBatch = &Batch{}
+	if sim.RunningBatch == nil {
+		sim.RunningBatch = &Batch{}
 	}
 
 	// attempt to dequeue, if batch size is not exceeded, and there is a request waiting
-	for len(sim.ActiveBatch.Requests) < int(sim.MaxBatchSize) && len(sim.WaitQ.queue) > 0 {
+	for len(sim.RunningBatch.Requests) < int(sim.MaxBatchSize) && len(sim.WaitQ.queue) > 0 {
 		// we will attempt to dequeue `next` request
 		// if that attempt fails, we will break out of the loop
 
@@ -177,14 +181,14 @@ func (sim *Simulator) Step(now int64) {
 
 		// dequeue this request
 		sim.WaitQ.queue = sim.WaitQ.queue[1:]
-		// make it part of the active batch
-		sim.ActiveBatch.Requests = append(sim.ActiveBatch.Requests, next)
+		// make it part of the running batch
+		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
 		// change the state of the request from queued to running
 		next.State = "running"
 	}
 
-	// if there are no active requests at this point, we're done with this step
-	if len(sim.ActiveBatch.Requests) == 0 {
+	// if there are no requests in RunningBatch at this point, we're done with this step
+	if len(sim.RunningBatch.Requests) == 0 {
 		return
 	}
 
@@ -192,7 +196,7 @@ func (sim *Simulator) Step(now int64) {
 	// We want to make this efficient so that the total simulation time is
 	// O(TT), where TT is the total number of input and output tokens
 	// across all requests
-	for _, req := range sim.ActiveBatch.Requests {
+	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex == 0 {
 			// this request goes through prefill phase in this batch
 			req.ProgressIndex = len(req.InputTokens)
@@ -228,7 +232,7 @@ func (sim *Simulator) Step(now int64) {
 
 	// handle completed and remaining requests
 	remaining := []*Request{}
-	for _, req := range sim.ActiveBatch.Requests {
+	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex == len(req.InputTokens)+len(req.OutputTokens) {
 			req.State = "completed"
 			sim.KVCache.ReleaseKVBlocks(req)
@@ -246,12 +250,12 @@ func (sim *Simulator) Step(now int64) {
 
 	// push the next step event as needed
 	if len(remaining) > 0 {
-		sim.ActiveBatch.Requests = remaining
+		sim.RunningBatch.Requests = remaining
 		pbe := StepEvent{time: now + sim.Advance}
 		sim.Schedule(&pbe)
 		sim.StepEvent = &pbe
 	} else {
-		sim.ActiveBatch = nil
+		sim.RunningBatch = nil
 		sim.StepEvent = nil
 	}
 }
