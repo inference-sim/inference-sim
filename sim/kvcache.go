@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -20,7 +21,7 @@ type KVBlock struct {
 	RefCount int      // Number of active requests referencing this block
 	InUse    bool     // Whether the block is currently in use by an active (batched) request
 	Hash     string   // Prefix hash identifying this block's content and its lineage (if full)
-	Tokens   []string // Actual tokens stored in this block; full if len(Tokens) == BlockSizeTokens
+	Tokens   []int    // Actual tokens stored in this block; full if len(Tokens) == BlockSizeTokens
 	PrevFree *KVBlock // LRU doubly linked list: previous free block
 	NextFree *KVBlock // LRU doubly linked list: next free block
 }
@@ -93,16 +94,28 @@ func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
 }
 
 // hashTokens returns a SHA256 hash of the joined token sequence.
-func hashTokens(tokens []string) string {
+func hashTokens(tokens []int) string {
 	h := sha256.New()
-	h.Write([]byte(strings.Join(tokens, "|")))
+
+	// string version of token ids to be joined
+	var tokenStrings strings.Builder
+
+	for i, token := range tokens {
+		if i > 0 {
+			// Add a | delimiter before all tokens except the first
+			tokenStrings.WriteString("|")
+		}
+		tokenStrings.WriteString(strconv.Itoa(token))
+	}
+
+	h.Write([]byte(tokenStrings.String()))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
 // GetCachedBlocks attempts to reuse previously cached full blocks.
 // It returns block IDs and the number of fully matched cached prefixes.
 // This is a pure method and does not modify kvcache state.
-func (kvc *KVCacheState) GetCachedBlocks(tokens []string) (blockIDs []int) {
+func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int) {
 	n := len(tokens) / kvc.BlockSizeTokens
 	for i := 0; i < n; i++ {
 		chunk := tokens[:(i+1)*kvc.BlockSizeTokens]
@@ -160,7 +173,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
 			end = len(req.InputTokens)
 		}
 		tok := req.InputTokens[start:end]
-		blk.Tokens = append([]string{}, tok...) // copy tokens
+		blk.Tokens = append([]int{}, tok...) // copy tokens
 		blk.RefCount = 1
 		blk.InUse = true
 		kvc.UsedBlockCnt++
@@ -180,7 +193,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
 
 // AppendToken adds a new (decoded) token to the latest request block.
 // If the latest block is full, a new one is allocated.
-func (kvc *KVCacheState) AppendToken(reqID, token string) bool {
+func (kvc *KVCacheState) AppendToken(reqID string, token int) bool {
 	ids := kvc.RequestMap[reqID]
 	if len(ids) == 0 {
 		// ToDo: Log an error here
@@ -193,7 +206,7 @@ func (kvc *KVCacheState) AppendToken(reqID, token string) bool {
 		// append the token to the latest block
 		latestBlk.Tokens = append(latestBlk.Tokens, token)
 		if len(latestBlk.Tokens) == kvc.BlockSizeTokens {
-			fullTokens := []string{}
+			fullTokens := []int{}
 			for _, blockId := range ids {
 				fullTokens = append(fullTokens, kvc.Blocks[blockId].Tokens...)
 			}
@@ -210,7 +223,7 @@ func (kvc *KVCacheState) AppendToken(reqID, token string) bool {
 	if newBlk == nil {
 		return false
 	}
-	newBlk.Tokens = []string{token}
+	newBlk.Tokens = []int{token}
 	newBlk.RefCount = 1
 	newBlk.InUse = true
 	kvc.UsedBlockCnt++

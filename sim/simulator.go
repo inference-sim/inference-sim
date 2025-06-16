@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"strconv"
 )
 
 // EventQueue implements heap.Interface and orders events by timestamp.
@@ -118,16 +117,16 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 		if currentTime > horizon {
 			break
 		}
-		// generate random input and output tokens; their lengths and contents are both random
+		// generate random input and output token ids; their lengths and contents are both random
 		// ToDo: create flags for max input and output lengths
 		// Plug them into rGen.Intn below, instead of hardcoded values
-		input := make([]string, rGen.Intn(20)+10)
-		output := make([]string, rGen.Intn(10)+5)
+		input := make([]int, rGen.Intn(20)+10)
+		output := make([]int, rGen.Intn(10)+5)
 		for i := range input {
-			input[i] = "tok" + strconv.Itoa(rGen.Intn(100000))
+			input[i] = rGen.Intn(100000)
 		}
 		for i := range output {
-			output[i] = "tok" + strconv.Itoa(rGen.Intn(100000))
+			output[i] = rGen.Intn(100000)
 		}
 
 		// form the request; it will be in the "queued" state when it arrives
