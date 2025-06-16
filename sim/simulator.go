@@ -159,21 +159,14 @@ func (sim *Simulator) Step(now int64) {
 		// we will attempt to dequeue `next` request
 		// if that attempt fails, we will break out of the loop
 
-		// estimate the number of new blocks needed for the next request
 		next := sim.WaitQ.queue[0]
-		_, _, numRemainingBlocks := sim.KVCache.CacheStateFor(next)
 
-		// ToDo: verify if the following checks are used by vLLM to determine schedulability
-		if numRemainingBlocks > sim.KVCache.countFreeBlocks() {
-			break
-		}
-		// note: in reality, some of the stuff like caching of newly created blocks
-		// that happens inside AllocateKVBlocks
-		// should really be happening inside model execution, or after
-		// but we will take this shortcut for now
+		// estimate the number of new blocks needed for the next request
+		// and allocate if possible
 		if ok := sim.KVCache.AllocateKVBlocks(next); !ok {
-			// this really should not happen
-			// ToDo: Log an error here
+			// cannot allocate enough blocks for remaining tokens, do not schedule current request
+			// vLLM maintains First-Come-First-Served order of requests, so we cannot move onto the
+			// next request.
 			break
 		}
 

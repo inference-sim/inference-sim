@@ -4,6 +4,7 @@ package sim
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
 	"strings"
 )
 
@@ -115,20 +116,18 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []string) (blockIDs []int) {
 	return
 }
 
-// CacheStateFor returns the IDs of cached blocks, the remaining tokens, and blocks needed for remaining tokens, given a request
-func (kvc *KVCacheState) CacheStateFor(req *Request) (cachedBlocks []int, remainingTokens []string, numRemainingBlocks int) {
-	cachedBlocks = kvc.GetCachedBlocks(req.InputTokens)
-	remainingTokens = req.InputTokens[len(cachedBlocks)*kvc.BlockSizeTokens:]
-	numRemainingBlocks = (len(remainingTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
-	return
-}
-
 // AllocateKVBlocks reserves cache blocks for a request.
 // It reuses cached blocks and allocates new ones from the free list as needed.
 // Each full block added is hashed and recorded in the prefix table.
 func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
-	cachedBlocks, _, numRemainingBlocks := kvc.CacheStateFor(req)
+	// given a request, find IDs of cached blocks, the remaining tokens, and blocks needed for remaining tokens
+	cachedBlocks := kvc.GetCachedBlocks(req.InputTokens)
+	remainingTokens := req.InputTokens[len(cachedBlocks)*kvc.BlockSizeTokens:]
+	numRemainingBlocks := (len(remainingTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
+
+	// Cannot allocate enough KV cache blocks
 	if numRemainingBlocks > kvc.countFreeBlocks() {
+		log.Printf("Not enough KV cache space to allocate %v new blocks", numRemainingBlocks)
 		return false
 	}
 
