@@ -3,6 +3,10 @@
 
 package sim
 
+import (
+	"fmt"
+)
+
 // Request models a single request's lifecycle in the simulation.
 // Each request has:
 // - input tokens (prompt)
@@ -23,4 +27,9 @@ type Request struct {
 
 	TTFTSet        bool  // Tracks whether TTFT has been set
 	FirstTokenTime int64 // Timestamp when first token was generated
+}
+
+// This method returns a human-readable string representation of a Request.
+func (req Request) String() string {
+	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v)", req.ID, req.State, req.ProgressIndex)
 }

@@ -48,23 +48,27 @@ type Simulator struct {
 	RunningBatch *Batch
 	// ToDo: We have a data structure, but this is where we need to
 	// make metrics calculations accurate
-	Metrics      *Metrics
-	MaxBatchSize int64
-	StepEvent    Event
+	Metrics *Metrics
+	// max number of requests RunningBatch can hold
+	MaxRunningReqs int64
+	// max total number of new tokens across all requests in RunningBatch
+	MaxScheduledTokens int64
+	StepEvent          Event
 }
 
-func NewSimulator(horizon int64, advance int64, totalKVBlocks int, blockSizeTokens int, maxBatchSize int64) *Simulator {
+func NewSimulator(horizon int64, advance int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int64) *Simulator {
 	s := &Simulator{
-		Clock:        0,
-		Horizon:      horizon,
-		Advance:      advance,
-		EventQueue:   make(EventQueue, 0),
-		WaitQ:        &WaitQueue{},
-		KVCache:      NewKVCacheState(totalKVBlocks, blockSizeTokens),
-		RunningBatch: &Batch{},
-		Metrics:      &Metrics{RequestLatencies: make(map[string]int64)},
-		MaxBatchSize: maxBatchSize,
-		StepEvent:    nil,
+		Clock:              0,
+		Horizon:            horizon,
+		Advance:            advance,
+		EventQueue:         make(EventQueue, 0),
+		WaitQ:              &WaitQueue{},
+		KVCache:            NewKVCacheState(totalKVBlocks, blockSizeTokens),
+		RunningBatch:       &Batch{},
+		Metrics:            &Metrics{RequestLatencies: make(map[string]int64)},
+		MaxRunningReqs:     maxRunningReqs,
+		MaxScheduledTokens: maxScheduledTokens,
+		StepEvent:          nil,
 	}
 	return s
 }
@@ -154,12 +158,17 @@ func (sim *Simulator) Step(now int64) {
 		sim.RunningBatch = &Batch{}
 	}
 
+	// allocate a max token budget at the start of each Step
+	tokenBudget := sim.MaxScheduledTokens
 	// attempt to dequeue, if batch size is not exceeded, and there is a request waiting
-	for len(sim.RunningBatch.Requests) < int(sim.MaxBatchSize) && len(sim.WaitQ.queue) > 0 {
+	for len(sim.RunningBatch.Requests) < int(sim.MaxRunningReqs) && len(sim.WaitQ.queue) > 0 && tokenBudget > 0 {
 		// we will attempt to dequeue `next` request
 		// if that attempt fails, we will break out of the loop
 
 		next := sim.WaitQ.queue[0]
+
+		cachedBlocks := sim.KVCache.GetCachedBlocks(next.InputTokens)
+		numRemainingTokens := int64(len(next.InputTokens) - len(cachedBlocks)*sim.KVCache.BlockSizeTokens)
 
 		// estimate the number of new blocks needed for the next request
 		// and allocate if possible
@@ -176,6 +185,8 @@ func (sim *Simulator) Step(now int64) {
 		sim.WaitQ.queue = sim.WaitQ.queue[1:]
 		// make it part of the running batch
 		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
+		// decrement the token budget
+		tokenBudget = tokenBudget - numRemainingTokens
 		// change the state of the request from queued to running
 		next.State = "running"
 	}
@@ -190,6 +201,12 @@ func (sim *Simulator) Step(now int64) {
 	// O(TT), where TT is the total number of input and output tokens
 	// across all requests
 	for _, req := range sim.RunningBatch.Requests {
+		if tokenBudget <= 0 {
+			// Simulator has run out of token budget. Cannot run any more requests in this Step.
+			// Wait for currently running requests to finish, and try again in next Step
+			log.Printf("Simulator has run out of token budget. Trying in next step.")
+			break
+		}
 		if req.ProgressIndex == 0 {
 			// this request goes through prefill phase in this batch
 			req.ProgressIndex = len(req.InputTokens)
@@ -208,6 +225,9 @@ func (sim *Simulator) Step(now int64) {
 				// Could not allocate (e.g., no free blocks)
 				continue // ToDo: pre-empt this request
 			}
+			// currently each request produces 1 token per decode.
+			// this needs to be updated with speculative decoding
+			tokenBudget--
 			req.ProgressIndex++
 			sim.Metrics.TotalOutputTokens++
 		}
