@@ -16,7 +16,7 @@ var (
 	rate              float64 // Poisson arrival rate (requests per tick)
 	logLevel          string  // Log verbosity level
 	seed              int64   // Random seed for reproducibility
-	stepDuration      int64   // Duration of each forward pass step (in ticks)
+	stepDuration      int64   // Duration of each Step Event (in ticks)
 	maxBatchSize      int64   // Maximum number of requests per batch
 	blockSizeTokens   int     // Number of tokens per KV block
 )
@@ -72,7 +72,7 @@ func init() {
 	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", 10000, "Total simulation horizon (in ticks)")
 	runCmd.Flags().Float64Var(&rate, "rate", 0.02, "Poisson arrival rate (requests per tick)")
 	runCmd.Flags().StringVar(&logLevel, "log", "info", "Log level (trace, debug, info, warn, error, fatal, panic)")
-	runCmd.Flags().Int64Var(&stepDuration, "step", 100, "Forward pass step duration (in ticks)")
+	runCmd.Flags().Int64Var(&stepDuration, "step", 100, "Step duration (in ticks)")
 	runCmd.Flags().Int64Var(&maxBatchSize, "max-batch", 35, "Maximum batch size")
 	runCmd.Flags().IntVar(&blockSizeTokens, "block size in tokens", 16, "Number of tokens contained in a KV cache block")
 
