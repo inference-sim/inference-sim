@@ -145,21 +145,40 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 	}
 }
 
-// In vllm, the processing of requests proceeds iteratively in steps.
-// Step simulates a single vllm step(), which roughly corresponds to a single scheduler.schedule()
-// to construct a batch, model execution of the batch and scheduler.update().
-// ToDo: Understand and handle pre-emption logic, if need be.
-func (sim *Simulator) Step(now int64) {
-
-	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
-
+func (sim *Simulator) makeRunningBatch() {
 	if sim.RunningBatch == nil {
 		sim.RunningBatch = &Batch{}
 	}
 
 	// allocate a max token budget at the start of each Step
 	tokenBudget := sim.MaxScheduledTokens
-	// attempt to dequeue, if batch size is not exceeded, and there is a request waiting
+
+	// First run requests in the RunningBatch.
+	// Requests could be in either prefill or decode.
+	for _, req := range sim.RunningBatch.Requests {
+		if tokenBudget <= 0 {
+			// Simulator has run out of token budget. Cannot run any more requests in this Step.
+			// Wait for currently running requests to finish, and try again in next Step
+			log.Printf("Simulator has run out of token budget. Trying in next step.")
+			break
+		}
+		// if a request is in running queue in this function and in prefill phase, nothing left to do,
+		// blocks have already been allocated. if it is in decode phase, then allocate blocks for the
+		// token generated in the previous Step
+		if req.ProgressIndex >= len(req.InputTokens) {
+			// this request will go through decode phase in this batch
+			ok := sim.KVCache.AllocateKVBlocksDecode(req)
+			if !ok {
+				// Could not allocate (e.g., no free blocks)
+				continue // ToDo: pre-empt this request
+			}
+			// currently each request produces 1 token per decode.
+			// this needs to be updated with speculative decoding
+			tokenBudget--
+		}
+	}
+
+	// Next, attempt to dequeue requests in waiting queue, if batch size is not exceeded
 	for len(sim.RunningBatch.Requests) < int(sim.MaxRunningReqs) && len(sim.WaitQ.queue) > 0 && tokenBudget > 0 {
 		// we will attempt to dequeue `next` request
 		// if that attempt fails, we will break out of the loop
@@ -171,7 +190,7 @@ func (sim *Simulator) Step(now int64) {
 
 		// estimate the number of new blocks needed for the next request
 		// and allocate if possible
-		if ok := sim.KVCache.AllocateKVBlocks(next); !ok {
+		if ok := sim.KVCache.AllocateKVBlocksPrefill(next); !ok {
 			// cannot allocate enough blocks for remaining tokens, do not schedule current request
 			// vLLM maintains First-Come-First-Served order of requests, so we cannot move onto the
 			// next request.
@@ -189,23 +208,20 @@ func (sim *Simulator) Step(now int64) {
 		// change the state of the request from queued to running
 		next.State = "running"
 	}
+}
 
-	// if there are no requests in RunningBatch at this point, we're done with this step
-	if len(sim.RunningBatch.Requests) == 0 {
-		return
-	}
+// In vllm, the processing of requests proceeds iteratively in steps.
+// Step simulates a single vllm step(), which roughly corresponds to a single scheduler.schedule()
+// to construct a batch, model execution of the batch and scheduler.update().
+// ToDo: Understand and handle pre-emption logic, if need be.
+func (sim *Simulator) Step(now int64) {
 
-	// Subprocess: Model Execution - this could be prefill or decode depending on the request
-	// We want to make this efficient so that the total simulation time is
-	// O(TT), where TT is the total number of input and output tokens
-	// across all requests
+	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
+	sim.makeRunningBatch()
+
+	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
+	// similar to vLLM's execute_model()
 	for _, req := range sim.RunningBatch.Requests {
-		if tokenBudget <= 0 {
-			// Simulator has run out of token budget. Cannot run any more requests in this Step.
-			// Wait for currently running requests to finish, and try again in next Step
-			log.Printf("Simulator has run out of token budget. Trying in next step.")
-			break
-		}
 		if req.ProgressIndex == 0 {
 			// this request goes through prefill phase in this batch
 			req.ProgressIndex = len(req.InputTokens)
@@ -217,16 +233,6 @@ func (sim *Simulator) Step(now int64) {
 			// Make sure they are cached, if they're full
 		} else if req.ProgressIndex >= len(req.InputTokens) {
 			// this request goes through decode phase in this batch
-			nextTokenIndex := req.ProgressIndex - len(req.InputTokens)
-			nextToken := req.OutputTokens[nextTokenIndex]
-			ok := sim.KVCache.AppendToken(req.ID, nextToken)
-			if !ok {
-				// Could not allocate (e.g., no free blocks)
-				continue // ToDo: pre-empt this request
-			}
-			// currently each request produces 1 token per decode.
-			// this needs to be updated with speculative decoding
-			tokenBudget--
 			req.ProgressIndex++
 			sim.Metrics.TotalOutputTokens++
 		}
@@ -246,6 +252,9 @@ func (sim *Simulator) Step(now int64) {
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex == len(req.InputTokens)+len(req.OutputTokens) {
+			// the last decode token would not have been KV cached yet.
+			// perform one last allocation for the last generated decode token.
+			sim.KVCache.AllocateKVBlocksDecode(req)
 			req.State = "completed"
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
