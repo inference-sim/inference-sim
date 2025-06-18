@@ -3,7 +3,6 @@ package sim
 
 import (
 	"container/heap"
-	"fmt"
 	"log"
 	"math/rand"
 )
@@ -52,10 +51,12 @@ type Simulator struct {
 	MaxRunningReqs int64
 	// max total number of new tokens across all requests in RunningBatch
 	MaxScheduledTokens int64
-	StepEvent          Event
+	// path to the input JSON file containing request workloads
+	Requests  []*Request
+	StepEvent Event
 }
 
-func NewSimulator(horizon int64, advance int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int64) *Simulator {
+func NewSimulator(horizon int64, advance int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int64, requests []*Request) *Simulator {
 	s := &Simulator{
 		Clock:              0,
 		Horizon:            horizon,
@@ -67,6 +68,7 @@ func NewSimulator(horizon int64, advance int64, totalKVBlocks int, blockSizeToke
 		Metrics:            &Metrics{RequestLatencies: make(map[string]int64)},
 		MaxRunningReqs:     maxRunningReqs,
 		MaxScheduledTokens: maxScheduledTokens,
+		Requests:           requests,
 		StepEvent:          nil,
 	}
 	return s
@@ -103,45 +105,41 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 // GeneratePoissonArrivals generates requests with arrival distributed as a Poisson process
 func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed int64) {
 	currentTime := int64(0)
-	// each request gets a unique id
-	requestId := 0
+	// keep track of how many requests in the data file have been processed
+	reqIdx := 0
 	// initialize the random number generator
 	rGen := rand.New(rand.NewSource(seed))
 
 	// create request arrivals iteratively
-	for currentTime < horizon {
+	for currentTime < horizon && reqIdx < len(sim.Requests) {
 		// In a Poisson process, the arrival rate is inversely proportional
 		// to the mean interarrival time
-		delta := int64(rGen.ExpFloat64() * (1.0 / rate))
-		currentTime += delta
-		if currentTime > horizon {
-			break
-		}
-		// generate random input and output token ids; their lengths and contents are both random
+		// go through the workload requests one by one
 		// ToDo: create flags for max input and output lengths
-		// Plug them into rGen.Intn below, instead of hardcoded values
-		input := make([]int, rGen.Intn(20)+10)
-		output := make([]int, rGen.Intn(10)+5)
-		for i := range input {
-			input[i] = rGen.Intn(100000)
-		}
-		for i := range output {
-			output[i] = rGen.Intn(100000)
-		}
+		requestID := sim.Requests[reqIdx].ID
+		input := sim.Requests[reqIdx].InputTokens
+		output := sim.Requests[reqIdx].OutputTokens
 
 		// form the request; it will be in the "queued" state when it arrives
 		req := &Request{
-			ID:           fmt.Sprintf("req-%d", requestId),
+			ID:           requestID,
 			ArrivalTime:  currentTime,
 			InputTokens:  input,
 			OutputTokens: output,
 			State:        "queued",
 		}
+
 		// push the request for arrival
 		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
 
 		// move on to the next request
-		requestId++
+		reqIdx++
+
+		delta := int64(rGen.ExpFloat64() * (1.0 / rate))
+		currentTime += delta
+		if currentTime > horizon {
+			break
+		}
 	}
 }
 
