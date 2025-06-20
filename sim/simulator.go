@@ -281,6 +281,7 @@ func (sim *Simulator) Step(now int64) {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + ScheduleTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime
+			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime))
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
 		} else if req.ProgressIndex >= len(req.InputTokens) {
@@ -315,6 +316,7 @@ func (sim *Simulator) Step(now int64) {
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
 				sim.Metrics.TPOTSum += reqTotalOutput
+				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(len(req.OutputTokens)-1))
 			}
 		} else {
 			remaining = append(remaining, req)
