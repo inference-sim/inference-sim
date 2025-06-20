@@ -157,10 +157,13 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 
 // Estimate Step Advance Time using regression features and coefficients
 func (sim *Simulator) getStepTime() int64 {
-	var totalStepTime int64
-	totalStepTime += (int64)(sim.RegressionCoeffs[0] * float64(sim.RunningBatchFeatures.NumDecodeRequests))
-	totalStepTime += (int64)(sim.RegressionCoeffs[1] * sim.RunningBatchFeatures.RequestRate)
-	return totalStepTime
+	var totalStepTime float64
+	totalStepTime += sim.RegressionCoeffs[0] * float64(sim.RunningBatchFeatures.NumPrefillRequests)
+	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
+	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[3] * float64(sim.RunningBatchFeatures.RequestRate)
+	totalStepTime += sim.RegressionCoeffs[4] // intercept
+	return int64(totalStepTime * 1e6)        // convert from seconds to microseconds, need to verify with Satyam
 }
 
 func (sim *Simulator) makeRunningBatch() {
