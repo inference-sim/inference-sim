@@ -74,7 +74,7 @@ func Execute() {
 
 // init sets up CLI flags and subcommands
 func init() {
-	runCmd.Flags().IntVar(&totalKVBlocks, "kv", 8000000, "Total number of KV cache blocks")
+	runCmd.Flags().IntVar(&totalKVBlocks, "total-kv-blocks", 8000000, "Total number of KV cache blocks")
 	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", 10000, "Total simulation horizon (in ticks)")
 	runCmd.Flags().Float64Var(&rate, "rate", 0.02, "Poisson arrival rate (requests per tick)")
 	runCmd.Flags().StringVar(&logLevel, "log", "info", "Log level (trace, debug, info, warn, error, fatal, panic)")
@@ -82,7 +82,7 @@ func init() {
 	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 35, "Maximum number of requests running together")
 	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 8192, "Maximum total number of new tokens across running requests")
 	runCmd.Flags().StringVar(&requestsFilePath, "requests-file-path", "ShareGPT_V3_tokenized.json", "Path to workload tokenized JSON file")
-	runCmd.Flags().IntVar(&blockSizeTokens, "block size in tokens", 16, "Number of tokens contained in a KV cache block")
+	runCmd.Flags().IntVar(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
