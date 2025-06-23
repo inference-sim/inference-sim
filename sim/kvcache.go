@@ -132,7 +132,7 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int) {
 // AllocateKVBlocks reserves cache blocks for a request.
 // It reuses cached blocks and allocates new ones from the free list as needed.
 // Each full block added is hashed and recorded in the prefix table.
-func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
+func (kvc *KVCacheState) AllocateKVBlocksPrefill(req *Request) bool {
 	// given a request, find IDs of cached blocks, the remaining tokens, and blocks needed for remaining tokens
 	cachedBlocks := kvc.GetCachedBlocks(req.InputTokens)
 	remainingTokens := req.InputTokens[len(cachedBlocks)*kvc.BlockSizeTokens:]
@@ -193,18 +193,27 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request) bool {
 
 // AppendToken adds a new (decoded) token to the latest request block.
 // If the latest block is full, a new one is allocated.
-func (kvc *KVCacheState) AppendToken(reqID string, token int) bool {
+func (kvc *KVCacheState) AllocateKVBlocksDecode(req *Request) bool {
+	// sanity check to make sure the request isn't in prefill phase
+	if req.ProgressIndex <= len(req.InputTokens) {
+		return false
+	}
+
+	reqID := req.ID
 	ids := kvc.RequestMap[reqID]
 	if len(ids) == 0 {
 		// ToDo: Log an error here
 		// This can only happen if both inputs and outputs are empty which is invalid
 		return false
 	}
+
+	lastTokenOutputIndex := req.ProgressIndex - len(req.InputTokens) - 1
+	lastToken := req.OutputTokens[lastTokenOutputIndex]
 	latestBlk := kvc.Blocks[ids[len(ids)-1]]
 	if len(latestBlk.Tokens) < kvc.BlockSizeTokens {
 		// latest block is not full yet
 		// append the token to the latest block
-		latestBlk.Tokens = append(latestBlk.Tokens, token)
+		latestBlk.Tokens = append(latestBlk.Tokens, lastToken)
 		if len(latestBlk.Tokens) == kvc.BlockSizeTokens {
 			fullTokens := []int{}
 			for _, blockId := range ids {
@@ -223,7 +232,7 @@ func (kvc *KVCacheState) AppendToken(reqID string, token int) bool {
 	if newBlk == nil {
 		return false
 	}
-	newBlk.Tokens = []int{token}
+	newBlk.Tokens = []int{lastToken}
 	newBlk.RefCount = 1
 	newBlk.InUse = true
 	kvc.UsedBlockCnt++
