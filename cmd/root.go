@@ -19,6 +19,7 @@ var (
 	stepDuration       int64   // Duration of each forward pass step (in ticks)
 	maxRunningReqs     int64   // Maximum number of requests in the Running batch
 	maxScheduledTokens int64   // Maximum total number of tokens across requests in the Running batch
+	requestsFilePath   string  // Path to requests workload file path, default ShareGPT
 	blockSizeTokens    int     // Number of tokens per KV block
 )
 
@@ -44,6 +45,8 @@ var runCmd = &cobra.Command{
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, rate=%.2f, step=%dticks",
 			totalKVBlocks, simulationHorizon, rate, stepDuration)
 
+		requests := ProcessInput(requestsFilePath)
+
 		// Initialize and run the simulator
 		s := sim.NewSimulator(
 			simulationHorizon,
@@ -52,6 +55,7 @@ var runCmd = &cobra.Command{
 			blockSizeTokens,
 			maxRunningReqs,
 			maxScheduledTokens,
+			requests,
 		)
 		s.GeneratePoissonArrivals(rate, simulationHorizon, seed)
 		s.Run()
@@ -77,6 +81,7 @@ func init() {
 	runCmd.Flags().Int64Var(&stepDuration, "step", 100, "Step duration (in ticks)")
 	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 35, "Maximum number of requests running together")
 	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 8192, "Maximum total number of new tokens across running requests")
+	runCmd.Flags().StringVar(&requestsFilePath, "requests-file-path", "ShareGPT_V3_tokenized.json", "Path to workload tokenized JSON file")
 	runCmd.Flags().IntVar(&blockSizeTokens, "block size in tokens", 16, "Number of tokens contained in a KV cache block")
 
 	// Attach `run` as a subcommand to `root`
