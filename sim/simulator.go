@@ -119,6 +119,7 @@ func (sim *Simulator) Run() {
 // Adds a newly arrived request to the waiting queue
 func (sim *Simulator) EnqueueRequest(r *Request) {
 	sim.WaitQ.Enqueue(r)
+	sim.Metrics.TotalInputTokens += len(r.InputTokens)
 }
 
 // GeneratePoissonArrivals generates requests with arrival distributed as a Poisson process

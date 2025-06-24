@@ -2,13 +2,17 @@
 
 package sim
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // Metrics aggregates statistics about the simulation
 // for final reporting. Useful for evaluating system performance
 // and debugging behavior over time.
 type Metrics struct {
 	CompletedRequests int   // Number of requests completed
+	TotalInputTokens  int   // Total number of input tokens
 	TotalOutputTokens int   // Total number of output tokens
 	TotalLatency      int64 // Sum of total latencies (completion - arrival)
 	KVBlocksUsed      int   // Integral of KVBlockUsage over time
@@ -22,9 +26,12 @@ type Metrics struct {
 
 // Print displays aggregated metrics at the end of the simulation.
 // Includes average latency, TTFT, TPOT, KV usage, and prefix cache behavior.
-func (m *Metrics) Print(horizon int64) {
+func (m *Metrics) Print(horizon int64, startTime time.Time) {
 	fmt.Println("=== Simulation Metrics ===")
 	fmt.Printf("Completed Requests   : %d\n", m.CompletedRequests)
+	fmt.Printf("Total Input Tokens   : %d\n", m.TotalInputTokens)
+	fmt.Printf("Total Output Tokens  : %d\n", m.TotalOutputTokens)
+	fmt.Printf("Benchmark Duration(s): %.3f\n", time.Since(startTime).Seconds())
 	if m.CompletedRequests > 0 {
 		avgLatency := float64(m.TotalLatency) / float64(m.CompletedRequests)
 		avgTTFT := float64(m.TTFTSum) / float64(m.CompletedRequests)

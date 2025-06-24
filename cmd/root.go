@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -45,6 +46,8 @@ var runCmd = &cobra.Command{
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, request rate=%.2f, regression coefficients=%v",
 			totalKVBlocks, simulationHorizon, rate, regressionCoeffs)
 
+		startTime := time.Now() // Get current time (start)
+
 		requests := ProcessInput(requestsFilePath)
 
 		// Initialize and run the simulator
@@ -60,7 +63,7 @@ var runCmd = &cobra.Command{
 		)
 		s.GeneratePoissonArrivals(rate, simulationHorizon, seed)
 		s.Run()
-		s.Metrics.Print(s.Horizon)
+		s.Metrics.Print(s.Horizon, startTime)
 
 		logrus.Info("Simulation complete.")
 	},
