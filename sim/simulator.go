@@ -80,7 +80,7 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		WaitQ:                &WaitQueue{},
 		KVCache:              NewKVCacheState(totalKVBlocks, blockSizeTokens),
 		RunningBatch:         &Batch{},
-		Metrics:              &Metrics{RequestLatencies: make(map[string]int64)},
+		Metrics:              &Metrics{RequestTTFTs: []float64{}, RequestTPOTs: []float64{}},
 		MaxRunningReqs:       maxRunningReqs,
 		MaxScheduledTokens:   maxScheduledTokens,
 		RegressionCoeffs:     regressionCoeffs,
@@ -113,6 +113,7 @@ func (sim *Simulator) Run() {
 			break
 		}
 	}
+	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
 	log.Printf("[tick %07d] Simulation ended", sim.Clock)
 }
 
@@ -268,6 +269,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
+	log.Printf("%v\n", sim.RunningBatchFeatures)
 
 	// Estimate regression times based on runningBatch state
 	currStepAdvance := sim.getStepTime()
@@ -279,8 +281,14 @@ func (sim *Simulator) Step(now int64) {
 			// this request goes through prefill phase in this batch
 			req.ProgressIndex = len(req.InputTokens)
 			req.TTFTSet = true
+<<<<<<< HEAD
 			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + ScheduleTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime
+=======
+			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime
+			sim.Metrics.TTFTSum += req.FirstTokenTime
+			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime))
+>>>>>>> 90f6a84 (Working TPOT)
 
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
@@ -307,16 +315,20 @@ func (sim *Simulator) Step(now int64) {
 		if req.ProgressIndex == len(req.InputTokens)+len(req.OutputTokens) {
 			// the last decode token would not have been KV cached yet.
 			// perform one last allocation for the last generated decode token.
-			sim.KVCache.AllocateKVBlocksDecode(req)
 			req.State = "completed"
+			fmt.Printf("Finished req: ID: %s\n", req.ID)
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
 			lat := now + currStepAdvance - req.ArrivalTime
 			sim.Metrics.TotalLatency += lat
-			sim.Metrics.RequestLatencies[req.ID] = lat
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
 				sim.Metrics.TPOTSum += reqTotalOutput
+<<<<<<< HEAD
+=======
+				// TPOT calculation in vLLM excludes the first generated token
+				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(len(req.OutputTokens)-1))
+>>>>>>> 90f6a84 (Working TPOT)
 			}
 		} else {
 			remaining = append(remaining, req)

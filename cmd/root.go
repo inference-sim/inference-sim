@@ -50,6 +50,8 @@ var runCmd = &cobra.Command{
 
 		requests := ProcessInput(requestsFilePath)
 
+		seed = 42
+
 		// Initialize and run the simulator
 		s := sim.NewSimulator(
 			simulationHorizon,
@@ -63,7 +65,7 @@ var runCmd = &cobra.Command{
 		)
 		s.GeneratePoissonArrivals(rate, simulationHorizon, seed)
 		s.Run()
-		s.Metrics.Print(s.Horizon, startTime)
+		s.Metrics.Print(s.Horizon, totalKVBlocks, startTime)
 
 		logrus.Info("Simulation complete.")
 	},
