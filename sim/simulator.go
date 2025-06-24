@@ -269,6 +269,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
+	log.Printf("%v\n", sim.RunningBatchFeatures)
 
 	// Estimate regression times based on runningBatch state
 	currStepAdvance := sim.getStepTime()
@@ -316,6 +317,7 @@ func (sim *Simulator) Step(now int64) {
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
 				sim.Metrics.TPOTSum += reqTotalOutput
+				// TPOT calculation in vLLM excludes the first generated token
 				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(len(req.OutputTokens)-1))
 			}
 		} else {

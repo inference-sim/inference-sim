@@ -3,8 +3,10 @@
 package sim
 
 import (
+	"bufio"
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"time"
 )
@@ -81,4 +83,36 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		fmt.Printf("Avg KV Blocks Usage : %.3f\n", float64(m.KVBlocksUsed)/float64(m.SimEndedTime))
 		fmt.Printf("Peak KV Usage       : %d blocks\n", m.PeakKVBlocksUsed)
 	}
+
+	// sanity checks
+	fileName := "output_TTFTs.txt"
+
+	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0777)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating file %s: %v\n", fileName, err)
+		return
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Error closing file %s: %v\n", fileName, closeErr)
+		}
+	}()
+
+	writer := bufio.NewWriter(file)
+
+	defer func() {
+		if flushErr := writer.Flush(); flushErr != nil {
+			fmt.Fprintf(os.Stderr, "Error flushing writer for file %s: %v\n", fileName, flushErr)
+		}
+	}()
+
+	for _, f := range m.RequestTTFTs {
+		_, writeErr := fmt.Fprint(writer, f/1000, ", ")
+		if writeErr != nil {
+			fmt.Fprintf(os.Stderr, "Error writing float %f to file: %v\n", f, writeErr)
+			return // Stop writing on first error
+		}
+	}
+
+	fmt.Printf("Successfully wrote floats to '%s'\n", fileName)
 }

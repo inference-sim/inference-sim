@@ -50,6 +50,8 @@ var runCmd = &cobra.Command{
 
 		requests := ProcessInput(requestsFilePath)
 
+		seed = 42
+
 		// Initialize and run the simulator
 		s := sim.NewSimulator(
 			simulationHorizon,
