@@ -269,6 +269,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
+	log.Printf("%v\n", sim.RunningBatchFeatures)
 
 	// save waitQ length for analysis
 	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, len(sim.WaitQ.queue))
