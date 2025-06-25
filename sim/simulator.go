@@ -33,11 +33,6 @@ func (eq *EventQueue) Pop() any {
 	return item
 }
 
-const (
-	ScheduleTime = 690 // avg time in ticks for scheduler.schedule()
-	UpdateTime   = 322 // avg time in ticks for scheduler.update_from_output()
-)
-
 type RegressionFeatures struct {
 	NumDecodeRequests  int     `json:"num_decode_requests"`
 	NumPrefillRequests int     `json:"num_prefill_requests"`
@@ -284,22 +279,10 @@ func (sim *Simulator) Step(now int64) {
 	// similar to vLLM's execute_model()
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex == 0 {
-			// this request goes through prefill phase in this batch
 			req.ProgressIndex = len(req.InputTokens)
 			req.TTFTSet = true
-<<<<<<< HEAD
-<<<<<<< HEAD
 			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + ScheduleTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime
-=======
-			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime
-=======
-			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + ScheduleTime
->>>>>>> 0b31f98 (Removed txt from git)
-			sim.Metrics.TTFTSum += req.FirstTokenTime
-			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime))
->>>>>>> 90f6a84 (Working TPOT)
-
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
 		} else if req.ProgressIndex >= len(req.InputTokens) {
@@ -334,11 +317,6 @@ func (sim *Simulator) Step(now int64) {
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
 				sim.Metrics.TPOTSum += reqTotalOutput
-<<<<<<< HEAD
-=======
-				// TPOT calculation in vLLM excludes the first generated token
-				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(len(req.OutputTokens)-1))
->>>>>>> 90f6a84 (Working TPOT)
 			}
 		} else {
 			remaining = append(remaining, req)
