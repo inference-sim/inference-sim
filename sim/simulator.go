@@ -105,7 +105,7 @@ func (sim *Simulator) Run() {
 		ev := heap.Pop(&sim.EventQueue).(Event)
 		// advance the clock
 		sim.Clock = ev.Timestamp()
-		log.Printf("[tick %07d] Executing %T", sim.Clock, ev)
+		// log.Printf("[tick %07d] Executing %T", sim.Clock, ev)
 		// process the event
 		ev.Execute(sim)
 		// end the simulation if horizon is reached or if we've run out of events
@@ -114,7 +114,7 @@ func (sim *Simulator) Run() {
 		}
 	}
 	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
-	log.Printf("[tick %07d] Simulation ended", sim.Clock)
+	// log.Printf("[tick %07d] Simulation ended", sim.Clock)
 }
 
 // Adds a newly arrived request to the waiting queue
@@ -269,6 +269,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
+
 	log.Printf("%v\n", sim.RunningBatchFeatures)
 
 	// save waitQ length for analysis

@@ -54,6 +54,6 @@ func (e *StepEvent) Timestamp() int64 {
 
 // Execute the StepEvent
 func (e *StepEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< StepEvent at %d ticks", e.time)
+	// logrus.Infof("<< StepEvent at %d ticks", e.time)
 	sim.Step(e.time)
 }
