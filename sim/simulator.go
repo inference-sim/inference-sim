@@ -3,9 +3,9 @@ package sim
 
 import (
 	"container/heap"
-	"fmt"
-	"log"
 	"math/rand"
+
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -105,7 +105,7 @@ func (sim *Simulator) Run() {
 		ev := heap.Pop(&sim.EventQueue).(Event)
 		// advance the clock
 		sim.Clock = ev.Timestamp()
-		log.Printf("[tick %07d] Executing %T", sim.Clock, ev)
+		logrus.Infof("[tick %07d] Executing %T", sim.Clock, ev)
 		// process the event
 		ev.Execute(sim)
 		// end the simulation if horizon is reached or if we've run out of events
@@ -114,7 +114,7 @@ func (sim *Simulator) Run() {
 		}
 	}
 	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
-	log.Printf("[tick %07d] Simulation ended", sim.Clock)
+	logrus.Infof("[tick %07d] Simulation ended", sim.Clock)
 }
 
 // Adds a newly arrived request to the waiting queue
@@ -189,7 +189,7 @@ func (sim *Simulator) makeRunningBatch() {
 		if tokenBudget <= 0 {
 			// Simulator has run out of token budget. Cannot run any more requests in this Step.
 			// Wait for currently running requests to finish, and try again in next Step
-			log.Printf("Simulator has run out of token budget. Trying in next step.")
+			logrus.Warnf("Simulator has run out of token budget. Trying in next step.")
 			break
 		}
 		// if a request is in running queue in this function and in prefill phase, nothing left to do,
@@ -200,7 +200,7 @@ func (sim *Simulator) makeRunningBatch() {
 			ok := sim.KVCache.AllocateKVBlocksDecode(req)
 			if !ok {
 				// Could not allocate (e.g., no free blocks)
-				fmt.Printf("[Preemption]\n")
+				logrus.Warnf("[Preemption]")
 				continue // ToDo: pre-empt this request
 			}
 			// currently each request produces 1 token per decode.
@@ -314,7 +314,7 @@ func (sim *Simulator) Step(now int64) {
 			// the last decode token would not have been KV cached yet.
 			// perform one last allocation for the last generated decode token.
 			req.State = "completed"
-			fmt.Printf("Finished req: ID: %s\n", req.ID)
+			logrus.Infof("Finished req: ID: %s\n", req.ID)
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
 			lat := now + currStepAdvance - req.ArrivalTime
