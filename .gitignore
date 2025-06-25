@@ -33,8 +33,4 @@ go.work.sum
 
 # data files
 *.json
-<<<<<<< HEAD
 *.txt
-=======
-*.txt
->>>>>>> 0b31f98 (Removed txt from git)
