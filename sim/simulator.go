@@ -3,6 +3,7 @@ package sim
 
 import (
 	"container/heap"
+	"fmt"
 	"log"
 	"math/rand"
 )
@@ -27,12 +28,24 @@ func (eq *EventQueue) Pop() any {
 	return item
 }
 
+const (
+	ScheduleTime = 690 // avg time in ticks for scheduler.schedule()
+	UpdateTime   = 322 // avg time in ticks for scheduler.update_from_output()
+)
+
+type RegressionFeatures struct {
+	NumDecodeRequests  int     `json:"num_decode_requests"`
+	NumPrefillRequests int     `json:"num_prefill_requests"`
+	TotalDecodeTokens  int     `json:"total_decode_tokens"`
+	TotalPrefillTokens int     `json:"total_prefill_tokens"`
+	MaxPrefillTokens   int64   `json:"max_prefill_tokens"`
+	RequestRate        float64 `json:"request_rate"`
+}
+
 // Simulator is the core object that holds simulation time, system state, and the event loop.
 type Simulator struct {
 	Clock   int64
 	Horizon int64
-	// Advance estimates the per-batch model execution time
-	Advance int64
 	// EventQueue has all the simulator events, like arrival and step events
 	EventQueue EventQueue
 	// WaitQ aka request waiting queue before it is scheduled
@@ -51,26 +64,32 @@ type Simulator struct {
 	MaxRunningReqs int64
 	// max total number of new tokens across all requests in RunningBatch
 	MaxScheduledTokens int64
-	// path to the input JSON file containing request workloads
-	Requests  []*Request
-	StepEvent Event
+	RegressionCoeffs   []float64
+	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
+	// , "total_decode_tokens": c, "total_prefill_tokens": d}
+	RunningBatchFeatures RegressionFeatures
+	Requests             []*Request
+	StepEvent            Event
 }
 
-func NewSimulator(horizon int64, advance int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int64, requests []*Request) *Simulator {
+func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int64, regressionCoeffs []float64, rate float64, requests []*Request) *Simulator {
 	s := &Simulator{
-		Clock:              0,
-		Horizon:            horizon,
-		Advance:            advance,
-		EventQueue:         make(EventQueue, 0),
-		WaitQ:              &WaitQueue{},
-		KVCache:            NewKVCacheState(totalKVBlocks, blockSizeTokens),
-		RunningBatch:       &Batch{},
-		Metrics:            &Metrics{RequestLatencies: make(map[string]int64)},
-		MaxRunningReqs:     maxRunningReqs,
-		MaxScheduledTokens: maxScheduledTokens,
-		Requests:           requests,
-		StepEvent:          nil,
+		Clock:                0,
+		Horizon:              horizon,
+		EventQueue:           make(EventQueue, 0),
+		WaitQ:                &WaitQueue{},
+		KVCache:              NewKVCacheState(totalKVBlocks, blockSizeTokens),
+		RunningBatch:         &Batch{},
+		Metrics:              &Metrics{RequestLatencies: make(map[string]int64)},
+		MaxRunningReqs:       maxRunningReqs,
+		MaxScheduledTokens:   maxScheduledTokens,
+		RegressionCoeffs:     regressionCoeffs,
+		RunningBatchFeatures: RegressionFeatures{},
+		Requests:             requests,
+		StepEvent:            nil,
 	}
+
+	s.RunningBatchFeatures.RequestRate = rate
 	return s
 }
 
@@ -143,6 +162,17 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 	}
 }
 
+// Estimate Step Advance Time using regression features and coefficients
+func (sim *Simulator) getStepTime() int64 {
+	var totalStepTime float64
+	totalStepTime += sim.RegressionCoeffs[0] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
+	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.MaxPrefillTokens*sim.RunningBatchFeatures.MaxPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[3] * float64(sim.RunningBatchFeatures.NumPrefillRequests)
+	totalStepTime += sim.RegressionCoeffs[4] // intercept
+	return int64(totalStepTime * 1e6)        // convert from seconds to microseconds, need to verify with Satyam
+}
+
 func (sim *Simulator) makeRunningBatch() {
 	if sim.RunningBatch == nil {
 		sim.RunningBatch = &Batch{}
@@ -163,16 +193,21 @@ func (sim *Simulator) makeRunningBatch() {
 		// if a request is in running queue in this function and in prefill phase, nothing left to do,
 		// blocks have already been allocated. if it is in decode phase, then allocate blocks for the
 		// token generated in the previous Step
-		if req.ProgressIndex >= len(req.InputTokens) {
+		if req.ProgressIndex >= len(req.InputTokens) && len(req.OutputTokens) > 0 {
 			// this request will go through decode phase in this batch
 			ok := sim.KVCache.AllocateKVBlocksDecode(req)
 			if !ok {
 				// Could not allocate (e.g., no free blocks)
+				fmt.Printf("[Preemption]\n")
 				continue // ToDo: pre-empt this request
 			}
 			// currently each request produces 1 token per decode.
 			// this needs to be updated with speculative decoding
 			tokenBudget--
+
+			// update decode-related features in RunningBatchFeatures
+			sim.RunningBatchFeatures.NumDecodeRequests += 1
+			sim.RunningBatchFeatures.TotalDecodeTokens += 1
 		}
 	}
 
@@ -205,6 +240,11 @@ func (sim *Simulator) makeRunningBatch() {
 		tokenBudget = tokenBudget - numRemainingTokens
 		// change the state of the request from queued to running
 		next.State = "running"
+
+		// update prefill-related features in RunningBatchFeatures
+		sim.RunningBatchFeatures.NumPrefillRequests += 1
+		sim.RunningBatchFeatures.TotalPrefillTokens += int(numRemainingTokens * numRemainingTokens)
+		sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numRemainingTokens)
 	}
 }
 
@@ -214,8 +254,22 @@ func (sim *Simulator) makeRunningBatch() {
 // ToDo: Understand and handle pre-emption logic, if need be.
 func (sim *Simulator) Step(now int64) {
 
+	// refreshing RunningBatchFeatures for current Step
+	requestRate := sim.RunningBatchFeatures.RequestRate
+
+	sim.RunningBatchFeatures = RegressionFeatures{
+		NumDecodeRequests:  0,
+		NumPrefillRequests: 0,
+		TotalDecodeTokens:  0,
+		TotalPrefillTokens: 0,
+		MaxPrefillTokens:   0,
+		RequestRate:        requestRate,
+	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
+
+	// Estimate regression times based on runningBatch state
+	currStepAdvance := sim.getStepTime()
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
@@ -224,8 +278,8 @@ func (sim *Simulator) Step(now int64) {
 			// this request goes through prefill phase in this batch
 			req.ProgressIndex = len(req.InputTokens)
 			req.TTFTSet = true
-			req.FirstTokenTime = now + sim.Advance
-			sim.Metrics.TTFTSum += now + sim.Advance - req.ArrivalTime
+			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + ScheduleTime
+			sim.Metrics.TTFTSum += req.FirstTokenTime
 
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
@@ -244,7 +298,7 @@ func (sim *Simulator) Step(now int64) {
 	if sim.KVCache.UsedBlockCnt > sim.Metrics.PeakKVBlocksUsed {
 		sim.Metrics.PeakKVBlocksUsed = sim.KVCache.UsedBlockCnt
 	}
-	sim.Metrics.KVBlocksUsed += sim.KVCache.UsedBlockCnt * int(sim.Advance)
+	sim.Metrics.KVBlocksUsed += sim.KVCache.UsedBlockCnt * int(currStepAdvance)
 
 	// handle completed and remaining requests
 	remaining := []*Request{}
@@ -256,11 +310,12 @@ func (sim *Simulator) Step(now int64) {
 			req.State = "completed"
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
-			lat := now + sim.Advance - req.ArrivalTime
+			lat := now + currStepAdvance - req.ArrivalTime
 			sim.Metrics.TotalLatency += lat
 			sim.Metrics.RequestLatencies[req.ID] = lat
 			if len(req.OutputTokens) > 0 {
-				sim.Metrics.TPOTSum += now + sim.Advance - req.FirstTokenTime
+				reqTotalOutput := lat - req.FirstTokenTime
+				sim.Metrics.TPOTSum += reqTotalOutput
 			}
 		} else {
 			remaining = append(remaining, req)
@@ -270,7 +325,7 @@ func (sim *Simulator) Step(now int64) {
 	// push the next step event as needed
 	if len(remaining) > 0 {
 		sim.RunningBatch.Requests = remaining
-		pbe := StepEvent{time: now + sim.Advance}
+		pbe := StepEvent{time: now + currStepAdvance + UpdateTime}
 		sim.Schedule(&pbe)
 		sim.StepEvent = &pbe
 	} else {

@@ -11,16 +11,16 @@ import (
 
 var (
 	// CLI flags for simulation configuration
-	totalKVBlocks      int     // Total number of KV blocks available on GPU
-	simulationHorizon  int64   // Total simulation time (in ticks)
-	rate               float64 // Poisson arrival rate (requests per tick)
-	logLevel           string  // Log verbosity level
-	seed               int64   // Random seed for reproducibility
-	stepDuration       int64   // Duration of each forward pass step (in ticks)
-	maxRunningReqs     int64   // Maximum number of requests in the Running batch
-	maxScheduledTokens int64   // Maximum total number of tokens across requests in the Running batch
-	requestsFilePath   string  // Path to requests workload file path, default ShareGPT
-	blockSizeTokens    int     // Number of tokens per KV block
+	totalKVBlocks      int       // Total number of KV blocks available on GPU
+	simulationHorizon  int64     // Total simulation time (in ticks)
+	rate               float64   // Poisson arrival rate (requests per tick)
+	logLevel           string    // Log verbosity level
+	seed               int64     // Random seed for reproducibility
+	maxRunningReqs     int64     // Maximum number of requests in the Running batch
+	maxScheduledTokens int64     // Maximum total number of tokens across requests in the Running batch
+	blockSizeTokens    int       // Number of tokens per KV block
+	requestsFilePath   string    // Path to requests workload file path, default ShareGPT
+	regressionCoeffs   []float64 // List of regression coeffs corresponding to features
 )
 
 // rootCmd is the base command for the CLI
@@ -42,19 +42,20 @@ var runCmd = &cobra.Command{
 		logrus.SetLevel(level)
 
 		// Log configuration
-		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, rate=%.2f, step=%dticks",
-			totalKVBlocks, simulationHorizon, rate, stepDuration)
+		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, request rate=%.2f, regression coefficients=%v",
+			totalKVBlocks, simulationHorizon, rate, regressionCoeffs)
 
 		requests := ProcessInput(requestsFilePath)
 
 		// Initialize and run the simulator
 		s := sim.NewSimulator(
 			simulationHorizon,
-			stepDuration,
 			totalKVBlocks,
 			blockSizeTokens,
 			maxRunningReqs,
 			maxScheduledTokens,
+			regressionCoeffs,
+			rate,
 			requests,
 		)
 		s.GeneratePoissonArrivals(rate, simulationHorizon, seed)
@@ -79,9 +80,9 @@ func init() {
 	runCmd.Flags().Int64Var(&seed, "seed", 42, "Random seed")
 	runCmd.Flags().Float64Var(&rate, "rate", 0.02, "Poisson arrival rate (requests per tick)")
 	runCmd.Flags().StringVar(&logLevel, "log", "info", "Log level (trace, debug, info, warn, error, fatal, panic)")
-	runCmd.Flags().Int64Var(&stepDuration, "step", 100, "Step duration (in ticks)")
 	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 35, "Maximum number of requests running together")
 	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 8192, "Maximum total number of new tokens across running requests")
+	runCmd.Flags().Float64SliceVar(&regressionCoeffs, "regression-coeffs", []float64{1.0, 2.0}, "List of regression coefficients")
 	runCmd.Flags().StringVar(&requestsFilePath, "requests-file-path", "ShareGPT_V3_tokenized.json", "Path to workload tokenized JSON file")
 	runCmd.Flags().IntVar(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 
