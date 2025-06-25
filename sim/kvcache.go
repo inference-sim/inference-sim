@@ -195,7 +195,7 @@ func (kvc *KVCacheState) AllocateKVBlocksPrefill(req *Request) bool {
 // If the latest block is full, a new one is allocated.
 func (kvc *KVCacheState) AllocateKVBlocksDecode(req *Request) bool {
 	// sanity check to make sure the request isn't in prefill phase
-	if req.ProgressIndex <= len(req.InputTokens) {
+	if req.ProgressIndex < len(req.InputTokens) {
 		return false
 	}
 
@@ -207,7 +207,7 @@ func (kvc *KVCacheState) AllocateKVBlocksDecode(req *Request) bool {
 		return false
 	}
 
-	lastTokenOutputIndex := req.ProgressIndex - len(req.InputTokens) - 1
+	lastTokenOutputIndex := req.ProgressIndex - len(req.InputTokens)
 	lastToken := req.OutputTokens[lastTokenOutputIndex]
 	latestBlk := kvc.Blocks[ids[len(ids)-1]]
 	if len(latestBlk.Tokens) < kvc.BlockSizeTokens {

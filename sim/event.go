@@ -1,6 +1,8 @@
 package sim
 
-import "github.com/sirupsen/logrus"
+import (
+	"github.com/sirupsen/logrus"
+)
 
 // Event defines the interface for all simulation events.
 // Each event must have a Timestamp (in ticks) and an Execute method
