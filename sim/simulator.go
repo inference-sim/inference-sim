@@ -80,7 +80,7 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		WaitQ:                &WaitQueue{},
 		KVCache:              NewKVCacheState(totalKVBlocks, blockSizeTokens),
 		RunningBatch:         &Batch{},
-		Metrics:              &Metrics{RequestTTFTs: []float64{}, RequestTPOTs: []float64{}},
+		Metrics:              &Metrics{RequestTTFTs: []float64{}, RequestTPOTs: []float64{}, NumWaitQRequests: []int{}, NumRunningBatchRequests: []int{}},
 		MaxRunningReqs:       maxRunningReqs,
 		MaxScheduledTokens:   maxScheduledTokens,
 		RegressionCoeffs:     regressionCoeffs,
@@ -269,6 +269,12 @@ func (sim *Simulator) Step(now int64) {
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
+
+	// save waitQ length for analysis
+	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, len(sim.WaitQ.queue))
+
+	// save runningBatch length for analysis
+	sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, len(sim.RunningBatch.Requests))
 
 	// Estimate regression times based on runningBatch state
 	currStepAdvance := sim.getStepTime()
