@@ -8,6 +8,11 @@ import (
 	"math/rand"
 )
 
+const (
+	ScheduleTime = 690 // avg time in ticks for scheduler.schedule()
+	UpdateTime   = 322 // avg time in ticks for scheduler.update_from_output()
+)
+
 // EventQueue implements heap.Interface and orders events by timestamp.
 // See canonical Golang example here: https://pkg.go.dev/container/heap#example-package-IntHeap
 type EventQueue []Event
@@ -105,7 +110,7 @@ func (sim *Simulator) Run() {
 		ev := heap.Pop(&sim.EventQueue).(Event)
 		// advance the clock
 		sim.Clock = ev.Timestamp()
-		log.Printf("[tick %07d] Executing %T", sim.Clock, ev)
+		// log.Printf("[tick %07d] Executing %T", sim.Clock, ev)
 		// process the event
 		ev.Execute(sim)
 		// end the simulation if horizon is reached or if we've run out of events
@@ -114,7 +119,7 @@ func (sim *Simulator) Run() {
 		}
 	}
 	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
-	log.Printf("[tick %07d] Simulation ended", sim.Clock)
+	// log.Printf("[tick %07d] Simulation ended", sim.Clock)
 }
 
 // Adds a newly arrived request to the waiting queue
@@ -269,6 +274,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
+
 	log.Printf("%v\n", sim.RunningBatchFeatures)
 
 	// Estimate regression times based on runningBatch state
@@ -282,10 +288,14 @@ func (sim *Simulator) Step(now int64) {
 			req.ProgressIndex = len(req.InputTokens)
 			req.TTFTSet = true
 <<<<<<< HEAD
+<<<<<<< HEAD
 			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + ScheduleTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime
 =======
 			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime
+=======
+			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + ScheduleTime
+>>>>>>> 0b31f98 (Removed txt from git)
 			sim.Metrics.TTFTSum += req.FirstTokenTime
 			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime))
 >>>>>>> 90f6a84 (Working TPOT)
