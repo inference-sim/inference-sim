@@ -3,11 +3,7 @@
 package sim
 
 import (
-	"bufio"
 	"fmt"
-	"math"
-	"os"
-	"sort"
 	"time"
 )
 
@@ -31,88 +27,20 @@ type Metrics struct {
 	RequestTPOTs []float64 // list of all requests' TPOT
 }
 
-// CalculatePercentile is a util function that calculates the p-th percentile of a data list
-func CalculatePercentile(data []float64, p float64) float64 {
-	n := len(data)
-
-	sortedData := make([]float64, n)
-	copy(sortedData, data)
-
-	sort.Float64s(sortedData)
-
-	rank := p / 100.0 * float64(n-1)
-	lowerIdx := int(math.Floor(rank))
-	upperIdx := int(math.Ceil(rank))
-
-	if lowerIdx == upperIdx {
-		return sortedData[lowerIdx]
-	} else {
-		lowerVal := sortedData[lowerIdx]
-		upperVal := sortedData[upperIdx]
-		if upperIdx >= n {
-			return sortedData[n-1]
-		}
-		return lowerVal + (upperVal-lowerVal)*(rank-float64(lowerIdx))
-	}
-}
-
 // Print displays aggregated metrics at the end of the simulation.
 // Includes average latency, TTFT, TPOT, KV usage, and prefix cache behavior.
 func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 	fmt.Println("=== Simulation Metrics ===")
 	fmt.Printf("Completed Requests   : %d\n", m.CompletedRequests)
-	fmt.Printf("Request Rate         : %.3f\n", m.RequestRate)
 	fmt.Printf("Total Input Tokens   : %d\n", m.TotalInputTokens)
 	fmt.Printf("Total Output Tokens  : %d\n", m.TotalOutputTokens)
-	fmt.Printf("Simulation Duration(s): %.3f\n", time.Since(startTime).Seconds())
-	fmt.Printf("vLLM estimated Duration(s): %d\n", m.SimEndedTime/1e6)
 	if m.CompletedRequests > 0 {
 		avgTTFT := float64(m.TTFTSum) / float64(m.CompletedRequests)
-		medianTTFT := CalculatePercentile(m.RequestTTFTs, 50)
-		p99TTFT := CalculatePercentile(m.RequestTTFTs, 99)
 		avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
-		medianTPOT := CalculatePercentile(m.RequestTPOTs, 50)
-		p99TPOT := CalculatePercentile(m.RequestTPOTs, 99)
 
 		fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT/1000)
-		fmt.Printf("Median TTFT(ms)   : %.3f\n", medianTTFT/1000)
-		fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT/1000)
 		fmt.Printf("Mean TPOT(ms)     : %.3f\n", avgTPOT/1000)
-		fmt.Printf("Median TPOT(ms)   : %.3f\n", medianTPOT/1000)
-		fmt.Printf("P99 TPOT(ms)      : %.3f\n", p99TPOT/1000)
 		fmt.Printf("Avg KV Blocks Usage : %.3f\n", float64(m.KVBlocksUsed)/float64(m.SimEndedTime))
 		fmt.Printf("Peak KV Usage       : %d blocks\n", m.PeakKVBlocksUsed)
 	}
-
-	// sanity checks
-	fileName := "output_TTFTs.txt"
-
-	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0777)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating file %s: %v\n", fileName, err)
-		return
-	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "Error closing file %s: %v\n", fileName, closeErr)
-		}
-	}()
-
-	writer := bufio.NewWriter(file)
-
-	defer func() {
-		if flushErr := writer.Flush(); flushErr != nil {
-			fmt.Fprintf(os.Stderr, "Error flushing writer for file %s: %v\n", fileName, flushErr)
-		}
-	}()
-
-	for _, f := range m.RequestTTFTs {
-		_, writeErr := fmt.Fprint(writer, f/1000, ", ")
-		if writeErr != nil {
-			fmt.Fprintf(os.Stderr, "Error writing float %f to file: %v\n", f, writeErr)
-			return // Stop writing on first error
-		}
-	}
-
-	fmt.Printf("Successfully wrote floats to '%s'\n", fileName)
 }
