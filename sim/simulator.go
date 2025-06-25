@@ -94,7 +94,7 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		StepEvent:            nil,
 	}
 
-	s.RunningBatchFeatures.RequestRate = rate
+	s.Metrics.RequestRate = rate
 	return s
 }
 

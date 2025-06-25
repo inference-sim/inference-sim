@@ -15,13 +15,14 @@ import (
 // for final reporting. Useful for evaluating system performance
 // and debugging behavior over time.
 type Metrics struct {
-	CompletedRequests int   // Number of requests completed
-	TotalInputTokens  int   // Total number of input tokens
-	TotalOutputTokens int   // Total number of output tokens
-	TotalLatency      int64 // Sum of total latencies (completion - arrival)
-	SimEndedTime      int64 // Sim clock time in ticks when simulation ends
-	KVBlocksUsed      int   // Integral of KVBlockUsage over time
-	PeakKVBlocksUsed  int   // Max number of simultaneously used KV blocks
+	CompletedRequests int     // Number of requests completed
+	TotalInputTokens  int     // Total number of input tokens
+	TotalOutputTokens int     // Total number of output tokens
+	RequestRate       float64 // Incoming request rate
+	TotalLatency      int64   // Sum of total latencies (completion - arrival)
+	SimEndedTime      int64   // Sim clock time in ticks when simulation ends
+	KVBlocksUsed      int     // Integral of KVBlockUsage over time
+	PeakKVBlocksUsed  int     // Max number of simultaneously used KV blocks
 
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	TPOTSum int64 // Total TPOT sum across requests (in ticks)
@@ -60,6 +61,7 @@ func CalculatePercentile(data []float64, p float64) float64 {
 func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 	fmt.Println("=== Simulation Metrics ===")
 	fmt.Printf("Completed Requests   : %d\n", m.CompletedRequests)
+	fmt.Printf("Request Rate         : %.3f\n", m.RequestRate)
 	fmt.Printf("Total Input Tokens   : %d\n", m.TotalInputTokens)
 	fmt.Printf("Total Output Tokens  : %d\n", m.TotalOutputTokens)
 	fmt.Printf("Simulation Duration(s): %.3f\n", time.Since(startTime).Seconds())
