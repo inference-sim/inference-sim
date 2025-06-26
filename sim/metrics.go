@@ -107,7 +107,9 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
 		medianTPOT := CalculatePercentile(m.RequestTPOTs, 50)
 		p99TPOT := CalculatePercentile(m.RequestTPOTs, 99)
+		reqThroughput := float64(m.CompletedRequests) / float64(m.SimEndedTime/1e6)
 
+		fmt.Printf("Request throughput (req/s):  : %.3f\n", reqThroughput)
 		fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT/1000)
 		fmt.Printf("Median TTFT(ms)   : %.3f\n", medianTTFT/1000)
 		fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT/1000)
