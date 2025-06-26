@@ -171,8 +171,8 @@ func (sim *Simulator) getStepTime() int64 {
 	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalPrefillTokens)
 	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.MaxPrefillTokens*sim.RunningBatchFeatures.MaxPrefillTokens)
 	totalStepTime += sim.RegressionCoeffs[3] * float64(sim.RunningBatchFeatures.NumPrefillRequests)
-	totalStepTime += sim.RegressionCoeffs[4] // intercept
-	return int64(totalStepTime * 1e6)        // convert from seconds to microseconds, need to verify with Satyam
+	totalStepTime += (sim.RegressionCoeffs[4]) // intercept
+	return int64(totalStepTime * 1e6)          // convert from seconds to microseconds, need to verify with Satyam
 }
 
 func (sim *Simulator) makeRunningBatch() {
