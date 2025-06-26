@@ -4,9 +4,10 @@ package sim
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"log"
 	"strconv"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
 // ToDo: Multi-modality is not yet supported
@@ -140,7 +141,7 @@ func (kvc *KVCacheState) AllocateKVBlocksPrefill(req *Request) bool {
 
 	// Cannot allocate enough KV cache blocks
 	if numRemainingBlocks > kvc.countFreeBlocks() {
-		log.Printf("Not enough KV cache space to allocate %v new blocks", numRemainingBlocks)
+		logrus.Warnf("Not enough KV cache space to allocate %v new blocks", numRemainingBlocks)
 		return false
 	}
 

@@ -9,6 +9,8 @@ import (
 	"os"
 	"sort"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Metrics aggregates statistics about the simulation
@@ -62,12 +64,12 @@ func CalculatePercentile(data []float64, p float64) float64 {
 func (m *Metrics) SavetoFile(data []int, fileName string) {
 	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0777)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating file %s: %v\n", fileName, err)
+		logrus.Fatalf("Error creating file %s: %v\n", fileName, err)
 		return
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "Error closing file %s: %v\n", fileName, closeErr)
+			logrus.Fatalf("Error closing file %s: %v\n", fileName, closeErr)
 		}
 	}()
 
@@ -75,19 +77,19 @@ func (m *Metrics) SavetoFile(data []int, fileName string) {
 
 	defer func() {
 		if flushErr := writer.Flush(); flushErr != nil {
-			fmt.Fprintf(os.Stderr, "Error flushing writer for file %s: %v\n", fileName, flushErr)
+			logrus.Fatalf("Error flushing writer for file %s: %v\n", fileName, flushErr)
 		}
 	}()
 
 	for _, f := range data {
 		_, writeErr := fmt.Fprint(writer, f, ", ")
 		if writeErr != nil {
-			fmt.Fprintf(os.Stderr, "Error writing int %d to file: %v\n", f, writeErr)
+			logrus.Fatalf("Error writing int %d to file: %v\n", f, writeErr)
 			return // Stop writing on first error
 		}
 	}
 
-	fmt.Printf("Successfully wrote to '%s'\n", fileName)
+	logrus.Debugf("Successfully wrote to '%s'\n", fileName)
 }
 
 // Print displays aggregated metrics at the end of the simulation.

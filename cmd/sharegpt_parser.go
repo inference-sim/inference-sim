@@ -2,11 +2,10 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
 	"os"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 // Conversation represents a single chat turn in the conversation.
@@ -28,7 +27,7 @@ func ProcessInput(requestsFilePath string) []*sim.Request {
 	// Read the content of the JSON file
 	fileContent, err := os.ReadFile(requestsFilePath)
 	if err != nil {
-		log.Fatalf("Error reading file %s: %v", requestsFilePath, err)
+		logrus.Fatalf("Error reading file %s: %v", requestsFilePath, err)
 	}
 
 	// Declare a slice of DataEntry to unmarshal the raw JSON into
@@ -37,7 +36,7 @@ func ProcessInput(requestsFilePath string) []*sim.Request {
 	// Unmarshal the JSON data into the rawData slice
 	err = json.Unmarshal(fileContent, &rawData)
 	if err != nil {
-		log.Fatalf("Error unmarshaling raw JSON: %v", err)
+		logrus.Fatalf("Error unmarshaling raw JSON: %v", err)
 	}
 
 	var requests []*sim.Request
@@ -66,6 +65,6 @@ func ProcessInput(requestsFilePath string) []*sim.Request {
 	}
 
 	// Print the parsed requests to verify
-	fmt.Printf("Successfully parsed requests file %s. Total number of requests: %d\n", requestsFilePath, len(requests))
+	logrus.Infof("Successfully parsed requests file %s. Total number of requests: %d\n", requestsFilePath, len(requests))
 	return requests
 }
