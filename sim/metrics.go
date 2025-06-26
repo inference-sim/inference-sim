@@ -87,7 +87,7 @@ func (m *Metrics) SavetoFile(data []int, fileName string) {
 		}
 	}
 
-	fmt.Printf("Successfully wrote floats to '%s'\n", fileName)
+	fmt.Printf("Successfully wrote to '%s'\n", fileName)
 }
 
 // Print displays aggregated metrics at the end of the simulation.
