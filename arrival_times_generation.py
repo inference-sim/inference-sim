@@ -39,6 +39,7 @@ def add_arrival_delta(json_filepath, arrival_deltas_list, output_filepath=None):
         print(f"Error: Could not decode JSON from '{json_filepath}'. Please check the file format.")
         return
 
+    data = data[:5]
     if len(data) != len(arrival_deltas_list):
         print(f"Warning: The number of entries in the JSON file ({len(data)}) "
               f"does not match the number of arrival delta values ({len(arrival_deltas_list)}). "
@@ -76,10 +77,10 @@ def main():
     )
 
     args = parser.parse_args()
-    rates = [1, 5, 10, 15, 20, 25, 30, 32, 34, 35, 38, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+    rates = [1]
     for rate in rates:
-        output_filename = f"data/output_tokens_2025-06-26_arrivaldeltas_rr={rate}.json"
-        inter_arrival_times = list(generate_arrival_times(4999, rate, seed = args.seed))
+        output_filename = f"data/output_tokens_2025-06-30_arrivaldeltas_rr={rate}.json"
+        inter_arrival_times = list(generate_arrival_times(4, rate, seed = args.seed))
         add_arrival_delta(args.input_filename, inter_arrival_times, output_filename)
 
 

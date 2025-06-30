@@ -50,14 +50,14 @@ if __name__ == "__main__":
         "--block-size-in-tokens", "16",
         "--horizon", "10000000000",
         "--regression-coeffs", "3.41298094e-05,4.15316658e-06,2.86339254e-06,1.65335979e-03,5.11182987e-08,-9.48056285e-08,1.86501432e-07,2.24889167e-05,-7.77693854e-09,3.21956881e-08,6.28999508e-06,-1.72890630e-08,-9.60619427e-06,-6.28061729e-04,0.00568775493503766",
-        "--requests-file-path", "data/output_tokens_2025-06-26_arrivaldeltas.json",
+        "--requests-file-path", "data/output_tokens_2025-06-30_arrivaldeltas.json",
     ]
 
-    rates = [1, 5, 10, 15, 20, 25, 30, 32, 34, 35, 38, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+    rates = [1]
 
     tasks = []
     for idx, rate in enumerate(rates):
-        args_template[16] = f"data/output_tokens_2025-06-26_arrivaldeltas_rr={rate}.json"
+        args_template[16] = f"data/output_tokens_2025-06-30_arrivaldeltas_rr={rate}.json"
         tasks.append({"thread_id": idx+1, "args": args_template[:2] + [str(rate/1e6)] + args_template[3:]})
 
     threads = []
