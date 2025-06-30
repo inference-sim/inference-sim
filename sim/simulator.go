@@ -201,7 +201,7 @@ func (sim *Simulator) makeRunningBatch() {
 			logrus.Warnf("Simulator has run out of token budget. Trying in next step.")
 			break
 		}
-		// if a request is in running queue in this function and in prefill phase, nothing left to do,
+		// if a request is in running queue in this function and in prefill phase, then nothing left to do,
 		// blocks have already been allocated. if it is in decode phase, then allocate blocks for the
 		// token generated in the previous Step
 		if req.ProgressIndex >= len(req.InputTokens) && len(req.OutputTokens) > 0 {
