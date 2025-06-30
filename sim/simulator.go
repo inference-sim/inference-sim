@@ -58,17 +58,17 @@ type Simulator struct {
 	// max total number of new tokens across all requests in RunningBatch
 	MaxScheduledTokens int
 	// Threshold prefill length beyond which chunked prefill starts
-	LongPrefillTokenThreshold int
-	RegressionCoeffs          []float64
+	RegressionCoeffs []float64
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
-	RunningBatchFeatures RegressionFeatures
-	Requests             []*Request
-	ScheduleTime         int64
-	UpdateTime           int64
-	QueueOverheadTime    int64
-	VLLMOverheadTime     int64
-	StepEvent            Event
+	RunningBatchFeatures      RegressionFeatures
+	Requests                  []*Request
+	ScheduleTime              int64
+	UpdateTime                int64
+	QueueOverheadTime         int64
+	VLLMOverheadTime          int64
+	StepEvent                 Event
+	LongPrefillTokenThreshold int
 	// map of request IDs to total num computed tokens (including cached tokens)
 	ReqNumComputedTokens map[string]int
 }

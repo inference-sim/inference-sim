@@ -11,7 +11,6 @@ import (
 )
 
 var (
-	// CLI flags for simulation configuration
 	totalKVBlocks             int       // Total number of KV blocks available on GPU
 	simulationHorizon         int64     // Total simulation time (in ticks)
 	rate                      float64   // Poisson arrival rate (requests per tick)
