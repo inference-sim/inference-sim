@@ -2,11 +2,7 @@
 package sim
 
 import (
-	"bufio"
 	"container/heap"
-	"fmt"
-	"os"
-	"strconv"
 
 	"github.com/sirupsen/logrus"
 )
@@ -345,12 +341,7 @@ func (sim *Simulator) Step(now int64) {
 	// push the next step event as needed
 	if len(remaining) > 0 {
 		sim.RunningBatch.Requests = remaining
-<<<<<<< HEAD
 		pbe := StepEvent{time: now + currStepAdvance + sim.QueueOverheadTime + sim.ScheduleTime + sim.UpdateTime}
-=======
-		pbe := StepEvent{time: now + currStepAdvance + UpdateTime + ScheduleTime}
-		sim.StepCount += 1
->>>>>>> f7bdd75 (Exp)
 		sim.Schedule(&pbe)
 		sim.StepEvent = &pbe
 	} else {
