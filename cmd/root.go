@@ -56,7 +56,6 @@ var runCmd = &cobra.Command{
 			blockSizeTokens,
 			maxRunningReqs,
 			maxScheduledTokens,
-			longPrefillTokenThreshold,
 			regressionCoeffs,
 			rate,
 			requests,
