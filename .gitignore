@@ -40,3 +40,4 @@ simulation_worker
 
 # results
 results/
+*.zip
