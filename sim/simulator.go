@@ -57,7 +57,7 @@ type Simulator struct {
 	MaxRunningReqs int64
 	// max total number of new tokens across all requests in RunningBatch
 	MaxScheduledTokens int
-	// Threshold prefill length beyond which chunked prefill starts
+	// regression coefficients for execute_model time prediction
 	RegressionCoeffs []float64
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
