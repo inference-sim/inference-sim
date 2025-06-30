@@ -22,11 +22,11 @@ var (
 	updateTime                int64     // Time in millisec to do update_from_output()
 	queueOverheadTime         int64     // Time in millisec to queue
 	vLLMOverheadTime          int64     // Time in millisec for vLLM overheads
+	maxModelLength            int       // Max request length (input + output tokens) to be handled
+	longPrefillTokenThreshold int       // Threshold prefill length beyond which chunked prefill starts
 	blockSizeTokens           int       // Number of tokens per KV block
 	requestsFilePath          string    // Path to requests workload file path, default ShareGPT
 	regressionCoeffs          []float64 // List of regression coeffs corresponding to features
-	maxModelLength            int       // Max request length (input + output tokens) to be handled
-	longPrefillTokenThreshold int       // Max length of prefill beyond which chunked prefill is triggered
 )
 
 // rootCmd is the base command for the CLI
