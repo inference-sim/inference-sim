@@ -319,13 +319,20 @@ func (sim *Simulator) Step(now int64) {
 	// handle completed and remaining requests
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
-		if req.ProgressIndex == len(req.InputTokens)+len(req.OutputTokens) {
-			// the last decode token would not have been KV cached yet.
-			// perform one last allocation for the last generated decode token.
+		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
+		if req.ProgressIndex == len(req.InputTokens)+max(len(req.OutputTokens), 1)-1 {
 			req.State = "completed"
+			if len(req.OutputTokens) > 0 {
+				ok := sim.KVCache.AllocateKVBlocksDecode(req)
+				if !ok {
+					// Could not allocate (e.g., no free blocks)
+					logrus.Warnf("[Preemption]")
+					continue // ToDo: pre-empt this request
+				}
+			}
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
-			lat := now + currStepAdvance - req.ArrivalTime
+			lat := now + currStepAdvance + ScheduleTime + UpdateTime - req.ArrivalTime
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, now+currStepAdvance)
 			sim.Metrics.TotalLatency += lat
 			if len(req.OutputTokens) > 0 {
