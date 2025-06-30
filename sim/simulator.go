@@ -57,8 +57,9 @@ type Simulator struct {
 	MaxRunningReqs int64
 	// max total number of new tokens across all requests in RunningBatch
 	MaxScheduledTokens int
-	// regression coefficients for execute_model time prediction
-	RegressionCoeffs []float64
+	// Threshold prefill length beyond which chunked prefill starts
+	LongPrefillTokenThreshold int
+	RegressionCoeffs          []float64
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
 	RunningBatchFeatures RegressionFeatures
@@ -70,7 +71,7 @@ type Simulator struct {
 	StepEvent            Event
 }
 
-func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int,
+func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int, longPrefillTokenThreshold int,
 	regressionCoeffs []float64, rate float64, requests []*Request, scheduleTime int64, updateTime int64, queueOverheadTime int64, vLLMOverheadTime int64) *Simulator {
 	s := &Simulator{
 		Clock:                0,
@@ -206,7 +207,15 @@ func (sim *Simulator) makeRunningBatch() {
 			logrus.Warnf("Simulator has run out of token budget. Trying in next step.")
 			break
 		}
-		// if a request is in running queue in this function and in prefill phase, then nothing left to do,
+		// if a request is in running queue in this function and in prefill phase, then it must be doing chunked prefill
+		if req.ProgressIndex < len(req.InputTokens) {
+			numNewTokens := 0
+			if sim.LongPrefillTokenThreshold > 0 && sim.LongPrefillTokenThreshold < len(req.InputTokens) {
+				numNewTokens = sim.LongPrefillTokenThreshold
+			}
+			req.ProgressIndex += min(numNewTokens, tokenBudget)
+		}
+
 		// blocks have already been allocated. if it is in decode phase, then allocate blocks for the
 		// token generated in the previous Step
 		if req.ProgressIndex >= len(req.InputTokens) && len(req.OutputTokens) > 0 {
