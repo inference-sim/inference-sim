@@ -12,16 +12,15 @@ import (
 
 var (
 	// CLI flags for simulation configuration
-	totalKVBlocks             int       // Total number of KV blocks available on GPU
-	simulationHorizon         int64     // Total simulation time (in ticks)
-	rate                      float64   // Poisson arrival rate (requests per tick)
-	logLevel                  string    // Log verbosity level
-	maxRunningReqs            int64     // Maximum number of requests in the Running batch
-	maxScheduledTokens        int       // Maximum total number of tokens across requests in the Running batch
-	longPrefillTokenThreshold int       // Threshold prefill length beyond which chunked prefill starts
-	blockSizeTokens           int       // Number of tokens per KV block
-	requestsFilePath          string    // Path to requests workload file path, default ShareGPT
-	regressionCoeffs          []float64 // List of regression coeffs corresponding to features
+	totalKVBlocks      int       // Total number of KV blocks available on GPU
+	simulationHorizon  int64     // Total simulation time (in ticks)
+	rate               float64   // Poisson arrival rate (requests per tick)
+	logLevel           string    // Log verbosity level
+	maxRunningReqs     int64     // Maximum number of requests in the Running batch
+	maxScheduledTokens int       // Maximum total number of tokens across requests in the Running batch
+	blockSizeTokens    int       // Number of tokens per KV block
+	requestsFilePath   string    // Path to requests workload file path, default ShareGPT
+	regressionCoeffs   []float64 // List of regression coeffs corresponding to features
 )
 
 // rootCmd is the base command for the CLI
@@ -57,7 +56,6 @@ var runCmd = &cobra.Command{
 			blockSizeTokens,
 			maxRunningReqs,
 			maxScheduledTokens,
-			longPrefillTokenThreshold,
 			regressionCoeffs,
 			rate,
 			requests,
@@ -85,7 +83,6 @@ func init() {
 	runCmd.Flags().StringVar(&logLevel, "log", "error", "Log level (trace, debug, info, warn, error, fatal, panic)")
 	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 35, "Maximum number of requests running together")
 	runCmd.Flags().IntVar(&maxScheduledTokens, "max-num-scheduled-tokens", 8192, "Maximum total number of new tokens across running requests")
-	runCmd.Flags().IntVar(&longPrefillTokenThreshold, "long-prefill-token-threshold", 8192, "Threshold prefill length beyond which chunked prefill starts")
 	runCmd.Flags().Float64SliceVar(&regressionCoeffs, "regression-coeffs", []float64{1.0, 2.0}, "List of regression coefficients")
 	runCmd.Flags().StringVar(&requestsFilePath, "requests-file-path", "ShareGPT_V3_tokenized.json", "Path to workload tokenized JSON file")
 	runCmd.Flags().IntVar(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
