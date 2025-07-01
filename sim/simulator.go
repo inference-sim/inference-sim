@@ -2,10 +2,7 @@
 package sim
 
 import (
-	"bufio"
 	"container/heap"
-	"os"
-	"strconv"
 
 	"github.com/sirupsen/logrus"
 )
@@ -71,8 +68,6 @@ type Simulator struct {
 	QueueOverheadTime    int64
 	VLLMOverheadTime     int64
 	StepEvent            Event
-	StepCount            int
-	HardcodedStepTimes   []int
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int, longPrefillTokenThreshold int,
@@ -95,17 +90,9 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		QueueOverheadTime:    queueOverheadTime,
 		VLLMOverheadTime:     vLLMOverheadTime,
 		StepEvent:            nil,
-		StepCount:            0,
 	}
 
 	s.Metrics.RequestRate = rate
-	file, _ := os.Open("loop_step_time.txt")
-	scanner := bufio.NewScanner(file)
-
-	for scanner.Scan() {
-		stepTime, _ := strconv.ParseFloat(scanner.Text(), 64)
-		s.HardcodedStepTimes = append(s.HardcodedStepTimes, int(stepTime*1e6))
-	}
 
 	return s
 }
@@ -307,8 +294,6 @@ func (sim *Simulator) Step(now int64) {
 	// Estimate regression times based on runningBatch state
 	currStepAdvance := sim.getStepTime()
 
-	logrus.Warnf("Now: %d, StepTime: %d, StepCount: %d, RunningBatch: %v\n", now, currStepAdvance, sim.StepCount, sim.RunningBatch)
-
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
 	for _, req := range sim.RunningBatch.Requests {
@@ -378,5 +363,4 @@ func (sim *Simulator) Step(now int64) {
 		sim.RunningBatch = nil
 		sim.StepEvent = nil
 	}
-	sim.StepCount += 1
 }
