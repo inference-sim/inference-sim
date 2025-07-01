@@ -2,7 +2,10 @@
 package sim
 
 import (
+	"bufio"
 	"container/heap"
+	"os"
+	"strconv"
 
 	"github.com/sirupsen/logrus"
 )
@@ -96,6 +99,13 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 	}
 
 	s.Metrics.RequestRate = rate
+	file, _ := os.Open("loop_step_time.txt")
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		stepTime, _ := strconv.ParseFloat(scanner.Text(), 64)
+		s.HardcodedStepTimes = append(s.HardcodedStepTimes, int(stepTime*1e6))
+	}
 
 	return s
 }
@@ -172,8 +182,28 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 }
 
 // Estimate Step Advance Time using regression features and coefficients
+// func (sim *Simulator) getStepTime() int64 {
+// 	return int64(sim.HardcodedStepTimes[sim.StepCount])
+// }
+
 func (sim *Simulator) getStepTime() int64 {
-	return int64(sim.HardcodedStepTimes[sim.StepCount])
+	var totalStepTime float64
+	totalStepTime += sim.RegressionCoeffs[0] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
+	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.MaxPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[3] * float64(sim.RunningBatchFeatures.NumPrefillRequests)
+	totalStepTime += sim.RegressionCoeffs[4] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.TotalDecodeTokens)
+	totalStepTime += sim.RegressionCoeffs[5] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[6] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*int(sim.RunningBatchFeatures.MaxPrefillTokens))
+	totalStepTime += sim.RegressionCoeffs[7] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.NumPrefillRequests)
+	totalStepTime += sim.RegressionCoeffs[8] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[9] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*int(sim.RunningBatchFeatures.MaxPrefillTokens))
+	totalStepTime += sim.RegressionCoeffs[10] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*int(sim.RunningBatchFeatures.NumPrefillRequests))
+	totalStepTime += sim.RegressionCoeffs[11] * float64(int(sim.RunningBatchFeatures.MaxPrefillTokens)*int(sim.RunningBatchFeatures.MaxPrefillTokens))
+	totalStepTime += sim.RegressionCoeffs[12] * float64(int(sim.RunningBatchFeatures.MaxPrefillTokens)*int(sim.RunningBatchFeatures.NumPrefillRequests))
+	totalStepTime += sim.RegressionCoeffs[13] * float64(sim.RunningBatchFeatures.NumPrefillRequests*int(sim.RunningBatchFeatures.NumPrefillRequests))
+	totalStepTime += (sim.RegressionCoeffs[14]) // intercept
+	return int64(totalStepTime * 1e6)           // convert from seconds to microseconds, need to verify with Satyam
 }
 
 func (sim *Simulator) makeRunningBatch() {
@@ -268,8 +298,6 @@ func (sim *Simulator) Step(now int64) {
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
 
-	logrus.Warnf("Time: %d, StepCount: %d, RunningBatch: %v\n", now, sim.StepCount, sim.RunningBatch)
-
 	// save waitQ length for analysis
 	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, len(sim.WaitQ.queue))
 
@@ -278,6 +306,8 @@ func (sim *Simulator) Step(now int64) {
 
 	// Estimate regression times based on runningBatch state
 	currStepAdvance := sim.getStepTime()
+
+	logrus.Warnf("Now: %d, StepTime: %d, StepCount: %d, RunningBatch: %v\n", now, currStepAdvance, sim.StepCount, sim.RunningBatch)
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
@@ -348,4 +378,5 @@ func (sim *Simulator) Step(now int64) {
 		sim.RunningBatch = nil
 		sim.StepEvent = nil
 	}
+	sim.StepCount += 1
 }
