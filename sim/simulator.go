@@ -2,7 +2,10 @@
 package sim
 
 import (
+	"bufio"
 	"container/heap"
+	"os"
+	"strconv"
 
 	"github.com/sirupsen/logrus"
 )
@@ -98,6 +101,13 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 	}
 
 	s.Metrics.RequestRate = rate
+	file, _ := os.Open("loop_step_time.txt")
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		stepTime, _ := strconv.ParseFloat(scanner.Text(), 64)
+		s.HardcodedStepTimes = append(s.HardcodedStepTimes, int(stepTime*1e6))
+	}
 
 	return s
 }
@@ -174,6 +184,10 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 }
 
 // Estimate Step Advance Time using regression features and coefficients
+// func (sim *Simulator) getStepTime() int64 {
+// 	return int64(sim.HardcodedStepTimes[sim.StepCount])
+// }
+
 func (sim *Simulator) getStepTime() int64 {
 	var totalStepTime float64
 	totalStepTime += sim.RegressionCoeffs[0] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
@@ -325,6 +339,8 @@ func (sim *Simulator) Step(now int64) {
 	// Estimate regression times based on runningBatch state
 	currStepAdvance := sim.getStepTime()
 
+	logrus.Warnf("Now: %d, StepTime: %d, StepCount: %d, RunningBatch: %v\n", now, currStepAdvance, sim.StepCount, sim.RunningBatch)
+
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
 	for _, req := range sim.RunningBatch.Requests {
@@ -397,4 +413,5 @@ func (sim *Simulator) Step(now int64) {
 		sim.RunningBatch = nil
 		sim.StepEvent = nil
 	}
+	sim.StepCount += 1
 }
