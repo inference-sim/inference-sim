@@ -4,7 +4,6 @@ package sim
 import (
 	"bufio"
 	"container/heap"
-	"fmt"
 	"os"
 	"strconv"
 
@@ -12,8 +11,10 @@ import (
 )
 
 const (
-	ScheduleTime = 690 // avg time in ticks for scheduler.schedule()
-	UpdateTime   = 322 // avg time in ticks for scheduler.update_from_output()
+	ScheduleTime      = 531  // avg time in ticks for scheduler.schedule()
+	UpdateTime        = 77   // avg time in ticks for scheduler.update_from_output()
+	QueueOverheadTime = 1000 // avg time in process_input_queue()
+	VLLMOverheadTime  = 6000 // avg time in vllm input/output processing
 )
 
 // EventQueue implements heap.Interface and orders events by timestamp.
@@ -96,15 +97,13 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 	}
 
 	s.Metrics.RequestRate = rate
-	file, _ := os.Open("loop_time.txt")
+	file, _ := os.Open("loop_step_time.txt")
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
 		stepTime, _ := strconv.ParseFloat(scanner.Text(), 64)
-		s.HardcodedStepTimes = append(s.HardcodedStepTimes, int(stepTime))
+		s.HardcodedStepTimes = append(s.HardcodedStepTimes, int(stepTime*1e6))
 	}
-
-	fmt.Printf("Hardcoded step times: %v\n", s.HardcodedStepTimes)
 
 	return s
 }
@@ -181,8 +180,28 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 }
 
 // Estimate Step Advance Time using regression features and coefficients
+// func (sim *Simulator) getStepTime() int64 {
+// 	return int64(sim.HardcodedStepTimes[sim.StepCount])
+// }
+
 func (sim *Simulator) getStepTime() int64 {
-	return int64(sim.HardcodedStepTimes[sim.StepCount])
+	var totalStepTime float64
+	totalStepTime += sim.RegressionCoeffs[0] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
+	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.MaxPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[3] * float64(sim.RunningBatchFeatures.NumPrefillRequests)
+	totalStepTime += sim.RegressionCoeffs[4] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.TotalDecodeTokens)
+	totalStepTime += sim.RegressionCoeffs[5] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[6] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*int(sim.RunningBatchFeatures.MaxPrefillTokens))
+	totalStepTime += sim.RegressionCoeffs[7] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.NumPrefillRequests)
+	totalStepTime += sim.RegressionCoeffs[8] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[9] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*int(sim.RunningBatchFeatures.MaxPrefillTokens))
+	totalStepTime += sim.RegressionCoeffs[10] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*int(sim.RunningBatchFeatures.NumPrefillRequests))
+	totalStepTime += sim.RegressionCoeffs[11] * float64(int(sim.RunningBatchFeatures.MaxPrefillTokens)*int(sim.RunningBatchFeatures.MaxPrefillTokens))
+	totalStepTime += sim.RegressionCoeffs[12] * float64(int(sim.RunningBatchFeatures.MaxPrefillTokens)*int(sim.RunningBatchFeatures.NumPrefillRequests))
+	totalStepTime += sim.RegressionCoeffs[13] * float64(sim.RunningBatchFeatures.NumPrefillRequests*int(sim.RunningBatchFeatures.NumPrefillRequests))
+	totalStepTime += (sim.RegressionCoeffs[14]) // intercept
+	return int64(totalStepTime * 1e6)           // convert from seconds to microseconds, need to verify with Satyam
 }
 
 func (sim *Simulator) makeRunningBatch() {
@@ -277,8 +296,6 @@ func (sim *Simulator) Step(now int64) {
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
 
-	logrus.Warnf("Time: %d, StepCount: %d, RunningBatch: %v\n", now, sim.StepCount, sim.RunningBatch)
-
 	// save waitQ length for analysis
 	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, len(sim.WaitQ.queue))
 
@@ -288,13 +305,15 @@ func (sim *Simulator) Step(now int64) {
 	// Estimate regression times based on runningBatch state
 	currStepAdvance := sim.getStepTime()
 
+	logrus.Warnf("Now: %d, StepTime: %d, StepCount: %d, RunningBatch: %v\n", now, currStepAdvance, sim.StepCount, sim.RunningBatch)
+
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex == 0 {
 			req.ProgressIndex = len(req.InputTokens)
 			req.TTFTSet = true
-			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + ScheduleTime + UpdateTime
+			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + VLLMOverheadTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime
 			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime))
 			// ToDo: Go through the newly allocated blocks for this request;
@@ -332,14 +351,14 @@ func (sim *Simulator) Step(now int64) {
 			}
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
-			lat := now + currStepAdvance + ScheduleTime + UpdateTime - req.ArrivalTime
+			lat := now + currStepAdvance - req.ArrivalTime + VLLMOverheadTime
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, now+currStepAdvance)
 			sim.Metrics.TotalLatency += lat
 			if len(req.OutputTokens) > 0 {
-				reqTotalOutput := lat - req.FirstTokenTime
+				reqTotalOutput := lat - req.FirstTokenTime + VLLMOverheadTime
 				sim.Metrics.TPOTSum += reqTotalOutput
 				// TPOT calculation in vLLM excludes the first generated token
-				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(len(req.OutputTokens)-1))
+				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(max(len(req.OutputTokens)-1, 1)))
 			}
 		} else {
 			remaining = append(remaining, req)
@@ -349,12 +368,12 @@ func (sim *Simulator) Step(now int64) {
 	// push the next step event as needed
 	if len(remaining) > 0 {
 		sim.RunningBatch.Requests = remaining
-		pbe := StepEvent{time: now + currStepAdvance + UpdateTime + ScheduleTime}
-		sim.StepCount += 1
+		pbe := StepEvent{time: now + currStepAdvance + QueueOverheadTime}
 		sim.Schedule(&pbe)
 		sim.StepEvent = &pbe
 	} else {
 		sim.RunningBatch = nil
 		sim.StepEvent = nil
 	}
+	sim.StepCount += 1
 }
