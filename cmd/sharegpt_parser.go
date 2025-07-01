@@ -18,6 +18,7 @@ type Conversation struct {
 type DataEntry struct {
 	ID            string         `json:"id"`
 	Conversations []Conversation `json:"conversations"`
+	ArrivalDelta  int            `json:"arrivalDelta"`
 }
 
 // Process input tokenized requests JSON file to extract only the first human-gpt from-value pair
@@ -56,6 +57,7 @@ func ProcessInput(requestsFilePath string) []*sim.Request {
 					ID:           entry.ID,
 					InputTokens:  inputTokens,
 					OutputTokens: outputTokens,
+					ArrivalDelta: entry.ArrivalDelta,
 				}
 				requests = append(requests, &req)
 				pairCount++

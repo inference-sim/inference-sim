@@ -3,7 +3,6 @@ package sim
 
 import (
 	"container/heap"
-	"math/rand"
 
 	"github.com/sirupsen/logrus"
 )
@@ -34,12 +33,11 @@ func (eq *EventQueue) Pop() any {
 }
 
 type RegressionFeatures struct {
-	NumDecodeRequests  int     `json:"num_decode_requests"`
-	NumPrefillRequests int     `json:"num_prefill_requests"`
-	TotalDecodeTokens  int     `json:"total_decode_tokens"`
-	TotalPrefillTokens int     `json:"total_prefill_tokens"`
-	MaxPrefillTokens   int64   `json:"max_prefill_tokens"`
-	RequestRate        float64 `json:"request_rate"`
+	NumDecodeRequests  int `json:"num_decode_requests"`
+	NumPrefillRequests int `json:"num_prefill_requests"`
+	TotalDecodeTokens  int `json:"total_decode_tokens"`
+	TotalPrefillTokens int `json:"total_prefill_tokens"`
+	MaxPrefillTokens   int `json:"max_prefill_tokens"`
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -63,8 +61,9 @@ type Simulator struct {
 	// max number of requests RunningBatch can hold
 	MaxRunningReqs int64
 	// max total number of new tokens across all requests in RunningBatch
-	MaxScheduledTokens int64
-	RegressionCoeffs   []float64
+	MaxScheduledTokens int
+	// regression coefficients for execute_model time prediction
+	RegressionCoeffs []float64
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
 	RunningBatchFeatures RegressionFeatures
@@ -72,7 +71,7 @@ type Simulator struct {
 	StepEvent            Event
 }
 
-func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int64, regressionCoeffs []float64, rate float64, requests []*Request) *Simulator {
+func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int, regressionCoeffs []float64, rate float64, requests []*Request) *Simulator {
 	s := &Simulator{
 		Clock:                0,
 		Horizon:              horizon,
@@ -124,12 +123,10 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 }
 
 // GeneratePoissonArrivals generates requests with arrival distributed as a Poisson process
-func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed int64) {
+func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 	currentTime := int64(0)
 	// keep track of how many requests in the data file have been processed
 	reqIdx := 0
-	// initialize the random number generator
-	rGen := rand.New(rand.NewSource(seed))
 
 	// create request arrivals iteratively
 	for currentTime < horizon && reqIdx < len(sim.Requests) {
@@ -140,11 +137,15 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 		requestID := sim.Requests[reqIdx].ID
 		input := sim.Requests[reqIdx].InputTokens
 		output := sim.Requests[reqIdx].OutputTokens
+		arrivalDelta := sim.Requests[reqIdx].ArrivalDelta
+
+		currentTime += int64(arrivalDelta)
 
 		// form the request; it will be in the "queued" state when it arrives
 		req := &Request{
 			ID:           requestID,
 			ArrivalTime:  currentTime,
+			ArrivalDelta: arrivalDelta,
 			InputTokens:  input,
 			OutputTokens: output,
 			State:        "queued",
@@ -156,8 +157,6 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64, seed 
 		// move on to the next request
 		reqIdx++
 
-		delta := int64(rGen.ExpFloat64() * (1.0 / rate))
-		currentTime += delta
 		if currentTime > horizon {
 			break
 		}
@@ -169,10 +168,20 @@ func (sim *Simulator) getStepTime() int64 {
 	var totalStepTime float64
 	totalStepTime += sim.RegressionCoeffs[0] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
 	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalPrefillTokens)
-	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.MaxPrefillTokens*sim.RunningBatchFeatures.MaxPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.MaxPrefillTokens)
 	totalStepTime += sim.RegressionCoeffs[3] * float64(sim.RunningBatchFeatures.NumPrefillRequests)
-	totalStepTime += (sim.RegressionCoeffs[4]) // intercept
-	return int64(totalStepTime * 1e6)          // convert from seconds to microseconds, need to verify with Satyam
+	totalStepTime += sim.RegressionCoeffs[4] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.TotalDecodeTokens)
+	totalStepTime += sim.RegressionCoeffs[5] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[6] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*int(sim.RunningBatchFeatures.MaxPrefillTokens))
+	totalStepTime += sim.RegressionCoeffs[7] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.NumPrefillRequests)
+	totalStepTime += sim.RegressionCoeffs[8] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*sim.RunningBatchFeatures.TotalPrefillTokens)
+	totalStepTime += sim.RegressionCoeffs[9] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*int(sim.RunningBatchFeatures.MaxPrefillTokens))
+	totalStepTime += sim.RegressionCoeffs[10] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*int(sim.RunningBatchFeatures.NumPrefillRequests))
+	totalStepTime += sim.RegressionCoeffs[11] * float64(int(sim.RunningBatchFeatures.MaxPrefillTokens)*int(sim.RunningBatchFeatures.MaxPrefillTokens))
+	totalStepTime += sim.RegressionCoeffs[12] * float64(int(sim.RunningBatchFeatures.MaxPrefillTokens)*int(sim.RunningBatchFeatures.NumPrefillRequests))
+	totalStepTime += sim.RegressionCoeffs[13] * float64(sim.RunningBatchFeatures.NumPrefillRequests*int(sim.RunningBatchFeatures.NumPrefillRequests))
+	totalStepTime += (sim.RegressionCoeffs[14]) // intercept
+	return int64(totalStepTime * 1e6)           // convert from seconds to microseconds, need to verify with Satyam
 }
 
 func (sim *Simulator) makeRunningBatch() {
@@ -221,7 +230,7 @@ func (sim *Simulator) makeRunningBatch() {
 		next := sim.WaitQ.queue[0]
 
 		cachedBlocks := sim.KVCache.GetCachedBlocks(next.InputTokens)
-		numRemainingTokens := int64(len(next.InputTokens) - len(cachedBlocks)*sim.KVCache.BlockSizeTokens)
+		numRemainingTokens := len(next.InputTokens) - len(cachedBlocks)*sim.KVCache.BlockSizeTokens
 
 		// estimate the number of new blocks needed for the next request
 		// and allocate if possible
@@ -245,7 +254,7 @@ func (sim *Simulator) makeRunningBatch() {
 
 		// update prefill-related features in RunningBatchFeatures
 		sim.RunningBatchFeatures.NumPrefillRequests += 1
-		sim.RunningBatchFeatures.TotalPrefillTokens += int(numRemainingTokens * numRemainingTokens)
+		sim.RunningBatchFeatures.TotalPrefillTokens += int(numRemainingTokens)
 		sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numRemainingTokens)
 	}
 }
@@ -257,15 +266,12 @@ func (sim *Simulator) makeRunningBatch() {
 func (sim *Simulator) Step(now int64) {
 
 	// refreshing RunningBatchFeatures for current Step
-	requestRate := sim.RunningBatchFeatures.RequestRate
-
 	sim.RunningBatchFeatures = RegressionFeatures{
 		NumDecodeRequests:  0,
 		NumPrefillRequests: 0,
 		TotalDecodeTokens:  0,
 		TotalPrefillTokens: 0,
 		MaxPrefillTokens:   0,
-		RequestRate:        requestRate,
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch()
@@ -314,10 +320,10 @@ func (sim *Simulator) Step(now int64) {
 			// the last decode token would not have been KV cached yet.
 			// perform one last allocation for the last generated decode token.
 			req.State = "completed"
-			logrus.Infof("Finished req: ID: %s\n", req.ID)
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
 			lat := now + currStepAdvance - req.ArrivalTime
+			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, now+currStepAdvance)
 			sim.Metrics.TotalLatency += lat
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
