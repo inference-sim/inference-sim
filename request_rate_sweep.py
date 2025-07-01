@@ -60,7 +60,7 @@ if __name__ == "__main__":
     rates = [2, 4, 8, 16, 32, 45, 64]
 
     tasks = []
-    for idx, rate in enumerate(rates):
+    for idx, rate in enumerate(rates):x
         args_template[16] = f"data/output_tokens_2025-06-30_arrivaldeltas_rr={rate}.json"
         tasks.append({"thread_id": idx+1, "args": args_template[:2] + [str(rate/1e6)] + args_template[3:]})
 
