@@ -77,7 +77,7 @@ def main():
     )
 
     args = parser.parse_args()
-    rates = [32]
+    rates = [2, 4, 8, 16, 32, 45, 64]
     for rate in rates:
         output_filename = f"data/output_tokens_2025-06-30_arrivaldeltas_rr={rate}.json"
         inter_arrival_times = list(generate_arrival_times(399, rate, seed = args.seed))
