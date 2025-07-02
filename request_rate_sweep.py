@@ -49,15 +49,15 @@ if __name__ == "__main__":
         "--max-num-scheduled-tokens", "2048",
         "--block-size-in-tokens", "16",
         "--horizon", "10000000000",
-        "--regression-coeffs", "3.41298094e-05,4.15316658e-06,2.86339254e-06,1.65335979e-03,5.11182987e-08,-9.48056285e-08,1.86501432e-07,2.24889167e-05,-7.77693854e-09,3.21956881e-08,6.28999508e-06,-1.72890630e-08,-9.60619427e-06,-6.28061729e-04,0.00568775493503766",
-        "--requests-file-path", "data/output_tokens_2025-06-26_arrivaldeltas.json",
+        "--regression-coeffs", "3.38283913e-05,9.82346868e-06,-3.11237143e-06,1.50291993e-03,4.24173346e-08,-1.06897441e-07,1.92844617e-07,2.60430816e-05,-7.72212201e-09,2.67059068e-08,7.20303280e-06,-1.06904337e-08,-1.05254706e-05,-9.19828725e-04,0.005708624032334771",
+        "--requests-file-path", "data/output_tokens_2025-06-30_arrivaldeltas.json",
     ]
 
-    rates = [1, 5, 10, 15, 20, 25, 30, 32, 34, 35, 38, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+    rates = [2, 4, 8, 16, 32, 45, 64]
 
     tasks = []
-    for idx, rate in enumerate(rates):
-        args_template[16] = f"data/output_tokens_2025-06-26_arrivaldeltas_rr={rate}.json"
+    for idx, rate in enumerate(rates):x
+        args_template[16] = f"data/output_tokens_2025-06-30_arrivaldeltas_rr={rate}.json"
         tasks.append({"thread_id": idx+1, "args": args_template[:2] + [str(rate/1e6)] + args_template[3:]})
 
     threads = []

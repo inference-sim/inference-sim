@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	ScheduleTime = 690 // avg time in ticks for scheduler.schedule()
-	UpdateTime   = 322 // avg time in ticks for scheduler.update_from_output()
+	ScheduleTime      = 544  // avg time in ticks for scheduler.schedule()
+	UpdateTime        = 80   // avg time in ticks for scheduler.update_from_output()
+	QueueOverheadTime = 1000 // avg time in process_input_queue()
+	VLLMOverheadTime  = 6000 // avg time in vllm input/output processing
 )
 
 // EventQueue implements heap.Interface and orders events by timestamp.
@@ -89,6 +91,7 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 	}
 
 	s.Metrics.RequestRate = rate
+
 	return s
 }
 
@@ -201,7 +204,7 @@ func (sim *Simulator) makeRunningBatch() {
 			logrus.Warnf("Simulator has run out of token budget. Trying in next step.")
 			break
 		}
-		// if a request is in running queue in this function and in prefill phase, nothing left to do,
+		// if a request is in running queue in this function and in prefill phase, then nothing left to do,
 		// blocks have already been allocated. if it is in decode phase, then allocate blocks for the
 		// token generated in the previous Step
 		if req.ProgressIndex >= len(req.InputTokens) && len(req.OutputTokens) > 0 {
@@ -291,7 +294,7 @@ func (sim *Simulator) Step(now int64) {
 		if req.ProgressIndex == 0 {
 			req.ProgressIndex = len(req.InputTokens)
 			req.TTFTSet = true
-			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + ScheduleTime
+			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + VLLMOverheadTime + ScheduleTime + UpdateTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime
 			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime))
 			// ToDo: Go through the newly allocated blocks for this request;
@@ -316,20 +319,27 @@ func (sim *Simulator) Step(now int64) {
 	// handle completed and remaining requests
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
-		if req.ProgressIndex == len(req.InputTokens)+len(req.OutputTokens) {
-			// the last decode token would not have been KV cached yet.
-			// perform one last allocation for the last generated decode token.
+		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
+		if req.ProgressIndex == len(req.InputTokens)+max(len(req.OutputTokens), 1)-1 {
 			req.State = "completed"
+			if len(req.OutputTokens) > 0 {
+				ok := sim.KVCache.AllocateKVBlocksDecode(req)
+				if !ok {
+					// Could not allocate (e.g., no free blocks)
+					logrus.Warnf("[Preemption]")
+					continue // ToDo: pre-empt this request
+				}
+			}
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
-			lat := now + currStepAdvance - req.ArrivalTime
+			lat := now + currStepAdvance - req.ArrivalTime + VLLMOverheadTime + ScheduleTime + UpdateTime
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, now+currStepAdvance)
 			sim.Metrics.TotalLatency += lat
 			if len(req.OutputTokens) > 0 {
-				reqTotalOutput := lat - req.FirstTokenTime
+				reqTotalOutput := lat - req.FirstTokenTime + VLLMOverheadTime
 				sim.Metrics.TPOTSum += reqTotalOutput
 				// TPOT calculation in vLLM excludes the first generated token
-				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(len(req.OutputTokens)-1))
+				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(max(len(req.OutputTokens)-1, 1)))
 			}
 		} else {
 			remaining = append(remaining, req)
@@ -339,7 +349,7 @@ func (sim *Simulator) Step(now int64) {
 	// push the next step event as needed
 	if len(remaining) > 0 {
 		sim.RunningBatch.Requests = remaining
-		pbe := StepEvent{time: now + currStepAdvance + UpdateTime}
+		pbe := StepEvent{time: now + currStepAdvance + QueueOverheadTime + ScheduleTime + UpdateTime}
 		sim.Schedule(&pbe)
 		sim.StepEvent = &pbe
 	} else {
