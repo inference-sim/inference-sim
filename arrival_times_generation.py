@@ -16,7 +16,7 @@ def generate_arrival_times(num_reqs, arrival_rate, burstiness = 1.0, seed=None):
 
 import json
 
-def add_arrival_delta(json_filepath, arrival_deltas_list, output_filepath=None):
+def add_arrival_delta(json_filepath, arrival_deltas_list, num_requests, output_filepath=None):
     """
     Adds an 'arrival delta' field to each entry in a JSON file.
 
@@ -39,7 +39,7 @@ def add_arrival_delta(json_filepath, arrival_deltas_list, output_filepath=None):
         print(f"Error: Could not decode JSON from '{json_filepath}'. Please check the file format.")
         return
 
-    data = data[:400]
+    data = data[:num_requests]
     if len(data) != len(arrival_deltas_list):
         print(f"Warning: The number of entries in the JSON file ({len(data)}) "
               f"does not match the number of arrival delta values ({len(arrival_deltas_list)}). "
@@ -76,12 +76,18 @@ def main():
         help="Input ShareGPT requests filename"
     )
 
+    parser.add_argument(
+        "--num_requests",
+        type=int,
+        help="Number of requests to process"
+    )
+
     args = parser.parse_args()
     rates = [2, 4, 8, 16, 32, 45, 64]
     for rate in rates:
         output_filename = f"data/output_tokens_2025-06-30_arrivaldeltas_rr={rate}.json"
-        inter_arrival_times = list(generate_arrival_times(399, rate, seed = args.seed))
-        add_arrival_delta(args.input_filename, inter_arrival_times, output_filename)
+        inter_arrival_times = list(generate_arrival_times(args.num_requests - 1, rate, seed = args.seed))
+        add_arrival_delta(args.input_filename, inter_arrival_times, args.num_requests, output_filename)
 
 
 if __name__=="__main__":

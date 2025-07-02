@@ -7,13 +7,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const (
-	ScheduleTime      = 544  // avg time in ticks for scheduler.schedule()
-	UpdateTime        = 80   // avg time in ticks for scheduler.update_from_output()
-	QueueOverheadTime = 1000 // avg time in process_input_queue()
-	VLLMOverheadTime  = 6000 // avg time in vllm input/output processing
-)
-
 // EventQueue implements heap.Interface and orders events by timestamp.
 // See canonical Golang example here: https://pkg.go.dev/container/heap#example-package-IntHeap
 type EventQueue []Event
@@ -70,10 +63,15 @@ type Simulator struct {
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
 	RunningBatchFeatures RegressionFeatures
 	Requests             []*Request
+	ScheduleTime         int64
+	UpdateTime           int64
+	QueueOverheadTime    int64
+	VLLMOverheadTime     int64
 	StepEvent            Event
 }
 
-func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int, regressionCoeffs []float64, rate float64, requests []*Request) *Simulator {
+func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int,
+	regressionCoeffs []float64, rate float64, requests []*Request, scheduleTime int64, updateTime int64, queueOverheadTime int64, vLLMOverheadTime int64) *Simulator {
 	s := &Simulator{
 		Clock:                0,
 		Horizon:              horizon,
@@ -81,12 +79,16 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		WaitQ:                &WaitQueue{},
 		KVCache:              NewKVCacheState(totalKVBlocks, blockSizeTokens),
 		RunningBatch:         &Batch{},
-		Metrics:              &Metrics{RequestTTFTs: []float64{}, RequestTPOTs: []float64{}, NumWaitQRequests: []int{}, NumRunningBatchRequests: []int{}},
+		Metrics:              &Metrics{RequestTTFTs: []float64{}, RequestTPOTs: []float64{}, RequestE2Es: []float64{}, NumWaitQRequests: []int{}, NumRunningBatchRequests: []int{}},
 		MaxRunningReqs:       maxRunningReqs,
 		MaxScheduledTokens:   maxScheduledTokens,
 		RegressionCoeffs:     regressionCoeffs,
 		RunningBatchFeatures: RegressionFeatures{},
 		Requests:             requests,
+		ScheduleTime:         scheduleTime,
+		UpdateTime:           updateTime,
+		QueueOverheadTime:    queueOverheadTime,
+		VLLMOverheadTime:     vLLMOverheadTime,
 		StepEvent:            nil,
 	}
 
@@ -294,9 +296,9 @@ func (sim *Simulator) Step(now int64) {
 		if req.ProgressIndex == 0 {
 			req.ProgressIndex = len(req.InputTokens)
 			req.TTFTSet = true
-			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + VLLMOverheadTime + ScheduleTime + UpdateTime
+			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime
-			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime))
+			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime)/1000)
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
 		} else if req.ProgressIndex >= len(req.InputTokens) {
@@ -332,14 +334,15 @@ func (sim *Simulator) Step(now int64) {
 			}
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
-			lat := now + currStepAdvance - req.ArrivalTime + VLLMOverheadTime + ScheduleTime + UpdateTime
+			lat := now + currStepAdvance - req.ArrivalTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
+			sim.Metrics.RequestE2Es = append(sim.Metrics.RequestE2Es, float64(lat)/1000)
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, now+currStepAdvance)
 			sim.Metrics.TotalLatency += lat
 			if len(req.OutputTokens) > 0 {
-				reqTotalOutput := lat - req.FirstTokenTime + VLLMOverheadTime
+				reqTotalOutput := lat - req.FirstTokenTime + sim.VLLMOverheadTime
 				sim.Metrics.TPOTSum += reqTotalOutput
 				// TPOT calculation in vLLM excludes the first generated token
-				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(max(len(req.OutputTokens)-1, 1)))
+				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(max(len(req.OutputTokens)-1, 1))/1000)
 			}
 		} else {
 			remaining = append(remaining, req)
@@ -349,7 +352,7 @@ func (sim *Simulator) Step(now int64) {
 	// push the next step event as needed
 	if len(remaining) > 0 {
 		sim.RunningBatch.Requests = remaining
-		pbe := StepEvent{time: now + currStepAdvance + QueueOverheadTime + ScheduleTime + UpdateTime}
+		pbe := StepEvent{time: now + currStepAdvance + sim.QueueOverheadTime + sim.ScheduleTime + sim.UpdateTime}
 		sim.Schedule(&pbe)
 		sim.StepEvent = &pbe
 	} else {

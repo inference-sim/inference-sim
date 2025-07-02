@@ -51,12 +51,16 @@ if __name__ == "__main__":
         "--horizon", "10000000000",
         "--regression-coeffs", "3.38283913e-05,9.82346868e-06,-3.11237143e-06,1.50291993e-03,4.24173346e-08,-1.06897441e-07,1.92844617e-07,2.60430816e-05,-7.72212201e-09,2.67059068e-08,7.20303280e-06,-1.06904337e-08,-1.05254706e-05,-9.19828725e-04,0.005708624032334771",
         "--requests-file-path", "data/output_tokens_2025-06-30_arrivaldeltas.json",
+        "--schedule-time", "544",
+        "--update-time", "80",
+        "--queue-overhead-time", "1000",
+        "--vllm-overhead-time", "6000",
     ]
 
     rates = [2, 4, 8, 16, 32, 45, 64]
 
     tasks = []
-    for idx, rate in enumerate(rates):x
+    for idx, rate in enumerate(rates):
         args_template[16] = f"data/output_tokens_2025-06-30_arrivaldeltas_rr={rate}.json"
         tasks.append({"thread_id": idx+1, "args": args_template[:2] + [str(rate/1e6)] + args_template[3:]})
 
