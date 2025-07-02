@@ -55,12 +55,13 @@ if __name__ == "__main__":
         "--update-time", "80",
         "--queue-overhead-time", "1000",
         "--vllm-overhead-time", "6000",
+        "--long-prefill-token-threshold", "10000000",
     ]
 
-    rates = [2, 4, 8, 16, 32, 45, 64]
+    rates = [4, 64]
 
     tasks = []
-    for idx, rate in enumerate(rates):x
+    for idx, rate in enumerate(rates):
         args_template[16] = f"data/output_tokens_2025-06-30_arrivaldeltas_rr={rate}.json"
         tasks.append({"thread_id": idx+1, "args": args_template[:2] + [str(rate/1e6)] + args_template[3:]})
 
