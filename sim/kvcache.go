@@ -300,6 +300,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex
 // deprecated, use AllocateKVBlocks()
 // AllocateKVBlocksDecode adds a new (decoded) token to the latest request block.
 // If the latest block is full, a new one is allocated.
+// endIndex is non-inclusive
 func (kvc *KVCacheState) AllocateKVBlocksDecode(req *Request) bool {
 	// sanity check to make sure the request isn't in prefill phase
 	if req.ProgressIndex < len(req.InputTokens) {
