@@ -194,16 +194,19 @@ func (kvc *KVCacheState) AllocateKVBlocksPrefill(req *Request) bool {
 
 // AppendToken adds a new (decoded) token to the latest request block.
 // If the latest block is full, a new one is allocated.
+// start and endIndex are by original requests' index
 // endIndex is non-inclusive
 func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex int, cachedBlocks []int) bool {
 	reqID := req.ID
+	// fmt.Printf("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d\n", req.ID, len(req.InputTokens), startIndex, endIndex)
 
 	var newTokens []int
+	var numNewBlocks = 1
 	if req.ProgressIndex < len(req.InputTokens) {
 		// request is in prefill (could be chunked)
 		newTokens = req.InputTokens[startIndex:endIndex]
-		// check if enough memory fot tokens to be cached
-		numNewBlocks := (len(newTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
+		// check if enough memory for tokens to be cached
+		numNewBlocks = (len(newTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
 
 		// Cannot allocate enough KV cache blocks
 		if numNewBlocks > kvc.countFreeBlocks() {
@@ -212,11 +215,11 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex
 		}
 	} else {
 		// request is in decode
-		newTokens = append(newTokens, req.OutputTokens[req.ProgressIndex-len(req.InputTokens)])
+		newTokens = append(newTokens, req.OutputTokens[startIndex-len(req.InputTokens)])
 	}
-	newTokenProgressIndex := startIndex
-	for newTokenProgressIndex < endIndex { // non-inclusive endIndex
-		currToken := newTokens[newTokenProgressIndex]
+	newTokenProgressIndex := 0
+	for newTokenProgressIndex < len(newTokens) { // non-inclusive endIndex
+		// fmt.Printf("new loop for AllocateBlock. ReqID: %s, Num Inputs: %d\n", req.ID, len(req.InputTokens))
 		ids, ok := kvc.RequestMap[reqID]
 		latestBlk := &KVBlock{}
 		if ok {
@@ -227,6 +230,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex
 		} else {
 			// KV cache is seeing this request for the first time (beginning of prefill)
 			// append the cached blocks to this request's ID map
+
 			for _, blockId := range cachedBlocks {
 				blk := kvc.Blocks[blockId]
 				blk.RefCount++
@@ -240,8 +244,11 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex
 			}
 		}
 		if len(latestBlk.Tokens) > 0 && len(latestBlk.Tokens) < kvc.BlockSizeTokens {
-			// latest block is not full yet, append the token to the latest block
-			latestBlk.Tokens = append(latestBlk.Tokens, currToken)
+			// latest block is not full yet, append tokens to the latest block
+			toksToAppend := newTokens[:min(len(newTokens), kvc.BlockSizeTokens-len(latestBlk.Tokens))]
+			latestBlk.Tokens = append(latestBlk.Tokens, toksToAppend...)
+			newTokenProgressIndex += kvc.BlockSizeTokens - len(latestBlk.Tokens)
+			// fmt.Printf("Appending to latest blk: newTokenProgressIndex = %d, endBlk=%d\n", newTokenProgressIndex, min(len(newTokens), kvc.BlockSizeTokens-len(latestBlk.Tokens)))
 			if len(latestBlk.Tokens) == kvc.BlockSizeTokens {
 				// latesBlk is full
 				fullTokens := []int{}
@@ -255,18 +262,35 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex
 		} else {
 			// latest block is full or request is coming in for the first time.
 			// allocate new block(s) for the request
-			newBlk := kvc.popFreeBlock()
-			if newBlk == nil {
-				// cannot allocate any new block, fail
-				return false
+			for i := 0; i < numNewBlocks; i++ {
+				blk := kvc.popFreeBlock()
+				if blk == nil {
+					return false
+				}
+				// start and end are the range of tokens in blk
+				start := newTokenProgressIndex
+				end := newTokenProgressIndex + kvc.BlockSizeTokens
+				// fmt.Printf("Assigning new blocks: newTokenProgressIndex = %d, ogStartIdx= %d, ogEndIdx = %d, startBlk=%d, endBlk=%d\n", newTokenProgressIndex, startIndex, endIndex, start, end)
+				if end > len(newTokens) {
+					end = len(newTokens)
+				}
+				tok := newTokens[start:end]
+				blk.Tokens = append([]int{}, tok...) // copy tokens
+				blk.RefCount = 1
+				blk.InUse = true
+				kvc.UsedBlockCnt++
+
+				if len(blk.Tokens) == kvc.BlockSizeTokens {
+					fullPrefix := req.InputTokens[:end]
+					h := hashTokens(fullPrefix)
+					blk.Hash = h
+					kvc.HashToBlock[h] = blk.ID
+				}
+				// allocated is the block IDs allocated for this request
+				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blk.ID)
+				newTokenProgressIndex = end
 			}
-			newBlk.Tokens = []int{currToken}
-			newBlk.RefCount = 1
-			newBlk.InUse = true
-			kvc.UsedBlockCnt++
-			kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], newBlk.ID)
 		}
-		newTokenProgressIndex += 1
 	}
 
 	return true

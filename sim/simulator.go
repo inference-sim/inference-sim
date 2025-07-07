@@ -69,6 +69,8 @@ type Simulator struct {
 	VLLMOverheadTime          int64
 	LongPrefillTokenThreshold int
 	StepEvent                 Event
+	// map of request IDs to total num computed tokens (including cached tokens)
+	ReqNumComputedTokens map[string]int
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int, longPrefillTokenThreshold int,
@@ -92,6 +94,7 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		VLLMOverheadTime:          vLLMOverheadTime,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 		StepEvent:                 nil,
+		ReqNumComputedTokens:      make(map[string]int),
 	}
 
 	s.Metrics.RequestRate = rate
@@ -195,13 +198,10 @@ func (sim *Simulator) getStepTime() int64 {
 	return int64(totalStepTime * 1e6)           // convert from seconds to microseconds, need to verify with Satyam
 }
 
-func (sim *Simulator) makeRunningBatch() map[string]int {
+func (sim *Simulator) makeRunningBatch() {
 	if sim.RunningBatch == nil {
 		sim.RunningBatch = &Batch{}
 	}
-
-	// map of request IDs to total num computed tokens (including cached tokens)
-	reqNumComputedTokens := make(map[string]int)
 
 	// allocate a max token budget at the start of each Step
 	tokenBudget := sim.MaxScheduledTokens
@@ -233,13 +233,13 @@ func (sim *Simulator) makeRunningBatch() map[string]int {
 			sim.RunningBatchFeatures.NumPrefillRequests += 1
 			sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
 			sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
-			reqNumComputedTokens[req.ID] += numNewTokens
+			sim.ReqNumComputedTokens[req.ID] += numNewTokens
 
 		}
 		// if it is in decode phase, then allocate blocks for the token generated in the previous Step
 		if req.ProgressIndex >= len(req.InputTokens) && len(req.OutputTokens) > 0 {
 			// this request will go through decode phase in this batch
-			ok := sim.KVCache.AllocateKVBlocks(req, 0, 0, []int{})
+			ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int{})
 			if !ok {
 				// Could not allocate (e.g., no free blocks)
 				logrus.Warnf("[Preemption]")
@@ -252,7 +252,7 @@ func (sim *Simulator) makeRunningBatch() map[string]int {
 			// update decode-related features in RunningBatchFeatures
 			sim.RunningBatchFeatures.NumDecodeRequests += 1
 			sim.RunningBatchFeatures.TotalDecodeTokens += 1
-			reqNumComputedTokens[req.ID] += 1
+			sim.ReqNumComputedTokens[req.ID] += 1
 		}
 	}
 
@@ -299,9 +299,8 @@ func (sim *Simulator) makeRunningBatch() map[string]int {
 		sim.RunningBatchFeatures.NumPrefillRequests += 1
 		sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
 		sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
-		reqNumComputedTokens[next.ID] = numNewTokens + len(cachedBlocks)*sim.KVCache.BlockSizeTokens
+		sim.ReqNumComputedTokens[next.ID] = numNewTokens + len(cachedBlocks)*sim.KVCache.BlockSizeTokens
 	}
-	return reqNumComputedTokens
 }
 
 // In vllm, the processing of requests proceeds iteratively in steps.
@@ -319,7 +318,9 @@ func (sim *Simulator) Step(now int64) {
 		MaxPrefillTokens:   0,
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
-	schedulerOutput := sim.makeRunningBatch()
+	sim.makeRunningBatch()
+
+	// fmt.Printf("Scheduler output: %v\n", sim.ReqNumComputedTokens)
 
 	// save waitQ length for analysis
 	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, len(sim.WaitQ.queue))
@@ -334,7 +335,7 @@ func (sim *Simulator) Step(now int64) {
 	// similar to vLLM's execute_model()
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex < len(req.InputTokens) {
-			req.ProgressIndex = schedulerOutput[req.ID]
+			req.ProgressIndex = sim.ReqNumComputedTokens[req.ID]
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime
@@ -365,7 +366,7 @@ func (sim *Simulator) Step(now int64) {
 		if req.ProgressIndex == len(req.InputTokens)+max(len(req.OutputTokens), 1)-1 {
 			req.State = "completed"
 			if len(req.OutputTokens) > 0 {
-				ok := sim.KVCache.AllocateKVBlocks(req, 0, 0, []int{})
+				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int{})
 				if !ok {
 					// Could not allocate (e.g., no free blocks)
 					logrus.Warnf("[Preemption]")
