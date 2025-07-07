@@ -42,3 +42,10 @@ simulation_worker
 # results
 results/
 *.zip
+
+# uv files
+.python-version
+pyproject.toml
+uv.lock
+.DS_Store
+blackbox_opt.ipynb
