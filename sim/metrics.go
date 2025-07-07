@@ -113,7 +113,11 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		reqThroughput := float64(m.CompletedRequests) / float64(m.SimEndedTime/1e6)
 
 		fmt.Printf("Request throughput (req/s):  : %.3f\n", reqThroughput)
-		fmt.Printf("TTFTs             : %v\n", m.RequestTTFTs)
+		fmt.Printf("TTFTs             :[")
+		for _, ttft := range m.RequestTTFTs {
+			fmt.Printf("%.6f, ", ttft/1000)
+		}
+		fmt.Printf("]\n")
 		fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT/1000)
 		fmt.Printf("Median TTFT(ms)   : %.3f\n", medianTTFT)
 		fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT)
@@ -121,7 +125,11 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		fmt.Printf("Mean TPOT(ms)     : %.3f\n", avgTPOT/1000)
 		fmt.Printf("Median TPOT(ms)   : %.3f\n", medianTPOT)
 		fmt.Printf("P99 TPOT(ms)      : %.3f\n", p99TPOT)
-		fmt.Printf("E2Es             : %v\n", m.RequestE2Es)
+		fmt.Printf("E2Es             : [")
+		for _, e2e := range m.RequestE2Es {
+			fmt.Printf("%.3f, ", e2e/1000)
+		}
+		fmt.Printf("]\n")
 		fmt.Printf("Avg KV Blocks Usage : %.3f\n", float64(m.KVBlocksUsed)/float64(m.SimEndedTime))
 		fmt.Printf("Peak KV Usage       : %d blocks\n", m.PeakKVBlocksUsed)
 
@@ -130,7 +138,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 	}
 
 	// sanity checks
-	m.SavetoFile(m.NumWaitQRequests, "../inference-sim-analysis/waitQ_lengths_med.txt")
-	m.SavetoFile(m.NumRunningBatchRequests, "../inference-sim-analysis/runBatch_lengths_med.txt")
+	// m.SavetoFile(m.NumWaitQRequests, "../inference-sim-analysis/waitQ_lengths_med.txt")
+	// m.SavetoFile(m.NumRunningBatchRequests, "../inference-sim-analysis/runBatch_lengths_med.txt")
 
 }
