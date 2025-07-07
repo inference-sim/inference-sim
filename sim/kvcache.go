@@ -296,7 +296,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex
 	return true
 }
 
-// AppendToken adds a new (decoded) token to the latest request block.
+// AllocateKVBlocksDecode adds a new (decoded) token to the latest request block.
 // If the latest block is full, a new one is allocated.
 func (kvc *KVCacheState) AllocateKVBlocksDecode(req *Request) bool {
 	// sanity check to make sure the request isn't in prefill phase

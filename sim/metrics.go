@@ -121,7 +121,6 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT/1000)
 		fmt.Printf("Median TTFT(ms)   : %.3f\n", medianTTFT)
 		fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT)
-		// fmt.Printf("TPOTs             : %v\n", m.RequestTPOTs)
 		fmt.Printf("Mean TPOT(ms)     : %.3f\n", avgTPOT/1000)
 		fmt.Printf("Median TPOT(ms)   : %.3f\n", medianTPOT)
 		fmt.Printf("P99 TPOT(ms)      : %.3f\n", p99TPOT)
