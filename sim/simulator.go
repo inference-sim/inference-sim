@@ -197,13 +197,10 @@ func (sim *Simulator) getStepTime() int64 {
 	return int64(totalStepTime * 1e6)           // convert from seconds to microseconds, need to verify with Satyam
 }
 
-func (sim *Simulator) makeRunningBatch() map[string]int {
+func (sim *Simulator) makeRunningBatch() {
 	if sim.RunningBatch == nil {
 		sim.RunningBatch = &Batch{}
 	}
-
-	// map of request IDs to total num computed tokens (including cached tokens)
-	reqNumComputedTokens := make(map[string]int)
 
 	// allocate a max token budget at the start of each Step
 	tokenBudget := sim.MaxScheduledTokens
@@ -303,7 +300,6 @@ func (sim *Simulator) makeRunningBatch() map[string]int {
 		sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
 		sim.ReqNumComputedTokens[next.ID] = numNewTokens + len(cachedBlocks)*sim.KVCache.BlockSizeTokens
 	}
-	return reqNumComputedTokens
 }
 
 // In vllm, the processing of requests proceeds iteratively in steps.
