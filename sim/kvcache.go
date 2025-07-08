@@ -230,7 +230,6 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex
 		} else {
 			// KV cache is seeing this request for the first time (beginning of prefill)
 			// append the cached blocks to this request's ID map
-
 			for _, blockId := range cachedBlocks {
 				blk := kvc.Blocks[blockId]
 				blk.RefCount++
