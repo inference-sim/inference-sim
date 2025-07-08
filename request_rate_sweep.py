@@ -7,13 +7,15 @@ import shutil
 import argparse
 import platform
 
+from arrival_times_generation import generate_arrival_times, add_arrival_delta
+
 GO_BINARY_NAME = "simulation_worker"
 
 GO_BINARY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), GO_BINARY_NAME)
 OUTPUT_DIR = "results/sweep_request_rate"
+TIMESTAMPED_FILENAME_FORMAT = "data/output_tokens_2025-07-07_arrivaldeltas_"
 DATASET_NAME = "ShareGPT"
 TEMPERATURE = 0
-NUM_PROMPTS = 400
 
 print_lock = threading.Lock()
 
@@ -23,7 +25,7 @@ def save_results(filename, output, arguments):
         f.write("\n\n")
         f.write(output)
 
-def run_go_binary(thread_id, arguments):
+def run_go_binary(thread_id, arguments, num_requests):
     result = subprocess.run(
         [GO_BINARY_PATH] + arguments,
         capture_output=True,
@@ -36,13 +38,34 @@ def run_go_binary(thread_id, arguments):
         request_rate = int(float(arguments[2])*1e6)
         long_prefill_token_threshold = int(arguments[26])
         max_num_scheduled_token = int(arguments[8])
-        output_filename = f"{OUTPUT_DIR}/exp_{NUM_PROMPTS}p_{request_rate}r_{TEMPERATURE}t_{max_num_scheduled_token}mbt_{long_prefill_token_threshold}lpt_{DATASET_NAME}.txt"
+        output_filename = f"{OUTPUT_DIR}/exp_{num_requests}p_{request_rate}r_{TEMPERATURE}t_{max_num_scheduled_token}mbt_{long_prefill_token_threshold}lpt_{DATASET_NAME}.txt"
         save_results(output_filename, result.stdout, arguments)
         if result.stderr:
             print(f"[Thread {thread_id}] Go binary error output:\n{result.stderr}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Go binary with request rate sweep")
+    parser = argparse.ArgumentParser(description="Run Go binary with sweep over different parameters")
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random generation seed"
+    )
+
+    parser.add_argument(
+        "--input_filename",
+        type=str,
+        help="Input ShareGPT tokenized requests filename"
+    )
+
+    parser.add_argument(
+        "--num_requests",
+        type=int,
+        default=400,
+        help="Number of requests to process"
+    )
+
     parser.add_argument(
         "--regression_coeffs",
         type=str,
@@ -120,6 +143,14 @@ if __name__ == "__main__":
     ]
 
     rates = args.rates
+    num_requests = args.num_requests
+
+    # timestamp tokenized requests file with arrival deltas based on num_requests and request_rate.
+    for rate in rates:
+        timestamped_filename = f"{TIMESTAMPED_FILENAME_FORMAT}n={num_requests}_rr={rate}.json"
+        inter_arrival_times = list(generate_arrival_times(num_requests - 1, rate, seed = args.seed))
+        add_arrival_delta(args.input_filename, inter_arrival_times, num_requests, timestamped_filename)
+
     max_num_scheduled_tokens = args.max_num_batched_tokens
     long_prefill_token_thresholds = args.long_prefill_token_thresholds
 
@@ -128,18 +159,18 @@ if __name__ == "__main__":
     for rate, max_num_token, threshold in itertools.product(rates, max_num_scheduled_tokens, long_prefill_token_thresholds):
         current_args = copy.deepcopy(args_template)
         current_args[2] = str(rate / 1e6)
-        current_args[16] = f"data/output_tokens_2025-07-07_arrivaldeltas_rr={rate}.json"
+        current_args[16] = f"{TIMESTAMPED_FILENAME_FORMAT}n={num_requests}_rr={rate}.json"
         current_args[8] = str(max_num_token)
         current_args[26] = str(threshold)
 
-        tasks.append({"thread_id": thread_id, "args": current_args})
+        tasks.append({"thread_id": thread_id, "args": current_args, "num_requests": num_requests})
         thread_id += 1
 
     threads = []
     for task in tasks:
         thread = threading.Thread(
             target=run_go_binary,
-            args=(task["thread_id"], task["args"])
+            args=(task["thread_id"], task["args"], task["num_requests"])
         )
         threads.append(thread)
         thread.start() # Start the thread
