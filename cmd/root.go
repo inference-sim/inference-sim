@@ -53,7 +53,7 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
-		requests := ProcessInput(requestsFilePath)
+		requests := ProcessInputShareGPT(requestsFilePath)
 
 		// Initialize and run the simulator
 		s := sim.NewSimulator(
