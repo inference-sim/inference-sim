@@ -1,28 +1,30 @@
-import subprocess
-import threading
-import os
+import argparse
 import copy
 import itertools
+import os
 import shutil
-import argparse
-import platform
+import subprocess
+import threading
 
-from arrival_times_generation import generate_arrival_times, add_arrival_delta
+from arrival_times_generation import add_arrival_delta, generate_arrival_times
 
 GO_BINARY_NAME = "simulation_worker"
 
-GO_BINARY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), GO_BINARY_NAME)
+GO_BINARY_PATH = os.path.join(os.path.dirname(
+    os.path.abspath(__file__)), GO_BINARY_NAME)
 OUTPUT_DIR = "results/sweep_params"
 DATASET_NAME = "sharegpt"
 TEMPERATURE = 0.0
 
 print_lock = threading.Lock()
 
+
 def save_results(filename, output, arguments):
-    with open (filename, "w") as f:
+    with open(filename, "w") as f:
         f.write(' '.join(arguments))
         f.write("\n\n")
         f.write(output)
+
 
 def run_go_binary(thread_id, arguments, num_requests):
     result = subprocess.run(
@@ -40,10 +42,13 @@ def run_go_binary(thread_id, arguments, num_requests):
         output_filename = f"{OUTPUT_DIR}/exp_{num_requests}p_{request_rate}r_{TEMPERATURE}t_{max_num_scheduled_token}mbt_{long_prefill_token_threshold}lpt_{DATASET_NAME}.txt"
         save_results(output_filename, result.stdout, arguments)
         if result.stderr:
-            print(f"[Thread {thread_id}] Go binary error output:\n{result.stderr}")
+            print(
+                f"[Thread {thread_id}] Go binary error output:\n{result.stderr}")
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Go binary with sweep over different parameters")
+    parser = argparse.ArgumentParser(
+        description="Run Go binary with sweep over different parameters")
 
     parser.add_argument(
         "--seed",
@@ -148,8 +153,10 @@ if __name__ == "__main__":
     # timestamp tokenized requests file with arrival deltas based on num_requests and request_rate.
     for rate in rates:
         timestamped_filename = f"{input_filename_root}_arrivaldeltas_n={num_requests}_rr={rate}.json"
-        inter_arrival_times = list(generate_arrival_times(num_requests - 1, rate, seed = args.seed))
-        add_arrival_delta(args.input_filename, inter_arrival_times, num_requests, timestamped_filename)
+        inter_arrival_times = list(generate_arrival_times(
+            num_requests - 1, rate, seed=args.seed))
+        add_arrival_delta(args.input_filename, inter_arrival_times,
+                          num_requests, timestamped_filename)
 
     max_num_scheduled_tokens = args.max_num_batched_tokens
     long_prefill_token_thresholds = args.long_prefill_token_thresholds
@@ -163,7 +170,8 @@ if __name__ == "__main__":
         current_args[8] = str(max_num_token)
         current_args[26] = str(threshold)
 
-        tasks.append({"thread_id": thread_id, "args": current_args, "num_requests": num_requests})
+        tasks.append({"thread_id": thread_id, "args": current_args,
+                     "num_requests": num_requests})
         thread_id += 1
 
     threads = []
@@ -173,7 +181,7 @@ if __name__ == "__main__":
             args=(task["thread_id"], task["args"], task["num_requests"])
         )
         threads.append(thread)
-        thread.start() # Start the thread
+        thread.start()  # Start the thread
 
     # Wait for all threads to complete.
     for thread in threads:
