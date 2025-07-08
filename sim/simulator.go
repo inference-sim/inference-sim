@@ -330,16 +330,18 @@ func (sim *Simulator) Step(now int64) {
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex < len(req.InputTokens) {
 			req.ProgressIndex = sim.ReqNumComputedTokens[req.ID]
-			req.TTFTSet = true
-			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
-			sim.Metrics.TTFTSum += req.FirstTokenTime
-			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime)/1000)
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
 		} else {
 			// this request goes through decode phase in this batch
 			req.ProgressIndex++
 			sim.Metrics.TotalOutputTokens++
+		}
+		if req.ProgressIndex == len(req.InputTokens) { // prefill complete, first token is generated
+			req.TTFTSet = true
+			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
+			sim.Metrics.TTFTSum += req.FirstTokenTime
+			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime)/1000)
 		}
 	}
 
