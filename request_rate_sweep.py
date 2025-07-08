@@ -12,10 +12,9 @@ from arrival_times_generation import generate_arrival_times, add_arrival_delta
 GO_BINARY_NAME = "simulation_worker"
 
 GO_BINARY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), GO_BINARY_NAME)
-OUTPUT_DIR = "results/sweep_request_rate"
-TIMESTAMPED_FILENAME_FORMAT = "data/output_tokens_2025-07-07_arrivaldeltas_"
-DATASET_NAME = "ShareGPT"
-TEMPERATURE = 0
+OUTPUT_DIR = "results/sweep_params"
+DATASET_NAME = "sharegpt"
+TEMPERATURE = 0.0
 
 print_lock = threading.Lock()
 
@@ -144,10 +143,11 @@ if __name__ == "__main__":
 
     rates = args.rates
     num_requests = args.num_requests
+    input_filename_root = args.input_filename.split(".json")[0]
 
     # timestamp tokenized requests file with arrival deltas based on num_requests and request_rate.
     for rate in rates:
-        timestamped_filename = f"{TIMESTAMPED_FILENAME_FORMAT}n={num_requests}_rr={rate}.json"
+        timestamped_filename = f"{input_filename_root}_arrivaldeltas_n={num_requests}_rr={rate}.json"
         inter_arrival_times = list(generate_arrival_times(num_requests - 1, rate, seed = args.seed))
         add_arrival_delta(args.input_filename, inter_arrival_times, num_requests, timestamped_filename)
 
@@ -159,7 +159,7 @@ if __name__ == "__main__":
     for rate, max_num_token, threshold in itertools.product(rates, max_num_scheduled_tokens, long_prefill_token_thresholds):
         current_args = copy.deepcopy(args_template)
         current_args[2] = str(rate / 1e6)
-        current_args[16] = f"{TIMESTAMPED_FILENAME_FORMAT}n={num_requests}_rr={rate}.json"
+        current_args[16] = f"{input_filename_root}_arrivaldeltas_n={num_requests}_rr={rate}.json"
         current_args[8] = str(max_num_token)
         current_args[26] = str(threshold)
 
