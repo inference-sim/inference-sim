@@ -59,37 +59,3 @@ def add_arrival_delta(json_filepath, arrival_deltas_list, num_requests, output_f
     except IOError as e:
         print(f"Error writing to file '{output_filepath}': {e}")
 
-def main():
-    parser = argparse.ArgumentParser(
-            description="A request arrival times generator for Gamma/Exponential Distribution"
-            )
-
-    parser.add_argument(
-        "--seed",
-        type=int,
-        help="Random generation seed"
-    )
-
-    parser.add_argument(
-        "--input_filename",
-        type=str,
-        help="Input ShareGPT requests filename"
-    )
-
-    parser.add_argument(
-        "--num_requests",
-        type=int,
-        help="Number of requests to process"
-    )
-
-    args = parser.parse_args()
-    rates = [4, 16, 30, 64]
-    for rate in rates:
-        output_filename = f"data/output_tokens_2025-07-07_arrivaldeltas_rr={rate}.json"
-        inter_arrival_times = list(generate_arrival_times(args.num_requests - 1, rate, seed = args.seed))
-        add_arrival_delta(args.input_filename, inter_arrival_times, args.num_requests, output_filename)
-
-
-if __name__=="__main__":
-    main()
-
