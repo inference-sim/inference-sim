@@ -65,6 +65,30 @@ if __name__ == "__main__":
         type=str,
         default="6000",
     )
+    parser.add_argument(
+        "--rates",
+        type=int,
+        nargs='+',
+        default=[32],
+        help='An optional list of request arrival rates. Defaults to [32]'
+    )
+
+    parser.add_argument(
+        "--max_num_batched_tokens",
+        type=int,
+        nargs='+',
+        default=[256],
+        help='An optional list of max_num_scheduled_tokens. Defaults to [256]'
+    )
+
+    parser.add_argument(
+        "--long_prefill_token_thresholds",
+        type=int,
+        nargs='+',
+        default=[128],
+        help='An optional list of long-prefill-token-thresholds. Defaults to [128]'
+    )
+
     args = parser.parse_args()
     if os.path.exists(OUTPUT_DIR):
         shutil.rmtree(OUTPUT_DIR)
@@ -92,16 +116,16 @@ if __name__ == "__main__":
         "--long-prefill-token-threshold", "16",
     ]
 
-    rates = [32]
-    max_num_scheduled_tokens = [128, 256, 512, 1024]
-    long_prefill_token_thresholds = [16, 32, 64, 128, 256, 512, 1024]
+    rates = args.rates
+    max_num_scheduled_tokens = args.max_num_batched_tokens
+    long_prefill_token_thresholds = args.long_prefill_token_thresholds
 
     tasks = []
     thread_id = 1
     for rate, max_num_token, threshold in itertools.product(rates, max_num_scheduled_tokens, long_prefill_token_thresholds):
         current_args = copy.deepcopy(args_template)
         current_args[2] = str(rate / 1e6)
-        current_args[16] = f"data/output_tokens_2025-07-07_arrivaldeltas_rr={rate}.json" # Use today's date here
+        current_args[16] = f"data/output_tokens_2025-07-07_arrivaldeltas_rr={rate}.json"
         current_args[8] = str(max_num_token)
         current_args[26] = str(threshold)
 
