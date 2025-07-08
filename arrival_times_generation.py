@@ -65,6 +65,7 @@ def add_arrival_delta(json_filepath, arrival_deltas_list, num_requests, output_f
 <<<<<<< HEAD
 =======
 
+<<<<<<< HEAD
 def main():
     parser = argparse.ArgumentParser(
             description="A request arrival times generator for Gamma/Exponential Distribution"
@@ -100,3 +101,5 @@ if __name__=="__main__":
     main()
 
 >>>>>>> 008bea0 (Fixed minor issues and log lines)
+=======
+>>>>>>> 16fb8de (Added num requests to request_rate_sweep)

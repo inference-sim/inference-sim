@@ -10,6 +10,8 @@ import threading
 
 from arrival_times_generation import add_arrival_delta, generate_arrival_times
 
+from arrival_times_generation import generate_arrival_times, add_arrival_delta
+
 GO_BINARY_NAME = "simulation_worker"
 
 GO_BINARY_PATH = os.path.join(os.path.dirname(
@@ -26,7 +28,6 @@ def save_results(filename, output, arguments):
         f.write(' '.join(arguments))
         f.write("\n\n")
         f.write(output)
-
 
 def run_go_binary(thread_id, arguments, num_requests):
     result = subprocess.run(
