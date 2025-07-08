@@ -86,7 +86,7 @@ if __name__ == "__main__":
         "--long-prefill-token-threshold", "32",
     ]
 
-    rates = [4]
+    rates = [32]
 
     tasks = []
     for idx, rate in enumerate(rates):
