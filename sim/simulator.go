@@ -82,7 +82,7 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		WaitQ:                     &WaitQueue{},
 		KVCache:                   NewKVCacheState(totalKVBlocks, blockSizeTokens),
 		RunningBatch:              &Batch{},
-		Metrics:                   &Metrics{RequestTTFTs: []float64{}, RequestTPOTs: []float64{}, RequestE2Es: []float64{}, NumWaitQRequests: []int{}, NumRunningBatchRequests: []int{}},
+		Metrics:                   &Metrics{RequestTTFTs: []float64{}, RequestTPOTs: []float64{}, RequestE2Es: []float64{}, RequestCompletionTimes: []float64{}, NumWaitQRequests: []int{}, NumRunningBatchRequests: []int{}},
 		MaxRunningReqs:            maxRunningReqs,
 		MaxScheduledTokens:        maxScheduledTokens,
 		RegressionCoeffs:          regressionCoeffs,
@@ -340,8 +340,8 @@ func (sim *Simulator) Step(now int64) {
 		if req.ProgressIndex == len(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
-			sim.Metrics.TTFTSum += req.FirstTokenTime
-			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime)/1000)
+			sim.Metrics.TTFTSum += req.FirstTokenTime                                                     // in microsec
+			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime)/1000) // in ms
 		}
 	}
 
@@ -372,15 +372,16 @@ func (sim *Simulator) Step(now int64) {
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
 			lat := now + currStepAdvance - req.ArrivalTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
-			sim.Metrics.RequestE2Es = append(sim.Metrics.RequestE2Es, float64(lat)/1000)
-			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, now+currStepAdvance)
+			sim.Metrics.RequestE2Es = append(sim.Metrics.RequestE2Es, float64(lat)/1000) // in ms
+			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, lat+req.ArrivalTime)
 			sim.Metrics.TotalLatency += lat
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime + sim.VLLMOverheadTime
-				sim.Metrics.TPOTSum += reqTotalOutput
-				// TPOT calculation in vLLM excludes the first generated token
+				sim.Metrics.TPOTSum += reqTotalOutput // in microsec
+				// TPOT calculation in vLLM excludes the first generated token, calculated in ms
 				sim.Metrics.RequestTPOTs = append(sim.Metrics.RequestTPOTs, float64(reqTotalOutput)/float64(max(len(req.OutputTokens)-1, 1))/1000)
 			}
+			sim.Metrics.RequestCompletionTimes = append(sim.Metrics.RequestCompletionTimes, float64(lat+req.ArrivalTime)/1e6) // in seconds
 		} else {
 			remaining = append(remaining, req)
 		}

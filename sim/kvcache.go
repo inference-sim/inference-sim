@@ -130,7 +130,8 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int) {
 	return
 }
 
-// AllocateKVBlocks reserves cache blocks for a request.
+// deprecated, use AllocateKVBlocks()
+// AllocateKVBlocksPrefill reserves cache blocks for a request.
 // It reuses cached blocks and allocates new ones from the free list as needed.
 // Each full block added is hashed and recorded in the prefix table.
 func (kvc *KVCacheState) AllocateKVBlocksPrefill(req *Request) bool {
@@ -192,8 +193,8 @@ func (kvc *KVCacheState) AllocateKVBlocksPrefill(req *Request) bool {
 	return true
 }
 
-// AppendToken adds a new (decoded) token to the latest request block.
-// If the latest block is full, a new one is allocated.
+// AllocateKVBlocks handles KV Block allocation for both prefill and decode.
+// If the latest block is full, a new one is allocated. Otherwise push to latest allocated block.
 // start and endIndex are by original requests' index
 // endIndex is non-inclusive
 func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex int, cachedBlocks []int) bool {
@@ -296,6 +297,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex
 	return true
 }
 
+// deprecated, use AllocateKVBlocks()
 // AllocateKVBlocksDecode adds a new (decoded) token to the latest request block.
 // If the latest block is full, a new one is allocated.
 func (kvc *KVCacheState) AllocateKVBlocksDecode(req *Request) bool {

@@ -29,12 +29,19 @@ type Metrics struct {
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	TPOTSum int64 // Total TPOT sum across requests (in ticks)
 
-	RequestTTFTs []float64 // list of all requests' TTFT
-	RequestTPOTs []float64 // list of all requests' TPOT
-	RequestE2Es  []float64 // list of all requests' latencies
+	RequestTTFTs           []float64 // list of all requests' TTFT
+	RequestTPOTs           []float64 // list of all requests' TPOT
+	RequestE2Es            []float64 // list of all requests' latencies
+	RequestCompletionTimes []float64 // list of all requests' completion times in ticks
 
 	NumWaitQRequests        []int // number of requests in waitQ over different steps
 	NumRunningBatchRequests []int // number of request in runningBatch over different steps
+}
+
+// Bin represents a single completion time integral bin with its integer key and count.
+type Bin struct {
+	Key   int
+	Count int
 }
 
 // CalculatePercentile is a util function that calculates the p-th percentile of a data list
@@ -60,6 +67,36 @@ func CalculatePercentile(data []float64, p float64) float64 {
 		}
 		return lowerVal + (upperVal-lowerVal)*(rank-float64(lowerIdx))
 	}
+}
+
+func CalculateBinnedThroughput(data []float64) float64 {
+	tempBins := make(map[int]int)
+	maxBinKeyActual := 0
+	totalCompletionCounts := 0
+
+	if len(data) == 0 {
+		return 0
+	}
+
+	for _, val := range data {
+		binKey := int(val)
+		tempBins[binKey]++
+		maxBinKeyActual = max(maxBinKeyActual, binKey)
+	}
+
+	for i := 0; i <= maxBinKeyActual; i++ {
+		if _, ok := tempBins[i]; !ok {
+			tempBins[i] = 0
+		}
+	}
+
+	for _, count := range tempBins {
+		totalCompletionCounts += count
+	}
+
+	meanCompletionCount := float64(totalCompletionCounts) / float64(len(tempBins))
+
+	return meanCompletionCount
 }
 
 func (m *Metrics) SavetoFile(data []int, fileName string) {
@@ -110,9 +147,9 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
 		medianTPOT := CalculatePercentile(m.RequestTPOTs, 50)
 		p99TPOT := CalculatePercentile(m.RequestTPOTs, 99)
-		reqThroughput := float64(m.CompletedRequests) / float64(m.SimEndedTime/1e6)
+		perSecThroughput := CalculateBinnedThroughput(m.RequestCompletionTimes)
 
-		fmt.Printf("Request throughput (req/s):  : %.3f\n", reqThroughput)
+		fmt.Printf("Request throughput (req/s):  : %.3f\n", perSecThroughput)
 		fmt.Printf("TTFTs             :[")
 		for _, ttft := range m.RequestTTFTs {
 			fmt.Printf("%.6f, ", ttft/1000)
@@ -121,6 +158,11 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT/1000)
 		fmt.Printf("Median TTFT(ms)   : %.3f\n", medianTTFT)
 		fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT)
+		fmt.Printf("TPOTs             : [")
+		for _, tpot := range m.RequestTPOTs {
+			fmt.Printf("%.6f, ", tpot/1000)
+		}
+		fmt.Printf("]\n")
 		fmt.Printf("Mean TPOT(ms)     : %.3f\n", avgTPOT/1000)
 		fmt.Printf("Median TPOT(ms)   : %.3f\n", medianTPOT)
 		fmt.Printf("P99 TPOT(ms)      : %.3f\n", p99TPOT)
@@ -133,7 +175,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		fmt.Printf("Peak KV Usage       : %d blocks\n", m.PeakKVBlocksUsed)
 
 		fmt.Println("=== Saturation Metrics ===")
-		fmt.Printf("Throughput to arrival rate ratio:  : %.3f\n", reqThroughput/(m.RequestRate*1e6))
+		fmt.Printf("Throughput to arrival rate ratio:  : %.3f\n", perSecThroughput/(m.RequestRate*1e6))
 	}
 
 	// sanity checks
