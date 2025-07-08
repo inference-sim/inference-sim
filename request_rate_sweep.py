@@ -11,6 +11,9 @@ GO_BINARY_NAME = "simulation_worker"
 
 GO_BINARY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), GO_BINARY_NAME)
 OUTPUT_DIR = "results/sweep_request_rate"
+DATASET_NAME = "ShareGPT"
+TEMPERATURE = 0
+NUM_PROMPTS = 400
 
 print_lock = threading.Lock()
 
@@ -33,7 +36,7 @@ def run_go_binary(thread_id, arguments):
         request_rate = int(float(arguments[2])*1e6)
         long_prefill_token_threshold = int(arguments[26])
         max_num_scheduled_token = int(arguments[8])
-        output_filename = f"{OUTPUT_DIR}/rr={request_rate}_lptt={long_prefill_token_threshold}_mnbt={max_num_scheduled_token}.txt"
+        output_filename = f"{OUTPUT_DIR}/exp_{NUM_PROMPTS}p_{request_rate}r_{TEMPERATURE}t_{max_num_scheduled_token}mbt_{long_prefill_token_threshold}lpt_{DATASET_NAME}.txt"
         save_results(output_filename, result.stdout, arguments)
         if result.stderr:
             print(f"[Thread {thread_id}] Go binary error output:\n{result.stderr}")
