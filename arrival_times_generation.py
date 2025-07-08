@@ -63,6 +63,7 @@ def add_arrival_delta(json_filepath, arrival_deltas_list, num_requests, output_f
     except IOError as e:
         print(f"Error writing to file '{output_filepath}': {e}")
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 
 <<<<<<< HEAD
@@ -103,3 +104,5 @@ if __name__=="__main__":
 >>>>>>> 008bea0 (Fixed minor issues and log lines)
 =======
 >>>>>>> 16fb8de (Added num requests to request_rate_sweep)
+=======
+>>>>>>> 10428d0 (Fixed minor formatting issues)
