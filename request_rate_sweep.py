@@ -74,7 +74,7 @@ if __name__ == "__main__":
         "--rate", "0.000034",
         "--max-num-running-reqs", "256",
         "--total-kv-blocks", "94060",
-        "--max-num-scheduled-tokens", "2048",
+        "--max-num-scheduled-tokens", "256",
         "--block-size-in-tokens", "16",
         "--horizon", "10000000000",
         "--regression-coeffs", args.regression_coeffs,
@@ -83,6 +83,7 @@ if __name__ == "__main__":
         "--update-time", args.update_time,
         "--queue-overhead-time", args.queue_overhead_time,
         "--vllm-overhead-time", args.vllm_overhead_time,
+        "--long-prefill-token-threshold", "16",
     ]
 
     rates = [4]

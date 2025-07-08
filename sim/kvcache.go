@@ -194,6 +194,110 @@ func (kvc *KVCacheState) AllocateKVBlocksPrefill(req *Request) bool {
 
 // AppendToken adds a new (decoded) token to the latest request block.
 // If the latest block is full, a new one is allocated.
+// start and endIndex are by original requests' index
+// endIndex is non-inclusive
+func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int, endIndex int, cachedBlocks []int) bool {
+	reqID := req.ID
+	logrus.Infof("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d\n", req.ID, len(req.InputTokens), startIndex, endIndex)
+
+	var newTokens []int
+	var numNewBlocks = 1
+	if req.ProgressIndex < len(req.InputTokens) {
+		// request is in prefill (could be chunked)
+		newTokens = req.InputTokens[startIndex:endIndex]
+		// check if enough memory for tokens to be cached
+		numNewBlocks = (len(newTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
+
+		// Cannot allocate enough KV cache blocks
+		if numNewBlocks > kvc.countFreeBlocks() {
+			logrus.Warnf("Not enough KV cache space to allocate %v new blocks", numNewBlocks)
+			return false
+		}
+	} else {
+		// request is in decode
+		newTokens = append(newTokens, req.OutputTokens[startIndex-len(req.InputTokens)])
+	}
+	newTokenProgressIndex := 0
+	for newTokenProgressIndex < len(newTokens) { // non-inclusive endIndex
+		ids, ok := kvc.RequestMap[reqID]
+		latestBlk := &KVBlock{}
+		if ok {
+			// KV cache has already seen this request before. The latest block needs to be filled first,
+			// followed by new blocks. Caching cannot happen here.
+			latestBlk = kvc.Blocks[ids[len(ids)-1]]
+
+		} else {
+			// KV cache is seeing this request for the first time (beginning of prefill)
+			// append the cached blocks to this request's ID map
+
+			for _, blockId := range cachedBlocks {
+				blk := kvc.Blocks[blockId]
+				blk.RefCount++
+				if !blk.InUse {
+					blk.InUse = true
+					kvc.UsedBlockCnt++
+					kvc.removeFromFreeList(blk)
+				}
+				// allocated is the block IDs allocated for this request
+				logrus.Infof("Hit KV Cache for req: %s of length: %d\n", req.ID, len(cachedBlocks)*kvc.BlockSizeTokens)
+				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
+			}
+		}
+		if len(latestBlk.Tokens) > 0 && len(latestBlk.Tokens) < kvc.BlockSizeTokens {
+			// latest block is not full yet, append tokens to the latest block
+			toksToAppend := newTokens[:min(len(newTokens), kvc.BlockSizeTokens-len(latestBlk.Tokens))]
+			latestBlk.Tokens = append(latestBlk.Tokens, toksToAppend...)
+			newTokenProgressIndex += min(len(newTokens), kvc.BlockSizeTokens-len(latestBlk.Tokens))
+			logrus.Infof("Appending to latest blk: req: %s, newTokenProgressIndex = %d, endBlk=%d, tokens = %v\n", req.ID, newTokenProgressIndex, min(len(newTokens), kvc.BlockSizeTokens-len(latestBlk.Tokens)), toksToAppend)
+			if len(latestBlk.Tokens) == kvc.BlockSizeTokens {
+				// latesBlk is full
+				fullTokens := []int{}
+				for _, blockId := range ids {
+					fullTokens = append(fullTokens, kvc.Blocks[blockId].Tokens...)
+				}
+				h := hashTokens(fullTokens)
+				latestBlk.Hash = h
+				kvc.HashToBlock[h] = latestBlk.ID
+			}
+		} else {
+			// latest block is full or request is coming in for the first time.
+			// allocate new block(s) for the request
+			for i := 0; i < numNewBlocks; i++ {
+				blk := kvc.popFreeBlock()
+				if blk == nil {
+					return false
+				}
+				// start and end are the range of tokens in blk
+				start := newTokenProgressIndex
+				end := newTokenProgressIndex + kvc.BlockSizeTokens
+				logrus.Infof("Assigning new blocks: req = %s, newTokenProgressIndex = %d, ogStartIdx= %d, ogEndIdx = %d, startBlk=%d, endBlk=%d\n", req.ID, newTokenProgressIndex, startIndex, endIndex, start, end)
+				if end > len(newTokens) {
+					end = len(newTokens)
+				}
+				tok := newTokens[start:end]
+				blk.Tokens = append([]int{}, tok...) // copy tokens
+				blk.RefCount = 1
+				blk.InUse = true
+				kvc.UsedBlockCnt++
+
+				if len(blk.Tokens) == kvc.BlockSizeTokens {
+					fullPrefix := req.InputTokens[:end]
+					h := hashTokens(fullPrefix)
+					blk.Hash = h
+					kvc.HashToBlock[h] = blk.ID
+				}
+				// allocated is the block IDs allocated for this request
+				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blk.ID)
+				newTokenProgressIndex = end
+			}
+		}
+	}
+
+	return true
+}
+
+// AllocateKVBlocksDecode adds a new (decoded) token to the latest request block.
+// If the latest block is full, a new one is allocated.
 func (kvc *KVCacheState) AllocateKVBlocksDecode(req *Request) bool {
 	// sanity check to make sure the request isn't in prefill phase
 	if req.ProgressIndex < len(req.InputTokens) {

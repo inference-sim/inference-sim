@@ -61,35 +61,40 @@ type Simulator struct {
 	RegressionCoeffs []float64
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
-	RunningBatchFeatures RegressionFeatures
-	Requests             []*Request
-	ScheduleTime         int64
-	UpdateTime           int64
-	QueueOverheadTime    int64
-	VLLMOverheadTime     int64
-	StepEvent            Event
+	RunningBatchFeatures      RegressionFeatures
+	Requests                  []*Request
+	ScheduleTime              int64
+	UpdateTime                int64
+	QueueOverheadTime         int64
+	VLLMOverheadTime          int64
+	LongPrefillTokenThreshold int
+	StepEvent                 Event
+	// map of request IDs to total num computed tokens (including cached tokens)
+	ReqNumComputedTokens map[string]int
 }
 
-func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int,
+func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int, longPrefillTokenThreshold int,
 	regressionCoeffs []float64, rate float64, requests []*Request, scheduleTime int64, updateTime int64, queueOverheadTime int64, vLLMOverheadTime int64) *Simulator {
 	s := &Simulator{
-		Clock:                0,
-		Horizon:              horizon,
-		EventQueue:           make(EventQueue, 0),
-		WaitQ:                &WaitQueue{},
-		KVCache:              NewKVCacheState(totalKVBlocks, blockSizeTokens),
-		RunningBatch:         &Batch{},
-		Metrics:              &Metrics{RequestTTFTs: []float64{}, RequestTPOTs: []float64{}, RequestE2Es: []float64{}, NumWaitQRequests: []int{}, NumRunningBatchRequests: []int{}},
-		MaxRunningReqs:       maxRunningReqs,
-		MaxScheduledTokens:   maxScheduledTokens,
-		RegressionCoeffs:     regressionCoeffs,
-		RunningBatchFeatures: RegressionFeatures{},
-		Requests:             requests,
-		ScheduleTime:         scheduleTime,
-		UpdateTime:           updateTime,
-		QueueOverheadTime:    queueOverheadTime,
-		VLLMOverheadTime:     vLLMOverheadTime,
-		StepEvent:            nil,
+		Clock:                     0,
+		Horizon:                   horizon,
+		EventQueue:                make(EventQueue, 0),
+		WaitQ:                     &WaitQueue{},
+		KVCache:                   NewKVCacheState(totalKVBlocks, blockSizeTokens),
+		RunningBatch:              &Batch{},
+		Metrics:                   &Metrics{RequestTTFTs: []float64{}, RequestTPOTs: []float64{}, RequestE2Es: []float64{}, NumWaitQRequests: []int{}, NumRunningBatchRequests: []int{}},
+		MaxRunningReqs:            maxRunningReqs,
+		MaxScheduledTokens:        maxScheduledTokens,
+		RegressionCoeffs:          regressionCoeffs,
+		RunningBatchFeatures:      RegressionFeatures{},
+		Requests:                  requests,
+		ScheduleTime:              scheduleTime,
+		UpdateTime:                updateTime,
+		QueueOverheadTime:         queueOverheadTime,
+		VLLMOverheadTime:          vLLMOverheadTime,
+		LongPrefillTokenThreshold: longPrefillTokenThreshold,
+		StepEvent:                 nil,
+		ReqNumComputedTokens:      make(map[string]int),
 	}
 
 	s.Metrics.RequestRate = rate
@@ -206,12 +211,31 @@ func (sim *Simulator) makeRunningBatch() {
 			logrus.Warnf("Simulator has run out of token budget. Trying in next step.")
 			break
 		}
-		// if a request is in running queue in this function and in prefill phase, then nothing left to do,
-		// blocks have already been allocated. if it is in decode phase, then allocate blocks for the
-		// token generated in the previous Step
+		numNewTokens := len(req.InputTokens) - req.ProgressIndex
+		// if a request is in running queue in this function and in prefill phase,
+		// request must be doing chunked prefill
+		// cache hits cannot happen here
+		if numNewTokens > 0 {
+			if 0 < sim.LongPrefillTokenThreshold && sim.LongPrefillTokenThreshold < numNewTokens {
+				numNewTokens = sim.LongPrefillTokenThreshold
+			}
+			numNewTokens = min(numNewTokens, tokenBudget)
+			if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int{}); !ok {
+				// Could not allocate (e.g., no free blocks)
+				logrus.Warnf("[Preemption]")
+				continue // ToDo: pre-empt this request
+			}
+			tokenBudget -= numNewTokens
+			sim.RunningBatchFeatures.NumPrefillRequests += 1
+			sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
+			sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
+			sim.ReqNumComputedTokens[req.ID] += numNewTokens
+
+		}
+		// if it is in decode phase, then allocate blocks for the token generated in the previous Step
 		if req.ProgressIndex >= len(req.InputTokens) && len(req.OutputTokens) > 0 {
 			// this request will go through decode phase in this batch
-			ok := sim.KVCache.AllocateKVBlocksDecode(req)
+			ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int{})
 			if !ok {
 				// Could not allocate (e.g., no free blocks)
 				logrus.Warnf("[Preemption]")
@@ -224,6 +248,7 @@ func (sim *Simulator) makeRunningBatch() {
 			// update decode-related features in RunningBatchFeatures
 			sim.RunningBatchFeatures.NumDecodeRequests += 1
 			sim.RunningBatchFeatures.TotalDecodeTokens += 1
+			sim.ReqNumComputedTokens[req.ID] += 1
 		}
 	}
 
@@ -234,12 +259,21 @@ func (sim *Simulator) makeRunningBatch() {
 
 		next := sim.WaitQ.queue[0]
 
+		// first find cache hits. This only happens once per prefill (regardless of chunked)
 		cachedBlocks := sim.KVCache.GetCachedBlocks(next.InputTokens)
-		numRemainingTokens := len(next.InputTokens) - len(cachedBlocks)*sim.KVCache.BlockSizeTokens
+		numNewTokens := len(next.InputTokens) - len(cachedBlocks)*sim.KVCache.BlockSizeTokens
+
+		// now check for chunked prefill
+		if 0 < sim.LongPrefillTokenThreshold && sim.LongPrefillTokenThreshold < numNewTokens {
+			numNewTokens = sim.LongPrefillTokenThreshold
+		}
+		numNewTokens = min(numNewTokens, tokenBudget)
+		startIndex := len(cachedBlocks) * sim.KVCache.BlockSizeTokens
+		endIndex := startIndex + numNewTokens
 
 		// estimate the number of new blocks needed for the next request
 		// and allocate if possible
-		if ok := sim.KVCache.AllocateKVBlocksPrefill(next); !ok {
+		if ok := sim.KVCache.AllocateKVBlocks(next, startIndex, endIndex, cachedBlocks); !ok {
 			// cannot allocate enough blocks for remaining tokens, do not schedule current request
 			// vLLM maintains First-Come-First-Served order of requests, so we cannot move onto the
 			// next request.
@@ -253,14 +287,15 @@ func (sim *Simulator) makeRunningBatch() {
 		// make it part of the running batch
 		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
 		// decrement the token budget
-		tokenBudget = tokenBudget - numRemainingTokens
+		tokenBudget = tokenBudget - numNewTokens
 		// change the state of the request from queued to running
 		next.State = "running"
 
 		// update prefill-related features in RunningBatchFeatures
 		sim.RunningBatchFeatures.NumPrefillRequests += 1
-		sim.RunningBatchFeatures.TotalPrefillTokens += int(numRemainingTokens)
-		sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numRemainingTokens)
+		sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
+		sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
+		sim.ReqNumComputedTokens[next.ID] = numNewTokens + len(cachedBlocks)*sim.KVCache.BlockSizeTokens
 	}
 }
 
@@ -293,18 +328,20 @@ func (sim *Simulator) Step(now int64) {
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
 	for _, req := range sim.RunningBatch.Requests {
-		if req.ProgressIndex == 0 {
-			req.ProgressIndex = len(req.InputTokens)
+		if req.ProgressIndex < len(req.InputTokens) {
+			req.ProgressIndex = sim.ReqNumComputedTokens[req.ID]
+			// ToDo: Go through the newly allocated blocks for this request;
+			// Make sure they are cached, if they're full
+		} else {
+			// this request goes through decode phase in this batch
+			req.ProgressIndex++
+			sim.Metrics.TotalOutputTokens++
+		}
+		if req.ProgressIndex == len(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime
 			sim.Metrics.RequestTTFTs = append(sim.Metrics.RequestTTFTs, float64(req.FirstTokenTime)/1000)
-			// ToDo: Go through the newly allocated blocks for this request;
-			// Make sure they are cached, if they're full
-		} else if req.ProgressIndex >= len(req.InputTokens) {
-			// this request goes through decode phase in this batch
-			req.ProgressIndex++
-			sim.Metrics.TotalOutputTokens++
 		}
 	}
 
@@ -325,7 +362,7 @@ func (sim *Simulator) Step(now int64) {
 		if req.ProgressIndex == len(req.InputTokens)+max(len(req.OutputTokens), 1)-1 {
 			req.State = "completed"
 			if len(req.OutputTokens) > 0 {
-				ok := sim.KVCache.AllocateKVBlocksDecode(req)
+				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int{})
 				if !ok {
 					// Could not allocate (e.g., no free blocks)
 					logrus.Warnf("[Preemption]")
