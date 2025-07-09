@@ -66,7 +66,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_requests",
         type=int,
-        default=400,
+        nargs='+',
+        default=[400],
         help="Number of requests to process"
     )
 
@@ -151,27 +152,28 @@ if __name__ == "__main__":
     input_filename_root = args.input_filename.split(".json")[0]
 
     # timestamp tokenized requests file with arrival deltas based on num_requests and request_rate.
-    for rate in rates:
-        timestamped_filename = f"{input_filename_root}_arrivaldeltas_n={num_requests}_rr={rate}.json"
-        inter_arrival_times = list(generate_arrival_times(
-            num_requests - 1, rate, seed=args.seed))
-        add_arrival_delta(args.input_filename, inter_arrival_times,
-                          num_requests, timestamped_filename)
+    for n in num_requests:
+        for rate in rates:
+            timestamped_filename = f"{input_filename_root}_arrivaldeltas_n={n}_rr={rate}.json"
+            inter_arrival_times = list(
+                generate_arrival_times(n - 1, rate, seed=args.seed))
+            add_arrival_delta(args.input_filename,
+                              inter_arrival_times, n, timestamped_filename)
 
     max_num_scheduled_tokens = args.max_num_batched_tokens
     long_prefill_token_thresholds = args.long_prefill_token_thresholds
 
     tasks = []
     thread_id = 1
-    for rate, max_num_token, threshold in itertools.product(rates, max_num_scheduled_tokens, long_prefill_token_thresholds):
+    for n, rate, max_num_token, threshold in itertools.product(num_requests, rates, max_num_scheduled_tokens, long_prefill_token_thresholds):
         current_args = copy.deepcopy(args_template)
         current_args[2] = str(rate / 1e6)
-        current_args[16] = f"{input_filename_root}_arrivaldeltas_n={num_requests}_rr={rate}.json"
+        current_args[16] = f"{input_filename_root}_arrivaldeltas_n={n}_rr={rate}.json"
         current_args[8] = str(max_num_token)
         current_args[26] = str(threshold)
 
         tasks.append({"thread_id": thread_id, "args": current_args,
-                     "num_requests": num_requests})
+                     "num_requests": n})
         thread_id += 1
 
     threads = []
