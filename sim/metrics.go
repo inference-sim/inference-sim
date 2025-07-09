@@ -32,6 +32,18 @@ type Metrics struct {
 	NumRunningBatchRequests []int // number of request in runningBatch over different steps
 }
 
+func NewMetrics() *Metrics {
+	return &Metrics{
+		CompletedRequests:       0,
+		RequestTTFTs:            make(map[string]float64),
+		RequestTPOTs:            make(map[string]float64),
+		RequestE2Es:             make(map[string]float64),
+		RequestCompletionTimes:  make(map[string]float64),
+		NumWaitQRequests:        []int{},
+		NumRunningBatchRequests: []int{},
+	}
+}
+
 // Print displays aggregated metrics at the end of the simulation.
 // Includes average latency, TTFT, TPOT, KV usage, and prefix cache behavior.
 func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {

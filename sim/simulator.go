@@ -81,7 +81,7 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		WaitQ:                     &WaitQueue{},
 		KVCache:                   NewKVCacheState(totalKVBlocks, blockSizeTokens),
 		RunningBatch:              &Batch{},
-		Metrics:                   &Metrics{RequestTTFTs: make(map[string]float64), RequestTPOTs: make(map[string]float64), RequestE2Es: make(map[string]float64), RequestCompletionTimes: make(map[string]float64), NumWaitQRequests: []int{}, NumRunningBatchRequests: []int{}},
+		Metrics:                   NewMetrics(),
 		MaxRunningReqs:            maxRunningReqs,
 		MaxScheduledTokens:        maxScheduledTokens,
 		RegressionCoeffs:          regressionCoeffs,
