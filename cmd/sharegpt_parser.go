@@ -23,7 +23,7 @@ type DataEntry struct {
 
 // Process input tokenized requests JSON file to extract only the first human-gpt from-value pair
 // from conversations
-func ProcessInput(requestsFilePath string) []*sim.Request {
+func ProcessInputShareGPT(requestsFilePath string) []*sim.Request {
 
 	// Read the content of the JSON file
 	fileContent, err := os.ReadFile(requestsFilePath)
