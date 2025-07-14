@@ -380,6 +380,8 @@ func (sim *Simulator) Step(now int64) {
 				sim.Metrics.TPOTSum += reqTotalOutput // in microsec
 				// TPOT calculation in vLLM excludes the first generated token, calculated in ms
 				sim.Metrics.RequestTPOTs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1)) / 1000
+			} else {
+				sim.Metrics.RequestTPOTs[req.ID] = 0
 			}
 			sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat+req.ArrivalTime) / 1e6 // in seconds
 		} else {
