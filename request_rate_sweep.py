@@ -155,6 +155,8 @@ if __name__ == "__main__":
     for n in num_requests:
         for rate in rates:
             timestamped_filename = f"{input_filename_root}_arrivaldeltas_n={n}_rr={rate}.json"
+            if os.path.exists(timestamped_filename):
+                continue
             inter_arrival_times = list(
                 generate_arrival_times(n - 1, rate, seed=args.seed))
             add_arrival_delta(args.input_filename,
