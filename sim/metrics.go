@@ -102,7 +102,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 	fmt.Printf("Total Input Tokens   : %d\n", m.TotalInputTokens)
 	fmt.Printf("Total Output Tokens  : %d\n", m.TotalOutputTokens)
 	fmt.Printf("Simulation Duration(s): %.3f\n", time.Since(startTime).Seconds())
-	fmt.Printf("vLLM estimated Duration(s): %d\n", m.SimEndedTime)
+	fmt.Printf("vLLM estimated Duration(s): %d\n", m.SimEndedTime/1e6)
 	if m.CompletedRequests > 0 {
 		avgTTFT := float64(m.TTFTSum) / float64(m.CompletedRequests)
 		medianTTFT := CalculatePercentile(m.RequestTTFTs, 50)
@@ -121,7 +121,6 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT/1000)
 		fmt.Printf("Median TTFT(ms)   : %.3f\n", medianTTFT)
 		fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT)
-		fmt.Printf("TPOTs             : %v\n", m.RequestTPOTs)
 		fmt.Printf("Mean TPOT(ms)     : %.3f\n", avgTPOT/1000)
 		fmt.Printf("Median TPOT(ms)   : %.3f\n", medianTPOT)
 		fmt.Printf("P99 TPOT(ms)      : %.3f\n", p99TPOT)
