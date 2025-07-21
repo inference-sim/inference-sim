@@ -67,8 +67,8 @@ type Simulator struct {
 	UpdateTime                int64
 	QueueOverheadTime         int64
 	VLLMOverheadTime          int64
-	StepEvent                 Event
 	LongPrefillTokenThreshold int
+	StepEvent                 Event
 	// map of request IDs to total num computed tokens (including cached tokens)
 	ReqNumComputedTokens map[string]int
 }

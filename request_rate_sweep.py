@@ -1,6 +1,8 @@
 import subprocess
 import threading
 import os
+import copy
+import itertools
 import shutil
 import argparse
 import platform
@@ -9,11 +11,16 @@ GO_BINARY_NAME = "simulation_worker"
 
 GO_BINARY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), GO_BINARY_NAME)
 OUTPUT_DIR = "results/sweep_request_rate"
+DATASET_NAME = "ShareGPT"
+TEMPERATURE = 0
+NUM_PROMPTS = 400
 
 print_lock = threading.Lock()
 
-def save_results(filename, output):
+def save_results(filename, output, arguments):
     with open (filename, "w") as f:
+        f.write(' '.join(arguments))
+        f.write("\n\n")
         f.write(output)
 
 def run_go_binary(thread_id, arguments):
@@ -24,11 +31,13 @@ def run_go_binary(thread_id, arguments):
         check=True,
         encoding='utf-8'
     )
-    print(result.stdout, flush=True)
+    # print(result.stdout, flush=True)
     with print_lock:
         request_rate = int(float(arguments[2])*1e6)
-        output_filename = f"{OUTPUT_DIR}/output_rr={request_rate}.txt"
-        save_results(output_filename, result.stdout)
+        long_prefill_token_threshold = int(arguments[26])
+        max_num_scheduled_token = int(arguments[8])
+        output_filename = f"{OUTPUT_DIR}/exp_{NUM_PROMPTS}p_{request_rate}r_{TEMPERATURE}t_{max_num_scheduled_token}mbt_{long_prefill_token_threshold}lpt_{DATASET_NAME}.txt"
+        save_results(output_filename, result.stdout, arguments)
         if result.stderr:
             print(f"[Thread {thread_id}] Go binary error output:\n{result.stderr}")
 
@@ -59,6 +68,30 @@ if __name__ == "__main__":
         type=str,
         default="6000",
     )
+    parser.add_argument(
+        "--rates",
+        type=int,
+        nargs='+',
+        default=[32],
+        help='An optional list of request arrival rates. Defaults to [32]'
+    )
+
+    parser.add_argument(
+        "--max_num_batched_tokens",
+        type=int,
+        nargs='+',
+        default=[256],
+        help='An optional list of max_num_scheduled_tokens. Defaults to [256]'
+    )
+
+    parser.add_argument(
+        "--long_prefill_token_thresholds",
+        type=int,
+        nargs='+',
+        default=[128],
+        help='An optional list of long-prefill-token-thresholds. Defaults to [128]'
+    )
+
     args = parser.parse_args()
     if os.path.exists(OUTPUT_DIR):
         shutil.rmtree(OUTPUT_DIR)
@@ -83,15 +116,24 @@ if __name__ == "__main__":
         "--update-time", args.update_time,
         "--queue-overhead-time", args.queue_overhead_time,
         "--vllm-overhead-time", args.vllm_overhead_time,
-        "--long-prefill-token-threshold", "32",
+        "--long-prefill-token-threshold", "16",
     ]
 
-    rates = [4]
+    rates = args.rates
+    max_num_scheduled_tokens = args.max_num_batched_tokens
+    long_prefill_token_thresholds = args.long_prefill_token_thresholds
 
     tasks = []
-    for idx, rate in enumerate(rates):
-        args_template[16] = f"data/output_tokens_2025-07-07_arrivaldeltas_rr={rate}.json"
-        tasks.append({"thread_id": idx+1, "args": args_template[:2] + [str(rate/1e6)] + args_template[3:]})
+    thread_id = 1
+    for rate, max_num_token, threshold in itertools.product(rates, max_num_scheduled_tokens, long_prefill_token_thresholds):
+        current_args = copy.deepcopy(args_template)
+        current_args[2] = str(rate / 1e6)
+        current_args[16] = f"data/output_tokens_2025-07-07_arrivaldeltas_rr={rate}.json"
+        current_args[8] = str(max_num_token)
+        current_args[26] = str(threshold)
+
+        tasks.append({"thread_id": thread_id, "args": current_args})
+        thread_id += 1
 
     threads = []
     for task in tasks:
