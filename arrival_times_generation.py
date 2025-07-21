@@ -1,20 +1,22 @@
 # generate a set of n arrival times a r req/sec with a poisson distribution
-import argparse
 import json
+
 import numpy as np
 
-def generate_arrival_times(num_reqs, arrival_rate, burstiness = 1.0, seed=None):
+
+def generate_arrival_times(num_reqs, arrival_rate, burstiness=1.0, seed=None):
     if seed is not None:
         np.random.seed(seed)
-    
-    theta = 1 / (arrival_rate * burstiness)
-    inter_arrival_times = np.random.gamma(shape=burstiness, scale=theta, size=num_reqs) * 1e6
 
-    inter_arrival_times = np.array([0] + list(inter_arrival_times)).astype(int)  # Ensure the first arrival time is 0
-    
+    theta = 1 / (arrival_rate * burstiness)
+    inter_arrival_times = np.random.gamma(
+        shape=burstiness, scale=theta, size=num_reqs) * 1e6
+
+    # Ensure the first arrival time is 0
+    inter_arrival_times = np.array([0] + list(inter_arrival_times)).astype(int)
+
     return inter_arrival_times
 
-import json
 
 def add_arrival_delta(json_filepath, arrival_deltas_list, num_requests, output_filepath=None):
     """
@@ -36,7 +38,8 @@ def add_arrival_delta(json_filepath, arrival_deltas_list, num_requests, output_f
         print(f"Error: The file '{json_filepath}' was not found.")
         return
     except json.JSONDecodeError:
-        print(f"Error: Could not decode JSON from '{json_filepath}'. Please check the file format.")
+        print(
+            f"Error: Could not decode JSON from '{json_filepath}'. Please check the file format.")
         return
 
     data = data[:num_requests]
@@ -55,41 +58,7 @@ def add_arrival_delta(json_filepath, arrival_deltas_list, num_requests, output_f
     try:
         with open(output_filepath, 'w') as f:
             json.dump(data, f, indent=2)
-        print(f"Successfully added 'arrival delta' to entries and saved to '{output_filepath}'.")
+        print(
+            f"Successfully added 'arrival delta' to entries and saved to '{output_filepath}'.")
     except IOError as e:
         print(f"Error writing to file '{output_filepath}': {e}")
-
-def main():
-    parser = argparse.ArgumentParser(
-            description="A request arrival times generator for Gamma/Exponential Distribution"
-            )
-
-    parser.add_argument(
-        "--seed",
-        type=int,
-        help="Random generation seed"
-    )
-
-    parser.add_argument(
-        "--input_filename",
-        type=str,
-        help="Input ShareGPT requests filename"
-    )
-
-    parser.add_argument(
-        "--num_requests",
-        type=int,
-        help="Number of requests to process"
-    )
-
-    args = parser.parse_args()
-    rates = [4, 16, 30, 64]
-    for rate in rates:
-        output_filename = f"data/output_tokens_2025-07-07_arrivaldeltas_rr={rate}.json"
-        inter_arrival_times = list(generate_arrival_times(args.num_requests - 1, rate, seed = args.seed))
-        add_arrival_delta(args.input_filename, inter_arrival_times, args.num_requests, output_filename)
-
-
-if __name__=="__main__":
-    main()
-
