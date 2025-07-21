@@ -1,4 +1,5 @@
 # generate a set of n arrival times a r req/sec with a poisson distribution
+import argparse
 import json
 
 import numpy as np
@@ -62,11 +63,7 @@ def add_arrival_delta(json_filepath, arrival_deltas_list, num_requests, output_f
             f"Successfully added 'arrival delta' to entries and saved to '{output_filepath}'.")
     except IOError as e:
         print(f"Error writing to file '{output_filepath}': {e}")
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 
-<<<<<<< HEAD
 def main():
     parser = argparse.ArgumentParser(
             description="A request arrival times generator for Gamma/Exponential Distribution"
@@ -100,9 +97,3 @@ def main():
 
 if __name__=="__main__":
     main()
-
->>>>>>> 008bea0 (Fixed minor issues and log lines)
-=======
->>>>>>> 16fb8de (Added num requests to request_rate_sweep)
-=======
->>>>>>> 10428d0 (Fixed minor formatting issues)
