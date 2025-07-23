@@ -12,7 +12,7 @@ GO_BINARY_NAME = "simulation_worker"
 
 GO_BINARY_PATH = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), GO_BINARY_NAME)
-OUTPUT_DIR = "results/sweep_params"
+DEFAULT_OUTPUT_DIR = "results/sweep_params"
 DATASET_NAME = "sharegpt"
 TEMPERATURE = 0.0
 
@@ -26,7 +26,7 @@ def save_results(filename, output, arguments):
         f.write(output)
 
 
-def run_go_binary(thread_id, arguments, num_requests):
+def run_go_binary(thread_id, arguments, num_requests, output_dir=DEFAULT_OUTPUT_DIR):
     result = subprocess.run(
         [GO_BINARY_PATH] + arguments,
         capture_output=True,
@@ -39,7 +39,7 @@ def run_go_binary(thread_id, arguments, num_requests):
         request_rate = int(float(arguments[2])*1e6)
         long_prefill_token_threshold = int(arguments[26])
         max_num_scheduled_token = int(arguments[8])
-        output_filename = f"{OUTPUT_DIR}/exp_{num_requests}p_{request_rate}r_{TEMPERATURE}t_{max_num_scheduled_token}mbt_{long_prefill_token_threshold}lpt_{DATASET_NAME}.txt"
+        output_filename = f"{output_dir}/exp_{num_requests}p_{request_rate}r_{TEMPERATURE}t_{max_num_scheduled_token}mbt_{long_prefill_token_threshold}lpt_{DATASET_NAME}.txt"
         save_results(output_filename, result.stdout, arguments)
         if result.stderr:
             print(
@@ -69,6 +69,13 @@ if __name__ == "__main__":
         nargs='+',
         default=[400],
         help="Number of requests to process"
+    )
+
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=DEFAULT_OUTPUT_DIR,
+        help="Directory to save output results from simulation"
     )
 
     parser.add_argument(
@@ -121,9 +128,10 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    if os.path.exists(OUTPUT_DIR):
-        shutil.rmtree(OUTPUT_DIR)
-    os.makedirs(OUTPUT_DIR)
+    output_dir = args.output_dir
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
 
     print("--- Starting request rate sweep ---")
 
@@ -175,7 +183,7 @@ if __name__ == "__main__":
         current_args[26] = str(threshold)
 
         tasks.append({"thread_id": thread_id, "args": current_args,
-                     "num_requests": n})
+                     "num_requests": n, "output_dir": output_dir})
         thread_id += 1
 
     threads = []
