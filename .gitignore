@@ -43,6 +43,7 @@ simulation_worker
 
 # results
 results/
+largesweep/
 *.zip
 
 # uv files
@@ -50,5 +51,5 @@ results/
 pyproject.toml
 uv.lock
 .DS_Store
-blackbox_opt.ipynb
+*.ipynb
 *.pyc
