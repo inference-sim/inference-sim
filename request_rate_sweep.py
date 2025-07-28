@@ -127,6 +127,34 @@ if __name__ == "__main__":
         help='An optional list of long-prefill-token-thresholds. Defaults to [128]'
     )
 
+    parser.add_argument(
+        "--total_kv_blocks",
+        type=str,
+        default="94060",
+        help="Total number of KV Blocks available"
+    )
+
+    parser.add_argument(
+        "--horizon",
+        type=str,
+        default="1000000000000",
+        help="Horizon in micosec(ticks) the simulation runs for at max"
+    )
+
+    parser.add_argument(
+        "--max_num_seqs",
+        type=str,
+        default="256",
+        help="Max number of requests in the running queue at a given time"
+    )
+
+    parser.add_argument(
+        "--block_size",
+        type=str,
+        default="16",
+        help="Block size in tokens"
+    )
+
     args = parser.parse_args()
     output_dir = args.output_dir
     if os.path.exists(output_dir):
@@ -141,11 +169,11 @@ if __name__ == "__main__":
     args_template = [
         "run",
         "--rate", "0.000034",
-        "--max-num-running-reqs", "256",
-        "--total-kv-blocks", "94060",
+        "--max-num-running-reqs", args.max_num_seqs,
+        "--total-kv-blocks", args.total_kv_blocks,
         "--max-num-scheduled-tokens", "256",
-        "--block-size-in-tokens", "16",
-        "--horizon", "10000000000",
+        "--block-size-in-tokens", args.block_size,
+        "--horizon", args.horizon,
         "--regression-coeffs", args.regression_coeffs,
         "--requests-file-path", "data/output_tokens_2025-06-30_arrivaldeltas.json",
         "--schedule-time", args.schedule_time,
