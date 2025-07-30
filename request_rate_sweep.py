@@ -137,7 +137,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--horizon",
         type=str,
-        default="1000000000000",
+        default="922337203685477580",
         help="Horizon in micosec(ticks) the simulation runs for at max"
     )
 
