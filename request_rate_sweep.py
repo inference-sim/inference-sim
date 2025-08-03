@@ -218,7 +218,7 @@ if __name__ == "__main__":
     for task in tasks:
         thread = threading.Thread(
             target=run_go_binary,
-            args=(task["thread_id"], task["args"], task["num_requests"])
+            args=(task["thread_id"], task["args"], task["num_requests"], task["output_dir"])
         )
         threads.append(thread)
         thread.start()  # Start the thread
