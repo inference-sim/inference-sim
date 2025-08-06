@@ -9,7 +9,7 @@ def main():
     parser.add_argument(
         "--config_file",
         type=str,
-        default="optimzer_config.yaml",
+        default="optimizer_config.yaml",
         help="Path to the optimizer configuration file."
     )
     parser.add_argument(

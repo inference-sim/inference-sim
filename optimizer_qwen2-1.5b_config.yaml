@@ -1,6 +1,6 @@
-tokens_dir: "data/output_tokens_2000_qwen2-1-5b_tokenized.json"
+tokens_dir: "data/qwen2-1.5b/output_tokens_2000_qwen2-1-5b_tokenized.json"
 sim_dir: "./results/qwen2-1.5b/test/"
-vllm_dir: "../pytools/experiments/profiling/qwen2-1.5b/sweep"
+vllm_dir: "./results/qwen2-1.5b/sweep/"
 
 pbounds:
   sum_decode_tokens: [0, 1]

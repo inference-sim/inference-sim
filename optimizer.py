@@ -410,6 +410,23 @@ class InferenceSimOptimizer:
         import optuna.visualization
         return optuna.visualization.plot_optimization_history(self.study)
     
+    def _make_simulator_coeffs_input(self, sum_decode_tokens, sum_prefill_tokens, 
+                                    num_prefills, step_constant, vllm_overhead):
+        coefficients = [sum_decode_tokens, sum_prefill_tokens, 0, num_prefills, 
+                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        coefficients_str = ','.join(map(str, coefficients))
+
+        command = []
+        command.extend([
+            "--regression_coeffs", f'{coefficients_str}',
+            "--schedule_time", f"{str(int(step_constant))}",
+            "--update_time", f"{str(int(0))}",
+            "--queue_overhead_time", f"{str(int(0))}",
+            "--vllm_overhead_time", f"{str(int(vllm_overhead))}",
+        ])
+        return command
+
+    
     def evaluate(self, config: Optional[Dict] = None, sim_dir: Optional[str] = None) -> float:
         """
         Evaluate the optimized model on test configuration.
@@ -450,12 +467,8 @@ class InferenceSimOptimizer:
         step_constant = best_params['step_constant'] * self.scaling['step_constant']
         vllm_overhead = best_params['vllm_overhead'] * self.scaling['vllm_overhead']
         
-        # Create coefficients array
-        coefficients = [sum_decode_tokens, sum_prefill_tokens, 0, num_prefills, 
-                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        coefficients_str = ','.join(map(str, coefficients))
-        
         # Build command
+        coeffs_command = self._make_simulator_coeffs_input(sum_decode_tokens, sum_prefill_tokens, num_prefills, step_constant, vllm_overhead)
         command = ["python", "request_rate_sweep.py", "--rates"]
         command.extend(list(map(str, test_config["request_rate"])))
         command.append("--long_prefill_token_thresholds")
@@ -466,14 +479,12 @@ class InferenceSimOptimizer:
         command.extend(list(map(str, test_config["num_prompts"])))
         command.extend([
             "--input_filename", f"{self.tokens_dir}",
-            "--regression_coeffs", f'{coefficients_str}',
-            "--schedule_time", f"{str(int(step_constant))}",
-            "--update_time", f"{str(int(0))}",
-            "--queue_overhead_time", f"{str(int(0))}",
-            "--vllm_overhead_time", f"{str(int(vllm_overhead))}",
             "--total_kv_blocks", f"{str(self.kv_blocks)}",
             "--output_dir", test_sim_dir
         ])
+
+        print (coeffs_command)
+        command.extend(coeffs_command)
         
         # Run simulation
         self._run_command(command)
@@ -541,6 +552,12 @@ class InferenceSimOptimizer:
             "scaling": self.scaling,
             "vllm_path": self.vllm_dir
         }
+
+        coeffs_command = self._make_simulator_coeffs_input(result['sum_decode_tokens'], result['sum_prefill_tokens'],
+                                                          result['num_prefills'], result['step_constant'], result['vllm_overhead'])
+
+        coeffs_command_str = ' '.join(coeffs_command)
+        print (f"Best coefficients command for simulator:\n\n{coeffs_command_str}\n")
 
         # Save as JSON (append if file exists, else create new list)
         if os.path.exists(filename):
