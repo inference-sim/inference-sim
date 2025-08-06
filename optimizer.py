@@ -359,7 +359,7 @@ class InferenceSimOptimizer:
         
         # Reset eval score when starting new optimization
         self.eval_score = None
-        
+        self.n_trials = n_trials
         # Create sampler
         if sampler == "implicit_natural_gradient":
             mod = optunahub.load_module("samplers/implicit_natural_gradient")
@@ -496,6 +496,7 @@ class InferenceSimOptimizer:
         print("=" * 60)
         print("EVALUATION RESULTS")
         print("=" * 60)
+        print(f"Evaluating trainig of {self.n_trials} trials")
         print(f"Train Config: {self.train_config}")
         print(f"Test Config: {test_config}")
         print(f"Train Error: {self.train_score}")
@@ -546,8 +547,14 @@ class InferenceSimOptimizer:
             "eval_error": self.eval_score,
             "test_config": self.test_config,
             "train_config": self.train_config,
+            "num_trials": self.n_trials,
+            "pbounds": self.pbounds,
             "scaling": self.scaling,
-            "vllm_path": self.vllm_dir
+            "vllm_path": self.vllm_dir,
+            "tokens_dir": self.tokens_dir,
+            "sim_dir": self.sim_dir,
+            "kv_blocks": self.kv_blocks,
+            "seed": self.seed
         }
 
         coeffs_command = self._make_simulator_coeffs_input(result['sum_decode_tokens'], result['sum_prefill_tokens'],
