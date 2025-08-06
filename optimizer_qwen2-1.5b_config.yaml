@@ -23,12 +23,12 @@ scaling:
   sum_decode_tokensmmaxprefill_tokens: 0.0001
   sum_decode_tokensmnumprefills: 0.0001
   intercept: 0.05
-  step_constant: 50000
+  step_constant: 2000
   vllm_overhead: 6000
 
 train_config:
   num_prompts: [400, 1600]
-  request_rate: [8, 32]
+  request_rate: [8, 32, 64]
   temperature: [0.0]
   max_num_batched_tokens: [256, 1024]
   long_prefill_token_threshold: [16, 1024]
@@ -49,3 +49,4 @@ test_config:
 kv_blocks: 36374
 error_function: "mape"  # or "mse"
 seed: 10
+n_trials: 400
