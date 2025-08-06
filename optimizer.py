@@ -6,6 +6,34 @@ from typing import Dict, Optional, Union
 import os
 import sys
 import json
+import yaml
+
+def parse_optimizer_config(config_file: str):
+    """
+    Parses the optimizer configuration from a YAML file.
+
+    Args:
+        config_file: Path to the YAML configuration file.
+
+    Returns:
+        A dictionary of parameters to be passed to the InferenceSimOptimizer.
+    """
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    return {
+        'pbounds': config.get('pbounds'),
+        'scaling': config.get('scaling'),
+        'tokens_dir': config.get('tokens_dir'),
+        'sim_dir': config.get('sim_dir'),
+        'vllm_dir': config.get('vllm_dir'),
+        'kv_blocks': config.get('kv_blocks'),
+        'error_function': config.get('error_function'),
+        'train_config': config.get('train_config'),
+        'test_config': config.get('test_config'),
+        'seed': config.get('seed', 42)  # Default seed if not specified
+    }
+    
 
 class InferenceSimOptimizer:
     """
@@ -25,7 +53,8 @@ class InferenceSimOptimizer:
         kv_blocks: int = 94060,
         error_function: str = "mape",
         train_config: Optional[Dict] = None,
-        test_config: Optional[Dict] = None
+        test_config: Optional[Dict] = None,
+        seed: int = 42
     ):
         """
         Initialize the InferenceSimOptimizer.
@@ -100,7 +129,7 @@ class InferenceSimOptimizer:
         self.study = None
         self.train_score = None
         self.eval_score = None
-        
+        self.seed = seed
         # Print initialization summary
         self._print_init_summary()
         
@@ -243,6 +272,7 @@ class InferenceSimOptimizer:
         print(f"Error Function: {self.error_function}")
         print(f"Train Config: {self.train_config}")
         print(f"Test Config: {self.test_config}")
+        print(f"Seed: {self.seed}")
         print("=" * 60)
     
     def _get_error(self, sim_values, vllm_values):
@@ -261,7 +291,7 @@ class InferenceSimOptimizer:
             sum_decode_tokens = trial.suggest_float('sum_decode_tokens', *self.pbounds['sum_decode_tokens']) * self.scaling['sum_decode_tokens']
             sum_prefill_tokens = trial.suggest_float('sum_prefill_tokens', *self.pbounds['sum_prefill_tokens']) * self.scaling['sum_prefill_tokens']
             num_prefills = trial.suggest_float('num_prefills', *self.pbounds['num_prefills']) * self.scaling['num_prefills']
-            intercept = trial.suggest_float('intercept', *self.pbounds['intercept']) * self.scaling['intercept']
+            # intercept = trial.suggest_float('intercept', *self.pbounds['intercept']) * self.scaling['intercept']
             step_constant = trial.suggest_float('step_constant', *self.pbounds['step_constant']) * self.scaling['step_constant']
             vllm_overhead = trial.suggest_float('vllm_overhead', *self.pbounds['vllm_overhead']) * self.scaling['vllm_overhead']
             
@@ -275,7 +305,7 @@ class InferenceSimOptimizer:
             coefficients = [sum_decode_tokens, sum_prefill_tokens, 0, num_prefills, 
                           sum_decode_tokenss2, sum_decode_tokensmsumprefill_tokens, 
                           sum_decode_tokensmmaxprefill_tokens, sum_decode_tokensmnumprefills, 
-                          0, 0, 0, 0, 0, 0, intercept]
+                          0, 0, 0, 0, 0, 0, 0]
             coefficients_str = ','.join(map(str, coefficients))
             
             # Build command
@@ -309,7 +339,7 @@ class InferenceSimOptimizer:
         
         return objective
     
-    def optimize(self, n_trials: int = 100, sampler: str = "implicit_natural_gradient", seed: int = 42):
+    def optimize(self, n_trials: int = 100, sampler: str = "implicit_natural_gradient"):
         """
         Run optimization study.
         
@@ -336,7 +366,7 @@ class InferenceSimOptimizer:
         # Create sampler
         if sampler == "implicit_natural_gradient":
             mod = optunahub.load_module("samplers/implicit_natural_gradient")
-            sampler_obj = mod.ImplicitNaturalGradientSampler(seed=seed)
+            sampler_obj = mod.ImplicitNaturalGradientSampler(seed=self.seed)
         else:
             raise ValueError(f"Unknown sampler: {sampler}")
         
@@ -396,7 +426,7 @@ class InferenceSimOptimizer:
         
         # Use provided config or default test config
         test_config = config or self.test_config
-        test_sim_dir = sim_dir or (self.sim_dir + "/test")
+        test_sim_dir = sim_dir or (self.sim_dir)
         
         # Print evaluation information
         print("=" * 60)
@@ -416,13 +446,13 @@ class InferenceSimOptimizer:
         sum_decode_tokens = best_params['sum_decode_tokens'] * self.scaling['sum_decode_tokens']
         sum_prefill_tokens = best_params['sum_prefill_tokens'] * self.scaling['sum_prefill_tokens']
         num_prefills = best_params['num_prefills'] * self.scaling['num_prefills']
-        intercept = best_params['intercept'] * self.scaling['intercept']
+        # intercept = best_params['intercept'] * self.scaling['intercept']
         step_constant = best_params['step_constant'] * self.scaling['step_constant']
         vllm_overhead = best_params['vllm_overhead'] * self.scaling['vllm_overhead']
         
         # Create coefficients array
         coefficients = [sum_decode_tokens, sum_prefill_tokens, 0, num_prefills, 
-                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, intercept]
+                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         coefficients_str = ','.join(map(str, coefficients))
         
         # Build command
@@ -492,7 +522,7 @@ class InferenceSimOptimizer:
             "sum_decode_tokensmsumprefill_tokens": 0,
             "sum_decode_tokensmmaxprefill_tokens": 0,
             "sum_decode_tokensmnumprefills": 0,
-            "intercept": best_params['intercept'] * self.scaling['intercept'],
+            "intercept": 0,
             "step_constant": best_params['step_constant'] * self.scaling['step_constant'],
             "vllm_overhead": best_params['vllm_overhead'] * self.scaling['vllm_overhead'],
             "train_error": self.train_score,
