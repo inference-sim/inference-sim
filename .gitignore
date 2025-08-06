@@ -36,7 +36,7 @@ __pycache__/*
 
 # data files
 *.json
-*.txt
+data/
 
 # binaries
 simulation_worker
@@ -48,7 +48,6 @@ largesweep/
 
 # uv files
 .python-version
-pyproject.toml
 uv.lock
 .DS_Store
 *.ipynb

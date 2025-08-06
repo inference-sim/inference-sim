@@ -1,0 +1,52 @@
+tokens_dir: "data/qwen2-1.5b/output_tokens_2000_qwen2-1-5b_tokenized.json"
+sim_dir: "./results/qwen2-1.5b/test/"
+vllm_dir: "./results/qwen2-1.5b/sweep/"
+
+pbounds:
+  sum_decode_tokens: [0, 1]
+  sum_prefill_tokens: [0, 1]
+  num_prefills: [0, 1]
+  sum_decode_tokenss2: [0, 1]
+  sum_decode_tokensmsumprefill_tokens: [0, 1]
+  sum_decode_tokensmmaxprefill_tokens: [0, 1]
+  sum_decode_tokensmnumprefills: [0, 1]
+  intercept: [0, 1]
+  step_constant: [0, 1]
+  vllm_overhead: [0, 1]
+
+scaling:
+  sum_decode_tokens: 0.0001
+  sum_prefill_tokens: 0.0001
+  num_prefills: 0.0001
+  sum_decode_tokenss2: 0.0001
+  sum_decode_tokensmsumprefill_tokens: 0.0001
+  sum_decode_tokensmmaxprefill_tokens: 0.0001
+  sum_decode_tokensmnumprefills: 0.0001
+  intercept: 0.05
+  step_constant: 2000
+  vllm_overhead: 6000
+
+train_config:
+  num_prompts: [400, 1600]
+  request_rate: [8, 32, 64]
+  temperature: [0.0]
+  max_num_batched_tokens: [256, 1024]
+  long_prefill_token_threshold: [16, 1024]
+  datasets:
+    - name: sharegpt
+      path: ShareGPT_V3_unfiltered_cleaned_split.json
+
+test_config:
+  num_prompts: [100, 400, 800, 1600]
+  request_rate: [4, 8, 16, 32, 64]
+  temperature: [0.0]
+  max_num_batched_tokens: [256, 1024, 8192]
+  long_prefill_token_threshold: [16, 256, 1024]
+  datasets:
+    - name: sharegpt
+      path: ShareGPT_V3_unfiltered_cleaned_split.json
+
+kv_blocks: 36374
+error_function: "mape"  # or "mse"
+seed: 10
+n_trials: 400
