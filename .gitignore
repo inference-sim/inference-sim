@@ -36,7 +36,7 @@ __pycache__/*
 
 # data files
 *.json
-*.txt
+data/
 
 # binaries
 simulation_worker
