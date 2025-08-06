@@ -434,7 +434,7 @@ class InferenceSimOptimizer:
         print("=" * 60)
         print(f"Train Config: {self.train_config}")
         print(f"Test Config: {test_config}")
-        print(f"Train Score: {self.train_score}")
+        print(f"Train Error: {self.train_score}")
         print(f"vLLM Directory: {self.vllm_dir}")
         print(f"Simulation Directory (eval): {test_sim_dir}")
         print("=" * 60)
@@ -485,7 +485,16 @@ class InferenceSimOptimizer:
         # Store eval score
         self.eval_score = error
         
-        print(f"Evaluation Score: {error}")
+        print("=" * 60)
+        print("EVALUATION RESULTS")
+        print("=" * 60)
+        print(f"Train Config: {self.train_config}")
+        print(f"Test Config: {test_config}")
+        print(f"Train Error: {self.train_score}")
+        print(f"Test Error: {error}")
+        print(f"vLLM Directory: {self.vllm_dir}")
+        print(f"Simulation Directory (eval): {test_sim_dir}")
+        print("=" * 60)
         
         return error
     
