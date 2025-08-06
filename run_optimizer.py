@@ -15,8 +15,8 @@ def main():
     parser.add_argument(
         "--n_trials",
         type=int,
-        default=100,
-        help="Number of optimization trials to run."
+        default=None,
+        help="Optional: Number of optimization trials to run. If not set, uses default from config."
     )
     parser.add_argument(
         "--save_study",
@@ -32,7 +32,10 @@ def main():
     optimizer = InferenceSimOptimizer(**config)
 
     # Run optimization
-    optimizer.optimize(n_trials=args.n_trials)
+    if args.n_trials is not None:
+        optimizer.optimize(n_trials=args.n_trials)
+    else:
+        optimizer.optimize()
 
     # Evaluate the optimizer
     optimizer.evaluate()

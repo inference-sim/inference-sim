@@ -32,7 +32,8 @@ def parse_optimizer_config(config_file: str):
         'error_function': config.get('error_function'),
         'train_config': config.get('train_config'),
         'test_config': config.get('test_config'),
-        'seed': config.get('seed', 42)  # Default seed if not specified
+        'seed': config.get('seed', 42),  # Default seed if not specified
+        'n_trials': config.get('n_trials', 100)  # Default number of trials if not specified
     }
     
 
@@ -55,7 +56,8 @@ class InferenceSimOptimizer:
         error_function: str = "mape",
         train_config: Optional[Dict] = None,
         test_config: Optional[Dict] = None,
-        seed: int = 42
+        seed: int = 42,
+        n_trials: int = 100
     ):
         """
         Initialize the InferenceSimOptimizer.
@@ -131,6 +133,7 @@ class InferenceSimOptimizer:
         self.train_score = None
         self.eval_score = None
         self.seed = seed
+        self.n_trials = n_trials
         # Print initialization summary
         self._print_init_summary()
         
@@ -336,16 +339,23 @@ class InferenceSimOptimizer:
         
         return objective
     
-    def optimize(self, n_trials: int = 100, sampler: str = "implicit_natural_gradient"):
+    def optimize(self, n_trials: Optional[int] = None, sampler: str = "implicit_natural_gradient"):
         """
         Run optimization study.
         
         Args:
-            n_trials: Number of optimization trials to run, defaults to 100
+            n_trials: Number of optimization trials to run, defaults to 100, if not specified will use the default from config
             sampler: Sampler to use for optimization, defaults to "implicit_natural_gradient"
             seed: Random seed for reproducibility, defaults to 42
         """
         # Print optimization start summary
+        if n_trials is None:
+            n_trials = self.n_trials
+        else:
+            self.n_trials = n_trials
+        if n_trials <= 0:
+            raise ValueError("Number of trials must be a positive integer.")
+
         print("=" * 60)
         print("STARTING OPTIMIZATION")
         print("=" * 60)
@@ -359,7 +369,6 @@ class InferenceSimOptimizer:
         
         # Reset eval score when starting new optimization
         self.eval_score = None
-        self.n_trials = n_trials
         # Create sampler
         if sampler == "implicit_natural_gradient":
             mod = optunahub.load_module("samplers/implicit_natural_gradient")
