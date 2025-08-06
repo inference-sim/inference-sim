@@ -288,7 +288,7 @@ class InferenceSimOptimizer:
             sum_decode_tokens = trial.suggest_float('sum_decode_tokens', *self.pbounds['sum_decode_tokens']) * self.scaling['sum_decode_tokens']
             sum_prefill_tokens = trial.suggest_float('sum_prefill_tokens', *self.pbounds['sum_prefill_tokens']) * self.scaling['sum_prefill_tokens']
             num_prefills = trial.suggest_float('num_prefills', *self.pbounds['num_prefills']) * self.scaling['num_prefills']
-            # intercept = trial.suggest_float('intercept', *self.pbounds['intercept']) * self.scaling['intercept']
+            intercept = trial.suggest_float('intercept', *self.pbounds['intercept']) * self.scaling['intercept']
             step_constant = trial.suggest_float('step_constant', *self.pbounds['step_constant']) * self.scaling['step_constant']
             vllm_overhead = trial.suggest_float('vllm_overhead', *self.pbounds['vllm_overhead']) * self.scaling['vllm_overhead']
             
@@ -460,7 +460,7 @@ class InferenceSimOptimizer:
         sum_decode_tokens = best_params['sum_decode_tokens'] * self.scaling['sum_decode_tokens']
         sum_prefill_tokens = best_params['sum_prefill_tokens'] * self.scaling['sum_prefill_tokens']
         num_prefills = best_params['num_prefills'] * self.scaling['num_prefills']
-        # intercept = best_params['intercept'] * self.scaling['intercept']
+        intercept = best_params['intercept'] * self.scaling['intercept']
         step_constant = best_params['step_constant'] * self.scaling['step_constant']
         vllm_overhead = best_params['vllm_overhead'] * self.scaling['vllm_overhead']
         
@@ -539,7 +539,7 @@ class InferenceSimOptimizer:
             "sum_decode_tokensmsumprefill_tokens": 0,
             "sum_decode_tokensmmaxprefill_tokens": 0,
             "sum_decode_tokensmnumprefills": 0,
-            "intercept": 0,
+            "intercept": best_params['intercept'] * self.scaling['intercept'],
             "step_constant": best_params['step_constant'] * self.scaling['step_constant'],
             "vllm_overhead": best_params['vllm_overhead'] * self.scaling['vllm_overhead'],
             "train_error": self.train_score,
