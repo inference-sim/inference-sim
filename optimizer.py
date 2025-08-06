@@ -4,9 +4,10 @@ import optuna
 import optunahub
 from typing import Dict, Optional, Union
 import os
-import sys
 import json
 import yaml
+from utils import find_matching_experiments, parse_sim_results, parse_vllm_results
+        
 
 def parse_optimizer_config(config_file: str):
     """
@@ -152,10 +153,6 @@ class InferenceSimOptimizer:
         # This would need to import from your existing pytools.experiments.utils
         # For now, return placeholder values
         # Ensure pytools is in the path
-        parent_dir = os.path.dirname(os.getcwd())
-        sys.path.insert(0, parent_dir)
-
-        from pytools.experiments.utils import find_matching_experiments, parse_sim_results, parse_vllm_results
         
         matching_pairs = find_matching_experiments(sim_dir, vllm_dir, sweep_configs)
         
