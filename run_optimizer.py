@@ -35,7 +35,7 @@ def main():
     if args.n_trials is not None:
         optimizer.optimize(n_trials=args.n_trials)
     else:
-        optimizer.optimize()
+        optimizer.optimize(n_trials=optimizer.n_trials)
 
     # Evaluate the optimizer
     optimizer.evaluate()
