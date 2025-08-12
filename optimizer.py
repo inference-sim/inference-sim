@@ -469,7 +469,7 @@ class InferenceSimOptimizer:
         sum_decode_tokens = best_params['sum_decode_tokens'] * self.scaling['sum_decode_tokens']
         sum_prefill_tokens = best_params['sum_prefill_tokens'] * self.scaling['sum_prefill_tokens']
         num_prefills = best_params['num_prefills'] * self.scaling['num_prefills']
-        intercept = best_params['intercept'] * self.scaling['intercept']
+        # intercept = best_params['intercept'] * self.scaling['intercept']
         step_constant = best_params['step_constant'] * self.scaling['step_constant']
         vllm_overhead = best_params['vllm_overhead'] * self.scaling['vllm_overhead']
         
@@ -549,7 +549,7 @@ class InferenceSimOptimizer:
             "sum_decode_tokensmsumprefill_tokens": 0,
             "sum_decode_tokensmmaxprefill_tokens": 0,
             "sum_decode_tokensmnumprefills": 0,
-            "intercept": best_params['intercept'] * self.scaling['intercept'],
+            "intercept": 0,
             "step_constant": best_params['step_constant'] * self.scaling['step_constant'],
             "vllm_overhead": best_params['vllm_overhead'] * self.scaling['vllm_overhead'],
             "train_error": self.train_score,
