@@ -532,10 +532,6 @@ class InferenceSimOptimizer:
             print("No evaluation score available. Running evaluation first...")
             self.evaluate()
 
-        # Default filename
-        if filename is None:
-            filename = "./results/optimization_results.json"
-
         # Ensure directory exists
         os.makedirs(os.path.dirname(filename), exist_ok=True)
 
