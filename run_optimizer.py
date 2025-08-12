@@ -19,10 +19,10 @@ def main():
         help="Optional: Number of optimization trials to run. If not set, uses default from config."
     )
     parser.add_argument(
-        "--save_study",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Save the study results to a file."
+        "--save_study_file",
+        type=str,
+        default="./results/optimization_results.json",
+        help="Save the study results to this file."
     )
     
     args = parser.parse_args()
@@ -41,8 +41,7 @@ def main():
     optimizer.evaluate()
 
     # Save study results if requested
-    if args.save_study:
-        optimizer.save_study()
+    optimizer.save_study(args.save_study_file)
 
 if __name__ == "__main__":
     main()
