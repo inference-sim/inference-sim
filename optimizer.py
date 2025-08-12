@@ -431,48 +431,8 @@ class InferenceSimOptimizer:
             "--vllm_overhead_time", f"{str(int(vllm_overhead))}",
         ])
         return command
-
     
-    def evaluate(self, config: Optional[Dict] = None, sim_dir: Optional[str] = None) -> float:
-        """
-        Evaluate the optimized model on test configuration.
-        
-        Args:
-            config: Test configuration to use (defaults to self.test_config)
-            sim_dir: Simulation directory to use (defaults to self.sim_dir + "/test")
-            
-        Returns:
-            Error value on test set
-        """
-        if self.study is None:
-            raise ValueError("No study available. Run optimize() first.")
-        
-        # Use provided config or default test config
-        test_config = config or self.test_config
-        test_sim_dir = sim_dir or (self.sim_dir)
-        
-        # Print evaluation information
-        print("=" * 60)
-        print("EVALUATION DETAILS")
-        print("=" * 60)
-        print(f"Train Config: {self.train_config}")
-        print(f"Test Config: {test_config}")
-        print(f"Train Error: {self.train_score}")
-        print(f"vLLM Directory: {self.vllm_dir}")
-        print(f"Simulation Directory (eval): {test_sim_dir}")
-        print("=" * 60)
-        
-        # Get best parameters from study
-        best_params = self.study.best_params
-        
-        # Extract scaled parameters
-        sum_decode_tokens = best_params['sum_decode_tokens'] * self.scaling['sum_decode_tokens']
-        sum_prefill_tokens = best_params['sum_prefill_tokens'] * self.scaling['sum_prefill_tokens']
-        num_prefills = best_params['num_prefills'] * self.scaling['num_prefills']
-        # intercept = best_params['intercept'] * self.scaling['intercept']
-        step_constant = best_params['step_constant'] * self.scaling['step_constant']
-        vllm_overhead = best_params['vllm_overhead'] * self.scaling['vllm_overhead']
-        
+    def _run_with_coeffs(self, test_config, test_sim_dir, sum_decode_tokens, sum_prefill_tokens, num_prefills, step_constant, vllm_overhead):
         # Build command
         coeffs_command = self._make_simulator_coeffs_input(sum_decode_tokens, sum_prefill_tokens, num_prefills, step_constant, vllm_overhead)
         command = ["python", "request_rate_sweep.py", "--rates"]
@@ -494,6 +454,42 @@ class InferenceSimOptimizer:
         
         # Run simulation
         self._run_command(command)
+    
+    def evaluate(self, config: Optional[Dict] = None, sim_dir: Optional[str] = None, best_params: Optional[Dict] = None) -> float:
+        """
+        Evaluate the optimized model on test configuration.
+        
+        Args:
+            config: Test configuration to use (defaults to self.test_config)
+            sim_dir: Simulation directory to use (defaults to self.sim_dir + "/test")
+            
+        Returns:
+            Error value on test set
+        """
+        if self.study is None and best_params is None:
+            raise ValueError("No parameters available. Run optimize() first.")
+        
+        # Use provided config or default test config
+        test_config = config or self.test_config
+        test_sim_dir = sim_dir or (self.sim_dir)
+        
+        # Print evaluation information
+        print("=" * 60)
+        print("EVALUATION DETAILS")
+        print("=" * 60)
+        print(f"Train Config: {self.train_config}")
+        print(f"Test Config: {test_config}")
+        print(f"Train Error: {self.train_score}")
+        print(f"vLLM Directory: {self.vllm_dir}")
+        print(f"Simulation Directory (eval): {test_sim_dir}")
+        print("=" * 60)
+        
+        sum_decode_tokens = best_params["sum_decode_tokens"]
+        sum_prefill_tokens = best_params["sum_prefill_tokens"]
+        num_prefills = best_params["num_prefills"]
+        step_constant = best_params["step_constant"]
+        vllm_overhead = best_params["vllm_overhead"]
+        self._run_with_coeffs(test_config, test_sim_dir, sum_decode_tokens, sum_prefill_tokens, num_prefills, step_constant, vllm_overhead)
         
         # Parse results and calculate error
         sim_values, vllm_values = self._parse_outputs_from_file(test_sim_dir, self.vllm_dir, test_config)
@@ -530,7 +526,7 @@ class InferenceSimOptimizer:
         # If no evaluation has been done, run it first
         if self.eval_score is None:
             print("No evaluation score available. Running evaluation first...")
-            self.evaluate()
+            self.evaluate(self.study.best_params)
 
         # Ensure directory exists
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -538,16 +534,16 @@ class InferenceSimOptimizer:
         # Get best parameters with scaling applied
         best_params = self.study.best_params
         result = {
-            "sum_decode_tokens": best_params['sum_decode_tokens'] * self.scaling['sum_decode_tokens'],
-            "sum_prefill_tokens": best_params['sum_prefill_tokens'] * self.scaling['sum_prefill_tokens'],
-            "num_prefills": best_params['num_prefills'] * self.scaling['num_prefills'],
+            "sum_decode_tokens": best_params['sum_decode_tokens'],
+            "sum_prefill_tokens": best_params['sum_prefill_tokens'],
+            "num_prefills": best_params['num_prefills'],
             "sum_decode_tokenss2": 0,
             "sum_decode_tokensmsumprefill_tokens": 0,
             "sum_decode_tokensmmaxprefill_tokens": 0,
             "sum_decode_tokensmnumprefills": 0,
             "intercept": 0,
-            "step_constant": best_params['step_constant'] * self.scaling['step_constant'],
-            "vllm_overhead": best_params['vllm_overhead'] * self.scaling['vllm_overhead'],
+            "step_constant": best_params['step_constant'],
+            "vllm_overhead": best_params['vllm_overhead'],
             "train_error": self.train_score,
             "eval_error": self.eval_score,
             "test_config": self.test_config,
