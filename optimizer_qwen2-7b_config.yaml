@@ -1,6 +1,6 @@
-tokens_dir: "data/qwen2.5-0.5b/output_tokens_2025-06-30_tokenized.json"
-sim_dir: "./results/qwen2.5-0.5b/test/"
-vllm_dir: "./results/qwen2.5-0.5b/sweep/"
+tokens_dir: "data/qwen2-7b/output_tokens_1000_qwen-7b_tokenized.json"
+sim_dir: "./results/qwen2-7b/test/"
+vllm_dir: "./results/qwen2-7b/sweep/"
 
 pbounds:
   sum_decode_tokens: [0, 1]
