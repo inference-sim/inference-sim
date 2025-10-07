@@ -28,11 +28,12 @@ func (eq *EventQueue) Pop() any {
 }
 
 type RegressionFeatures struct {
-	NumDecodeRequests  int `json:"num_decode_requests"`
-	NumPrefillRequests int `json:"num_prefill_requests"`
-	TotalDecodeTokens  int `json:"total_decode_tokens"`
-	TotalPrefillTokens int `json:"total_prefill_tokens"`
-	MaxPrefillTokens   int `json:"max_prefill_tokens"`
+	TotalCacheMissTokens int `json:"num_cache_miss_tokens"`
+	TotalDecodeTokens    int `json:"total_decode_tokens"`
+	NumDecodeRequests    int `json:"num_decode_requests"`
+	NumPrefillRequests   int `json:"num_prefill_requests"`
+	TotalPrefillTokens   int `json:"total_prefill_tokens"`
+	MaxPrefillTokens     int `json:"max_prefill_tokens"`
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -168,7 +169,6 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 func (sim *Simulator) getQueuedTime() int64 {
 	// ToDo: incorporate alpha_1 here
 	return int64(10)
-
 }
 
 // Scheduling processing time estimation (step has been doing some book keeping and processing before scheduling the request)
@@ -193,22 +193,10 @@ func (sim *Simulator) getPreemptionProcessingTime() int64 {
 // Estimate Step Advance Time using regression features and coefficients
 func (sim *Simulator) getStepTime() int64 {
 	var totalStepTime float64
-	totalStepTime += sim.RegressionCoeffs[0] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
-	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalPrefillTokens)
-	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.MaxPrefillTokens)
-	totalStepTime += sim.RegressionCoeffs[3] * float64(sim.RunningBatchFeatures.NumPrefillRequests)
-	totalStepTime += sim.RegressionCoeffs[4] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.TotalDecodeTokens)
-	totalStepTime += sim.RegressionCoeffs[5] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.TotalPrefillTokens)
-	totalStepTime += sim.RegressionCoeffs[6] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*int(sim.RunningBatchFeatures.MaxPrefillTokens))
-	totalStepTime += sim.RegressionCoeffs[7] * float64(sim.RunningBatchFeatures.TotalDecodeTokens*sim.RunningBatchFeatures.NumPrefillRequests)
-	totalStepTime += sim.RegressionCoeffs[8] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*sim.RunningBatchFeatures.TotalPrefillTokens)
-	totalStepTime += sim.RegressionCoeffs[9] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*int(sim.RunningBatchFeatures.MaxPrefillTokens))
-	totalStepTime += sim.RegressionCoeffs[10] * float64(sim.RunningBatchFeatures.TotalPrefillTokens*int(sim.RunningBatchFeatures.NumPrefillRequests))
-	totalStepTime += sim.RegressionCoeffs[11] * float64(int(sim.RunningBatchFeatures.MaxPrefillTokens)*int(sim.RunningBatchFeatures.MaxPrefillTokens))
-	totalStepTime += sim.RegressionCoeffs[12] * float64(int(sim.RunningBatchFeatures.MaxPrefillTokens)*int(sim.RunningBatchFeatures.NumPrefillRequests))
-	totalStepTime += sim.RegressionCoeffs[13] * float64(sim.RunningBatchFeatures.NumPrefillRequests*int(sim.RunningBatchFeatures.NumPrefillRequests))
-	totalStepTime += (sim.RegressionCoeffs[14]) // intercept
-	return int64(totalStepTime * 1e6)           // convert from seconds to microseconds, need to verify with Satyam
+	totalStepTime += sim.RegressionCoeffs[0]
+	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalCacheMissTokens)
+	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
+	return int64(totalStepTime * 1e6) // convert from seconds to microseconds, need to verify with Satyam
 }
 
 func (sim *Simulator) makeRunningBatch(now int64) {
@@ -221,6 +209,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 
 	// First run requests in the RunningBatch.
 	// Requests could be in either prefill or decode.
+	// ToDo: while True; // last item in running batch
 	for _, req := range sim.RunningBatch.Requests {
 		if tokenBudget <= 0 {
 			// Simulator has run out of token budget. Cannot run any more requests in this Step.
@@ -237,7 +226,9 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 				numNewTokens = sim.LongPrefillTokenThreshold
 			}
 			numNewTokens = min(numNewTokens, tokenBudget)
+
 			if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int{}); !ok {
+				// ToDo: add while true here, because we will keep preempting until we are good
 				// Could not allocate (e.g., no free blocks)
 				logrus.Warnf("[Preemption]")
 				preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
@@ -249,9 +240,12 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 				})
 
 				// sim.KVCache.removeFromFreeList() // ToDo
+				sim.WaitQ.queue = append(sim.WaitQ.queue, preemptedRequest) // preempted requests go back to waiting
+
 				continue // ToDo: pre-empt this request
 			}
 			tokenBudget -= numNewTokens
+			sim.RunningBatchFeatures.TotalCacheMissTokens += numNewTokens
 			sim.RunningBatchFeatures.NumPrefillRequests += 1
 			sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
 			sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
@@ -327,6 +321,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		// update prefill-related features in RunningBatchFeatures
 		sim.RunningBatchFeatures.NumPrefillRequests += 1
 		sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
+		sim.RunningBatchFeatures.TotalCacheMissTokens += numNewTokens
 		sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
 		sim.ReqNumComputedTokens[next.ID] = numNewTokens + len(cachedBlocks)*sim.KVCache.BlockSizeTokens
 	}
@@ -340,11 +335,8 @@ func (sim *Simulator) Step(now int64) {
 
 	// refreshing RunningBatchFeatures for current Step
 	sim.RunningBatchFeatures = RegressionFeatures{
-		NumDecodeRequests:  0,
-		NumPrefillRequests: 0,
-		TotalDecodeTokens:  0,
-		TotalPrefillTokens: 0,
-		MaxPrefillTokens:   0,
+		TotalDecodeTokens:    0,
+		TotalCacheMissTokens: 0,
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch(now)
