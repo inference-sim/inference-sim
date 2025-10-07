@@ -27,15 +27,12 @@ func (e *ArrivalEvent) Timestamp() int64 {
 func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
-	// Enqueue the arriving request into the waiting queue
-	sim.EnqueueRequest(e.Request)
+	// Just call queued event always
+	queued_delay := sim.getQueuedTime() // coming from alpha
+	sim.Schedule(&QueuedEvent{
+		time: e.time + queued_delay,
+	})
 
-	// If there's no Step scheduled, trigger one immediately
-	if sim.StepEvent == nil {
-		sim.Schedule(&StepEvent{
-			time: e.time,
-		})
-	}
 }
 
 // QueuedEvent represents the queue of a new inference request into the system.
@@ -52,6 +49,16 @@ func (e *QueuedEvent) Timestamp() int64 {
 // Execute does nothing
 func (e *QueuedEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Queued: %s at %d ticks", e.Request.ID, e.time)
+
+	// Enqueue the arriving request into the waiting queue
+	sim.EnqueueRequest(e.Request)
+
+	// If there's no Step scheduled, trigger one immediately
+	if sim.StepEvent == nil {
+		sim.Schedule(&StepEvent{
+			time: e.time,
+		})
+	}
 }
 
 // ScheduledEvent represents the scheduling of a new inference request in the system.

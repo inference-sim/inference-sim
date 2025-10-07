@@ -62,10 +62,6 @@ type Simulator struct {
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
 	RunningBatchFeatures      RegressionFeatures
 	Requests                  []*Request
-	ScheduleTime              int64
-	UpdateTime                int64
-	QueueOverheadTime         int64
-	VLLMOverheadTime          int64
 	LongPrefillTokenThreshold int
 	StepEvent                 Event
 	// map of request IDs to total num computed tokens (including cached tokens)
@@ -73,7 +69,7 @@ type Simulator struct {
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int, longPrefillTokenThreshold int,
-	regressionCoeffs []float64, rate float64, requests []*Request, scheduleTime int64, updateTime int64, queueOverheadTime int64, vLLMOverheadTime int64) *Simulator {
+	regressionCoeffs []float64, rate float64, requests []*Request) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -87,10 +83,6 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		RegressionCoeffs:          regressionCoeffs,
 		RunningBatchFeatures:      RegressionFeatures{},
 		Requests:                  requests,
-		ScheduleTime:              scheduleTime,
-		UpdateTime:                updateTime,
-		QueueOverheadTime:         queueOverheadTime,
-		VLLMOverheadTime:          vLLMOverheadTime,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 		StepEvent:                 nil,
 		ReqNumComputedTokens:      make(map[string]int),
@@ -172,6 +164,32 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 	}
 }
 
+// Queueing processing time estimation
+func (sim *Simulator) getQueuedTime() int64 {
+	// ToDo: incorporate alpha_1 here
+	return int64(10)
+
+}
+
+// Scheduling processing time estimation (step has been doing some book keeping and processing before scheduling the request)
+func (sim *Simulator) getSchedulingProcessingTime() int64 {
+	// ToDo: incorporate some alphas here or constant?
+	return int64(0)
+
+}
+
+// Request Left processing time estimation
+func (sim *Simulator) getRequestLeftProcessingTime() int64 {
+	// ToDo: incorporate some alphas here
+	return int64(10)
+}
+
+// Request Preemption processing time estimation
+func (sim *Simulator) getPreemptionProcessingTime() int64 {
+	// ToDo: incorporate some alphas here or maybe constat
+	return int64(2)
+}
+
 // Estimate Step Advance Time using regression features and coefficients
 func (sim *Simulator) getStepTime() int64 {
 	var totalStepTime float64
@@ -193,7 +211,7 @@ func (sim *Simulator) getStepTime() int64 {
 	return int64(totalStepTime * 1e6)           // convert from seconds to microseconds, need to verify with Satyam
 }
 
-func (sim *Simulator) makeRunningBatch() {
+func (sim *Simulator) makeRunningBatch(now int64) {
 	if sim.RunningBatch == nil {
 		sim.RunningBatch = &Batch{}
 	}
@@ -222,6 +240,15 @@ func (sim *Simulator) makeRunningBatch() {
 			if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int{}); !ok {
 				// Could not allocate (e.g., no free blocks)
 				logrus.Warnf("[Preemption]")
+				preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
+				preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
+				sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
+				sim.Schedule(&PreemptionEvent{
+					time:    now + preemptionDelay,
+					Request: preemptedRequest,
+				})
+
+				// sim.KVCache.removeFromFreeList() // ToDo
 				continue // ToDo: pre-empt this request
 			}
 			tokenBudget -= numNewTokens
@@ -285,6 +312,13 @@ func (sim *Simulator) makeRunningBatch() {
 		sim.WaitQ.queue = sim.WaitQ.queue[1:]
 		// make it part of the running batch
 		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
+		// create a scheduledevent for the request that just went into running batch
+		scheduledDelay := sim.getSchedulingProcessingTime() // ToDo: there are some minor processing time above - model it or constant?
+		sim.Schedule(&ScheduledEvent{
+			time:    now + scheduledDelay,
+			Request: next,
+		})
+
 		// decrement the token budget
 		tokenBudget = tokenBudget - numNewTokens
 		// change the state of the request from queued to running
@@ -313,7 +347,7 @@ func (sim *Simulator) Step(now int64) {
 		MaxPrefillTokens:   0,
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
-	sim.makeRunningBatch()
+	sim.makeRunningBatch(now)
 
 	// save waitQ length for analysis
 	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, len(sim.WaitQ.queue))
@@ -338,7 +372,7 @@ func (sim *Simulator) Step(now int64) {
 		}
 		if req.ProgressIndex == len(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
-			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime + sim.QueueOverheadTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
+			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime                             // in microsec
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime) / 1000 // in ms
 		}
@@ -370,12 +404,19 @@ func (sim *Simulator) Step(now int64) {
 			}
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
-			lat := now + currStepAdvance - req.ArrivalTime + sim.QueueOverheadTime + sim.VLLMOverheadTime + sim.ScheduleTime + sim.UpdateTime
+			// trigger the RequestLeftEvent
+			requestLeftDelay := sim.getRequestLeftProcessingTime() // alpha params to estimate
+			sim.Schedule(&RequestLeftEvent{
+				time:    now + currStepAdvance + requestLeftDelay,
+				Request: req,
+			})
+
+			lat := now + currStepAdvance - req.ArrivalTime
 			sim.Metrics.RequestE2Es[req.ID] = float64(lat) / 1000 // in ms
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, lat+req.ArrivalTime)
 			sim.Metrics.TotalLatency += lat
 			if len(req.OutputTokens) > 0 {
-				reqTotalOutput := lat - req.FirstTokenTime + sim.VLLMOverheadTime
+				reqTotalOutput := lat - req.FirstTokenTime
 				sim.Metrics.TPOTSum += reqTotalOutput // in microsec
 				// TPOT calculation in vLLM excludes the first generated token, calculated in ms
 				sim.Metrics.RequestTPOTs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1)) / 1000
@@ -391,7 +432,9 @@ func (sim *Simulator) Step(now int64) {
 	// push the next step event as needed
 	if len(remaining) > 0 {
 		sim.RunningBatch.Requests = remaining
-		pbe := StepEvent{time: now + currStepAdvance + sim.QueueOverheadTime + sim.ScheduleTime + sim.UpdateTime}
+		// estimate queue overhead from LR (sim.features)
+		//
+		pbe := StepEvent{time: now + currStepAdvance}
 		sim.Schedule(&pbe)
 		sim.StepEvent = &pbe
 	} else {
