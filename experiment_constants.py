@@ -1,0 +1,57 @@
+CONTEXT_LENGTH = 7000 # for Qwen32B to fit
+MAX_NUM_BATCHED_TOKENS = 4096
+BLOCK_SIZE = 16
+GPU_MEM_UTIL = 0.9
+MODES = ["train", "test"]
+MAX_NUM_SEQS = 4096
+SEED = 42
+GPU_TYPE = "NVIDIA-H100-80GB-HBM3"
+GPU_MEMORY_MIN = 50000
+NAMESPACE = "blis"
+CHUNK_SIZES = [256, 2048]
+NUM_PROMPTS = 2000
+REQUEST_RATES = [5]
+PREFIX_HIT_RATIOS = [0.3, 0.6]
+DATASET_PATH = "ShareGPT_V3_unfiltered_cleaned_split.json"
+MODEL = "Qwen/Qwen3-14B"
+SPECS = ["LL"]
+TOTAL_KV_BLOCKS = {
+    "Qwen3-14B": 14508,
+    "Qwen2_5-7B": 56990
+}
+QUEUING_DELAYS = {
+    "Qwen3-14B": 5612,
+    "Qwen2_5-7B": 56990
+}
+FINISHED_DELAYS = {
+    "Qwen3-14B": 6194,
+    "Qwen2_5-7B": 726
+}
+LL_SPECS = {
+    "TYPE": "LL",
+    "INPUT_LEN_MIN": 2,
+    "INPUT_LEN_MAX": 512,
+    "OUTPUT_LEN_MIN": 1,
+    "OUTPUT_LEN_MAX": 10
+}
+LH_SPECS = {
+    "TYPE": "LH",
+    "INPUT_LEN_MIN": 2,
+    "INPUT_LEN_MAX": 512,
+    "OUTPUT_LEN_MIN": 100,
+    "OUTPUT_LEN_MAX": 2000
+}
+HL_SPECS = {
+    "TYPE": "HL",
+    "INPUT_LEN_MIN": 512,
+    "INPUT_LEN_MAX": 8000,
+    "OUTPUT_LEN_MIN": 1,
+    "OUTPUT_LEN_MAX": 10
+}
+HH_SPECS = {
+    "TYPE": "HH",
+    "INPUT_LEN_MIN": 512,
+    "INPUT_LEN_MAX": 8000,
+    "OUTPUT_LEN_MIN": 100,
+    "OUTPUT_LEN_MAX": 2000
+}

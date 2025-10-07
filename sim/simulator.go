@@ -64,13 +64,15 @@ type Simulator struct {
 	RunningBatchFeatures      RegressionFeatures
 	Requests                  []*Request
 	LongPrefillTokenThreshold int
+	QueuingDelay              int
+	FinishedDelay             int
 	StepEvent                 Event
 	// map of request IDs to total num computed tokens (including cached tokens)
 	ReqNumComputedTokens map[string]int
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int, longPrefillTokenThreshold int,
-	regressionCoeffs []float64, rate float64, requests []*Request) *Simulator {
+	queuingDelay int, finishedDelay int, regressionCoeffs []float64, rate float64, requests []*Request) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -85,6 +87,8 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		RunningBatchFeatures:      RegressionFeatures{},
 		Requests:                  requests,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
+		QueuingDelay:              queuingDelay,
+		FinishedDelay:             finishedDelay,
 		StepEvent:                 nil,
 		ReqNumComputedTokens:      make(map[string]int),
 	}
@@ -167,7 +171,7 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 // Queueing processing time estimation
 func (sim *Simulator) getQueuedTime() int64 {
 	// ToDo: incorporate alpha_1 here
-	return int64(5612) // in microseconds, Qwen14b avg
+	return int64(sim.QueuingDelay) // avg across requests
 }
 
 // Scheduling processing time estimation (step has been doing some book keeping and processing before scheduling the request)
@@ -180,7 +184,7 @@ func (sim *Simulator) getSchedulingProcessingTime() int64 {
 // Request Left processing time estimation
 func (sim *Simulator) getRequestLeftProcessingTime() int64 {
 	// ToDo: incorporate some alphas here
-	return int64(582) // in microseconds, Qwen14b avg
+	return int64(sim.FinishedDelay) // avg across requests
 }
 
 // Request Preemption processing time estimation

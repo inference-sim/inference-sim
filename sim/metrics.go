@@ -55,40 +55,46 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 	fmt.Printf("Simulation Duration(s): %.3f\n", time.Since(startTime).Seconds())
 	fmt.Printf("vLLM estimated Duration(s): %.3f\n", float64(m.SimEndedTime)/float64(1e6))
 	if m.CompletedRequests > 0 {
-		avgTTFT := float64(m.TTFTSum) / float64(m.CompletedRequests)
-		sortedTTFTs := SortRequestMetrics(m.RequestTTFTs)
-		sortedTPOTs := SortRequestMetrics(m.RequestTPOTs)
+		// avgTTFT := float64(m.TTFTSum) / float64(m.CompletedRequests)
+		// sortedTTFTs := SortRequestMetrics(m.RequestTTFTs)
+		// sortedTPOTs := SortRequestMetrics(m.RequestTPOTs)
 		sortedE2Es := SortRequestMetrics(m.RequestE2Es)
 		sortedCompletionTimes := SortRequestMetrics(m.RequestCompletionTimes)
-		medianTTFT := CalculatePercentile(sortedTTFTs, 50)
-		p99TTFT := CalculatePercentile(sortedTTFTs, 99)
-		avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
-		medianTPOT := CalculatePercentile(sortedTPOTs, 50)
-		p99TPOT := CalculatePercentile(sortedTPOTs, 99)
+		// medianTTFT := CalculatePercentile(sortedTTFTs, 50)
+		// p99TTFT := CalculatePercentile(sortedTTFTs, 99)
+		// avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
+		// medianTPOT := CalculatePercentile(sortedTPOTs, 50)
+		// p99TPOT := CalculatePercentile(sortedTPOTs, 99)
+		avgE2E := float64(m.TotalLatency) / float64(m.CompletedRequests)
+		medianE2E := CalculatePercentile(sortedE2Es, 50)
+		p99E2E := CalculatePercentile(sortedE2Es, 99)
 		perSecThroughput := CalculateBinnedThroughput(sortedCompletionTimes)
 
 		fmt.Printf("Request throughput (req/s):  : %.3f\n", perSecThroughput)
-		fmt.Printf("TTFTs             :[")
-		for _, ttft := range sortedTTFTs {
-			fmt.Printf("%.6f, ", ttft/1000)
-		}
-		fmt.Printf("]\n")
-		fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT/1000)
-		fmt.Printf("Median TTFT(ms)   : %.3f\n", medianTTFT)
-		fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT)
-		fmt.Printf("TPOTs             : [")
-		for _, tpot := range sortedTPOTs {
-			fmt.Printf("%.6f, ", tpot/1000)
-		}
-		fmt.Printf("]\n")
-		fmt.Printf("Mean TPOT(ms)     : %.3f\n", avgTPOT/1000)
-		fmt.Printf("Median TPOT(ms)   : %.3f\n", medianTPOT)
-		fmt.Printf("P99 TPOT(ms)      : %.3f\n", p99TPOT)
-		fmt.Printf("E2Es             : [")
-		for _, e2e := range sortedE2Es {
-			fmt.Printf("%.6f, ", e2e/1000)
-		}
-		fmt.Printf("]\n")
+		// fmt.Printf("TTFTs             :[")
+		// for _, ttft := range sortedTTFTs {
+		// 	fmt.Printf("%.6f, ", ttft/1000)
+		// }
+		// fmt.Printf("]\n")
+		// fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT/1000)
+		// fmt.Printf("Median TTFT(ms)   : %.3f\n", medianTTFT)
+		// fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT)
+		// fmt.Printf("TPOTs             : [")
+		// for _, tpot := range sortedTPOTs {
+		// 	fmt.Printf("%.6f, ", tpot/1000)
+		// }
+		// fmt.Printf("]\n")
+		// fmt.Printf("Mean TPOT(ms)     : %.3f\n", avgTPOT/1000)
+		// fmt.Printf("Median TPOT(ms)   : %.3f\n", medianTPOT)
+		// fmt.Printf("P99 TPOT(ms)      : %.3f\n", p99TPOT)
+		// fmt.Printf("E2Es             : [")
+		// for _, e2e := range sortedE2Es {
+		// 	fmt.Printf("%.6f, ", e2e/1000)
+		// }
+		// fmt.Printf("]\n")
+		fmt.Printf("Mean E2E(ms)     : %.3f\n", avgE2E/1000)
+		fmt.Printf("Median E2E(ms)   : %.3f\n", medianE2E)
+		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
 		fmt.Printf("Avg KV Blocks Usage : %.3f\n", float64(m.KVBlocksUsed)/float64(m.SimEndedTime))
 		fmt.Printf("Peak KV Usage       : %d blocks\n", m.PeakKVBlocksUsed)
 

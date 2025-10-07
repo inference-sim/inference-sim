@@ -15,7 +15,6 @@ GO_BINARY_PATH = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), GO_BINARY_NAME)
 DEFAULT_OUTPUT_DIR = "results/sweep_params"
 DATASET_NAME = "sharegpt"
-TEMPERATURE = 0.0
 
 print_lock = threading.Lock()
 
@@ -27,7 +26,8 @@ def save_results(filename, output, arguments):
         f.write(output)
 
 
-def run_go_binary(thread_id, arguments, num_requests, output_dir=DEFAULT_OUTPUT_DIR):
+def run_go_binary(thread_id, arguments, spec, prefix_ratio, output_dir=DEFAULT_OUTPUT_DIR):
+    print(' '.join(arguments))
     result = subprocess.run(
         [GO_BINARY_PATH] + arguments,
         capture_output=True,
@@ -38,9 +38,8 @@ def run_go_binary(thread_id, arguments, num_requests, output_dir=DEFAULT_OUTPUT_
     # print(result.stdout, flush=True)
     with print_lock:
         request_rate = int(float(arguments[2])*1e6)
-        long_prefill_token_threshold = int(arguments[26])
-        max_num_scheduled_token = int(arguments[8])
-        output_filename = f"{output_dir}/exp_{num_requests}p_{request_rate}r_{TEMPERATURE}t_{max_num_scheduled_token}mbt_{long_prefill_token_threshold}lpt_{DATASET_NAME}.txt"
+        long_prefill_token_threshold = int(arguments[18])
+        output_filename = f"{output_dir}/exp_{request_rate}r_{spec}_{prefix_ratio}_{long_prefill_token_threshold}_{DATASET_NAME}.txt"
         save_results(output_filename, result.stdout, arguments)
         if result.stderr:
             print(
@@ -91,14 +90,16 @@ if __name__ == "__main__":
     args_template = [
         "run",
         "--rate", "0.000034",
-        "--max-num-running-reqs", args.max_num_seqs,
-        "--total-kv-blocks", args.total_kv_blocks,
+        "--max-num-running-reqs", "8192",
+        "--total-kv-blocks", "5000",
         "--max-num-scheduled-tokens", "256",
-        "--block-size-in-tokens", args.block_size,
+        "--block-size-in-tokens", "16",
         "--horizon", args.horizon,
         "--regression-coeffs", args.regression_coeffs,
         "--requests-file-path", "data/output_tokens_2025-06-30_arrivaldeltas.json",
-        "--long-prefill-token-threshold", "16",
+        "--long-prefill-token-threshold", "256",
+        "--queuing-delay", "1000",
+        "--finished-delay", "1000"
     ]
     
     tasks = []
@@ -118,16 +119,18 @@ if __name__ == "__main__":
                     current_args[10] = str(BLOCK_SIZE)
                     current_args[16] = os.path.join(requests_folder, "detailed_results_test_tokenized.json")
                     current_args[18] = str(chunk_size)
+                    current_args[20] = str(QUEUING_DELAYS[model_name])
+                    current_args[22] = str(FINISHED_DELAYS[model_name])
 
                     tasks.append({"thread_id": thread_id, "args": current_args,
-                                "num_requests": NUM_PROMPTS, "output_dir": output_dir})
+                                "output_dir": output_dir, "spec": spec, "prefix_ratio": prefix_hit_ratio})
                     thread_id += 1
 
                 threads = []
                 for task in tasks:
                     thread = threading.Thread(
                         target=run_go_binary,
-                        args=(task["thread_id"], task["args"], task["num_requests"], task["output_dir"])
+                        args=(task["thread_id"], task["args"], task["spec"], task["prefix_ratio"], task["output_dir"])
                     )
                     threads.append(thread)
                     thread.start()  # Start the thread

@@ -24,6 +24,8 @@ var (
 	regressionCoeffs          []float64 // List of regression coeffs corresponding to features
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
 	longPrefillTokenThreshold int       // Max length of prefill beyond which chunked prefill is triggered
+	queuingDelay              int       // Delay between server hit and queued per request
+	finishedDelay             int       // Delay between finished and server left per request
 )
 
 // rootCmd is the base command for the CLI
@@ -60,6 +62,8 @@ var runCmd = &cobra.Command{
 			maxRunningReqs,
 			maxScheduledTokens,
 			longPrefillTokenThreshold,
+			queuingDelay,
+			finishedDelay,
 			regressionCoeffs,
 			rate,
 			requests,
@@ -91,8 +95,9 @@ func init() {
 	runCmd.Flags().StringVar(&requestsFilePath, "requests-file-path", "ShareGPT_V3_tokenized.json", "Path to workload tokenized JSON file")
 	runCmd.Flags().IntVar(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 	runCmd.Flags().IntVar(&maxModelLength, "max-model-len", 2048, "Max request length (input + output tokens)")
-	// in vLLM, default longPrefillTokenThreshold is 0
 	runCmd.Flags().IntVar(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
+	runCmd.Flags().IntVar(&queuingDelay, "queuing-delay", 0, "Delay between server hit and queued per request")
+	runCmd.Flags().IntVar(&finishedDelay, "finished-delay", 0, "Delay between finished and server left per request")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

@@ -46,6 +46,7 @@ simulation_worker
 results/
 largesweep/
 *.zip
+*.yaml
 
 # uv files
 .python-version

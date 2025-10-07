@@ -30,7 +30,8 @@ func (e *ArrivalEvent) Execute(sim *Simulator) {
 	// Just call queued event always
 	queued_delay := sim.getQueuedTime() // coming from alpha
 	sim.Schedule(&QueuedEvent{
-		time: e.time + queued_delay,
+		time:    e.time + queued_delay,
+		Request: e.Request,
 	})
 
 }

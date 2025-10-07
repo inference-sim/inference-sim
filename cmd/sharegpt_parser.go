@@ -9,22 +9,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Prompt represents a single request sent to vLLM.
+// Prompt corresponds to each request inside the "prompts" JSON array.
 type Prompt struct {
-	inputText     []int   `json:"input_text"`     // must be tokenized
-	generatedText []int   `json:"generated_text"` // must be tokenized
-	inputLen      int     `json:"input_len"`
-	prefixLen     int     `json:"prefix_len"`
-	outputLen     int     `json:"output_len"`
-	e2eLatency    float64 `json:"e2e_latency"`
-	arrivalTime   int64   `json:"arrival_time"`
+	InputText     []int   `json:"input_text"`
+	GeneratedText []int   `json:"generated_text"`
+	InputLen      int     `json:"input_len"`
+	PrefixLen     int     `json:"prefix_len"`
+	OutputLen     int     `json:"output_len"`
+	E2ELatency    float64 `json:"e2e_latency"`
+	ArrivalTime   int64   `json:"arrival_time"`
 }
 
-// DataEntry represents a single top-level object in the JSON file.
+// DataEntry corresponds to the root JSON object.
 type DataEntry struct {
-	numPrompts int      `json:"num_prompts"`
-	rate       float64  `json:"request_rate"`
-	prompts    []Prompt `json:"prompts"`
+	NumPrompts  int      `json:"num_prompts"`
+	RequestRate float64  `json:"request_rate"`
+	Prompts     []Prompt `json:"prompts"` // A slice of the struct defined above
 }
 
 // Process input tokenized requests JSON file to extract only the first human-gpt from-value pair
@@ -38,7 +38,7 @@ func ProcessInputShareGPT(requestsFilePath string) []*sim.Request {
 	}
 
 	// Declare a slice of DataEntry to unmarshal the raw JSON into
-	var rawData []DataEntry
+	var rawData DataEntry
 
 	// Unmarshal the JSON data into the rawData slice
 	err = json.Unmarshal(fileContent, &rawData)
@@ -48,24 +48,20 @@ func ProcessInputShareGPT(requestsFilePath string) []*sim.Request {
 
 	var requests []*sim.Request
 
-	for _, entry := range rawData {
+	for i, prompt := range rawData.Prompts {
 		// We need to find the first human-gpt pair
-		var inputTokens []int
-		var outputTokens []int
 
-		for i := 0; i < len(entry.prompts)-1; i++ {
-			reqID := fmt.Sprintf("request{%d}", i)
-			inputTokens = entry.prompts[i].inputText
-			outputTokens = entry.prompts[i+1].generatedText
+		reqID := fmt.Sprintf("request_%d", i)
+		inputTokens := prompt.InputText
+		outputTokens := prompt.GeneratedText
 
-			req := sim.Request{
-				ID:           reqID,
-				InputTokens:  inputTokens,
-				OutputTokens: outputTokens,
-				ArrivalTime:  entry.prompts[i].arrivalTime,
-			}
-			requests = append(requests, &req)
+		req := sim.Request{
+			ID:           reqID,
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			ArrivalTime:  prompt.ArrivalTime,
 		}
+		requests = append(requests, &req)
 	}
 
 	// Print the parsed requests to verify
