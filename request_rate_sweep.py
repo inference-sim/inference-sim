@@ -201,10 +201,6 @@ if __name__ == "__main__":
         threads.append(thread)
         thread.start()  # Start the thread
 
-    # Wait for all threads to complete.
-    for thread in threads:
-        thread.join()
-
     if os.path.exists(all_metrics_filepath):
         df = pd.read_csv(all_metrics_filepath)
         new_metrics = pd.concat(all_metrics, ignore_index=True)

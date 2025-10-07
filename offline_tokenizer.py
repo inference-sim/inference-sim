@@ -3,7 +3,7 @@ import json
 import os
 
 from transformers import AutoTokenizer
-
+from experiment_constants import *
 
 parser = argparse.ArgumentParser(
     description="A tokenizer for JSON requests in the ShareGPT format."
