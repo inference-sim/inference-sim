@@ -139,15 +139,14 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 		requestID := sim.Requests[reqIdx].ID
 		input := sim.Requests[reqIdx].InputTokens
 		output := sim.Requests[reqIdx].OutputTokens
-		arrivalDelta := sim.Requests[reqIdx].ArrivalDelta
+		arrivalTime := sim.Requests[reqIdx].ArrivalTime
 
-		currentTime += int64(arrivalDelta)
+		currentTime = int64(arrivalTime)
 
 		// form the request; it will be in the "queued" state when it arrives
 		req := &Request{
 			ID:           requestID,
 			ArrivalTime:  currentTime,
-			ArrivalDelta: arrivalDelta,
 			InputTokens:  input,
 			OutputTokens: output,
 			State:        "queued",

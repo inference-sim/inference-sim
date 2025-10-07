@@ -3,7 +3,7 @@ import json
 import os
 
 from transformers import AutoTokenizer
-
+from experiment_constants import *
 
 def main():
     parser = argparse.ArgumentParser(
@@ -42,17 +42,28 @@ def main():
                                         all_data["num_prompts"] = data["num_prompts"]
                                         all_data["request_rate"] = data["request_rate"]
                                         all_data["prompts"] = []
+                                        start_timestamp = 0
+                                        # final start timestamp for time.monotonic(). Every other timestamp will be a delta wrt this timestamp
+                                        for event in data["prompts"][0]["events"]:
+                                            if event["event_type"] == "SERVER_HIT":
+                                                start_timestamp = event["timestamp"]
                                         for prompt in data["prompts"]:
+                                            if prompt["error"]=="":
+                                                input_text = prompt["input_text"]
+                                                tokenized_input_text = tokenizer.encode(input_text, return_tensors="np").tolist()[0]
+                                                prompt["input_text"] = tokenized_input_text
 
-                                            input_text = prompt["input_text"]
-                                            tokenized_input_text = tokenizer.encode(input_text, return_tensors="np").tolist()[0]
-                                            prompt["input_text"] = tokenized_input_text
+                                                output_text = prompt["generated_text"]
+                                                tokenized_output_text = tokenizer.encode(output_text, return_tensors="np").tolist()[0]
+                                                prompt["generated_text"] = tokenized_output_text
+                                                for event in prompt["events"]:
+                                                    if event["event_type"] == "SERVER_HIT":
+                                                        prompt["arrival_time"] = int((event["timestamp"] - start_timestamp)*1e6)
+                                                        break
+                                                prompt.pop('events', None)
+                                                prompt.pop('error', None)
 
-                                            output_text = prompt["generated_text"]
-                                            tokenized_output_text = tokenizer.encode(output_text, return_tensors="np").tolist()[0]
-                                            prompt["generated_text"] = tokenized_output_text
-
-                                            all_data["prompts"].append(prompt)
+                                                all_data["prompts"].append(prompt)
 
                                         print("Num tokenized requests:", len(all_data["prompts"]))
                                         os.makedirs(output_folder, exist_ok=True)
@@ -66,8 +77,4 @@ def main():
 
 
 if __name__ == "__main__":
-    CHUNK_SIZES = [256, 2048]
-    REQUEST_RATES = [5]
-    PREFIX_HIT_RATIOS = [0.3, 0.6]
-    SPECS = ["LL"]
     main()

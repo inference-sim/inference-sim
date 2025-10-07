@@ -26,11 +26,10 @@ type Request struct {
 
 	TTFTSet        bool  // Tracks whether TTFT has been set
 	FirstTokenTime int64 // Timestamp when first token was generated
-	ArrivalDelta   int   // Delta timegap between previous and current request
 	ArrivalTime    int64 // Timestamp in ticks when the request arrives in the simulator
 }
 
 // This method returns a human-readable string representation of a Request.
 func (req Request) String() string {
-	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v, ArrivalDelta: %d, ArrivalTime: %d)", req.ID, req.State, req.ProgressIndex, req.ArrivalDelta, req.ArrivalTime)
+	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v, ArrivalTime: %d)", req.ID, req.State, req.ProgressIndex, req.ArrivalTime)
 }
