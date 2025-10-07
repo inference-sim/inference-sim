@@ -168,7 +168,7 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 // Queueing processing time estimation
 func (sim *Simulator) getQueuedTime() int64 {
 	// ToDo: incorporate alpha_1 here
-	return int64(10)
+	return int64(5612) // in microseconds, Qwen14b avg
 }
 
 // Scheduling processing time estimation (step has been doing some book keeping and processing before scheduling the request)
@@ -181,13 +181,13 @@ func (sim *Simulator) getSchedulingProcessingTime() int64 {
 // Request Left processing time estimation
 func (sim *Simulator) getRequestLeftProcessingTime() int64 {
 	// ToDo: incorporate some alphas here
-	return int64(10)
+	return int64(582) // in microseconds, Qwen14b avg
 }
 
 // Request Preemption processing time estimation
 func (sim *Simulator) getPreemptionProcessingTime() int64 {
 	// ToDo: incorporate some alphas here or maybe constat
-	return int64(2)
+	return int64(0)
 }
 
 // Estimate Step Advance Time using regression features and coefficients
@@ -209,7 +209,6 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 
 	// First run requests in the RunningBatch.
 	// Requests could be in either prefill or decode.
-	// ToDo: while True; // last item in running batch
 	for _, req := range sim.RunningBatch.Requests {
 		if tokenBudget <= 0 {
 			// Simulator has run out of token budget. Cannot run any more requests in this Step.
@@ -259,7 +258,17 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 			if !ok {
 				// Could not allocate (e.g., no free blocks)
 				logrus.Warnf("[Preemption]")
-				continue // ToDo: pre-empt this request
+				// Repeat preemption logic (ToDo: make into a method)
+				preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
+				preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
+				sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
+				sim.Schedule(&PreemptionEvent{
+					time:    now + preemptionDelay,
+					Request: preemptedRequest,
+				})
+
+				// sim.KVCache.removeFromFreeList() // ToDo
+				sim.WaitQ.queue = append(sim.WaitQ.queue, preemptedRequest) // preempted requests go back to waiting
 			}
 			// currently each request produces 1 token per decode.
 			// this needs to be updated with speculative decoding
