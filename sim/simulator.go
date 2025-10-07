@@ -259,7 +259,6 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 
 	// First run requests in the RunningBatch.
 	// Requests could be in either prefill or decode.
-	// ToDo: while True; // last item in running batch
 	for _, req := range sim.RunningBatch.Requests {
 		if tokenBudget <= 0 {
 			// Simulator has run out of token budget. Cannot run any more requests in this Step.
