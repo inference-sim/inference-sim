@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 
 from transformers import AutoTokenizer
 
@@ -14,55 +15,59 @@ def main():
         type=str,
         help="LLM name for loading appropriate tokenizer"
     )
-    parser.add_argument(
-        "--input_filepath",
-        type=str,
-        help="JSON filepath with text inputs and outputs for requests"
-    )
-    parser.add_argument(
-        "--output_filepath",
-        type=str,
-        help="JSON filepath to store tokenized inputs and outputs for request"
-    )
 
     args = parser.parse_args()
 
     # Load the tokenizer for given model
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=False)
+    model_name = args.model_name.split("/")[-1].replace(".", "_")
 
-    try:
-        with open(args.input_filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+    for rr in REQUEST_RATES:
+        for spec in SPECS:
+            for chunk_size in CHUNK_SIZES:
+                for prefix_hit_ratio in PREFIX_HIT_RATIOS:
+                    spec_small = spec.lower()
+                    input_folder = f"../vllm-data-collection/results_new/scenario4/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                    output_folder = f"data/scenario4/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                    if os.path.isdir(input_folder):
+                        for input_dirpath, _, input_filenames in os.walk(input_folder):
+                            for input_filename in input_filenames:
+                                if input_filename == "detailed_results_test.json":
+                                    full_path = os.path.join(input_dirpath, input_filename)
+                                    try:
+                                        with open(full_path, 'r', encoding='utf-8') as f:
+                                            data = json.load(f)
 
-        all_conversations = []
+                                        all_data = {}
+                                        all_data["num_prompts"] = data["num_prompts"]
+                                        all_data["request_rate"] = data["request_rate"]
+                                        all_data["prompts"] = []
+                                        for prompt in data["prompts"]:
 
-        for entry in data:
-            conversations = entry["conversations"]
+                                            input_text = prompt["input_text"]
+                                            tokenized_input_text = tokenizer.encode(input_text, return_tensors="np").tolist()[0]
+                                            prompt["input_text"] = tokenized_input_text
 
-            # Process only the first two turns (human-gpt)
-            if len(conversations) > 1 and conversations[0]["from"] == "human" and conversations[1]["from"] == "gpt":
-                human_value = conversations[0]["value"]
-                tokenized_human_value = tokenizer.encode(
-                    human_value, return_tensors="np").tolist()[0]
-                conversations[0]["value"] = tokenized_human_value
+                                            output_text = prompt["generated_text"]
+                                            tokenized_output_text = tokenizer.encode(output_text, return_tensors="np").tolist()[0]
+                                            prompt["generated_text"] = tokenized_output_text
 
-                gpt_value = conversations[1]["value"]
-                tokenized_gpt_value = tokenizer.encode(
-                    gpt_value, return_tensors="np").tolist()[0]
-                conversations[1]["value"] = tokenized_gpt_value
+                                            all_data["prompts"].append(prompt)
 
-                conversation_obj = {"ID": entry["id"], "conversations": []}
-                conversation_obj["conversations"].append(conversations[0])
-                conversation_obj["conversations"].append(conversations[1])
-                all_conversations.append(conversation_obj)
+                                        print("Num tokenized requests:", len(all_data["prompts"]))
+                                        os.makedirs(output_folder, exist_ok=True)
+                                        output_filename = "detailed_results_test_tokenized.json"
+                                        output_filepath = os.path.join(output_folder, output_filename)
+                                        with open(output_filepath, 'w', encoding='utf-8') as f:
+                                            json.dump(all_data, f, indent=2)
 
-        print("Num tokenized requests:", len(all_conversations))
-        with open(args.output_filepath, 'w', encoding='utf-8') as f:
-            json.dump(all_conversations, f, indent=2)
-
-    except FileNotFoundError:
-        print(f"Error: The file at '{args.input_filepath}' was not found.")
+                                    except FileNotFoundError:
+                                        print(f"Error: The file at '{full_path}' was not found.")
 
 
 if __name__ == "__main__":
+    CHUNK_SIZES = [256, 2048]
+    REQUEST_RATES = [5]
+    PREFIX_HIT_RATIOS = [0.3, 0.6]
+    SPECS = ["LL"]
     main()

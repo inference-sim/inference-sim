@@ -83,40 +83,21 @@ if __name__ == "__main__":
         type=str,
         default="3.38283913e-05,9.82346868e-06,-3.11237143e-06,1.50291993e-03,4.24173346e-08,-1.06897441e-07,1.92844617e-07,2.60430816e-05,-7.72212201e-09,2.67059068e-08,7.20303280e-06,-1.06904337e-08,-1.05254706e-05,-9.19828725e-04,0.005708624032334771",
     )
-    parser.add_argument(
-        "--schedule_time",
-        type=str,
-        default="544",
-    )
-    parser.add_argument(
-        "--update_time",
-        type=str,
-        default="80",
-    )
-    parser.add_argument(
-        "--queue_overhead_time",
-        type=str,
-        default="1000",
-    )
-    parser.add_argument(
-        "--vllm_overhead_time",
-        type=str,
-        default="6000",
-    )
+
     parser.add_argument(
         "--rates",
         type=int,
         nargs='+',
-        default=[32],
-        help='An optional list of request arrival rates. Defaults to [32]'
+        default=[5],
+        help='An optional list of request arrival rates. Defaults to [5]'
     )
 
     parser.add_argument(
         "--max_num_batched_tokens",
         type=int,
         nargs='+',
-        default=[256],
-        help='An optional list of max_num_scheduled_tokens. Defaults to [256]'
+        default=[4096],
+        help='An optional list of max_num_scheduled_tokens. Defaults to [4096]'
     )
 
     parser.add_argument(

@@ -2,23 +2,29 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
 
-// Conversation represents a single chat turn in the conversation.
-type Conversation struct {
-	From  string `json:"from"`
-	Value []int  `json:"value"`
+// Prompt represents a single request sent to vLLM.
+type Prompt struct {
+	inputText     []int   `json:"input_text"`     // must be tokenized
+	generatedText []int   `json:"generated_text"` // must be tokenized
+	inputLen      int     `json:"input_len"`
+	prefixLen     int     `json:"prefix_len"`
+	outputLen     int     `json:"output_len"`
+	e2eLatency    float64 `json:"e2e_latency"`
+	arrivalTime   int64   `json:"arrival_time"`
 }
 
-// DataEntry represents a single top-level object in your JSON array.
+// DataEntry represents a single top-level object in the JSON file.
 type DataEntry struct {
-	ID            string         `json:"id"`
-	Conversations []Conversation `json:"conversations"`
-	ArrivalDelta  int            `json:"arrivalDelta"`
+	numPrompts int      `json:"num_prompts"`
+	rate       float64  `json:"request_rate"`
+	prompts    []Prompt `json:"prompts"`
 }
 
 // Process input tokenized requests JSON file to extract only the first human-gpt from-value pair
@@ -46,23 +52,19 @@ func ProcessInputShareGPT(requestsFilePath string) []*sim.Request {
 		// We need to find the first human-gpt pair
 		var inputTokens []int
 		var outputTokens []int
-		pairCount := 0
 
-		for i := 0; i < len(entry.Conversations)-1 && pairCount < 2; i++ {
-			if entry.Conversations[i].From == "human" && entry.Conversations[i+1].From == "gpt" {
-				inputTokens = entry.Conversations[i].Value
-				outputTokens = entry.Conversations[i+1].Value
+		for i := 0; i < len(entry.prompts)-1; i++ {
+			reqID := fmt.Sprintf("request{%d}", i)
+			inputTokens = entry.prompts[i].inputText
+			outputTokens = entry.prompts[i+1].generatedText
 
-				req := sim.Request{
-					ID:           entry.ID,
-					InputTokens:  inputTokens,
-					OutputTokens: outputTokens,
-					ArrivalDelta: entry.ArrivalDelta,
-				}
-				requests = append(requests, &req)
-				pairCount++
-				i++ // Skip the gpt conversation as it's already processed
+			req := sim.Request{
+				ID:           reqID,
+				InputTokens:  inputTokens,
+				OutputTokens: outputTokens,
+				ArrivalTime:  entry.prompts[i].arrivalTime,
 			}
+			requests = append(requests, &req)
 		}
 	}
 
