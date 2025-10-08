@@ -69,6 +69,7 @@ type Simulator struct {
 	StepEvent                 Event
 	// map of request IDs to total num computed tokens (including cached tokens)
 	ReqNumComputedTokens map[string]int
+	PreemptionHappened   bool
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunningReqs int64, maxScheduledTokens int, longPrefillTokenThreshold int,
@@ -91,6 +92,7 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		FinishedDelay:             finishedDelay,
 		StepEvent:                 nil,
 		ReqNumComputedTokens:      make(map[string]int),
+		PreemptionHappened:        false,
 	}
 
 	s.Metrics.RequestRate = rate
@@ -202,6 +204,38 @@ func (sim *Simulator) getStepTime() int64 {
 	return int64(totalStepTime * 1e6) // convert from seconds to microseconds, need to verify with Satyam
 }
 
+func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int) bool {
+
+	for {
+		if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int{}); !ok {
+			// ToDo: add while true here, because we will keep preempting until we are good
+			// Could not allocate (e.g., no free blocks)
+			logrus.Warnf("[Preemption]")
+			sim.PreemptionHappened = true
+			preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
+			preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
+			sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
+			sim.Schedule(&PreemptionEvent{
+				time:    now + preemptionDelay,
+				Request: preemptedRequest,
+			})
+
+			preemptedRequest.State = "queued"
+			preemptedRequest.ProgressIndex = 0
+			sim.KVCache.ReleaseKVBlocks(preemptedRequest)
+			sim.WaitQ.queue = append([]*Request{preemptedRequest}, sim.WaitQ.queue...)
+			// ToDo: sim.prempted request
+
+			if preemptedRequest == req {
+				return false
+			}
+		} else {
+			return true
+		}
+	}
+
+}
+
 func (sim *Simulator) makeRunningBatch(now int64) {
 	if sim.RunningBatch == nil {
 		sim.RunningBatch = &Batch{}
@@ -229,23 +263,10 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 			}
 			numNewTokens = min(numNewTokens, tokenBudget)
 
-			if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int{}); !ok {
-				// ToDo: add while true here, because we will keep preempting until we are good
-				// Could not allocate (e.g., no free blocks)
-				logrus.Warnf("[Preemption]")
-				preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
-				preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
-				sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
-				sim.Schedule(&PreemptionEvent{
-					time:    now + preemptionDelay,
-					Request: preemptedRequest,
-				})
-
-				// sim.KVCache.removeFromFreeList() // ToDo
-				sim.WaitQ.queue = append(sim.WaitQ.queue, preemptedRequest) // preempted requests go back to waiting
-
-				continue // ToDo: pre-empt this request
+			if can_schedule := sim.preempt(req, now, numNewTokens); !can_schedule {
+				break
 			}
+
 			tokenBudget -= numNewTokens
 			sim.RunningBatchFeatures.TotalCacheMissTokens += numNewTokens
 			sim.RunningBatchFeatures.NumPrefillRequests += 1
@@ -257,22 +278,8 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		// if it is in decode phase, then allocate blocks for the token generated in the previous Step
 		if req.ProgressIndex >= len(req.InputTokens) && len(req.OutputTokens) > 0 {
 			// this request will go through decode phase in this batch
-			ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int{})
-			if !ok {
-				// Could not allocate (e.g., no free blocks)
-				logrus.Warnf("[Preemption]")
-
-				preemptionDelay := sim.getPreemptionProcessingTime()
-				preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
-				sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
-				sim.Schedule(&PreemptionEvent{
-					time:    now + preemptionDelay,
-					Request: preemptedRequest,
-				})
-				preemptedRequest.State = "queued"
-				preemptedRequest.ProgressIndex = 0
-				sim.KVCache.ReleaseKVBlocks(preemptedRequest)
-				sim.WaitQ.queue = append([]*Request{preemptedRequest}, sim.WaitQ.queue...) // preempted requests go back to waiting
+			if can_schedule := sim.preempt(req, now, numNewTokens); !can_schedule {
+				break
 			}
 			// currently each request produces 1 token per decode.
 			// this needs to be updated with speculative decoding
@@ -285,8 +292,8 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		}
 	}
 
-	// Next, attempt to dequeue requests in waiting queue, if batch size is not exceeded
-	for len(sim.RunningBatch.Requests) < int(sim.MaxRunningReqs) && len(sim.WaitQ.queue) > 0 && tokenBudget > 0 {
+	// Next, attempt to dequeue requests in waiting queue, if batch size is not exceeded and not any preemption happened
+	for len(sim.RunningBatch.Requests) < int(sim.MaxRunningReqs) && len(sim.WaitQ.queue) > 0 && tokenBudget > 0 && !sim.PreemptionHappened {
 		// we will attempt to dequeue `next` request
 		// if that attempt fails, we will break out of the loop
 
@@ -403,8 +410,8 @@ func (sim *Simulator) Step(now int64) {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int{})
 				if !ok {
 					// Could not allocate (e.g., no free blocks)
-					logrus.Warnf("[Preemption]")
-					continue // ToDo: pre-empt this request
+					logrus.Warnf("[THIS SHOULD NEVER HAPPEN]")
+					continue
 				}
 			}
 			sim.KVCache.ReleaseKVBlocks(req)

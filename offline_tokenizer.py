@@ -16,18 +16,25 @@ def main():
         help="LLM name for loading appropriate tokenizer"
     )
 
+    parser.add_argument(
+        "--results_path",
+        type=str,
+        help="Path for the scenario results folder"
+    )
+
     args = parser.parse_args()
 
     # Load the tokenizer for given model
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=False)
     model_name = args.model_name.split("/")[-1].replace(".", "_")
+    results_dir = args.results_path
 
     for rr in REQUEST_RATES:
         for spec in SPECS:
             for chunk_size in CHUNK_SIZES:
                 for prefix_hit_ratio in PREFIX_HIT_RATIOS:
                     spec_small = spec.lower()
-                    input_folder = f"../vllm-data-collection/results_new/scenario4/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                    input_folder = f"{results_dir}/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
                     output_folder = f"data/scenario4/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
                     if os.path.isdir(input_folder):
                         for input_dirpath, _, input_filenames in os.walk(input_folder):

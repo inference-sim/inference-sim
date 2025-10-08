@@ -88,7 +88,8 @@ if __name__ == "__main__":
         "--requests-file-path", "data/output_tokens_2025-06-30_arrivaldeltas.json",
         "--long-prefill-token-threshold", "256",
         "--queuing-delay", "1000",
-        "--finished-delay", "1000"
+        "--finished-delay", "1000",
+        "--log", "warn"
     ]
     
     tasks = []
