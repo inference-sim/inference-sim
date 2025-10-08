@@ -51,22 +51,10 @@ if __name__ == "__main__":
         description="Run Go binary with sweep over different parameters")
 
     parser.add_argument(
-        "--model",
-        type=str,
-        help="LLM name"
-    )
-
-    parser.add_argument(
         "--output_dir",
         type=str,
         default=DEFAULT_OUTPUT_DIR,
         help="Directory to save output results from simulation"
-    )
-
-    parser.add_argument(
-        "--regression_coeffs", # in the order [intercept, gamma1, gamma2]
-        type=str,
-        default="1.17167255e-02,1.69822525e-05,1.86698155e-04",
     )
 
     parser.add_argument(
@@ -77,7 +65,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    output_dir = args.output_dir
+    model_name = MODEL.split("/")[-1].replace(".", "_")
+    output_dir = os.path.join(args.output_dir, model_name)
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
     os.makedirs(output_dir)
@@ -95,7 +84,7 @@ if __name__ == "__main__":
         "--max-num-scheduled-tokens", "256",
         "--block-size-in-tokens", "16",
         "--horizon", args.horizon,
-        "--regression-coeffs", args.regression_coeffs,
+        "--regression-coeffs", "1.17167255e-02,1.69822525e-05,1.86698155e-04",
         "--requests-file-path", "data/output_tokens_2025-06-30_arrivaldeltas.json",
         "--long-prefill-token-threshold", "256",
         "--queuing-delay", "1000",
@@ -104,7 +93,6 @@ if __name__ == "__main__":
     
     tasks = []
     thread_id = 1
-    model_name = args.model.split("/")[-1].replace(".", "_")
 
     for rr in REQUEST_RATES:
         for spec in SPECS:
@@ -117,6 +105,7 @@ if __name__ == "__main__":
                     current_args[6] = str(TOTAL_KV_BLOCKS[model_name])
                     current_args[8] = str(MAX_NUM_BATCHED_TOKENS)
                     current_args[10] = str(BLOCK_SIZE)
+                    current_args[14] = ','.join(list(map(str, REGRESSION_COEFFS[model_name])))
                     current_args[16] = os.path.join(requests_folder, "detailed_results_test_tokenized.json")
                     current_args[18] = str(chunk_size)
                     current_args[20] = str(QUEUING_DELAYS[model_name])

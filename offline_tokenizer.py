@@ -50,11 +50,13 @@ def main():
                                         for prompt in data["prompts"]:
                                             if prompt["error"]=="":
                                                 input_text = prompt["input_text"]
-                                                tokenized_input_text = tokenizer.encode(input_text, return_tensors="np").tolist()[0]
+                                                tokenized_input_text = tokenizer(input_text).input_ids
                                                 prompt["input_text"] = tokenized_input_text
 
                                                 output_text = prompt["generated_text"]
-                                                tokenized_output_text = tokenizer.encode(output_text, return_tensors="np").tolist()[0]
+                                                tokenized_output_text = tokenizer(output_text).input_ids
+                                                if len(tokenized_output_text) != prompt["output_len"]:
+                                                    print(len(tokenized_output_text), prompt["output_len"])
                                                 prompt["generated_text"] = tokenized_output_text
                                                 for event in prompt["events"]:
                                                     if event["event_type"] == "SERVER_HIT":
