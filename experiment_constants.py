@@ -20,13 +20,16 @@ TOTAL_KV_BLOCKS = {
     "Qwen2_5-7B": 56990
 }
 QUEUING_DELAYS = {
-    "Qwen3-14B": 5612,
-    "Qwen2_5-7B": 56990
+    "Qwen3-14B-LL": 5612,
+    "Qwen2_5-7B-LL": 4294,
+    "Qwen2_5-7B-LH": 8095
 }
 FINISHED_DELAYS = {
-    "Qwen3-14B": 6194,
-    "Qwen2_5-7B": 726
+    "Qwen3-14B-LL": 582,
+    "Qwen2_5-7B-LL": 518,
+    "Qwen2_5-7B-LH": 935
 }
+
 REGRESSION_COEFFS = {
     "Qwen3-14B": [1.17167255e-02, 1.69822525e-05, 1.86698155e-04],
     "Qwen2_5-7B": [6.59619835e-03, 8.13333252e-06, 4.11493210e-05]

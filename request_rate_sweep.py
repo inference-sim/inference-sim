@@ -109,8 +109,8 @@ if __name__ == "__main__":
                     current_args[14] = ','.join(list(map(str, REGRESSION_COEFFS[model_name])))
                     current_args[16] = os.path.join(requests_folder, "detailed_results_test_tokenized.json")
                     current_args[18] = str(chunk_size)
-                    current_args[20] = str(QUEUING_DELAYS[model_name])
-                    current_args[22] = str(FINISHED_DELAYS[model_name])
+                    current_args[20] = str(QUEUING_DELAYS[f"{model_name}-{spec}"])
+                    current_args[22] = str(FINISHED_DELAYS[f"{model_name}-{spec}"])
 
                     tasks.append({"thread_id": thread_id, "args": current_args,
                                 "output_dir": output_dir, "spec": spec, "prefix_ratio": prefix_hit_ratio})
