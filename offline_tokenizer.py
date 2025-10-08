@@ -11,12 +11,6 @@ def main():
     )
 
     parser.add_argument(
-        "--model_name",
-        type=str,
-        help="LLM name for loading appropriate tokenizer"
-    )
-
-    parser.add_argument(
         "--results_path",
         type=str,
         help="Path for the scenario results folder"
@@ -25,8 +19,8 @@ def main():
     args = parser.parse_args()
 
     # Load the tokenizer for given model
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=False)
-    model_name = args.model_name.split("/")[-1].replace(".", "_")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL, use_fast=False)
+    model_name = MODEL.split("/")[-1].replace(".", "_")
     results_dir = args.results_path
 
     for rr in REQUEST_RATES:

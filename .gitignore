@@ -54,3 +54,5 @@ uv.lock
 .DS_Store
 *.ipynb
 *.pyc
+
+analysis_results/

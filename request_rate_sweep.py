@@ -42,6 +42,7 @@ def parse_metrics_to_json(stdout, filename, model_name, request_rate, spec, pref
         match = metric_pattern.search(line)
         if match:
             key = match.group(1).strip()
+            key = key.rstrip(":")
             value_str = match.group(2)
 
             try:

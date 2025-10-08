@@ -27,6 +27,7 @@ type Metrics struct {
 	RequestTPOTs           map[string]float64 // list of all requests' TPOT
 	RequestE2Es            map[string]float64 // list of all requests' latencies
 	RequestCompletionTimes map[string]float64 // list of all requests' completion times in ticks
+	RequestStepCounters    []int              // list of all requests' num of steps between scheduled and finished
 
 	NumWaitQRequests        []int // number of requests in waitQ over different steps
 	NumRunningBatchRequests []int // number of request in runningBatch over different steps
@@ -42,6 +43,20 @@ func NewMetrics() *Metrics {
 		NumWaitQRequests:        []int{},
 		NumRunningBatchRequests: []int{},
 	}
+}
+
+// calculateMean computes the average of a slice of integers.
+func calculateMean(numbers []int) float64 {
+	if len(numbers) == 0 {
+		return 0.0
+	}
+
+	sum := 0.0
+	for _, number := range numbers {
+		sum += float64(number)
+	}
+
+	return sum / float64(len(numbers))
 }
 
 // Print displays aggregated metrics at the end of the simulation.
@@ -69,6 +84,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		medianE2E := CalculatePercentile(sortedE2Es, 50)
 		p99E2E := CalculatePercentile(sortedE2Es, 99)
 		perSecThroughput := CalculateBinnedThroughput(sortedCompletionTimes)
+		meanActiveSteps := calculateMean(m.RequestStepCounters)
 
 		fmt.Printf("Request throughput (req/s):  : %.3f\n", perSecThroughput)
 		// fmt.Printf("TTFTs             :[")
@@ -95,6 +111,8 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		fmt.Printf("Mean E2E(ms)     : %.3f\n", avgE2E/1000)
 		fmt.Printf("Median E2E(ms)   : %.3f\n", medianE2E)
 		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
+		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
+		fmt.Printf("Mean Active Steps     : %.3f\n", meanActiveSteps)
 		fmt.Printf("Avg KV Blocks Usage : %.3f\n", float64(m.KVBlocksUsed)/float64(m.SimEndedTime))
 		fmt.Printf("Peak KV Usage       : %d blocks\n", m.PeakKVBlocksUsed)
 

@@ -67,6 +67,7 @@ type Simulator struct {
 	QueuingDelay              int
 	FinishedDelay             int
 	StepEvent                 Event
+	StepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
 	ReqNumComputedTokens map[string]int
 	PreemptionHappened   bool
@@ -91,6 +92,7 @@ func NewSimulator(horizon int64, totalKVBlocks int, blockSizeTokens int, maxRunn
 		QueuingDelay:              queuingDelay,
 		FinishedDelay:             finishedDelay,
 		StepEvent:                 nil,
+		StepCount:                 0,
 		ReqNumComputedTokens:      make(map[string]int),
 		PreemptionHappened:        false,
 	}
@@ -151,11 +153,13 @@ func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
 
 		// form the request; it will be in the "queued" state when it arrives
 		req := &Request{
-			ID:           requestID,
-			ArrivalTime:  currentTime,
-			InputTokens:  input,
-			OutputTokens: output,
-			State:        "queued",
+			ID:               requestID,
+			ArrivalTime:      currentTime,
+			InputTokens:      input,
+			OutputTokens:     output,
+			State:            "queued",
+			ScheduledStepIdx: 0,
+			FinishedStepIdx:  0,
 		}
 
 		// push the request for arrival
@@ -325,6 +329,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		sim.WaitQ.queue = sim.WaitQ.queue[1:]
 		// make it part of the running batch
 		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
+		next.ScheduledStepIdx = sim.StepCount
 		// create a scheduledevent for the request that just went into running batch
 		scheduledDelay := sim.getSchedulingProcessingTime() // ToDo: there are some minor processing time above - model it or constant?
 		sim.Schedule(&ScheduledEvent{
@@ -351,6 +356,9 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 // to construct a batch, model execution of the batch and scheduler.update().
 // ToDo: Understand and handle pre-emption logic, if need be.
 func (sim *Simulator) Step(now int64) {
+
+	// increment Step counter
+	sim.StepCount += 1
 
 	// refreshing RunningBatchFeatures for current Step
 	sim.RunningBatchFeatures = RegressionFeatures{
@@ -434,6 +442,8 @@ func (sim *Simulator) Step(now int64) {
 			} else {
 				sim.Metrics.RequestTPOTs[req.ID] = 0
 			}
+			req.FinishedStepIdx = sim.StepCount
+			sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
 			sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat+req.ArrivalTime) / 1e6 // in seconds
 		} else {
 			remaining = append(remaining, req)
