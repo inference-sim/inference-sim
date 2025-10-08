@@ -21,11 +21,13 @@ TOTAL_KV_BLOCKS = {
 }
 QUEUING_DELAYS = {
     "Qwen3-14B-LL": 5612,
+    "Qwen3-14B-LH": 13859,
     "Qwen2_5-7B-LL": 4294,
     "Qwen2_5-7B-LH": 8095
 }
 FINISHED_DELAYS = {
     "Qwen3-14B-LL": 582,
+    "Qwen3-14B-LH": 2149,
     "Qwen2_5-7B-LL": 518,
     "Qwen2_5-7B-LH": 935
 }

@@ -21,9 +21,9 @@ GO_BINARY_PATH = os.path.join(os.path.dirname(
 DEFAULT_OUTPUT_DIR = "results/sweep_params"
 DATASET_NAME = "sharegpt"
 
-print_lock = threading.Lock()
+metrics_lock = threading.Lock()
 
-def parse_metrics_to_json(stdout, filename, model_name, request_rate, spec, prefix_hit_ratio, long_prefill_token_threshold, dataset_name):
+def parse_metrics_to_json(stdout, filename, model_name, request_rate, spec, prefix_hit_ratio, chunk_size, dataset_name):
     """
     Reads text from standard input, parses key-value metrics,
     and prints a single JSON object to standard output.
@@ -35,7 +35,7 @@ def parse_metrics_to_json(stdout, filename, model_name, request_rate, spec, pref
     metrics_data["request_rate"] = request_rate
     metrics_data["spec"] = spec
     metrics_data["prefix_ratio"] = prefix_hit_ratio
-    metrics_data["chunk_size"] = long_prefill_token_threshold
+    metrics_data["chunk_size"] = chunk_size
     metrics_data["dataset"] = dataset_name
 
     for line in stdout.split('\n'):
@@ -57,7 +57,7 @@ def parse_metrics_to_json(stdout, filename, model_name, request_rate, spec, pref
         json.dump(metrics_data, f, indent=4)
     return metrics_data
 
-def run_go_binary(thread_id, arguments, model_name, spec, prefix_ratio, output_dir=DEFAULT_OUTPUT_DIR):
+def run_go_binary(thread_id, arguments, model_name, spec, prefix_ratio, chunk_size, results, output_dir=DEFAULT_OUTPUT_DIR):
     print(' '.join(arguments))
     result = subprocess.run(
         [GO_BINARY_PATH] + arguments,
@@ -67,23 +67,15 @@ def run_go_binary(thread_id, arguments, model_name, spec, prefix_ratio, output_d
         encoding='utf-8'
     )
     # print(result.stdout, flush=True)
-    with print_lock:
+    with metrics_lock:
         request_rate = int(float(arguments[2])*1e6)
-        long_prefill_token_threshold = int(arguments[18])
-        output_filename = f"{output_dir}/exp_{request_rate}r_{spec}_{prefix_ratio}_{long_prefill_token_threshold}_{DATASET_NAME}.json"
-        all_metrics_filepath = f"{args.output_dir}/simulator_results.csv"
+        output_filename = f"{output_dir}/exp_{request_rate}r_{spec}_{prefix_ratio}_{chunk_size}_{DATASET_NAME}.json"
         if result.stderr:
             print(
                 f"[Thread {thread_id}] Go binary error output:\n{result.stderr}")
         else:
-            metrics = parse_metrics_to_json(result.stdout, output_filename, model_name, request_rate, spec, prefix_hit_ratio, long_prefill_token_threshold, DATASET_NAME)
-            new_metrics_df = pd.DataFrame([metrics])
-            if not os.path.exists(all_metrics_filepath):
-                new_metrics_df.to_csv(all_metrics_filepath, index=False)
-            else:
-                df = pd.read_csv(all_metrics_filepath)
-                df = pd.concat([df, new_metrics_df], ignore_index=True)
-                df.to_csv(all_metrics_filepath, index=False)
+            metrics = parse_metrics_to_json(result.stdout, output_filename, model_name, request_rate, spec, prefix_ratio, chunk_size, DATASET_NAME)
+            results.append(pd.DataFrame([metrics]))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -133,6 +125,8 @@ if __name__ == "__main__":
     
     tasks = []
     thread_id = 1
+    all_metrics_filepath = f"{args.output_dir}/simulator_results.csv"
+    all_metrics = []
 
     for rr in REQUEST_RATES:
         for spec in SPECS:
@@ -152,20 +146,27 @@ if __name__ == "__main__":
                     current_args[22] = str(FINISHED_DELAYS[f"{model_name}-{spec}"])
 
                     tasks.append({"thread_id": thread_id, "args": current_args,
-                                "output_dir": output_dir, "spec": spec, "prefix_ratio": prefix_hit_ratio, "model": model_name})
+                                "output_dir": output_dir, "spec": spec, "prefix_ratio": prefix_hit_ratio, "chunk_size": chunk_size, "model": model_name, "results": all_metrics})
                     thread_id += 1
 
-                threads = []
-                for task in tasks:
-                    thread = threading.Thread(
-                        target=run_go_binary,
-                        args=(task["thread_id"], task["args"], task["model"], task["spec"], task["prefix_ratio"], task["output_dir"])
-                    )
-                    threads.append(thread)
-                    thread.start()  # Start the thread
+    threads = []
+    for task in tasks:
+        thread = threading.Thread(
+            target=run_go_binary,
+            args=(task["thread_id"], task["args"], task["model"], task["spec"], task["prefix_ratio"], task["chunk_size"], task["results"], task["output_dir"])
+        )
+        threads.append(thread)
+        thread.start()  # Start the thread
 
-                # Wait for all threads to complete.
-                for thread in threads:
-                    thread.join()
+    # Wait for all threads to complete.
+    for thread in threads:
+        thread.join()
 
+    if os.path.exists(all_metrics_filepath):
+        df = pd.read_csv(all_metrics_filepath)
+        new_metrics = pd.concat(all_metrics, ignore_index=True)
+        final_df = pd.concat([df, new_metrics], ignore_index=True)
+    else:
+        final_df = pd.concat(all_metrics, ignore_index=True)
+    final_df.to_csv(all_metrics_filepath, index=False)
     print("--- All Go binary executions completed ---")
