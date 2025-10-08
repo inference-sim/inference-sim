@@ -261,17 +261,18 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 			if !ok {
 				// Could not allocate (e.g., no free blocks)
 				logrus.Warnf("[Preemption]")
-				// Repeat preemption logic (ToDo: make into a method)
-				preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
+
+				preemptionDelay := sim.getPreemptionProcessingTime()
 				preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
 				sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
 				sim.Schedule(&PreemptionEvent{
 					time:    now + preemptionDelay,
 					Request: preemptedRequest,
 				})
-
-				// sim.KVCache.removeFromFreeList() // ToDo
-				sim.WaitQ.queue = append(sim.WaitQ.queue, preemptedRequest) // preempted requests go back to waiting
+				preemptedRequest.State = "queued"
+				preemptedRequest.ProgressIndex = 0
+				sim.KVCache.ReleaseKVBlocks(preemptedRequest)
+				sim.WaitQ.queue = append([]*Request{preemptedRequest}, sim.WaitQ.queue...) // preempted requests go back to waiting
 			}
 			// currently each request produces 1 token per decode.
 			// this needs to be updated with speculative decoding
