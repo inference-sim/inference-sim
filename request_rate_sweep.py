@@ -15,10 +15,16 @@ from arrival_times_generation import add_arrival_delta, generate_arrival_times
 from experiment_constants import *
 
 GO_BINARY_NAME = "simulation_worker"
+# SIMULATION_BASE_DIR=/Users/toslali/Desktop/work/ibm/projects/llm-inference/study/inference-llmd/inference-sim
+BASE_DIR = os.getenv("SIMULATION_BASE_DIR", os.path.dirname(os.path.abspath(__file__)))
+print(BASE_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
 
-GO_BINARY_PATH = os.path.join(os.path.dirname(
-    os.path.abspath(__file__)), GO_BINARY_NAME)
-DEFAULT_OUTPUT_DIR = "results/sweep_params"
+GO_BINARY_PATH = os.path.join(BASE_DIR, GO_BINARY_NAME)
+
+
+DEFAULT_OUTPUT_DIR =  os.path.join(BASE_DIR, "results/sweep_params") 
 DATASET_NAME = "sharegpt"
 
 metrics_lock = threading.Lock()
@@ -133,7 +139,7 @@ if __name__ == "__main__":
         for spec in SPECS:
             for chunk_size in CHUNK_SIZES:
                 for prefix_hit_ratio in PREFIX_HIT_RATIOS:
-                    requests_folder = f"data/scenario4/{model_name}/{spec.lower()}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                    requests_folder = f"{BASE_DIR}/data/scenario4/{model_name}/{spec.lower()}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
                     current_args = copy.deepcopy(args_template)
                     current_args[2] = str(rr / 1e6)
                     current_args[4] = str(MAX_NUM_SEQS)
