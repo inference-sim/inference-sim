@@ -24,8 +24,10 @@ if BASE_DIR not in sys.path:
 
 GO_BINARY_PATH = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), GO_BINARY_NAME)
-DEFAULT_OUTPUT_DIR = "results/sweep_params"
-DEFAULT_DATA_FOLDER = "data/"
+
+
+DEFAULT_OUTPUT_DIR =  os.path.join(BASE_DIR, "results/sweep_params") 
+DEFAULT_DATA_FOLDER = os.path.join(BASE_DIR, "data") 
 DATASET_NAME = "sharegpt"
 
 metrics_lock = threading.Lock()
