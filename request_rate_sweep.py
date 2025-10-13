@@ -86,9 +86,8 @@ def run_go_binary(thread_id, mode, arguments, model_name, spec, prefix_ratio, ch
         if result.stderr:
             print(
                 f"[Thread {thread_id}] Go binary error output:\n{result.stderr}")
-        else:
-            metrics = parse_metrics_to_json(result.stdout, mode, output_filename, model_name, request_rate, spec, prefix_ratio, chunk_size, DATASET_NAME)
-            results.append(pd.DataFrame([metrics]))
+        metrics = parse_metrics_to_json(result.stdout, mode, output_filename, model_name, request_rate, spec, prefix_ratio, chunk_size, DATASET_NAME)
+        results.append(pd.DataFrame([metrics]))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
