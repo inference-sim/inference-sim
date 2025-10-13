@@ -110,11 +110,10 @@ def get_arrival_times(input_requests, request_rate, burstiness):
         normalize_factor = target_total_delay_s / delay_ts[-1]
         delay_ts = [delay * normalize_factor for delay in delay_ts]
 
-    curr_ts = 0
+    interval_us = 0
     for request_index, _ in enumerate(input_requests):
-        interval_us = int(curr_ts*1e6)
-        curr_ts += delay_ts[request_index]
         arrival_times.append(interval_us)
+        interval_us = int(delay_ts[request_index]*1e6)
     return arrival_times
     
 def generate_synthetic_requests(seed, model, num_requests, prefix_hit_rate, input_len_mean, output_len_mean, request_rate, data_folder):
