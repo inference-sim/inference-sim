@@ -67,7 +67,7 @@ models = ["Qwen2_5-7B", "Qwen3-14B"]
 metrics = ["mean_e2e_error", "median_e2e_error", "p99_e2e_error", "throughput_error", "active_steps_error"]
 specs = {
     "Qwen2_5-7B": ["LL", "LH"],
-    "Qwen3-14B": ["LL"]
+    "Qwen3-14B": ["LL", "LH"]
 }
 all_data = aggregate_results()
 plot_vllm_vs_sim(all_data, groupby=["model", "spec"])

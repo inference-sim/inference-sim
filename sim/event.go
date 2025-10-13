@@ -28,7 +28,7 @@ func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
 	// Just call queued event always
-	queued_delay := sim.getQueuedTime() // coming from alpha
+	queued_delay := sim.getQueuedTime(e.Request) // coming from alpha
 	sim.Schedule(&QueuedEvent{
 		time:    e.time + queued_delay,
 		Request: e.Request,

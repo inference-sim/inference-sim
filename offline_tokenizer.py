@@ -29,7 +29,7 @@ def main():
                 for prefix_hit_ratio in PREFIX_HIT_RATIOS:
                     spec_small = spec.lower()
                     input_folder = f"{results_dir}/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
-                    output_folder = f"data/scenario4/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                    output_folder = f"data/train/scenario4/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
                     if os.path.isdir(input_folder):
                         for input_dirpath, _, input_filenames in os.walk(input_folder):
                             for input_filename in input_filenames:
