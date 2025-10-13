@@ -43,7 +43,7 @@ class PrefixRepetitionRandomLengthsDataset():
         **kwargs,
     ) -> list[SampleRequest]:
         vocab_size = tokenizer.vocab_size
-        if num_requests < num_prefixes == 0:
+        if num_requests < num_prefixes:
             raise ValueError(
                 f"num_requests ({num_requests}) must be greater than or equal "
                 f"to num_prefixes ({num_prefixes})"
