@@ -163,9 +163,9 @@ if __name__ == "__main__":
             for chunk_size in CHUNK_SIZES:
                 for prefix_hit_ratio in PREFIX_HIT_RATIOS:
                     if args.mode == "train":
-                        requests_folder = f"data/{args.mode}/scenario4/{model_name}/{spec.lower()}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                        requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/{spec.lower()}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
                     else:
-                        requests_folder = f"data/{args.mode}/scenario4/{model_name}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                        requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/rr_{rr}/prefix_{prefix_hit_ratio}"
                     current_args = copy.deepcopy(args_template)
                     current_args[2] = str(rr / 1e6)
                     current_args[4] = str(MAX_NUM_SEQS)

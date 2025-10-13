@@ -56,19 +56,8 @@ class PrefixRepetitionRandomLengthsDataset():
             # Generate random tokens
             tokens = np.random.randint(
                 0, vocab_size, size=target_length).tolist()
-            text = tokenizer.decode(tokens)
-            re_encoded = tokenizer.encode(text, add_special_tokens=False)
-
-            if len(re_encoded) == target_length:
-                return re_encoded
-            elif len(re_encoded) < target_length:
-                # Recursively generate additional consistent tokens
-                needed = target_length - len(re_encoded)
-                extra_tokens = _generate_exact_length_tokens(needed)
-                return re_encoded + extra_tokens
-            else:
-                # Truncate to target length
-                return re_encoded[:target_length]
+        
+            return tokens
 
         requests = []
         input_len = int(np.random.normal(loc=input_len_mean, scale=input_len_mean/10))
