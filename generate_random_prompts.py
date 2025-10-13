@@ -43,8 +43,7 @@ class PrefixRepetitionRandomLengthsDataset():
         **kwargs,
     ) -> list[SampleRequest]:
         vocab_size = tokenizer.vocab_size
-        prompts_per_prefix = num_requests // num_prefixes
-        if prompts_per_prefix == 0:
+        if num_requests < num_prefixes == 0:
             raise ValueError(
                 f"num_requests ({num_requests}) must be greater than or equal "
                 f"to num_prefixes ({num_prefixes})"
@@ -56,34 +55,37 @@ class PrefixRepetitionRandomLengthsDataset():
             # Generate random tokens
             tokens = np.random.randint(
                 0, vocab_size, size=target_length).tolist()
-        
             return tokens
 
         requests = []
-        input_len = int(np.random.normal(loc=input_len_mean, scale=input_len_mean/10))
+        all_prefixes = []
         for _ in range(num_prefixes):
+            prefix_tokens = _generate_exact_length_tokens(100000)
+            all_prefixes.append(prefix_tokens)
+
+        for _ in range(num_requests):
+            input_len = int(np.random.normal(loc=input_len_mean, scale=input_len_mean/10))
             prefix_len = int(prefix_hit_rate * input_len)
-            prefix_tokens = _generate_exact_length_tokens(prefix_len)
+            prefix_idx = np.random.randint(0, len(all_prefixes))
+            prefix_tokens = all_prefixes[prefix_idx][:prefix_len]
+            suffix_len = input_len - prefix_len
+            suffix_tokens = _generate_exact_length_tokens(suffix_len)
 
-            for _ in range(prompts_per_prefix):
-                suffix_len = input_len - prefix_len
-                suffix_tokens = _generate_exact_length_tokens(suffix_len)
+            combined_tokens = prefix_tokens + suffix_tokens
+            prompt = combined_tokens
+            prompt_len = len(combined_tokens)
+            output_len = min(int(np.random.normal(loc=output_len_mean, scale=output_len_mean/10)), max_model_len - input_len - 10)
+            output_tokens = _generate_exact_length_tokens(output_len)
 
-                combined_tokens = prefix_tokens + suffix_tokens
-                prompt = combined_tokens
-                prompt_len = len(combined_tokens)
-                output_len = min(int(np.random.normal(loc=output_len_mean, scale=output_len_mean/10)), max_model_len - input_len - 10)
-                output_tokens = _generate_exact_length_tokens(output_len)
-
-                requests.append(
-                    SampleRequest(
-                        prompt=prompt,
-                        prompt_len=prompt_len,
-                        prefix_len=prefix_len,
-                        output=output_tokens,
-                        output_len=output_len
-                    )
+            requests.append(
+                SampleRequest(
+                    prompt=prompt,
+                    prompt_len=prompt_len,
+                    prefix_len=prefix_len,
+                    output=output_tokens,
+                    output_len=output_len
                 )
+            )
         np.random.shuffle(requests)
         return requests
     
