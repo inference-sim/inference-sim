@@ -11,7 +11,6 @@ import threading
 
 import pandas as pd
 
-from experiment_constants import *
 from generate_random_prompts import generate_synthetic_requests
 
 GO_BINARY_NAME = "simulation_worker"
@@ -80,9 +79,12 @@ def run_go_binary(thread_id, mode, arguments, model_name, spec, prefix_ratio, ch
     with metrics_lock:
         request_rate = int(float(arguments[2])*1e6)
         if mode == "train":
-            output_filename = f"{output_dir}/exp_{request_rate}r_{spec}_{prefix_ratio}_{chunk_size}_{DATASET_NAME}.json"
+            output_filename = f"{output_dir}/exp_train_{request_rate}r_{spec}_{prefix_ratio}_{chunk_size}_{DATASET_NAME}.json"
+        elif mode == "val":
+            output_filename = f"{output_dir}/exp_val_{request_rate}r_{spec}_{chunk_size}_{DATASET_NAME}.json"
         else:
             output_filename = f"{output_dir}/exp_{request_rate}r_{prefix_ratio}_{chunk_size}_{DATASET_NAME}.json"
+        
         if result.stderr:
             print(
                 f"[Thread {thread_id}] Go binary error output:\n{result.stderr}")
@@ -115,6 +117,12 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if args.mode == "val":
+        from experiment_constants_val import *
+    if args.mode == "test":
+        from experiment_constants import *
+    if args.mode == "train":
+        from experiment_constants_train import *
     model_name = MODEL.split("/")[-1].replace(".", "_")
     output_dir = os.path.join(args.output_dir, model_name)
     if os.path.exists(output_dir):
@@ -164,6 +172,8 @@ if __name__ == "__main__":
                 for prefix_hit_ratio in PREFIX_HIT_RATIOS:
                     if args.mode == "train":
                         requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/{spec.lower()}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                    if args.mode == "val":
+                        requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/{spec.lower()}/chunk_size_{chunk_size}/rr_{rr}"
                     else:
                         requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/rr_{rr}/prefix_{prefix_hit_ratio}"
                     current_args = copy.deepcopy(args_template)
