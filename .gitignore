@@ -56,3 +56,4 @@ uv.lock
 *.pyc
 
 analysis_results/
+saturation_regimes.xlsx
