@@ -155,24 +155,30 @@ if __name__ == "__main__":
     all_metrics = []
     if args.mode == "inference":
         SPECS = ['synthetic']
+    if args.mode == "test":
+        PREFIX_HIT_RATIOS = [0.1] # default value for exactly 1 loop execution
 
     for rr in REQUEST_RATES:
         for spec in SPECS:
             for mbnt in MAX_NUM_BATCHED_TOKENS:
-                requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/{spec.lower()}/mbnt_{mbnt}/rr_{rr}"
-                current_args = copy.deepcopy(args_template)
-                current_args[2] = str(rr / 1e6)
-                current_args[6] = str(TOTAL_KV_BLOCKS[model_name])
-                current_args[8] = str(mbnt)
-                current_args[10] = str(BLOCK_SIZE)
-                current_args[14] = ','.join(list(map(str, BETA_COEFFS[model_name])))
-                current_args[16] = os.path.join(requests_folder, f"detailed_results_{args.mode}_tokenized.json")
-                current_args[20] = ','.join(list(map(str, QUEUING_COEFFS[model_name])))
-                current_args[22] = ','.join(list(map(str, FINISHED_COEFFS[model_name])))
+                for prefix_hit_rate in PREFIX_HIT_RATIOS:
+                    if args.mode == "test":
+                        requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/{spec.lower()}/mbnt_{mbnt}/rr_{rr}"
+                    elif args.mode == "inference":
+                        requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/{spec.lower()}/rr_{rr}/prefix_{prefix_hit_rate}"
+                    current_args = copy.deepcopy(args_template)
+                    current_args[2] = str(rr / 1e6)
+                    current_args[6] = str(TOTAL_KV_BLOCKS[model_name])
+                    current_args[8] = str(mbnt)
+                    current_args[10] = str(BLOCK_SIZE)
+                    current_args[14] = ','.join(list(map(str, BETA_COEFFS[model_name])))
+                    current_args[16] = os.path.join(requests_folder, f"detailed_results_{args.mode}_tokenized.json")
+                    current_args[20] = ','.join(list(map(str, QUEUING_COEFFS[model_name])))
+                    current_args[22] = ','.join(list(map(str, FINISHED_COEFFS[model_name])))
 
-                tasks.append({"thread_id": thread_id, "mode": args.mode, "args": current_args,
-                            "output_dir": output_dir, "spec": spec, "mbnt": mbnt, "model": model_name, "results": all_metrics})
-                thread_id += 1
+                    tasks.append({"thread_id": thread_id, "mode": args.mode, "args": current_args,
+                                "output_dir": output_dir, "spec": spec, "mbnt": mbnt, "model": model_name, "results": all_metrics})
+                    thread_id += 1
 
     threads = []
     for task in tasks:
