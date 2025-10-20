@@ -14,7 +14,7 @@ import pandas as pd
 from generate_random_prompts import generate_synthetic_requests
 
 GO_BINARY_NAME = "simulation_worker"
-# SIMULATION_BASE_DIR=/Users/toslali/Desktop/work/ibm/projects/llm-inference/study/inference-llmd/inference-sim
+# e.g., SIMULATION_BASE_DIR=/Users/toslali/Desktop/work/ibm/projects/llm-inference/study/inference-llmd/inference-sim
 BASE_DIR = os.getenv("SIMULATION_BASE_DIR", os.path.dirname(os.path.abspath(__file__)))
 print(BASE_DIR)
 if BASE_DIR not in sys.path:
