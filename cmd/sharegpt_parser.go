@@ -2,23 +2,29 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
 
-// Conversation represents a single chat turn in the conversation.
-type Conversation struct {
-	From  string `json:"from"`
-	Value []int  `json:"value"`
+// Prompt corresponds to each request inside the "prompts" JSON array.
+type Prompt struct {
+	InputText     []int   `json:"input_text"`
+	GeneratedText []int   `json:"generated_text"`
+	InputLen      int     `json:"input_len"`
+	PrefixLen     int     `json:"prefix_len"`
+	OutputLen     int     `json:"output_len"`
+	E2ELatency    float64 `json:"e2e_latency"`
+	ArrivalTime   int64   `json:"arrival_time"`
 }
 
-// DataEntry represents a single top-level object in your JSON array.
+// DataEntry corresponds to the root JSON object.
 type DataEntry struct {
-	ID            string         `json:"id"`
-	Conversations []Conversation `json:"conversations"`
-	ArrivalDelta  int            `json:"arrivalDelta"`
+	NumPrompts  int      `json:"num_prompts"`
+	RequestRate float64  `json:"request_rate"`
+	Prompts     []Prompt `json:"prompts"` // A slice of the struct defined above
 }
 
 // Process input tokenized requests JSON file to extract only the first human-gpt from-value pair
@@ -32,7 +38,7 @@ func ProcessInputShareGPT(requestsFilePath string) []*sim.Request {
 	}
 
 	// Declare a slice of DataEntry to unmarshal the raw JSON into
-	var rawData []DataEntry
+	var rawData DataEntry
 
 	// Unmarshal the JSON data into the rawData slice
 	err = json.Unmarshal(fileContent, &rawData)
@@ -42,28 +48,20 @@ func ProcessInputShareGPT(requestsFilePath string) []*sim.Request {
 
 	var requests []*sim.Request
 
-	for _, entry := range rawData {
+	for i, prompt := range rawData.Prompts {
 		// We need to find the first human-gpt pair
-		var inputTokens []int
-		var outputTokens []int
-		pairCount := 0
 
-		for i := 0; i < len(entry.Conversations)-1 && pairCount < 2; i++ {
-			if entry.Conversations[i].From == "human" && entry.Conversations[i+1].From == "gpt" {
-				inputTokens = entry.Conversations[i].Value
-				outputTokens = entry.Conversations[i+1].Value
+		reqID := fmt.Sprintf("request_%d", i)
+		inputTokens := prompt.InputText
+		outputTokens := prompt.GeneratedText
 
-				req := sim.Request{
-					ID:           entry.ID,
-					InputTokens:  inputTokens,
-					OutputTokens: outputTokens,
-					ArrivalDelta: entry.ArrivalDelta,
-				}
-				requests = append(requests, &req)
-				pairCount++
-				i++ // Skip the gpt conversation as it's already processed
-			}
+		req := sim.Request{
+			ID:           reqID,
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			ArrivalTime:  prompt.ArrivalTime,
 		}
+		requests = append(requests, &req)
 	}
 
 	// Print the parsed requests to verify

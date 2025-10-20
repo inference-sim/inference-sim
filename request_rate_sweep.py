@@ -1,32 +1,73 @@
 import argparse
 import copy
 import itertools
+import json
 import os
+import re
 import shutil
 import subprocess
+import sys
 import threading
 
-from arrival_times_generation import add_arrival_delta, generate_arrival_times
+import pandas as pd
+
+from generate_random_prompts import generate_synthetic_requests
 
 GO_BINARY_NAME = "simulation_worker"
+# e.g., SIMULATION_BASE_DIR=/Users/toslali/Desktop/work/ibm/projects/llm-inference/study/inference-llmd/inference-sim
+BASE_DIR = os.getenv("SIMULATION_BASE_DIR", os.path.dirname(os.path.abspath(__file__)))
+print(BASE_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
 
 GO_BINARY_PATH = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), GO_BINARY_NAME)
-DEFAULT_OUTPUT_DIR = "results/sweep_params"
+
+
+DEFAULT_OUTPUT_DIR =  os.path.join(BASE_DIR, "results/sweep_params") 
+DEFAULT_DATA_FOLDER = os.path.join(BASE_DIR, "data") 
 DATASET_NAME = "sharegpt"
-TEMPERATURE = 0.0
 
-print_lock = threading.Lock()
+metrics_lock = threading.Lock()
 
+def parse_metrics_to_json(stdout, mode, filename, model_name, request_rate, spec, prefix_hit_ratio, chunk_size, dataset_name):
+    """
+    Reads text from standard input, parses key-value metrics,
+    and prints a single JSON object to standard output.
+    """
 
-def save_results(filename, output, arguments):
-    with open(filename, "w") as f:
-        f.write(' '.join(arguments))
-        f.write("\n\n")
-        f.write(output)
+    metrics_data = {}
+    metric_pattern = re.compile(r'^\s*(.+?)\s*:\s*([\d\.]+)')
+    metrics_data["model"] = model_name
+    metrics_data["request_rate"] = request_rate
+    if mode == "train":
+        metrics_data["spec"] = spec
+    metrics_data["prefix_ratio"] = prefix_hit_ratio
+    metrics_data["chunk_size"] = chunk_size
+    metrics_data["dataset"] = dataset_name
 
+    for line in stdout.split('\n'):
+        match = metric_pattern.search(line)
+        if match:
+            key = match.group(1).strip()
+            key = key.rstrip(":")
+            value_str = match.group(2)
 
-def run_go_binary(thread_id, arguments, num_requests, output_dir=DEFAULT_OUTPUT_DIR):
+            try:
+                if '.' in value_str:
+                    value = float(value_str)
+                else:
+                    value = int(value_str)
+                metrics_data[key] = value
+            except ValueError:
+                continue
+    
+    with open(filename, 'w+') as f:
+        json.dump(metrics_data, f, indent=4)
+    return metrics_data
+
+def run_go_binary(thread_id, mode, arguments, model_name, spec, prefix_ratio, chunk_size, results, output_dir=DEFAULT_OUTPUT_DIR):
+    print(' '.join(arguments))
     result = subprocess.run(
         [GO_BINARY_PATH] + arguments,
         capture_output=True,
@@ -35,103 +76,30 @@ def run_go_binary(thread_id, arguments, num_requests, output_dir=DEFAULT_OUTPUT_
         encoding='utf-8'
     )
     # print(result.stdout, flush=True)
-    with print_lock:
+    with metrics_lock:
         request_rate = int(float(arguments[2])*1e6)
-        long_prefill_token_threshold = int(arguments[26])
-        max_num_scheduled_token = int(arguments[8])
-        output_filename = f"{output_dir}/exp_{num_requests}p_{request_rate}r_{TEMPERATURE}t_{max_num_scheduled_token}mbt_{long_prefill_token_threshold}lpt_{DATASET_NAME}.txt"
-        save_results(output_filename, result.stdout, arguments)
+        if mode == "train":
+            output_filename = f"{output_dir}/exp_train_{request_rate}r_{spec}_{prefix_ratio}_{chunk_size}_{DATASET_NAME}.json"
+        elif mode == "val":
+            output_filename = f"{output_dir}/exp_val_{request_rate}r_{spec}_{chunk_size}_{DATASET_NAME}.json"
+        else:
+            output_filename = f"{output_dir}/exp_{request_rate}r_{prefix_ratio}_{chunk_size}_{DATASET_NAME}.json"
+        
         if result.stderr:
             print(
                 f"[Thread {thread_id}] Go binary error output:\n{result.stderr}")
-
+        metrics = parse_metrics_to_json(result.stdout, mode, output_filename, model_name, request_rate, spec, prefix_ratio, chunk_size, DATASET_NAME)
+        results.append(pd.DataFrame([metrics]))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run Go binary with sweep over different parameters")
 
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random generation seed"
-    )
-
-    parser.add_argument(
-        "--input_filename",
-        type=str,
-        help="Input ShareGPT tokenized requests filename"
-    )
-
-    parser.add_argument(
-        "--num_requests",
-        type=int,
-        nargs='+',
-        default=[400],
-        help="Number of requests to process"
-    )
-
-    parser.add_argument(
         "--output_dir",
         type=str,
         default=DEFAULT_OUTPUT_DIR,
         help="Directory to save output results from simulation"
-    )
-
-    parser.add_argument(
-        "--regression_coeffs",
-        type=str,
-        default="3.38283913e-05,9.82346868e-06,-3.11237143e-06,1.50291993e-03,4.24173346e-08,-1.06897441e-07,1.92844617e-07,2.60430816e-05,-7.72212201e-09,2.67059068e-08,7.20303280e-06,-1.06904337e-08,-1.05254706e-05,-9.19828725e-04,0.005708624032334771",
-    )
-    parser.add_argument(
-        "--schedule_time",
-        type=str,
-        default="544",
-    )
-    parser.add_argument(
-        "--update_time",
-        type=str,
-        default="80",
-    )
-    parser.add_argument(
-        "--queue_overhead_time",
-        type=str,
-        default="1000",
-    )
-    parser.add_argument(
-        "--vllm_overhead_time",
-        type=str,
-        default="6000",
-    )
-    parser.add_argument(
-        "--rates",
-        type=int,
-        nargs='+',
-        default=[32],
-        help='An optional list of request arrival rates. Defaults to [32]'
-    )
-
-    parser.add_argument(
-        "--max_num_batched_tokens",
-        type=int,
-        nargs='+',
-        default=[256],
-        help='An optional list of max_num_scheduled_tokens. Defaults to [256]'
-    )
-
-    parser.add_argument(
-        "--long_prefill_token_thresholds",
-        type=int,
-        nargs='+',
-        default=[128],
-        help='An optional list of long-prefill-token-thresholds. Defaults to [128]'
-    )
-
-    parser.add_argument(
-        "--total_kv_blocks",
-        type=str,
-        default="94060",
-        help="Total number of KV Blocks available"
     )
 
     parser.add_argument(
@@ -142,21 +110,21 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--max_num_seqs",
+        '--mode',
         type=str,
-        default="256",
-        help="Max number of requests in the running queue at a given time"
-    )
-
-    parser.add_argument(
-        "--block_size",
-        type=str,
-        default="16",
-        help="Block size in tokens"
+        default="test",
+        help="BLIS mode - train/test"
     )
 
     args = parser.parse_args()
-    output_dir = args.output_dir
+    if args.mode == "val":
+        from experiment_constants_val import *
+    if args.mode == "test":
+        from experiment_constants import *
+    if args.mode == "train":
+        from experiment_constants_train import *
+    model_name = MODEL.split("/")[-1].replace(".", "_")
+    output_dir = os.path.join(args.output_dir, model_name)
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
     os.makedirs(output_dir)
@@ -166,59 +134,69 @@ if __name__ == "__main__":
     if not os.path.exists(GO_BINARY_PATH):
         print(f"Error: Go binary not found at '{GO_BINARY_PATH}'.")
 
+    if args.mode == "test":
+        data_root_folder = f'{DEFAULT_DATA_FOLDER}/test/scenario4'
+        os.makedirs(data_root_folder, exist_ok=True)
+        for rr in REQUEST_RATES:
+            for prefix_hit_ratio in PREFIX_HIT_RATIOS:
+                generate_synthetic_requests(SEED, MODEL, NUM_PROMPTS, prefix_hit_ratio, 
+                                                       INFERENCE_SPECS["INPUT_LEN_MEAN"], INFERENCE_SPECS["OUTPUT_LEN_MEAN"], 
+                                                       rr, data_root_folder)
+
     args_template = [
         "run",
         "--rate", "0.000034",
-        "--max-num-running-reqs", args.max_num_seqs,
-        "--total-kv-blocks", args.total_kv_blocks,
+        "--max-num-running-reqs", "8192",
+        "--total-kv-blocks", "5000",
         "--max-num-scheduled-tokens", "256",
-        "--block-size-in-tokens", args.block_size,
+        "--block-size-in-tokens", "16",
         "--horizon", args.horizon,
-        "--regression-coeffs", args.regression_coeffs,
+        "--regression-coeffs", "1.17167255e-02,1.69822525e-05,1.86698155e-04",
         "--requests-file-path", "data/output_tokens_2025-06-30_arrivaldeltas.json",
-        "--schedule-time", args.schedule_time,
-        "--update-time", args.update_time,
-        "--queue-overhead-time", args.queue_overhead_time,
-        "--vllm-overhead-time", args.vllm_overhead_time,
-        "--long-prefill-token-threshold", "16",
+        "--long-prefill-token-threshold", "256",
+        "--queuing-coeffs", "1000, 1000",
+        "--finished-coeffs", "1000, 1000",
+        "--log", "warn"
     ]
-
-    rates = args.rates
-    num_requests = args.num_requests
-    input_filename_root = args.input_filename.split(".json")[0]
-
-    # timestamp tokenized requests file with arrival deltas based on num_requests and request_rate.
-    for n in num_requests:
-        for rate in rates:
-            timestamped_filename = f"{input_filename_root}_arrivaldeltas_n={n}_rr={rate}.json"
-            if os.path.exists(timestamped_filename):
-                continue
-            inter_arrival_times = list(
-                generate_arrival_times(n - 1, rate, seed=args.seed))
-            add_arrival_delta(args.input_filename,
-                              inter_arrival_times, n, timestamped_filename)
-
-    max_num_scheduled_tokens = args.max_num_batched_tokens
-    long_prefill_token_thresholds = args.long_prefill_token_thresholds
-
+    
     tasks = []
     thread_id = 1
-    for n, rate, max_num_token, threshold in itertools.product(num_requests, rates, max_num_scheduled_tokens, long_prefill_token_thresholds):
-        current_args = copy.deepcopy(args_template)
-        current_args[2] = str(rate / 1e6)
-        current_args[16] = f"{input_filename_root}_arrivaldeltas_n={n}_rr={rate}.json"
-        current_args[8] = str(max_num_token)
-        current_args[26] = str(threshold)
+    all_metrics_filepath = f"{args.output_dir}/simulator_{args.mode}_results.csv"
+    all_metrics = []
+    if args.mode == "test":
+        SPECS = ['N/A']
 
-        tasks.append({"thread_id": thread_id, "args": current_args,
-                     "num_requests": n, "output_dir": output_dir})
-        thread_id += 1
+    for rr in REQUEST_RATES:
+        for spec in SPECS:
+            for chunk_size in CHUNK_SIZES:
+                for prefix_hit_ratio in PREFIX_HIT_RATIOS:
+                    if args.mode == "train":
+                        requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/{spec.lower()}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                    if args.mode == "val":
+                        requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/{spec.lower()}/chunk_size_{chunk_size}/rr_{rr}"
+                    else:
+                        requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/rr_{rr}/prefix_{prefix_hit_ratio}"
+                    current_args = copy.deepcopy(args_template)
+                    current_args[2] = str(rr / 1e6)
+                    current_args[4] = str(MAX_NUM_SEQS)
+                    current_args[6] = str(TOTAL_KV_BLOCKS[model_name])
+                    current_args[8] = str(MAX_NUM_BATCHED_TOKENS)
+                    current_args[10] = str(BLOCK_SIZE)
+                    current_args[14] = ','.join(list(map(str, BETA_COEFFS[model_name])))
+                    current_args[16] = os.path.join(requests_folder, "detailed_results_test_tokenized.json")
+                    current_args[18] = str(chunk_size)
+                    current_args[20] = ','.join(list(map(str, QUEUING_COEFFS[model_name])))
+                    current_args[22] = ','.join(list(map(str, FINISHED_COEFFS[model_name])))
+
+                    tasks.append({"thread_id": thread_id, "mode": args.mode, "args": current_args,
+                                "output_dir": output_dir, "spec": spec, "prefix_ratio": prefix_hit_ratio, "chunk_size": chunk_size, "model": model_name, "results": all_metrics})
+                    thread_id += 1
 
     threads = []
     for task in tasks:
         thread = threading.Thread(
             target=run_go_binary,
-            args=(task["thread_id"], task["args"], task["num_requests"], task["output_dir"])
+            args=(task["thread_id"], task["mode"], task["args"], task["model"], task["spec"], task["prefix_ratio"], task["chunk_size"], task["results"], task["output_dir"])
         )
         threads.append(thread)
         thread.start()  # Start the thread
@@ -227,4 +205,11 @@ if __name__ == "__main__":
     for thread in threads:
         thread.join()
 
+    if os.path.exists(all_metrics_filepath):
+        df = pd.read_csv(all_metrics_filepath)
+        new_metrics = pd.concat(all_metrics, ignore_index=True)
+        final_df = pd.concat([df, new_metrics], ignore_index=True)
+    else:
+        final_df = pd.concat(all_metrics, ignore_index=True)
+    final_df.to_csv(all_metrics_filepath, index=False)
     print("--- All Go binary executions completed ---")

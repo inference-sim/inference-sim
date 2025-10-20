@@ -24,13 +24,14 @@ type Request struct {
 	State         string // "queued", "running", "completed"
 	ProgressIndex int    // Total number of input tokens processed so far + number of output tokens generated so far
 
-	TTFTSet        bool  // Tracks whether TTFT has been set
-	FirstTokenTime int64 // Timestamp when first token was generated
-	ArrivalDelta   int   // Delta timegap between previous and current request
-	ArrivalTime    int64 // Timestamp in ticks when the request arrives in the simulator
+	TTFTSet          bool  // Tracks whether TTFT has been set
+	FirstTokenTime   int64 // Timestamp when first token was generated
+	ArrivalTime      int64 // Timestamp in ticks when the request arrives in the simulator
+	ScheduledStepIdx int   // Step index when this request got scheduled (waiting -> running)
+	FinishedStepIdx  int   // Step index when this request got scheduled (waiting -> running)
 }
 
 // This method returns a human-readable string representation of a Request.
 func (req Request) String() string {
-	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v, ArrivalDelta: %d, ArrivalTime: %d)", req.ID, req.State, req.ProgressIndex, req.ArrivalDelta, req.ArrivalTime)
+	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v, ArrivalTime: %d)", req.ID, req.State, req.ProgressIndex, req.ArrivalTime)
 }
