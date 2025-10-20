@@ -29,7 +29,7 @@ setup(
     description="Simulation sweep utilities with Go backend",
     py_modules=[
         "request_rate_sweep",
-        "experiment_constants",
+        "experiment_constants_inference",
         "generate_random_prompts",
     ],
     install_requires=[
