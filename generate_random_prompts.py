@@ -43,7 +43,7 @@ class PrefixRepetitionRandomLengthsDataset():
         **kwargs,
     ) -> list[SampleRequest]:
         vocab_size = tokenizer.vocab_size
-        if num_requests < num_prefixes == 0:
+        if num_requests < num_prefixes:
             raise ValueError(
                 f"num_requests ({num_requests}) must be greater than or equal "
                 f"to num_prefixes ({num_prefixes})"
@@ -126,9 +126,9 @@ def generate_synthetic_requests(seed, model, num_requests, prefix_hit_rate, inpu
     for idx, request in enumerate(workload):
         request.ID = f'request_{idx}'
         request.arrival_time = arrival_times[idx]
-    data_model_rr_folder = os.path.join(data_folder, os.path.join(model_name, f'rr_{request_rate}/prefix_{prefix_hit_rate}'))
+    data_model_rr_folder = os.path.join(data_folder, os.path.join(model_name, f'synthetic/rr_{request_rate}/prefix_{prefix_hit_rate}'))
     os.makedirs(data_model_rr_folder, exist_ok=True)
-    data_filename = "detailed_results_test_tokenized.json"
+    data_filename = "detailed_results_inference_tokenized.json"
     data_full_filepath = os.path.join(data_model_rr_folder, data_filename)
     data_dump["prompts"] = [vars(req) for req in workload]
     with open(data_full_filepath, 'w') as f:

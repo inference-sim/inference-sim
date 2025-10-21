@@ -6,7 +6,7 @@ import shutil
 
 
 class GoBuildCommand(install):
-    """Builds Go binary and places it next to request_rate_sweep.py."""
+    """Builds Go binary and places it next to run_blis_sweep.py."""
     def run(self):
         print("Building Go binary (simulation_worker)...")
         subprocess.run(["go", "build", "-o", "simulation_worker", "main.go"], check=True)
@@ -14,7 +14,7 @@ class GoBuildCommand(install):
         # Continue normal Python install
         super().run()
 
-        # Copy binary into the installed site-packages folder (next to request_rate_sweep.py)
+        # Copy binary into the installed site-packages folder (next to run_blis_sweep.py)
         site_packages_dir = self.install_lib
         dest = os.path.join(site_packages_dir, "simulation_worker")
         print(f"Copying Go binary to {dest}")
@@ -28,8 +28,8 @@ setup(
     version="0.1.0",
     description="Simulation sweep utilities with Go backend",
     py_modules=[
-        "request_rate_sweep",
-        "experiment_constants",
+        "run_blis_sweep",
+        "experiment_constants_inference",
         "generate_random_prompts",
     ],
     install_requires=[

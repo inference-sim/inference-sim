@@ -1,12 +1,14 @@
+# only run this file in test mode
+
 import argparse
 import json
 import os
 
 from transformers import AutoTokenizer
-
+from experiment_constants_test import *
 
 parser = argparse.ArgumentParser(
-    description="A tokenizer for JSON requests in the ShareGPT format."
+    description="A tokenizer for JSON requests."
 )
 
 parser.add_argument(
@@ -15,18 +17,7 @@ parser.add_argument(
     help="Path for the scenario results folder"
 )
 
-parser.add_argument(
-    "--mode",
-    type=str,
-    help="train/val"
-)
-
 args = parser.parse_args()
-
-if args.mode == "val":
-    from experiment_constants_val import *
-else:
-    from experiment_constants import *
 
 # Load the tokenizer for given model
 tokenizer = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True, revision=None)
@@ -36,21 +27,14 @@ results_dir = args.results_path
 for rr in REQUEST_RATES:
     for spec in SPECS:
         spec_small = spec.lower()
-        for chunk_size in CHUNK_SIZES:
-            if args.mode == "val":
-                PREFIX_HIT_RATIOS = [0]
-            for prefix_hit_ratio in PREFIX_HIT_RATIOS:
-                if args.mode == "train":
-                    input_folder = f"{results_dir}/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
-                    output_folder = f"data/train/scenario4/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}/prefix_{prefix_hit_ratio}"
-                elif args.mode == "val":
-                    input_folder = f"{results_dir}/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}"
-                    output_folder = f"data/val/scenario4/{model_name}/{spec_small}/chunk_size_{chunk_size}/rr_{rr}"
+        for mbnt in MAX_NUM_BATCHED_TOKENS:
+                input_folder = f"{results_dir}/{model_name}/{spec_small}/mbnt_{mbnt}/rr_{rr}"
+                output_folder = f"data/test/scenario4/{model_name}/{spec_small}/mbnt_{mbnt}/rr_{rr}"
                 print(input_folder)
                 if os.path.isdir(input_folder):
                     for input_dirpath, _, input_filenames in os.walk(input_folder):
                         for input_filename in input_filenames:
-                            if input_filename == "detailed_results_test.json":
+                            if input_filename == f"detailed_results_test.json":
                                 full_path = os.path.join(input_dirpath, input_filename)
                                 try:
                                     with open(full_path, 'r', encoding='utf-8') as f:
@@ -68,21 +52,21 @@ for rr in REQUEST_RATES:
                                         if event["event_type"] == "SERVER_HIT":
                                             start_timestamp = event["timestamp"]
                                     for prompt in data["prompts"]:
-                                        input_text = prompt["input_text"]
-                                        tokenized_input_text = tokenizer.encode(input_text, add_special_tokens=False)
-                                        total_input_tokens += len(tokenized_input_text)
-                                        prompt["input_text"] = tokenized_input_text
-                                        # if len(tokenized_input_text) != prompt["input_len"]:
-                                        #     print("input mismatch:", len(tokenized_input_text), prompt["input_len"])
-
-                                        output_text = prompt["generated_text"]
-                                        tokenized_output_text = tokenizer.encode(output_text, add_special_tokens=False)
-                                        total_output_tokens += len(tokenized_output_text)
-                                        # if len(tokenized_output_text) != prompt["output_len"]:
-                                        #     print("output mismatch:", len(tokenized_output_text), prompt["output_len"])
-                                        
-                                        prompt["generated_text"] = tokenized_output_text
                                         if prompt["error"]=="":
+                                            input_text = prompt["input_text"]
+                                            tokenized_input_text = tokenizer(input_text).input_ids
+                                            total_input_tokens += len(tokenized_input_text)
+                                            prompt["input_text"] = tokenized_input_text
+                                            # if len(tokenized_input_text) != prompt["input_len"]:
+                                            #     print("input mismatch:", len(tokenized_input_text), prompt["input_len"])
+
+                                            output_text = prompt["generated_text"]
+                                            tokenized_output_text = tokenizer(output_text).input_ids
+                                            total_output_tokens += len(tokenized_output_text)
+                                            # if len(tokenized_output_text) != prompt["output_len"]:
+                                            #     print("output mismatch:", len(tokenized_output_text), prompt["output_len"])
+                                            
+                                            prompt["generated_text"] = tokenized_output_text
                                             for event in prompt["events"]:
                                                 if event["event_type"] == "SERVER_HIT":
                                                     prompt["arrival_time"] = int((event["timestamp"] - start_timestamp)*1e6)
@@ -96,7 +80,7 @@ for rr in REQUEST_RATES:
                                     print("Input", total_input_tokens, data["total_input_tokens"])
                                     print("Output", total_output_tokens, data["total_output_tokens"])
                                     os.makedirs(output_folder, exist_ok=True)
-                                    output_filename = "detailed_results_test_tokenized.json"
+                                    output_filename = f"detailed_results_test_tokenized.json"
                                     output_filepath = os.path.join(output_folder, output_filename)
                                     with open(output_filepath, 'w', encoding='utf-8') as f:
                                         json.dump(all_data, f, indent=2)
