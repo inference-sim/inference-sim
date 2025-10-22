@@ -6,7 +6,7 @@ Discrete event simulator for inference platforms.
 
 > Go >= 1.21 is required.
 
-### Testing Pipeline
+## Testing Pipeline
 
 #### Install and build inference-sim
 
@@ -38,15 +38,15 @@ python request_rate_sweep.py --mode test
 python analyze_sim_results.py
 ```
 
-### Inference Pipeline
+## Inference Pipeline
 
-# Install inference-sim
+#### Install inference-sim
 
 ```shell
 pip install git+https://github.com/inference-sim/inference-sim.git
 ```
 
-# Import and utilize BLIS related modules
+#### Import and utilize BLIS related modules
 
 ```shell
 spec = importlib.util.find_spec("run_blis_sweep")
@@ -55,14 +55,14 @@ CONSTANTS_PATH = SIMULATION_BASE_DIR / "experiment_constants_inference.py"
 RESULTS_PATH = SIMULATION_BASE_DIR / "results/sweep_params/simulator_inference_results.csv"
 ```
 
-# Set the env variable expected by the BLIS script
+#### Set the env variable expected by the BLIS script
 
 ```shell
 os.environ["SIMULATION_BASE_DIR"] = str(SIMULATION_BASE_DIR)
 runpy.run_module("run_blis_sweep", run_name="__main__")
 ```
 
-# Run BLIS sweep
+#### Run BLIS sweep
 
 Modify `experiment_constants_inference.py` as required to specify inference configs to BLIS. Next, run the simulator through:
 
