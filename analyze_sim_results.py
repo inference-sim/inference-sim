@@ -54,7 +54,7 @@ def aggregate_results():
                 row = {"model": MODEL, "spec": spec, "rr": rr, "mbnt": mbnt}
                 vllm_filename = f"vllm_{rr}r_{spec}_{mbnt}.json"
                 sim_filename = f"exp_test_{rr}r_{spec}_{mbnt}.json"
-                vllm_results_folder = f"../vllm-data-collection/scenario4/results_server_side/test/{MODEL}"
+                vllm_results_folder = f"../vllm-data-collection/scenario4/results_server_side/{MODEL}/test"
                 vllm_metrics = get_metrics_from_file(vllm_results_folder, vllm_filename)
                 if vllm_metrics[3] >= SATURATION_PERCENTAGE * rr:
                     print(f"{spec}, {rr}, {mbnt}")
