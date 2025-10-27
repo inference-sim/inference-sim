@@ -29,7 +29,7 @@ python offline_tokenizer.py --results_path <path to results_new/scenario in vllm
 Next, modify `experiment_constants_test.py` as required to specify test configs to BLIS. Finally, run BLIS sweeps.
 
 ```shell
-python request_rate_sweep.py --mode test
+python run_blis_sweep.py --mode test
 ```
 
 #### Analyze results for accuracy, MAE
