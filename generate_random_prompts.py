@@ -126,6 +126,7 @@ def generate_synthetic_requests(seed, model, num_requests, prefix_hit_rate, inpu
     for idx, request in enumerate(workload):
         request.ID = f'request_{idx}'
         request.arrival_time = arrival_times[idx]
+    request_rate = f"{float(request_rate):.2f}"
     data_model_rr_folder = os.path.join(data_folder, os.path.join(model_name, f'synthetic/rr_{request_rate}/prefix_{prefix_hit_rate}'))
     os.makedirs(data_model_rr_folder, exist_ok=True)
     data_filename = "detailed_results_inference_tokenized.json"
