@@ -73,7 +73,8 @@ def run_go_binary(thread_id, arguments, model_name, spec, mbnt, results, output_
     )
     # print(result.stdout, flush=True)
     with metrics_lock:
-        request_rate = int(float(arguments[2])*1e6)
+        request_rate = round(float(arguments[2])*1e6, 2)
+        request_rate = f"{float(request_rate):.2f}"
         output_filename = f"{output_dir}/exp_{args.mode}_{request_rate}r_{spec}_{mbnt}.json"
         
         if result.stderr:
@@ -153,13 +154,20 @@ if __name__ == "__main__":
     thread_id = 1
     all_metrics_filepath = f"{args.output_dir}/simulator_{args.mode}_results.csv"
     all_metrics = []
+    request_rates = []
     if args.mode == "inference":
         SPECS = ['synthetic']
     if args.mode == "test":
         PREFIX_HIT_RATIOS = [0.1] # default value for exactly 1 loop execution
 
-    for rr in REQUEST_RATES:
-        for spec in SPECS:
+    for spec in SPECS:
+        request_rates = []
+        if isinstance(REQUEST_RATES, dict):
+            request_rates = REQUEST_RATES[spec]
+        else:
+            request_rates = REQUEST_RATES
+        for rr in request_rates:
+            rr = f"{float(rr):.2f}"
             for mbnt in MAX_NUM_BATCHED_TOKENS:
                 for prefix_hit_rate in PREFIX_HIT_RATIOS:
                     if args.mode == "test":
@@ -167,7 +175,7 @@ if __name__ == "__main__":
                     elif args.mode == "inference":
                         requests_folder = f"{BASE_DIR}/data/{args.mode}/scenario4/{model_name}/{spec.lower()}/rr_{rr}/prefix_{prefix_hit_rate}"
                     current_args = copy.deepcopy(args_template)
-                    current_args[2] = str(rr / 1e6)
+                    current_args[2] = str(float(rr) / 1e6)
                     current_args[6] = str(TOTAL_KV_BLOCKS[model_name])
                     current_args[8] = str(mbnt)
                     current_args[10] = str(BLOCK_SIZE)
