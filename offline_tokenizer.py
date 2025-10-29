@@ -24,11 +24,13 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True, revisio
 model_name = MODEL.split("/")[-1].replace(".", "_")
 results_dir = args.results_path
 
-for rr in REQUEST_RATES:
-    for spec in SPECS:
+
+for spec in SPECS:
+    for rr in REQUEST_RATES[spec]:
         spec_small = spec.lower()
+        rr = f"{float(rr):.2f}"
         for mbnt in MAX_NUM_BATCHED_TOKENS:
-                input_folder = f"{results_dir}/{model_name}/{spec_small}/mbnt_{mbnt}/rr_{rr}"
+                input_folder = f"{results_dir}/{model_name}/test/{spec_small}/mbnt_{mbnt}/rr_{rr}"
                 output_folder = f"data/test/scenario4/{model_name}/{spec_small}/mbnt_{mbnt}/rr_{rr}"
                 print(input_folder)
                 if os.path.isdir(input_folder):
@@ -51,7 +53,7 @@ for rr in REQUEST_RATES:
                                     for event in data["prompts"][0]["events"]:
                                         if event["event_type"] == "SERVER_HIT":
                                             start_timestamp = event["timestamp"]
-                                    for prompt in data["prompts"]:
+                                    for prompt in data["prompts"][:NUM_PROMPTS]:
                                         if prompt["error"]=="":
                                             input_text = prompt["input_text"]
                                             tokenized_input_text = tokenizer(input_text).input_ids
