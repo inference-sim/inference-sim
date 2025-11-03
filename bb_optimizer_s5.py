@@ -1,7 +1,5 @@
-import json
 import os
-import re
-import subprocess
+import time
 import threading
 import concurrent.futures
 from typing import Dict, Optional
@@ -27,6 +25,7 @@ class InferenceSimOptimizer:
     def __init__(
         self,
         pbounds: Optional[Dict] = None,
+        scaling: Optional[Dict] = None,
         seed: int = 42,
         n_trials: int = 100
     ):
@@ -39,9 +38,14 @@ class InferenceSimOptimizer:
         """
         # Set default parameter bounds
         self.pbounds = pbounds or {
-            'beta0': (0, 1e-2),
-            'beta1': (0, 1e-4),
-            'beta2': (0, 1e-4),
+            'beta0': (0, 1),
+            'beta1': (0, 1),
+            'beta2': (0, 1),
+        }
+        self.scaling = scaling or {
+            'beta0': 1e-2,
+            'beta1': 1e-4,
+            'beta2': 1e-4
         }
         self.seed = seed
         if n_trials <= 0:
@@ -49,10 +53,20 @@ class InferenceSimOptimizer:
         self.n_trials = n_trials
         self.metrics_lock = threading.Lock()
         self.model_name = config["MODEL"].split("/")[-1].replace(".", "_")
-        self.unsaturated_exps = get_unsaturated_exps(self.model_name)
+        vllm_results_folder = f"../vllm-data-collection/scenario4/results_server_side/{self.model_name}/train"
+        self.unsaturated_exps = get_unsaturated_exps(vllm_results_folder)
         self.alpha_coeffs = config["QUEUING_COEFFS"][self.model_name] + config["FINISHED_COEFFS"][self.model_name]
         self.alpha_coeffs = list(map(str, self.alpha_coeffs))
         self.total_kv_blocks = config["TOTAL_KV_BLOCKS"][self.model_name]
+
+        # get vllm ground truth metrics and save into a dict, 
+        # to avoid processing every iteration
+        self.all_vllm_metrics = {}
+        for exp in self.unsaturated_exps:
+            request_rate, spec, mbnt = exp["rr"], exp["spec"], exp["mbnt"]
+            vllm_filename = f"vllm_{request_rate}r_{spec}_{mbnt}.json"
+            exp_vllm_metrics = parse_vllm_metrics_to_json(vllm_results_folder, vllm_filename)
+            self.all_vllm_metrics[f"{request_rate}r_{spec}_{mbnt}"] = exp_vllm_metrics
         
     def cost_function(self, vllm_metrics, sim_metrics):
         metric_names = ["Mean E2E(ms)", "Median E2E(ms)", "P99 E2E(ms)"]
@@ -63,11 +77,14 @@ class InferenceSimOptimizer:
         return total_mape
         
     def per_thread_cost(self, spec, mbnt, request_rate, beta_coeffs):
+        """
+        Run simulator per experiment thread and obtain simulator results. 
+        Compare against vllm ground truth metrics and return cost per experiment
+        """
         # get vllm ground truth
-        vllm_filename = f"vllm_{request_rate}r_{spec}_{mbnt}.json"
-        vllm_results_folder = f"../vllm-data-collection/scenario4/results_server_side/{self.model_name}/train"
-        vllm_metrics = parse_vllm_metrics_to_json(vllm_results_folder, vllm_filename)
-        if not vllm_metrics:
+        if f"{request_rate}r_{spec}_{mbnt}" in self.all_vllm_metrics:
+            vllm_metrics = self.all_vllm_metrics[f"{request_rate}r_{spec}_{mbnt}"]
+        else:
             return None
         
         # get sim metrics
@@ -95,11 +112,11 @@ class InferenceSimOptimizer:
         return self.per_thread_cost(*args_tuple)
 
     def multithreaded_obj(self, trial: optuna.trial.Trial):
-        total_cost = 0
+        total_cost = 0.0
         tasks = []
-        beta0 = trial.suggest_float('beta0', *self.pbounds['beta0'])
-        beta1 = trial.suggest_float('beta1', *self.pbounds['beta1'])
-        beta2 = trial.suggest_float('beta2', *self.pbounds['beta2'])
+        beta0 = trial.suggest_float('beta0', *self.pbounds['beta0']) * self.scaling['beta0']
+        beta1 = trial.suggest_float('beta1', *self.pbounds['beta1']) * self.scaling['beta1']
+        beta2 = trial.suggest_float('beta2', *self.pbounds['beta2']) * self.scaling['beta2']
         beta_coeffs = [beta0, beta1, beta2]
         beta_coeffs = list(map(str, beta_coeffs))
 
@@ -113,13 +130,13 @@ class InferenceSimOptimizer:
         return total_cost
 
 
-    def optimize(self, sampler: str = "implicit_natural_gradient"):
+    def optimize(self, sampler: str = ""):
         """
         Run optimization study.
         
         Args:
             n_trials: Number of optimization trials to run, defaults to 100
-            sampler: Sampler to use for optimization, defaults to "implicit_natural_gradient"
+            sampler: Sampler to use for optimization, defaults to "TPESampler"
         """
         print("=" * 60)
         print("STARTING OPTIMIZATION")
@@ -130,11 +147,14 @@ class InferenceSimOptimizer:
         
         if sampler == "implicit_natural_gradient":
             mod = optunahub.load_module("samplers/implicit_natural_gradient")
-            sampler_obj = mod.ImplicitNaturalGradientSampler(self.seed)
+            sampler_obj = mod.ImplicitNaturalGradientSampler(seed=self.seed)
         else:
             sampler_obj = TPESampler(seed=self.seed)
         
-        self.study = optuna.create_study(sampler=sampler_obj)  
+        self.study = optuna.create_study(sampler=sampler_obj, 
+                                         direction="minimize", 
+                                         load_if_exists=False,
+                                         storage=None)  
         self.study.optimize(self.multithreaded_obj, n_trials=self.n_trials)    
         self.train_score = self.study.best_value
         
@@ -142,7 +162,9 @@ class InferenceSimOptimizer:
         print("OPTIMIZATION COMPLETED")
         print("=" * 60)
         print(f"Best Training Error: {self.study.best_value}")
-        print(f"Best Parameters: {self.study.best_params}")
+        print(f"Best Parameters:")
+        for param in self.study.best_params:
+            print(f"{param}: {self.study.best_params[param] * self.scaling[param]}")
         print("=" * 60)
 
     def get_best_params(self):
@@ -166,4 +188,5 @@ class InferenceSimOptimizer:
         return optuna.visualization.plot_optimization_history(self.study)
     
 optimizer = InferenceSimOptimizer()
-optimizer.optimize()
+optimizer.optimize(sampler="implicit_natural_gradient")
+optimizer.visualize_study()

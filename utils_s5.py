@@ -3,10 +3,9 @@ import os
 import re
 import subprocess
 
-def get_unsaturated_exps(model_name):
+def get_unsaturated_exps(results_folder):
     # find only unsaturated configs to train over
     unsaturated_exps = []
-    results_folder = f"../vllm-data-collection/scenario4/results_server_side/{model_name}/train"
     if os.path.isdir(results_folder):
         for _, _, filenames in os.walk(results_folder):
             for filename in filenames:
