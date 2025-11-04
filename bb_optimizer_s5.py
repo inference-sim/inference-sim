@@ -1,11 +1,12 @@
+from multiprocessing import Pool
+import numpy as np
 import os
-import time
-import threading
-import concurrent.futures
+from tqdm import tqdm
 from typing import Dict, Optional
 import optuna
 import optunahub
-from optuna.samplers import TPESampler
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 
 from experiment_configs_scenario5 import config
 from utils_s5 import get_unsaturated_exps, parse_vllm_metrics_to_json, run_go_binary
@@ -27,7 +28,7 @@ class InferenceSimOptimizer:
         pbounds: Optional[Dict] = None,
         scaling: Optional[Dict] = None,
         seed: int = 42,
-        n_trials: int = 100
+        n_trials: int = None
     ):
         """
         Initialize the InferenceSimOptimizer.
@@ -48,16 +49,23 @@ class InferenceSimOptimizer:
             'beta2': 1e-4
         }
         self.seed = seed
-        if n_trials <= 0:
+        if n_trials and n_trials <= 0:
             raise ValueError("Number of trials must be a positive integer.")
-        self.n_trials = n_trials
-        self.metrics_lock = threading.Lock()
+        # self.metrics_lock = threading.Lock()
         self.model_name = config["MODEL"].split("/")[-1].replace(".", "_")
         vllm_results_folder = f"../vllm-data-collection/scenario4/results_server_side/{self.model_name}/train"
         self.unsaturated_exps = get_unsaturated_exps(vllm_results_folder)
         self.alpha_coeffs = config["QUEUING_COEFFS"][self.model_name] + config["FINISHED_COEFFS"][self.model_name]
         self.alpha_coeffs = list(map(str, self.alpha_coeffs))
         self.total_kv_blocks = config["TOTAL_KV_BLOCKS"][self.model_name]
+
+        self.search_space = {
+            'beta0': list(np.round(np.linspace(0, 1, 10), 3)),
+            'beta1': list(np.round(np.linspace(0, 1, 10), 3)),
+            'beta2': list(np.round(np.linspace(0, 1, 10), 3)),
+        }
+
+        self.n_trials = n_trials if n_trials else len(self.search_space['beta0']) * len(self.search_space['beta1']) * len(self.search_space['beta2'])
 
         # get vllm ground truth metrics and save into a dict, 
         # to avoid processing every iteration
@@ -67,6 +75,11 @@ class InferenceSimOptimizer:
             vllm_filename = f"vllm_{request_rate}r_{spec}_{mbnt}.json"
             exp_vllm_metrics = parse_vllm_metrics_to_json(vllm_results_folder, vllm_filename)
             self.all_vllm_metrics[f"{request_rate}r_{spec}_{mbnt}"] = exp_vllm_metrics
+
+        print("=" * 60)
+        print("STARTING OPTIMIZATION")
+        print("=" * 60)
+        print(f"Number of Trials: {self.n_trials}")
         
     def cost_function(self, vllm_metrics, sim_metrics):
         metric_names = ["Mean E2E(ms)", "Median E2E(ms)", "P99 E2E(ms)"]
@@ -102,7 +115,7 @@ class InferenceSimOptimizer:
         args_list = ["run"]
         for key in args:
             args_list.extend([f"--{key}", str(args[key])])
-        sim_metrics = run_go_binary(args_list, GO_BINARY_PATH, self.metrics_lock, self.model_name, spec, mbnt, request_rate)
+        sim_metrics = run_go_binary(args_list, GO_BINARY_PATH, self.model_name, spec, mbnt, request_rate)
         if not sim_metrics:
             return None
         cost = self.cost_function(vllm_metrics, sim_metrics)
@@ -112,7 +125,7 @@ class InferenceSimOptimizer:
         return self.per_thread_cost(*args_tuple)
 
     def multithreaded_obj(self, trial: optuna.trial.Trial):
-        total_cost = 0.0
+        print(f"Running trial {trial.number=} in process {os.getpid()}")
         tasks = []
         beta0 = trial.suggest_float('beta0', *self.pbounds['beta0']) * self.scaling['beta0']
         beta1 = trial.suggest_float('beta1', *self.pbounds['beta1']) * self.scaling['beta1']
@@ -122,14 +135,13 @@ class InferenceSimOptimizer:
 
         for exp in self.unsaturated_exps:
             tasks.append((exp["spec"], exp["mbnt"], exp["rr"], beta_coeffs))
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            all_costs = executor.map(self.run_task_from_tuple, tasks)
-            valid_costs = [cost for cost in all_costs if cost is not None]
-            total_cost = sum(valid_costs)
-        return total_cost
-
-
+        
+        all_costs = []
+        for task in tqdm(tasks):
+            all_costs.append(self.run_task_from_tuple(task))
+        valid_costs = [cost for cost in all_costs if cost is not None]
+        return sum(valid_costs)
+       
     def optimize(self, sampler: str = ""):
         """
         Run optimization study.
@@ -138,23 +150,19 @@ class InferenceSimOptimizer:
             n_trials: Number of optimization trials to run, defaults to 100
             sampler: Sampler to use for optimization, defaults to "TPESampler"
         """
-        print("=" * 60)
-        print("STARTING OPTIMIZATION")
-        print("=" * 60)
-        print(f"Number of Trials: {self.n_trials}")
-        print(f"Sampler: {sampler}")
-        print("=" * 60)
-        
         if sampler == "implicit_natural_gradient":
             mod = optunahub.load_module("samplers/implicit_natural_gradient")
             sampler_obj = mod.ImplicitNaturalGradientSampler(seed=self.seed)
+        elif sampler == "grid_sampler":
+            sampler_obj = optuna.samplers.GridSampler(self.search_space, seed=self.seed)
         else:
-            sampler_obj = TPESampler(seed=self.seed)
+            sampler_obj = optuna.samplers.TPESampler(seed=self.seed)
         
         self.study = optuna.create_study(sampler=sampler_obj, 
-                                         direction="minimize", 
-                                         load_if_exists=False,
-                                         storage=None)  
+                                         direction="minimize",
+                                         study_name="journal_storage_multiprocess",
+                                         storage=JournalStorage(JournalFileBackend(file_path="./journal.log")),
+                                         load_if_exists=True)  
         self.study.optimize(self.multithreaded_obj, n_trials=self.n_trials)    
         self.train_score = self.study.best_value
         
@@ -187,6 +195,16 @@ class InferenceSimOptimizer:
         import optuna.visualization
         return optuna.visualization.plot_optimization_history(self.study)
     
-optimizer = InferenceSimOptimizer()
-optimizer.optimize(sampler="implicit_natural_gradient")
-optimizer.visualize_study()
+
+def with_inp(args):
+    i, optimizer = args
+    optimizer.optimize(sampler = "grid_sampler")
+
+if __name__ == "__main__":
+    optimizer = InferenceSimOptimizer(n_trials=1)
+    
+    with Pool(processes=16) as pool:
+        pool.map(with_inp, ((i, optimizer) for i in range(16)))
+
+    optimizer.optimize(sampler = "grid_sampler")
+    optimizer.visualize_study()
