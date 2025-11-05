@@ -53,7 +53,7 @@ class InferenceSimOptimizer:
         self.n_trials = n_trials
         self.metrics_lock = threading.Lock()
         self.model_name = config["MODEL"].split("/")[-1].replace(".", "_")
-        vllm_results_folder = f"../vllm-data-collection/scenario4/results_server_side/{self.model_name}/train"
+        vllm_results_folder = f"results_server_side/{self.model_name}/train"
         self.unsaturated_exps = get_unsaturated_exps(vllm_results_folder)
         self.alpha_coeffs = config["QUEUING_COEFFS"][self.model_name] + config["FINISHED_COEFFS"][self.model_name]
         self.alpha_coeffs = list(map(str, self.alpha_coeffs))
@@ -102,7 +102,7 @@ class InferenceSimOptimizer:
         args_list = ["run"]
         for key in args:
             args_list.extend([f"--{key}", str(args[key])])
-        sim_metrics = run_go_binary(args_list, GO_BINARY_PATH, self.metrics_lock, self.model_name, spec, mbnt, request_rate)
+        sim_metrics = run_go_binary(args_list, GO_BINARY_PATH, self.model_name, spec, mbnt, request_rate, self.metrics_lock)
         if not sim_metrics:
             return None
         cost = self.cost_function(vllm_metrics, sim_metrics)
@@ -187,6 +187,6 @@ class InferenceSimOptimizer:
         import optuna.visualization
         return optuna.visualization.plot_optimization_history(self.study)
     
-optimizer = InferenceSimOptimizer()
-optimizer.optimize(sampler="implicit_natural_gradient")
+optimizer = InferenceSimOptimizer(n_trials=50)
+optimizer.optimize(sampler="")
 optimizer.visualize_study()
