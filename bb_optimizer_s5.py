@@ -53,7 +53,7 @@ class InferenceSimOptimizer:
             raise ValueError("Number of trials must be a positive integer.")
         # self.metrics_lock = threading.Lock()
         self.model_name = config["MODEL"].split("/")[-1].replace(".", "_")
-        vllm_results_folder = f"../vllm-data-collection/scenario4/results_server_side/{self.model_name}/train"
+        vllm_results_folder = f"results_server_side/{self.model_name}/train"
         self.unsaturated_exps = get_unsaturated_exps(vllm_results_folder)
         self.alpha_coeffs = config["QUEUING_COEFFS"][self.model_name] + config["FINISHED_COEFFS"][self.model_name]
         self.alpha_coeffs = list(map(str, self.alpha_coeffs))
@@ -65,7 +65,8 @@ class InferenceSimOptimizer:
             'beta2': list(np.round(np.linspace(0, 1, 10), 3)),
         }
 
-        self.n_trials = n_trials if n_trials else len(self.search_space['beta0']) * len(self.search_space['beta1']) * len(self.search_space['beta2'])
+        search_space_len = len(self.search_space['beta0']) * len(self.search_space['beta1']) * len(self.search_space['beta2'])
+        self.n_trials = n_trials if n_trials else search_space_len // num_processes
 
         # get vllm ground truth metrics and save into a dict, 
         # to avoid processing every iteration
@@ -156,7 +157,7 @@ class InferenceSimOptimizer:
         elif sampler == "grid_sampler":
             sampler_obj = optuna.samplers.GridSampler(self.search_space, seed=self.seed)
         else:
-            sampler_obj = optuna.samplers.TPESampler(seed=self.seed)
+            sampler_obj = optuna.samplers.TPESampler(seed=self.seed, multivariate=True, group=True, constant_liar=True)
         
         self.study = optuna.create_study(sampler=sampler_obj, 
                                          direction="minimize",
@@ -198,13 +199,14 @@ class InferenceSimOptimizer:
 
 def with_inp(args):
     i, optimizer = args
-    optimizer.optimize(sampler = "grid_sampler")
+    optimizer.optimize(sampler = "")
 
 if __name__ == "__main__":
     optimizer = InferenceSimOptimizer(n_trials=1)
+    num_processes = 50
     
-    with Pool(processes=16) as pool:
-        pool.map(with_inp, ((i, optimizer) for i in range(16)))
+    with Pool(processes=num_processes) as pool:
+        pool.map(with_inp, ((i, optimizer) for i in range(num_processes)))
 
-    optimizer.optimize(sampler = "grid_sampler")
+    optimizer.optimize(sampler = "")
     optimizer.visualize_study()
