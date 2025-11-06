@@ -15,7 +15,7 @@ GO_BINARY_NAME = "simulation_worker"
 GO_BINARY_PATH = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), GO_BINARY_NAME)
 
-class InferenceSimOptimizer:
+class InferenceSimOptimizerMultiTrial:
     """
     A class for black box optimization of inference simulation parameters.
     
@@ -199,14 +199,14 @@ class InferenceSimOptimizer:
 
 def with_inp(args):
     i, optimizer = args
-    optimizer.optimize(sampler = "")
+    optimizer.optimize(sampler = "grid_sampler")
 
 if __name__ == "__main__":
-    optimizer = InferenceSimOptimizer(n_trials=1)
+    optimizer = InferenceSimOptimizerMultiTrial(n_trials=1)
     num_processes = 50
     
     with Pool(processes=num_processes) as pool:
         pool.map(with_inp, ((i, optimizer) for i in range(num_processes)))
 
-    optimizer.optimize(sampler = "")
+    optimizer.optimize(sampler = "grid_sampler")
     optimizer.visualize_study()
