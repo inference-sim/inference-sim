@@ -1,10 +1,11 @@
 from multiprocessing import Pool
 import numpy as np
 import os
+import concurrent
+import threading
 from tqdm import tqdm
 from typing import Dict, Optional
 import optuna
-import optunahub
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
 
@@ -14,8 +15,9 @@ from utils_s5 import get_unsaturated_exps, parse_vllm_metrics_to_json, run_go_bi
 GO_BINARY_NAME = "simulation_worker"
 GO_BINARY_PATH = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), GO_BINARY_NAME)
-
-class InferenceSimOptimizerMultiTrial:
+VLLM_DATA_DIR = os.getenv("VLLM_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+    
+class InferenceSimOptimizer:
     """
     A class for black box optimization of inference simulation parameters.
     
@@ -25,10 +27,8 @@ class InferenceSimOptimizerMultiTrial:
     
     def __init__(
         self,
-        pbounds: Optional[Dict] = None,
-        scaling: Optional[Dict] = None,
-        seed: int = 42,
-        n_trials: int = None
+        pbounds_scaling: Optional[Dict] = None,
+        seed: int = 42
     ):
         """
         Initialize the InferenceSimOptimizer.
@@ -37,36 +37,26 @@ class InferenceSimOptimizerMultiTrial:
             pbounds: Parameter bounds for optimization variables
             scaling: Scaling factors for parameters
         """
-        # Set default parameter bounds
-        self.pbounds = pbounds or {
-            'beta0': (0, 1),
-            'beta1': (0, 1),
-            'beta2': (0, 1),
+        # Set default parameter bounds, scaling
+        self.pbounds_scaling = pbounds_scaling or {
+            'beta0': (1e-4, 1e4),
+            'beta1': (1e-4, 1e4),
+            'beta2': (1e-4, 1e4),
         }
-        self.scaling = scaling or {
-            'beta0': 1e-2,
-            'beta1': 1e-4,
-            'beta2': 1e-4
+        self.scaling = {
+            'beta0': 1,
+            'beta1': 1,
+            'beta2': 1
         }
         self.seed = seed
-        if n_trials and n_trials <= 0:
-            raise ValueError("Number of trials must be a positive integer.")
-        # self.metrics_lock = threading.Lock()
+
+        self.metrics_lock = None
         self.model_name = config["MODEL"].split("/")[-1].replace(".", "_")
-        vllm_results_folder = f"results_server_side/{self.model_name}/train"
+        vllm_results_folder = f"{VLLM_DATA_DIR}/results_server_side/{self.model_name}/train"
         self.unsaturated_exps = get_unsaturated_exps(vllm_results_folder)
         self.alpha_coeffs = config["QUEUING_COEFFS"][self.model_name] + config["FINISHED_COEFFS"][self.model_name]
         self.alpha_coeffs = list(map(str, self.alpha_coeffs))
         self.total_kv_blocks = config["TOTAL_KV_BLOCKS"][self.model_name]
-
-        self.search_space = {
-            'beta0': list(np.round(np.linspace(0, 1, 10), 3)),
-            'beta1': list(np.round(np.linspace(0, 1, 10), 3)),
-            'beta2': list(np.round(np.linspace(0, 1, 10), 3)),
-        }
-
-        search_space_len = len(self.search_space['beta0']) * len(self.search_space['beta1']) * len(self.search_space['beta2'])
-        self.n_trials = n_trials if n_trials else search_space_len // num_processes
 
         # get vllm ground truth metrics and save into a dict, 
         # to avoid processing every iteration
@@ -76,11 +66,6 @@ class InferenceSimOptimizerMultiTrial:
             vllm_filename = f"vllm_{request_rate}r_{spec}_{mbnt}.json"
             exp_vllm_metrics = parse_vllm_metrics_to_json(vllm_results_folder, vllm_filename)
             self.all_vllm_metrics[f"{request_rate}r_{spec}_{mbnt}"] = exp_vllm_metrics
-
-        print("=" * 60)
-        print("STARTING OPTIMIZATION")
-        print("=" * 60)
-        print(f"Number of Trials: {self.n_trials}")
         
     def cost_function(self, vllm_metrics, sim_metrics):
         metric_names = ["Mean E2E(ms)", "Median E2E(ms)", "P99 E2E(ms)"]
@@ -89,7 +74,7 @@ class InferenceSimOptimizerMultiTrial:
             mape = abs(sim_metrics[metric] - vllm_metrics[metric])/vllm_metrics[metric] * 100
             total_mape += mape
         return total_mape
-        
+    
     def per_thread_cost(self, spec, mbnt, request_rate, beta_coeffs):
         """
         Run simulator per experiment thread and obtain simulator results. 
@@ -116,16 +101,67 @@ class InferenceSimOptimizerMultiTrial:
         args_list = ["run"]
         for key in args:
             args_list.extend([f"--{key}", str(args[key])])
-        sim_metrics = run_go_binary(args_list, GO_BINARY_PATH, self.model_name, spec, mbnt, request_rate)
+        sim_metrics = run_go_binary(args_list, GO_BINARY_PATH, self.model_name, spec, mbnt, request_rate, self.metrics_lock)
         if not sim_metrics:
             return None
         cost = self.cost_function(vllm_metrics, sim_metrics)
         return cost
-
+    
     def run_task_from_tuple(self, args_tuple):
         return self.per_thread_cost(*args_tuple)
 
-    def multithreaded_obj(self, trial: optuna.trial.Trial):
+    def multiexp_obj(self, trial: optuna.trial.Trial):
+        total_cost = 0.0
+        tasks = []
+        self.metrics_lock = threading.Lock()
+        beta0 = trial.suggest_float('beta0', *self.pbounds_scaling['beta0'], log=True)
+        beta1 = trial.suggest_float('beta1', *self.pbounds_scaling['beta1'], log=True)
+        beta2 = trial.suggest_float('beta2', *self.pbounds_scaling['beta2'], log=True)
+        beta_coeffs = [beta0, beta1, beta2]
+        beta_coeffs = list(map(str, beta_coeffs))
+
+        for exp in self.unsaturated_exps:
+            tasks.append((exp["spec"], exp["mbnt"], exp["rr"], beta_coeffs))
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            all_costs = executor.map(self.run_task_from_tuple, tasks)
+            valid_costs = [cost for cost in all_costs if cost is not None]
+            total_cost = sum(valid_costs)
+        return total_cost
+
+
+    def optimize_multiexp(self, n_trials: int = 50):
+        """
+        Run TPE log sampler to find best scaling parameters.
+        
+        Args:
+            n_trials: Number of optimization trials to run, defaults to 50
+        """
+        print("=" * 60)
+        print("STARTING OPTIMIZATION")
+        print("=" * 60)
+        print(f"Number of Trials: {n_trials}")
+        print("=" * 60)
+        
+        sampler_obj = optuna.samplers.TPESampler(seed=self.seed)
+        
+        self.study = optuna.create_study(sampler=sampler_obj, 
+                                         direction="minimize", 
+                                         load_if_exists=False,
+                                         storage=None)  
+        self.study.optimize(self.multiexp_obj, n_trials=n_trials)    
+        self.train_score = self.study.best_value
+        
+        print("=" * 60)
+        print("OPTIMIZATION COMPLETED")
+        print("=" * 60)
+        print(f"Best Training Error: {self.study.best_value}")
+        print(f"Best Parameters:")
+        for param in self.study.best_params:
+            print(f"Scaling for {param}: {self.study.best_params[param]}")
+        print("=" * 60)
+
+    def multitrial_obj(self, trial: optuna.trial.Trial):
         print(f"Running trial {trial.number=} in process {os.getpid()}")
         tasks = []
         beta0 = trial.suggest_float('beta0', *self.pbounds['beta0']) * self.scaling['beta0']
@@ -139,11 +175,11 @@ class InferenceSimOptimizerMultiTrial:
         
         all_costs = []
         for task in tqdm(tasks):
-            all_costs.append(self.run_task_from_tuple(task))
+            all_costs.append(self.per_thread_cost(*task))
         valid_costs = [cost for cost in all_costs if cost is not None]
         return sum(valid_costs)
        
-    def optimize(self, sampler: str = ""):
+    def optimize_multitrial(self):
         """
         Run optimization study.
         
@@ -151,20 +187,13 @@ class InferenceSimOptimizerMultiTrial:
             n_trials: Number of optimization trials to run, defaults to 100
             sampler: Sampler to use for optimization, defaults to "TPESampler"
         """
-        if sampler == "implicit_natural_gradient":
-            mod = optunahub.load_module("samplers/implicit_natural_gradient")
-            sampler_obj = mod.ImplicitNaturalGradientSampler(seed=self.seed)
-        elif sampler == "grid_sampler":
-            sampler_obj = optuna.samplers.GridSampler(self.search_space, seed=self.seed)
-        else:
-            sampler_obj = optuna.samplers.TPESampler(seed=self.seed, multivariate=True, group=True, constant_liar=True)
-        
+        sampler_obj = optuna.samplers.GridSampler(self.search_space, seed=self.seed)
         self.study = optuna.create_study(sampler=sampler_obj, 
                                          direction="minimize",
-                                         study_name="journal_storage_multiprocess",
+                                         study_name="journal_storage_multitrial",
                                          storage=JournalStorage(JournalFileBackend(file_path="./journal.log")),
                                          load_if_exists=True)  
-        self.study.optimize(self.multithreaded_obj, n_trials=self.n_trials)    
+        self.study.optimize(self.multitrial_obj, n_trials=1)    
         self.train_score = self.study.best_value
         
         print("=" * 60)
@@ -186,7 +215,8 @@ class InferenceSimOptimizerMultiTrial:
         if self.study is None:
             raise ValueError("No study available. Run optimize() first.")
         
-        return self.study.best_params
+        for param in self.study.best_params:
+            print(f"{param}: {self.study.best_params[param] * self.scaling[param]}")
 
     def visualize_study(self):
         """Visualize the optimization study results."""
@@ -195,18 +225,27 @@ class InferenceSimOptimizerMultiTrial:
         
         import optuna.visualization
         return optuna.visualization.plot_optimization_history(self.study)
-    
 
 def with_inp(args):
     i, optimizer = args
-    optimizer.optimize(sampler = "grid_sampler")
+    optimizer.optimize_multitrial(sampler = "grid_sampler")
 
 if __name__ == "__main__":
-    optimizer = InferenceSimOptimizerMultiTrial(n_trials=1)
-    num_processes = 50
+    # Sequential TPE log sampling
+    num_TPE_iters = 50
+    num_GS_iters = 50
+    optimizer = InferenceSimOptimizer()
+    optimizer.optimize_multiexp(n_trials=num_TPE_iters)
+    optimizer.scaling = optimizer.get_best_params()
+    optimizer.search_space = {
+        'beta0': list(np.linspace(0, 2 * optimizer.scaling["beta0"], optimizer.scaling["beta0"]/10)),
+        'beta1': list(np.linspace(0, 2 * optimizer.scaling["beta1"], optimizer.scaling["beta1"]/10)),
+        'beta2': list(np.linspace(0, 2 * optimizer.scaling["beta2"], optimizer.scaling["beta2"]/10)),
+    }
     
-    with Pool(processes=num_processes) as pool:
-        pool.map(with_inp, ((i, optimizer) for i in range(num_processes)))
+    # Parallel GridSampler
+    with Pool(processes=num_GS_iters) as pool:
+        pool.map(with_inp, ((i, optimizer) for i in range(num_GS_iters)))
 
-    optimizer.optimize(sampler = "grid_sampler")
-    optimizer.visualize_study()
+    optimizer.optimize_multitrial()
+    optimizer.get_best_params()

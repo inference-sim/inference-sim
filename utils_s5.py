@@ -26,7 +26,7 @@ def parse_vllm_metrics_to_json(folder, filepath):
         print(f"Error: The file at '{full_path}' was not found.")
         return None
     
-def run_go_binary(arguments, go_binary_path, model_name, spec, mbnt, request_rate):
+def run_go_binary(arguments, go_binary_path, model_name, spec, mbnt, request_rate, metrics_lock = None):
     result = subprocess.run(
         [go_binary_path] + arguments,
         capture_output=True,
@@ -35,12 +35,19 @@ def run_go_binary(arguments, go_binary_path, model_name, spec, mbnt, request_rat
         encoding='utf-8'
     )
 
-    
-    if result.stderr:
-        print(
-            f"Go binary error output:\n{result.stderr}")
-    sim_metrics = parse_sim_metrics_to_json(result.stdout, model_name, spec, mbnt, request_rate)
-    return sim_metrics
+    if not metrics_lock:
+        if result.stderr:
+            print(
+                f"Go binary error output:\n{result.stderr}")
+        sim_metrics = parse_sim_metrics_to_json(result.stdout, model_name, spec, mbnt, request_rate)
+        return sim_metrics
+    else:
+        with metrics_lock:
+            if result.stderr:
+                print(
+                    f"Go binary error output:\n{result.stderr}")
+            sim_metrics = parse_sim_metrics_to_json(result.stdout, model_name, spec, mbnt, request_rate)
+            return sim_metrics
     
 def parse_sim_metrics_to_json(stdout, model_name, spec, mbnt, request_rate):
     """
