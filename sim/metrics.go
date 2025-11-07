@@ -62,19 +62,19 @@ func calculateMean(numbers []int) float64 {
 // Print displays aggregated metrics at the end of the simulation.
 // Includes average latency, TTFT, TPOT, KV usage, and prefix cache behavior.
 func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
+	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 	fmt.Println("=== Simulation Metrics ===")
 	fmt.Printf("Completed Requests   : %d\n", m.CompletedRequests)
 	fmt.Printf("Request Rate(req/s)  : %d\n", int(m.RequestRate*1e6))
 	fmt.Printf("Total Input Tokens   : %d\n", m.TotalInputTokens)
 	fmt.Printf("Total Output Tokens  : %d\n", m.TotalOutputTokens)
 	fmt.Printf("Simulation Duration(s): %.3f\n", time.Since(startTime).Seconds())
-	fmt.Printf("vLLM estimated Duration(s): %.3f\n", float64(m.SimEndedTime)/float64(1e6))
+	fmt.Printf("vLLM estimated Duration(s): %.3f\n", vllmRuntime)
 	if m.CompletedRequests > 0 {
 		// avgTTFT := float64(m.TTFTSum) / float64(m.CompletedRequests)
 		// sortedTTFTs := SortRequestMetrics(m.RequestTTFTs)
 		// sortedTPOTs := SortRequestMetrics(m.RequestTPOTs)
 		sortedE2Es := SortRequestMetrics(m.RequestE2Es)
-		sortedCompletionTimes := SortRequestMetrics(m.RequestCompletionTimes)
 		// medianTTFT := CalculatePercentile(sortedTTFTs, 50)
 		// p99TTFT := CalculatePercentile(sortedTTFTs, 99)
 		// avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
@@ -83,10 +83,10 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		avgE2E := float64(m.TotalLatency) / float64(m.CompletedRequests)
 		medianE2E := CalculatePercentile(sortedE2Es, 50)
 		p99E2E := CalculatePercentile(sortedE2Es, 99)
-		perSecThroughput := CalculateBinnedThroughput(sortedCompletionTimes)
+		reqThroughput := float64(m.CompletedRequests) / vllmRuntime
 		meanActiveSteps := calculateMean(m.RequestStepCounters)
 
-		fmt.Printf("Request throughput (req/s):  : %.3f\n", perSecThroughput)
+		fmt.Printf("Request throughput (req/s):  : %.3f\n", reqThroughput)
 		// fmt.Printf("TTFTs             :[")
 		// for _, ttft := range sortedTTFTs {
 		// 	fmt.Printf("%.6f, ", ttft/1000)
@@ -117,7 +117,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int, startTime time.Time) {
 		fmt.Printf("Peak KV Usage       : %d blocks\n", m.PeakKVBlocksUsed)
 
 		fmt.Println("=== Saturation Metrics ===")
-		fmt.Printf("Throughput to arrival rate ratio:  : %.3f\n", perSecThroughput/(m.RequestRate*1e6))
+		fmt.Printf("Throughput to arrival rate ratio:  : %.3f\n", reqThroughput/(m.RequestRate*1e6))
 	}
 
 	// sanity checks
