@@ -44,38 +44,6 @@ func CalculatePercentile(data []float64, p float64) float64 {
 	}
 }
 
-// Calculate Binned throughput with bins of 1 sec each
-// return mean count of completed requests per second
-func CalculateBinnedThroughput(data []float64) float64 {
-	tempBins := make(map[int]int)
-	maxBinKeyActual := 0
-	totalCompletionCounts := 0
-
-	if len(data) == 0 {
-		return 0
-	}
-
-	for _, val := range data {
-		binKey := int(val)
-		tempBins[binKey]++
-		maxBinKeyActual = max(maxBinKeyActual, binKey)
-	}
-
-	for i := 0; i <= maxBinKeyActual; i++ {
-		if _, ok := tempBins[i]; !ok {
-			tempBins[i] = 0
-		}
-	}
-
-	for _, count := range tempBins {
-		totalCompletionCounts += count
-	}
-
-	meanCompletionCount := float64(totalCompletionCounts) / float64(len(tempBins))
-
-	return meanCompletionCount
-}
-
 func (m *Metrics) SavetoFile(data []int, fileName string) {
 	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0777)
 	if err != nil {
