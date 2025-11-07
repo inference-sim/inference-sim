@@ -22,7 +22,7 @@ type Request struct {
 	OutputTokens []int // Pre-specified output tokens (already known for the simulation)
 
 	State         string // "queued", "running", "completed"
-	ProgressIndex int    // Total number of input tokens processed so far + number of output tokens generated so far
+	ProgressIndex int64  // Total number of input tokens processed so far + number of output tokens generated so far
 
 	TTFTSet          bool  // Tracks whether TTFT has been set
 	FirstTokenTime   int64 // Timestamp when first token was generated
