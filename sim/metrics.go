@@ -15,7 +15,6 @@ type Metrics struct {
 	TotalInputTokens  int     // Total number of input tokens
 	TotalOutputTokens int     // Total number of output tokens
 	RequestRate       float64 // Incoming request rate
-	TotalLatency      int64   // Sum of total latencies (completion - arrival)
 	SimEndedTime      int64   // Sim clock time in ticks when simulation ends
 	KVBlocksUsed      float64 // Integral of KVBlockUsage over time
 	PeakKVBlocksUsed  int64   // Max number of simultaneously used KV blocks
@@ -45,20 +44,6 @@ func NewMetrics() *Metrics {
 	}
 }
 
-// calculateMean computes the average of a slice of integers.
-func calculateMean(numbers []int) float64 {
-	if len(numbers) == 0 {
-		return 0.0
-	}
-
-	sum := 0.0
-	for _, number := range numbers {
-		sum += float64(number)
-	}
-
-	return sum / float64(len(numbers))
-}
-
 // Print displays aggregated metrics at the end of the simulation.
 // Includes average latency, TTFT, TPOT, KV usage, and prefix cache behavior.
 func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
@@ -80,11 +65,11 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		// avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
 		// medianTPOT := CalculatePercentile(sortedTPOTs, 50)
 		// p99TPOT := CalculatePercentile(sortedTPOTs, 99)
-		avgE2E := float64(m.TotalLatency) / float64(m.CompletedRequests)
+		avgE2E := CalculateMean(sortedE2Es)
 		medianE2E := CalculatePercentile(sortedE2Es, 50)
 		p99E2E := CalculatePercentile(sortedE2Es, 99)
 		reqThroughput := float64(m.CompletedRequests) / vllmRuntime
-		meanActiveSteps := calculateMean(m.RequestStepCounters)
+		meanActiveSteps := CalculateMean(m.RequestStepCounters)
 
 		fmt.Printf("Request throughput (req/s):  : %.3f\n", reqThroughput)
 		// fmt.Printf("TTFTs             :[")
@@ -110,7 +95,6 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		// fmt.Printf("]\n")
 		fmt.Printf("Mean E2E(ms)     : %.3f\n", avgE2E/1000)
 		fmt.Printf("Median E2E(ms)   : %.3f\n", medianE2E)
-		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
 		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
 		fmt.Printf("Mean Active Steps     : %.3f\n", meanActiveSteps)
 		fmt.Printf("KV Blocks Used : %v\n", m.KVBlocksUsed)
