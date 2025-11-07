@@ -443,7 +443,6 @@ func (sim *Simulator) Step(now int64) {
 			lat := now + currStepAdvance - req.ArrivalTime
 			sim.Metrics.RequestE2Es[req.ID] = float64(lat) / 1000 // in ms
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, lat+req.ArrivalTime)
-			sim.Metrics.TotalLatency += lat
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
 				sim.Metrics.TPOTSum += reqTotalOutput // in microsec

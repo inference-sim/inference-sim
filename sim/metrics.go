@@ -15,7 +15,6 @@ type Metrics struct {
 	TotalInputTokens  int     // Total number of input tokens
 	TotalOutputTokens int     // Total number of output tokens
 	RequestRate       float64 // Incoming request rate
-	TotalLatency      int64   // Sum of total latencies (completion - arrival)
 	SimEndedTime      int64   // Sim clock time in ticks when simulation ends
 	KVBlocksUsed      float64 // Integral of KVBlockUsage over time
 	PeakKVBlocksUsed  int64   // Max number of simultaneously used KV blocks
@@ -96,7 +95,6 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		// fmt.Printf("]\n")
 		fmt.Printf("Mean E2E(ms)     : %.3f\n", avgE2E/1000)
 		fmt.Printf("Median E2E(ms)   : %.3f\n", medianE2E)
-		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
 		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
 		fmt.Printf("Mean Active Steps     : %.3f\n", meanActiveSteps)
 		fmt.Printf("KV Blocks Used : %v\n", m.KVBlocksUsed)
