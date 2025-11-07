@@ -44,6 +44,23 @@ func CalculatePercentile(data []float64, p float64) float64 {
 	}
 }
 
+type IntOrFloat64 interface {
+	int | float64
+}
+
+func CalculateMean[T IntOrFloat64](numbers []T) float64 {
+	if len(numbers) == 0 {
+		return 0.0
+	}
+
+	sum := 0.0
+	for _, number := range numbers {
+		sum += float64(number)
+	}
+
+	return sum / float64(len(numbers))
+}
+
 func (m *Metrics) SavetoFile(data []int, fileName string) {
 	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0777)
 	if err != nil {

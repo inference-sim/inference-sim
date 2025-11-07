@@ -45,20 +45,6 @@ func NewMetrics() *Metrics {
 	}
 }
 
-// calculateMean computes the average of a slice of integers.
-func calculateMean(numbers []int) float64 {
-	if len(numbers) == 0 {
-		return 0.0
-	}
-
-	sum := 0.0
-	for _, number := range numbers {
-		sum += float64(number)
-	}
-
-	return sum / float64(len(numbers))
-}
-
 // Print displays aggregated metrics at the end of the simulation.
 // Includes average latency, TTFT, TPOT, KV usage, and prefix cache behavior.
 func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
@@ -80,11 +66,11 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		// avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
 		// medianTPOT := CalculatePercentile(sortedTPOTs, 50)
 		// p99TPOT := CalculatePercentile(sortedTPOTs, 99)
-		avgE2E := float64(m.TotalLatency) / float64(m.CompletedRequests)
+		avgE2E := CalculateMean(sortedE2Es)
 		medianE2E := CalculatePercentile(sortedE2Es, 50)
 		p99E2E := CalculatePercentile(sortedE2Es, 99)
 		reqThroughput := float64(m.CompletedRequests) / vllmRuntime
-		meanActiveSteps := calculateMean(m.RequestStepCounters)
+		meanActiveSteps := CalculateMean(m.RequestStepCounters)
 
 		fmt.Printf("Request throughput (req/s):  : %.3f\n", reqThroughput)
 		// fmt.Printf("TTFTs             :[")
