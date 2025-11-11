@@ -93,7 +93,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		// 	fmt.Printf("%.6f, ", e2e/1000)
 		// }
 		// fmt.Printf("]\n")
-		fmt.Printf("Mean E2E(ms)     : %.3f\n", avgE2E/1000)
+		fmt.Printf("Mean E2E(ms)     : %.3f\n", avgE2E)
 		fmt.Printf("Median E2E(ms)   : %.3f\n", medianE2E)
 		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
 		fmt.Printf("Mean Active Steps     : %.3f\n", meanActiveSteps)
