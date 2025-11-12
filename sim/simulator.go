@@ -3,6 +3,7 @@ package sim
 
 import (
 	"container/heap"
+	"fmt"
 
 	"github.com/sirupsen/logrus"
 )
@@ -64,7 +65,6 @@ type Simulator struct {
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
 	RunningBatchFeatures      RegressionFeatures
-	Requests                  []*Request
 	LongPrefillTokenThreshold int64
 	QueuingDelay              int
 	FinishedDelay             int
@@ -73,10 +73,11 @@ type Simulator struct {
 	// map of request IDs to total num computed tokens (including cached tokens)
 	ReqNumComputedTokens map[string]int64
 	PreemptionHappened   bool
+	RequestGenConfig     *RequestGenConfig
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	queuingDelay int, finishedDelay int, regressionCoeffs []float64, queuingCoeffs []float64, finishedCoeffs []float64, rate float64, requests []*Request) *Simulator {
+	queuingDelay int, finishedDelay int, regressionCoeffs []float64, queuingCoeffs []float64, finishedCoeffs []float64, requestGenConfig *RequestGenConfig) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -91,7 +92,6 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 		QueuingCoeffs:             queuingCoeffs,
 		FinishedCoeffs:            finishedCoeffs,
 		RunningBatchFeatures:      RegressionFeatures{},
-		Requests:                  requests,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 		QueuingDelay:              queuingDelay,
 		FinishedDelay:             finishedDelay,
@@ -99,11 +99,69 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 		StepCount:                 0,
 		ReqNumComputedTokens:      make(map[string]int64),
 		PreemptionHappened:        false,
+		RequestGenConfig:          requestGenConfig,
 	}
 
-	s.Metrics.RequestRate = rate
+	s.GenerateRequestArrivals()
+
+	s.Metrics.RequestRate = requestGenConfig.GuideLLMConfig.RateConfig.Rate
 
 	return s
+}
+
+// GenerateRequestArrivals generates request arrivals according to gen config
+func (sim *Simulator) GenerateRequestArrivals() {
+
+	currentTime := int64(0)
+	// keep track of how many requests have been generated
+	reqIdx := 0
+
+	// generate prefix here; this is a random sequence of tokens of prefix len
+
+	// create request arrivals iteratively
+	for currentTime < sim.Horizon && reqIdx < sim.RequestGenConfig.GuideLLMConfig.RateConfig.MaxPrompts {
+		// In a Poisson process, the arrival rate is inversely proportional
+		// to the mean interarrival time
+		// go through the workload requests one by one
+		// ToDo: create flags for max input and output lengths
+		reqIdx += 1
+
+		// generate input tokens here
+		// get input token len
+		// generate random input tokens of above len
+		input := []int{}
+
+		// generate output tokens here
+		// get output token len
+		// generate random output tokens of above len
+		// output :=
+		output := []int{}
+
+		// form the request; it will be in the "queued" state when it arrives
+		req := &Request{
+			ID:               fmt.Sprintf("%v", reqIdx),
+			ArrivalTime:      currentTime,
+			InputTokens:      input,
+			OutputTokens:     output,
+			State:            "queued",
+			ScheduledStepIdx: 0,
+			FinishedStepIdx:  0,
+		}
+
+		// push the request for arrival
+		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
+
+		// fix the units below with appropriate conversions if need be
+		currentTime += int64(1 / sim.RequestGenConfig.GuideLLMConfig.RateConfig.Rate)
+
+		// move on to the next request
+		reqIdx++
+
+		if currentTime > sim.Horizon {
+			break
+		}
+	}
+
 }
 
 // Pushes an event (ArrivalEvent/StepEvent) into the simulator's EventQueue.
@@ -134,48 +192,6 @@ func (sim *Simulator) Run() {
 func (sim *Simulator) EnqueueRequest(r *Request) {
 	sim.WaitQ.Enqueue(r)
 	sim.Metrics.TotalInputTokens += len(r.InputTokens)
-}
-
-// GeneratePoissonArrivals generates requests with arrival distributed as a Poisson process
-func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
-	currentTime := int64(0)
-	// keep track of how many requests in the data file have been processed
-	reqIdx := 0
-
-	// create request arrivals iteratively
-	for currentTime < horizon && reqIdx < len(sim.Requests) {
-		// In a Poisson process, the arrival rate is inversely proportional
-		// to the mean interarrival time
-		// go through the workload requests one by one
-		// ToDo: create flags for max input and output lengths
-		requestID := sim.Requests[reqIdx].ID
-		input := sim.Requests[reqIdx].InputTokens
-		output := sim.Requests[reqIdx].OutputTokens
-		arrivalTime := sim.Requests[reqIdx].ArrivalTime
-
-		currentTime = int64(arrivalTime)
-
-		// form the request; it will be in the "queued" state when it arrives
-		req := &Request{
-			ID:               requestID,
-			ArrivalTime:      currentTime,
-			InputTokens:      input,
-			OutputTokens:     output,
-			State:            "queued",
-			ScheduledStepIdx: 0,
-			FinishedStepIdx:  0,
-		}
-
-		// push the request for arrival
-		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
-
-		// move on to the next request
-		reqIdx++
-
-		if currentTime > horizon {
-			break
-		}
-	}
 }
 
 // Queueing processing time estimation
