@@ -10,6 +10,7 @@ import (
 // RequestGenConfig enables the simulator to generate data with specified arrival rates
 type RequestGenConfig struct {
 	Format         string          `yaml:"format"` // "GuideLLM" is the only supported format at the moment
+	Seed           int64           `yaml:"seed"`   // Random generation seed
 	GuideLLMConfig *GuideLLMConfig `yaml:",inline"`
 }
 
@@ -30,7 +31,7 @@ type DataConfig struct {
 	OutputTokensMin    int `yaml:"output_tokens_min"`   // Min Output Token Count
 	OutputTokensMax    int `yaml:"output_tokens_max"`   // Max Output Token Count
 	// Each prompt has PrefixTokens shared prefix tokens, followed by random tokens
-	PrefixTokens int `yaml:"prefix_tokens"` // Prefix Token Count shared by all requests
+	PrefixTokens int `yaml:"prefix_tokens"` // Shared Prefix Token Count, additive to random tokens
 }
 
 type ArrivalType string
@@ -46,7 +47,7 @@ type RateConfig struct {
 func ReadRequestGenConfig(fileName string) (*RequestGenConfig, error) {
 	yamlFile, err := os.ReadFile(fileName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, fmt.Errorf("failed to read request generator config file: %w", err)
 	}
 
 	var config RequestGenConfig
@@ -54,8 +55,10 @@ func ReadRequestGenConfig(fileName string) (*RequestGenConfig, error) {
 
 	err = yaml.Unmarshal(yamlFile, &config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal request generator config YAML: %w", err)
 	}
+	// convert RPS from requests per second to requests per microsec (or tick)
+	config.GuideLLMConfig.RateConfig.Rate = config.GuideLLMConfig.RateConfig.Rate / 1e6
 
 	return &config, nil
 }

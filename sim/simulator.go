@@ -4,6 +4,8 @@ package sim
 import (
 	"container/heap"
 	"fmt"
+	"math"
+	"math/rand"
 
 	"github.com/sirupsen/logrus"
 )
@@ -71,9 +73,10 @@ type Simulator struct {
 	StepEvent                 Event
 	StepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
-	ReqNumComputedTokens map[string]int64
-	PreemptionHappened   bool
-	RequestGenConfig     *RequestGenConfig
+	ReqNumComputedTokens  map[string]int64
+	PreemptionHappened    bool
+	RequestGenConfig      *RequestGenConfig
+	RandomNumberGenerator *rand.Rand
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
@@ -101,22 +104,50 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 		PreemptionHappened:        false,
 		RequestGenConfig:          requestGenConfig,
 	}
-
-	s.GenerateRequestArrivals()
+	src := rand.NewSource(requestGenConfig.Seed)
+	s.RandomNumberGenerator = rand.New(src)
+	s.generateRequestArrivals()
 
 	s.Metrics.RequestRate = requestGenConfig.GuideLLMConfig.RateConfig.Rate
 
 	return s
 }
 
+// generateLengthGauss generates input or output length satisfying DataConfig distribution
+// The generated length is sampled from a Gaussian distribution with mean=lengthMean, std=lengthStd
+// and is clamped between (lengthMin, lengthMax)
+func (sim *Simulator) generateLengthGauss(lengthMean, lengthStd, lengthMin, lengthMax int) int {
+	if lengthMin == lengthMax {
+		return lengthMin
+	}
+	val := sim.RandomNumberGenerator.NormFloat64()*float64(lengthStd) + float64(lengthMean)
+	clampedVal := math.Min(float64(lengthMax), val)
+	clampedVal = math.Max(float64(lengthMin), clampedVal)
+	roundedVal := math.Round(clampedVal)
+	return int(roundedVal)
+}
+
+// generateRandomTokenIDs creates a slice of 'length' random integers.
+// each token ID ranges between 0 to 32000.
+func (sim *Simulator) generateRandomTokenIDs(length int) []int {
+
+	tokens := make([]int, length)
+
+	for i := 0; i < length; i++ {
+		tokens[i] = sim.RandomNumberGenerator.Intn(32000)
+	}
+	return tokens
+}
+
 // GenerateRequestArrivals generates request arrivals according to gen config
-func (sim *Simulator) GenerateRequestArrivals() {
+func (sim *Simulator) generateRequestArrivals() {
 
 	currentTime := int64(0)
 	// keep track of how many requests have been generated
 	reqIdx := 0
 
 	// generate prefix here; this is a random sequence of tokens of prefix len
+	prefix := sim.generateRandomTokenIDs(sim.RequestGenConfig.GuideLLMConfig.DataConfig.PrefixTokens)
 
 	// create request arrivals iteratively
 	for currentTime < sim.Horizon && reqIdx < sim.RequestGenConfig.GuideLLMConfig.RateConfig.MaxPrompts {
@@ -124,22 +155,22 @@ func (sim *Simulator) GenerateRequestArrivals() {
 		// to the mean interarrival time
 		// go through the workload requests one by one
 		// ToDo: create flags for max input and output lengths
-		reqIdx += 1
 
-		// generate input tokens here
-		// get input token len
-		// generate random input tokens of above len
-		input := []int{}
+		// get input token length given DataConfig distribution
+		promptLen := sim.generateLengthGauss(sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMax)
+		// generate random input tokens of above promptLen
+		prompt := sim.generateRandomTokenIDs(promptLen)
+		// combine prefix and prompt
+		input := append(prefix, prompt...)
 
-		// generate output tokens here
-		// get output token len
-		// generate random output tokens of above len
-		// output :=
-		output := []int{}
+		// get output token len given DataConfig distribution
+		outputLen := sim.generateLengthGauss(sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMax)
+		// generate random output tokens of above outputLen
+		output := sim.generateRandomTokenIDs(outputLen)
 
 		// form the request; it will be in the "queued" state when it arrives
 		req := &Request{
-			ID:               fmt.Sprintf("%v", reqIdx),
+			ID:               fmt.Sprintf("request_%v", reqIdx),
 			ArrivalTime:      currentTime,
 			InputTokens:      input,
 			OutputTokens:     output,
@@ -151,7 +182,7 @@ func (sim *Simulator) GenerateRequestArrivals() {
 		// push the request for arrival
 		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
 
-		// fix the units below with appropriate conversions if need be
+		// estimate arrivalTime based on constant RPS
 		currentTime += int64(1 / sim.RequestGenConfig.GuideLLMConfig.RateConfig.Rate)
 
 		// move on to the next request

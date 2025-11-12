@@ -53,7 +53,6 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
-		// requests := ProcessInputShareGPT(requestsFilePath)
 		requestGenConfig, err := sim.ReadRequestGenConfig(requestsConfigPath)
 		if err != nil {
 			logrus.Fatalf("unable to read request gen config; %v", err)
@@ -74,7 +73,6 @@ var runCmd = &cobra.Command{
 			finishedCoeffs,
 			requestGenConfig,
 		)
-		//		s.GeneratePoissonArrivals(rate, simulationHorizon)
 		s.Run()
 		s.Metrics.Print(s.Horizon, totalKVBlocks, startTime)
 
