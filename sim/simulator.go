@@ -77,7 +77,7 @@ type Simulator struct {
 	ReqNumComputedTokens  map[string]int64
 	PreemptionHappened    bool
 	RequestGenConfig      *RequestGenConfig
-	RandomNumberGenerator *rand.Rand
+	randomNumberGenerator *rand.Rand // random number generator for request tokens
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
@@ -106,6 +106,9 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 		RequestGenConfig:          requestGenConfig,
 	}
 	s.Metrics.RequestRate = requestGenConfig.GuideLLMConfig.RateConfig.Rate
+
+	src := rand.NewSource(requestGenConfig.Seed)
+	s.randomNumberGenerator = rand.New(src)
 	s.generateRequestArrivals()
 
 	return s
@@ -114,11 +117,11 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 // generateLengthGauss generates input or output length satisfying DataConfig distribution
 // The generated length is sampled from a Gaussian distribution with mean=lengthMean, std=lengthStd
 // and is clamped between (lengthMin, lengthMax)
-func (sim *Simulator) generateLengthGauss(randomNumberGenerator *rand.Rand, lengthMean, lengthStd, lengthMin, lengthMax int) int {
+func (sim *Simulator) generateLengthGauss(lengthMean, lengthStd, lengthMin, lengthMax int) int {
 	if lengthMin == lengthMax {
 		return lengthMin
 	}
-	val := randomNumberGenerator.NormFloat64()*float64(lengthStd) + float64(lengthMean)
+	val := sim.randomNumberGenerator.NormFloat64()*float64(lengthStd) + float64(lengthMean)
 	clampedVal := math.Min(float64(lengthMax), val)
 	clampedVal = math.Max(float64(lengthMin), clampedVal)
 	roundedVal := math.Round(clampedVal)
@@ -127,12 +130,12 @@ func (sim *Simulator) generateLengthGauss(randomNumberGenerator *rand.Rand, leng
 
 // generateRandomTokenIDs creates a slice of 'length' random integers.
 // each token ID ranges between 0 to 32000.
-func (sim *Simulator) generateRandomTokenIDs(randomNumberGenerator *rand.Rand, length int) []int {
+func (sim *Simulator) generateRandomTokenIDs(length int) []int {
 
 	tokens := make([]int, length)
 
 	for i := 0; i < length; i++ {
-		tokens[i] = randomNumberGenerator.Intn(MaxTokenID)
+		tokens[i] = sim.randomNumberGenerator.Intn(MaxTokenID)
 	}
 	return tokens
 }
@@ -144,11 +147,8 @@ func (sim *Simulator) generateRequestArrivals() {
 	// keep track of how many requests have been generated
 	reqIdx := 0
 
-	src := rand.NewSource(sim.RequestGenConfig.Seed)
-	randomNumberGenerator := rand.New(src)
-
 	// generate prefix here; this is a random sequence of tokens of prefix len
-	prefix := sim.generateRandomTokenIDs(randomNumberGenerator, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PrefixTokens)
+	prefix := sim.generateRandomTokenIDs(sim.RequestGenConfig.GuideLLMConfig.DataConfig.PrefixTokens)
 
 	// create request arrivals iteratively
 	for currentTime < sim.Horizon && reqIdx < sim.RequestGenConfig.GuideLLMConfig.RateConfig.MaxPrompts {
@@ -158,16 +158,16 @@ func (sim *Simulator) generateRequestArrivals() {
 		// ToDo: create flags for max input and output lengths
 
 		// get input token length given DataConfig distribution
-		promptLen := sim.generateLengthGauss(randomNumberGenerator, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMax)
+		promptLen := sim.generateLengthGauss(sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMax)
 		// generate random input tokens of above promptLen
-		prompt := sim.generateRandomTokenIDs(randomNumberGenerator, promptLen)
+		prompt := sim.generateRandomTokenIDs(promptLen)
 		// combine prefix and prompt
 		input := append(prefix, prompt...)
 
 		// get output token len given DataConfig distribution
-		outputLen := sim.generateLengthGauss(randomNumberGenerator, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMax)
+		outputLen := sim.generateLengthGauss(sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMax)
 		// generate random output tokens of above outputLen
-		output := sim.generateRandomTokenIDs(randomNumberGenerator, outputLen)
+		output := sim.generateRandomTokenIDs(outputLen)
 
 		// form the request; it will be in the "queued" state when it arrives
 		req := &Request{
