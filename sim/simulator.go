@@ -77,6 +77,7 @@ type Simulator struct {
 	PreemptionHappened    bool
 	RequestGenConfig      *RequestGenConfig
 	RandomNumberGenerator *rand.Rand
+	MaxTokenID            int
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
@@ -106,6 +107,7 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 	}
 	src := rand.NewSource(requestGenConfig.Seed)
 	s.RandomNumberGenerator = rand.New(src)
+	s.MaxTokenID = 32000 // Max token ID in request input/output
 	s.generateRequestArrivals()
 
 	s.Metrics.RequestRate = requestGenConfig.GuideLLMConfig.RateConfig.Rate
@@ -134,7 +136,7 @@ func (sim *Simulator) generateRandomTokenIDs(length int) []int {
 	tokens := make([]int, length)
 
 	for i := 0; i < length; i++ {
-		tokens[i] = sim.RandomNumberGenerator.Intn(32000)
+		tokens[i] = sim.RandomNumberGenerator.Intn(sim.MaxTokenID)
 	}
 	return tokens
 }
@@ -183,7 +185,7 @@ func (sim *Simulator) generateRequestArrivals() {
 		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
 
 		// estimate arrivalTime based on constant RPS
-		currentTime += int64(1 / sim.RequestGenConfig.GuideLLMConfig.RateConfig.Rate)
+		currentTime += int64(1 / sim.Metrics.RequestRate)
 
 		// move on to the next request
 		reqIdx++
