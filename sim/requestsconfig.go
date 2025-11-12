@@ -1,46 +1,61 @@
 package sim
 
-import "fmt"
+import (
+	"fmt"
+	"os"
 
-// RequestGenConfig enables the simulator to generate prompt and output tokens
-// It also includes rate specifications
+	"gopkg.in/yaml.v3"
+)
+
+// RequestGenConfig enables the simulator to generate data with specified arrival rates
 type RequestGenConfig struct {
-	Format         string // "GuideLLM" is the only supported format at the moment
-	GuideLLMConfig *GuideLLMConfig
+	Format         string          `yaml:"format"` // "GuideLLM" is the only supported format at the moment
+	GuideLLMConfig *GuideLLMConfig `yaml:",inline"`
 }
 
 // GuideLLMConfig supports GuideLLM style request generation
 type GuideLLMConfig struct {
-	DataConfig DataConfig
-	RateConfig RateConfig
+	DataConfig DataConfig `yaml:"data"` // prompt, prefix and output token config
+	RateConfig RateConfig `yaml:"rate"` // prompt arrival and count config
 }
 
 // DataConfig supports GuideLLM style data config for request generation
 type DataConfig struct {
-	PromptTokens       int
-	PromptTokensStdDev int
-	PromptTokensMin    int
-	PromptTokensMax    int
-	OutputTokens       int
-	OutputTokensStdDev int
-	OutputTokensMin    int
-	OutputTokensMax    int
-	PrefixTokens       int
+	PromptTokens       int `yaml:"prompt_tokens"`       // Average Prompt Token Count
+	PromptTokensStdDev int `yaml:"prompt_tokens_stdev"` // Stddev Prompt Token Count
+	PromptTokensMin    int `yaml:"prompt_tokens_min"`   // Min Prompt Token Count
+	PromptTokensMax    int `yaml:"prompt_tokens_max"`   // Max Prompt Token Count
+	OutputTokens       int `yaml:"output_tokens"`       // Average Output Token Count
+	OutputTokensStdDev int `yaml:"output_tokens_stdev"` // Stddev Output Token Count
+	OutputTokensMin    int `yaml:"output_tokens_min"`   // Min Output Token Count
+	OutputTokensMax    int `yaml:"output_tokens_max"`   // Max Output Token Count
+	// Each prompt has PrefixTokens shared prefix tokens, followed by random tokens
+	PrefixTokens int `yaml:"prefix_tokens"` // Prefix Token Count shared by all requests
 }
 
 type ArrivalType string
 
-// ConstantArrivalType is the only supported type at the moment
-const ConstantArrivalType ArrivalType = "Constant"
-
 // RateConfig supports GuideLLM style rate config for request generation
 type RateConfig struct {
-	ArrivalType ArrivalType
-	Rate        float64
-	MaxPrompts  int
+	ArrivalType ArrivalType `yaml:"arrival_type"` // "Constant" is the only supported type at the moment
+	Rate        float64     `yaml:"rate"`         // Requests per second
+	MaxPrompts  int         `yaml:"max-requests"` // Max number of prompts to be generated
 }
 
-// ReadRequestGenConfig return request gen config from file
+// ReadRequestGenConfig returns request gen config from YAML file
 func ReadRequestGenConfig(fileName string) (*RequestGenConfig, error) {
-	return nil, fmt.Errorf("not implemented")
+	yamlFile, err := os.ReadFile(fileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	var config RequestGenConfig
+	config.GuideLLMConfig = &GuideLLMConfig{}
+
+	err = yaml.Unmarshal(yamlFile, &config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
+	}
+
+	return &config, nil
 }

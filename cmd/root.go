@@ -99,7 +99,7 @@ func init() {
 	runCmd.Flags().Float64SliceVar(&regressionCoeffs, "regression-coeffs", []float64{1.0, 2.0}, "List of beta coefficients")
 	runCmd.Flags().Float64SliceVar(&queuingCoeffs, "queuing-coeffs", []float64{1.0, 2.0}, "List of queuing coefficients")
 	runCmd.Flags().Float64SliceVar(&finishedCoeffs, "finished-coeffs", []float64{1.0, 2.0}, "List of finished coefficients")
-	runCmd.Flags().StringVar(&requestsConfigPath, "request-gen-config-path", "requestgenconfig.yaml", "Path to request gen config file")
+	runCmd.Flags().StringVar(&requestsConfigPath, "reqgen-config-path", "requestgenconfig.yaml", "Path to request gen config file")
 	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 	runCmd.Flags().IntVar(&maxModelLength, "max-model-len", 2048, "Max request length (input + output tokens)")
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
