@@ -52,6 +52,12 @@ var (
 
 	// results file path
 	resultsPath string // File to save BLIS results to
+
+	// CLI flags for load balancer
+	queuingDelay     int    // Delay between server hit and queued per request
+	finishedDelay    int    // Delay between finished and server left per request
+	numReplicas      int    // Number of replicas
+	loadBalancerType string // Load balancer policy - random is the only type supported for now
 )
 
 // rootCmd is the base command for the CLI
@@ -189,11 +195,21 @@ var runCmd = &cobra.Command{
 			tensorParallelism,
 			roofline,
 			tracesWorkloadFilePath,
+			numReplicas,
+			loadBalancerType,
 		)
 		s.Run()
 
 		// Print and save results
-		s.Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath)
+		if numReplicas > 1 {
+			for rIdx := range s.Replicas {
+				replica := &s.Replicas[rIdx]
+				replica.Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, "")
+			}
+			s.GlobalMetrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath)
+		} else {
+			s.Replicas[0].Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath)
+		}
 
 		logrus.Info("Simulation complete.")
 	},
@@ -249,6 +265,12 @@ func init() {
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
+
+	// Load balancer configs
+	runCmd.Flags().IntVar(&queuingDelay, "queuing-delay", 0, "Delay between server hit and queued per request")
+	runCmd.Flags().IntVar(&finishedDelay, "finished-delay", 0, "Delay between finished and server left per request")
+	runCmd.Flags().IntVar(&numReplicas, "num-replicas", 1, "Number of replicas")
+	runCmd.Flags().StringVar(&loadBalancerType, "load-balancer-type", "random", "Load balancer policy (default and only is random for now)")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
