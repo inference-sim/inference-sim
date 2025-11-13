@@ -14,8 +14,9 @@ type Event interface {
 
 // ArrivalEvent represents the arrival of a new inference request into the system.
 type ArrivalEvent struct {
-	time    int64    // Simulation time of arrival (in ticks)
-	Request *Request // The incoming request associated with this event
+	time         int64    // Simulation time of arrival (in ticks)
+	Request      *Request // The incoming request associated with this event
+	replicaIndex int      // replica to which this request will be sent
 }
 
 // Timestamp returns the scheduled time of the ArrivalEvent.
@@ -27,19 +28,24 @@ func (e *ArrivalEvent) Timestamp() int64 {
 func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
+	rIndex := sim.LoadBalancer.GetReplica(e)
+	e.replicaIndex = rIndex
+
 	// Just call queued event always
 	queued_delay := sim.getQueuedTime(e.Request) // coming from alpha
 	sim.Schedule(&QueuedEvent{
-		time:    e.time + queued_delay,
-		Request: e.Request,
+		time:         e.time + queued_delay,
+		Request:      e.Request,
+		replicaIndex: e.replicaIndex,
 	})
 
 }
 
 // QueuedEvent represents the queue of a new inference request into the system.
 type QueuedEvent struct {
-	time    int64    // Simulation time of queued (in ticks)
-	Request *Request // The incoming request associated with this event
+	time         int64    // Simulation time of queued (in ticks)
+	Request      *Request // The incoming request associated with this event
+	replicaIndex int      // replica to which this request will be sent
 }
 
 // Timestamp returns the time of the QueuedEvent.
@@ -52,12 +58,13 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Queued: %s at %d ticks", e.Request.ID, e.time)
 
 	// Enqueue the arriving request into the waiting queue
-	sim.EnqueueRequest(e.Request)
+	sim.EnqueueRequest(e.Request, e.replicaIndex)
 
 	// If there's no Step scheduled, trigger one immediately
-	if sim.StepEvent == nil {
+	if sim.Replicas[e.replicaIndex].StepEvent == nil {
 		sim.Schedule(&StepEvent{
-			time: e.time,
+			time:         e.time,
+			replicaIndex: e.replicaIndex,
 		})
 	}
 }
@@ -116,7 +123,8 @@ func (e *RequestLeftEvent) Execute(sim *Simulator) {
 //   - execute_model()
 //   - scheduler.update_from_output()
 type StepEvent struct {
-	time int64 // Scheduled execution time (in ticks)
+	time         int64 // Scheduled execution time (in ticks)
+	replicaIndex int   // replica to which this step event belongs
 }
 
 // Timestamp returns the scheduled time of the StepEvent.
@@ -127,5 +135,5 @@ func (e *StepEvent) Timestamp() int64 {
 // Execute the StepEvent
 func (e *StepEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< StepEvent at %d ticks", e.time)
-	sim.Step(e.time)
+	sim.Step(e.time, e.replicaIndex)
 }

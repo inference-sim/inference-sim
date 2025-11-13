@@ -40,12 +40,7 @@ type RegressionFeatures struct {
 	MaxPrefillTokens     int64 `json:"max_prefill_tokens"`
 }
 
-// Simulator is the core object that holds simulation time, system state, and the event loop.
-type Simulator struct {
-	Clock   int64
-	Horizon int64
-	// EventQueue has all the simulator events, like arrival and step events
-	EventQueue EventQueue
+type Replica struct {
 	// WaitQ aka request waiting queue before it is scheduled
 	WaitQ   *WaitQueue
 	KVCache *KVCacheState
@@ -55,23 +50,43 @@ type Simulator struct {
 	// while adding requests to RunningBatch
 	// ToDo: Add vLLM logic for reordering requests in RunningBatch before model execution
 	RunningBatch *Batch
+	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
+	// , "total_decode_tokens": c, "total_prefill_tokens": d}
+	RunningBatchFeatures RegressionFeatures
+	// Metrics for this replica
 	// ToDo: We have a data structure, but this is where we need to
 	// make metrics calculations accurate
 	Metrics *Metrics
+	// Local vllm event indicator
+	StepEvent Event
+}
+
+// Simulator is the core object that holds simulation time, system state, and the event loop.
+type Simulator struct {
+	Clock   int64
+	Horizon int64
+	// Load balancer
+	LoadBalancer LoadBalancer
+	// Num Replicas
+	NumReplicas int
+	// Replicas are the states of each replica
+	Replicas []Replica
+	// Global metrics
+	// ToDo: We have a data structure, but this is where we need to
+	// make metrics calculations accurate
+	GlobalMetrics *Metrics
+	// EventQueue has all the simulator events, like arrival and step events
+	EventQueue EventQueue
 	// max number of requests RunningBatch can hold
 	MaxRunningReqs int64
 	// max total number of new tokens across all requests in RunningBatch
-	MaxScheduledTokens int64
-	RegressionCoeffs   []float64
-	QueuingCoeffs      []float64
-	FinishedCoeffs     []float64
-	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
-	// , "total_decode_tokens": c, "total_prefill_tokens": d}
-	RunningBatchFeatures      RegressionFeatures
+	MaxScheduledTokens        int64
+	RegressionCoeffs          []float64
+	QueuingCoeffs             []float64
+	FinishedCoeffs            []float64
 	LongPrefillTokenThreshold int64
 	QueuingDelay              int
 	FinishedDelay             int
-	StepEvent                 Event
 	StepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
 	ReqNumComputedTokens  map[string]int64
@@ -81,31 +96,47 @@ type Simulator struct {
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	queuingDelay int, finishedDelay int, regressionCoeffs []float64, queuingCoeffs []float64, finishedCoeffs []float64, requestGenConfig *RequestGenConfig) *Simulator {
+	queuingDelay int, finishedDelay int, regressionCoeffs []float64, queuingCoeffs []float64, finishedCoeffs []float64, requestGenConfig *RequestGenConfig, numReplicas int, loadBalancerType string) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
 		EventQueue:                make(EventQueue, 0),
-		WaitQ:                     &WaitQueue{},
-		KVCache:                   NewKVCacheState(totalKVBlocks, blockSizeTokens),
-		RunningBatch:              &Batch{},
-		Metrics:                   NewMetrics(),
+		GlobalMetrics:             NewMetrics(),
+		NumReplicas:               numReplicas,
 		MaxRunningReqs:            maxRunningReqs,
 		MaxScheduledTokens:        maxScheduledTokens,
 		RegressionCoeffs:          regressionCoeffs,
 		QueuingCoeffs:             queuingCoeffs,
 		FinishedCoeffs:            finishedCoeffs,
-		RunningBatchFeatures:      RegressionFeatures{},
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 		QueuingDelay:              queuingDelay,
 		FinishedDelay:             finishedDelay,
-		StepEvent:                 nil,
 		StepCount:                 0,
 		ReqNumComputedTokens:      make(map[string]int64),
 		PreemptionHappened:        false,
 		RequestGenConfig:          requestGenConfig,
 	}
-	s.Metrics.RequestRate = requestGenConfig.GuideLLMConfig.RateConfig.Rate
+
+	switch loadBalancerType {
+	case "random":
+		s.LoadBalancer = NewRandomLoadBalancer(s.NumReplicas, 0)
+	default:
+		logrus.Panic("unknown load balancer type")
+	}
+
+	replicas := make([]Replica, s.NumReplicas)
+	for i := range replicas {
+		replicas[i].WaitQ = &WaitQueue{}
+		replicas[i].KVCache = NewKVCacheState(totalKVBlocks, blockSizeTokens)
+		replicas[i].RunningBatch = &Batch{}
+		replicas[i].StepEvent = nil
+		replicas[i].Metrics = NewMetrics()
+		replicas[i].RunningBatchFeatures = RegressionFeatures{}
+	}
+
+	s.Replicas = replicas
+
+	s.GlobalMetrics.RequestRate = requestGenConfig.GuideLLMConfig.RateConfig.Rate
 
 	src := rand.NewSource(requestGenConfig.Seed)
 	s.randomNumberGenerator = rand.New(src)
@@ -184,7 +215,7 @@ func (sim *Simulator) generateRequestArrivals() {
 		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
 
 		// estimate arrivalTime based on constant RPS
-		currentTime += int64(1 / sim.Metrics.RequestRate)
+		currentTime += int64(1 / sim.GlobalMetrics.RequestRate)
 
 		// move on to the next request
 		reqIdx++
@@ -199,7 +230,7 @@ func (sim *Simulator) generateRequestArrivals() {
 // Pushes an event (ArrivalEvent/StepEvent) into the simulator's EventQueue.
 // Note, this has nothing to do with vLLM's scheduler.schedule().
 func (sim *Simulator) Schedule(ev Event) {
-	heap.Push(&sim.EventQueue, ev)
+	heap.Push(&sim.EventQueue, ev) // ToDo: discuss if we need event queues per replica
 }
 
 func (sim *Simulator) Run() {
@@ -216,14 +247,14 @@ func (sim *Simulator) Run() {
 			break
 		}
 	}
-	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
+	sim.GlobalMetrics.SimEndedTime = min(sim.Clock, sim.Horizon)
 	logrus.Infof("[tick %07d] Simulation ended", sim.Clock)
 }
 
 // Adds a newly arrived request to the waiting queue
-func (sim *Simulator) EnqueueRequest(r *Request) {
-	sim.WaitQ.Enqueue(r)
-	sim.Metrics.TotalInputTokens += len(r.InputTokens)
+func (sim *Simulator) EnqueueRequest(r *Request, rIndex int) {
+	sim.Replicas[rIndex].WaitQ.Enqueue(r)
+	sim.Replicas[rIndex].Metrics.TotalInputTokens += len(r.InputTokens)
 }
 
 // Queueing processing time estimation
@@ -258,25 +289,25 @@ func (sim *Simulator) getPreemptionProcessingTime() int64 {
 }
 
 // Estimate Step Advance Time using regression features and coefficients
-func (sim *Simulator) getStepTime() int64 {
+func (sim *Simulator) getStepTime(rIndex int) int64 {
 	var totalStepTime float64
 	totalStepTime += sim.RegressionCoeffs[0]
-	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalCacheMissTokens)
-	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
+	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.Replicas[rIndex].RunningBatchFeatures.TotalCacheMissTokens)
+	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.Replicas[rIndex].RunningBatchFeatures.TotalDecodeTokens)
 	return int64(totalStepTime * 1e6) // convert from seconds to microseconds, need to verify with Satyam
 }
 
-func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool {
+func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64, rIndex int) bool {
 
 	for {
-		if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int64{}); !ok {
+		if ok := sim.Replicas[rIndex].KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int64{}); !ok {
 			// ToDo: add while true here, because we will keep preempting until we are good
 			// Could not allocate (e.g., no free blocks)
 			logrus.Warnf("[Preemption]")
 			sim.PreemptionHappened = true
 			preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
-			preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
-			sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
+			preemptedRequest := sim.Replicas[rIndex].RunningBatch.Requests[len(sim.Replicas[rIndex].RunningBatch.Requests)-1]
+			sim.Replicas[rIndex].RunningBatch.Requests = sim.Replicas[rIndex].RunningBatch.Requests[:len(sim.Replicas[rIndex].RunningBatch.Requests)-1]
 			sim.Schedule(&PreemptionEvent{
 				time:    now + preemptionDelay,
 				Request: preemptedRequest,
@@ -284,8 +315,8 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 
 			preemptedRequest.State = "queued"
 			preemptedRequest.ProgressIndex = 0
-			sim.KVCache.ReleaseKVBlocks(preemptedRequest)
-			sim.WaitQ.queue = append([]*Request{preemptedRequest}, sim.WaitQ.queue...)
+			sim.Replicas[rIndex].KVCache.ReleaseKVBlocks(preemptedRequest)
+			sim.Replicas[rIndex].WaitQ.queue = append([]*Request{preemptedRequest}, sim.Replicas[rIndex].WaitQ.queue...)
 
 			if preemptedRequest == req {
 				return false
@@ -297,9 +328,9 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 
 }
 
-func (sim *Simulator) makeRunningBatch(now int64) {
-	if sim.RunningBatch == nil {
-		sim.RunningBatch = &Batch{}
+func (sim *Simulator) makeRunningBatch(now int64, rIndex int) {
+	if sim.Replicas[rIndex].RunningBatch == nil {
+		sim.Replicas[rIndex].RunningBatch = &Batch{}
 	}
 
 	// allocate a max token budget at the start of each Step
@@ -307,7 +338,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 
 	// First run requests in the RunningBatch.
 	// Requests could be in either prefill or decode.
-	for _, req := range sim.RunningBatch.Requests {
+	for _, req := range sim.Replicas[rIndex].RunningBatch.Requests {
 		if tokenBudget <= 0 {
 			// Simulator has run out of token budget. Cannot run any more requests in this Step.
 			// Wait for currently running requests to finish, and try again in next Step
@@ -324,22 +355,22 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 			}
 			numNewTokens = min(numNewTokens, tokenBudget)
 
-			if can_schedule := sim.preempt(req, now, numNewTokens); !can_schedule {
+			if can_schedule := sim.preempt(req, now, numNewTokens, rIndex); !can_schedule {
 				break
 			}
 
 			tokenBudget -= numNewTokens
-			sim.RunningBatchFeatures.TotalCacheMissTokens += numNewTokens
-			sim.RunningBatchFeatures.NumPrefillRequests += 1
-			sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
-			sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
+			sim.Replicas[rIndex].RunningBatchFeatures.TotalCacheMissTokens += numNewTokens
+			sim.Replicas[rIndex].RunningBatchFeatures.NumPrefillRequests += 1
+			sim.Replicas[rIndex].RunningBatchFeatures.TotalPrefillTokens += numNewTokens
+			sim.Replicas[rIndex].RunningBatchFeatures.MaxPrefillTokens = max(sim.Replicas[rIndex].RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
 			sim.ReqNumComputedTokens[req.ID] += numNewTokens
 
 		}
 		// if it is in decode phase, then allocate blocks for the token generated in the previous Step
 		if req.ProgressIndex >= Len64(req.InputTokens) && len(req.OutputTokens) > 0 {
 			// this request will go through decode phase in this batch
-			if can_schedule := sim.preempt(req, now, numNewTokens); !can_schedule {
+			if can_schedule := sim.preempt(req, now, numNewTokens, rIndex); !can_schedule {
 				break
 			}
 			// currently each request produces 1 token per decode.
@@ -347,34 +378,34 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 			tokenBudget--
 
 			// update decode-related features in RunningBatchFeatures
-			sim.RunningBatchFeatures.NumDecodeRequests += 1
-			sim.RunningBatchFeatures.TotalDecodeTokens += 1
+			sim.Replicas[rIndex].RunningBatchFeatures.NumDecodeRequests += 1
+			sim.Replicas[rIndex].RunningBatchFeatures.TotalDecodeTokens += 1
 			sim.ReqNumComputedTokens[req.ID] += 1
 		}
 	}
 
 	// Next, attempt to dequeue requests in waiting queue, if batch size is not exceeded and not any preemption happened
-	for len(sim.RunningBatch.Requests) < int(sim.MaxRunningReqs) && len(sim.WaitQ.queue) > 0 && tokenBudget > 0 && !sim.PreemptionHappened {
+	for len(sim.Replicas[rIndex].RunningBatch.Requests) < int(sim.MaxRunningReqs) && len(sim.Replicas[rIndex].WaitQ.queue) > 0 && tokenBudget > 0 && !sim.PreemptionHappened {
 		// we will attempt to dequeue `next` request
 		// if that attempt fails, we will break out of the loop
 
-		next := sim.WaitQ.queue[0]
+		next := sim.Replicas[rIndex].WaitQ.queue[0]
 
 		// first find cache hits. This only happens once per prefill (regardless of chunked)
-		cachedBlocks := sim.KVCache.GetCachedBlocks(next.InputTokens)
-		numNewTokens := Len64(next.InputTokens) - Len64(cachedBlocks)*sim.KVCache.BlockSizeTokens
+		cachedBlocks := sim.Replicas[rIndex].KVCache.GetCachedBlocks(next.InputTokens)
+		numNewTokens := Len64(next.InputTokens) - Len64(cachedBlocks)*sim.Replicas[rIndex].KVCache.BlockSizeTokens
 
 		// now check for chunked prefill
 		if 0 < sim.LongPrefillTokenThreshold && sim.LongPrefillTokenThreshold < numNewTokens {
 			numNewTokens = sim.LongPrefillTokenThreshold
 		}
 		numNewTokens = min(numNewTokens, tokenBudget)
-		startIndex := Len64(cachedBlocks) * sim.KVCache.BlockSizeTokens
+		startIndex := Len64(cachedBlocks) * sim.Replicas[rIndex].KVCache.BlockSizeTokens
 		endIndex := startIndex + numNewTokens
 
 		// estimate the number of new blocks needed for the next request
 		// and allocate if possible
-		if ok := sim.KVCache.AllocateKVBlocks(next, startIndex, endIndex, cachedBlocks); !ok {
+		if ok := sim.Replicas[rIndex].KVCache.AllocateKVBlocks(next, startIndex, endIndex, cachedBlocks); !ok {
 			// cannot allocate enough blocks for remaining tokens, do not schedule current request
 			// vLLM maintains First-Come-First-Served order of requests, so we cannot move onto the
 			// next request.
@@ -384,9 +415,9 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		// at this point: the `next` request is deemed schedulable
 
 		// dequeue this request
-		sim.WaitQ.queue = sim.WaitQ.queue[1:]
+		sim.Replicas[rIndex].WaitQ.queue = sim.Replicas[rIndex].WaitQ.queue[1:]
 		// make it part of the running batch
-		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
+		sim.Replicas[rIndex].RunningBatch.Requests = append(sim.Replicas[rIndex].RunningBatch.Requests, next)
 		next.ScheduledStepIdx = sim.StepCount
 		// create a scheduledevent for the request that just went into running batch
 		scheduledDelay := sim.getSchedulingProcessingTime() // ToDo: there are some minor processing time above - model it or constant?
@@ -401,11 +432,11 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		next.State = "running"
 
 		// update prefill-related features in RunningBatchFeatures
-		sim.RunningBatchFeatures.NumPrefillRequests += 1
-		sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
-		sim.RunningBatchFeatures.TotalCacheMissTokens += numNewTokens
-		sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
-		sim.ReqNumComputedTokens[next.ID] = numNewTokens + Len64(cachedBlocks)*sim.KVCache.BlockSizeTokens
+		sim.Replicas[rIndex].RunningBatchFeatures.NumPrefillRequests += 1
+		sim.Replicas[rIndex].RunningBatchFeatures.TotalPrefillTokens += numNewTokens
+		sim.Replicas[rIndex].RunningBatchFeatures.TotalCacheMissTokens += numNewTokens
+		sim.Replicas[rIndex].RunningBatchFeatures.MaxPrefillTokens = max(sim.Replicas[rIndex].RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
+		sim.ReqNumComputedTokens[next.ID] = numNewTokens + Len64(cachedBlocks)*sim.Replicas[rIndex].KVCache.BlockSizeTokens
 	}
 }
 
@@ -413,31 +444,31 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 // Step simulates a single vllm step(), which roughly corresponds to a single scheduler.schedule()
 // to construct a batch, model execution of the batch and scheduler.update().
 // ToDo: Understand and handle pre-emption logic, if need be.
-func (sim *Simulator) Step(now int64) {
+func (sim *Simulator) Step(now int64, rIndex int) {
 
 	// increment Step counter
 	sim.StepCount += 1
 
 	// refreshing RunningBatchFeatures for current Step
-	sim.RunningBatchFeatures = RegressionFeatures{
+	sim.Replicas[rIndex].RunningBatchFeatures = RegressionFeatures{
 		TotalDecodeTokens:    0,
 		TotalCacheMissTokens: 0,
 	}
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
-	sim.makeRunningBatch(now)
+	sim.makeRunningBatch(now, rIndex)
 
 	// save waitQ length for analysis
-	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, len(sim.WaitQ.queue))
+	sim.GlobalMetrics.NumWaitQRequests = append(sim.GlobalMetrics.NumWaitQRequests, len(sim.Replicas[rIndex].WaitQ.queue))
 
 	// save runningBatch length for analysis
-	sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, len(sim.RunningBatch.Requests))
+	sim.GlobalMetrics.NumRunningBatchRequests = append(sim.GlobalMetrics.NumRunningBatchRequests, len(sim.Replicas[rIndex].RunningBatch.Requests))
 
 	// Estimate regression times based on runningBatch state
-	currStepAdvance := sim.getStepTime()
+	currStepAdvance := sim.getStepTime(rIndex)
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
-	for _, req := range sim.RunningBatch.Requests {
+	for _, req := range sim.Replicas[rIndex].RunningBatch.Requests {
 		if req.ProgressIndex < Len64(req.InputTokens) {
 			req.ProgressIndex = sim.ReqNumComputedTokens[req.ID]
 			// ToDo: Go through the newly allocated blocks for this request;
@@ -445,13 +476,13 @@ func (sim *Simulator) Step(now int64) {
 		} else {
 			// this request goes through decode phase in this batch
 			req.ProgressIndex++
-			sim.Metrics.TotalOutputTokens++
+			sim.Replicas[rIndex].Metrics.TotalOutputTokens++
 		}
 		if req.ProgressIndex == Len64(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime
-			sim.Metrics.TTFTSum += req.FirstTokenTime                             // in microsec
-			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime) / 1000 // in ms
+			sim.Replicas[rIndex].Metrics.TTFTSum += req.FirstTokenTime                             // in microsec
+			sim.Replicas[rIndex].Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime) / 1000 // in ms
 		}
 	}
 
@@ -460,27 +491,27 @@ func (sim *Simulator) Step(now int64) {
 
 	// Write KVBlocks usage metrics
 
-	if sim.KVCache.UsedBlockCnt > sim.Metrics.PeakKVBlocksUsed {
-		sim.Metrics.PeakKVBlocksUsed = sim.KVCache.UsedBlockCnt
+	if sim.Replicas[rIndex].KVCache.UsedBlockCnt > sim.Replicas[rIndex].Metrics.PeakKVBlocksUsed {
+		sim.Replicas[rIndex].Metrics.PeakKVBlocksUsed = sim.Replicas[rIndex].KVCache.UsedBlockCnt
 	}
-	sim.Metrics.KVBlocksUsed += float64(sim.KVCache.UsedBlockCnt) * float64(currStepAdvance)
+	sim.Replicas[rIndex].Metrics.KVBlocksUsed += float64(sim.Replicas[rIndex].KVCache.UsedBlockCnt) * float64(currStepAdvance)
 
 	// handle completed and remaining requests
 	remaining := []*Request{}
-	for _, req := range sim.RunningBatch.Requests {
+	for _, req := range sim.Replicas[rIndex].RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
 		if req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1 {
 			req.State = "completed"
 			if len(req.OutputTokens) > 0 {
-				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
+				ok := sim.Replicas[rIndex].KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					// Could not allocate (e.g., no free blocks)
 					logrus.Warnf("[THIS SHOULD NEVER HAPPEN]")
 					continue
 				}
 			}
-			sim.KVCache.ReleaseKVBlocks(req)
-			sim.Metrics.CompletedRequests++
+			sim.Replicas[rIndex].KVCache.ReleaseKVBlocks(req)
+			sim.Replicas[rIndex].Metrics.CompletedRequests++
 			// trigger the RequestLeftEvent
 			requestLeftDelay := sim.getRequestLeftProcessingTime(req) // alpha params to estimate
 			sim.Schedule(&RequestLeftEvent{
@@ -489,19 +520,19 @@ func (sim *Simulator) Step(now int64) {
 			})
 
 			lat := now + currStepAdvance - req.ArrivalTime
-			sim.Metrics.RequestE2Es[req.ID] = float64(lat) / 1000 // in ms
+			sim.Replicas[rIndex].Metrics.RequestE2Es[req.ID] = float64(lat) / 1000 // in ms
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, lat+req.ArrivalTime)
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
-				sim.Metrics.TPOTSum += reqTotalOutput // in microsec
+				sim.Replicas[rIndex].Metrics.TPOTSum += reqTotalOutput // in microsec
 				// TPOT calculation in vLLM excludes the first generated token, calculated in ms
-				sim.Metrics.RequestTPOTs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1)) / 1000
+				sim.Replicas[rIndex].Metrics.RequestTPOTs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1)) / 1000
 			} else {
-				sim.Metrics.RequestTPOTs[req.ID] = 0
+				sim.Replicas[rIndex].Metrics.RequestTPOTs[req.ID] = 0
 			}
 			req.FinishedStepIdx = sim.StepCount
-			sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
-			sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat+req.ArrivalTime) / 1e6 // in seconds
+			sim.Replicas[rIndex].Metrics.RequestStepCounters = append(sim.Replicas[rIndex].Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
+			sim.Replicas[rIndex].Metrics.RequestCompletionTimes[req.ID] = float64(lat+req.ArrivalTime) / 1e6 // in seconds
 		} else {
 			remaining = append(remaining, req)
 		}
@@ -509,14 +540,14 @@ func (sim *Simulator) Step(now int64) {
 
 	// push the next step event as needed
 	if len(remaining) > 0 {
-		sim.RunningBatch.Requests = remaining
+		sim.Replicas[rIndex].RunningBatch.Requests = remaining
 		// estimate queue overhead from LR (sim.features)
 		//
 		pbe := StepEvent{time: now + currStepAdvance}
 		sim.Schedule(&pbe)
-		sim.StepEvent = &pbe
+		sim.Replicas[rIndex].StepEvent = &pbe
 	} else {
-		sim.RunningBatch = nil
-		sim.StepEvent = nil
+		sim.Replicas[rIndex].RunningBatch = nil
+		sim.Replicas[rIndex].StepEvent = nil
 	}
 }

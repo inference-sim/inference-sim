@@ -27,6 +27,8 @@ var (
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	queuingDelay              int       // Delay between server hit and queued per request
 	finishedDelay             int       // Delay between finished and server left per request
+	numReplicas               int       // Number of replicas
+	loadBalancerType          string    // Load balancer policy - random is the only type supported for now
 )
 
 // rootCmd is the base command for the CLI
@@ -72,9 +74,16 @@ var runCmd = &cobra.Command{
 			queuingCoeffs,
 			finishedCoeffs,
 			requestGenConfig,
+			numReplicas,
+			loadBalancerType,
 		)
 		s.Run()
-		s.Metrics.Print(s.Horizon, totalKVBlocks, startTime)
+
+		for rIdx := range s.Replicas {
+			replica := &s.Replicas[rIdx]
+			replica.Metrics.Print(s.Horizon, totalKVBlocks, startTime)
+		}
+		s.GlobalMetrics.Print(s.Horizon, totalKVBlocks, startTime)
 
 		logrus.Info("Simulation complete.")
 	},
@@ -103,6 +112,8 @@ func init() {
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
 	runCmd.Flags().IntVar(&queuingDelay, "queuing-delay", 0, "Delay between server hit and queued per request")
 	runCmd.Flags().IntVar(&finishedDelay, "finished-delay", 0, "Delay between finished and server left per request")
+	runCmd.Flags().IntVar(&numReplicas, "num-relicas", 1, "Number of replicas")
+	runCmd.Flags().StringVar(&loadBalancerType, "load-balancer-type", "random", "Load balancer policy (default and only is random for now)")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
