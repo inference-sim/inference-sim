@@ -3,10 +3,14 @@ package sim
 
 import (
 	"container/heap"
+	"fmt"
+	"math"
+	"math/rand"
 
 	"github.com/sirupsen/logrus"
 )
 
+const MaxTokenID = 128000 // Max token ID in request input/output
 // EventQueue implements heap.Interface and orders events by timestamp.
 // See canonical Golang example here: https://pkg.go.dev/container/heap#example-package-IntHeap
 type EventQueue []Event
@@ -64,19 +68,20 @@ type Simulator struct {
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
 	RunningBatchFeatures      RegressionFeatures
-	Requests                  []*Request
 	LongPrefillTokenThreshold int64
 	QueuingDelay              int
 	FinishedDelay             int
 	StepEvent                 Event
 	StepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
-	ReqNumComputedTokens map[string]int64
-	PreemptionHappened   bool
+	ReqNumComputedTokens  map[string]int64
+	PreemptionHappened    bool
+	RequestGenConfig      *RequestGenConfig
+	randomNumberGenerator *rand.Rand // random number generator for request tokens
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	queuingDelay int, finishedDelay int, regressionCoeffs []float64, queuingCoeffs []float64, finishedCoeffs []float64, rate float64, requests []*Request) *Simulator {
+	queuingDelay int, finishedDelay int, regressionCoeffs []float64, queuingCoeffs []float64, finishedCoeffs []float64, requestGenConfig *RequestGenConfig) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -91,7 +96,6 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 		QueuingCoeffs:             queuingCoeffs,
 		FinishedCoeffs:            finishedCoeffs,
 		RunningBatchFeatures:      RegressionFeatures{},
-		Requests:                  requests,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 		QueuingDelay:              queuingDelay,
 		FinishedDelay:             finishedDelay,
@@ -99,11 +103,97 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 		StepCount:                 0,
 		ReqNumComputedTokens:      make(map[string]int64),
 		PreemptionHappened:        false,
+		RequestGenConfig:          requestGenConfig,
 	}
+	s.Metrics.RequestRate = requestGenConfig.GuideLLMConfig.RateConfig.Rate
 
-	s.Metrics.RequestRate = rate
+	src := rand.NewSource(requestGenConfig.Seed)
+	s.randomNumberGenerator = rand.New(src)
+	s.generateRequestArrivals()
 
 	return s
+}
+
+// generateLengthGauss generates input or output length satisfying DataConfig distribution
+// The generated length is sampled from a Gaussian distribution with mean=lengthMean, std=lengthStd
+// and is clamped between (lengthMin, lengthMax)
+func (sim *Simulator) generateLengthGauss(lengthMean, lengthStd, lengthMin, lengthMax int) int {
+	if lengthMin == lengthMax {
+		return lengthMin
+	}
+	val := sim.randomNumberGenerator.NormFloat64()*float64(lengthStd) + float64(lengthMean)
+	clampedVal := math.Min(float64(lengthMax), val)
+	clampedVal = math.Max(float64(lengthMin), clampedVal)
+	roundedVal := math.Round(clampedVal)
+	return int(roundedVal)
+}
+
+// generateRandomTokenIDs creates a slice of 'length' random integers.
+// each token ID ranges between 0 to 32000.
+func (sim *Simulator) generateRandomTokenIDs(length int) []int {
+
+	tokens := make([]int, length)
+
+	for i := 0; i < length; i++ {
+		tokens[i] = sim.randomNumberGenerator.Intn(MaxTokenID)
+	}
+	return tokens
+}
+
+// GenerateRequestArrivals generates request arrivals according to gen config
+func (sim *Simulator) generateRequestArrivals() {
+
+	currentTime := int64(0)
+	// keep track of how many requests have been generated
+	reqIdx := 0
+
+	// generate prefix here; this is a random sequence of tokens of prefix len
+	prefix := sim.generateRandomTokenIDs(sim.RequestGenConfig.GuideLLMConfig.DataConfig.PrefixTokens)
+
+	// create request arrivals iteratively
+	for currentTime < sim.Horizon && reqIdx < sim.RequestGenConfig.GuideLLMConfig.RateConfig.MaxPrompts {
+		// In a Poisson process, the arrival rate is inversely proportional
+		// to the mean interarrival time
+		// go through the workload requests one by one
+		// ToDo: create flags for max input and output lengths
+
+		// get input token length given DataConfig distribution
+		promptLen := sim.generateLengthGauss(sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMax)
+		// generate random input tokens of above promptLen
+		prompt := sim.generateRandomTokenIDs(promptLen)
+		// combine prefix and prompt
+		input := append(prefix, prompt...)
+
+		// get output token len given DataConfig distribution
+		outputLen := sim.generateLengthGauss(sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMax)
+		// generate random output tokens of above outputLen
+		output := sim.generateRandomTokenIDs(outputLen)
+
+		// form the request; it will be in the "queued" state when it arrives
+		req := &Request{
+			ID:               fmt.Sprintf("request_%v", reqIdx),
+			ArrivalTime:      currentTime,
+			InputTokens:      input,
+			OutputTokens:     output,
+			State:            "queued",
+			ScheduledStepIdx: 0,
+			FinishedStepIdx:  0,
+		}
+
+		// push the request for arrival
+		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
+
+		// estimate arrivalTime based on constant RPS
+		currentTime += int64(1 / sim.Metrics.RequestRate)
+
+		// move on to the next request
+		reqIdx++
+
+		if currentTime > sim.Horizon {
+			break
+		}
+	}
+
 }
 
 // Pushes an event (ArrivalEvent/StepEvent) into the simulator's EventQueue.
@@ -134,48 +224,6 @@ func (sim *Simulator) Run() {
 func (sim *Simulator) EnqueueRequest(r *Request) {
 	sim.WaitQ.Enqueue(r)
 	sim.Metrics.TotalInputTokens += len(r.InputTokens)
-}
-
-// GeneratePoissonArrivals generates requests with arrival distributed as a Poisson process
-func (sim *Simulator) GeneratePoissonArrivals(rate float64, horizon int64) {
-	currentTime := int64(0)
-	// keep track of how many requests in the data file have been processed
-	reqIdx := 0
-
-	// create request arrivals iteratively
-	for currentTime < horizon && reqIdx < len(sim.Requests) {
-		// In a Poisson process, the arrival rate is inversely proportional
-		// to the mean interarrival time
-		// go through the workload requests one by one
-		// ToDo: create flags for max input and output lengths
-		requestID := sim.Requests[reqIdx].ID
-		input := sim.Requests[reqIdx].InputTokens
-		output := sim.Requests[reqIdx].OutputTokens
-		arrivalTime := sim.Requests[reqIdx].ArrivalTime
-
-		currentTime = int64(arrivalTime)
-
-		// form the request; it will be in the "queued" state when it arrives
-		req := &Request{
-			ID:               requestID,
-			ArrivalTime:      currentTime,
-			InputTokens:      input,
-			OutputTokens:     output,
-			State:            "queued",
-			ScheduledStepIdx: 0,
-			FinishedStepIdx:  0,
-		}
-
-		// push the request for arrival
-		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
-
-		// move on to the next request
-		reqIdx++
-
-		if currentTime > horizon {
-			break
-		}
-	}
 }
 
 // Queueing processing time estimation

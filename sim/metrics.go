@@ -4,6 +4,7 @@ package sim
 
 import (
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -59,7 +60,13 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		// avgTTFT := float64(m.TTFTSum) / float64(m.CompletedRequests)
 		// sortedTTFTs := SortRequestMetrics(m.RequestTTFTs)
 		// sortedTPOTs := SortRequestMetrics(m.RequestTPOTs)
-		sortedE2Es := SortRequestMetrics(m.RequestE2Es)
+		sortedE2Es := make([]float64, 0, len(m.RequestE2Es))
+
+		for _, value := range m.RequestE2Es {
+			sortedE2Es = append(sortedE2Es, value)
+		}
+
+		sort.Float64s(sortedE2Es)
 		// medianTTFT := CalculatePercentile(sortedTTFTs, 50)
 		// p99TTFT := CalculatePercentile(sortedTTFTs, 99)
 		// avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
@@ -97,7 +104,6 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		fmt.Printf("Median E2E(ms)   : %.3f\n", medianE2E)
 		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
 		fmt.Printf("Mean Active Steps     : %.3f\n", meanActiveSteps)
-		fmt.Printf("KV Blocks Used : %v\n", m.KVBlocksUsed)
 		fmt.Printf("Sim Ended Time : %v\n", m.SimEndedTime)
 		fmt.Printf("Avg KV Blocks Usage : %.3f\n", float64(m.KVBlocksUsed)/float64(m.SimEndedTime))
 		fmt.Printf("Peak KV Usage       : %v blocks\n", m.PeakKVBlocksUsed)
@@ -105,9 +111,4 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		fmt.Println("=== Saturation Metrics ===")
 		fmt.Printf("Throughput to arrival rate ratio:  : %.3f\n", reqThroughput/(m.RequestRate*1e6))
 	}
-
-	// sanity checks
-	// m.SavetoFile(m.NumWaitQRequests, "../inference-sim-analysis/waitQ_lengths_med.txt")
-	// m.SavetoFile(m.NumRunningBatchRequests, "../inference-sim-analysis/runBatch_lengths_med.txt")
-
 }
