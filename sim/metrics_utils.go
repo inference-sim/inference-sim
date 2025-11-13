@@ -7,8 +7,6 @@ import (
 	"math"
 	"os"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/sirupsen/logrus"
 )
@@ -90,46 +88,4 @@ func (m *Metrics) SavetoFile(data []int, fileName string) {
 	}
 
 	logrus.Debugf("Successfully wrote to '%s'\n", fileName)
-}
-
-// keyWithIndex is a util struct to temporarily store the original key and its parsed numeric index.
-// useful for metrics parsing when requestIDs are strings of form: "request_1", "request_2" ...
-type keyWithIndex struct {
-	originalKey  string
-	numericIndex int
-}
-
-// SortRequestMetrics sorts a map of "request_N": value pairs based on the numerical part of the request key N
-// This is useful for metric maps like {"request_N": TTFT/TPOT/CompletionTime}
-// It returns a slice of RequestPair structs, sorted numerically by their Index
-func SortRequestMetrics(data map[string]float64) []float64 {
-	if len(data) == 0 {
-		return []float64{}
-	}
-
-	keysWithIndexes := make([]keyWithIndex, 0, len(data))
-	for key := range data {
-		trimmedKey := strings.TrimPrefix(key, "request_")
-		if trimmedKey == key && !strings.HasPrefix(key, "request_") {
-			return nil
-		}
-
-		numericIndex, _ := strconv.Atoi(trimmedKey)
-
-		keysWithIndexes = append(keysWithIndexes, keyWithIndex{
-			originalKey:  key,
-			numericIndex: numericIndex,
-		})
-	}
-
-	sort.Slice(keysWithIndexes, func(i, j int) bool {
-		return keysWithIndexes[i].numericIndex < keysWithIndexes[j].numericIndex
-	})
-
-	sortedValues := make([]float64, 0, len(keysWithIndexes))
-	for _, ki := range keysWithIndexes {
-		sortedValues = append(sortedValues, data[ki.originalKey])
-	}
-
-	return sortedValues
 }

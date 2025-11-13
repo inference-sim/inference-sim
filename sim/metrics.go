@@ -104,7 +104,6 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		fmt.Printf("Median E2E(ms)   : %.3f\n", medianE2E)
 		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
 		fmt.Printf("Mean Active Steps     : %.3f\n", meanActiveSteps)
-		fmt.Printf("KV Blocks Used : %v\n", m.KVBlocksUsed)
 		fmt.Printf("Sim Ended Time : %v\n", m.SimEndedTime)
 		fmt.Printf("Avg KV Blocks Usage : %.3f\n", float64(m.KVBlocksUsed)/float64(m.SimEndedTime))
 		fmt.Printf("Peak KV Usage       : %v blocks\n", m.PeakKVBlocksUsed)
