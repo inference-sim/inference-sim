@@ -24,8 +24,6 @@ var (
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
-	queuingDelay              int       // Delay between server hit and queued per request
-	finishedDelay             int       // Delay between finished and server left per request
 )
 
 // rootCmd is the base command for the CLI
