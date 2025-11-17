@@ -63,14 +63,11 @@ type Simulator struct {
 	// max total number of new tokens across all requests in RunningBatch
 	MaxScheduledTokens int64
 	RegressionCoeffs   []float64
-	QueuingCoeffs      []float64
-	FinishedCoeffs     []float64
+	AlphaCoeffs        []float64
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
 	RunningBatchFeatures      RegressionFeatures
 	LongPrefillTokenThreshold int64
-	QueuingDelay              int
-	FinishedDelay             int
 	StepEvent                 Event
 	StepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
@@ -81,7 +78,7 @@ type Simulator struct {
 }
 
 func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	queuingDelay int, finishedDelay int, regressionCoeffs []float64, queuingCoeffs []float64, finishedCoeffs []float64, requestGenConfig *RequestGenConfig) *Simulator {
+	regressionCoeffs []float64, alphaCoeffs []float64, requestGenConfig *RequestGenConfig) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -93,12 +90,9 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 		MaxRunningReqs:            maxRunningReqs,
 		MaxScheduledTokens:        maxScheduledTokens,
 		RegressionCoeffs:          regressionCoeffs,
-		QueuingCoeffs:             queuingCoeffs,
-		FinishedCoeffs:            finishedCoeffs,
+		AlphaCoeffs:               alphaCoeffs,
 		RunningBatchFeatures:      RegressionFeatures{},
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
-		QueuingDelay:              queuingDelay,
-		FinishedDelay:             finishedDelay,
 		StepEvent:                 nil,
 		StepCount:                 0,
 		ReqNumComputedTokens:      make(map[string]int64),
@@ -226,13 +220,12 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	sim.Metrics.TotalInputTokens += len(r.InputTokens)
 }
 
-// Queueing processing time estimation
-func (sim *Simulator) getQueuedTime(req *Request) int64 {
-	// ToDo: incorporate alpha_1 here
-	var totalQueueTime float64
-	totalQueueTime += sim.QueuingCoeffs[0] * float64(len(req.InputTokens))
-	totalQueueTime += sim.QueuingCoeffs[1]
-	return int64(totalQueueTime)
+// Pre and post-processing time estimation using alpha model
+func (sim *Simulator) getProcessingTime(req *Request) int64 {
+	var totalProcessingTime float64
+	totalProcessingTime += sim.AlphaCoeffs[0]                                 // alpha0
+	totalProcessingTime += sim.AlphaCoeffs[1] * float64(len(req.InputTokens)) // alpha1 * input_len
+	return int64(totalProcessingTime)
 }
 
 // Scheduling processing time estimation (step has been doing some book keeping and processing before scheduling the request)
@@ -240,15 +233,6 @@ func (sim *Simulator) getSchedulingProcessingTime() int64 {
 	// ToDo: incorporate some alphas here or constant?
 	return int64(0)
 
-}
-
-// Request Left processing time estimation
-func (sim *Simulator) getRequestLeftProcessingTime(req *Request) int64 {
-	// ToDo: incorporate some alphas here
-	var totalFinishedTime float64
-	totalFinishedTime += sim.FinishedCoeffs[0] * float64(len(req.InputTokens))
-	totalFinishedTime += sim.FinishedCoeffs[1]
-	return int64(totalFinishedTime) // convert from seconds to microseconds, need to verify with Satyam
 }
 
 // Request Preemption processing time estimation
@@ -481,10 +465,9 @@ func (sim *Simulator) Step(now int64) {
 			}
 			sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
-			// trigger the RequestLeftEvent
-			requestLeftDelay := sim.getRequestLeftProcessingTime(req) // alpha params to estimate
+			// trigger the RequestLeftEvent with no delay
 			sim.Schedule(&RequestLeftEvent{
-				time:    now + currStepAdvance + requestLeftDelay,
+				time:    now + currStepAdvance,
 				Request: req,
 			})
 

@@ -27,8 +27,8 @@ func (e *ArrivalEvent) Timestamp() int64 {
 func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
-	// Just call queued event always
-	queued_delay := sim.getQueuedTime(e.Request) // coming from alpha
+	// Trigger queued event with processing delay
+	queued_delay := sim.getProcessingTime(e.Request) // coming from alpha model
 	sim.Schedule(&QueuedEvent{
 		time:    e.time + queued_delay,
 		Request: e.Request,
@@ -47,7 +47,8 @@ func (e *QueuedEvent) Timestamp() int64 {
 	return e.time
 }
 
-// Execute does nothing
+// Execute normally just enqueues the request
+// If this is the first step, Execute calls the StepEvent
 func (e *QueuedEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Queued: %s at %d ticks", e.Request.ID, e.time)
 
