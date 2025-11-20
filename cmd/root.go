@@ -20,13 +20,10 @@ var (
 	maxScheduledTokens        int64     // Maximum total number of tokens across requests in the Running batch
 	blockSizeTokens           int64     // Number of tokens per KV block
 	requestsConfigPath        string    // Path to requests gen config file
-	regressionCoeffs          []float64 // List of beta coeffs corresponding to features
-	queuingCoeffs             []float64 // List of regression coeffs corresponding to features
-	finishedCoeffs            []float64 // List of regression coeffs corresponding to features
+	regressionCoeffs          []float64 // List of beta coeffs corresponding to step features
+	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
-	queuingDelay              int       // Delay between server hit and queued per request
-	finishedDelay             int       // Delay between finished and server left per request
 )
 
 // rootCmd is the base command for the CLI
@@ -66,11 +63,8 @@ var runCmd = &cobra.Command{
 			maxRunningReqs,
 			maxScheduledTokens,
 			longPrefillTokenThreshold,
-			queuingDelay,
-			finishedDelay,
 			regressionCoeffs,
-			queuingCoeffs,
-			finishedCoeffs,
+			alphaCoeffs,
 			requestGenConfig,
 		)
 		s.Run()
@@ -94,15 +88,12 @@ func init() {
 	runCmd.Flags().StringVar(&logLevel, "log", "error", "Log level (trace, debug, info, warn, error, fatal, panic)")
 	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 35, "Maximum number of requests running together")
 	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 8192, "Maximum total number of new tokens across running requests")
-	runCmd.Flags().Float64SliceVar(&regressionCoeffs, "regression-coeffs", []float64{1.0, 2.0}, "List of beta coefficients")
-	runCmd.Flags().Float64SliceVar(&queuingCoeffs, "queuing-coeffs", []float64{1.0, 2.0}, "List of queuing coefficients")
-	runCmd.Flags().Float64SliceVar(&finishedCoeffs, "finished-coeffs", []float64{1.0, 2.0}, "List of finished coefficients")
+	runCmd.Flags().Float64SliceVar(&regressionCoeffs, "regression-coeffs", []float64{1.0, 2.0}, "Comma-separated list of beta coefficients")
+	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{1.0, 2.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
 	runCmd.Flags().StringVar(&requestsConfigPath, "reqgen-config-path", "requestgenconfig.yaml", "Path to request gen config file")
 	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 	runCmd.Flags().IntVar(&maxModelLength, "max-model-len", 2048, "Max request length (input + output tokens)")
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
-	runCmd.Flags().IntVar(&queuingDelay, "queuing-delay", 0, "Delay between server hit and queued per request")
-	runCmd.Flags().IntVar(&finishedDelay, "finished-delay", 0, "Delay between finished and server left per request")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
