@@ -48,6 +48,16 @@ var rootCmd = &cobra.Command{
 	Short: "Discrete-event simulator for inference platforms",
 }
 
+// check if all values in the coefficients list is 0 (default)
+func AllZeros(values []float64) bool {
+	for _, v := range values {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // runCmd executes the simulation using parameters from CLI flags
 var runCmd = &cobra.Command{
 	Use:   "run",
@@ -64,9 +74,20 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
 		}
 
+		// Load alpha/beta coeffs from coefficients.yaml
+		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
+
+		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) { // default all 0s
+			newAlpha, newBeta := GetCoefficients(model, tensorParallelism, gpu, vllmVersion)
+			alphaCoeffs, betaCoeffs = newAlpha, newBeta
+		}
+		if len(alphaCoeffs) == 0 || len(betaCoeffs) == 0 {
+			logrus.Fatalf("Could not find coefficients for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
+		}
+
 		// Log configuration
-		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, regression coefficients=%v",
-			totalKVBlocks, simulationHorizon, betaCoeffs)
+		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
+			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs)
 
 		startTime := time.Now() // Get current time (start)
 
@@ -115,10 +136,10 @@ func init() {
 
 	// vLLM server configs
 	runCmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 8000000, "Total number of KV cache blocks")
-	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 35, "Maximum number of requests running together")
-	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 8192, "Maximum total number of new tokens across running requests")
-	runCmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{1.0, 2.0, 3.0}, "Comma-separated list of beta coefficients")
-	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{1.0, 2.0, 3.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
+	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 256, "Maximum number of requests running together")
+	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 2048, "Maximum total number of new tokens across running requests")
+	runCmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated list of beta coefficients")
+	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
 	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 	runCmd.Flags().IntVar(&maxModelLength, "max-model-len", 2048, "Max request length (input + output tokens)")
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
@@ -127,19 +148,19 @@ func init() {
 	runCmd.Flags().StringVar(&model, "model", "", "LLM name")
 	runCmd.Flags().StringVar(&gpu, "hardware", "H100", "GPU type")
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 1, "Tensor parallelism")
-	runCmd.Flags().StringVar(&vllmVersion, "vllm_version", "0.11.0", "vLLM version")
+	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "0.11.0", "vLLM version")
 
 	// GuideLLM request generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
-	runCmd.Flags().IntVar(&maxPrompts, "max_prompts", 100, "Number of requests")
-	runCmd.Flags().IntVar(&promptTokensMean, "prompt_tokens", 512, "Average Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensStdev, "prompt_tokens_stdev", 256, "Stddev Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensMin, "prompt_tokens_min", 2, "Min Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensMax, "prompt_tokens_max", 7000, "Max Prompt Token Count")
-	runCmd.Flags().IntVar(&outputTokensMean, "output_tokens", 512, "Average Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensStdev, "output_tokens_stdev", 256, "Stddev Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensMin, "output_tokens_min", 2, "Min Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensMax, "output_tokens_max", 7000, "Max Output Token Count")
+	runCmd.Flags().IntVar(&maxPrompts, "max-prompts", 100, "Number of requests")
+	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", 512, "Average Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", 256, "Stddev Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMin, "prompt-tokens-min", 2, "Min Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMax, "prompt-tokens-max", 7000, "Max Prompt Token Count")
+	runCmd.Flags().IntVar(&outputTokensMean, "output-tokens", 512, "Average Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", 256, "Stddev Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", 2, "Min Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", 7000, "Max Output Token Count")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
