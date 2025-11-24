@@ -95,7 +95,7 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("unable to read request gen config; %v", err)
 		}
 
-		guideLLMConfig := &sim.GuideLLMConfig{Rate: rate, MaxPrompts: maxPrompts, PromptTokens: promptTokensMean,
+		guideLLMConfig := &sim.GuideLLMConfig{Rate: rate / 1e6, MaxPrompts: maxPrompts, PromptTokens: promptTokensMean,
 			PromptTokensStdDev: promptTokensStdev, PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
 			OutputTokens: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
 			OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax}

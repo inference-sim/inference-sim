@@ -29,7 +29,6 @@ type Request struct {
 	ArrivalTime      int64   // Timestamp in ticks when the request arrives in the simulator
 	ScheduledStepIdx int     // Step index when this request got scheduled (waiting -> running)
 	FinishedStepIdx  int     // Step index when this request got scheduled (waiting -> running)
-	LatestTokenTime  int64   // Timestamp of the latest generated output token - useful for ITL calculation
 	ITL              []int64 // List of inter-token latencies
 }
 

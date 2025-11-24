@@ -54,7 +54,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 	fmt.Println("=== Simulation Metrics ===")
 	fmt.Printf("Completed Requests   : %v\n", m.CompletedRequests)
-	fmt.Printf("Request Rate(req/s)  : %v\n", int(m.RequestRate))
+	fmt.Printf("Request Rate(req/s)  : %v\n", m.RequestRate*1e6)
 	fmt.Printf("Total Input Tokens   : %v\n", m.TotalInputTokens)
 	fmt.Printf("Total Output Tokens  : %v\n", m.TotalOutputTokens)
 	fmt.Printf("Simulation Duration(s): %.3f\n", time.Since(startTime).Seconds())
@@ -111,7 +111,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		fmt.Printf("itl_p90_ms   : %.3f\n", p90ITL)
 		fmt.Printf("itl_p95_ms   : %.3f\n", p95ITL)
 		fmt.Printf("itl_p99_ms   : %.3f\n", p99ITL)
-		fmt.Printf("requests_per_sec   : %.3f\n", float64(m.CompletedRequests)/float64(vllmRuntime))
+		fmt.Printf("responses_per_sec   : %.3f\n", float64(m.CompletedRequests)/float64(vllmRuntime))
 		fmt.Printf("tokens_per_sec   : %.3f\n", float64(m.TotalOutputTokens)/float64(vllmRuntime))
 	}
 }

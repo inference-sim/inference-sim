@@ -451,14 +451,12 @@ func (sim *Simulator) Step(now int64) {
 			// this request goes through decode phase in this batch
 			req.ProgressIndex++
 			sim.Metrics.TotalOutputTokens++
-			req.ITL = append(req.ITL, now+currStepAdvance+sim.getOutputTokenProcessingTime()-req.LatestTokenTime)
-			req.LatestTokenTime = now + currStepAdvance + sim.getOutputTokenProcessingTime()
+			req.ITL = append(req.ITL, currStepAdvance+sim.getOutputTokenProcessingTime())
 		}
 		if req.ProgressIndex == Len64(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.getOutputTokenProcessingTime() - req.ArrivalTime
-			req.LatestTokenTime = now + currStepAdvance + sim.getOutputTokenProcessingTime() // first output token ts
-			sim.Metrics.TTFTSum += req.FirstTokenTime                                        // in microsec
+			sim.Metrics.TTFTSum += req.FirstTokenTime // in microsec
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
 		}
 	}
@@ -479,6 +477,7 @@ func (sim *Simulator) Step(now int64) {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
 		if req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1 {
 			req.State = "completed"
+			req.ITL = append(req.ITL, currStepAdvance+sim.getOutputTokenProcessingTime())
 			if len(req.OutputTokens) > 0 {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
@@ -496,7 +495,14 @@ func (sim *Simulator) Step(now int64) {
 			})
 
 			// we need to add the token postprocessing time for all output tokens for E2E latency
-			lat := now + currStepAdvance + sim.getOutputTokenProcessingTime()*int64(len(req.OutputTokens)) - req.ArrivalTime
+			ITLSum := func(nums []int64) int64 {
+				s := int64(0)
+				for _, v := range nums {
+					s += v
+				}
+				return s
+			}(req.ITL)
+			lat := req.FirstTokenTime + ITLSum
 			sim.Metrics.RequestE2Es[req.ID] = float64(lat)
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, lat+req.ArrivalTime)
 			if len(req.OutputTokens) > 0 {
