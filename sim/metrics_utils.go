@@ -21,6 +21,7 @@ type IntOrFloat64 interface {
 }
 
 // CalculatePercentile is a util function that calculates the p-th percentile of a data list
+// return values are in milliseconds
 func CalculatePercentile[T IntOrFloat64](data []T, p float64) float64 {
 	n := len(data)
 
@@ -29,17 +30,19 @@ func CalculatePercentile[T IntOrFloat64](data []T, p float64) float64 {
 	upperIdx := int(math.Ceil(rank))
 
 	if lowerIdx == upperIdx {
-		return float64(data[lowerIdx])
+		return float64(data[lowerIdx]) / 1000
 	} else {
 		lowerVal := data[lowerIdx]
 		upperVal := data[upperIdx]
 		if upperIdx >= n {
-			return float64(data[n-1])
+			return float64(data[n-1]) / 1000
 		}
-		return float64(lowerVal) + float64(upperVal-lowerVal)*(rank-float64(lowerIdx))
+		return float64(lowerVal)/1000 + float64(upperVal-lowerVal)*(rank-float64(lowerIdx))/1000
 	}
 }
 
+// CalculateMean is a util function that calculates the mean of a data list
+// return values are in milliseconds
 func CalculateMean[T IntOrFloat64](numbers []T) float64 {
 	if len(numbers) == 0 {
 		return 0.0
@@ -50,7 +53,7 @@ func CalculateMean[T IntOrFloat64](numbers []T) float64 {
 		sum += float64(number)
 	}
 
-	return sum / float64(len(numbers))
+	return (sum / float64(len(numbers))) / 1000
 }
 
 func (m *Metrics) SavetoFile(data []int, fileName string) {

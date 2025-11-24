@@ -20,7 +20,7 @@ var (
 	maxRunningReqs            int64     // Maximum number of requests in the Running batch
 	maxScheduledTokens        int64     // Maximum total number of tokens across requests in the Running batch
 	blockSizeTokens           int64     // Number of tokens per KV block
-	regressionCoeffs          []float64 // List of beta coeffs corresponding to step features
+	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
@@ -66,7 +66,7 @@ var runCmd = &cobra.Command{
 
 		// Log configuration
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, regression coefficients=%v",
-			totalKVBlocks, simulationHorizon, regressionCoeffs)
+			totalKVBlocks, simulationHorizon, betaCoeffs)
 
 		startTime := time.Now() // Get current time (start)
 
@@ -88,7 +88,7 @@ var runCmd = &cobra.Command{
 			maxRunningReqs,
 			maxScheduledTokens,
 			longPrefillTokenThreshold,
-			regressionCoeffs,
+			betaCoeffs,
 			alphaCoeffs,
 			guideLLMConfig,
 		)
@@ -117,7 +117,7 @@ func init() {
 	runCmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 8000000, "Total number of KV cache blocks")
 	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 35, "Maximum number of requests running together")
 	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 8192, "Maximum total number of new tokens across running requests")
-	runCmd.Flags().Float64SliceVar(&regressionCoeffs, "regression-coeffs", []float64{1.0, 2.0, 3.0}, "Comma-separated list of beta coefficients")
+	runCmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{1.0, 2.0, 3.0}, "Comma-separated list of beta coefficients")
 	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{1.0, 2.0, 3.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
 	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 	runCmd.Flags().IntVar(&maxModelLength, "max-model-len", 2048, "Max request length (input + output tokens)")
