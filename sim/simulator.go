@@ -451,12 +451,15 @@ func (sim *Simulator) Step(now int64) {
 			// this request goes through decode phase in this batch
 			req.ProgressIndex++
 			sim.Metrics.TotalOutputTokens++
+			req.ITL = append(req.ITL, now+currStepAdvance+sim.getOutputTokenProcessingTime()-req.LatestTokenTime)
+			req.LatestTokenTime = now + currStepAdvance + sim.getOutputTokenProcessingTime()
 		}
 		if req.ProgressIndex == Len64(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.getOutputTokenProcessingTime() - req.ArrivalTime
-			sim.Metrics.TTFTSum += req.FirstTokenTime                             // in microsec
-			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime) / 1000 // in ms
+			req.LatestTokenTime = now + currStepAdvance + sim.getOutputTokenProcessingTime() // first output token ts
+			sim.Metrics.TTFTSum += req.FirstTokenTime                                        // in microsec
+			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime) / 1000            // in ms
 		}
 	}
 
@@ -507,6 +510,7 @@ func (sim *Simulator) Step(now int64) {
 			req.FinishedStepIdx = sim.StepCount
 			sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
 			sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat+req.ArrivalTime) / 1e6 // in seconds
+			sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
 		} else {
 			remaining = append(remaining, req)
 		}

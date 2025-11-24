@@ -4,6 +4,7 @@ package sim
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 )
@@ -25,6 +26,7 @@ type Metrics struct {
 
 	RequestTTFTs           map[string]float64 // list of all requests' TTFT
 	RequestTPOTs           map[string]float64 // list of all requests' TPOT
+	AllITLs                []int64            // list of all requests' ITL
 	RequestE2Es            map[string]float64 // list of all requests' latencies
 	RequestCompletionTimes map[string]float64 // list of all requests' completion times in ticks
 	RequestStepCounters    []int              // list of all requests' num of steps between scheduled and finished
@@ -38,6 +40,7 @@ func NewMetrics() *Metrics {
 		CompletedRequests:       0,
 		RequestTTFTs:            make(map[string]float64),
 		RequestTPOTs:            make(map[string]float64),
+		AllITLs:                 []int64{},
 		RequestE2Es:             make(map[string]float64),
 		RequestCompletionTimes:  make(map[string]float64),
 		NumWaitQRequests:        []int{},
@@ -51,7 +54,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 	fmt.Println("=== Simulation Metrics ===")
 	fmt.Printf("Completed Requests   : %v\n", m.CompletedRequests)
-	fmt.Printf("Request Rate(req/s)  : %v\n", int(m.RequestRate*1e6))
+	fmt.Printf("Request Rate(req/s)  : %v\n", int(m.RequestRate))
 	fmt.Printf("Total Input Tokens   : %v\n", m.TotalInputTokens)
 	fmt.Printf("Total Output Tokens  : %v\n", m.TotalOutputTokens)
 	fmt.Printf("Simulation Duration(s): %.3f\n", time.Since(startTime).Seconds())
@@ -74,19 +77,6 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		p95TTFT := CalculatePercentile(sortedTTFTs, 95)
 		p99TTFT := CalculatePercentile(sortedTTFTs, 99)
 
-		// ITL metrics
-		sortedTPOTs := make([]float64, 0, len(m.RequestTPOTs))
-
-		for _, value := range m.RequestTPOTs {
-			sortedTPOTs = append(sortedTPOTs, value)
-		}
-
-		sort.Float64s(sortedTPOTs)
-		avgTPOT := CalculateMean(sortedTPOTs)
-		p90TPOT := CalculatePercentile(sortedTPOTs, 90)
-		p95TPOT := CalculatePercentile(sortedTPOTs, 95)
-		p99TPOT := CalculatePercentile(sortedTPOTs, 99)
-
 		// E2E metrics
 		sortedE2Es := make([]float64, 0, len(m.RequestE2Es))
 
@@ -100,17 +90,26 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		p95E2E := CalculatePercentile(sortedE2Es, 95)
 		p99E2E := CalculatePercentile(sortedE2Es, 99)
 
-		fmt.Printf("Mean E2E(ms)     : %.3f\n", avgE2E)
-		fmt.Printf("P90 E2E(ms)   : %.3f\n", p90E2E)
-		fmt.Printf("P95 E2E(ms)   : %.3f\n", p95E2E)
-		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
-		fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT)
-		fmt.Printf("P90 TTFT(ms)   : %.3f\n", p90TTFT)
-		fmt.Printf("P95 TTFT(ms)   : %.3f\n", p95TTFT)
-		fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT)
-		fmt.Printf("Mean TPOT(ms)     : %.3f\n", avgTPOT)
-		fmt.Printf("P90 TPOT(ms)   : %.3f\n", p90TPOT)
-		fmt.Printf("P95 TPOT(ms)   : %.3f\n", p95TPOT)
-		fmt.Printf("P99 TPOT(ms)      : %.3f\n", p99TPOT)
+		// ITL metrics
+
+		slices.Sort(m.AllITLs)
+
+		avgITL := CalculateMean(m.AllITLs)
+		p90ITL := CalculatePercentile(m.AllITLs, 90)
+		p95ITL := CalculatePercentile(m.AllITLs, 95)
+		p99ITL := CalculatePercentile(m.AllITLs, 99)
+
+		fmt.Printf("e2e_mean  : %.3f\n", avgE2E)
+		fmt.Printf("e2e_p90   : %.3f\n", p90E2E)
+		fmt.Printf("e2e_p95   : %.3f\n", p95E2E)
+		fmt.Printf("e2e_p99   : %.3f\n", p99E2E)
+		fmt.Printf("ttft_mean : %.3f\n", avgTTFT)
+		fmt.Printf("ttft_p90  : %.3f\n", p90TTFT)
+		fmt.Printf("ttft_p95  : %.3f\n", p95TTFT)
+		fmt.Printf("ttft_p99  : %.3f\n", p99TTFT)
+		fmt.Printf("itl_mean  : %.3f\n", avgITL)
+		fmt.Printf("itl_p90   : %.3f\n", p90ITL)
+		fmt.Printf("itl_p95   : %.3f\n", p95ITL)
+		fmt.Printf("itl_p99   : %.3f\n", p99ITL)
 	}
 }

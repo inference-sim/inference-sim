@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
 
 	"github.com/sirupsen/logrus"
 )
@@ -17,33 +16,28 @@ type Bin struct {
 	Count int
 }
 
+type IntOrFloat64 interface {
+	int | int64 | float64
+}
+
 // CalculatePercentile is a util function that calculates the p-th percentile of a data list
-func CalculatePercentile(data []float64, p float64) float64 {
+func CalculatePercentile[T IntOrFloat64](data []T, p float64) float64 {
 	n := len(data)
-
-	sortedData := make([]float64, n)
-	copy(sortedData, data)
-
-	sort.Float64s(sortedData)
 
 	rank := p / 100.0 * float64(n-1)
 	lowerIdx := int(math.Floor(rank))
 	upperIdx := int(math.Ceil(rank))
 
 	if lowerIdx == upperIdx {
-		return sortedData[lowerIdx]
+		return float64(data[lowerIdx])
 	} else {
-		lowerVal := sortedData[lowerIdx]
-		upperVal := sortedData[upperIdx]
+		lowerVal := data[lowerIdx]
+		upperVal := data[upperIdx]
 		if upperIdx >= n {
-			return sortedData[n-1]
+			return float64(data[n-1])
 		}
-		return lowerVal + (upperVal-lowerVal)*(rank-float64(lowerIdx))
+		return float64(lowerVal) + float64(upperVal-lowerVal)*(rank-float64(lowerIdx))
 	}
-}
-
-type IntOrFloat64 interface {
-	int | float64
 }
 
 func CalculateMean[T IntOrFloat64](numbers []T) float64 {

@@ -24,11 +24,13 @@ type Request struct {
 	State         string // "queued", "running", "completed"
 	ProgressIndex int64  // Total number of input tokens processed so far + number of output tokens generated so far
 
-	TTFTSet          bool  // Tracks whether TTFT has been set
-	FirstTokenTime   int64 // Timestamp when first token was generated
-	ArrivalTime      int64 // Timestamp in ticks when the request arrives in the simulator
-	ScheduledStepIdx int   // Step index when this request got scheduled (waiting -> running)
-	FinishedStepIdx  int   // Step index when this request got scheduled (waiting -> running)
+	TTFTSet          bool    // Tracks whether TTFT has been set
+	FirstTokenTime   int64   // Timestamp when first token was generated
+	ArrivalTime      int64   // Timestamp in ticks when the request arrives in the simulator
+	ScheduledStepIdx int     // Step index when this request got scheduled (waiting -> running)
+	FinishedStepIdx  int     // Step index when this request got scheduled (waiting -> running)
+	LatestTokenTime  int64   // Timestamp of the latest generated output token - useful for ITL calculation
+	ITL              []int64 // List of inter-token latencies
 }
 
 // This method returns a human-readable string representation of a Request.
