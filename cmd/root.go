@@ -22,6 +22,7 @@ var (
 	blockSizeTokens           int64     // Number of tokens per KV block
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
+	coeffsFilePath            string    // Path to trained coefficients filepath for testing/inference
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
@@ -78,7 +79,7 @@ var runCmd = &cobra.Command{
 		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
 
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) { // default all 0s
-			newAlpha, newBeta := GetCoefficients(model, tensorParallelism, gpu, vllmVersion)
+			newAlpha, newBeta := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, coeffsFilePath)
 			alphaCoeffs, betaCoeffs = newAlpha, newBeta
 		}
 		if len(alphaCoeffs) == 0 || len(betaCoeffs) == 0 {
@@ -133,6 +134,7 @@ func init() {
 	runCmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
 	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	runCmd.Flags().StringVar(&logLevel, "log", "error", "Log level (trace, debug, info, warn, error, fatal, panic)")
+	runCmd.Flags().StringVar(&coeffsFilePath, "coeffs-filepath", "coefficients.yaml", "Path to trained coefficients filepath for testing/inference")
 
 	// vLLM server configs
 	runCmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 8000000, "Total number of KV cache blocks")

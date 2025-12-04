@@ -244,8 +244,7 @@ func (sim *Simulator) getQueueingTime(req *Request) int64 {
 
 // Per output token processing time estimation using alpha model
 func (sim *Simulator) getOutputTokenProcessingTime() int64 {
-	var totalProcessingTime float64
-	totalProcessingTime += sim.AlphaCoeffs[2] // only alpha2
+	totalProcessingTime := sim.AlphaCoeffs[2] // only alpha2
 	return int64(totalProcessingTime)         // in microseconds
 }
 

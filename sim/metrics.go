@@ -98,6 +98,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		p90ITL := CalculatePercentile(m.AllITLs, 90)
 		p95ITL := CalculatePercentile(m.AllITLs, 95)
 		p99ITL := CalculatePercentile(m.AllITLs, 99)
+		// fmt.Printf("ITL: %v\n", m.AllITLs)
 
 		fmt.Printf("e2e_mean_ms  : %.3f\n", avgE2E)
 		fmt.Printf("e2e_p90_ms   : %.3f\n", p90E2E)

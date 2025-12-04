@@ -6,8 +6,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const TRAINED_COEFFICIENTS_FILEPATH string = "coefficients.yaml"
-
 // Define struct for YAML
 type Config struct {
 	Models  []Model `yaml:"models"`
@@ -23,9 +21,9 @@ type Model struct {
 	VLLMVersion       string    `yaml:"vllm_version"`
 }
 
-func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string) ([]float64, []float64) {
+func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, coeffsFilePath string) ([]float64, []float64) {
 	// Read YAML file
-	data, err := os.ReadFile(TRAINED_COEFFICIENTS_FILEPATH)
+	data, err := os.ReadFile(coeffsFilePath)
 	if err != nil {
 		panic(err)
 	}
