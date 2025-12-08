@@ -56,4 +56,8 @@ uv.lock
 *.pyc
 
 analysis_results/
+analysis_results_*/
+baseline_reg/
+results_old/
+.inference-sim-env/
 saturation_regimes.xlsx
