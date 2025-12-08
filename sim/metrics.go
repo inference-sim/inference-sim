@@ -4,6 +4,7 @@ package sim
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 )
@@ -25,6 +26,7 @@ type Metrics struct {
 
 	RequestTTFTs           map[string]float64 // list of all requests' TTFT
 	RequestTPOTs           map[string]float64 // list of all requests' TPOT
+	AllITLs                []int64            // list of all requests' ITL
 	RequestE2Es            map[string]float64 // list of all requests' latencies
 	RequestCompletionTimes map[string]float64 // list of all requests' completion times in ticks
 	RequestStepCounters    []int              // list of all requests' num of steps between scheduled and finished
@@ -38,6 +40,7 @@ func NewMetrics() *Metrics {
 		CompletedRequests:       0,
 		RequestTTFTs:            make(map[string]float64),
 		RequestTPOTs:            make(map[string]float64),
+		AllITLs:                 []int64{},
 		RequestE2Es:             make(map[string]float64),
 		RequestCompletionTimes:  make(map[string]float64),
 		NumWaitQRequests:        []int{},
@@ -51,7 +54,7 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 	fmt.Println("=== Simulation Metrics ===")
 	fmt.Printf("Completed Requests   : %v\n", m.CompletedRequests)
-	fmt.Printf("Request Rate(req/s)  : %v\n", int(m.RequestRate*1e6))
+	fmt.Printf("Request Rate(req/s)  : %v\n", m.RequestRate*1e6)
 	fmt.Printf("Total Input Tokens   : %v\n", m.TotalInputTokens)
 	fmt.Printf("Total Output Tokens  : %v\n", m.TotalOutputTokens)
 	fmt.Printf("Simulation Duration(s): %.3f\n", time.Since(startTime).Seconds())
@@ -60,6 +63,21 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		// avgTTFT := float64(m.TTFTSum) / float64(m.CompletedRequests)
 		// sortedTTFTs := SortRequestMetrics(m.RequestTTFTs)
 		// sortedTPOTs := SortRequestMetrics(m.RequestTPOTs)
+
+		// TTFT metrics
+		sortedTTFTs := make([]float64, 0, len(m.RequestTTFTs))
+
+		for _, value := range m.RequestTTFTs {
+			sortedTTFTs = append(sortedTTFTs, value)
+		}
+
+		sort.Float64s(sortedTTFTs)
+		avgTTFT := CalculateMean(sortedTTFTs)
+		p90TTFT := CalculatePercentile(sortedTTFTs, 90)
+		p95TTFT := CalculatePercentile(sortedTTFTs, 95)
+		p99TTFT := CalculatePercentile(sortedTTFTs, 99)
+
+		// E2E metrics
 		sortedE2Es := make([]float64, 0, len(m.RequestE2Es))
 
 		for _, value := range m.RequestE2Es {
@@ -67,48 +85,34 @@ func (m *Metrics) Print(horizon int64, totalBlocks int64, startTime time.Time) {
 		}
 
 		sort.Float64s(sortedE2Es)
-		// medianTTFT := CalculatePercentile(sortedTTFTs, 50)
-		// p99TTFT := CalculatePercentile(sortedTTFTs, 99)
-		// avgTPOT := float64(m.TPOTSum) / float64(m.TotalOutputTokens)
-		// medianTPOT := CalculatePercentile(sortedTPOTs, 50)
-		// p99TPOT := CalculatePercentile(sortedTPOTs, 99)
 		avgE2E := CalculateMean(sortedE2Es)
-		medianE2E := CalculatePercentile(sortedE2Es, 50)
+		p90E2E := CalculatePercentile(sortedE2Es, 90)
+		p95E2E := CalculatePercentile(sortedE2Es, 95)
 		p99E2E := CalculatePercentile(sortedE2Es, 99)
-		reqThroughput := float64(m.CompletedRequests) / vllmRuntime
-		meanActiveSteps := CalculateMean(m.RequestStepCounters)
 
-		fmt.Printf("Request throughput (req/s):  : %.3f\n", reqThroughput)
-		// fmt.Printf("TTFTs             :[")
-		// for _, ttft := range sortedTTFTs {
-		// 	fmt.Printf("%.6f, ", ttft/1000)
-		// }
-		// fmt.Printf("]\n")
-		// fmt.Printf("Mean TTFT(ms)     : %.3f\n", avgTTFT/1000)
-		// fmt.Printf("Median TTFT(ms)   : %.3f\n", medianTTFT)
-		// fmt.Printf("P99 TTFT(ms)      : %.3f\n", p99TTFT)
-		// fmt.Printf("TPOTs             : [")
-		// for _, tpot := range sortedTPOTs {
-		// 	fmt.Printf("%.6f, ", tpot/1000)
-		// }
-		// fmt.Printf("]\n")
-		// fmt.Printf("Mean TPOT(ms)     : %.3f\n", avgTPOT/1000)
-		// fmt.Printf("Median TPOT(ms)   : %.3f\n", medianTPOT)
-		// fmt.Printf("P99 TPOT(ms)      : %.3f\n", p99TPOT)
-		// fmt.Printf("E2Es             : [")
-		// for _, e2e := range sortedE2Es {
-		// 	fmt.Printf("%.6f, ", e2e/1000)
-		// }
-		// fmt.Printf("]\n")
-		fmt.Printf("Mean E2E(ms)     : %.3f\n", avgE2E)
-		fmt.Printf("Median E2E(ms)   : %.3f\n", medianE2E)
-		fmt.Printf("P99 E2E(ms)      : %.3f\n", p99E2E)
-		fmt.Printf("Mean Active Steps     : %.3f\n", meanActiveSteps)
-		fmt.Printf("Sim Ended Time : %v\n", m.SimEndedTime)
-		fmt.Printf("Avg KV Blocks Usage : %.3f\n", float64(m.KVBlocksUsed)/float64(m.SimEndedTime))
-		fmt.Printf("Peak KV Usage       : %v blocks\n", m.PeakKVBlocksUsed)
+		// ITL metrics
 
-		fmt.Println("=== Saturation Metrics ===")
-		fmt.Printf("Throughput to arrival rate ratio:  : %.3f\n", reqThroughput/(m.RequestRate*1e6))
+		slices.Sort(m.AllITLs)
+
+		avgITL := CalculateMean(m.AllITLs)
+		p90ITL := CalculatePercentile(m.AllITLs, 90)
+		p95ITL := CalculatePercentile(m.AllITLs, 95)
+		p99ITL := CalculatePercentile(m.AllITLs, 99)
+		// fmt.Printf("ITL: %v\n", m.AllITLs)
+
+		fmt.Printf("e2e_mean_ms  : %.3f\n", avgE2E)
+		fmt.Printf("e2e_p90_ms   : %.3f\n", p90E2E)
+		fmt.Printf("e2e_p95_ms   : %.3f\n", p95E2E)
+		fmt.Printf("e2e_p99_ms   : %.3f\n", p99E2E)
+		fmt.Printf("ttft_mean_ms : %.3f\n", avgTTFT)
+		fmt.Printf("ttft_p90_ms  : %.3f\n", p90TTFT)
+		fmt.Printf("ttft_p95_ms  : %.3f\n", p95TTFT)
+		fmt.Printf("ttft_p99_ms  : %.3f\n", p99TTFT)
+		fmt.Printf("itl_mean_ms  : %.3f\n", avgITL)
+		fmt.Printf("itl_p90_ms   : %.3f\n", p90ITL)
+		fmt.Printf("itl_p95_ms   : %.3f\n", p95ITL)
+		fmt.Printf("itl_p99_ms   : %.3f\n", p99ITL)
+		fmt.Printf("responses_per_sec   : %.3f\n", float64(m.CompletedRequests)/float64(vllmRuntime))
+		fmt.Printf("tokens_per_sec   : %.3f\n", float64(m.TotalOutputTokens)/float64(vllmRuntime))
 	}
 }

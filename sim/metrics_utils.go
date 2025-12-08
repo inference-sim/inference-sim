@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
 
 	"github.com/sirupsen/logrus"
 )
@@ -17,35 +16,33 @@ type Bin struct {
 	Count int
 }
 
+type IntOrFloat64 interface {
+	int | int64 | float64
+}
+
 // CalculatePercentile is a util function that calculates the p-th percentile of a data list
-func CalculatePercentile(data []float64, p float64) float64 {
+// return values are in milliseconds
+func CalculatePercentile[T IntOrFloat64](data []T, p float64) float64 {
 	n := len(data)
-
-	sortedData := make([]float64, n)
-	copy(sortedData, data)
-
-	sort.Float64s(sortedData)
 
 	rank := p / 100.0 * float64(n-1)
 	lowerIdx := int(math.Floor(rank))
 	upperIdx := int(math.Ceil(rank))
 
 	if lowerIdx == upperIdx {
-		return sortedData[lowerIdx]
+		return float64(data[lowerIdx]) / 1000
 	} else {
-		lowerVal := sortedData[lowerIdx]
-		upperVal := sortedData[upperIdx]
+		lowerVal := data[lowerIdx]
+		upperVal := data[upperIdx]
 		if upperIdx >= n {
-			return sortedData[n-1]
+			return float64(data[n-1]) / 1000
 		}
-		return lowerVal + (upperVal-lowerVal)*(rank-float64(lowerIdx))
+		return float64(lowerVal)/1000 + float64(upperVal-lowerVal)*(rank-float64(lowerIdx))/1000
 	}
 }
 
-type IntOrFloat64 interface {
-	int | float64
-}
-
+// CalculateMean is a util function that calculates the mean of a data list
+// return values are in milliseconds
 func CalculateMean[T IntOrFloat64](numbers []T) float64 {
 	if len(numbers) == 0 {
 		return 0.0
@@ -56,7 +53,7 @@ func CalculateMean[T IntOrFloat64](numbers []T) float64 {
 		sum += float64(number)
 	}
 
-	return sum / float64(len(numbers))
+	return (sum / float64(len(numbers))) / 1000
 }
 
 func (m *Metrics) SavetoFile(data []int, fileName string) {

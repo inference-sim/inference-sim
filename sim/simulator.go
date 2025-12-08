@@ -40,6 +40,20 @@ type RegressionFeatures struct {
 	MaxPrefillTokens     int64 `json:"max_prefill_tokens"`
 }
 
+// GuideLLMConfig supports GuideLLM style request generation
+type GuideLLMConfig struct {
+	Rate               float64 // Requests per second
+	MaxPrompts         int     // Number of requests
+	PromptTokens       int     // Average Prompt Token Count
+	PromptTokensStdDev int     // Stddev Prompt Token Count
+	PromptTokensMin    int     // Min Prompt Token Count
+	PromptTokensMax    int     // Max Prompt Token Count
+	OutputTokens       int     // Average Output Token Count
+	OutputTokensStdDev int     // Stddev Output Token Count
+	OutputTokensMin    int     // Min Output Token Count
+	OutputTokensMax    int     // Max Output Token Count
+}
+
 // Simulator is the core object that holds simulation time, system state, and the event loop.
 type Simulator struct {
 	Clock   int64
@@ -62,7 +76,7 @@ type Simulator struct {
 	MaxRunningReqs int64
 	// max total number of new tokens across all requests in RunningBatch
 	MaxScheduledTokens int64
-	RegressionCoeffs   []float64
+	BetaCoeffs         []float64
 	AlphaCoeffs        []float64
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
@@ -73,12 +87,12 @@ type Simulator struct {
 	// map of request IDs to total num computed tokens (including cached tokens)
 	ReqNumComputedTokens  map[string]int64
 	PreemptionHappened    bool
-	RequestGenConfig      *RequestGenConfig
+	GuideLLMConfig        *GuideLLMConfig
 	randomNumberGenerator *rand.Rand // random number generator for request tokens
 }
 
-func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	regressionCoeffs []float64, alphaCoeffs []float64, requestGenConfig *RequestGenConfig) *Simulator {
+func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
+	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -89,7 +103,7 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 		Metrics:                   NewMetrics(),
 		MaxRunningReqs:            maxRunningReqs,
 		MaxScheduledTokens:        maxScheduledTokens,
-		RegressionCoeffs:          regressionCoeffs,
+		BetaCoeffs:                betaCoeffs,
 		AlphaCoeffs:               alphaCoeffs,
 		RunningBatchFeatures:      RegressionFeatures{},
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
@@ -97,11 +111,11 @@ func NewSimulator(horizon int64, totalKVBlocks int64, blockSizeTokens int64, max
 		StepCount:                 0,
 		ReqNumComputedTokens:      make(map[string]int64),
 		PreemptionHappened:        false,
-		RequestGenConfig:          requestGenConfig,
+		GuideLLMConfig:            guideLLMConfig,
 	}
-	s.Metrics.RequestRate = requestGenConfig.GuideLLMConfig.RateConfig.Rate
+	s.Metrics.RequestRate = s.GuideLLMConfig.Rate
 
-	src := rand.NewSource(requestGenConfig.Seed)
+	src := rand.NewSource(seed)
 	s.randomNumberGenerator = rand.New(src)
 	s.generateRequestArrivals()
 
@@ -142,24 +156,24 @@ func (sim *Simulator) generateRequestArrivals() {
 	reqIdx := 0
 
 	// generate prefix here; this is a random sequence of tokens of prefix len
-	prefix := sim.generateRandomTokenIDs(sim.RequestGenConfig.GuideLLMConfig.DataConfig.PrefixTokens)
+	prefix := sim.generateRandomTokenIDs(0)
 
 	// create request arrivals iteratively
-	for currentTime < sim.Horizon && reqIdx < sim.RequestGenConfig.GuideLLMConfig.RateConfig.MaxPrompts {
+	for currentTime < sim.Horizon && reqIdx < sim.GuideLLMConfig.MaxPrompts {
 		// In a Poisson process, the arrival rate is inversely proportional
 		// to the mean interarrival time
 		// go through the workload requests one by one
 		// ToDo: create flags for max input and output lengths
 
 		// get input token length given DataConfig distribution
-		promptLen := sim.generateLengthGauss(sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.PromptTokensMax)
+		promptLen := sim.generateLengthGauss(sim.GuideLLMConfig.PromptTokens, sim.GuideLLMConfig.PromptTokensStdDev, sim.GuideLLMConfig.PromptTokensMin, sim.GuideLLMConfig.PromptTokensMax)
 		// generate random input tokens of above promptLen
 		prompt := sim.generateRandomTokenIDs(promptLen)
 		// combine prefix and prompt
 		input := append(prefix, prompt...)
 
 		// get output token len given DataConfig distribution
-		outputLen := sim.generateLengthGauss(sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokens, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensStdDev, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMin, sim.RequestGenConfig.GuideLLMConfig.DataConfig.OutputTokensMax)
+		outputLen := sim.generateLengthGauss(sim.GuideLLMConfig.OutputTokens, sim.GuideLLMConfig.OutputTokensStdDev, sim.GuideLLMConfig.OutputTokensMin, sim.GuideLLMConfig.OutputTokensMax)
 		// generate random output tokens of above outputLen
 		output := sim.generateRandomTokenIDs(outputLen)
 
@@ -220,12 +234,18 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	sim.Metrics.TotalInputTokens += len(r.InputTokens)
 }
 
-// Pre and post-processing time estimation using alpha model
-func (sim *Simulator) getProcessingTime(req *Request) int64 {
+// Queueing time estimation using alpha model
+func (sim *Simulator) getQueueingTime(req *Request) int64 {
 	var totalProcessingTime float64
 	totalProcessingTime += sim.AlphaCoeffs[0]                                 // alpha0
 	totalProcessingTime += sim.AlphaCoeffs[1] * float64(len(req.InputTokens)) // alpha1 * input_len
-	return int64(totalProcessingTime)
+	return int64(totalProcessingTime)                                         // in microseconds                                     // in microseconds
+}
+
+// Per output token processing time estimation using alpha model
+func (sim *Simulator) getOutputTokenProcessingTime() int64 {
+	totalProcessingTime := sim.AlphaCoeffs[2] // only alpha2
+	return int64(totalProcessingTime)         // in microseconds
 }
 
 // Scheduling processing time estimation (step has been doing some book keeping and processing before scheduling the request)
@@ -244,10 +264,10 @@ func (sim *Simulator) getPreemptionProcessingTime() int64 {
 // Estimate Step Advance Time using regression features and coefficients
 func (sim *Simulator) getStepTime() int64 {
 	var totalStepTime float64
-	totalStepTime += sim.RegressionCoeffs[0]
-	totalStepTime += sim.RegressionCoeffs[1] * float64(sim.RunningBatchFeatures.TotalCacheMissTokens)
-	totalStepTime += sim.RegressionCoeffs[2] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
-	return int64(totalStepTime * 1e6) // convert from seconds to microseconds, need to verify with Satyam
+	totalStepTime += sim.BetaCoeffs[0]
+	totalStepTime += sim.BetaCoeffs[1] * float64(sim.RunningBatchFeatures.TotalCacheMissTokens)
+	totalStepTime += sim.BetaCoeffs[2] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
+	return int64(totalStepTime) // in microseconds
 }
 
 func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool {
@@ -430,12 +450,13 @@ func (sim *Simulator) Step(now int64) {
 			// this request goes through decode phase in this batch
 			req.ProgressIndex++
 			sim.Metrics.TotalOutputTokens++
+			req.ITL = append(req.ITL, currStepAdvance+sim.getOutputTokenProcessingTime())
 		}
 		if req.ProgressIndex == Len64(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
-			req.FirstTokenTime = now + currStepAdvance - req.ArrivalTime
-			sim.Metrics.TTFTSum += req.FirstTokenTime                             // in microsec
-			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime) / 1000 // in ms
+			req.FirstTokenTime = now + currStepAdvance + sim.getOutputTokenProcessingTime() - req.ArrivalTime
+			sim.Metrics.TTFTSum += req.FirstTokenTime // in microsec
+			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
 		}
 	}
 
@@ -455,6 +476,7 @@ func (sim *Simulator) Step(now int64) {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
 		if req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1 {
 			req.State = "completed"
+			req.ITL = append(req.ITL, currStepAdvance+sim.getOutputTokenProcessingTime())
 			if len(req.OutputTokens) > 0 {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
@@ -471,20 +493,29 @@ func (sim *Simulator) Step(now int64) {
 				Request: req,
 			})
 
-			lat := now + currStepAdvance - req.ArrivalTime
-			sim.Metrics.RequestE2Es[req.ID] = float64(lat) / 1000 // in ms
+			// we need to add the token postprocessing time for all output tokens for E2E latency
+			ITLSum := func(nums []int64) int64 {
+				s := int64(0)
+				for _, v := range nums {
+					s += v
+				}
+				return s
+			}(req.ITL)
+			lat := req.FirstTokenTime + ITLSum
+			sim.Metrics.RequestE2Es[req.ID] = float64(lat)
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, lat+req.ArrivalTime)
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
 				sim.Metrics.TPOTSum += reqTotalOutput // in microsec
 				// TPOT calculation in vLLM excludes the first generated token, calculated in ms
-				sim.Metrics.RequestTPOTs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1)) / 1000
+				sim.Metrics.RequestTPOTs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
 			} else {
 				sim.Metrics.RequestTPOTs[req.ID] = 0
 			}
 			req.FinishedStepIdx = sim.StepCount
 			sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
-			sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat+req.ArrivalTime) / 1e6 // in seconds
+			sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
+			sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
 		} else {
 			remaining = append(remaining, req)
 		}
