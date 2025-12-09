@@ -97,7 +97,7 @@ Define custom workload characteristics:
 - mistralai/mistral-small-3.1-24b-instruct-2503
 - mistralai/mixtral-8x7b-instruct-v0.1
 
-> Note: Currently, BLIS supports only a limited set of GPU, TP and vllm versions for each of the above LLMs. Refer to [coefficients.yaml](!coefficients.yaml) for details on supported models, hardware, TP and vllm versions.
+> Note: Currently, BLIS supports only a limited set of GPU, TP and vllm versions for each of the above LLMs. Refer to [coefficients.yaml](!https://github.com/inference-sim/inference-sim/blob/main/coefficients.yaml) for details on supported models, hardware, TP and vllm versions.
 
 ## Example Output
 
