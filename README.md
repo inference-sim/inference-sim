@@ -36,8 +36,7 @@ go build -o simulation_worker main.go
 Run BLIS for `meta-llama/llama-3.1-8b-instruct` with default configs:
 
 ```bash
-   ./simulation_worker run \
-    --model meta-llama/llama-3.1-8b-instruct 
+   ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct 
 ```
 
 ## Usage
@@ -47,8 +46,7 @@ Run BLIS for `meta-llama/llama-3.1-8b-instruct` with default configs:
 Run a preset workload (`chatbot`, `summarization`, `contentgen`, `multidoc`):
 
 ```bash
-   ./simulation_worker run \
-    --model meta-llama/llama-3.1-8b-instruct --workload chatbot
+   ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --workload chatbot
 ```
 
 **Custom GPU, TP, vllm versions**
