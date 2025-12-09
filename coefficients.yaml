@@ -1,0 +1,631 @@
+defaults:
+  ibm-granite/granite-3.1-8b-instruct:
+    GPU: H100
+    tensor_parallelism: 4
+    vllm_version: vllm/vllm-openai:v0.8.4
+  meta-llama/llama-3.1-8b-instruct:
+    GPU: H100
+    tensor_parallelism: 2
+    vllm_version: vllm/vllm-openai:v0.8.4
+  meta-llama/llama-3.3-70b-instruct:
+    GPU: H100
+    tensor_parallelism: 4
+    vllm_version: vllm/vllm-openai:v0.8.4
+  microsoft/phi-4:
+    GPU: H100
+    tensor_parallelism: 2
+    vllm_version: vllm/vllm-openai:v0.8.4
+  mistralai/mistral-small-24b-instruct-2501:
+    GPU: H100
+    tensor_parallelism: 2
+    vllm_version: vllm/vllm-openai:v0.8.4
+  mistralai/mistral-small-3.1-24b-instruct-2503:
+    GPU: H100
+    tensor_parallelism: 8
+    vllm_version: vllm/vllm-openai:v0.8.4
+  mistralai/mixtral-8x7b-instruct-v0.1:
+    GPU: H100
+    tensor_parallelism: 2
+    vllm_version: vllm/vllm-openai:v0.8.4
+  openai/gpt-oss-120b:
+    GPU: H100
+    tensor_parallelism: 2
+    vllm_version: vllm/vllm-openai:v0.10.1.1
+  openai/gpt-oss-20b:
+    GPU: H100
+    tensor_parallelism: 1
+    vllm_version: vllm/vllm-openai:v0.10.1.1
+  qwen/qwen2.5-7b-instruct:
+    GPU: H100
+    tensor_parallelism: 4
+    vllm_version: vllm/vllm-openai:v0.8.4
+models:
+- GPU: A100-80
+  alpha_coeffs:
+  - 5948.910386094121
+  - 5.688978831542181
+  - 16738.26113236831
+  best_loss: 440.3159114711698
+  beta_coeffs:
+  - 4599.735684704053
+  - 115.734784868264
+  - 6.180744132016841
+  id: ibm-granite/granite-3.1-8b-instruct
+  tensor_parallelism: 1
+  total_kv_blocks: 23257
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 2247.789307383601
+  - 4.366709277206167
+  - 2026.846223138372
+  best_loss: 477.84339070499686
+  beta_coeffs:
+  - 8721.044757226877
+  - 4.483158878859319
+  - 0.5577916481502001
+  id: ibm-granite/granite-3.1-8b-instruct
+  tensor_parallelism: 1
+  total_kv_blocks: 23257
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 6282.220842884447
+  - 0.5510008300425131
+  - 7853.784054359992
+  best_loss: 317.14486383990857
+  beta_coeffs:
+  - 5322.217712746302
+  - 41.074634472512905
+  - 11.2743432142139
+  id: ibm-granite/granite-3.1-8b-instruct
+  tensor_parallelism: 2
+  total_kv_blocks: 105497
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 10024.457261493666
+  - 2.110235670377125
+  - 5822.543580863752
+  best_loss: 299.18698205372567
+  beta_coeffs:
+  - 2395.9072629127068
+  - 11.768985404449758
+  - 8.894510818868516
+  id: ibm-granite/granite-3.1-8b-instruct
+  tensor_parallelism: 2
+  total_kv_blocks: 105497
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 3478.111658834035
+  - 1.6888352615821622
+  - 1013.5705389395669
+  best_loss: 348.2419084621179
+  beta_coeffs:
+  - 6147.712298704921
+  - 8.669891071607832
+  - 6.139207633313169
+  id: ibm-granite/granite-3.1-8b-instruct
+  tensor_parallelism: 4
+  total_kv_blocks: 446923
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 7739.7334212001515
+  - 2.308926798943791
+  - 6276.246189076296
+  best_loss: 335.98105991131
+  beta_coeffs:
+  - 16441.531547147923
+  - 47.837412108198656
+  - 18.20560632171683
+  id: meta-llama/llama-3.1-8b-instruct
+  tensor_parallelism: 1
+  total_kv_blocks: 29205
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 232.46191091038054
+  - 1.752360364195244
+  - 3357.4400353290152
+  best_loss: 379.0472762050282
+  beta_coeffs:
+  - 5752.705191348184
+  - 17.25086436834028
+  - 5.999143920128404
+  id: meta-llama/llama-3.1-8b-instruct
+  tensor_parallelism: 1
+  total_kv_blocks: 29205
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 2943.6134268743335
+  - 2.151286397723518
+  - 14229.18244730705
+  best_loss: 827.2597345491479
+  beta_coeffs:
+  - 8001.630597822392
+  - 26.362876080324924
+  - 14.969035206354745
+  id: meta-llama/llama-3.1-8b-instruct
+  tensor_parallelism: 2
+  total_kv_blocks: 132139
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 1601.350510688092
+  - 3.512476196805965
+  - 1805.5430360826988
+  best_loss: 424.54516713463454
+  beta_coeffs:
+  - 6910.420479880494
+  - 17.67057489844186
+  - 2.8377471109943855
+  id: meta-llama/llama-3.1-8b-instruct
+  tensor_parallelism: 2
+  total_kv_blocks: 132139
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 51.276026503262926
+  - 4.394380027592064
+  - 9537.099917293996
+  best_loss: 242.8760213411417
+  beta_coeffs:
+  - 497.6895574004801
+  - 30.017036638245568
+  - 8.943353286006426
+  id: meta-llama/llama-3.1-8b-instruct
+  tensor_parallelism: 4
+  total_kv_blocks: 559190
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 34.38988572325434
+  - 2.1870952105216817
+  - 6001.151321705148
+  best_loss: 456.9786608275622
+  beta_coeffs:
+  - 41.80647673754272
+  - 11.861039406797376
+  - 5.9099565324485255
+  id: meta-llama/llama-3.1-8b-instruct
+  tensor_parallelism: 4
+  total_kv_blocks: 559190
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 2597.3171308592136
+  - 9.950912552989394
+  - 11511.44254521247
+  best_loss: 295.605845726634
+  beta_coeffs:
+  - 12601.271149123822
+  - 76.42284100369776
+  - 66.84396200500741
+  id: meta-llama/llama-3.3-70b-instruct
+  tensor_parallelism: 4
+  total_kv_blocks: 128273
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 27262.037667007146
+  - 12.483736088204523
+  - 112.29324980868637
+  best_loss: 221.029873173539
+  beta_coeffs:
+  - 14140.825207623911
+  - 10.025593497696502
+  - 19.401640879612657
+  id: meta-llama/llama-3.3-70b-instruct
+  tensor_parallelism: 8
+  total_kv_blocks: 728405
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 4267.302283143799
+  - 16.660033242658532
+  - 16319.921860002582
+  best_loss: 297.4340999301876
+  beta_coeffs:
+  - 18180.028288213853
+  - 82.4050731266856
+  - 53.80449568341092
+  id: microsoft/phi-4
+  tensor_parallelism: 1
+  total_kv_blocks: 14645
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 3697.6155227263353
+  - 7.50794554937522
+  - 9062.1336063128
+  best_loss: 212.96081578761303
+  beta_coeffs:
+  - 4406.28708175561
+  - 47.40944867621954
+  - 23.356685272854975
+  id: microsoft/phi-4
+  tensor_parallelism: 1
+  total_kv_blocks: 14645
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 683.2219090810977
+  - 5.3076828288085105
+  - 2886.317968804282
+  best_loss: 323.4764766657908
+  beta_coeffs:
+  - 10800.519468630244
+  - 116.83419651549394
+  - 20.50370761280137
+  id: microsoft/phi-4
+  tensor_parallelism: 2
+  total_kv_blocks: 76476
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 6440.71358709443
+  - 9.459834652506629
+  - 16785.247518077897
+  best_loss: 518.4177724596042
+  beta_coeffs:
+  - 574.3193908443218
+  - 19.880200585495377
+  - 8.689234395416412
+  id: microsoft/phi-4
+  tensor_parallelism: 2
+  total_kv_blocks: 76476
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 3091.6374207646295
+  - 0.8375016060017124
+  - 16179.301838499438
+  best_loss: 1608.4981261257376
+  beta_coeffs:
+  - 25535.044611072637
+  - 163.18432608228954
+  - 36.9679102942264
+  id: mistralai/mistral-small-24b-instruct-2501
+  tensor_parallelism: 1
+  total_kv_blocks: 11506
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 459.38237418004474
+  - 8.421647400099843
+  - 18232.44131511755
+  best_loss: 491.81724819922977
+  beta_coeffs:
+  - 8045.360389916899
+  - 185.12975339255487
+  - 13.887314225804772
+  id: mistralai/mistral-small-24b-instruct-2501
+  tensor_parallelism: 2
+  total_kv_blocks: 81996
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 10475.040522450588
+  - 11.283072984834146
+  - 2541.795724185129
+  best_loss: 649.6165378303667
+  beta_coeffs:
+  - 2464.1052052186587
+  - 12.644719287600402
+  - 509.1952938574658
+  id: mistralai/mistral-small-24b-instruct-2501
+  tensor_parallelism: 2
+  total_kv_blocks: 81996
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 3122.794906100851
+  - 7.652576982347842
+  - 6552.26886845761
+  best_loss: 223.90041715636153
+  beta_coeffs:
+  - 5657.097360700671
+  - 54.14578990259821
+  - 6.453687531529113
+  id: mistralai/mistral-small-24b-instruct-2501
+  tensor_parallelism: 4
+  total_kv_blocks: 399921
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 7703.055187898937
+  - 9.034495842862523
+  - 12284.047909830093
+  best_loss: 420.292049964583
+  beta_coeffs:
+  - 1018.268102818126
+  - 19.065523878535114
+  - 11.566836336041064
+  id: mistralai/mistral-small-24b-instruct-2501
+  tensor_parallelism: 4
+  total_kv_blocks: 399921
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 2239.88590735043
+  - 5.162936375024076
+  - 38551.01984703668
+  best_loss: 1267.9546653712375
+  beta_coeffs:
+  - 26764.640363714563
+  - 22.42028179664324
+  - 3.632013196764092
+  id: mistralai/mistral-small-3.1-24b-instruct-2503
+  tensor_parallelism: 1
+  total_kv_blocks: 11171
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 21303.07339912921
+  - 20.437871883263337
+  - 6545.850891475854
+  best_loss: 243.5332635117481
+  beta_coeffs:
+  - 6730.726097395263
+  - 21.938289947390075
+  - 28.17012689380326
+  id: mistralai/mistral-small-3.1-24b-instruct-2503
+  tensor_parallelism: 2
+  total_kv_blocks: 81326
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 6355.928322252437
+  - 0.38784617173177255
+  - 5397.281993658105
+  best_loss: 368.1041029155367
+  beta_coeffs:
+  - 647.0364314797403
+  - 39.264469825158756
+  - 350.33998755325024
+  id: mistralai/mistral-small-3.1-24b-instruct-2503
+  tensor_parallelism: 4
+  total_kv_blocks: 398582
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 951.6828928272123
+  - 4.154785361270902
+  - 1029.7240818012767
+  best_loss: 337.75499787040025
+  beta_coeffs:
+  - 5618.826054381695
+  - 11.426217511230869
+  - 3.5495143430645157
+  id: mistralai/mistral-small-3.1-24b-instruct-2503
+  tensor_parallelism: 8
+  total_kv_blocks: 1740883
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 14183.211469689128
+  - 0.05035849522569347
+  - 29675.091979055112
+  best_loss: 1154.179914511648
+  beta_coeffs:
+  - 12616.330563372463
+  - 29.98066344907465
+  - 29.72539500682795
+  id: mistralai/mixtral-8x7b-instruct-v0.1
+  tensor_parallelism: 2
+  total_kv_blocks: 58377
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 26559.08984584117
+  - 2.4378012808675087
+  - 2141.985555705179
+  best_loss: 442.28537683721106
+  beta_coeffs:
+  - 3648.04909627335
+  - 3.410683698407131
+  - 515.8436275086335
+  id: mistralai/mixtral-8x7b-instruct-v0.1
+  tensor_parallelism: 4
+  total_kv_blocks: 411666
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 31444.718314479487
+  - 1.7995264019905064
+  - 4849.900447286201
+  best_loss: 678.0394370931962
+  beta_coeffs:
+  - 1063.065924802559
+  - 82.92021273475513
+  - 23.671998666682363
+  id: openai/gpt-oss-120b
+  tensor_parallelism: 1
+  total_kv_blocks: 32414
+  vllm_version: vllm/vllm-openai:v0.10.1.1
+- GPU: H100
+  alpha_coeffs:
+  - 8446.20325671582
+  - 2.0435727967451633
+  - 3931.975750463961
+  best_loss: 550.1931261226246
+  beta_coeffs:
+  - 2118.606133364004
+  - 41.928675845255086
+  - 23.080130740244385
+  id: openai/gpt-oss-120b
+  tensor_parallelism: 2
+  total_kv_blocks: 558277
+  vllm_version: vllm/vllm-openai:v0.10.1.1
+- GPU: H100
+  alpha_coeffs:
+  - 997.9263858358371
+  - 1.6710704994372263
+  - 247.32404471388872
+  best_loss: 283.6115511994761
+  beta_coeffs:
+  - 5604.3098518198185
+  - 21.068776218469026
+  - 7.358611427105032
+  id: openai/gpt-oss-120b
+  tensor_parallelism: 4
+  total_kv_blocks: 3090344
+  vllm_version: vllm/vllm-openai:v0.10.1.1
+- GPU: H100
+  alpha_coeffs:
+  - 5344.229823996739
+  - 1.9232283406777833
+  - 945.5974593186882
+  best_loss: 191.9767804014799
+  beta_coeffs:
+  - 3552.3844498975877
+  - 13.974438290885491
+  - 266.4529116445669
+  id: openai/gpt-oss-120b
+  tensor_parallelism: 8
+  total_kv_blocks: 14075850
+  vllm_version: vllm/vllm-openai:v0.10.1.1
+- GPU: H100
+  alpha_coeffs:
+  - 2575.297973825855
+  - 1.6942915710418411
+  - 19152.051890144965
+  best_loss: 2726.6213770690483
+  beta_coeffs:
+  - 7344.860029214045
+  - 60.64650677940525
+  - 3.679647756509839
+  id: openai/gpt-oss-20b
+  tensor_parallelism: 1
+  total_kv_blocks: 302690
+  vllm_version: vllm/vllm-openai:v0.10.1.1
+- GPU: H100
+  alpha_coeffs:
+  - 23999.290851176513
+  - 1.5829275414611783
+  - 35.20005301663724
+  best_loss: 256.1647421668078
+  beta_coeffs:
+  - 2480.741189189891
+  - 6.017948627317637
+  - 316.21825642894214
+  id: openai/gpt-oss-20b
+  tensor_parallelism: 2
+  total_kv_blocks: 1345552
+  vllm_version: vllm/vllm-openai:v0.10.1.1
+- GPU: H100
+  alpha_coeffs:
+  - 223.66888048506826
+  - 1.9991491055145332
+  - 1735.8265227075872
+  best_loss: 369.53404960206865
+  beta_coeffs:
+  - 3017.2277921272153
+  - 19.523385586681577
+  - 2.1164568937324333
+  id: openai/gpt-oss-20b
+  tensor_parallelism: 4
+  total_kv_blocks: 5651790
+  vllm_version: vllm/vllm-openai:v0.10.1.1
+- GPU: H100
+  alpha_coeffs:
+  - 3089.8770066709303
+  - 1.6493949028234987
+  - 2365.761919945067
+  best_loss: 278.91681258346875
+  beta_coeffs:
+  - 360.60632811228436
+  - 13.711997306742141
+  - 498.42919329757655
+  id: openai/gpt-oss-20b
+  tensor_parallelism: 8
+  total_kv_blocks: 23146322
+  vllm_version: vllm/vllm-openai:v0.10.1.1
+- GPU: A100-80
+  alpha_coeffs:
+  - 8970.33939991319
+  - 2.308213163493539
+  - 19547.350153998857
+  best_loss: 841.3731827421983
+  beta_coeffs:
+  - 10041.674273463475
+  - 81.12095792183437
+  - 59.98624422876753
+  id: qwen/qwen2.5-7b-instruct
+  tensor_parallelism: 1
+  total_kv_blocks: 67659
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 5223.7601312008765
+  - 2.4114266267351026
+  - 5368.0632635001375
+  best_loss: 489.86573167272115
+  beta_coeffs:
+  - 1602.214225165806
+  - 19.870256563814962
+  - 452.93689651035174
+  id: qwen/qwen2.5-7b-instruct
+  tensor_parallelism: 1
+  total_kv_blocks: 67659
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 7025.080179905166
+  - 0.6723360037062633
+  - 12768.009664258823
+  best_loss: 341.3768464254508
+  beta_coeffs:
+  - 401.64665660295196
+  - 47.40399462356343
+  - 50.80563458278253
+  id: qwen/qwen2.5-7b-instruct
+  tensor_parallelism: 2
+  total_kv_blocks: 303840
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 3964.1641151493222
+  - 2.6222135912249396
+  - 571.965331107411
+  best_loss: 433.57248099497906
+  beta_coeffs:
+  - 5700.266845590395
+  - 25.085041958229453
+  - 13.858969948847147
+  id: qwen/qwen2.5-7b-instruct
+  tensor_parallelism: 2
+  total_kv_blocks: 303840
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: A100-80
+  alpha_coeffs:
+  - 2577.06420952233
+  - 0.3339473356344911
+  - 32321.626896118138
+  best_loss: 2188.0457582576178
+  beta_coeffs:
+  - 5901.811750021876
+  - 6.742051493559949
+  - 31.244432570134666
+  id: qwen/qwen2.5-7b-instruct
+  tensor_parallelism: 4
+  total_kv_blocks: 1281766
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 6748.565706303843
+  - 1.60068623289796
+  - 1952.6809484593186
+  best_loss: 317.1127265636959
+  beta_coeffs:
+  - 2206.931356893263
+  - 16.799213648645086
+  - 218.0953180138298
+  id: qwen/qwen2.5-7b-instruct
+  tensor_parallelism: 4
+  total_kv_blocks: 1281766
+  vllm_version: vllm/vllm-openai:v0.8.4
+version: 0.0.1

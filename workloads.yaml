@@ -1,0 +1,38 @@
+workloads:
+  chatbot:
+    prompt_tokens: 256
+    prompt_tokens_stdev: 100
+    prompt_tokens_min: 2
+    prompt_tokens_max: 800
+    output_tokens: 256
+    output_tokens_stdev: 100
+    output_tokens_min: 1
+    output_tokens_max: 1024
+  contentgen:
+    prompt_tokens: 1024
+    prompt_tokens_stdev: 150
+    prompt_tokens_min: 10
+    prompt_tokens_max: 2048
+    output_tokens: 1024
+    output_tokens_stdev: 200
+    output_tokens_min: 10
+    output_tokens_max: 2048
+  summarization:
+    prompt_tokens: 4096
+    prompt_tokens_stdev: 500
+    prompt_tokens_min: 100
+    prompt_tokens_max: 8192
+    output_tokens: 512
+    output_tokens_stdev: 150
+    output_tokens_min: 10
+    output_tokens_max: 2048
+  multidoc:
+    prompt_tokens: 10240
+    prompt_tokens_stdev: 1200
+    prompt_tokens_min: 500
+    prompt_tokens_max: 20480
+    output_tokens: 1536
+    output_tokens_stdev: 300
+    output_tokens_min: 50
+    output_tokens_max: 4096
+  

@@ -23,6 +23,8 @@ var (
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
 	coeffsFilePath            string    // Path to trained coefficients filepath for testing/inference
+	workloadFilePath          string    // Path to GuideLLM preset workload definitions filepath
+	workloadType              string    // GuideLLM preset workload type (chatbot, summarization, contentgen, multidoc)
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
@@ -71,16 +73,27 @@ var runCmd = &cobra.Command{
 		}
 		logrus.SetLevel(level)
 
-		if model == "" {
+		if model == "" { // model not provided, exit
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
+		}
+
+		// GPU, TP, vLLM version configuration
+		hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
+
+		// if any of (hardware, tp, vllm-version args missing, fall back to default for all)
+		if (tensorParallelism == 0 && tp > 0) || (gpu == "" && len(hardware) > 0) || (vllmVersion == "" && len(version) > 0) {
+			logrus.Warnf("All of (GPU, TP, vLLM version) args should be provided, otherwise provide only model name. Using default tp=%v, GPU=%v, vllmVersion=%v", tp, hardware, version)
+			tensorParallelism = tp
+			gpu = hardware
+			vllmVersion = version
 		}
 
 		// Load alpha/beta coeffs from coefficients.yaml
 		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
 
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) { // default all 0s
-			newAlpha, newBeta := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, coeffsFilePath)
-			alphaCoeffs, betaCoeffs = newAlpha, newBeta
+			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, coeffsFilePath)
+			alphaCoeffs, betaCoeffs, totalKVBlocks = newAlpha, newBeta, kvBlocks
 		}
 		if len(alphaCoeffs) == 0 || len(betaCoeffs) == 0 {
 			logrus.Fatalf("Could not find coefficients for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
@@ -90,16 +103,29 @@ var runCmd = &cobra.Command{
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs)
 
-		startTime := time.Now() // Get current time (start)
+		// Workload configuration
+		var guideLLMConfig *sim.GuideLLMConfig
 
-		if err != nil {
-			logrus.Fatalf("unable to read request gen config; %v", err)
+		if workloadType == "custom" { // if workloadType custom, use args. If no args, use defaults
+			// error handling for prompt and output lengths
+			if promptTokensMean > promptTokensMax || promptTokensMean < promptTokensMin || promptTokensStdev > promptTokensMax || promptTokensStdev < promptTokensMin {
+				logrus.Fatalf("prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]")
+			}
+			if outputTokensMean > outputTokensMax || outputTokensMean < outputTokensMin || outputTokensStdev > outputTokensMax || outputTokensStdev < outputTokensMin {
+				logrus.Fatalf("output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]")
+			}
+			guideLLMConfig = &sim.GuideLLMConfig{Rate: rate / 1e6, MaxPrompts: maxPrompts, PromptTokens: promptTokensMean,
+				PromptTokensStdDev: promptTokensStdev, PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
+				OutputTokens: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
+				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax}
+		} else { // else use preset workload types
+			guideLLMConfig = GetWorkloadConfig(workloadFilePath, workloadType, rate/1e6, maxPrompts)
+			if guideLLMConfig == nil {
+				logrus.Fatalf("Undefined workload. Use one among (chatbot, summarization, contentgen, multidoc)")
+			}
 		}
 
-		guideLLMConfig := &sim.GuideLLMConfig{Rate: rate / 1e6, MaxPrompts: maxPrompts, PromptTokens: promptTokensMean,
-			PromptTokensStdDev: promptTokensStdev, PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
-			OutputTokens: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
-			OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax}
+		startTime := time.Now() // Get current time (start)
 
 		// Initialize and run the simulator
 		s := sim.NewSimulator(
@@ -133,11 +159,13 @@ func init() {
 
 	runCmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
 	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
-	runCmd.Flags().StringVar(&logLevel, "log", "error", "Log level (trace, debug, info, warn, error, fatal, panic)")
+	runCmd.Flags().StringVar(&logLevel, "log", "warn", "Log level (trace, debug, info, warn, error, fatal, panic)")
 	runCmd.Flags().StringVar(&coeffsFilePath, "coeffs-filepath", "coefficients.yaml", "Path to trained coefficients filepath for testing/inference")
+	runCmd.Flags().StringVar(&workloadFilePath, "workloads-filepath", "workloads.yaml", "Path to GuideLLM preset workload definitions filepath")
+	runCmd.Flags().StringVar(&workloadType, "workload", "custom", "GuideLLM preset workload type (chatbot, summarization, contentgen, multidoc)")
 
 	// vLLM server configs
-	runCmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 8000000, "Total number of KV cache blocks")
+	runCmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 0, "Total number of KV cache blocks")
 	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 256, "Maximum number of requests running together")
 	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 2048, "Maximum total number of new tokens across running requests")
 	runCmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated list of beta coefficients")
@@ -148,9 +176,9 @@ func init() {
 
 	// BLIS model configs
 	runCmd.Flags().StringVar(&model, "model", "", "LLM name")
-	runCmd.Flags().StringVar(&gpu, "hardware", "H100", "GPU type")
-	runCmd.Flags().IntVar(&tensorParallelism, "tp", 1, "Tensor parallelism")
-	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "0.11.0", "vLLM version")
+	runCmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
+	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
+	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
 
 	// GuideLLM request generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
