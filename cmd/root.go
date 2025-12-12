@@ -101,8 +101,8 @@ var runCmd = &cobra.Command{
 		}
 
 		// Log configuration
-		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
-			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs)
+		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v, gammaCoeffs=%v",
+			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs, gammaCoeffs)
 
 		// Workload configuration
 		var guideLLMConfig *sim.GuideLLMConfig
