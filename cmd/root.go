@@ -22,6 +22,8 @@ var (
 	blockSizeTokens           int64     // Number of tokens per KV block
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
+	gammaCoeffs               float64   // Gamma coeff corresponding to model generalization
+	fToken                    int64     // FLOPS per token specific to the LLM
 	coeffsFilePath            string    // Path to trained coefficients filepath for testing/inference
 	workloadFilePath          string    // Path to GuideLLM preset workload definitions filepath
 	workloadType              string    // GuideLLM preset workload type (chatbot, summarization, contentgen, multidoc)
@@ -77,21 +79,20 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
 		}
 
-		// GPU, TP, vLLM version configuration
-		hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
-
-		// if any of (hardware, tp, vllm-version args missing, fall back to default for all)
-		if (tensorParallelism == 0 && tp > 0) || (gpu == "" && len(hardware) > 0) || (vllmVersion == "" && len(version) > 0) {
-			logrus.Warnf("All of (GPU, TP, vLLM version) args should be provided, otherwise provide only model name. Using default tp=%v, GPU=%v, vllmVersion=%v", tp, hardware, version)
-			tensorParallelism = tp
-			gpu = hardware
-			vllmVersion = version
-		}
-
 		// Load alpha/beta coeffs from coefficients.yaml
 		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
 
-		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) { // default all 0s
+		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && gammaCoeffs == 0 { // default all 0s
+			// GPU, TP, vLLM version configuration
+			hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
+
+			// if any of (hardware, tp, vllm-version args missing, fall back to default for all)
+			if (tensorParallelism == 0 && tp > 0) || (gpu == "" && len(hardware) > 0) || (vllmVersion == "" && len(version) > 0) {
+				logrus.Warnf("All of (GPU, TP, vLLM version) args should be provided, otherwise provide only model name. Using default tp=%v, GPU=%v, vllmVersion=%v", tp, hardware, version)
+				tensorParallelism = tp
+				gpu = hardware
+				vllmVersion = version
+			}
 			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, coeffsFilePath)
 			alphaCoeffs, betaCoeffs, totalKVBlocks = newAlpha, newBeta, kvBlocks
 		}
@@ -138,6 +139,8 @@ var runCmd = &cobra.Command{
 			longPrefillTokenThreshold,
 			betaCoeffs,
 			alphaCoeffs,
+			gammaCoeffs,
+			fToken,
 			guideLLMConfig,
 		)
 		s.Run()
@@ -169,7 +172,9 @@ func init() {
 	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 256, "Maximum number of requests running together")
 	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 2048, "Maximum total number of new tokens across running requests")
 	runCmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated list of beta coefficients")
-	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
+	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1,alpha2) for processing delays")
+	runCmd.Flags().Float64Var(&gammaCoeffs, "gamma-coeffs", 0.0, "Gamma coefficient for model generalization")
+	runCmd.Flags().Int64Var(&fToken, "flop-per-token", 1000000, "FLOPS per token specific to the LLM")
 	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 	runCmd.Flags().IntVar(&maxModelLength, "max-model-len", 2048, "Max request length (input + output tokens)")
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")

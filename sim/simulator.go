@@ -78,6 +78,8 @@ type Simulator struct {
 	MaxScheduledTokens int64
 	BetaCoeffs         []float64
 	AlphaCoeffs        []float64
+	GammaCoeffs        float64
+	FToken             int64
 	// RunningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
 	// , "total_decode_tokens": c, "total_prefill_tokens": d}
 	RunningBatchFeatures      RegressionFeatures
@@ -92,7 +94,7 @@ type Simulator struct {
 }
 
 func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig) *Simulator {
+	betaCoeffs []float64, alphaCoeffs []float64, gammaCoeffs float64, fToken int64, guideLLMConfig *GuideLLMConfig) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -105,6 +107,8 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		MaxScheduledTokens:        maxScheduledTokens,
 		BetaCoeffs:                betaCoeffs,
 		AlphaCoeffs:               alphaCoeffs,
+		GammaCoeffs:               gammaCoeffs,
+		FToken:                    fToken,
 		RunningBatchFeatures:      RegressionFeatures{},
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 		StepEvent:                 nil,
@@ -267,6 +271,7 @@ func (sim *Simulator) getStepTime() int64 {
 	totalStepTime += sim.BetaCoeffs[0]
 	totalStepTime += sim.BetaCoeffs[1] * float64(sim.RunningBatchFeatures.TotalCacheMissTokens)
 	totalStepTime += sim.BetaCoeffs[2] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
+	totalStepTime += sim.GammaCoeffs * float64(sim.FToken*(sim.RunningBatchFeatures.TotalCacheMissTokens+sim.RunningBatchFeatures.NumDecodeRequests))
 	return int64(totalStepTime) // in microseconds
 }
 
