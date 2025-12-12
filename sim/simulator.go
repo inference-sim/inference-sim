@@ -271,7 +271,7 @@ func (sim *Simulator) getStepTime() int64 {
 	totalStepTime += sim.BetaCoeffs[0]
 	totalStepTime += sim.BetaCoeffs[1] * float64(sim.RunningBatchFeatures.TotalCacheMissTokens)
 	totalStepTime += sim.BetaCoeffs[2] * float64(sim.RunningBatchFeatures.TotalDecodeTokens)
-	totalStepTime += sim.GammaCoeffs * float64(sim.FToken*(sim.RunningBatchFeatures.TotalCacheMissTokens+sim.RunningBatchFeatures.NumDecodeRequests))
+	totalStepTime += sim.GammaCoeffs * float64(sim.FToken*(sim.RunningBatchFeatures.TotalCacheMissTokens+sim.RunningBatchFeatures.TotalDecodeTokens))
 	return int64(totalStepTime) // in microseconds
 }
 
