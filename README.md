@@ -39,28 +39,27 @@ Run BLIS for `meta-llama/llama-3.1-8b-instruct` with default configs:
    ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct 
 ```
 
-## Usage
 
-**Preset application workloads**
+## Common Workflows
 
-Run a preset workload (`chatbot`, `summarization`, `contentgen`, `multidoc`):
+BLIS supports several practical and commonly needed inference-planning workflows.
 
+**1. Performance estimation for a given model and workload**
+- Estimate latency and throughput for a preset application workload (`chatbot`, `summarization`, `contentgen`, `multidoc`):
 ```bash
-   ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --workload chatbot
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --workload chatbot
 ```
 
-**Custom GPU, TP, vllm versions**
-
-Override GPU, TP, and vLLM version:
+- Custom GPU, TP, vllm versions
 
 ```bash
    ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
    --hardware H100 --tp 2 --vllm-version vllm/vllm-openai:v0.8.4
 ```
 
-**Custom Workload Parameters**
-
-Define custom workload characteristics:
+- Custom Workload Parameters 
 
 ```bash
   ./simulation_worker run \
@@ -73,7 +72,7 @@ Define custom workload characteristics:
   --output-tokens-stdev 200 
 ```
 
-**Custom vLLM Configs**
+- Custom vLLM Configs
 
 ```bash
   ./simulation_worker run \
@@ -81,6 +80,33 @@ Define custom workload characteristics:
   --max-num-running-reqs 256 \
   --max-num-scheduled-tokens 2048
 ```
+
+
+**2. Saturation analysis (capacity limits)**
+Identify the maximum sustainable throughput or request rate before saturation:
+
+```bash
+./simulation_worker saturation \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --workload chatbot 
+```
+
+**3. Request replay**
+Replay a single request or a sequence of real requests:
+```bash
+./simulation_worker replay \
+  --requests requests.json \
+  --model meta-llama/llama-3.1-8b-instruct
+```
+
+**4. vLLM configuration optimization**
+Search for an optimal vLLM configuration across key knobs:
+```bash
+./simulation_worker search \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --vllm-config-knobs "max_num_batched_tokens,max_seq_len,max_num_seqs"
+```
+
 
 ## Supported LLMs
 
