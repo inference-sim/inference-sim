@@ -1,5 +1,6 @@
 workloads:
   chatbot:
+    prefix_tokens: 0
     prompt_tokens: 256
     prompt_tokens_stdev: 100
     prompt_tokens_min: 2
@@ -9,6 +10,7 @@ workloads:
     output_tokens_min: 1
     output_tokens_max: 1024
   contentgen:
+    prefix_tokens: 0
     prompt_tokens: 1024
     prompt_tokens_stdev: 150
     prompt_tokens_min: 10
@@ -18,6 +20,7 @@ workloads:
     output_tokens_min: 10
     output_tokens_max: 2048
   summarization:
+    prefix_tokens: 0
     prompt_tokens: 4096
     prompt_tokens_stdev: 500
     prompt_tokens_min: 100

@@ -14,6 +14,7 @@ type WorkloadConfig struct {
 }
 
 type Workload struct {
+	PrefixTokens      int `yaml:"prefix_tokens"`
 	PromptTokensMean  int `yaml:"prompt_tokens"`
 	PromptTokensStdev int `yaml:"prompt_tokens_stdev"`
 	PromptTokensMin   int `yaml:"prompt_tokens_min"`
@@ -40,6 +41,7 @@ func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float6
 	if workload, workloadExists := cfg.Workloads[workloadType]; workloadExists {
 		logrus.Infof("Using preset workload %v\n", workloadType)
 		return &sim.GuideLLMConfig{Rate: rate, MaxPrompts: maxPrompts,
+			PrefixTokens: workload.PrefixTokens,
 			PromptTokens: workload.PromptTokensMean, PromptTokensStdDev: workload.PromptTokensStdev,
 			PromptTokensMin: workload.PromptTokensMin, PromptTokensMax: workload.PromptTokensMax,
 			OutputTokens: workload.OutputTokensMean, OutputTokensStdDev: workload.OutputTokensStdev,

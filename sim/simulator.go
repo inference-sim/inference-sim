@@ -44,6 +44,7 @@ type RegressionFeatures struct {
 type GuideLLMConfig struct {
 	Rate               float64 // Requests per second
 	MaxPrompts         int     // Number of requests
+	PrefixTokens       int     // Prefix Token Count
 	PromptTokens       int     // Average Prompt Token Count
 	PromptTokensStdDev int     // Stddev Prompt Token Count
 	PromptTokensMin    int     // Min Prompt Token Count
@@ -156,7 +157,7 @@ func (sim *Simulator) generateRequestArrivals() {
 	reqIdx := 0
 
 	// generate prefix here; this is a random sequence of tokens of prefix len
-	prefix := sim.generateRandomTokenIDs(0)
+	prefix := sim.generateRandomTokenIDs(sim.GuideLLMConfig.PrefixTokens)
 
 	// create request arrivals iteratively
 	for currentTime < sim.Horizon && reqIdx < sim.GuideLLMConfig.MaxPrompts {
