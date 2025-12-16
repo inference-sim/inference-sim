@@ -83,7 +83,7 @@ BLIS supports several practical and commonly needed inference-planning workflows
 
 
 **2. Saturation analysis (capacity limits)**
-Identify the maximum sustainable throughput or request rate before saturation:
+- Identify the maximum sustainable throughput or request rate before saturation:
 
 ```bash
 ./simulation_worker saturation \
@@ -92,7 +92,7 @@ Identify the maximum sustainable throughput or request rate before saturation:
 ```
 
 **3. Request replay**
-Replay a single request or a sequence of real requests:
+- Replay a single request or a sequence of real requests:
 ```bash
 ./simulation_worker replay \
   --requests requests.json \
@@ -100,7 +100,7 @@ Replay a single request or a sequence of real requests:
 ```
 
 **4. vLLM configuration optimization**
-Search for an optimal vLLM configuration across key knobs:
+- Search for an optimal vLLM configuration across key knobs:
 ```bash
 ./simulation_worker search \
   --model meta-llama/llama-3.1-8b-instruct \
