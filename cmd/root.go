@@ -77,21 +77,21 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
 		}
 
-		// GPU, TP, vLLM version configuration
-		hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
-
-		// if any of (hardware, tp, vllm-version args missing, fall back to default for all)
-		if (tensorParallelism == 0 && tp > 0) || (gpu == "" && len(hardware) > 0) || (vllmVersion == "" && len(version) > 0) {
-			logrus.Warnf("All of (GPU, TP, vLLM version) args should be provided, otherwise provide only model name. Using default tp=%v, GPU=%v, vllmVersion=%v", tp, hardware, version)
-			tensorParallelism = tp
-			gpu = hardware
-			vllmVersion = version
-		}
-
 		// Load alpha/beta coeffs from coefficients.yaml
 		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
 
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) { // default all 0s
+			// GPU, TP, vLLM version configuration
+			hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
+
+			// if any of (hardware, tp, vllm-version args missing, fall back to default for all)
+			if (tensorParallelism == 0 && tp > 0) || (gpu == "" && len(hardware) > 0) || (vllmVersion == "" && len(version) > 0) {
+				logrus.Warnf("All of (GPU, TP, vLLM version) args should be provided, otherwise provide only model name. Using default tp=%v, GPU=%v, vllmVersion=%v", tp, hardware, version)
+				tensorParallelism = tp
+				gpu = hardware
+				vllmVersion = version
+			}
+
 			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, coeffsFilePath)
 			alphaCoeffs, betaCoeffs, totalKVBlocks = newAlpha, newBeta, kvBlocks
 		}
