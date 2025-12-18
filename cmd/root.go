@@ -29,6 +29,7 @@ var (
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
 	maxPrompts                int       // Number of requests
+	prefixTokens              int       // Prefix Token Count
 	promptTokensMean          int       // Average Prompt Token Count
 	promptTokensStdev         int       // Stdev Prompt Token Count
 	promptTokensMin           int       // Min Prompt Token Count
@@ -77,21 +78,21 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
 		}
 
-		// GPU, TP, vLLM version configuration
-		hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
-
-		// if any of (hardware, tp, vllm-version args missing, fall back to default for all)
-		if (tensorParallelism == 0 && tp > 0) || (gpu == "" && len(hardware) > 0) || (vllmVersion == "" && len(version) > 0) {
-			logrus.Warnf("All of (GPU, TP, vLLM version) args should be provided, otherwise provide only model name. Using default tp=%v, GPU=%v, vllmVersion=%v", tp, hardware, version)
-			tensorParallelism = tp
-			gpu = hardware
-			vllmVersion = version
-		}
-
 		// Load alpha/beta coeffs from coefficients.yaml
 		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
 
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) { // default all 0s
+			// GPU, TP, vLLM version configuration
+			hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
+
+			// if any of (hardware, tp, vllm-version args missing, fall back to default for all)
+			if (tensorParallelism == 0 && tp > 0) || (gpu == "" && len(hardware) > 0) || (vllmVersion == "" && len(version) > 0) {
+				logrus.Warnf("All of (GPU, TP, vLLM version) args should be provided, otherwise provide only model name. Using default tp=%v, GPU=%v, vllmVersion=%v", tp, hardware, version)
+				tensorParallelism = tp
+				gpu = hardware
+				vllmVersion = version
+			}
+
 			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, coeffsFilePath)
 			alphaCoeffs, betaCoeffs, totalKVBlocks = newAlpha, newBeta, kvBlocks
 		}
@@ -114,7 +115,8 @@ var runCmd = &cobra.Command{
 			if outputTokensMean > outputTokensMax || outputTokensMean < outputTokensMin || outputTokensStdev > outputTokensMax || outputTokensStdev < outputTokensMin {
 				logrus.Fatalf("output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]")
 			}
-			guideLLMConfig = &sim.GuideLLMConfig{Rate: rate / 1e6, MaxPrompts: maxPrompts, PromptTokens: promptTokensMean,
+			guideLLMConfig = &sim.GuideLLMConfig{Rate: rate / 1e6, MaxPrompts: maxPrompts,
+				PrefixTokens: prefixTokens, PromptTokens: promptTokensMean,
 				PromptTokensStdDev: promptTokensStdev, PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
 				OutputTokens: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
 				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax}
@@ -183,6 +185,7 @@ func init() {
 	// GuideLLM request generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&maxPrompts, "max-prompts", 100, "Number of requests")
+	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")
 	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", 512, "Average Prompt Token Count")
 	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", 256, "Stddev Prompt Token Count")
 	runCmd.Flags().IntVar(&promptTokensMin, "prompt-tokens-min", 2, "Min Prompt Token Count")
