@@ -40,6 +40,21 @@ type RegressionFeatures struct {
 	MaxPrefillTokens     int64 `json:"max_prefill_tokens"`
 }
 
+type PrefillRequestConfig struct {
+	ProgressIndex       int64 `json:"progress_index"`
+	NumNewPrefillTokens int   `json:"num_new_prefill_tokens"`
+}
+
+type DecodeRequestConfig struct {
+	ProgressIndex      int64 `json:"progress_index"`
+	NumNewDecodeTokens int   `json:"num_new_decode_tokens"`
+}
+
+type StepConfig struct {
+	PrefillRequests []PrefillRequestConfig `json:"prefill_requests"`
+	DecodeRequests  []DecodeRequestConfig  `json:"decode_requests"`
+}
+
 // GuideLLMConfig supports GuideLLM style request generation
 type GuideLLMConfig struct {
 	Rate               float64 // Requests per second
@@ -89,11 +104,15 @@ type Simulator struct {
 	ReqNumComputedTokens  map[string]int64
 	PreemptionHappened    bool
 	GuideLLMConfig        *GuideLLMConfig
+	Model                 string
+	GPU                   string
+	Roofline              bool
+	ModelConfig           ModelConfig
 	randomNumberGenerator *rand.Rand // random number generator for request tokens
 }
 
 func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig) *Simulator {
+	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, model string, GPU string, roofline bool) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -113,6 +132,10 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		ReqNumComputedTokens:      make(map[string]int64),
 		PreemptionHappened:        false,
 		GuideLLMConfig:            guideLLMConfig,
+		ModelConfig:               modelConfig,
+		Model:                     model,
+		GPU:                       GPU,
+		Roofline:                  roofline,
 	}
 	s.Metrics.RequestRate = s.GuideLLMConfig.Rate
 
@@ -271,6 +294,46 @@ func (sim *Simulator) getStepTime() int64 {
 	return int64(totalStepTime) // in microseconds
 }
 
+// Estimate Step Advance Time using roofline model
+func (sim *Simulator) getStepTimeRoofline() int64 {
+	stepConfig := StepConfig{
+		PrefillRequests: make([]PrefillRequestConfig, 0, len(sim.RunningBatch.Requests)),
+		DecodeRequests:  make([]DecodeRequestConfig, 0, len(sim.RunningBatch.Requests)),
+	}
+	for _, req := range sim.RunningBatch.Requests {
+		if req.ProgressIndex < Len64(req.InputTokens) {
+			stepConfig.PrefillRequests = append(stepConfig.PrefillRequests, PrefillRequestConfig{
+				ProgressIndex:       req.ProgressIndex,
+				NumNewPrefillTokens: req.NumNewTokens,
+			})
+		} else {
+			stepConfig.DecodeRequests = append(stepConfig.DecodeRequests, DecodeRequestConfig{
+				ProgressIndex:      req.ProgressIndex,
+				NumNewDecodeTokens: req.NumNewTokens,
+			})
+		}
+	}
+	// stepConfigJson, err := json.Marshal(sc)
+	// if err != nil {
+	// 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	// 	os.Exit(1)
+	// }
+	// modelConfigJson, err := json.Marshal(sim.ModelConfig.Raw)
+	// if err != nil {
+	// 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	// 	os.Exit(1)
+	// }
+	// args := []string{"get_flops.py", "--model-id", sim.Model, "--GPU", sim.GPU, "--model-config", string(modelConfigJson), "--step-config", string(stepConfigJson)}
+	// // python get_flops.py --model-id sim.model --GPU sim.GPU --model-config '{some json}' --step-config '{some json}'
+	// cmd := exec.Command("python", args...)
+	// out, _ := cmd.CombinedOutput()
+	// cmd.Run()
+	// strOut, _ := strconv.Atoi(string(out))
+	// return int64(strOut)
+	stepTime := rooflineStepTime(sim.GPU, sim.ModelConfig, stepConfig)
+	return stepTime
+}
+
 func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool {
 
 	for {
@@ -335,6 +398,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 
 			tokenBudget -= numNewTokens
 			sim.RunningBatchFeatures.TotalCacheMissTokens += numNewTokens
+			req.NumNewTokens = int(numNewTokens)
 			sim.RunningBatchFeatures.NumPrefillRequests += 1
 			sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
 			sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
@@ -352,6 +416,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 			tokenBudget--
 
 			// update decode-related features in RunningBatchFeatures
+			req.NumNewTokens = 1
 			sim.RunningBatchFeatures.NumDecodeRequests += 1
 			sim.RunningBatchFeatures.TotalDecodeTokens += 1
 			sim.ReqNumComputedTokens[req.ID] += 1
@@ -407,6 +472,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 
 		// update prefill-related features in RunningBatchFeatures
 		sim.RunningBatchFeatures.NumPrefillRequests += 1
+		next.NumNewTokens = int(numNewTokens)
 		sim.RunningBatchFeatures.TotalPrefillTokens += numNewTokens
 		sim.RunningBatchFeatures.TotalCacheMissTokens += numNewTokens
 		sim.RunningBatchFeatures.MaxPrefillTokens = max(sim.RunningBatchFeatures.MaxPrefillTokens, numNewTokens)
@@ -437,8 +503,13 @@ func (sim *Simulator) Step(now int64) {
 	// save runningBatch length for analysis
 	sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, len(sim.RunningBatch.Requests))
 
-	// Estimate regression times based on runningBatch state
-	currStepAdvance := sim.getStepTime()
+	// Estimate step times, either based on runningBatch state or on Roofline model
+	var currStepAdvance int64
+	if sim.Roofline {
+		currStepAdvance = sim.getStepTimeRoofline()
+	} else {
+		currStepAdvance = sim.getStepTime()
+	}
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()

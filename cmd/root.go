@@ -3,6 +3,7 @@ package cmd
 import (
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ var (
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
 	coeffsFilePath            string    // Path to trained coefficients filepath for testing/inference
+	modelConfigFolder         string    // Path to folder containing config.json and model.json
 	workloadFilePath          string    // Path to GuideLLM preset workload definitions filepath
 	workloadType              string    // GuideLLM preset workload type (chatbot, summarization, contentgen, multidoc)
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
@@ -39,6 +41,7 @@ var (
 	outputTokensStdev         int       // Stdev Output Token Count
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
+	roofline                  bool      // Whether to use roofline stepTime or not
 
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
@@ -82,9 +85,15 @@ var runCmd = &cobra.Command{
 		// Load alpha/beta coeffs from coefficients.yaml
 		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
 
-		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) { // default all 0s
+		// Default: Do not use Roofline estimates for step time
+		roofline = false
+
+		var modelConfig = sim.ModelConfig{}
+
+		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && len(modelConfigFolder) == 0 { // default all 0s
 			// convert model name to lowercase
 			model = strings.ToLower(model)
+
 			// GPU, TP, vLLM version configuration
 			hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
 
@@ -99,8 +108,14 @@ var runCmd = &cobra.Command{
 			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, coeffsFilePath)
 			alphaCoeffs, betaCoeffs, totalKVBlocks = newAlpha, newBeta, kvBlocks
 		}
-		if len(alphaCoeffs) == 0 || len(betaCoeffs) == 0 {
-			logrus.Fatalf("Could not find coefficients for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
+		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+			logrus.Warnf("Could not find coefficients for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
+			if len(modelConfigFolder) > 0 && len(gpu) > 0 {
+				roofline = true
+				hfPath := filepath.Join(modelConfigFolder, "config.json")
+				paramsPath := filepath.Join(modelConfigFolder, "model.json")
+				modelConfig = *sim.GetModelConfig(hfPath, paramsPath)
+			}
 		}
 
 		// Log configuration
@@ -131,7 +146,6 @@ var runCmd = &cobra.Command{
 		}
 
 		startTime := time.Now() // Get current time (start)
-
 		// Initialize and run the simulator
 		s := sim.NewSimulator(
 			simulationHorizon,
@@ -144,6 +158,10 @@ var runCmd = &cobra.Command{
 			betaCoeffs,
 			alphaCoeffs,
 			guideLLMConfig,
+			modelConfig,
+			model,
+			gpu,
+			roofline,
 		)
 		s.Run()
 		s.Metrics.Print(s.Horizon, totalKVBlocks, startTime)
@@ -166,6 +184,7 @@ func init() {
 	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	runCmd.Flags().StringVar(&logLevel, "log", "warn", "Log level (trace, debug, info, warn, error, fatal, panic)")
 	runCmd.Flags().StringVar(&coeffsFilePath, "coeffs-filepath", "coefficients.yaml", "Path to trained coefficients filepath for testing/inference")
+	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json and model.json")
 	runCmd.Flags().StringVar(&workloadFilePath, "workloads-filepath", "workloads.yaml", "Path to GuideLLM preset workload definitions filepath")
 	runCmd.Flags().StringVar(&workloadType, "workload", "custom", "GuideLLM preset workload type (chatbot, summarization, contentgen, multidoc)")
 
