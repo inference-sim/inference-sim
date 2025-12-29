@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"fmt"
 	"math"
 )
 
@@ -8,14 +9,14 @@ import (
 
 type HardwareCalib struct {
 	TFlopsEff       float64
-	BwEffBytesS     float64
+	BwEffTBs        float64
 	TOverheadMicros float64
 }
 
 var HardwareList = map[string]HardwareCalib{
 	"H100": {
 		TFlopsEff:       1979, // Tera (10^12) FLOP/s
-		BwEffBytesS:     3.35, // in TB/s
+		BwEffTBs:        3.35, // in TB/s
 		TOverheadMicros: 0.0,
 	},
 }
@@ -39,7 +40,7 @@ func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newToke
 	if includeAttention {
 		dKV := nKVHeads * dHead
 		// 1. QKV Projections
-		qkvFlops := 2 * seqLen * (dModel*dModel + 2*dModel*dKV)
+		qkvFlops := 2 * float64(newTokens) * (dModel*dModel + 2*dModel*dKV)
 		flops["attention_qkv"] = qkvFlops * nLayers
 
 		// 2. Attention Scores (QK^T)
@@ -72,7 +73,7 @@ func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newToke
 	return flops
 }
 
-func calculateMemoryAccessBytes(config ModelConfig, sequenceLength int64, newTokens int64, includeKVCache bool) map[string]float64 {
+func calculateMemoryAccessBytes(config ModelConfig, newTokens int64, includeKVCache bool) map[string]float64 {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
 	nHeads := float64(config.NumHeads)
@@ -82,8 +83,6 @@ func calculateMemoryAccessBytes(config ModelConfig, sequenceLength int64, newTok
 	}
 	dHead := dModel / nHeads
 	dFF := 4.0 * dModel
-	seqLen := float64(sequenceLength)
-
 	mem := make(map[string]float64)
 
 	// 1. Model Weights
@@ -94,11 +93,11 @@ func calculateMemoryAccessBytes(config ModelConfig, sequenceLength int64, newTok
 	// 2. KV Cache
 	if includeKVCache {
 		kvPerToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
-		mem["kv_cache"] = kvPerToken * seqLen
+		mem["kv_cache"] = kvPerToken * float64(newTokens)
 	}
 
 	// 3. Activations
-	activationsSize := (float64(newTokens)*dModel*config.BytesPerParam + nHeads*seqLen*seqLen*config.BytesPerParam)
+	activationsSize := (float64(newTokens)*dModel*config.BytesPerParam + nHeads*float64(newTokens)*float64(newTokens)*config.BytesPerParam)
 	mem["activations"] = activationsSize
 
 	var total float64
@@ -116,7 +115,7 @@ func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig
 
 	for _, req := range stepConfig.PrefillRequests {
 		flopsBreakdown := calculateTransformerFlops(modelConfig, req.ProgressIndex, int64(req.NumNewPrefillTokens), true, true)
-		memBreakdown := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, int64(req.NumNewPrefillTokens), true)
+		memBreakdown := calculateMemoryAccessBytes(modelConfig, int64(req.NumNewPrefillTokens), true)
 
 		tComputeS += flopsBreakdown["total"]
 		tMemoryS += memBreakdown["total"]
@@ -124,14 +123,15 @@ func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig
 
 	for _, req := range stepConfig.DecodeRequests {
 		flopsBreakdown := calculateTransformerFlops(modelConfig, 1, int64(req.NumNewDecodeTokens), true, true)
-		memBreakdown := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, int64(req.NumNewDecodeTokens), true)
+		memBreakdown := calculateMemoryAccessBytes(modelConfig, int64(req.NumNewDecodeTokens), true)
 
 		tComputeS += flopsBreakdown["total"]
 		tMemoryS += memBreakdown["total"]
 	}
 
 	tComputeMicros := (tComputeS / (hw.TFlopsEff * 1e12)) * 1e6
-	tMemoryMicros := (tComputeS / (hw.BwEffBytesS * 1e12)) * 1e6
+	tMemoryMicros := (tComputeS / (hw.BwEffTBs * 1e12)) * 1e6
+	fmt.Printf("compute time: %v, memory time: %v\n", tComputeMicros, tMemoryMicros)
 
 	return int64(math.Max(tComputeMicros, tMemoryMicros) + hw.TOverheadMicros)
 }
