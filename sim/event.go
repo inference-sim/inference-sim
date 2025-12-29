@@ -1,6 +1,8 @@
 package sim
 
 import (
+	"fmt"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,6 +31,7 @@ func (e *ArrivalEvent) Execute(sim *Simulator) {
 
 	// Trigger queued event with processing delay
 	queued_delay := sim.getQueueingTime(e.Request) // coming from alpha model
+	fmt.Printf("queue delay: %v\n", queued_delay)
 	sim.Schedule(&QueuedEvent{
 		time:    e.time + queued_delay,
 		Request: e.Request,
