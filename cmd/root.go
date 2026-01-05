@@ -3,6 +3,7 @@ package cmd
 import (
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -82,6 +83,8 @@ var runCmd = &cobra.Command{
 		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
 
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) { // default all 0s
+			// convert model name to lowercase
+			model = strings.ToLower(model)
 			// GPU, TP, vLLM version configuration
 			hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
 
