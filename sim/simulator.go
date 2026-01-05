@@ -313,7 +313,6 @@ func (sim *Simulator) getStepTimeRoofline() int64 {
 			})
 		}
 	}
-	fmt.Printf("running batch: %v\n", stepConfig)
 	// stepConfigJson, err := json.Marshal(sc)
 	// if err != nil {
 	// 	fmt.Fprintf(os.Stderr, "error: %v\n", err)

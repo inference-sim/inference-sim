@@ -1,28 +1,32 @@
 package sim
 
 import (
-	"fmt"
 	"math"
 )
 
 // --- Hardware Data Structures ---
 
 type HardwareCalib struct {
-	TFlopsEff       float64
-	BwEffTBs        float64
-	TOverheadMicros float64
+	TFlopsEff        float64
+	BwEffTBs         float64
+	TOverheadMicros  float64
+	perLayerOverhead float64
+	mfuPrefill       float64
+	mfuDecode        float64
 }
 
 var HardwareList = map[string]HardwareCalib{
 	"H100": {
-		TFlopsEff:       1979, // Tera (10^12) FLOP/s
-		BwEffTBs:        3.35, // in TB/s
-		TOverheadMicros: 0.0,
+		TFlopsEff:        989.5,       // Tera (10^12) FLOP/s
+		BwEffTBs:         3.35 * 0.78, // in TB/s
+		TOverheadMicros:  500.0,       // Per-step Overheads unaccounted for
+		perLayerOverhead: 20.0,
+		mfuPrefill:       0.55,
+		mfuDecode:        0.20,
 	},
 }
 
 // --- Bento FLOPS Logic ---
-
 func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) map[string]float64 {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
@@ -73,7 +77,12 @@ func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newToke
 	return flops
 }
 
-func calculateMemoryAccessBytes(config ModelConfig, newTokens int64, includeKVCache bool) map[string]float64 {
+func calculateMemoryAccessBytes(
+	config ModelConfig,
+	sequenceLength int64,
+	newTokens int64,
+	includeKVCache bool,
+) map[string]float64 {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
 	nHeads := float64(config.NumHeads)
@@ -81,24 +90,35 @@ func calculateMemoryAccessBytes(config ModelConfig, newTokens int64, includeKVCa
 	if nKVHeads == 0 {
 		nKVHeads = nHeads
 	}
+
 	dHead := dModel / nHeads
 	dFF := 4.0 * dModel
+	seq := float64(sequenceLength)
+	newT := float64(newTokens)
+
 	mem := make(map[string]float64)
 
-	// 1. Model Weights
+	// Weights: Read once per step
 	dKV := nKVHeads * dHead
-	weightsPerLayer := dModel*(dModel+2*dKV) + dModel*dModel + dModel*dFF*2
+	weightsPerLayer := dModel*(dModel+2*dKV) + dModel*dModel + dModel*dFF*3
 	mem["model_weights"] = weightsPerLayer * nLayers * config.BytesPerParam
 
-	// 2. KV Cache
 	if includeKVCache {
-		kvPerToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
-		mem["kv_cache"] = kvPerToken * float64(newTokens)
+		// KV write: New tokens being added to cache
+		kvWritePerNewToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
+		mem["kv_cache_growth"] = kvWritePerNewToken * newT
+
+		// KV read: Reading history.
+		// For Decode: it's exactly 'seq'
+		// For Prefill: FlashAttention is used. We only read the KV cache for
+		// EXISTING history (seq), not the newTokens themselves (they stay in SRAM).
+		kvReadPerToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
+		mem["kv_cache_access"] = kvReadPerToken * seq * (math.Max(1, newT))
 	}
 
-	// 3. Activations
-	activationsSize := (float64(newTokens)*dModel*config.BytesPerParam + nHeads*float64(newTokens)*float64(newTokens)*config.BytesPerParam)
-	mem["activations"] = activationsSize
+	// Activations: Only token-wise activations hit HBM
+	// Attention maps are NOT written to HBM in FlashAttention/vLLM.
+	mem["activations_tokens"] = nLayers * dModel * config.BytesPerParam * newT
 
 	var total float64
 	for _, v := range mem {
@@ -109,29 +129,50 @@ func calculateMemoryAccessBytes(config ModelConfig, newTokens int64, includeKVCa
 }
 
 func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig) int64 {
-	hw := HardwareList[gpu]
-	tComputeS := 0.0
-	tMemoryS := 0.0
+	hw, ok := HardwareList[gpu]
+	if !ok {
+		return 0
+	}
+
+	effFLOPS := hw.TFlopsEff * 1e12
+	bwBytesPerSec := hw.BwEffTBs * 1e12
+
+	var totalFlops, prefillFlops, decodeFlops, totalDynamicMem float64
+
+	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+	weightBytes := baseMem["model_weights"]
 
 	for _, req := range stepConfig.PrefillRequests {
-		flopsBreakdown := calculateTransformerFlops(modelConfig, req.ProgressIndex, int64(req.NumNewPrefillTokens), true, true)
-		memBreakdown := calculateMemoryAccessBytes(modelConfig, int64(req.NumNewPrefillTokens), true)
-
-		tComputeS += flopsBreakdown["total"]
-		tMemoryS += memBreakdown["total"]
+		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, int64(req.NumNewPrefillTokens), true, true)
+		prefillFlops += f["total"]
+		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, int64(req.NumNewPrefillTokens), true)
+		totalDynamicMem += (m["total"] - m["model_weights"])
 	}
 
 	for _, req := range stepConfig.DecodeRequests {
-		flopsBreakdown := calculateTransformerFlops(modelConfig, 1, int64(req.NumNewDecodeTokens), true, true)
-		memBreakdown := calculateMemoryAccessBytes(modelConfig, int64(req.NumNewDecodeTokens), true)
-
-		tComputeS += flopsBreakdown["total"]
-		tMemoryS += memBreakdown["total"]
+		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
+		decodeFlops += f["total"]
+		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
+		totalDynamicMem += (m["total"] - m["model_weights"])
 	}
 
-	tComputeMicros := (tComputeS / (hw.TFlopsEff * 1e12)) * 1e6
-	tMemoryMicros := (tComputeS / (hw.BwEffTBs * 1e12)) * 1e6
-	fmt.Printf("compute time: %v, memory time: %v\n", tComputeMicros, tMemoryMicros)
+	totalFlops = prefillFlops + decodeFlops
 
-	return int64(math.Max(tComputeMicros, tMemoryMicros) + hw.TOverheadMicros)
+	// Weighted MFU
+	mfu := hw.mfuDecode
+	if totalFlops > 0 {
+		mfu = (prefillFlops*hw.mfuPrefill + decodeFlops*hw.mfuDecode) / totalFlops
+	}
+
+	tComputeS := totalFlops / (effFLOPS * mfu)
+	tMemoryS := (weightBytes + totalDynamicMem) / bwBytesPerSec
+
+	// Layer-wise Hardware Floor ---
+	// Every layer has a fixed overhead for kernel launches and GPU state transitions.
+	layerOverheadS := (float64(modelConfig.NumLayers) * hw.perLayerOverhead) / 1e6
+
+	// Roofline: Max(Compute, Memory) + Layer Overhead
+	stepTimeS := math.Max(tComputeS, tMemoryS) + layerOverheadS
+
+	return int64(math.Round(stepTimeS*1e6 + hw.TOverheadMicros))
 }
