@@ -18,11 +18,11 @@ type HardwareCalib struct {
 var HardwareList = map[string]HardwareCalib{
 	"H100": {
 		TFlopsEff:        989.5,       // Tera (10^12) FLOP/s
-		BwEffTBs:         3.35 * 0.78, // in TB/s
+		BwEffTBs:         3.35 * 0.72, // in TB/s
 		TOverheadMicros:  500.0,       // Per-step Overheads unaccounted for
 		perLayerOverhead: 20.0,
-		mfuPrefill:       0.55,
-		mfuDecode:        0.20,
+		mfuPrefill:       0.65,
+		mfuDecode:        0.12,
 	},
 }
 
@@ -36,44 +36,40 @@ func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newToke
 		nKVHeads = nHeads
 	}
 	dHead := dModel / nHeads
-	dFF := 4.0 * dModel
-	seqLen := float64(sequenceLength)
 
+	// Qwen2.5 uses specific intermediate dims for SwiGLU
+	dFF := 4.0 * dModel
+	if config.IntermediateDim > 0 {
+		dFF = float64(config.IntermediateDim)
+	}
+
+	seqLen := float64(sequenceLength)
+	newT := float64(newTokens)
 	flops := make(map[string]float64)
 
 	if includeAttention {
 		dKV := nKVHeads * dHead
-		// 1. QKV Projections
-		qkvFlops := 2 * float64(newTokens) * (dModel*dModel + 2*dModel*dKV)
-		flops["attention_qkv"] = qkvFlops * nLayers
+		// Matrix Multiplications (GEMMs)
+		qkvFlops := 2 * newT * (dModel*dModel + 2*dModel*dKV)
+		projFlops := 2 * newT * dModel * dModel
+		flops["gemm_ops"] = (qkvFlops + projFlops) * nLayers
 
-		// 2. Attention Scores (QK^T)
-		qkFlops := 2 * nHeads * float64(newTokens) * seqLen * dHead
-		flops["attention_scores"] = qkFlops * nLayers
-
-		// 3. Softmax
-		softmaxFlops := 3 * nHeads * float64(newTokens) * seqLen
-		flops["attention_softmax"] = softmaxFlops * nLayers
-
-		// 4. Attention Output (Softmax @ V)
-		avFlops := 2 * nHeads * float64(newTokens) * seqLen * dHead
-		flops["attention_output"] = avFlops * nLayers
-
-		// 5. Output Projection
-		projFlops := 2 * float64(newTokens) * dModel * dModel
-		flops["attention_proj"] = projFlops * nLayers
+		// SRAM-local ops (FlashAttention)
+		effectiveCtx := seqLen
+		if newT > 1 {
+			effectiveCtx = seqLen + (newT-1)/2.0
+		}
+		// QK^T (2*ops) + Softmax (5*ops) + AV (2*ops)
+		attnMath := (2 * nHeads * newT * effectiveCtx * dHead) + (5 * nHeads * newT * effectiveCtx) + (2 * nHeads * newT * effectiveCtx * dHead)
+		flops["sram_ops"] = attnMath * nLayers
 	}
 
 	if includeMLP {
-		mlpFlops := 2 * float64(newTokens) * (dModel*dFF + dFF*dModel)
-		flops["mlp"] = mlpFlops * nLayers
+		// SwiGLU Gating: Gate, Up, and Down (3 matrices)
+		flops["gemm_ops"] += 2 * newT * (3 * dModel * dFF) * nLayers
 	}
 
-	var total float64
-	for _, v := range flops {
-		total += v
-	}
-	flops["total"] = total
+	flops["total"] = flops["gemm_ops"] + flops["sram_ops"]
 	return flops
 }
 
@@ -92,33 +88,38 @@ func calculateMemoryAccessBytes(
 	}
 
 	dHead := dModel / nHeads
-	dFF := 4.0 * dModel
 	seq := float64(sequenceLength)
 	newT := float64(newTokens)
 
+	dFF := 4.0 * dModel
+	if config.IntermediateDim > 0 {
+		dFF = float64(config.IntermediateDim)
+	}
+
 	mem := make(map[string]float64)
 
-	// Weights: Read once per step
+	// Weights: Loaded exactly once. (Static)
 	dKV := nKVHeads * dHead
-	weightsPerLayer := dModel*(dModel+2*dKV) + dModel*dModel + dModel*dFF*3
+	weightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel) + (3 * dModel * dFF)
 	mem["model_weights"] = weightsPerLayer * nLayers * config.BytesPerParam
 
 	if includeKVCache {
-		// KV write: New tokens being added to cache
+		// KV Growth: Writing new tokens to HBM.
 		kvWritePerNewToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
 		mem["kv_cache_growth"] = kvWritePerNewToken * newT
 
-		// KV read: Reading history.
-		// For Decode: it's exactly 'seq'
-		// For Prefill: FlashAttention is used. We only read the KV cache for
-		// EXISTING history (seq), not the newTokens themselves (they stay in SRAM).
+		// KV Access: Only read PAST history.
+		// IMPORTANT: For Prefill (newT > 1), the newT tokens attend to each other in SRAM.
+		// They do NOT generate HBM read traffic for themselves.
 		kvReadPerToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
-		mem["kv_cache_access"] = kvReadPerToken * seq * (math.Max(1, newT))
+		mem["kv_cache_access"] = kvReadPerToken * seq
 	}
 
-	// Activations: Only token-wise activations hit HBM
-	// Attention maps are NOT written to HBM in FlashAttention/vLLM.
+	// Token activations (linear)
 	mem["activations_tokens"] = nLayers * dModel * config.BytesPerParam * newT
+
+	// LOGICAL FIX: Remove attention map bytes entirely.
+	// FlashAttention fuses this; it never hits HBM.
 
 	var total float64
 	for _, v := range mem {
@@ -134,45 +135,71 @@ func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig
 		return 0
 	}
 
-	effFLOPS := hw.TFlopsEff * 1e12
-	bwBytesPerSec := hw.BwEffTBs * 1e12
+	effFLOPSPeak := hw.TFlopsEff * 1e12
+	effBWBytes := hw.BwEffTBs * 1e12
 
-	var totalFlops, prefillFlops, decodeFlops, totalDynamicMem float64
+	var totalGemmFlops, totalSramFlops, totalDynamicMem float64
 
+	// 1. Static weight memory (loaded once per step)
+	// We call with 0,0 to isolate the weight component
 	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
 	weightBytes := baseMem["model_weights"]
 
+	// 2. Process Prefills
+	// Logical Fix: Prefill compute is often much more efficient than decode
 	for _, req := range stepConfig.PrefillRequests {
-		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, int64(req.NumNewPrefillTokens), true, true)
-		prefillFlops += f["total"]
-		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, int64(req.NumNewPrefillTokens), true)
+		newT := int64(req.NumNewPrefillTokens)
+		if newT == 0 {
+			continue
+		}
+
+		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, newT, true, true)
+		totalGemmFlops += f["gemm_ops"]
+		totalSramFlops += f["sram_ops"]
+
+		// Memory: Subtract weights to get only the dynamic KV/activation traffic
+		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, newT, true)
 		totalDynamicMem += (m["total"] - m["model_weights"])
 	}
 
+	// 3. Process Decodes
 	for _, req := range stepConfig.DecodeRequests {
-		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
-		decodeFlops += f["total"]
-		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
+		newT := int64(1) // Decode is always 1 token
+
+		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, newT, true, true)
+		totalGemmFlops += f["gemm_ops"]
+		totalSramFlops += f["sram_ops"]
+
+		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, newT, true)
 		totalDynamicMem += (m["total"] - m["model_weights"])
 	}
 
-	totalFlops = prefillFlops + decodeFlops
+	// 4. Determine Workload State
+	isPrefillWorkload := len(stepConfig.PrefillRequests) > 0
 
-	// Weighted MFU
+	// Choose MFU based on the dominant kernel type in the batch
 	mfu := hw.mfuDecode
-	if totalFlops > 0 {
-		mfu = (prefillFlops*hw.mfuPrefill + decodeFlops*hw.mfuDecode) / totalFlops
+	if isPrefillWorkload {
+		mfu = hw.mfuPrefill
 	}
 
-	tComputeS := totalFlops / (effFLOPS * mfu)
-	tMemoryS := (weightBytes + totalDynamicMem) / bwBytesPerSec
+	// 5. Compute Time Calculation
+	// SRAM ops (Attention math) are nearly 2x more efficient than GEMMs on H100
+	tComputeS := (totalGemmFlops / (effFLOPSPeak * mfu)) + (totalSramFlops / (effFLOPSPeak * 0.90))
 
-	// Layer-wise Hardware Floor ---
-	// Every layer has a fixed overhead for kernel launches and GPU state transitions.
-	layerOverheadS := (float64(modelConfig.NumLayers) * hw.perLayerOverhead) / 1e6
+	// 6. Memory Time Calculation
+	tMemoryS := (weightBytes + totalDynamicMem) / effBWBytes
 
-	// Roofline: Max(Compute, Memory) + Layer Overhead
-	stepTimeS := math.Max(tComputeS, tMemoryS) + layerOverheadS
+	// 7. Roofline Bottleneck
+	// Step time is determined by the slowest component (Max, not Sum)
+	hardwareStepTimeS := math.Max(tComputeS, tMemoryS)
 
-	return int64(math.Round(stepTimeS*1e6 + hw.TOverheadMicros))
+	// 8. Layer & Static Overheads
+	// perLayerOverhead captures the sequential kernel launch floor (15-25us)
+	// TOverheadMicros captures the base engine/scheduler cost (500us)
+	layerFloorS := (float64(modelConfig.NumLayers) * hw.perLayerOverhead) / 1e6
+
+	totalMicros := (hardwareStepTimeS * 1e6) + (layerFloorS * 1e6) + hw.TOverheadMicros
+
+	return int64(math.Round(totalMicros))
 }

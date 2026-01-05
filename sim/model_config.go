@@ -21,6 +21,7 @@ type ModelConfig struct {
 	NumKVHeads        int     `json:"num_key_value_heads"`
 	VocabSize         int     `json:"vocab_size"`
 	InferredPrecision string  `json:"precision"`
+	IntermediateDim   int     `json:"intermediate_size"`
 	BytesPerParam     float64 `json:"bytes_per_param"`
 }
 
@@ -85,11 +86,12 @@ func GetModelConfig(hfConfigPath string, paramsConfigPath string) *ModelConfig {
 		BytesPerParam:     params.BytesPerParam,
 
 		// From HFConfig.Raw
-		NumLayers:  getInt("num_hidden_layers"),
-		HiddenDim:  getInt("hidden_size"),
-		VocabSize:  getInt("vocab_size"),
-		NumHeads:   numHeads,
-		NumKVHeads: numKVHeads,
+		NumLayers:       getInt("num_hidden_layers"),
+		HiddenDim:       getInt("hidden_size"),
+		VocabSize:       getInt("vocab_size"),
+		IntermediateDim: getInt("intermediate_size"),
+		NumHeads:        numHeads,
+		NumKVHeads:      numKVHeads,
 	}
 }
 
