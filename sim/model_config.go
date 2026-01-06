@@ -7,22 +7,14 @@ import (
 	"os"
 )
 
-type ParamsConfig struct {
-	NumParams         int64   `json:"total_params"`
-	InferredPrecision string  `json:"precision"`
-	BytesPerParam     float64 `json:"bytes_per_param"`
-}
-
 type ModelConfig struct {
-	NumParams         int64   `json:"total_params"`
-	NumLayers         int     `json:"num_hidden_layers"`
-	HiddenDim         int     `json:"hidden_size"`
-	NumHeads          int     `json:"num_attention_heads"`
-	NumKVHeads        int     `json:"num_key_value_heads"`
-	VocabSize         int     `json:"vocab_size"`
-	InferredPrecision string  `json:"precision"`
-	IntermediateDim   int     `json:"intermediate_size"`
-	BytesPerParam     float64 `json:"bytes_per_param"`
+	NumLayers       int     `json:"num_hidden_layers"`
+	HiddenDim       int     `json:"hidden_size"`
+	NumHeads        int     `json:"num_attention_heads"`
+	NumKVHeads      int     `json:"num_key_value_heads"`
+	VocabSize       int     `json:"vocab_size"`
+	BytesPerParam   float64 `json:"bytes_per_param"`
+	IntermediateDim int     `json:"intermediate_size"`
 }
 
 // HFConfig represents a flexible JSON object with dynamic fields.
@@ -44,24 +36,8 @@ func parseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
 	return &HFConfig{Raw: m}, nil
 }
 
-// parseParamsConfig parses model parameters JSON into ParamsConfig.
-func parseParamsConfig(paramsConfigFilePath string) (*ParamsConfig, error) {
-	data, err := os.ReadFile(paramsConfigFilePath)
-	if err != nil {
-		return nil, err
-	}
-
-	var params ParamsConfig
-	if err := json.Unmarshal(data, &params); err != nil {
-		return nil, err
-	}
-
-	return &params, nil
-}
-
-func GetModelConfig(hfConfigPath string, paramsConfigPath string) *ModelConfig {
+func GetModelConfig(hfConfigPath string) *ModelConfig {
 	hf, _ := parseHFConfig(hfConfigPath)
-	params, _ := parseParamsConfig(paramsConfigPath)
 	getInt := func(key string) int {
 		if val, ok := hf.Raw[key].(float64); ok {
 			return int(val)
@@ -79,12 +55,21 @@ func GetModelConfig(hfConfigPath string, paramsConfigPath string) *ModelConfig {
 		numKVHeads = numHeads
 	}
 
-	return &ModelConfig{
-		// From ParamsConfig
-		NumParams:         params.NumParams,
-		InferredPrecision: params.InferredPrecision,
-		BytesPerParam:     params.BytesPerParam,
+	// Extract precision and infer bytes per parameter
+	precisionToBytesPerParam := map[string]int{
+		"float32":  4,
+		"float16":  2,
+		"bfloat16": 2,
+		"int8":     1,
+		"uint8":    1,
+		"fp8":      1,
+		"int4":     1, // Often stored in 1-byte containers or packed
+		"nf4":      1,
+	}
 
+	bytesPerParam := precisionToBytesPerParam[hf.Raw["torch_dtype"].(string)]
+
+	modelConfig := &ModelConfig{
 		// From HFConfig.Raw
 		NumLayers:       getInt("num_hidden_layers"),
 		HiddenDim:       getInt("hidden_size"),
@@ -92,7 +77,9 @@ func GetModelConfig(hfConfigPath string, paramsConfigPath string) *ModelConfig {
 		IntermediateDim: getInt("intermediate_size"),
 		NumHeads:        numHeads,
 		NumKVHeads:      numKVHeads,
+		BytesPerParam:   float64(bytesPerParam),
 	}
+	return modelConfig
 }
 
 // GetString returns a string value for a key if present and of the right type.

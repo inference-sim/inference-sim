@@ -113,8 +113,7 @@ var runCmd = &cobra.Command{
 			if len(modelConfigFolder) > 0 && len(gpu) > 0 {
 				roofline = true
 				hfPath := filepath.Join(modelConfigFolder, "config.json")
-				paramsPath := filepath.Join(modelConfigFolder, "model.json")
-				modelConfig = *sim.GetModelConfig(hfPath, paramsPath)
+				modelConfig = *sim.GetModelConfig(hfPath)
 			}
 		}
 
