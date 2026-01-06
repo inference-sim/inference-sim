@@ -13,6 +13,7 @@ type HardwareCalib struct {
 	perLayerOverhead float64
 	mfuPrefill       float64
 	mfuDecode        float64
+	allReduceLatency float64
 }
 
 var HardwareList = map[string]HardwareCalib{
@@ -23,6 +24,7 @@ var HardwareList = map[string]HardwareCalib{
 		perLayerOverhead: 20.0,
 		mfuPrefill:       0.65,
 		mfuDecode:        0.12,
+		allReduceLatency: 20.0,
 	},
 }
 
@@ -129,21 +131,22 @@ func calculateMemoryAccessBytes(
 	return mem
 }
 
-func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig) int64 {
+func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig, tp int) int64 {
 	hw, ok := HardwareList[gpu]
 	if !ok {
 		return 0
 	}
 
-	effFLOPSPeak := hw.TFlopsEff * 1e12
-	effBWBytes := hw.BwEffTBs * 1e12
+	tpFactor := float64(tp)
+	effFLOPSPeak := (hw.TFlopsEff * 1e12) / tpFactor
+	effBWBytes := (hw.BwEffTBs * 1e12) // BW is usually per-GPU, weights/KV are split
 
 	var totalGemmFlops, totalSramFlops, totalDynamicMem float64
 
 	// 1. Static weight memory (loaded once per step)
 	// We call with 0,0 to isolate the weight component
 	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-	weightBytes := baseMem["model_weights"]
+	weightBytes := baseMem["model_weights"] / tpFactor
 
 	// 2. Process Prefills
 	// Logical Fix: Prefill compute is often much more efficient than decode
@@ -154,12 +157,12 @@ func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig
 		}
 
 		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, newT, true, true)
-		totalGemmFlops += f["gemm_ops"]
-		totalSramFlops += f["sram_ops"]
+		totalGemmFlops += f["gemm_ops"] / tpFactor
+		totalSramFlops += f["sram_ops"] / tpFactor
 
 		// Memory: Subtract weights to get only the dynamic KV/activation traffic
 		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, newT, true)
-		totalDynamicMem += (m["total"] - m["model_weights"])
+		totalDynamicMem += (m["total"] - m["model_weights"]) / tpFactor
 	}
 
 	// 3. Process Decodes
@@ -167,11 +170,11 @@ func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig
 		newT := int64(1) // Decode is always 1 token
 
 		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, newT, true, true)
-		totalGemmFlops += f["gemm_ops"]
-		totalSramFlops += f["sram_ops"]
+		totalGemmFlops += f["gemm_ops"] / tpFactor
+		totalSramFlops += f["sram_ops"] / tpFactor
 
 		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, newT, true)
-		totalDynamicMem += (m["total"] - m["model_weights"])
+		totalDynamicMem += (m["total"] - m["model_weights"]) / tpFactor
 	}
 
 	// 4. Determine Workload State
@@ -198,8 +201,16 @@ func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig
 	// perLayerOverhead captures the sequential kernel launch floor (15-25us)
 	// TOverheadMicros captures the base engine/scheduler cost (500us)
 	layerFloorS := (float64(modelConfig.NumLayers) * hw.perLayerOverhead) / 1e6
+	// --- TP COMMUNICATION OVERHEAD ---
+	// There are 2 All-Reduces per layer.
+	// This latency does NOT scale down with more GPUs; it often increases
+	// slightly or stays flat depending on NVLink topology.
+	commOverheadS := 0.0
+	if tp > 1 {
+		commOverheadS = (float64(modelConfig.NumLayers) * 2 * hw.allReduceLatency) / 1e6
+	}
 
-	totalMicros := (hardwareStepTimeS * 1e6) + (layerFloorS * 1e6) + hw.TOverheadMicros
+	totalMicros := (hardwareStepTimeS * 1e6) + (layerFloorS * 1e6) + (commOverheadS * 1e6) + hw.TOverheadMicros
 
 	return int64(math.Round(totalMicros))
 }

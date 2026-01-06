@@ -106,13 +106,14 @@ type Simulator struct {
 	GuideLLMConfig        *GuideLLMConfig
 	Model                 string
 	GPU                   string
+	TP                    int
 	Roofline              bool
 	ModelConfig           ModelConfig
 	randomNumberGenerator *rand.Rand // random number generator for request tokens
 }
 
 func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, model string, GPU string, roofline bool) *Simulator {
+	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, model string, GPU string, tp int, roofline bool) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -135,6 +136,7 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		ModelConfig:               modelConfig,
 		Model:                     model,
 		GPU:                       GPU,
+		TP:                        tp,
 		Roofline:                  roofline,
 	}
 	s.Metrics.RequestRate = s.GuideLLMConfig.Rate
@@ -330,7 +332,7 @@ func (sim *Simulator) getStepTimeRoofline() int64 {
 	// cmd.Run()
 	// strOut, _ := strconv.Atoi(string(out))
 	// return int64(strOut)
-	stepTime := rooflineStepTime(sim.GPU, sim.ModelConfig, stepConfig)
+	stepTime := rooflineStepTime(sim.GPU, sim.ModelConfig, stepConfig, sim.TP)
 	return stepTime
 }
 

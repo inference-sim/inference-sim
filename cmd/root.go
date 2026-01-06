@@ -110,7 +110,7 @@ var runCmd = &cobra.Command{
 		}
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
 			logrus.Warnf("Could not find coefficients for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
-			if len(modelConfigFolder) > 0 && len(gpu) > 0 {
+			if len(modelConfigFolder) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
 				roofline = true
 				hfPath := filepath.Join(modelConfigFolder, "config.json")
 				modelConfig = *sim.GetModelConfig(hfPath)
@@ -160,6 +160,7 @@ var runCmd = &cobra.Command{
 			modelConfig,
 			model,
 			gpu,
+			tensorParallelism,
 			roofline,
 		)
 		s.Run()
