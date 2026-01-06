@@ -117,14 +117,11 @@ var runCmd = &cobra.Command{
 				roofline = true
 				hfPath := filepath.Join(modelConfigFolder, "config.json")
 				modelConfig = *sim.GetModelConfig(hfPath)
-<<<<<<< HEAD
 				hwConfig = sim.GetHWConfig(hwConfigPath, gpu)
 			} else if len(modelConfigFolder) == 0 {
 				logrus.Fatalf("Please provide model config folder containing config.json for model=%v\n", model)
 			} else if len(hwConfigPath) == 0 {
 				logrus.Fatalf("Please provide hardware config path (e.g. hardware_config.json)\n")
-=======
->>>>>>> e3a3e27 (Redundant model configs)
 			}
 		}
 
