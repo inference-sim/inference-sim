@@ -114,11 +114,7 @@ type Simulator struct {
 }
 
 func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-<<<<<<< HEAD
 	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, hwConfig HardwareCalib, model string, GPU string, tp int, roofline bool) *Simulator {
-=======
-	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, model string, GPU string, tp int, roofline bool) *Simulator {
->>>>>>> ef0ef0b (Add TP)
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -321,28 +317,7 @@ func (sim *Simulator) getStepTimeRoofline() int64 {
 			})
 		}
 	}
-<<<<<<< HEAD
 	stepTime := rooflineStepTime(sim.GPU, sim.ModelConfig, sim.HWConfig, stepConfig, sim.TP)
-=======
-	// stepConfigJson, err := json.Marshal(sc)
-	// if err != nil {
-	// 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
-	// 	os.Exit(1)
-	// }
-	// modelConfigJson, err := json.Marshal(sim.ModelConfig.Raw)
-	// if err != nil {
-	// 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
-	// 	os.Exit(1)
-	// }
-	// args := []string{"get_flops.py", "--model-id", sim.Model, "--GPU", sim.GPU, "--model-config", string(modelConfigJson), "--step-config", string(stepConfigJson)}
-	// // python get_flops.py --model-id sim.model --GPU sim.GPU --model-config '{some json}' --step-config '{some json}'
-	// cmd := exec.Command("python", args...)
-	// out, _ := cmd.CombinedOutput()
-	// cmd.Run()
-	// strOut, _ := strconv.Atoi(string(out))
-	// return int64(strOut)
-	stepTime := rooflineStepTime(sim.GPU, sim.ModelConfig, stepConfig, sim.TP)
->>>>>>> ef0ef0b (Add TP)
 	return stepTime
 }
 
