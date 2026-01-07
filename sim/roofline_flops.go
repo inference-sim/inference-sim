@@ -26,6 +26,15 @@ var HardwareList = map[string]HardwareCalib{
 		mfuDecode:        0.12,
 		allReduceLatency: 20.0,
 	},
+	"A100-80": {
+		TFlopsEff:        312,          // Tera (10^12) FLOP/s
+		BwEffTBs:         2.039 * 0.72, // in TB/s
+		TOverheadMicros:  500.0,        // Per-step Overheads unaccounted for
+		perLayerOverhead: 20.0,
+		mfuPrefill:       0.65,
+		mfuDecode:        0.12,
+		allReduceLatency: 20.0,
+	},
 }
 
 // --- Bento FLOPS Logic ---
@@ -64,6 +73,33 @@ func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newToke
 		// QK^T (2*ops) + Softmax (5*ops) + AV (2*ops)
 		attnMath := (2 * nHeads * newT * effectiveCtx * dHead) + (5 * nHeads * newT * effectiveCtx) + (2 * nHeads * newT * effectiveCtx * dHead)
 		flops["sram_ops"] = attnMath * nLayers
+	}
+
+	if includeAttention {
+		dKV := nKVHeads * dHead
+
+		// 1. Standard GEMMs (Weights)
+		qkvFlops := 2 * newT * (dModel*dModel + 2*dModel*dKV)
+		projFlops := 2 * newT * dModel * dModel
+		flops["gemm_ops"] = (qkvFlops + projFlops) * nLayers
+
+		// SRAM-local ops (FlashAttention)
+		effectiveCtx := seqLen
+		if newT > 1 {
+			effectiveCtx = seqLen + (newT-1)/2.0
+		}
+
+		// 2. Attention Score Ops (The TTFT Killer)
+		// We treat the QK^T and AV as "GEMM" ops if they are large enough,
+		// because they utilize the same execution units as standard GEMMs in FlashAttention.
+		attnGemmOps := (4 * nHeads * newT * effectiveCtx * dHead)
+
+		// 3. Vector Ops (Softmax, Masking, RoPE)
+		ropeOps := 2 * newT * dModel
+		vectorOps := (5 * nHeads * newT * effectiveCtx) + ropeOps
+
+		flops["gemm_ops"] += (attnGemmOps * nLayers)
+		flops["sram_ops"] = (vectorOps * nLayers)
 	}
 
 	if includeMLP {
@@ -138,79 +174,71 @@ func rooflineStepTime(gpu string, modelConfig ModelConfig, stepConfig StepConfig
 	}
 
 	tpFactor := float64(tp)
-	effFLOPSPeak := (hw.TFlopsEff * 1e12) / tpFactor
-	effBWBytes := (hw.BwEffTBs * 1e12) // BW is usually per-GPU, weights/KV are split
+	peakFlops := hw.TFlopsEff * 1e12
+	peakBW := hw.BwEffTBs * 1e12
+	vectorPeak := peakFlops * 0.10 // Non-tensor core ops
 
-	var totalGemmFlops, totalSramFlops, totalDynamicMem float64
+	var prefillComputeS, prefillMemoryS float64
+	var decodeComputeS, decodeMemoryS float64
 
-	// 1. Static weight memory (loaded once per step)
-	// We call with 0,0 to isolate the weight component
-	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-	weightBytes := baseMem["model_weights"] / tpFactor
+	// 1. PREFILL PHASE (Calculated as a single batched operation)
+	if len(stepConfig.PrefillRequests) > 0 {
+		var pGemmFlops, pVectorFlops, pDynamicBytes float64
 
-	// 2. Process Prefills
-	// Logical Fix: Prefill compute is often much more efficient than decode
-	for _, req := range stepConfig.PrefillRequests {
-		newT := int64(req.NumNewPrefillTokens)
-		if newT == 0 {
-			continue
+		for _, req := range stepConfig.PrefillRequests {
+			numTokens := int64(req.NumNewPrefillTokens)
+
+			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
+			pGemmFlops += f["gemm_ops"] / tpFactor
+			pVectorFlops += f["sram_ops"] / tpFactor
+
+			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
+			pDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
 		}
 
-		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, newT, true, true)
-		totalGemmFlops += f["gemm_ops"] / tpFactor
-		totalSramFlops += f["sram_ops"] / tpFactor
+		// Prefill Roofline: Weights + KV Cache are loaded once for the whole chunk
+		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+		pWeightBytes := baseMem["model_weights"] / tpFactor
 
-		// Memory: Subtract weights to get only the dynamic KV/activation traffic
-		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, newT, true)
-		totalDynamicMem += (m["total"] - m["model_weights"]) / tpFactor
+		prefillComputeS = (pGemmFlops / (peakFlops * hw.mfuPrefill)) + (pVectorFlops / vectorPeak)
+		prefillMemoryS = (pWeightBytes + pDynamicBytes) / peakBW
 	}
 
-	// 3. Process Decodes
-	for _, req := range stepConfig.DecodeRequests {
-		newT := int64(1) // Decode is always 1 token
+	// 2. DECODE PHASE (Calculated as a single batched step)
+	if len(stepConfig.DecodeRequests) > 0 {
+		var dGemmFlops, dVectorFlops, dDynamicBytes float64
 
-		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, newT, true, true)
-		totalGemmFlops += f["gemm_ops"] / tpFactor
-		totalSramFlops += f["sram_ops"] / tpFactor
+		for _, req := range stepConfig.DecodeRequests {
+			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
+			dGemmFlops += f["gemm_ops"] / tpFactor
+			dVectorFlops += f["sram_ops"] / tpFactor
 
-		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, newT, true)
-		totalDynamicMem += (m["total"] - m["model_weights"]) / tpFactor
+			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
+			dDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
+		}
+
+		// Decode Roofline: Every step must reload the weights
+		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+		dWeightBytes := baseMem["model_weights"] / tpFactor
+
+		decodeComputeS = (dGemmFlops / (peakFlops * hw.mfuDecode)) + (dVectorFlops / vectorPeak)
+		decodeMemoryS = (dWeightBytes + dDynamicBytes) / peakBW
 	}
 
-	// 4. Determine Workload State
-	isPrefillWorkload := len(stepConfig.PrefillRequests) > 0
+	// 3. COMBINE AND ADD OVERHEADS
+	// We take the Max (bottleneck) for each phase independently
+	stepHardwareS := math.Max(prefillComputeS, prefillMemoryS) + math.Max(decodeComputeS, decodeMemoryS)
 
-	// Choose MFU based on the dominant kernel type in the batch
-	mfu := hw.mfuDecode
-	if isPrefillWorkload {
-		mfu = hw.mfuPrefill
-	}
-
-	// 5. Compute Time Calculation
-	// SRAM ops (Attention math) are nearly 2x more efficient than GEMMs on H100
-	tComputeS := (totalGemmFlops / (effFLOPSPeak * mfu)) + (totalSramFlops / (effFLOPSPeak * 0.90))
-
-	// 6. Memory Time Calculation
-	tMemoryS := (weightBytes + totalDynamicMem) / effBWBytes
-
-	// 7. Roofline Bottleneck
-	// Step time is determined by the slowest component (Max, not Sum)
-	hardwareStepTimeS := math.Max(tComputeS, tMemoryS)
-
-	// 8. Layer & Static Overheads
-	// perLayerOverhead captures the sequential kernel launch floor (15-25us)
-	// TOverheadMicros captures the base engine/scheduler cost (500us)
+	// Parallelism & Launch Overheads
 	layerFloorS := (float64(modelConfig.NumLayers) * hw.perLayerOverhead) / 1e6
-	// --- TP COMMUNICATION OVERHEAD ---
-	// There are 2 All-Reduces per layer.
-	// This latency does NOT scale down with more GPUs; it often increases
-	// slightly or stays flat depending on NVLink topology.
+
 	commOverheadS := 0.0
 	if tp > 1 {
+		// TP synchronization happens per layer
 		commOverheadS = (float64(modelConfig.NumLayers) * 2 * hw.allReduceLatency) / 1e6
 	}
 
-	totalMicros := (hardwareStepTimeS * 1e6) + (layerFloorS * 1e6) + (commOverheadS * 1e6) + hw.TOverheadMicros
+	totalMicros := (stepHardwareS * 1e6) + (layerFloorS * 1e6) + (commOverheadS * 1e6) + hw.TOverheadMicros
 
 	return int64(math.Round(totalMicros))
 }

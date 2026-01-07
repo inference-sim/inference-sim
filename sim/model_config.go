@@ -33,6 +33,13 @@ func parseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("parse HFConfig: %w", err)
 	}
+	// Check if this is a multimodal/composite config
+	if textCfg, ok := m["text_config"].(map[string]any); ok {
+		// We only care about text config, we "pivot" to the inner map.
+		for k, v := range textCfg {
+			m[k] = v
+		}
+	}
 	return &HFConfig{Raw: m}, nil
 }
 
