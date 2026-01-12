@@ -48,9 +48,9 @@ while time < horizon and active_requests:
 
 ### B. GPU Latency Model
 
-To achieve **CPU-only simulation**, BLIS replaces expensive GPU kernel execution with a simple model that predicts the duration of a single GPU iteration $k$ as ($L^{gpu}_{k}$):
+To achieve **CPU-only simulation**, BLIS replaces expensive GPU kernel execution with a simple model that predicts the duration of a single GPU iteration $k$ as ($L_{\text{gpu},k}$):
 
-$$L^{gpu}_{k} = \beta_0 + \beta_1 X_k + \beta_2 Y_k$$
+$$L_{\text{gpu},k} = \beta_0 + \beta_1 X_k + \beta_2 Y_k$$
 
 **Where:**
 * **$X_k$**: Total number of **uncached prefill tokens** in the scheduled batch in iteration $k$.
@@ -61,7 +61,7 @@ $$L^{gpu}_{k} = \beta_0 + \beta_1 X_k + \beta_2 Y_k$$
 
 Total request latency includes non-GPU overheads such as tokenization, API serialization, and networking. These are modeled as:
 
-$$L^{cpu} = \alpha_0 + \alpha_1 M + \alpha_2 N$$
+$$L_{\text{cpu}} = \alpha_0 + \alpha_1 M + \alpha_2 N$$
 
 **Where:**
 * **$M$**: The input sequence length.
@@ -71,13 +71,13 @@ $$L^{cpu} = \alpha_0 + \alpha_1 M + \alpha_2 N$$
 
 ## 4. Metrics Capture
 
-BLIS aggregates simulated GPU iteration times ($L^{gpu}$) and system overheads ($L^{cpu}$) to derive standard serving metrics. Let $T_{arrival}$ be the arrival timestamp, $P$ the set of prefill steps, and $D$ the set of decode steps.
+BLIS aggregates simulated GPU iteration times ($L_{\text{gpu},k}$) and system overheads ($L_{\text{cpu}}$) to derive standard serving metrics. Let $T_{arrival}$ be the arrival timestamp, $P$ the set of prefill steps, and $D$ the set of decode steps.
 
 | Metric | Mathematical Definition |
 | :--- | :--- |
-| **TTFT** | $L^{cpu} + \sum_{k \in P} L^{gpu}_k - T_{arrival}$ |
+| **TTFT** | $L_{\text{cpu}} + \sum_{k \in P} L_{\text{gpu},k} - T_{\text{arrival}}$ |
 | **ITL** | Observed $\Delta_t$ between consecutive decode iterations |
-| **E2E** | $L^{cpu} + \sum_{k \in \{P \cup D\}} L^{gpu}_k - T_{arrival}$ |
+| **E2E** | $L_{\text{cpu}} + \sum_{k \in \{P \cup D\}} L_{\text{gpu},k} - T_{\text{arrival}}$ |
 
 ---
 
