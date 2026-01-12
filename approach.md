@@ -75,9 +75,9 @@ BLIS aggregates simulated GPU iteration times ($L^{gpu}$) and system overheads (
 
 | Metric | Mathematical Definition |
 | :--- | :--- |
-| **TTFT** | $L^{cpu} + \sum_{k \in P} L^{gpu}_k - T_{arrival}$ |
+| **TTFT** | $$L^{cpu} + \sum_{k \in P} L^{gpu}_k - T_{arrival}$$ |
 | **ITL** | Observed $\Delta_t$ between consecutive decode iterations |
-| **E2E** | $L^{cpu} + \sum_{k \in \{P \cup D\}} L^{gpu}_k - T_{arrival}$ |
+| **E2E** | $$L^{cpu} + \sum_{k \in \{P \cup D\}} L^{gpu}_k - T_{arrival}$$ |
 
 ---
 
