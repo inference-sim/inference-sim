@@ -75,9 +75,9 @@ BLIS aggregates simulated GPU iteration times ($L^{gpu}$) and system overheads (
 
 | Metric | Mathematical Definition |
 | :--- | :--- |
-| **TTFT** | $$L^{cpu} + \sum_{k \in P} L^{gpu}_k - T_{arrival}$$ |
+| **TTFT** | $L^{cpu} + \sum_{k \in P} L^{gpu}_k - T_{arrival}$ |
 | **ITL** | Observed $\Delta_t$ between consecutive decode iterations |
-| **E2E** | $$L^{cpu} + \sum_{k \in \{P \cup D\}} L^{gpu}_k - T_{arrival}$$ |
+| **E2E** | $L^{cpu} + \sum_{k \in \{P \cup D\}} L^{gpu}_k - T_{arrival}$ |
 
 ---
 
@@ -99,5 +99,5 @@ $$\text{Loss} = \sum_{m \in \{TTFT, ITL, E2E\}} (|GT_{mean\_m} - Sim_{mean\_m}| 
 
 During inference, BLIS loads the pre-calibrated coefficients for the target configuration. By executing the high-speed Discrete Event loop, it generates high-fidelity performance projections for novel workloads in seconds. This enables:
 * **Capacity Planning:** Determining Pareto frontiers given SLO requirements.
-* **Hyperparameter Tuning:** Finding the optimal `max_num_batched_tokens` or `block_size` without burning GPU hours.
+* **Hyperparameter Tuning:** Finding optimal vLLM arguments without burning GPU hours.
 * **Regression Testing:** Detecting how code changes in vLLM internals affect throughput and latency.
