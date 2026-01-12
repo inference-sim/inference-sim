@@ -55,7 +55,7 @@ Override GPU, TP, and vLLM version:
 
 ```bash
    ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
-   --hardware H100 --tp 2 --vllm-version vllm/vllm-openai:v0.8.4
+   --hardware H100 --tp 1 --vllm-version vllm/vllm-openai:v0.8.4
 ```
 
 **Custom Workload Parameters**
@@ -81,6 +81,22 @@ Define custom workload characteristics:
   --max-num-running-reqs 256 \
   --max-num-scheduled-tokens 2048
 ```
+
+**Roofline Approach**
+
+BLIS looks for the absence of alpha-coeffs and beta-coeffs in the input args, as well as the presence of model-config-folder and hardware-config to trigger the roofline model. For example,
+
+```bash
+ ./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --hardware H100 \
+  --tp 1 \
+  --vllm-version vllm/vllm-openai:v0.8.4 \
+  --model-config-folder model_configs/llama-3.1-8b-instruct \
+  --hardware-config hardware_config.json
+```
+
+In the absence of alpha, beta coeffs as well as `model-config-folder` and `hardware-config`, BLIS tries to use coefficients saved in `coefficients.yaml` for default values of TP, GPU and vllm version.
 
 ## Supported LLMs
 
