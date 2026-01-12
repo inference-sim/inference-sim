@@ -109,11 +109,12 @@ type Simulator struct {
 	TP                    int
 	Roofline              bool
 	ModelConfig           ModelConfig
+	HWConfig              HardwareCalib
 	randomNumberGenerator *rand.Rand // random number generator for request tokens
 }
 
 func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, model string, GPU string, tp int, roofline bool) *Simulator {
+	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, hwConfig HardwareCalib, model string, GPU string, tp int, roofline bool) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -134,6 +135,7 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		PreemptionHappened:        false,
 		GuideLLMConfig:            guideLLMConfig,
 		ModelConfig:               modelConfig,
+		HWConfig:                  hwConfig,
 		Model:                     model,
 		GPU:                       GPU,
 		TP:                        tp,
@@ -315,24 +317,7 @@ func (sim *Simulator) getStepTimeRoofline() int64 {
 			})
 		}
 	}
-	// stepConfigJson, err := json.Marshal(sc)
-	// if err != nil {
-	// 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
-	// 	os.Exit(1)
-	// }
-	// modelConfigJson, err := json.Marshal(sim.ModelConfig.Raw)
-	// if err != nil {
-	// 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
-	// 	os.Exit(1)
-	// }
-	// args := []string{"get_flops.py", "--model-id", sim.Model, "--GPU", sim.GPU, "--model-config", string(modelConfigJson), "--step-config", string(stepConfigJson)}
-	// // python get_flops.py --model-id sim.model --GPU sim.GPU --model-config '{some json}' --step-config '{some json}'
-	// cmd := exec.Command("python", args...)
-	// out, _ := cmd.CombinedOutput()
-	// cmd.Run()
-	// strOut, _ := strconv.Atoi(string(out))
-	// return int64(strOut)
-	stepTime := rooflineStepTime(sim.GPU, sim.ModelConfig, stepConfig, sim.TP)
+	stepTime := rooflineStepTime(sim.GPU, sim.ModelConfig, sim.HWConfig, stepConfig, sim.TP)
 	return stepTime
 }
 
