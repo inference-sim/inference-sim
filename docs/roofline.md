@@ -1,6 +1,6 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step (Prefill or Decode) using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`.
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`.
 
 
 ## 1. Why Roofline?
@@ -8,10 +8,15 @@ This document describes the analytical approach used to estimate the GPU latency
 The Blackbox optimization approach outlined in [approach.md](./approach.md) requires training over ground-truth workload metrics obtained by running live vLLM instances over GPUs. In practice, collecting this ground-truth data and training the GPU latency model for each LLM can take several hours. For a faster approximation of GPU latencies without actually ever running vLLM, we recommend the roofline approach. This technique only requires the Huggingface LLM config (`config.json`) and hardware specifications (e.g. GPU Peak TFLOPS/Peak BW from NVIDIA datasheets) in `hardware_config.json`. It allows BLIS to generalize across diverse LLMs and workloads, while preserving TTFT/ITL/E2E accuracy.
 
 ## 2. Core Methodology: The Roofline Model
-The simulator predicts execution time by identifying whether a phase is **Compute-Bound** or **Memory-Bound**. 
+The simulator predicts execution time by identifying whether a phase (prefill/decode) is **Compute-Bound** or **Memory-Bound**. 
 
 For each phase:
-$$\text{Step Time} = \max\left( \frac{\text{Total FLOPS}}{\text{Peak Performance}}, \frac{\text{Total Bytes Transferred}}{\text{Memory Bandwidth}} \right)$$
+
+$$\text{Phase Time} = \max\left( \frac{\text{Total FLOPS}}{\text{Peak Performance}}, \frac{\text{Total Bytes Transferred}}{\text{Memory Bandwidth}} \right)$$
+
+As a result, overall step time is given by:
+
+$$\text{Step Time} = \text{Prefill Phase Time} + \text{Decode Phase Time}$$
 
 ---
 
