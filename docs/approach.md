@@ -1,8 +1,8 @@
-# BLIS Approach: Blackbox Inference Simulator for vLLM Internals
+# BLIS Approach: Blackbox Inference Simulator for vLLM
 
 ## 1. Architectural Overview
 
-BLIS is a **Discrete Event Simulator (DES)** integrated with a lightweight latency model. Unlike real-time execution engines, BLIS bypasses tensor operations, advancing the simulation clock by calculating time-deltas between discrete system events such as request arrivals, scheduling ticks, and KV-cache state changes.
+BLIS is a **Discrete Event Simulator (DES)** integrated with a lightweight latency model. Unlike real-time execution engines, BLIS bypasses heavy tensor operations, advancing the simulation clock by calculating time-deltas between discrete system events such as request arrivals, scheduling ticks, and KV-cache state changes. By mimicking the intricacies of vLLM-style inference—including prefill/decode phases, KV-cache management, and dynamic batching, BLIS enables researchers to study throughput, latency (TTFT/TPOT), and memory pressure through rigorous **what-if** analysis **without the need for physical GPUs**. 
 
 ### Core Components
 
@@ -107,3 +107,4 @@ During inference, BLIS loads the pre-calibrated coefficients for the target conf
 * **Capacity Planning:** Determining Pareto frontiers given SLO requirements.
 * **Hyperparameter Tuning:** Finding optimal vLLM arguments without burning GPU hours.
 * **Regression Testing:** Detecting how code changes in vLLM internals affect throughput and latency.
+* **Algorithm Discovery:**: Allowing researchers to prototype and validate new serving optimizations before implementation.

@@ -1,6 +1,6 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`.
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`, except Mixture-of-Expert (MoE) models currently.
 
 
 ## 1. Why Roofline?
