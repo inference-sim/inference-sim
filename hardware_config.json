@@ -9,7 +9,7 @@
 		"mfuDecode":        0.12,
 		"allReduceLatency": 20.0
 	},
-	"A100-80": {
+	"A100-SXM": {
 		"TFlopsEff":        312,      
 		"BwEffTBs":         2.039,
         "BwEffConstant": 0.72,
