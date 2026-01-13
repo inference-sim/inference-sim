@@ -11,6 +11,10 @@ BLIS is a **Discrete Event Simulator (DES)** integrated with a lightweight, CPU-
 * **The Virtual KV-Cache Manager:** Simulates **PagedAttention** block allocation. It tracks logical-to-physical mappings, reference counts for prefix sharing, and memory fragmentation without physical GPU memory allocation.
 * **The Latency Model:** An analytical engine that predicts the duration of vLLM iterations based on batch composition (prefill/decode counts), model architecture, and hardware topology.
 
+Here is a high-level diagram of the core components in BLIS and how they interact to return request latency metrics:
+
+![BLIS Architecture Diagram](./assets/BLIS_flow_diagram.png)
+
 ---
 
 ## 2. Capabilities
