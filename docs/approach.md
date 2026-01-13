@@ -97,6 +97,8 @@ $$\text{Loss} = \sum_{m \in \{TTFT, ITL, E2E\}} (|GT_{mean\_m} - Sim_{mean\_m}| 
 
 4.  **Artifact Generation:** Optimal coefficients are stored in `coefficients.yaml` for production-grade inference.
 
+> Note: We also have a Roofline approach for estimating GPU step times without requiring any training or running live vLLM instances. See details in [Roofline docs](./roofline.md). This approach generalizes across any model on HuggingFace provided the `config.json` for the model is downloaded under `model_configs/`. 
+
 ---
 
 ## 6. Inference
