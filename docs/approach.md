@@ -2,7 +2,7 @@
 
 ## 1. Architectural Overview
 
-BLIS is a **Discrete Event Simulator (DES)** integrated with a lightweight, CPU-only latency regression model. Unlike real-time execution engines, BLIS bypasses tensor operations, advancing the simulation clock by calculating time-deltas between discrete system events such as request arrivals, scheduling ticks, and KV-cache state changes.
+BLIS is a **Discrete Event Simulator (DES)** integrated with a lightweight, CPU-only latency model. Unlike real-time execution engines, BLIS bypasses tensor operations, advancing the simulation clock by calculating time-deltas between discrete system events such as request arrivals, scheduling ticks, and KV-cache state changes.
 
 ### Core Components
 
@@ -19,7 +19,7 @@ Here is a high-level diagram of the core components in BLIS and how they interac
 
 ## 2. Capabilities
 
-* **vLLM Feature Parity:** Supports Prefix Caching, Chunked Prefill, Continuous Batching, and Preemption.
+* **vLLM Feature Parity:** Supports Prefix Caching, Chunked Prefill, Continuous Batching, and Request Preemption.
 * **Configuration-Aware:** Utilizes standard vLLM scheduler arguments such as `max-num-batched-tokens`, `max-num-seqs`, and `block-size`.
 * **Workload Agnostic:** Scales across diverse arrival rates and varying sequence length distributions.
 * **Extensible Design:** Easily adapts to new hardware profiles, Tensor Parallelism (TP) degrees, or vLLM version updates via coefficient recalibration.
@@ -47,7 +47,7 @@ while time < horizon and active_requests:
     
     # Advance request states and global clock
     scheduler.update_processing_indices(scheduled_batch)
-    event_queue.push(current_time + step_time)
+    sim.Clock.advance(step_time)
 ```
 
 ### B. GPU Latency Model
@@ -91,7 +91,7 @@ BLIS uses a **Data-Driven Calibration** strategy to ensure simulation accuracy. 
 
 1.  **Initialization:** Define baseline estimates for $\alpha$ and $\beta$ coefficients.
 2.  **Profiling:** Execute training workloads on a live vLLM instance to collect ground-truth (GT) Mean and P90 metrics.
-3.  **Optimization:** Run BLIS iteratively using **Bayesian Optimization** to minimize the multi-objective loss function:
+3.  **Optimization:** Run BLIS iteratively using **Blackbox Bayesian Optimization** to minimize the multi-objective loss function:
 
 $$\text{Loss} = \sum_{m \in \{TTFT, ITL, E2E\}} (|GT_{mean\_m} - Sim_{mean\_m}| + |GT_{p90\_m} - Sim_{p90\_m}|)$$
 
