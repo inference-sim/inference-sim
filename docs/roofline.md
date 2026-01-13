@@ -46,9 +46,9 @@ The final step time is the sum of independent phases and overheads:
 ---
 
 ## 4. Key Performance Variables
-* **MFU (Model Flops Utilization):** Scaled efficiency factors for Prefill vs. Decode.
+* **MFU (Model Flops Utilization):** Scaled TFLOPs efficiency factors for Prefill vs. Decode.
 * **TP Factor:** Divides compute and memory load across multiple GPUs.
-* **Bandwidth Efficiency:** Real-world effective memory throughput versus theoretical peak.
+* **Bandwidth Efficiency:** Real-world effective bandwidth versus theoretical peak bandwidth.
 
 ## 5. Onboarding a new LLM/GPU
 
