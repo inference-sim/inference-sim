@@ -2,7 +2,7 @@
 
 ## 1. Architectural Overview
 
-BLIS is a **Discrete Event Simulator (DES)** integrated with a lightweight, CPU-only latency model. Unlike real-time execution engines, BLIS bypasses tensor operations, advancing the simulation clock by calculating time-deltas between discrete system events such as request arrivals, scheduling ticks, and KV-cache state changes.
+BLIS is a **Discrete Event Simulator (DES)** integrated with a lightweight latency model. Unlike real-time execution engines, BLIS bypasses tensor operations, advancing the simulation clock by calculating time-deltas between discrete system events such as request arrivals, scheduling ticks, and KV-cache state changes.
 
 ### Core Components
 
