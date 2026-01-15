@@ -2,6 +2,7 @@ package sim
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -20,7 +21,7 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 
 	reader := csv.NewReader(file)
 
-	// Skip header row (arrived_at, num_prefill_tokens, num_decode_tokens)
+	// Skip header row
 	if _, err := reader.Read(); err != nil {
 		logrus.Fatalf("failed to read csv header: %v", err)
 	}
@@ -29,34 +30,36 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
-			break // Reached end of file
+			break
 		}
 		if err != nil {
 			logrus.Fatalf("error reading csv at row %d: %v", reqIdx, err)
 		}
 
-		// Parse columns
-		// record[0]: arrived_at, record[1]: num_prefill_tokens, record[2]: num_decode_tokens
+		// 1. Parse Arrival Time
 		arrivalFloat, err := strconv.ParseFloat(record[0], 64)
 		if err != nil {
 			logrus.Fatalf("invalid arrival time at row %d: %v", reqIdx, err)
 		}
-		// 2. Convert to simulator time units (microseconds)
 		arrivalTime := int64(arrivalFloat * 1e6)
 
-		// Exit if we have passed the simulation's time limit
 		if arrivalTime > sim.Horizon {
 			break
 		}
 
-		prefillLen, _ := strconv.Atoi(record[1])
-		decodeLen, _ := strconv.Atoi(record[2])
+		// 2. Parse Token Lists from record[3] and record[4]
+		var inputTokens []int
+		var outputTokens []int
 
-		// Generate random token IDs based on CSV lengths
-		inputTokens := sim.generateRandomTokenIDs(prefillLen)
-		outputTokens := sim.generateRandomTokenIDs(decodeLen)
+		// Unmarshal JSON-style list: "[1, 2, 3]" -> []int{1, 2, 3}
+		if err := json.Unmarshal([]byte(record[3]), &inputTokens); err != nil {
+			logrus.Fatalf("failed to parse prefill_tokens at row %d: %v", reqIdx, err)
+		}
+		if err := json.Unmarshal([]byte(record[4]), &outputTokens); err != nil {
+			logrus.Fatalf("failed to parse decode_tokens at row %d: %v", reqIdx, err)
+		}
 
-		// Create the request object
+		// 3. Create the request object
 		reqID := fmt.Sprintf("request_%d", reqIdx)
 		req := &Request{
 			ID:               reqID,
@@ -68,20 +71,18 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 			FinishedStepIdx:  0,
 		}
 
-		// Push to the simulator's event schedule
+		// 4. Push to schedule and metrics
 		sim.Schedule(&ArrivalEvent{
 			time:    arrivalTime,
 			Request: req,
 		})
 
-		// Add to metrics.Requests
-		detail := RequestMetrics{
+		sim.Metrics.Requests[reqID] = RequestMetrics{
 			ID:               reqID,
 			ArrivedAt:        arrivalFloat,
 			NumPrefillTokens: len(inputTokens),
 			NumDecodeTokens:  len(outputTokens),
 		}
-		sim.Metrics.Requests[reqID] = detail
 
 		reqIdx++
 	}
