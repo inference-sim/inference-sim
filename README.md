@@ -58,9 +58,9 @@ Override GPU, TP, and vLLM version:
    --hardware H100 --tp 1 --vllm-version vllm/vllm-openai:v0.8.4
 ```
 
-**Custom Workload Parameters**
+**Custom Workload Distribution**
 
-Define custom workload characteristics:
+Define custom workload distribution to sample input/output lengths from:
 
 ```bash
   ./simulation_worker run \
