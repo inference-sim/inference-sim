@@ -61,3 +61,4 @@ baseline_reg/
 results_old/
 .inference-sim-env/
 saturation_regimes.xlsx
+traces.csv
