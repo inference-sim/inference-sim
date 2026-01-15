@@ -24,7 +24,7 @@ var (
 	blockSizeTokens           int64     // Number of tokens per KV block
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
-	defaultsFilePath          string    // Path to default constants - trained coefficients, default configs and workloads
+	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
 	modelConfigFolder         string    // Path to folder containing config.json and model.json
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
@@ -200,7 +200,7 @@ func init() {
 	runCmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
 	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	runCmd.Flags().StringVar(&logLevel, "log", "warn", "Log level (trace, debug, info, warn, error, fatal, panic)")
-	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default configs and workloads")
+	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
 	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
 	runCmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
 	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)")
