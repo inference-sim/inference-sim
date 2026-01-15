@@ -24,11 +24,11 @@ var (
 	blockSizeTokens           int64     // Number of tokens per KV block
 	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
 	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
-	coeffsFilePath            string    // Path to trained coefficients filepath for testing/inference
+	defaultsFilePath          string    // Path to default constants - trained coefficients, default configs and workloads
 	modelConfigFolder         string    // Path to folder containing config.json and model.json
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
-	workloadFilePath          string    // Path to GuideLLM preset workload definitions filepath
-	workloadType              string    // GuideLLM preset workload type (chatbot, summarization, contentgen, multidoc)
+	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
+	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
@@ -49,6 +49,9 @@ var (
 	gpu               string // GPU type
 	tensorParallelism int    // TP value
 	vllmVersion       string // vllm version
+
+	// results file path
+	resultsPath string // File to save BLIS results to
 )
 
 // rootCmd is the base command for the CLI
@@ -97,7 +100,7 @@ var runCmd = &cobra.Command{
 			model = strings.ToLower(model)
 
 			// GPU, TP, vLLM version configuration
-			hardware, tp, version := GetDefaultConfig(model) // pick default config for tp, GPU, vllmVersion
+			hardware, tp, version := GetDefaultSpecs(model) // pick default config for tp, GPU, vllmVersion
 
 			// if any of (hardware, tp, vllm-version args missing, fall back to default for all)
 			if (tensorParallelism == 0 && tp > 0) || (gpu == "" && len(hardware) > 0) || (vllmVersion == "" && len(version) > 0) {
@@ -108,7 +111,7 @@ var runCmd = &cobra.Command{
 				vllmVersion = version
 			}
 
-			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, coeffsFilePath)
+			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 			alphaCoeffs, betaCoeffs, totalKVBlocks = newAlpha, newBeta, kvBlocks
 		}
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
@@ -132,7 +135,7 @@ var runCmd = &cobra.Command{
 		// Workload configuration
 		var guideLLMConfig *sim.GuideLLMConfig
 
-		if workloadType == "custom" { // if workloadType custom, use args. If no args, use defaults
+		if workloadType == "distribution" { // if workloadType distribution, use args.
 			// error handling for prompt and output lengths
 			if promptTokensMean > promptTokensMax || promptTokensMean < promptTokensMin || promptTokensStdev > promptTokensMax || promptTokensStdev < promptTokensMin {
 				logrus.Fatalf("prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]")
@@ -145,11 +148,13 @@ var runCmd = &cobra.Command{
 				PromptTokensStdDev: promptTokensStdev, PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
 				OutputTokens: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
 				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax}
-		} else { // else use preset workload types
-			guideLLMConfig = GetWorkloadConfig(workloadFilePath, workloadType, rate/1e6, maxPrompts)
+		} else if workloadType != "traces" { // use default workload types
+			guideLLMConfig = GetWorkloadConfig(defaultsFilePath, workloadType, rate/1e6, maxPrompts)
 			if guideLLMConfig == nil {
 				logrus.Fatalf("Undefined workload. Use one among (chatbot, summarization, contentgen, multidoc)")
 			}
+		} else { // read from CSV
+			guideLLMConfig = nil
 		}
 
 		startTime := time.Now() // Get current time (start)
@@ -171,9 +176,12 @@ var runCmd = &cobra.Command{
 			gpu,
 			tensorParallelism,
 			roofline,
+			tracesWorkloadFilePath,
 		)
 		s.Run()
-		s.Metrics.Print(s.Horizon, totalKVBlocks, startTime)
+
+		// Print and save results
+		s.Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath)
 
 		logrus.Info("Simulation complete.")
 	},
@@ -192,11 +200,11 @@ func init() {
 	runCmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
 	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	runCmd.Flags().StringVar(&logLevel, "log", "warn", "Log level (trace, debug, info, warn, error, fatal, panic)")
-	runCmd.Flags().StringVar(&coeffsFilePath, "coeffs-filepath", "coefficients.yaml", "Path to trained coefficients filepath for testing/inference")
+	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default configs and workloads")
 	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
 	runCmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
-	runCmd.Flags().StringVar(&workloadFilePath, "workloads-filepath", "workloads.yaml", "Path to GuideLLM preset workload definitions filepath")
-	runCmd.Flags().StringVar(&workloadType, "workload", "custom", "GuideLLM preset workload type (chatbot, summarization, contentgen, multidoc)")
+	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)")
+	runCmd.Flags().StringVar(&tracesWorkloadFilePath, "workload-traces-filepath", "", "Workload filepath for traces workload type.")
 
 	// vLLM server configs
 	runCmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 1000000, "Total number of KV cache blocks")
@@ -214,7 +222,7 @@ func init() {
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
 
-	// GuideLLM request generation config
+	// GuideLLM-style distribution-based workload generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&maxPrompts, "max-prompts", 100, "Number of requests")
 	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")
@@ -226,6 +234,9 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", 256, "Stddev Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", 2, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", 7000, "Max Output Token Count")
+
+	// Results path
+	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

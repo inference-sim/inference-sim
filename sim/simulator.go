@@ -3,8 +3,6 @@ package sim
 
 import (
 	"container/heap"
-	"fmt"
-	"math"
 	"math/rand"
 
 	"github.com/sirupsen/logrus"
@@ -101,20 +99,22 @@ type Simulator struct {
 	StepEvent                 Event
 	StepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
-	ReqNumComputedTokens  map[string]int64
-	PreemptionHappened    bool
-	GuideLLMConfig        *GuideLLMConfig
-	Model                 string
-	GPU                   string
-	TP                    int
-	Roofline              bool
-	ModelConfig           ModelConfig
-	HWConfig              HardwareCalib
-	randomNumberGenerator *rand.Rand // random number generator for request tokens
+	ReqNumComputedTokens   map[string]int64
+	PreemptionHappened     bool
+	GuideLLMConfig         *GuideLLMConfig
+	Model                  string
+	GPU                    string
+	TP                     int
+	Roofline               bool
+	TracesWorkloadFilePath string
+	ModelConfig            ModelConfig
+	HWConfig               HardwareCalib
+	randomNumberGenerator  *rand.Rand // random number generator for request tokens
 }
 
 func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, hwConfig HardwareCalib, model string, GPU string, tp int, roofline bool) *Simulator {
+	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, hwConfig HardwareCalib, model string, GPU string,
+	tp int, roofline bool, tracesWorkloadFilePath string) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -140,96 +140,20 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		GPU:                       GPU,
 		TP:                        tp,
 		Roofline:                  roofline,
+		TracesWorkloadFilePath:    tracesWorkloadFilePath,
 	}
-	s.Metrics.RequestRate = s.GuideLLMConfig.Rate
 
 	src := rand.NewSource(seed)
 	s.randomNumberGenerator = rand.New(src)
-	s.generateRequestArrivals()
+	if len(s.TracesWorkloadFilePath) > 0 && s.GuideLLMConfig == nil {
+		s.Metrics.RequestRate = 0.0 // no request rate specified
+		s.generateWorkloadFromCSV()
+	} else {
+		s.Metrics.RequestRate = s.GuideLLMConfig.Rate
+		s.generateWorkloadDistribution()
+	}
 
 	return s
-}
-
-// generateLengthGauss generates input or output length satisfying DataConfig distribution
-// The generated length is sampled from a Gaussian distribution with mean=lengthMean, std=lengthStd
-// and is clamped between (lengthMin, lengthMax)
-func (sim *Simulator) generateLengthGauss(lengthMean, lengthStd, lengthMin, lengthMax int) int {
-	if lengthMin == lengthMax {
-		return lengthMin
-	}
-	val := sim.randomNumberGenerator.NormFloat64()*float64(lengthStd) + float64(lengthMean)
-	clampedVal := math.Min(float64(lengthMax), val)
-	clampedVal = math.Max(float64(lengthMin), clampedVal)
-	roundedVal := math.Round(clampedVal)
-	return int(roundedVal)
-}
-
-// generateRandomTokenIDs creates a slice of 'length' random integers.
-// each token ID ranges between 0 to 32000.
-func (sim *Simulator) generateRandomTokenIDs(length int) []int {
-
-	tokens := make([]int, length)
-
-	for i := 0; i < length; i++ {
-		tokens[i] = sim.randomNumberGenerator.Intn(MaxTokenID)
-	}
-	return tokens
-}
-
-// GenerateRequestArrivals generates request arrivals according to gen config
-func (sim *Simulator) generateRequestArrivals() {
-
-	currentTime := int64(0)
-	// keep track of how many requests have been generated
-	reqIdx := 0
-
-	// generate prefix here; this is a random sequence of tokens of prefix len
-	prefix := sim.generateRandomTokenIDs(sim.GuideLLMConfig.PrefixTokens)
-
-	// create request arrivals iteratively
-	for currentTime < sim.Horizon && reqIdx < sim.GuideLLMConfig.MaxPrompts {
-		// In a Poisson process, the arrival rate is inversely proportional
-		// to the mean interarrival time
-		// go through the workload requests one by one
-		// ToDo: create flags for max input and output lengths
-
-		// get input token length given DataConfig distribution
-		promptLen := sim.generateLengthGauss(sim.GuideLLMConfig.PromptTokens, sim.GuideLLMConfig.PromptTokensStdDev, sim.GuideLLMConfig.PromptTokensMin, sim.GuideLLMConfig.PromptTokensMax)
-		// generate random input tokens of above promptLen
-		prompt := sim.generateRandomTokenIDs(promptLen)
-		// combine prefix and prompt
-		input := append(prefix, prompt...)
-
-		// get output token len given DataConfig distribution
-		outputLen := sim.generateLengthGauss(sim.GuideLLMConfig.OutputTokens, sim.GuideLLMConfig.OutputTokensStdDev, sim.GuideLLMConfig.OutputTokensMin, sim.GuideLLMConfig.OutputTokensMax)
-		// generate random output tokens of above outputLen
-		output := sim.generateRandomTokenIDs(outputLen)
-
-		// form the request; it will be in the "queued" state when it arrives
-		req := &Request{
-			ID:               fmt.Sprintf("request_%v", reqIdx),
-			ArrivalTime:      currentTime,
-			InputTokens:      input,
-			OutputTokens:     output,
-			State:            "queued",
-			ScheduledStepIdx: 0,
-			FinishedStepIdx:  0,
-		}
-
-		// push the request for arrival
-		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
-
-		// estimate arrivalTime based on constant RPS
-		currentTime += int64(1 / sim.Metrics.RequestRate)
-
-		// move on to the next request
-		reqIdx++
-
-		if currentTime > sim.Horizon {
-			break
-		}
-	}
-
 }
 
 // Pushes an event (ArrivalEvent/StepEvent) into the simulator's EventQueue.
@@ -565,11 +489,10 @@ func (sim *Simulator) Step(now int64) {
 			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, lat+req.ArrivalTime)
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
-				sim.Metrics.TPOTSum += reqTotalOutput // in microsec
 				// TPOT calculation in vLLM excludes the first generated token, calculated in ms
-				sim.Metrics.RequestTPOTs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
+				sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
 			} else {
-				sim.Metrics.RequestTPOTs[req.ID] = 0
+				sim.Metrics.RequestITLs[req.ID] = 0
 			}
 			req.FinishedStepIdx = sim.StepCount
 			sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)

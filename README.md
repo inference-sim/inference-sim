@@ -65,6 +65,7 @@ Define custom workload characteristics:
 ```bash
   ./simulation_worker run \
   --model meta-llama/llama-3.1-8b-instruct \
+  --workload distribution \
   --rate 10 \
   --max-prompts 300 \
   --prompt-tokens 800 \
@@ -82,7 +83,33 @@ Define custom workload characteristics:
   --max-num-scheduled-tokens 2048
 ```
 
-**Roofline Approach**
+**Replay workload traces and save results**
+
+```bash
+   ./simulation_worker run \
+   --model meta-llama/llama-3.1-8b-instruct \
+   --workload traces --workload-traces-filepath traces.csv \
+   --results-path results.json
+```
+
+Simulation results will be saved to `results.json`. If `--results-path` is not provided, the results are only printed, but not saved.
+
+## Supported LLMs
+
+- ibm-granite/granite-3.1-8b-instruct
+- meta-llama/llama-3.1-8b-instruct
+- qwen/qwen2.5-7b-instruct
+- microsoft/phi-4
+- meta-llama/llama-3.3-70b-instruct
+- openai/gpt-oss-120b
+- openai/gpt-oss-20b
+- mistralai/mistral-small-24b-instruct-2501
+- mistralai/mistral-small-3.1-24b-instruct-2503
+- mistralai/mixtral-8x7b-instruct-v0.1
+
+> Note: Currently, BLIS supports only a limited set of GPU, TP and vllm versions for each of the above LLMs. Refer to [coefficients.yaml](!https://github.com/inference-sim/inference-sim/blob/main/coefficients.yaml) for details on supported models, hardware, TP and vllm versions. If you want to run other models, please use the Roofline Approach outlined below.
+
+## Roofline Approach 
 
 BLIS looks for the absence of alpha-coeffs and beta-coeffs in the input args, as well as the presence of model-config-folder and hardware-config to trigger the roofline model. For example,
 
@@ -98,47 +125,35 @@ BLIS looks for the absence of alpha-coeffs and beta-coeffs in the input args, as
 
 In the absence of alpha, beta coeffs as well as `model-config-folder` and `hardware-config`, BLIS tries to use coefficients saved in `coefficients.yaml` for default values of TP, GPU and vllm version.
 
-## Supported LLMs
-
-- ibm-granite/granite-3.1-8b-instruct
-- meta-llama/llama-3.1-8b-instruct
-- qwen/qwen2.5-7b-instruct
-- microsoft/phi-4
-- meta-llama/llama-3.3-70b-instruct
-- openai/gpt-oss-120b
-- openai/gpt-oss-20b
-- mistralai/mistral-small-24b-instruct-2501
-- mistralai/mistral-small-3.1-24b-instruct-2503
-- mistralai/mixtral-8x7b-instruct-v0.1
-
-> Note: Currently, BLIS supports only a limited set of GPU, TP and vllm versions for each of the above LLMs. Refer to [coefficients.yaml](!https://github.com/inference-sim/inference-sim/blob/main/coefficients.yaml) for details on supported models, hardware, TP and vllm versions.
-
 ## Example Output
 
 After running a simulation, you will see simulated metrics printed out as follows:
 
 ```
 === Simulation Metrics ===
-Completed Requests   : 100
-Request Rate(req/s)  : 1
-Total Input Tokens   : 53074
-Total Output Tokens  : 51331
-Simulation Duration(s): 0.121
-vLLM estimated Duration(s): 103.736
-e2e_mean_ms  : 3724.786
-e2e_p90_ms   : 5976.007
-e2e_p95_ms   : 6648.597
-e2e_p99_ms   : 8006.079
-ttft_mean_ms : 19.313
-ttft_p90_ms  : 23.159
-ttft_p95_ms  : 23.623
-ttft_p99_ms  : 25.015
-itl_mean_ms  : 7.205
-itl_p90_ms   : 7.185
-itl_p95_ms   : 7.191
-itl_p99_ms   : 7.191
-responses_per_sec   : 0.964
-tokens_per_sec   : 494.826
+{
+  "sim_start_timestamp": "2026-01-14 19:07:19",
+  "sim_end_timestamp": "2026-01-14 19:07:19",
+  "completed_requests": 40,
+  "total_input_tokens": 195567,
+  "total_output_tokens": 21450,
+  "vllm_estimated_duration_s": 25.882896,
+  "simulation_duration_s": 0.386482042,
+  "responses_per_sec": 1.545422119688616,
+  "tokens_per_sec": 828.7326116830203,
+  "e2e_mean_ms": 5384.433599999999,
+  "e2e_p90_ms": 6933.9587,
+  "e2e_p95_ms": 7338.8573499999975,
+  "e2e_p99_ms": 8418.08552,
+  "ttft_mean_ms": 131.05245,
+  "ttft_p90_ms": 144.60440000000003,
+  "ttft_p95_ms": 152.2315,
+  "ttft_p99_ms": 153.43732,
+  "itl_mean_ms": 9.778280409492787,
+  "itl_p90_ms": 8.743,
+  "itl_p95_ms": 8.743,
+  "itl_p99_ms": 44.8
+}
 ```
 
 
