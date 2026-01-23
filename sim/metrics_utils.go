@@ -29,6 +29,7 @@ type RequestMetrics struct {
 	TTFT             float64 `json:"ttft_ms"`
 	ITL              float64 `json:"itl_ms"`
 	E2E              float64 `json:"e2e_ms"`
+	SchedulingDelay  float64 `json:"scheduling_delay_ms"`
 }
 
 // MetricsOutput defines the JSON structure for the saved metrics
@@ -54,6 +55,7 @@ type MetricsOutput struct {
 	ITLP90Ms              float64          `json:"itl_p90_ms"`
 	ITLP95Ms              float64          `json:"itl_p95_ms"`
 	ITLP99Ms              float64          `json:"itl_p99_ms"`
+	SchedulingDelayP99Ms  float64          `json:"scheduling_delay_p99_ms"`
 	Requests              []RequestMetrics `json:"requests,omitempty"`
 }
 

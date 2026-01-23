@@ -281,6 +281,9 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		sim.RunningBatch = &Batch{}
 	}
 
+	// clear PreemptionHappened if it doesn't exist
+	sim.PreemptionHappened = false
+
 	// allocate a max token budget at the start of each Step
 	tokenBudget := sim.MaxScheduledTokens
 
@@ -375,6 +378,8 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 			time:    now + scheduledDelay,
 			Request: next,
 		})
+		// record request scheduling delay
+		sim.Metrics.RequestSchedulingDelays[next.ID] = now + scheduledDelay - next.ArrivalTime
 
 		// decrement the token budget
 		tokenBudget = tokenBudget - numNewTokens

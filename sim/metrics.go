@@ -26,12 +26,13 @@ type Metrics struct {
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	ITLSum  int64 // Total ITL sum across requests (in ticks)
 
-	RequestTTFTs           map[string]float64 // list of all requests' TTFT
-	RequestITLs            map[string]float64 // list of all requests' ITL
-	AllITLs                []int64            // list of all requests' ITL
-	RequestE2Es            map[string]float64 // list of all requests' latencies
-	RequestCompletionTimes map[string]float64 // list of all requests' completion times in ticks
-	RequestStepCounters    []int              // list of all requests' num of steps between scheduled and finished
+	RequestTTFTs            map[string]float64 // list of all requests' TTFT
+	RequestITLs             map[string]float64 // list of all requests' ITL
+	RequestSchedulingDelays map[string]int64   // list of all requests' scheduling delays
+	AllITLs                 []int64            // list of all requests' ITL
+	RequestE2Es             map[string]float64 // list of all requests' latencies
+	RequestCompletionTimes  map[string]float64 // list of all requests' completion times in ticks
+	RequestStepCounters     []int              // list of all requests' num of steps between scheduled and finished
 
 	NumWaitQRequests        []int                     // number of requests in waitQ over different steps
 	NumRunningBatchRequests []int                     // number of request in runningBatch over different steps
@@ -46,6 +47,7 @@ func NewMetrics() *Metrics {
 		AllITLs:                 []int64{},
 		RequestE2Es:             make(map[string]float64),
 		RequestCompletionTimes:  make(map[string]float64),
+		RequestSchedulingDelays: make(map[string]int64),
 		NumWaitQRequests:        []int{},
 		NumRunningBatchRequests: []int{},
 		Requests:                make(map[string]RequestMetrics),
@@ -96,6 +98,14 @@ func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.T
 		output.ITLP95Ms = CalculatePercentile(m.AllITLs, 95)
 		output.ITLP99Ms = CalculatePercentile(m.AllITLs, 99)
 
+		// --- P99 Scheduling Delay ---
+		sortedSchedulingDelays := make([]float64, 0, len(m.RequestSchedulingDelays))
+		for _, value := range m.RequestSchedulingDelays {
+			sortedSchedulingDelays = append(sortedSchedulingDelays, float64(value))
+		}
+		sort.Float64s(sortedSchedulingDelays)
+		output.SchedulingDelayP99Ms = CalculatePercentile(sortedSchedulingDelays, 99)
+
 		output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
 		output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
 
@@ -117,6 +127,7 @@ func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.T
 			detail.TTFT = ttft / 1e3
 			detail.E2E = m.RequestE2Es[id] / 1e3
 			detail.ITL = m.RequestITLs[id]
+			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id])
 			output.Requests = append(output.Requests, detail)
 		}
 
