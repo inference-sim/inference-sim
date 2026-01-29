@@ -15,6 +15,7 @@ The simulator is CPU-only, extremely fast, and designed for capacity planning, s
 - CPU-only inference cost model via learned **α/β coefficients**
 - Supports multiple **LLMs**, **TP values**, **GPU types**, and **vLLM versions**
 - Generates detailed **performance metrics** and **latency breakdowns**
+- Two powerful latency estimation techniques - blackbox optimization and heuristic roofline approaches.
 
 ---
 
@@ -94,24 +95,17 @@ Define custom workload distribution to sample input/output lengths from:
 
 Simulation results will be saved to `results.json`. If `--results-path` is not provided, the results are only printed, but not saved.
 
-## Supported LLMs
 
-- ibm-granite/granite-3.1-8b-instruct
-- meta-llama/llama-3.1-8b-instruct
-- qwen/qwen2.5-7b-instruct
-- microsoft/phi-4
-- meta-llama/llama-3.3-70b-instruct
-- openai/gpt-oss-120b
-- openai/gpt-oss-20b
-- mistralai/mistral-small-24b-instruct-2501
-- mistralai/mistral-small-3.1-24b-instruct-2503
-- mistralai/mixtral-8x7b-instruct-v0.1
+# Toggling Latency Estimation Approaches 
 
-> Note: Currently, BLIS supports only a limited set of GPU, TP and vllm versions for each of the above LLMs. Refer to [coefficients.yaml](!https://github.com/inference-sim/inference-sim/blob/main/coefficients.yaml) for details on supported models, hardware, TP and vllm versions. If you want to run other models, please use the Roofline Approach outlined below.
+BLIS uses two powerful estimation techniques:
 
-## Roofline Approach 
+- Blackbox Optimization (data-driven, requires pretraining). See detailed approach in [Blackbox Approach](./docs/approach.md)
+- Heuristic Roofline Approach (no pretraining needed). See detailed approach in [Roofline Approach](./docs/roofline.md)
 
-BLIS looks for the absence of alpha-coeffs and beta-coeffs in the input args, as well as the presence of model-config-folder and hardware-config to trigger the roofline model. For example,
+The instructions above use the blackbox optimization approach to estimate latencies. Since the blackbox optimization approach requires pretraining, it supports only a limited set of LLM, GPU, TP and vllm versions. Refer to [coefficients.yaml](!https://github.com/inference-sim/inference-sim/blob/main/coefficients.yaml) for details on supported models, hardware, TP and vllm versions. 
+
+To simulate a wider range of LLM, GPU, TP and vllm version combinations (regardless of pretraining support), please use the Heuristic Roofline Approach. You can toggle between blackbox optimization and roofline approaches by specifying the flags `model-config-folder` and `hardware-config` to trigger the roofline model. You should also download the HuggingFace `config.json` for the LLM to be simulated under the `model-config-folder` path. For example,
 
 ```bash
  ./simulation_worker run \
@@ -123,7 +117,9 @@ BLIS looks for the absence of alpha-coeffs and beta-coeffs in the input args, as
   --hardware-config hardware_config.json
 ```
 
-In the absence of alpha, beta coeffs as well as `model-config-folder` and `hardware-config`, BLIS tries to use coefficients saved in `coefficients.yaml` for default values of TP, GPU and vllm version.
+This example assumes that you have the HuggingFace [`config.json`](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/blob/main/config.json) for the LLM saved as `model_configs/llama-3.1-8b-instruct/config.json`. We have provided `config.json` files for a few commonly-used LLMs already under `model_configs/`.
+
+> Note: Currently, we only support H100 and A100-80 GPUs.
 
 ## Example Output
 
@@ -152,7 +148,8 @@ After running a simulation, you will see simulated metrics printed out as follow
   "itl_mean_ms": 9.778280409492787,
   "itl_p90_ms": 8.743,
   "itl_p95_ms": 8.743,
-  "itl_p99_ms": 44.8
+  "itl_p99_ms": 44.8,
+  "scheduling_delay_p99_ms": 7.08047
 }
 ```
 
