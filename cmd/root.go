@@ -102,12 +102,24 @@ var runCmd = &cobra.Command{
 			// GPU, TP, vLLM version configuration
 			hardware, tp, version := GetDefaultSpecs(model) // pick default config for tp, GPU, vllmVersion
 
-			// if any of (hardware, tp, vllm-version args missing, fall back to default for all)
-			if (tensorParallelism == 0 && tp > 0) || (gpu == "" && len(hardware) > 0) || (vllmVersion == "" && len(version) > 0) {
-				logrus.Warnf("Finding default values of TP, GPU and vllmVersion for model=%v\n", model)
-				logrus.Warnf("Using default tp=%v, GPU=%v, vllmVersion=%v", tp, hardware, version)
+			// if tp args are missing, fall back to default
+			if tensorParallelism == 0 && tp > 0 {
+				logrus.Warnf("Finding default values of TP for model=%v\n", model)
+				logrus.Warnf("Using default tp=%v", tp)
 				tensorParallelism = tp
+			}
+
+			// if hardware args are missing, fall back to default
+			if gpu == "" && len(hardware) > 0 {
+				logrus.Warnf("Finding default values of hardware for model=%v\n", model)
+				logrus.Warnf("Using default GPU=%v", hardware)
 				gpu = hardware
+			}
+
+			// if vllm-version args are missing, fall back to default
+			if vllmVersion == "" && len(version) > 0 {
+				logrus.Warnf("Finding default values of vLLM version for model=%v\n", model)
+				logrus.Warnf("Using default vLLM version=%v", version)
 				vllmVersion = version
 			}
 
