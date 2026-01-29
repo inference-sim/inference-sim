@@ -31,6 +31,6 @@ priompot to run blis against ground turth and record error
 
 
 
-So @vllm.md includes vllm related info, @blis.md is for how current blis roofline modeling works, @research.md gives insights about roofline modeling in literature. Please take a look at how blis implements roofline modeling and how to utilize it.. Improve roofline modeling by using insights on the md files I shared. When you improve algorithm, evaluate it using the script @evaluate.py. Record what has changed and why in progress.md, and record error from evalaute.py for each algoirthm you tried.. Try to minimize error please
+So @vllm.md includes vllm related info, @blis.md is for how current blis roofline modeling works, @research.md gives insights about roofline modeling in literature. Please take a look at how blis implements roofline modeling and how to utilize it.. Improve roofline modeling by using insights on the md files I shared. When you improve algorithm, evaluate it using the script @evaluate.py. Record what has changed and why in progress.md, and record error from evalaute.py for each algoirthm you tried.. Try to minimize error please. Important note: do not modify inference-sim scheduler at all, just adjust roofline approach only..
 
 
