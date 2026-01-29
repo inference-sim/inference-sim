@@ -1,0 +1,89 @@
+2026-01-20 06:08:47,625 INFO vllm.platforms: Automatically detected platform cuda.
+2026-01-20 06:08:53,171 INFO vllm.entrypoints.openai.api_server: vLLM API server version 0.11.0
+2026-01-20 06:08:53,173 INFO vllm.entrypoints.utils: non-default args: {'model_tag': '/model-cache/models/codellama/CodeLlama-34b-Instruct-hf', 'model': '/model-cache/models/codellama/CodeLlama-34b-Instruct-hf', 'max_model_len': 8192, 'served_model_name': ['codellama/CodeLlama-34b-Instruct-hf'], 'otlp_traces_endpoint': 'http://otel-jan20-codellama-prefill-1:4318/v1/traces', 'max_num_batched_tokens': 64, 'max_num_seqs': 32}
+2026-01-20 06:08:55,217 INFO vllm.platforms: Automatically detected platform cuda.
+2026-01-20 06:08:58,159 INFO vllm.config.model: Resolved architecture: LlamaForCausalLM
+2026-01-20 06:08:58,159 INFO vllm.config.model: Using max model len 8192
+2026-01-20 06:08:58,436 INFO vllm.config.scheduler: Chunked prefill is enabled with max_num_batched_tokens=64.
+2026-01-20 06:09:00,666 INFO vllm.platforms: Automatically detected platform cuda.
+2026-01-20 06:09:03,033 INFO vllm.v1.engine.core: Waiting for init message from front-end.
+2026-01-20 06:09:03,044 INFO vllm.v1.engine.core: Initializing a V1 LLM engine (v0.11.0) with config: model='/model-cache/models/codellama/CodeLlama-34b-Instruct-hf', speculative_config=None, tokenizer='/model-cache/models/codellama/CodeLlama-34b-Instruct-hf', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=8192, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser=''), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint='http://otel-jan20-codellama-prefill-1:4318/v1/traces', collect_detailed_traces=None), seed=0, served_model_name=codellama/CodeLlama-34b-Instruct-hf, enable_prefix_caching=True, chunked_prefill_enabled=True, pooler_config=None, compilation_config={"level":3,"debug_dump_path":"","cache_dir":"","backend":"","custom_ops":[],"splitting_ops":["vllm.unified_attention","vllm.unified_attention_with_output","vllm.mamba_mixer2","vllm.mamba_mixer","vllm.short_conv","vllm.linear_attention","vllm.plamo2_mamba_mixer","vllm.gdn_attention","vllm.sparse_attn_indexer"],"use_inductor":true,"compile_sizes":[],"inductor_compile_config":{"enable_auto_functionalized_v2":false},"inductor_passes":{},"cudagraph_mode":[2,1],"use_cudagraph":true,"cudagraph_num_of_warmups":1,"cudagraph_capture_sizes":[64,56,48,40,32,24,16,8,4,2,1],"cudagraph_copy_inputs":false,"full_cuda_graph":false,"use_inductor_graph_partition":false,"pass_config":{},"max_capture_size":64,"local_cache_dir":null}
+2026-01-20 06:09:04,594 INFO vllm.distributed.parallel_state: rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, TP rank 0, EP rank 0
+2026-01-20 06:09:04,757 INFO vllm.v1.sample.ops.topk_topp_sampler: Using FlashInfer for top-p & top-k sampling.
+2026-01-20 06:09:04,776 INFO vllm.v1.worker.gpu_model_runner: Starting to load model /model-cache/models/codellama/CodeLlama-34b-Instruct-hf...
+2026-01-20 06:09:04,896 INFO vllm.v1.worker.gpu_model_runner: Loading model from scratch...
+2026-01-20 06:09:04,952 INFO vllm.platforms.cuda: Using Flash Attention backend on V1 engine.
+2026-01-20 06:10:04,167 INFO vllm.model_executor.model_loader.default_loader: Loading weights took 59.08 seconds
+2026-01-20 06:10:04,518 INFO vllm.v1.worker.gpu_model_runner: Model loading took 62.8571 GiB and 59.277031 seconds
+2026-01-20 06:10:09,429 INFO vllm.compilation.backends: Using cache directory: /root/.cache/vllm/torch_compile_cache/3357a83840/rank_0_0/backbone for vLLM's torch.compile
+2026-01-20 06:10:09,431 INFO vllm.compilation.backends: Dynamo bytecode transform time: 4.79 s
+2026-01-20 06:10:11,216 INFO vllm.compilation.backends: Cache the graph for dynamic shape for later use
+2026-01-20 06:10:26,007 INFO vllm.compilation.backends: Compiling a graph for dynamic shape takes 16.32 s
+2026-01-20 06:10:29,202 INFO vllm.compilation.monitor: torch.compile takes 21.11 s in total
+2026-01-20 06:10:30,213 INFO vllm.v1.worker.gpu_worker: Available KV cache memory: 8.18 GiB
+2026-01-20 06:10:30,585 INFO vllm.v1.core.kv_cache_utils: GPU KV cache size: 44,640 tokens
+2026-01-20 06:10:30,585 INFO vllm.v1.core.kv_cache_utils: Maximum concurrency for 8,192 tokens per request: 5.45x
+2026-01-20 06:10:32,394 INFO vllm.v1.worker.gpu_model_runner: Graph capturing finished in 2 secs, took 0.20 GiB
+2026-01-20 06:10:32,423 INFO vllm.v1.engine.core: init engine (profile, create kv cache, warmup model) took 27.90 seconds
+2026-01-20 06:10:32,708 INFO vllm.v1.metrics.loggers: Engine 000: vllm cache_config_info with initialization after num_gpu_blocks is: 2790
+2026-01-20 06:10:32,907 INFO vllm.entrypoints.openai.api_server: Supported_tasks: ['generate']
+2026-01-20 06:10:32,908 INFO vllm.entrypoints.openai.api_server: Starting vLLM API server 0 on http://0.0.0.0:8000
+2026-01-20 06:10:32,908 INFO vllm.entrypoints.launcher: Available routes are:
+2026-01-20 06:10:32,908 INFO vllm.entrypoints.launcher: Route: /openapi.json, Methods: GET, HEAD
+2026-01-20 06:10:32,908 INFO vllm.entrypoints.launcher: Route: /docs, Methods: GET, HEAD
+2026-01-20 06:10:32,908 INFO vllm.entrypoints.launcher: Route: /docs/oauth2-redirect, Methods: GET, HEAD
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /redoc, Methods: GET, HEAD
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /health, Methods: GET
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /load, Methods: GET
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /ping, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /ping, Methods: GET
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /tokenize, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /detokenize, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/models, Methods: GET
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /version, Methods: GET
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/responses, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/responses/{response_id}, Methods: GET
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/responses/{response_id}/cancel, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/chat/completions, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/completions, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/embeddings, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /pooling, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /classify, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /score, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/score, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/audio/transcriptions, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/audio/translations, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /rerank, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v1/rerank, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /v2/rerank, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /scale_elastic_ep, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /is_scaling_elastic_ep, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /invocations, Methods: POST
+2026-01-20 06:10:32,909 INFO vllm.entrypoints.launcher: Route: /metrics, Methods: GET
+2026-01-20 06:11:13,161 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 598.2 tokens/s, Avg generation throughput: 6.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.7%, Prefix cache hit rate: 17.1%
+2026-01-20 06:11:23,161 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 1793.3 tokens/s, Avg generation throughput: 18.7 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.7%, Prefix cache hit rate: 30.0%
+2026-01-20 06:11:33,162 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 1632.5 tokens/s, Avg generation throughput: 16.2 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.7%, Prefix cache hit rate: 30.7%
+2026-01-20 06:11:43,162 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2141.4 tokens/s, Avg generation throughput: 17.9 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.8%, Prefix cache hit rate: 31.6%
+2026-01-20 06:11:53,163 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 1836.5 tokens/s, Avg generation throughput: 15.8 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.0%, Prefix cache hit rate: 32.0%
+2026-01-20 06:12:03,163 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 1577.9 tokens/s, Avg generation throughput: 21.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 4.0%, Prefix cache hit rate: 32.4%
+2026-01-20 06:12:13,164 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 1882.1 tokens/s, Avg generation throughput: 20.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.6%, Prefix cache hit rate: 33.1%
+2026-01-20 06:12:23,164 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 1655.0 tokens/s, Avg generation throughput: 15.0 tokens/s, Running: 2 reqs, Waiting: 36 reqs, GPU KV cache usage: 12.0%, Prefix cache hit rate: 31.9%
+2026-01-20 06:12:33,164 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 3496.8 tokens/s, Avg generation throughput: 43.4 tokens/s, Running: 2 reqs, Waiting: 24 reqs, GPU KV cache usage: 9.9%, Prefix cache hit rate: 32.7%
+2026-01-20 06:12:43,165 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 3476.8 tokens/s, Avg generation throughput: 35.0 tokens/s, Running: 2 reqs, Waiting: 12 reqs, GPU KV cache usage: 10.4%, Prefix cache hit rate: 33.1%
+2026-01-20 06:12:53,165 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 3516.3 tokens/s, Avg generation throughput: 29.2 tokens/s, Running: 3 reqs, Waiting: 1 reqs, GPU KV cache usage: 8.5%, Prefix cache hit rate: 33.0%
+2026-01-20 06:13:03,166 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 1807.2 tokens/s, Avg generation throughput: 18.9 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 7.5%, Prefix cache hit rate: 32.6%
+2026-01-20 06:13:13,166 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2559.8 tokens/s, Avg generation throughput: 30.9 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.1%, Prefix cache hit rate: 32.6%
+2026-01-20 06:13:23,167 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2220.9 tokens/s, Avg generation throughput: 28.6 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 8.0%, Prefix cache hit rate: 32.5%
+2026-01-20 06:13:33,167 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2028.9 tokens/s, Avg generation throughput: 19.7 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 7.9%, Prefix cache hit rate: 32.7%
+2026-01-20 06:13:43,167 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2486.7 tokens/s, Avg generation throughput: 22.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.0%, Prefix cache hit rate: 32.8%
+2026-01-20 06:13:53,168 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 1612.2 tokens/s, Avg generation throughput: 16.9 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 33.0%
+2026-01-20 06:14:03,168 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2971.3 tokens/s, Avg generation throughput: 26.2 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 7.9%, Prefix cache hit rate: 32.6%
+2026-01-20 06:14:13,169 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2929.1 tokens/s, Avg generation throughput: 36.1 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 10.0%, Prefix cache hit rate: 32.5%
+2026-01-20 06:14:23,169 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2617.4 tokens/s, Avg generation throughput: 24.4 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 10.8%, Prefix cache hit rate: 32.7%
+2026-01-20 06:14:33,169 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2640.3 tokens/s, Avg generation throughput: 28.4 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 10.3%, Prefix cache hit rate: 32.8%
+2026-01-20 06:14:43,169 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2209.8 tokens/s, Avg generation throughput: 25.5 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.9%, Prefix cache hit rate: 32.7%
+2026-01-20 06:14:53,169 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 2894.3 tokens/s, Avg generation throughput: 28.1 tokens/s, Running: 1 reqs, Waiting: 1 reqs, GPU KV cache usage: 8.7%, Prefix cache hit rate: 32.7%
+2026-01-20 06:15:03,169 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 3520.7 tokens/s, Avg generation throughput: 35.0 tokens/s, Running: 2 reqs, Waiting: 1 reqs, GPU KV cache usage: 9.9%, Prefix cache hit rate: 32.7%
+2026-01-20 06:15:13,169 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 3245.3 tokens/s, Avg generation throughput: 33.7 tokens/s, Running: 1 reqs, Waiting: 1 reqs, GPU KV cache usage: 8.2%, Prefix cache hit rate: 32.7%
+2026-01-20 06:15:23,169 INFO vllm.v1.metrics.loggers: Engine 000: Avg prompt throughput: 1649.4 tokens/s, Avg generation throughput: 12.4 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 32.7%
+2026-01-20 06:15:24,609 INFO vllm.entrypoints.launcher: Shutting down FastAPI HTTP server.
