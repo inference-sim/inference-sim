@@ -1,0 +1,6 @@
+model: meta-llama/Llama-2-7b-hf
+tensor_parallelism: 1
+max_model_len: 4096
+max_num_batched_tokens: 4096
+max_num_seqs: 256
+app: train

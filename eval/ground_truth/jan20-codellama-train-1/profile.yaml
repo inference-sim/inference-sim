@@ -1,0 +1,15 @@
+target: "http://10.129.7.70:8000"
+rate-type: sweep
+max-requests: 25
+rate: 12
+random-seed: 42
+data:
+  prefix_tokens: 0
+  prompt_tokens: 3500
+  prompt_tokens_stdev: 2500
+  prompt_tokens_min: 2
+  prompt_tokens_max: 7168
+  output_tokens: 800
+  output_tokens_stdev: 500
+  output_tokens_min: 1
+  output_tokens_max: 1024
