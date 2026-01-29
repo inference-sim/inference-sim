@@ -15,6 +15,10 @@ defaults:
     GPU: H100
     tensor_parallelism: 8
     vllm_version: vllm/vllm-openai:v0.8.4
+  codellama/codellama-34b-instruct-hf:
+    GPU: H100
+    tensor_parallelism: 1
+    vllm_version: vllm/vllm-openai:v0.8.4
   meta-llama/llama-4-scout-17b-16e-instruct:
     GPU: H100
     tensor_parallelism: 4
@@ -107,6 +111,46 @@ defaults:
     GPU: H100
     tensor_parallelism: 1
     vllm_version: vllm/vllm-openai:v0.10.1.1
+workloads:
+  chatbot:
+    prefix_tokens: 0
+    prompt_tokens: 256
+    prompt_tokens_stdev: 100
+    prompt_tokens_min: 2
+    prompt_tokens_max: 800
+    output_tokens: 256
+    output_tokens_stdev: 100
+    output_tokens_min: 1
+    output_tokens_max: 1024
+  contentgen:
+    prefix_tokens: 0
+    prompt_tokens: 1024
+    prompt_tokens_stdev: 150
+    prompt_tokens_min: 10
+    prompt_tokens_max: 2048
+    output_tokens: 1024
+    output_tokens_stdev: 200
+    output_tokens_min: 10
+    output_tokens_max: 2048
+  summarization:
+    prefix_tokens: 0
+    prompt_tokens: 4096
+    prompt_tokens_stdev: 500
+    prompt_tokens_min: 100
+    prompt_tokens_max: 8192
+    output_tokens: 512
+    output_tokens_stdev: 150
+    output_tokens_min: 10
+    output_tokens_max: 2048
+  multidoc:
+    prompt_tokens: 10240
+    prompt_tokens_stdev: 1200
+    prompt_tokens_min: 500
+    prompt_tokens_max: 20480
+    output_tokens: 1536
+    output_tokens_stdev: 300
+    output_tokens_min: 50
+    output_tokens_max: 4096
 models:
 - GPU: A100-80
   alpha_coeffs:
@@ -149,6 +193,20 @@ models:
   id: ibm-granite/granite-3.1-8b-instruct
   tensor_parallelism: 2
   total_kv_blocks: 105497
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+    - 13450.510995636703
+    - 0.041813767451373045
+    - 0.0 
+  best_loss: 250.012
+  beta_coeffs:
+    - 26595.2781995357
+    - 96.28441960829817
+    - 56.58626882402723
+  id: codellama/codellama-34b-instruct-hf
+  tensor_parallelism: 1
+  total_kv_blocks: 2537
   vllm_version: vllm/vllm-openai:v0.8.4
 - GPU: H100
   alpha_coeffs:
