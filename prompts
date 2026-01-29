@@ -1,0 +1,6 @@
+Analyze the code of inference-sim here with a focus on how it is used and how performance is modeled within BLIS, specifically any explicit or implicit roofline-related assumptions or implementations. Summarize findings concisely in a markdown file named blis.md, emphasizing insights relevant to roofline modeling.
+
+
+research 
+Analyze the two provided papers — https://arxiv.org/pdf/2503.16893 and https://arxiv.org/pdf/2402.16363
+ — extracting key insights relevant to roofline llm inference performance modeling, computational cost, and efficiency, and summarize your findings clearly in a markdown file named research.md.
