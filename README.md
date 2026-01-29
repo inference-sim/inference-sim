@@ -117,7 +117,7 @@ To simulate a wider range of LLM, GPU, TP and vllm version combinations (regardl
   --hardware-config hardware_config.json
 ```
 
-This example assumes that you have the HuggingFace [`config.json`](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/blob/main/config.json) for the LLM saved as `model_configs/llama-3.1-8b-instruct/config.json`. 
+This example assumes that you have the HuggingFace [`config.json`](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/blob/main/config.json) for the LLM saved as `model_configs/llama-3.1-8b-instruct/config.json`. We have provided `config.json` files for a few commonly-used LLMs already under `model_configs/`.
 
 > Note: Currently, we only support H100 and A100-80 GPUs.
 
