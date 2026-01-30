@@ -54,6 +54,7 @@ uv.lock
 .DS_Store
 *.ipynb
 *.pyc
+.claude
 
 analysis_results/
 analysis_results_*/
@@ -62,3 +63,5 @@ results_old/
 .inference-sim-env/
 saturation_regimes.xlsx
 traces.csv
+python_scripts/__pycache__
+vllm/

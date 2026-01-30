@@ -314,7 +314,283 @@ Available optimized layers in `model_executor/layers`:
 
 ---
 
-## 9. Summary: Roofline Modeling Implications
+## 9. Mixed Batch Execution: Detailed Kernel-Level Analysis
+
+### Forward Pass Execution Flow
+
+**Key Finding**: vLLM processes prefill and decode tokens **in a single unified forward pass**, not sequentially.
+
+#### Entry Point: `execute_model()` Method
+
+**File**: `vllm/v1/worker/gpu_model_runner.py:3280-3600`
+
+The execution flow:
+
+1. **Preprocessing** (lines 3304-3355):
+   - Update persistent batch states
+   - Collect all scheduled tokens from scheduler output
+   - Calculate `num_tokens_unpadded` = total tokens across all requests
+   - `max_num_scheduled_tokens` = maximum tokens in any single request
+
+2. **Unified Batch Preparation** (lines 3346-3400):
+```python
+# All tokens (prefill + decode) collected together
+tokens = [scheduler_output.num_scheduled_tokens[i] for i in req_ids]
+num_scheduled_tokens_np = np.array(tokens, dtype=np.int32)
+max_num_scheduled_tokens = int(num_scheduled_tokens_np.max())
+num_tokens_unpadded = scheduler_output.total_num_scheduled_tokens
+```
+
+3. **Single Batch Descriptor** (lines 3372-3379):
+   - One `BatchDescriptor` for entire mixed batch
+   - No separate prefill/decode descriptors
+   - CUDA graph mode determined once for the whole batch
+
+4. **Single Model Forward** (line 3506):
+```python
+model_output = self._model_forward(
+    input_ids=input_ids,
+    positions=positions,
+    intermediate_tensors=intermediate_tensors,
+    inputs_embeds=inputs_embeds,
+    **model_kwargs,
+)
+```
+
+### Token Organization: Variable-Length Sequence Packing
+
+**File**: `vllm/v1/worker/gpu_model_runner.py:1544-1549`
+
+vLLM uses a **flat concatenated tensor** with cumulative indices:
+
+```python
+# Example: 3 requests with [1, 20, 1] tokens (decode, prefill, decode)
+# num_scheduled_tokens: [1, 20, 1]
+# cu_num_tokens (cumsum): [1, 21, 22]
+
+self.query_start_loc.np[0] = 0
+self.query_start_loc.np[1 : num_reqs + 1] = cu_num_tokens  # [0, 1, 21, 22]
+```
+
+**Structure**:
+- All tokens packed into single flat tensor: `[T0, P0...P19, T1]` (total 22 tokens)
+- `query_start_loc` = `[0, 1, 21, 22]` marks boundaries
+- Request 0 (decode): tokens `[0:1]`
+- Request 1 (prefill): tokens `[1:21]`
+- Request 2 (decode): tokens `[21:22]`
+
+This enables **variable-length sequence batching** where:
+- Each request can have different query lengths
+- Prefill requests (many tokens) and decode requests (1 token) coexist
+- No padding required within the packed tensor
+
+### FlashAttention Backend: Single Kernel Launch
+
+**File**: `vllm/v1/attention/backends/flash_attn.py:607-742`
+
+The attention computation uses **one kernel call** for all tokens:
+
+```python
+def forward(self, layer, query, key, value, kv_cache, attn_metadata, ...):
+    # Single FlashAttention kernel processes entire mixed batch
+    flash_attn_varlen_func(
+        q=query[:num_actual_tokens],           # All queries (prefill + decode)
+        k=key_cache,                            # KV cache for all requests
+        v=value_cache,
+        out=output[:num_actual_tokens],
+        cu_seqlens_q=cu_seqlens_q,             # query_start_loc: [0, 1, 21, 22]
+        max_seqlen_q=max_seqlen_q,             # Max query length (e.g., 20)
+        seqused_k=seqused_k,                   # seq_lens: [100, 50, 200] per request
+        max_seqlen_k=max_seqlen_k,             # Max context (e.g., 200)
+        block_table=block_table,               # Paged KV cache block mappings
+        scheduler_metadata=scheduler_metadata,
+        ...
+    )
+```
+
+**Key Parameters**:
+- **`cu_seqlens_q`** (`query_start_loc`): Cumulative query positions `[0, 1, 21, 22]`
+- **`max_seqlen_q`**: Maximum query tokens in any request (20 in example)
+- **`seqused_k`** (`seq_lens`): Per-request total context length `[100, 50, 200]`
+- **`max_seqlen_k`**: Maximum context length across all requests (200)
+
+**No Separate Kernel Launches**:
+- FlashAttention v2/v3 kernel internally handles variable-length sequences
+- Prefill requests with 20 tokens and decode requests with 1 token processed in same kernel
+- Kernel uses `cu_seqlens_q` to identify each request's query range
+
+### Attention Metadata: Unified Structure
+
+**File**: `vllm/v1/attention/backend.py:287-410`
+
+Single `CommonAttentionMetadata` for entire batch:
+
+```python
+class CommonAttentionMetadata:
+    query_start_loc: torch.Tensor      # [0, 1, 21, 22] - cumulative indices
+    seq_lens: torch.Tensor             # [100, 50, 200] - per-request context
+    num_reqs: int                      # 3
+    num_actual_tokens: int             # 22 total tokens
+    max_query_len: int                 # 20 (max query in batch)
+    max_seq_len: int                   # 200 (max context in batch)
+    block_table: torch.Tensor          # Paged KV cache mappings
+    slot_mapping: torch.Tensor         # Token → cache slot mapping
+```
+
+**Characteristics**:
+- Single metadata structure for mixed batch
+- No prefill-specific or decode-specific metadata
+- All requests described by same structure with variable lengths
+
+### Layer-by-Layer Processing
+
+**Critical Observation**: While the forward pass is unified, **each layer processes tokens sequentially**:
+
+```
+Layer 0: Input [T0, P0...P19, T1] → QKV projection → Attention → MLP → Output
+Layer 1: Previous output → QKV projection → Attention → MLP → Output
+...
+Layer N: Previous output → Final projection
+```
+
+**Within Each Layer**:
+1. **QKV Projection**: Single GEMM for all tokens (prefill + decode)
+   - Matrix multiply: `[num_tokens, hidden_dim] @ [hidden_dim, 3*hidden_dim]`
+   - Processes all 22 tokens together
+
+2. **Attention Computation**: Single FlashAttention kernel
+   - Variable-length sequence handling via `cu_seqlens_q`
+   - Prefill tokens attend to their prompt context
+   - Decode tokens attend to full KV cache
+
+3. **Output Projection**: Single GEMM for all tokens
+   - Matrix multiply: `[num_tokens, hidden_dim] @ [hidden_dim, hidden_dim]`
+
+4. **MLP**: Single FFN computation for all tokens
+   - Gate/Up/Down projections on all tokens together
+
+**Memory Access Pattern**:
+- **Prefill requests**: High arithmetic intensity (Q@K^T on large matrices)
+- **Decode requests**: Low arithmetic intensity (single query vector)
+- **Combined**: Heterogeneous workload in same kernel
+
+### Why Sequential Processing May Occur
+
+Despite unified batching, **effective sequential behavior** can occur due to:
+
+#### 1. **Memory Hierarchy Effects**
+
+**L2 Cache Behavior**:
+- Prefill tokens generate large intermediate tensors
+- Decode tokens generate small intermediate tensors
+- L2 cache may not effectively share data between heterogeneous token types
+
+**HBM Access Patterns**:
+- Prefill: Mostly streaming reads/writes (high bandwidth utilization)
+- Decode: Scattered KV cache reads (low bandwidth utilization)
+- Mixed access patterns may serialize at memory controller
+
+#### 2. **Kernel Launch Overhead**
+
+**Per-Layer Operations**:
+- 4-5 kernel launches per layer (QKV, Attn, Proj, Gate, Up, Down)
+- Each kernel has fixed overhead (~5-20μs)
+- For models with 28-48 layers: 112-240 kernel launches per step
+- Overhead: ~0.5-5ms total per forward pass
+
+#### 3. **CUDA Stream Serialization**
+
+**Default Stream Behavior**:
+- Operations in same CUDA stream execute sequentially
+- Mixed batches may not benefit from kernel-level parallelism
+- Ubatching (DBO) can parallelize across streams, but disabled for mixed batches in some configurations
+
+#### 4. **Warp Divergence**
+
+**FlashAttention Kernel Internals**:
+- Warps processing prefill tokens: High compute utilization
+- Warps processing decode tokens: Low compute utilization (more memory waits)
+- Kernel execution time determined by slowest warp
+- Mixed workload may reduce overall efficiency
+
+#### 5. **Block Table Lookup Overhead**
+
+**Paged Attention Memory Access**:
+- Each token needs block table lookup
+- Decode tokens: Lookup full KV cache across many blocks
+- Prefill tokens: Minimal lookups (fresh tokens)
+- Unbalanced lookup overhead adds to decode latency
+
+### CUDA Graph Impact on Mixed Batches
+
+**File**: `vllm/forward_context.py:29-58`
+
+```python
+class BatchDescriptor(NamedTuple):
+    num_tokens: int
+    num_reqs: int | None = None
+    uniform: bool = False      # False for mixed batches
+    has_lora: bool = False
+
+    def relax_for_mixed_batch_cudagraphs(self) -> "BatchDescriptor":
+        # Used for PIECEWISE cudagraphs or mixed prefill-decode
+        return BatchDescriptor(
+            self.num_tokens, num_reqs=None, uniform=False, has_lora=self.has_lora
+        )
+```
+
+**CUDA Graph Modes**:
+1. **FULL**: Captures entire forward pass with fixed dimensions
+   - Requires padding to match graph shape
+   - Not efficient for highly variable mixed batches
+
+2. **PIECEWISE**: Captures individual operations with variable shapes
+   - Better for mixed batches
+   - Still requires shape matching within tolerance
+
+3. **DISABLED**: No graph capture
+   - Full flexibility for variable batches
+   - Higher kernel launch overhead
+
+**Mixed Batch Challenge**:
+- Prefill-heavy: Large token count, few requests
+- Decode-heavy: Small token count, many requests
+- Graph capture requires similar shapes → limited reuse across workload types
+
+### Roofline Implications for Mixed Batches
+
+#### Scenario 1: Prefill-Heavy Batch (e.g., CodeLlama prefillheavy)
+- **Characteristics**: Few large prefills (3000 tokens), minimal decode
+- **Bottleneck**: Compute-bound (large matrix operations)
+- **Time Estimation**: Dominated by prefill compute
+- **Decode Impact**: Minimal (1-2 decode requests negligible)
+
+#### Scenario 2: Decode-Heavy Batch
+- **Characteristics**: Many decode requests (50-100), no prefill
+- **Bottleneck**: Memory-bound (weight loading + KV cache access)
+- **Time Estimation**: Weight loading amortized across batch
+- **Prefill Impact**: None
+
+#### Scenario 3: Mixed Batch (e.g., mid-workload phase)
+- **Characteristics**: 5-10 prefills (500 tokens each), 10-20 decode
+- **Bottleneck**: Both compute (prefill) and memory (decode)
+- **Time Estimation**: **Complex interaction**
+  - If fully overlapped: `max(prefill_time, decode_time)`
+  - If sequential: `prefill_time + decode_time`
+  - Reality: **Partial overlap** due to memory hierarchy effects
+
+**Empirical Finding** (from roofline_step.go testing):
+- Additive model (`prefill_time + decode_time`) gives **better predictions** than fully overlapped model
+- Suggests effective sequential processing through layers
+- Likely due to:
+  1. Layer-by-layer execution (not inter-layer parallelism)
+  2. Memory bandwidth sharing between prefill and decode
+  3. Kernel launch overhead accumulation
+  4. Warp divergence in mixed workloads
+
+---
+
+## 10. Summary: Roofline Modeling Implications
 
 | Aspect | Characteristic | Roofline Implication |
 |--------|----------------|-------------------|
@@ -329,28 +605,89 @@ Available optimized layers in `model_executor/layers`:
 
 ### Key Insights for Performance Modeling
 
-1. **Prefill vs. Decode Split**: The unified scheduler enables simultaneous prefill and decode processing, creating heterogeneous arithmetic intensity within batches.
+1. **Unified Forward Pass with Effective Sequential Execution**: vLLM processes prefill and decode tokens in a single forward pass through the model, but layer-by-layer execution, memory hierarchy effects, and warp divergence create **effectively sequential behavior**. Roofline models should use **additive time estimation** (`prefill_time + decode_time`) rather than full overlap for mixed batches.
 
-2. **Memory-Bound Decode**: Decode phase typically bottlenecked by memory bandwidth due to scattered KV cache accesses. Performance scales with device memory bandwidth, not peak compute.
+2. **Variable-Length Sequence Packing**: Tokens from different requests (prefill with many tokens, decode with 1 token) are packed into a flat tensor using `query_start_loc` cumulative indices. FlashAttention handles variable-length sequences in a single kernel, but heterogeneous workloads reduce kernel efficiency.
 
-3. **Prefill Scalability**: Prefill arithmetic intensity increases with batch size and sequence length, enabling compute utilization up to roofline peak when sufficient tokens are batched.
+3. **Memory-Bound Decode**: Decode phase typically bottlenecked by memory bandwidth due to:
+   - Weight loading (amortized across batch)
+   - Scattered KV cache accesses (per-token block table lookups)
+   - Performance scales with device memory bandwidth, not peak compute
+   - Mixed batches share bandwidth between prefill and decode operations
 
-4. **KV Cache Impact**: Cache size determines maximum batch size and sequence length. Quantization reduces bandwidth pressure but adds compute overhead.
+4. **Prefill Scalability with Batch Size**: Prefill arithmetic intensity increases with:
+   - Total tokens in batch (multiple concurrent prefills)
+   - Sequence length per prefill
+   - Enables compute utilization up to roofline peak when sufficient tokens batched
+   - MFU (Model FLOPs Utilization) should scale with batch characteristics
 
-5. **Partition-Based Efficiency**: 512-token partition strategy in Paged Attention V2 balances shared memory occupancy with register pressure, affecting achieved bandwidth.
+5. **Kernel Launch Overhead**: Each layer requires 4-5 kernel launches (QKV, Attn, Proj, FFN):
+   - 28-layer model: ~112 kernel launches per step
+   - 48-layer model: ~240 kernel launches per step
+   - Overhead: ~0.5-5ms total per forward pass
+   - CUDA graph capture amortizes overhead but requires shape consistency
 
-6. **Prefix Caching Trade-off**: Reused prefixes reduce computation but add hashing and lookup overhead. Net benefit depends on prefix reuse frequency.
+6. **KV Cache Impact**:
+   - Cache size determines maximum batch size and sequence length
+   - Quantization (FP8) reduces bandwidth pressure by 50% but adds dequantization compute overhead
+   - Block table lookups add latency for long-context decode
+   - Paged memory enables sharing but increases memory access indirection
 
-7. **CUDA Graph Overhead**: Graph capture amortization depends on batch consistency and replay frequency. Highly variable batches may reduce graph efficiency.
+7. **Partition-Based Efficiency**: 512-token partition strategy in Paged Attention V2:
+   - Balances shared memory occupancy with register pressure
+   - Partition-based reduction may serialize attention computation
+   - Affects achieved bandwidth for very long contexts
+
+8. **Prefix Caching Trade-off**:
+   - Reused prefixes reduce computation (eliminate redundant prefill)
+   - Adds hashing and lookup overhead
+   - Net benefit depends on prefix reuse frequency
+   - Cache hit enables chunked prefill to start from cached position
+
+9. **Mixed Batch Complexity**:
+   - Prefill-heavy workloads: Compute-bound, high MFU achievable
+   - Decode-heavy workloads: Memory-bound, low MFU typical
+   - Mixed workloads: Heterogeneous arithmetic intensity creates kernel inefficiency
+   - **Time estimation**: Additive model more accurate than overlap model
 
 ---
 
 ## References
 
-- vLLM GitHub: https://github.com/vllm-project/vllm
-- Key Files:
-  - `vllm/v1/engine/core.py`: Main execution loop
-  - `vllm/v1/engine/gpu_model_runner.py`: GPU execution
-  - `vllm/v1/scheduler.py`: Scheduling logic
-  - `csrc/attention.cu`, `csrc/cache_kernels.cu`: GPU kernels
-  - `vllm/model_executor/layers/attention.py`: Attention abstractions
+### vLLM GitHub
+https://github.com/vllm-project/vllm
+
+### Key Files Analyzed for Roofline Modeling
+
+**Execution and Scheduling**:
+- `vllm/v1/engine/core.py`: Main execution loop and orchestration
+- `vllm/v1/worker/gpu_model_runner.py`: GPU model runner with `execute_model()` method
+  - Lines 3280-3600: Mixed batch preparation and forward pass
+  - Lines 1544-1549: Token organization using `query_start_loc`
+  - Lines 3372-3379: Batch descriptor and CUDA graph mode determination
+- `vllm/v1/scheduler.py`: Token-based unified scheduling logic
+
+**Attention Implementation**:
+- `vllm/v1/attention/backends/flash_attn.py`: FlashAttention v2/v3 backend
+  - Lines 607-742: Forward method with single kernel launch
+  - Lines 719-742: `flash_attn_varlen_func()` call with variable-length sequences
+- `vllm/v1/attention/backend.py`: Attention backend abstraction
+  - Lines 287-410: `CommonAttentionMetadata` structure for mixed batches
+- `vllm/forward_context.py`: Batch descriptor for CUDA graph handling
+  - Lines 29-58: `BatchDescriptor` with mixed batch support
+
+**GPU Kernels**:
+- `csrc/attention.cu`: CUDA attention kernels (FlashAttention integration)
+- `csrc/cache_kernels.cu`: KV cache management kernels
+  - Swap, copy, reshape operations
+  - FP8 quantization kernels
+
+**Model Layers**:
+- `vllm/model_executor/layers/attention.py`: Attention layer abstractions
+- `vllm/model_executor/layers/rotary_embedding.py`: RoPE position encoding
+- `vllm/model_executor/layers/fused_moe`: Mixture-of-experts kernels
+
+### Research Papers Referenced
+- FlashAttention v2: Dao et al., "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning"
+- Paged Attention: Kwon et al., "Efficient Memory Management for Large Language Model Serving with PagedAttention"
+- vLLM System: Kwon et al., "Efficient Memory Management for Large Language Model Serving with PagedAttention" (MLSys 2023)
