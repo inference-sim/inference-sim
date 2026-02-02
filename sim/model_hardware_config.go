@@ -30,6 +30,16 @@ type HardwareCalib struct {
 	MfuPrefill       float64 `json:"mfuPrefill"`
 	MfuDecode        float64 `json:"mfuDecode"`
 	AllReduceLatency float64 `json:"allReduceLatency"`
+
+	// Roofline calibration factors
+	TpScalingExponent          float64 `json:"tpScalingExponent"`          // Exponent for sublinear TP scaling (prefill compute)
+	MfuPrefillMultiplier       float64 `json:"mfuPrefillMultiplier"`       // Multiplier on base MFU for prefill
+	MfuDecodeMultiplier        float64 `json:"mfuDecodeMultiplier"`        // Multiplier on base MFU for decode
+	PrefillBwFactor            float64 `json:"prefillBwFactor"`            // Bandwidth reduction factor for prefill
+	DecodeBwFactor             float64 `json:"decodeBwFactor"`             // Bandwidth reduction factor for decode
+	VectorPeakFraction         float64 `json:"vectorPeakFraction"`         // Non-tensor core ops efficiency
+	PrefillOverheadMicros      float64 `json:"prefillOverheadMicros"`      // Per prefill request overhead (pure prefill)
+	MixedPrefillOverheadMicros float64 `json:"mixedPrefillOverheadMicros"` // Per prefill request overhead (mixed batch)
 }
 
 // HFConfig represents a flexible JSON object with dynamic fields.

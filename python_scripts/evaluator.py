@@ -236,14 +236,14 @@ class BLISEvaluator:
             experiment: Experiment configuration from ground truth
 
         Returns:
-            Experiment evaluation with per-QPS results and aggregated percentage errors
+            Experiment evaluation with per-QPS results and mean percentage errors
         """
         exp_name = experiment["experiment_name"]
 
         qps_evaluations = []
 
-        # Initialize sum accumulator for percentage errors only
-        sum_percentage_errors = {
+        # Initialize accumulator for percentage errors
+        total_percentage_errors = {
             "ttft_mean_ms": 0.0,
             "ttft_p90_ms": 0.0,
             "itl_mean_ms": 0.0,
@@ -258,20 +258,27 @@ class BLISEvaluator:
                 qps_evaluations.append(qps_result)
 
                 # Accumulate percentage errors
-                for metric in sum_percentage_errors.keys():
-                    sum_percentage_errors[metric] += qps_result["errors"][metric]["percentage"]
+                for metric in total_percentage_errors.keys():
+                    total_percentage_errors[metric] += qps_result["errors"][metric]["percentage"]
 
             except Exception as e:
                 if self.verbose:
                     print(f"  ERROR: Failed to evaluate QPS {qps_sweep['qps']}: {e}")
                 continue
 
+        # Calculate mean percentage errors
+        num_qps = len(qps_evaluations)
+        mean_percentage_errors = {
+            metric: total / num_qps if num_qps > 0 else 0.0
+            for metric, total in total_percentage_errors.items()
+        }
+
         result = {
             "experiment_name": exp_name,
             "model": experiment["model"],
             "app_type": experiment["vllm_config"]["app"],
-            "num_qps_points": len(qps_evaluations),
-            "sum_percentage_errors": sum_percentage_errors
+            "num_qps_points": num_qps,
+            "mean_percentage_errors": mean_percentage_errors
         }
 
         return result
@@ -297,8 +304,10 @@ class BLISEvaluator:
 
         # Aggregate across all experiments
         total_qps_points = sum(exp["num_qps_points"] for exp in all_experiment_results)
+        num_experiments = len(all_experiment_results)
 
-        sum_percentage_errors = {
+        # Calculate overall mean by averaging experiment means
+        mean_percentage_errors = {
             "ttft_mean_ms": 0.0,
             "ttft_p90_ms": 0.0,
             "itl_mean_ms": 0.0,
@@ -310,9 +319,9 @@ class BLISEvaluator:
         by_workload = {"train": [], "prefill": []}
 
         for exp_result in all_experiment_results:
-            # Add to overall sum
-            for metric in sum_percentage_errors.keys():
-                sum_percentage_errors[metric] += exp_result["sum_percentage_errors"][metric]
+            # Add to overall mean accumulator
+            for metric in mean_percentage_errors.keys():
+                mean_percentage_errors[metric] += exp_result["mean_percentage_errors"][metric]
 
             # Categorize by workload type
             app_type = exp_result["app_type"]
@@ -320,6 +329,13 @@ class BLISEvaluator:
                 by_workload["train"].append(exp_result)
             else:
                 by_workload["prefill"].append(exp_result)
+
+        # Compute overall mean
+        if num_experiments > 0:
+            mean_percentage_errors = {
+                metric: total / num_experiments
+                for metric, total in mean_percentage_errors.items()
+            }
 
         # Aggregate by model
         by_model = {"codellama": [], "llama-2": []}
@@ -330,32 +346,34 @@ class BLISEvaluator:
             elif "llama" in model_name:
                 by_model["llama-2"].append(exp_result)
 
-        # Compute aggregations for workload types
+        # Compute aggregations for workload types (mean of means)
         by_workload_agg = {}
         for workload_type, experiments in by_workload.items():
             if experiments:
-                agg_pct = {metric: sum(e["sum_percentage_errors"][metric] for e in experiments)
-                          for metric in sum_percentage_errors.keys()}
+                num_exp = len(experiments)
+                agg_pct = {metric: sum(e["mean_percentage_errors"][metric] for e in experiments) / num_exp
+                          for metric in mean_percentage_errors.keys()}
                 by_workload_agg[workload_type] = {
-                    "sum_percentage_errors": agg_pct
+                    "mean_percentage_errors": agg_pct
                 }
 
-        # Compute aggregations for model types
+        # Compute aggregations for model types (mean of means)
         by_model_agg = {}
         for model_type, experiments in by_model.items():
             if experiments:
-                agg_pct = {metric: sum(e["sum_percentage_errors"][metric] for e in experiments)
-                          for metric in sum_percentage_errors.keys()}
+                num_exp = len(experiments)
+                agg_pct = {metric: sum(e["mean_percentage_errors"][metric] for e in experiments) / num_exp
+                          for metric in mean_percentage_errors.keys()}
                 by_model_agg[model_type] = {
-                    "sum_percentage_errors": agg_pct
+                    "mean_percentage_errors": agg_pct
                 }
 
         # Build final result
         evaluation_result = {
             "evaluation_summary": {
-                "total_experiments": len(all_experiment_results),
+                "total_experiments": num_experiments,
                 "total_qps_points": total_qps_points,
-                "sum_percentage_errors": sum_percentage_errors,
+                "mean_percentage_errors": mean_percentage_errors,
                 "by_workload_type": by_workload_agg,
                 "by_model": by_model_agg
             },
@@ -372,13 +390,13 @@ class BLISEvaluator:
             results: Evaluation results dict
         """
         print("\n" + "=" * 80)
-        print("EVALUATION RESULTS - Sum of % Errors")
+        print("EVALUATION RESULTS - Mean % Error across QPS points")
         print("=" * 80)
 
         # Per-experiment results
         for exp in results["experiments"]:
             print(f"\n{exp['experiment_name']}:")
-            for metric, error in exp["sum_percentage_errors"].items():
+            for metric, error in exp["mean_percentage_errors"].items():
                 print(f"  {metric:20s}: {error:8.2f}%")
 
         print("\n" + "=" * 80)
