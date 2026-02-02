@@ -159,7 +159,12 @@ func rooflineStepTime(_ string, modelConfig ModelConfig, hwConfig HardwareCalib,
 	// TP scaling efficiency - actual speedup is sublinear due to communication overhead
 	// Empirical: TP=2 gives 1.36x speedup, TP=4 gives 1.84x speedup (compute-bound prefill)
 	effectiveTpPrefill := math.Pow(tpFactor, hwConfig.TpScalingExponent)
-	effectiveTpDecode := tpFactor // Decode is memory-bound, scales linearly with TP
+	// Decode TP scaling - memory-bound but with communication overhead at higher TP
+	decodeTpExp := hwConfig.DecodeTpScalingExponent
+	if decodeTpExp == 0 {
+		decodeTpExp = 1.0 // Default to linear scaling if not set
+	}
+	effectiveTpDecode := math.Pow(tpFactor, decodeTpExp)
 
 	var prefillComputeS, prefillMemoryS float64
 	var decodeComputeS, decodeMemoryS float64
@@ -203,16 +208,16 @@ func rooflineStepTime(_ string, modelConfig ModelConfig, hwConfig HardwareCalib,
 
 		for _, req := range stepConfig.DecodeRequests {
 			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
-			// Decode is memory-bound, scales linearly with TP
+			// Decode TP scaling - applies to both compute and memory
 			dGemmFlops += f["gemm_ops"] / effectiveTpDecode
 			dVectorFlops += f["sram_ops"] / effectiveTpDecode
 
 			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
-			dDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
+			dDynamicBytes += (m["total"] - m["model_weights"]) / effectiveTpDecode
 		}
 
 		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-		dWeightBytes := baseMem["model_weights"] / tpFactor
+		dWeightBytes := baseMem["model_weights"] / effectiveTpDecode
 
 		// Unified MFU for decode across all batch sizes
 		adjustedDecodeMFU := hwConfig.MfuDecode * hwConfig.MfuDecodeMultiplier

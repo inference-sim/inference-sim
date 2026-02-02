@@ -34,6 +34,7 @@ type HardwareCalib struct {
 
 	// Roofline calibration factors
 	TpScalingExponent          float64 `json:"tpScalingExponent"`          // Exponent for sublinear TP scaling (prefill compute)
+	DecodeTpScalingExponent    float64 `json:"decodeTpScalingExponent"`    // Exponent for TP scaling (decode memory-bound)
 	MfuPrefillMultiplier       float64 `json:"mfuPrefillMultiplier"`       // Multiplier on base MFU for prefill
 	MfuDecodeMultiplier        float64 `json:"mfuDecodeMultiplier"`        // Multiplier on base MFU for decode
 	PrefillBwFactor            float64 `json:"prefillBwFactor"`            // Bandwidth reduction factor for prefill
