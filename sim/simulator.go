@@ -206,7 +206,12 @@ func (sim *Simulator) Run() {
 			break
 		}
 	}
-	sim.GlobalMetrics.SimEndedTime = min(sim.Clock, sim.Horizon)
+	endTime := min(sim.Clock, sim.Horizon)
+	sim.GlobalMetrics.SimEndedTime = endTime
+	// Also set SimEndedTime for each replica's metrics
+	for i := range sim.Replicas {
+		sim.Replicas[i].Metrics.SimEndedTime = endTime
+	}
 	logrus.Infof("[tick %07d] Simulation ended", sim.Clock)
 }
 
