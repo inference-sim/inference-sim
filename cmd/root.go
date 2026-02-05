@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -202,7 +204,7 @@ var runCmd = &cobra.Command{
 
 		// Print and save results
 		if numReplicas > 1 {
-			// Print per-replica metrics
+			// Print per-replica metrics to stdout
 			for rIdx := range s.Replicas {
 				replica := &s.Replicas[rIdx]
 				idx := rIdx
@@ -243,8 +245,30 @@ var runCmd = &cobra.Command{
 				}
 			}
 
-			// Print global aggregated metrics
-			s.GlobalMetrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath, nil)
+			// Print global aggregated metrics to stdout
+			s.GlobalMetrics.SaveResults(s.Horizon, totalKVBlocks, startTime, "", nil)
+
+			// Save to file if requested
+			if resultsPath != "" {
+				multiOutput := sim.MultiReplicaMetricsOutput{
+					ReplicaMetrics: make([]sim.MetricsOutput, numReplicas),
+					GlobalMetrics:  s.GlobalMetrics.BuildMetricsOutput(startTime, true),
+				}
+
+				// Build metrics output for each replica
+				for rIdx := range s.Replicas {
+					multiOutput.ReplicaMetrics[rIdx] = s.Replicas[rIdx].Metrics.BuildMetricsOutput(startTime, false)
+				}
+
+				// Write to file
+				data, _ := json.MarshalIndent(multiOutput, "", "  ")
+				writeErr := os.WriteFile(resultsPath, data, 0644)
+				if writeErr != nil {
+					fmt.Printf("Error writing JSON file: %v\n", writeErr)
+				} else {
+					fmt.Printf("\nMetrics written to: %s\n", resultsPath)
+				}
+			}
 		} else {
 			s.Replicas[0].Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath, nil)
 		}

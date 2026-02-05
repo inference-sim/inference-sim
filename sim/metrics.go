@@ -54,7 +54,8 @@ func NewMetrics() *Metrics {
 	}
 }
 
-func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.Time, outputFilePath string, replicaIndex *int) {
+// BuildMetricsOutput creates a MetricsOutput struct without printing or saving
+func (m *Metrics) BuildMetricsOutput(startTime time.Time, includeRequests bool) MetricsOutput {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
 	// Create an instance of our output struct to populate
@@ -108,8 +109,35 @@ func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.T
 
 		output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
 		output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
+	}
 
-		// Print to Stdout
+	// Add request-level metrics if requested
+	if includeRequests {
+		for id, ttft := range m.RequestTTFTs {
+			detail := m.Requests[id]
+			detail.TTFT = ttft / 1e3
+			detail.E2E = m.RequestE2Es[id] / 1e3
+			detail.ITL = m.RequestITLs[id]
+			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id])
+			output.Requests = append(output.Requests, detail)
+		}
+
+		// Sort by ArrivedAt (Ascending)
+		sort.Slice(output.Requests, func(i, j int) bool {
+			return output.Requests[i].ArrivedAt < output.Requests[j].ArrivedAt
+		})
+	}
+
+	return output
+}
+
+// SaveResults prints metrics to stdout and optionally saves to a file
+func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.Time, outputFilePath string, replicaIndex *int) {
+	// Build the metrics output
+	output := m.BuildMetricsOutput(startTime, outputFilePath != "")
+
+	// Print to Stdout
+	if m.CompletedRequests > 0 {
 		if replicaIndex != nil {
 			fmt.Printf("=== Simulation Metrics (Replica %d) ===\n", *replicaIndex)
 		} else {
@@ -123,25 +151,9 @@ func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.T
 		fmt.Println(string(data))
 	}
 
-	// --- Write to JSON File ---
+	// Write to JSON File
 	if outputFilePath != "" {
-		// request-level metrics for detailed output in file
-		for id, ttft := range m.RequestTTFTs {
-			detail := m.Requests[id]
-			detail.TTFT = ttft / 1e3
-			detail.E2E = m.RequestE2Es[id] / 1e3
-			detail.ITL = m.RequestITLs[id]
-			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id])
-			output.Requests = append(output.Requests, detail)
-		}
-
-		// 2. Sort by ArrivedAt (Ascending)
-		sort.Slice(output.Requests, func(i, j int) bool {
-			return output.Requests[i].ArrivedAt < output.Requests[j].ArrivedAt
-		})
-
 		data, _ := json.MarshalIndent(output, "", "  ")
-
 		writeErr := os.WriteFile(outputFilePath, data, 0644)
 		if writeErr != nil {
 			fmt.Printf("Error writing JSON file: %v\n", writeErr)

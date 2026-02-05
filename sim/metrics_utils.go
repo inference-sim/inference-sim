@@ -60,6 +60,12 @@ type MetricsOutput struct {
 	Requests              []RequestMetrics `json:"requests,omitempty"`
 }
 
+// MultiReplicaMetricsOutput defines the JSON structure for multi-replica simulations
+type MultiReplicaMetricsOutput struct {
+	ReplicaMetrics []MetricsOutput `json:"replica_metrics"`
+	GlobalMetrics  MetricsOutput   `json:"global_metrics"`
+}
+
 // CalculatePercentile is a util function that calculates the p-th percentile of a data list
 // return values are in milliseconds
 func CalculatePercentile[T IntOrFloat64](data []T, p float64) float64 {
