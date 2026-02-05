@@ -548,7 +548,7 @@ func (sim *Simulator) Step(now int64, rIndex int) {
 		sim.Replicas[rIndex].RunningBatch.Requests = remaining
 		// estimate queue overhead from LR (sim.features)
 		//
-		pbe := StepEvent{time: now + currStepAdvance}
+		pbe := StepEvent{time: now + currStepAdvance, replicaIndex: rIndex}
 		sim.Schedule(&pbe)
 		sim.Replicas[rIndex].StepEvent = &pbe
 	} else {
