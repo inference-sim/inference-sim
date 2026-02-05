@@ -449,10 +449,10 @@ func (sim *Simulator) Step(now int64, rIndex int) {
 	sim.makeRunningBatch(now, rIndex)
 
 	// save waitQ length for analysis
-	sim.GlobalMetrics.NumWaitQRequests = append(sim.GlobalMetrics.NumWaitQRequests, len(sim.Replicas[rIndex].WaitQ.queue))
+	sim.Replicas[rIndex].Metrics.NumWaitQRequests = append(sim.Replicas[rIndex].Metrics.NumWaitQRequests, len(sim.Replicas[rIndex].WaitQ.queue))
 
 	// save runningBatch length for analysis
-	sim.GlobalMetrics.NumRunningBatchRequests = append(sim.GlobalMetrics.NumRunningBatchRequests, len(sim.Replicas[rIndex].RunningBatch.Requests))
+	sim.Replicas[rIndex].Metrics.NumRunningBatchRequests = append(sim.Replicas[rIndex].Metrics.NumRunningBatchRequests, len(sim.Replicas[rIndex].RunningBatch.Requests))
 
 	// Estimate step times, either based on runningBatch state or on Roofline model
 	var currStepAdvance int64
