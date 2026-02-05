@@ -29,7 +29,7 @@ func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
 	// Get replica assignment from load balancer
-	rIndex := sim.LoadBalancer.GetReplica(e)
+	rIndex := sim.LoadBalancer.GetReplica(e, sim.Replicas)
 	e.replicaIndex = rIndex
 
 	// Trigger queued event with processing delay
