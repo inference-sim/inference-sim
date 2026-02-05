@@ -54,7 +54,7 @@ func NewMetrics() *Metrics {
 	}
 }
 
-func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.Time, outputFilePath string) {
+func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.Time, outputFilePath string, replicaIndex *int) {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
 	// Create an instance of our output struct to populate
@@ -110,7 +110,11 @@ func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.T
 		output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
 
 		// Print to Stdout
-		fmt.Println("=== Simulation Metrics ===")
+		if replicaIndex != nil {
+			fmt.Printf("=== Simulation Metrics (Replica %d) ===\n", *replicaIndex)
+		} else {
+			fmt.Println("=== Simulation Metrics ===")
+		}
 		data, err := json.MarshalIndent(output, "", "  ")
 		if err != nil {
 			fmt.Println("Error marshalling:", err)

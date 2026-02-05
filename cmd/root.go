@@ -204,11 +204,12 @@ var runCmd = &cobra.Command{
 		if numReplicas > 1 {
 			for rIdx := range s.Replicas {
 				replica := &s.Replicas[rIdx]
-				replica.Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, "")
+				idx := rIdx
+				replica.Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, "", &idx)
 			}
-			s.GlobalMetrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath)
+			s.GlobalMetrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath, nil)
 		} else {
-			s.Replicas[0].Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath)
+			s.Replicas[0].Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath, nil)
 		}
 
 		logrus.Info("Simulation complete.")
