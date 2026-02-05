@@ -59,6 +59,15 @@ func (e *QueuedEvent) Timestamp() int64 {
 func (e *QueuedEvent) Execute(sim *Simulator) {
 	logrus.Infof("<< Queued: %s at %d ticks", e.Request.ID, e.time)
 
+	// Set which replica will process this request
+	e.Request.ReplicaIndex = e.replicaIndex
+
+	// Update the replica index in metrics
+	if reqMetrics, exists := sim.GlobalMetrics.Requests[e.Request.ID]; exists {
+		reqMetrics.ReplicaIndex = e.replicaIndex
+		sim.GlobalMetrics.Requests[e.Request.ID] = reqMetrics
+	}
+
 	// Enqueue the arriving request into the waiting queue
 	sim.EnqueueRequest(e.Request, e.replicaIndex)
 
