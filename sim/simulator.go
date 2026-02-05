@@ -449,6 +449,18 @@ func (sim *Simulator) Step(now int64, rIndex int) {
 	// save runningBatch length for analysis
 	sim.Replicas[rIndex].Metrics.NumRunningBatchRequests = append(sim.Replicas[rIndex].Metrics.NumRunningBatchRequests, len(sim.Replicas[rIndex].RunningBatch.Requests))
 
+	// aggregate across all replicas for global metrics
+	totalWaiting := 0
+	totalRunning := 0
+	for i := range sim.Replicas {
+		totalWaiting += len(sim.Replicas[i].WaitQ.queue)
+		if sim.Replicas[i].RunningBatch != nil {
+			totalRunning += len(sim.Replicas[i].RunningBatch.Requests)
+		}
+	}
+	sim.GlobalMetrics.NumWaitQRequests = append(sim.GlobalMetrics.NumWaitQRequests, totalWaiting)
+	sim.GlobalMetrics.NumRunningBatchRequests = append(sim.GlobalMetrics.NumRunningBatchRequests, totalRunning)
+
 	// Estimate step times, either based on runningBatch state or on Roofline model
 	var currStepAdvance int64
 	if sim.Roofline {
