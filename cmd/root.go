@@ -202,11 +202,48 @@ var runCmd = &cobra.Command{
 
 		// Print and save results
 		if numReplicas > 1 {
+			// Print per-replica metrics
 			for rIdx := range s.Replicas {
 				replica := &s.Replicas[rIdx]
 				idx := rIdx
 				replica.Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, "", &idx)
 			}
+
+			// Aggregate metrics from all replicas into GlobalMetrics
+			for rIdx := range s.Replicas {
+				replica := &s.Replicas[rIdx]
+				s.GlobalMetrics.CompletedRequests += replica.Metrics.CompletedRequests
+				s.GlobalMetrics.TotalInputTokens += replica.Metrics.TotalInputTokens
+				s.GlobalMetrics.TotalOutputTokens += replica.Metrics.TotalOutputTokens
+				s.GlobalMetrics.TTFTSum += replica.Metrics.TTFTSum
+
+				// Merge per-request metrics
+				for reqID, ttft := range replica.Metrics.RequestTTFTs {
+					s.GlobalMetrics.RequestTTFTs[reqID] = ttft
+				}
+				for reqID, e2e := range replica.Metrics.RequestE2Es {
+					s.GlobalMetrics.RequestE2Es[reqID] = e2e
+				}
+				for reqID, itl := range replica.Metrics.RequestITLs {
+					s.GlobalMetrics.RequestITLs[reqID] = itl
+				}
+				for reqID, delay := range replica.Metrics.RequestSchedulingDelays {
+					s.GlobalMetrics.RequestSchedulingDelays[reqID] = delay
+				}
+				for reqID, req := range replica.Metrics.Requests {
+					s.GlobalMetrics.Requests[reqID] = req
+				}
+
+				// Aggregate ITLs
+				s.GlobalMetrics.AllITLs = append(s.GlobalMetrics.AllITLs, replica.Metrics.AllITLs...)
+
+				// Track peak KV usage across all replicas
+				if replica.Metrics.PeakKVBlocksUsed > s.GlobalMetrics.PeakKVBlocksUsed {
+					s.GlobalMetrics.PeakKVBlocksUsed = replica.Metrics.PeakKVBlocksUsed
+				}
+			}
+
+			// Print global aggregated metrics
 			s.GlobalMetrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath, nil)
 		} else {
 			s.Replicas[0].Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath, nil)
