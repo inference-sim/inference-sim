@@ -270,7 +270,7 @@ func init() {
 	runCmd.Flags().IntVar(&queuingDelay, "queuing-delay", 0, "Delay between server hit and queued per request")
 	runCmd.Flags().IntVar(&finishedDelay, "finished-delay", 0, "Delay between finished and server left per request")
 	runCmd.Flags().IntVar(&numReplicas, "num-replicas", 1, "Number of replicas")
-	runCmd.Flags().StringVar(&loadBalancerType, "load-balancer-type", "random", "Load balancer policy (default and only is random for now)")
+	runCmd.Flags().StringVar(&loadBalancerType, "load-balancer-type", "random", "Load balancer policy (default is random)")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

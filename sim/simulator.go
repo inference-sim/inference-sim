@@ -154,12 +154,7 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		TracesWorkloadFilePath:    tracesWorkloadFilePath,
 	}
 
-	switch loadBalancerType {
-	case "random":
-		s.LoadBalancer = NewRandomLoadBalancer(s.NumReplicas, 0)
-	default:
-		logrus.Panic("unknown load balancer type")
-	}
+	s.LoadBalancer = NewLoadBalancer(loadBalancerType, s.NumReplicas, seed)
 
 	replicas := make([]Replica, s.NumReplicas)
 	for i := range replicas {
