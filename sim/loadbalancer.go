@@ -19,6 +19,8 @@ func NewLoadBalancer(lbType string, numReplicas int, seed int64) LoadBalancer {
 	switch lbType {
 	case "random":
 		return NewRandomLoadBalancer(numReplicas, seed)
+	case "prefix-aware":
+		return NewPrefixAwareLoadBalancer(numReplicas, seed)
 	default:
 		logrus.Panicf("unknown load balancer type: %s", lbType)
 		return nil
@@ -27,5 +29,5 @@ func NewLoadBalancer(lbType string, numReplicas int, seed int64) LoadBalancer {
 
 // GetAvailableLoadBalancers returns list of supported load balancer types
 func GetAvailableLoadBalancers() []string {
-	return []string{"random"}
+	return []string{"random", "prefix-aware"}
 }
