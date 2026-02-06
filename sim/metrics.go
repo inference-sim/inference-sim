@@ -133,17 +133,15 @@ func (m *Metrics) BuildMetricsOutput(startTime time.Time, includeRequests bool) 
 
 // SaveResults prints metrics to stdout and optionally saves to a file
 func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.Time, outputFilePath string, replicaIndex *int) {
-	// Build the metrics output
-	output := m.BuildMetricsOutput(startTime, outputFilePath != "")
-
-	// Print to Stdout
+	// Print to Stdout (summary only, no per-request details)
 	if m.CompletedRequests > 0 {
 		if replicaIndex != nil {
 			fmt.Printf("=== Simulation Metrics (Replica %d) ===\n", *replicaIndex)
 		} else {
 			fmt.Println("=== Simulation Metrics (Global) ===")
 		}
-		data, err := json.MarshalIndent(output, "", "  ")
+		outputSummary := m.BuildMetricsOutput(startTime, false)
+		data, err := json.MarshalIndent(outputSummary, "", "  ")
 		if err != nil {
 			fmt.Println("Error marshalling:", err)
 			return
@@ -151,9 +149,10 @@ func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.T
 		fmt.Println(string(data))
 	}
 
-	// Write to JSON File
+	// Write to JSON File (with per-request details)
 	if outputFilePath != "" {
-		data, _ := json.MarshalIndent(output, "", "  ")
+		outputFull := m.BuildMetricsOutput(startTime, true)
+		data, _ := json.MarshalIndent(outputFull, "", "  ")
 		writeErr := os.WriteFile(outputFilePath, data, 0644)
 		if writeErr != nil {
 			fmt.Printf("Error writing JSON file: %v\n", writeErr)
