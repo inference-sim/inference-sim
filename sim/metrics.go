@@ -138,7 +138,7 @@ func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.T
 		if replicaIndex != nil {
 			fmt.Printf("=== Simulation Metrics (Replica %d) ===\n", *replicaIndex)
 		} else {
-			fmt.Println("=== Simulation Metrics (Global) ===")
+			fmt.Println("=== Simulation Metrics ===")
 		}
 		outputSummary := m.BuildMetricsOutput(startTime, false)
 		data, err := json.MarshalIndent(outputSummary, "", "  ")
