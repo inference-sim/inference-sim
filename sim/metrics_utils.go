@@ -30,6 +30,7 @@ type RequestMetrics struct {
 	ITL              float64 `json:"itl_ms"`
 	E2E              float64 `json:"e2e_ms"`
 	SchedulingDelay  float64 `json:"scheduling_delay_ms"`
+	ReplicaIndex     int     `json:"replica_index"`
 }
 
 // MetricsOutput defines the JSON structure for the saved metrics
@@ -57,6 +58,12 @@ type MetricsOutput struct {
 	ITLP99Ms              float64          `json:"itl_p99_ms"`
 	SchedulingDelayP99Ms  float64          `json:"scheduling_delay_p99_ms"`
 	Requests              []RequestMetrics `json:"requests,omitempty"`
+}
+
+// MultiReplicaMetricsOutput defines the JSON structure for multi-replica simulations
+type MultiReplicaMetricsOutput struct {
+	ReplicaMetrics []MetricsOutput `json:"replica_metrics"`
+	GlobalMetrics  MetricsOutput   `json:"global_metrics"`
 }
 
 // CalculatePercentile is a util function that calculates the p-th percentile of a data list

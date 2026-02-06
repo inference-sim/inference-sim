@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -52,6 +54,12 @@ var (
 
 	// results file path
 	resultsPath string // File to save BLIS results to
+
+	// CLI flags for load balancer
+	queuingDelay     int    // Delay between server hit and queued per request
+	finishedDelay    int    // Delay between finished and server left per request
+	numReplicas      int    // Number of replicas
+	loadBalancerType string // Load balancer policy - random is the only type supported for now
 )
 
 // rootCmd is the base command for the CLI
@@ -189,11 +197,81 @@ var runCmd = &cobra.Command{
 			tensorParallelism,
 			roofline,
 			tracesWorkloadFilePath,
+			numReplicas,
+			loadBalancerType,
 		)
 		s.Run()
 
 		// Print and save results
-		s.Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath)
+		if numReplicas > 1 {
+			// Print per-replica metrics to stdout
+			for rIdx := range s.Replicas {
+				replica := &s.Replicas[rIdx]
+				idx := rIdx
+				replica.Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, "", &idx)
+			}
+
+			// Aggregate metrics from all replicas into GlobalMetrics
+			for rIdx := range s.Replicas {
+				replica := &s.Replicas[rIdx]
+				s.GlobalMetrics.CompletedRequests += replica.Metrics.CompletedRequests
+				s.GlobalMetrics.TotalInputTokens += replica.Metrics.TotalInputTokens
+				s.GlobalMetrics.TotalOutputTokens += replica.Metrics.TotalOutputTokens
+				s.GlobalMetrics.TTFTSum += replica.Metrics.TTFTSum
+
+				// Merge per-request metrics
+				for reqID, ttft := range replica.Metrics.RequestTTFTs {
+					s.GlobalMetrics.RequestTTFTs[reqID] = ttft
+				}
+				for reqID, e2e := range replica.Metrics.RequestE2Es {
+					s.GlobalMetrics.RequestE2Es[reqID] = e2e
+				}
+				for reqID, itl := range replica.Metrics.RequestITLs {
+					s.GlobalMetrics.RequestITLs[reqID] = itl
+				}
+				for reqID, delay := range replica.Metrics.RequestSchedulingDelays {
+					s.GlobalMetrics.RequestSchedulingDelays[reqID] = delay
+				}
+				for reqID, req := range replica.Metrics.Requests {
+					s.GlobalMetrics.Requests[reqID] = req
+				}
+
+				// Aggregate ITLs
+				s.GlobalMetrics.AllITLs = append(s.GlobalMetrics.AllITLs, replica.Metrics.AllITLs...)
+
+				// Track peak KV usage across all replicas
+				if replica.Metrics.PeakKVBlocksUsed > s.GlobalMetrics.PeakKVBlocksUsed {
+					s.GlobalMetrics.PeakKVBlocksUsed = replica.Metrics.PeakKVBlocksUsed
+				}
+			}
+
+			// Print global aggregated metrics to stdout
+			s.GlobalMetrics.SaveResults(s.Horizon, totalKVBlocks, startTime, "", nil)
+
+			// Save to file if requested
+			if resultsPath != "" {
+				multiOutput := sim.MultiReplicaMetricsOutput{
+					ReplicaMetrics: make([]sim.MetricsOutput, numReplicas),
+					GlobalMetrics:  s.GlobalMetrics.BuildMetricsOutput(startTime, true),
+				}
+
+				// Build metrics output for each replica
+				for rIdx := range s.Replicas {
+					multiOutput.ReplicaMetrics[rIdx] = s.Replicas[rIdx].Metrics.BuildMetricsOutput(startTime, false)
+				}
+
+				// Write to file
+				data, _ := json.MarshalIndent(multiOutput, "", "  ")
+				writeErr := os.WriteFile(resultsPath, data, 0644)
+				if writeErr != nil {
+					fmt.Printf("Error writing JSON file: %v\n", writeErr)
+				} else {
+					fmt.Printf("\nMetrics written to: %s\n", resultsPath)
+				}
+			}
+		} else {
+			s.Replicas[0].Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath, nil)
+		}
 
 		logrus.Info("Simulation complete.")
 	},
@@ -249,6 +327,12 @@ func init() {
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
+
+	// Load balancer configs
+	runCmd.Flags().IntVar(&queuingDelay, "queuing-delay", 0, "Delay between server hit and queued per request")
+	runCmd.Flags().IntVar(&finishedDelay, "finished-delay", 0, "Delay between finished and server left per request")
+	runCmd.Flags().IntVar(&numReplicas, "num-replicas", 1, "Number of replicas")
+	runCmd.Flags().StringVar(&loadBalancerType, "load-balancer-type", "random", "Load balancer policy (default is random)")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

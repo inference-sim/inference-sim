@@ -31,6 +31,7 @@ type Request struct {
 	FinishedStepIdx  int     // Step index when this request got scheduled (waiting -> running)
 	NumNewTokens     int     // Number of new tokens to be generated in the curren step
 	ITL              []int64 // List of inter-token latencies
+	ReplicaIndex     int     // Index of the replica that processed this request
 }
 
 // This method returns a human-readable string representation of a Request.

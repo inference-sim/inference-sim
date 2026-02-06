@@ -77,11 +77,12 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 			Request: req,
 		})
 
-		sim.Metrics.Requests[reqID] = RequestMetrics{
+		sim.GlobalMetrics.Requests[reqID] = RequestMetrics{
 			ID:               reqID,
 			ArrivedAt:        arrivalFloat,
 			NumPrefillTokens: len(inputTokens),
 			NumDecodeTokens:  len(outputTokens),
+			ReplicaIndex:     -1, // Will be set when request is enqueued to a replica
 		}
 
 		reqIdx++
@@ -165,11 +166,12 @@ func (sim *Simulator) generateWorkloadDistribution() {
 			ArrivedAt:        float64(currentTime) / 1e6,
 			NumPrefillTokens: len(input),
 			NumDecodeTokens:  len(output),
+			ReplicaIndex:     -1, // Will be set when request is enqueued to a replica
 		}
-		sim.Metrics.Requests[reqID] = detail
+		sim.GlobalMetrics.Requests[reqID] = detail
 
 		// estimate arrivalTime based on constant RPS
-		currentTime += int64(1 / sim.Metrics.RequestRate)
+		currentTime += int64(1 / sim.GlobalMetrics.RequestRate)
 
 		// move on to the next request
 		reqIdx++
