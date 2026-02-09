@@ -1535,6 +1535,266 @@ Scenario: Shadow divergence tracking
 
 ---
 
+## 14. Phased Implementation Roadmap
+
+This design is large and should be implemented in phases. Each phase delivers incremental, testable functionality while keeping code changes small enough for proper review.
+
+### Implementation Process
+
+**Starting a Phase:**
+1. Review the phase scope and deliverables below
+2. Check if prior phases revealed issues affecting this phase's design
+3. Create a phase-specific implementation plan (may be a sub-document or PR description)
+4. Identify any design clarifications needed before coding
+5. Update invariants or contracts if prior learnings require it
+
+**During a Phase:**
+- Implement with tests (BDD scenarios where applicable)
+- Keep PRs small (1-3 per phase)
+- Flag any design assumptions that don't hold in practice
+
+**Finishing a Phase:**
+1. Verify all phase deliverables are complete and tested
+2. Document lessons learned that affect future phases
+3. Update this design doc if:
+   - Interfaces needed adjustment
+   - New invariants were discovered
+   - Assumptions changed for later phases
+4. Mark phase complete in the roadmap below
+
+**Design Evolution:**
+- Interfaces and contracts are the stable foundation, but wording may be refined
+- Data structures and algorithms can flex based on implementation learnings
+- Later phases may be re-scoped based on earlier phase outcomes
+- This is expected and healthy—document changes as they happen
+
+---
+
+### Phase 1: Core Engine & Determinism
+
+**Goal:** Multi-replica simulation engine with deterministic execution.
+
+**Scope:**
+- `ClusterSimulator` with event heap and simulation loop
+- `InstanceSimulator` with basic request processing
+- `DeploymentConfig` and `ReplicaPool` (monolithic only)
+- `PartitionedRNG` and `SimulationKey` for determinism
+- Event ordering rules and tie-breaking
+- Basic `Request` lifecycle (arrival → enqueue → complete)
+
+**Deliverables:**
+- [ ] ClusterSimulator runs multiple instances with shared clock
+- [ ] Deterministic replay: same seed produces identical results
+- [ ] Event ordering is explicit and tested
+- [ ] Basic metrics collection (request count, completion count)
+
+**Not in scope:** Pluggable policies, KV cache tiers, workload generation, P/D.
+
+**Estimated PRs:** 2-3
+
+---
+
+### Phase 2: Policy Interfaces & Defaults
+
+**Goal:** All policy interfaces defined with pass-through/default implementations.
+
+**Scope:**
+- `AdmissionPolicy` interface + `AlwaysAdmit` default
+- `PriorityPolicy` interface + `ConstantPriority` default
+- `RoutingPolicy` interface + `RoundRobin` default
+- `InstanceScheduler` interface + `FCFSScheduler` default
+- `RouterState` structure (without shadow KV yet)
+- `InstanceSnapshot` for router visibility into instances
+
+**Deliverables:**
+- [ ] All four policy interfaces defined and documented
+- [ ] Default implementations pass integration tests
+- [ ] Policies are pluggable at simulation start
+- [ ] `PolicyBundle` structure works end-to-end
+
+**Not in scope:** Sophisticated policies, auto-scaler, shadow KV, counterfactuals.
+
+**Estimated PRs:** 2-3
+
+---
+
+### Phase 3: KV Cache Model
+
+**Goal:** Tiered KV cache with eviction and basic offloading.
+
+**Scope:**
+- `KVCacheState` with `TierState` (GPU required, CPU optional)
+- `KVBlock` tracking with `BlockID`, `PrefixHash`, `LastAccess`
+- `KVTierConfig` with capacity and latencies
+- LRU eviction policy
+- Offload/reload mechanics (GPU ↔ CPU)
+- Cache hit/miss affects simulated TTFT
+
+**Deliverables:**
+- [ ] KV cache correctly tracks block allocation per tier
+- [ ] Eviction fires when tier exceeds capacity
+- [ ] Offload/reload transfers work with correct latency
+- [ ] Cache hit rate metrics collected
+- [ ] `kv_cache_conservation` invariant tested
+
+**Not in scope:** P/D transfers, shadow model, storage tier (defer if needed).
+
+**Estimated PRs:** 2-3
+
+---
+
+### Phase 4: Workload & Basic Metrics
+
+**Goal:** Workload generation and metrics collection sufficient for fitness evaluation.
+
+**Scope:**
+- `WorkloadSpec` with `TenantSpec` and `ArrivalPattern`
+- Poisson and bursty arrival patterns
+- Token distributions (prompt/decode lengths)
+- `PrefixSpec` with prefix groups and reuse probability
+- `RawMetrics` collection (TTFT, TPOT, throughput, SLO attainment)
+- `EvaluationResult` and basic `FitnessFunction`
+- `DecisionTrace` with `RoutingRecord` (without counterfactuals yet)
+
+**Deliverables:**
+- [ ] Workload generator produces requests matching spec
+- [ ] Multiple tenants with different SLO classes
+- [ ] Prefix reuse works and affects cache behavior
+- [ ] Fitness function computes from raw metrics
+- [ ] Basic traces capture routing decisions
+
+**Not in scope:** Correlations, closed-loop, tenant archetypes, trace summarization.
+
+**Estimated PRs:** 2-3
+
+---
+
+### Phase 5: Auto-Scaler
+
+**Goal:** Auto-scaling with realistic actuation delays.
+
+**Scope:**
+- `AutoScaler` with `AutoScalePolicy` interface
+- `TriggerMode` (periodic and event-triggered)
+- `ScalingActuationConfig` with `ProvisioningDelay`, `ModelLoadTime`
+- `WarmupProfile` with performance penalty curve
+- `DrainPolicy` for scale-down behavior
+- `InstanceReadyEvent` and instance lifecycle states
+- `ScaleRecord` in traces
+
+**Deliverables:**
+- [ ] Auto-scaler evaluates and makes scale decisions
+- [ ] New instances have provisioning delay before accepting requests
+- [ ] Warmup penalty affects new instance performance
+- [ ] Scale-down respects drain policy
+- [ ] `scale_bounds` invariant tested
+- [ ] Scale decisions recorded in trace
+
+**Not in scope:** Sophisticated scaling policies (just threshold-based default).
+
+**Estimated PRs:** 2-3
+
+---
+
+### Phase 6: P/D Disaggregation
+
+**Goal:** Prefill-decode disaggregated architecture support.
+
+**Scope:**
+- `DISAGGREGATED_PD` architecture type
+- Separate `PrefillPool` and `DecodePool`
+- `PDTransferConfig` with latency, bandwidth, granularity
+- `BlockTransferState` and ownership tracking
+- `PDHandoffEvent` and transfer mechanics
+- `PipelineMode` option (decode before full transfer)
+- Backpressure when transfer queue grows
+
+**Deliverables:**
+- [ ] Requests route to prefill instance, then hand off to decode
+- [ ] KV transfer has correct latency based on config
+- [ ] Single ownership invariant holds (no duplication)
+- [ ] Pipelining works when enabled
+- [ ] `pd_handoff` and `pd_ownership` invariants tested
+
+**Not in scope:** Advanced P/D scheduling policies.
+
+**Estimated PRs:** 2-3
+
+---
+
+### Phase 7: Advanced Observability
+
+**Goal:** Shadow KV model, divergence tracking, counterfactual analysis.
+
+**Scope:**
+- `ObservedKVState` vs `ShadowKVModel` split in router
+- Shadow model updates on routing decisions
+- `shadow_divergence` anomaly detection
+- `TopKCandidates` in `RoutingDecision`
+- `ExpectedCacheHit` and `Regret` in `RoutingRecord`
+- Anomaly types table (priority_inversion, cache_thrashing, etc.)
+- `TraceSummary` and `SummaryConfig`
+- Basic summarization (issue_focused strategy)
+
+**Deliverables:**
+- [ ] Router maintains both observed and shadow KV state
+- [ ] Divergence logged when shadow prediction wrong
+- [ ] Top-k candidates recorded for all routing decisions
+- [ ] Regret calculated post-hoc
+- [ ] Basic trace summarization produces text feedback
+
+**Not in scope:** Advanced summarization strategies (pattern_mining, etc.).
+
+**Estimated PRs:** 2-3
+
+---
+
+### Phase 8: Framework Integration & Sandbox
+
+**Goal:** Safe policy execution and evolutionary framework adapters.
+
+**Scope:**
+- `CodePolicy` with Starlark (or WASM) sandbox
+- `SandboxConfig` with instruction/memory limits
+- Safety enforcement (no I/O, no time access, deterministic)
+- `BLISGEPAAdapter` implementation
+- `BLISEvaluator` for OpenEvolve
+- End-to-end test with simple evolved policy
+- Workload correlations (`CorrelationConfig`) if not yet done
+- `ClosedLoopConfig` (optional, may defer)
+
+**Deliverables:**
+- [ ] Starlark (or WASM) policies execute safely
+- [ ] Sandbox enforces resource limits
+- [ ] GEPA adapter works end-to-end
+- [ ] OpenEvolve evaluator works end-to-end
+- [ ] At least one policy successfully evolved in test
+
+**Not in scope:** Production-grade evolutionary runs (that's research, not implementation).
+
+**Estimated PRs:** 3-4
+
+---
+
+### Phase Summary
+
+| Phase | Focus | Key Deliverable |
+|-------|-------|-----------------|
+| 1 | Core Engine & Determinism | Reproducible multi-replica simulation |
+| 2 | Policy Interfaces & Defaults | Pluggable policy pipeline |
+| 3 | KV Cache Model | Tiered cache with eviction |
+| 4 | Workload & Basic Metrics | Fitness evaluation working |
+| 5 | Auto-Scaler | Realistic scaling with delays |
+| 6 | P/D Disaggregation | Prefill-decode architecture |
+| 7 | Advanced Observability | Shadow model, counterfactuals, summarization |
+| 8 | Framework Integration & Sandbox | Safe policies, GEPA/OpenEvolve adapters |
+
+**Total estimated PRs:** 18-25
+
+**Note:** Phase boundaries may shift based on learnings. If a phase reveals that a later phase needs redesign, update this document before starting that phase.
+
+---
+
 ## Summary
 
 This design extends BLIS to support evolutionary policy optimization through:
