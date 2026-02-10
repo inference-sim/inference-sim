@@ -1,6 +1,9 @@
 package cluster
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 // TestInstanceSimulator_Creation tests instance creation
 func TestInstanceSimulator_Creation(t *testing.T) {
@@ -265,4 +268,38 @@ func TestInstanceSimulator_PeakTracking(t *testing.T) {
 	// Dequeue some requests (simulated)
 	// Peak should remain at 5 even if current depth decreases
 	// This will be tested more fully when Step() is implemented
+}
+
+// TestInstanceSimulator_WaitQueueDepth_Performance verifies O(1) complexity
+func TestInstanceSimulator_WaitQueueDepth_Performance(t *testing.T) {
+	config := &DeploymentConfig{
+		ConfigID: "config1",
+		EngineConfig: &VLLMEngineConfig{
+			MaxNumSeqs:          256,
+			MaxNumBatchedTokens: 4096,
+		},
+	}
+	inst := NewInstanceSimulator("inst1", PoolMonolithic, config, 10000, 16)
+
+	// Enqueue 1000 requests - should be fast with O(1) depth check
+	for i := 0; i < 1000; i++ {
+		req := &Request{
+			ID:           fmt.Sprintf("req%d", i),
+			PromptTokens: 100,
+			OutputTokens: 50,
+			State:        RequestStateQueued,
+		}
+		inst.EnqueueRequest(req)
+	}
+
+	// Verify depth is correct
+	depth := inst.WaitQueueDepth()
+	if depth != 1000 {
+		t.Errorf("WaitQueueDepth() = %d, want 1000", depth)
+	}
+
+	// Verify peak was tracked
+	if inst.PeakWaitQueueDepth != 1000 {
+		t.Errorf("PeakWaitQueueDepth = %d, want 1000", inst.PeakWaitQueueDepth)
+	}
 }

@@ -63,31 +63,12 @@ func (inst *InstanceSimulator) EnqueueRequest(req *Request) {
 }
 
 // WaitQueueDepth returns the current wait queue depth
+// Uses the efficient Len() method instead of destructive queue traversal
 func (inst *InstanceSimulator) WaitQueueDepth() int {
 	if inst.WaitQueue == nil {
 		return 0
 	}
-	// Access the internal queue slice via reflection or add a method to sim.WaitQueue
-	// For now, we'll use a simple counter approach
-	count := 0
-	tempQueue := &sim.WaitQueue{}
-	for {
-		req := inst.WaitQueue.DequeueBatch()
-		if req == nil {
-			break
-		}
-		count++
-		tempQueue.Enqueue(req)
-	}
-	// Restore queue
-	for {
-		req := tempQueue.DequeueBatch()
-		if req == nil {
-			break
-		}
-		inst.WaitQueue.Enqueue(req)
-	}
-	return count
+	return inst.WaitQueue.Len()
 }
 
 // RunningBatchSize returns the current running batch size

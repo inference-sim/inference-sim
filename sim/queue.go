@@ -45,3 +45,8 @@ func (wq *WaitQueue) DequeueBatch() *Request {
 	wq.queue = wq.queue[1:]
 	return batch
 }
+
+// Len returns the number of requests in the wait queue
+func (wq *WaitQueue) Len() int {
+	return len(wq.queue)
+}
