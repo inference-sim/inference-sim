@@ -510,3 +510,53 @@ func TestDeterminism_SimulationKeyUniqueness(t *testing.T) {
 		t.Error("Different SimSeeds should produce different RNG sequences")
 	}
 }
+
+// TestDeterminism_ListInstancesOrdering verifies BC-9: ListInstances returns deterministic order
+func TestDeterminism_ListInstancesOrdering(t *testing.T) {
+	// Create simulator with multiple instances (unordered insertion)
+	config := &DeploymentConfig{ConfigID: "config1"}
+	pool, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 5)
+
+	// Add instances in deliberate non-alphabetical order
+	inst3 := NewInstanceSimulator("inst3", PoolMonolithic, config, 1000, 16)
+	inst1 := NewInstanceSimulator("inst1", PoolMonolithic, config, 1000, 16)
+	inst5 := NewInstanceSimulator("inst5", PoolMonolithic, config, 1000, 16)
+	inst2 := NewInstanceSimulator("inst2", PoolMonolithic, config, 1000, 16)
+	inst4 := NewInstanceSimulator("inst4", PoolMonolithic, config, 1000, 16)
+
+	pool.AddInstance(inst3)
+	pool.AddInstance(inst1)
+	pool.AddInstance(inst5)
+	pool.AddInstance(inst2)
+	pool.AddInstance(inst4)
+
+	config.ReplicaPool = pool
+
+	sim := NewClusterSimulator(10000)
+	sim.AddDeployment(config)
+
+	// Get instance list multiple times
+	list1 := sim.ListInstances()
+	list2 := sim.ListInstances()
+	list3 := sim.ListInstances()
+
+	// Verify lists are identical (deterministic)
+	if len(list1) != len(list2) || len(list1) != len(list3) {
+		t.Fatalf("Instance lists have different lengths")
+	}
+
+	for i := range list1 {
+		if list1[i] != list2[i] || list1[i] != list3[i] {
+			t.Errorf("Instance order differs at index %d: %s vs %s vs %s",
+				i, list1[i], list2[i], list3[i])
+		}
+	}
+
+	// Verify list is sorted
+	expected := []InstanceID{"inst1", "inst2", "inst3", "inst4", "inst5"}
+	for i := range expected {
+		if list1[i] != expected[i] {
+			t.Errorf("Instance at index %d: got %s, want %s", i, list1[i], expected[i])
+		}
+	}
+}

@@ -1,6 +1,9 @@
 package cluster
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // ClusterSimulator represents the multi-replica cluster simulator
 type ClusterSimulator struct {
@@ -66,12 +69,17 @@ func (c *ClusterSimulator) GetInstance(id InstanceID) *InstanceSimulator {
 	return c.Instances[id]
 }
 
-// ListInstances returns all instance IDs
+// ListInstances returns all instance IDs in deterministic sorted order (BC-9, BC-11)
+// Sorting ensures round-robin routing is deterministic despite map iteration randomization
 func (c *ClusterSimulator) ListInstances() []InstanceID {
 	ids := make([]InstanceID, 0, len(c.Instances))
 	for id := range c.Instances {
 		ids = append(ids, id)
 	}
+	// Sort for deterministic iteration order
+	sort.Slice(ids, func(i, j int) bool {
+		return string(ids[i]) < string(ids[j])
+	})
 	return ids
 }
 
