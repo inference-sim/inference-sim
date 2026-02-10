@@ -14,14 +14,18 @@ func TestDeterminism_BC9_SameSeedIdenticalResults(t *testing.T) {
 	sim1 := NewClusterSimulator(10000)
 	sim1.RNG = NewPartitionedRNG(seed)
 
-	pool1, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 1)
+	pool1 := mustCreatePool(t, "pool1", PoolMonolithic, 1, 1)
 	inst1 := NewInstanceSimulator("inst1", PoolMonolithic, nil, 1000, 16)
-	pool1.AddInstance(inst1)
+	if err := pool1.AddInstance(inst1); err != nil {
+		t.Fatalf("AddInstance(inst1) failed: %v", err)
+	}
 	config1 := &DeploymentConfig{
 		ConfigID:    "config1",
 		ReplicaPool: pool1,
 	}
-	sim1.AddDeployment(config1)
+	if err := sim1.AddDeployment(config1); err != nil {
+		t.Fatalf("AddDeployment(config1) failed: %v", err)
+	}
 
 	// Schedule identical requests
 	for i := 0; i < 5; i++ {
@@ -37,14 +41,18 @@ func TestDeterminism_BC9_SameSeedIdenticalResults(t *testing.T) {
 	sim2 := NewClusterSimulator(10000)
 	sim2.RNG = NewPartitionedRNG(seed)
 
-	pool2, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 1)
+	pool2 := mustCreatePool(t, "pool1", PoolMonolithic, 1, 1)
 	inst2 := NewInstanceSimulator("inst1", PoolMonolithic, nil, 1000, 16)
-	pool2.AddInstance(inst2)
+	if err := pool2.AddInstance(inst2); err != nil {
+		t.Fatalf("AddInstance(inst2) failed: %v", err)
+	}
 	config2 := &DeploymentConfig{
 		ConfigID:    "config1",
 		ReplicaPool: pool2,
 	}
-	sim2.AddDeployment(config2)
+	if err := sim2.AddDeployment(config2); err != nil {
+		t.Fatalf("AddDeployment(config2) failed: %v", err)
+	}
 
 	for i := 0; i < 5; i++ {
 		req := &Request{
@@ -118,16 +126,22 @@ func TestDeterminism_BC9_DifferentSeedDifferentResults(t *testing.T) {
 
 	// Identical configuration otherwise
 	for _, sim := range []*ClusterSimulator{sim1, sim2} {
-		pool, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 2)
+		pool := mustCreatePool(t, "pool1", PoolMonolithic, 1, 2)
 		inst1 := NewInstanceSimulator("inst1", PoolMonolithic, nil, 1000, 16)
 		inst2 := NewInstanceSimulator("inst2", PoolMonolithic, nil, 1000, 16)
-		pool.AddInstance(inst1)
-		pool.AddInstance(inst2)
+		if err := pool.AddInstance(inst1); err != nil {
+			t.Fatalf("AddInstance(inst1) failed: %v", err)
+		}
+		if err := pool.AddInstance(inst2); err != nil {
+			t.Fatalf("AddInstance(inst2) failed: %v", err)
+		}
 		config := &DeploymentConfig{
 			ConfigID:    "config1",
 			ReplicaPool: pool,
 		}
-		sim.AddDeployment(config)
+		if err := sim.AddDeployment(config); err != nil {
+			t.Fatalf("AddDeployment() failed: %v", err)
+		}
 
 		// Schedule requests
 		for i := 0; i < 10; i++ {
@@ -188,14 +202,18 @@ func TestDeterminism_BC11_NoExternalStateDependency(t *testing.T) {
 		sim := NewClusterSimulator(5000)
 		sim.RNG = NewPartitionedRNG(seed)
 
-		pool, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 1)
+		pool := mustCreatePool(t, "pool1", PoolMonolithic, 1, 1)
 		inst := NewInstanceSimulator("inst1", PoolMonolithic, nil, 1000, 16)
-		pool.AddInstance(inst)
+		if err := pool.AddInstance(inst); err != nil {
+			t.Fatalf("AddInstance(inst) failed: %v", err)
+		}
 		config := &DeploymentConfig{
 			ConfigID:    "config1",
 			ReplicaPool: pool,
 		}
-		sim.AddDeployment(config)
+		if err := sim.AddDeployment(config); err != nil {
+			t.Fatalf("AddDeployment() failed: %v", err)
+		}
 
 		// Schedule requests
 		for i := 0; i < 3; i++ {
@@ -379,14 +397,18 @@ func TestDeterminism_NoGlobalRandomness(t *testing.T) {
 	sim1 := NewClusterSimulator(5000)
 	sim1.RNG = NewPartitionedRNG(seed)
 
-	pool1, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 1)
+	pool1 := mustCreatePool(t, "pool1", PoolMonolithic, 1, 1)
 	inst1 := NewInstanceSimulator("inst1", PoolMonolithic, nil, 1000, 16)
-	pool1.AddInstance(inst1)
+	if err := pool1.AddInstance(inst1); err != nil {
+		t.Fatalf("AddInstance(inst1) failed: %v", err)
+	}
 	config1 := &DeploymentConfig{
 		ConfigID:    "config1",
 		ReplicaPool: pool1,
 	}
-	sim1.AddDeployment(config1)
+	if err := sim1.AddDeployment(config1); err != nil {
+		t.Fatalf("AddDeployment(config1) failed: %v", err)
+	}
 
 	req1 := &Request{ID: "req1", PromptTokens: 100, OutputTokens: 50}
 	sim1.ScheduleEvent(sim1.NewRequestArrivalEvent(100, req1))
@@ -411,14 +433,18 @@ func TestDeterminism_NoGlobalRandomness(t *testing.T) {
 	sim2 := NewClusterSimulator(5000)
 	sim2.RNG = NewPartitionedRNG(seed) // Same seed as sim1
 
-	pool2, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 1)
+	pool2 := mustCreatePool(t, "pool1", PoolMonolithic, 1, 1)
 	inst2 := NewInstanceSimulator("inst1", PoolMonolithic, nil, 1000, 16)
-	pool2.AddInstance(inst2)
+	if err := pool2.AddInstance(inst2); err != nil {
+		t.Fatalf("AddInstance(inst2) failed: %v", err)
+	}
 	config2 := &DeploymentConfig{
 		ConfigID:    "config1",
 		ReplicaPool: pool2,
 	}
-	sim2.AddDeployment(config2)
+	if err := sim2.AddDeployment(config2); err != nil {
+		t.Fatalf("AddDeployment(config2) failed: %v", err)
+	}
 
 	req2 := &Request{ID: "req1", PromptTokens: 100, OutputTokens: 50}
 	sim2.ScheduleEvent(sim2.NewRequestArrivalEvent(100, req2))
@@ -515,7 +541,7 @@ func TestDeterminism_SimulationKeyUniqueness(t *testing.T) {
 func TestDeterminism_ListInstancesOrdering(t *testing.T) {
 	// Create simulator with multiple instances (unordered insertion)
 	config := &DeploymentConfig{ConfigID: "config1"}
-	pool, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 5)
+	pool := mustCreatePool(t, "pool1", PoolMonolithic, 1, 5)
 
 	// Add instances in deliberate non-alphabetical order
 	inst3 := NewInstanceSimulator("inst3", PoolMonolithic, config, 1000, 16)
@@ -524,16 +550,28 @@ func TestDeterminism_ListInstancesOrdering(t *testing.T) {
 	inst2 := NewInstanceSimulator("inst2", PoolMonolithic, config, 1000, 16)
 	inst4 := NewInstanceSimulator("inst4", PoolMonolithic, config, 1000, 16)
 
-	pool.AddInstance(inst3)
-	pool.AddInstance(inst1)
-	pool.AddInstance(inst5)
-	pool.AddInstance(inst2)
-	pool.AddInstance(inst4)
+	if err := pool.AddInstance(inst3); err != nil {
+		t.Fatalf("AddInstance(inst3) failed: %v", err)
+	}
+	if err := pool.AddInstance(inst1); err != nil {
+		t.Fatalf("AddInstance(inst1) failed: %v", err)
+	}
+	if err := pool.AddInstance(inst5); err != nil {
+		t.Fatalf("AddInstance(inst5) failed: %v", err)
+	}
+	if err := pool.AddInstance(inst2); err != nil {
+		t.Fatalf("AddInstance(inst2) failed: %v", err)
+	}
+	if err := pool.AddInstance(inst4); err != nil {
+		t.Fatalf("AddInstance(inst4) failed: %v", err)
+	}
 
 	config.ReplicaPool = pool
 
 	sim := NewClusterSimulator(10000)
-	sim.AddDeployment(config)
+	if err := sim.AddDeployment(config); err != nil {
+		t.Fatalf("AddDeployment() failed: %v", err)
+	}
 
 	// Get instance list multiple times
 	list1 := sim.ListInstances()

@@ -2,6 +2,16 @@ package cluster
 
 import "testing"
 
+// mustCreatePool creates a ReplicaPool or fails the test
+func mustCreatePool(t *testing.T, poolID string, poolType PoolType, min, max int) *ReplicaPool {
+	t.Helper()
+	pool, err := NewReplicaPool(poolID, poolType, min, max)
+	if err != nil {
+		t.Fatalf("NewReplicaPool(%q, %v, %d, %d) failed: %v", poolID, poolType, min, max, err)
+	}
+	return pool
+}
+
 // TestNewReplicaPool tests ReplicaPool creation
 func TestNewReplicaPool(t *testing.T) {
 	tests := []struct {
@@ -93,7 +103,7 @@ func TestNewReplicaPool(t *testing.T) {
 // TestReplicaPool_AddInstance tests adding instances within bounds
 func TestReplicaPool_AddInstance(t *testing.T) {
 	t.Run("Add instance within bounds", func(t *testing.T) {
-		pool, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 3)
+		pool := mustCreatePool(t, "pool1", PoolMonolithic, 1, 3)
 
 		inst1 := &InstanceSimulator{ID: "inst1"}
 		inst2 := &InstanceSimulator{ID: "inst2"}
@@ -114,14 +124,18 @@ func TestReplicaPool_AddInstance(t *testing.T) {
 	})
 
 	t.Run("Add instance exceeds max", func(t *testing.T) {
-		pool, _ := NewReplicaPool("pool2", PoolMonolithic, 1, 2)
+		pool := mustCreatePool(t, "pool2", PoolMonolithic, 1, 2)
 
 		inst1 := &InstanceSimulator{ID: "inst1"}
 		inst2 := &InstanceSimulator{ID: "inst2"}
 		inst3 := &InstanceSimulator{ID: "inst3"}
 
-		pool.AddInstance(inst1)
-		pool.AddInstance(inst2)
+		if err := pool.AddInstance(inst1); err != nil {
+			t.Fatalf("AddInstance(inst1) failed: %v", err)
+		}
+		if err := pool.AddInstance(inst2); err != nil {
+			t.Fatalf("AddInstance(inst2) failed: %v", err)
+		}
 
 		err := pool.AddInstance(inst3)
 		if err == nil {
@@ -139,13 +153,17 @@ func TestReplicaPool_AddInstance(t *testing.T) {
 // TestReplicaPool_RemoveInstance tests removing instances within bounds
 func TestReplicaPool_RemoveInstance(t *testing.T) {
 	t.Run("Remove instance within bounds", func(t *testing.T) {
-		pool, _ := NewReplicaPool("pool1", PoolMonolithic, 1, 3)
+		pool := mustCreatePool(t, "pool1", PoolMonolithic, 1, 3)
 
 		inst1 := &InstanceSimulator{ID: "inst1"}
 		inst2 := &InstanceSimulator{ID: "inst2"}
 
-		pool.AddInstance(inst1)
-		pool.AddInstance(inst2)
+		if err := pool.AddInstance(inst1); err != nil {
+			t.Fatalf("AddInstance(inst1) failed: %v", err)
+		}
+		if err := pool.AddInstance(inst2); err != nil {
+			t.Fatalf("AddInstance(inst2) failed: %v", err)
+		}
 
 		if err := pool.RemoveInstance("inst2"); err != nil {
 			t.Errorf("RemoveInstance(inst2) unexpected error: %v", err)
@@ -164,10 +182,12 @@ func TestReplicaPool_RemoveInstance(t *testing.T) {
 	})
 
 	t.Run("Remove instance violates min", func(t *testing.T) {
-		pool, _ := NewReplicaPool("pool2", PoolMonolithic, 1, 3)
+		pool := mustCreatePool(t, "pool2", PoolMonolithic, 1, 3)
 
 		inst1 := &InstanceSimulator{ID: "inst1"}
-		pool.AddInstance(inst1)
+		if err := pool.AddInstance(inst1); err != nil {
+			t.Fatalf("AddInstance(inst1) failed: %v", err)
+		}
 
 		err := pool.RemoveInstance("inst1")
 		if err == nil {
@@ -182,12 +202,16 @@ func TestReplicaPool_RemoveInstance(t *testing.T) {
 	})
 
 	t.Run("Remove non-existent instance", func(t *testing.T) {
-		pool, _ := NewReplicaPool("pool3", PoolMonolithic, 0, 3)
+		pool := mustCreatePool(t, "pool3", PoolMonolithic, 0, 3)
 
 		inst1 := &InstanceSimulator{ID: "inst1"}
 		inst2 := &InstanceSimulator{ID: "inst2"}
-		pool.AddInstance(inst1)
-		pool.AddInstance(inst2)
+		if err := pool.AddInstance(inst1); err != nil {
+			t.Fatalf("AddInstance(inst1) failed: %v", err)
+		}
+		if err := pool.AddInstance(inst2); err != nil {
+			t.Fatalf("AddInstance(inst2) failed: %v", err)
+		}
 
 		err := pool.RemoveInstance("inst3")
 		if err == nil {
@@ -204,13 +228,17 @@ func TestReplicaPool_RemoveInstance(t *testing.T) {
 
 // TestReplicaPool_GetInstance tests instance retrieval
 func TestReplicaPool_GetInstance(t *testing.T) {
-	pool, _ := NewReplicaPool("pool1", PoolMonolithic, 0, 3)
+	pool := mustCreatePool(t, "pool1", PoolMonolithic, 0, 3)
 
 	inst1 := &InstanceSimulator{ID: "inst1"}
 	inst2 := &InstanceSimulator{ID: "inst2"}
 
-	pool.AddInstance(inst1)
-	pool.AddInstance(inst2)
+	if err := pool.AddInstance(inst1); err != nil {
+		t.Fatalf("AddInstance(inst1) failed: %v", err)
+	}
+	if err := pool.AddInstance(inst2); err != nil {
+		t.Fatalf("AddInstance(inst2) failed: %v", err)
+	}
 
 	// Test retrieving existing instances
 	retrieved1 := pool.GetInstance("inst1")
@@ -236,7 +264,7 @@ func TestReplicaPool_GetInstance(t *testing.T) {
 
 // TestReplicaPool_Len tests pool size tracking
 func TestReplicaPool_Len(t *testing.T) {
-	pool, _ := NewReplicaPool("pool1", PoolMonolithic, 0, 5)
+	pool := mustCreatePool(t, "pool1", PoolMonolithic, 0, 5)
 
 	if pool.Len() != 0 {
 		t.Errorf("Initial pool size = %d, want 0", pool.Len())
@@ -246,13 +274,19 @@ func TestReplicaPool_Len(t *testing.T) {
 	inst2 := &InstanceSimulator{ID: "inst2"}
 	inst3 := &InstanceSimulator{ID: "inst3"}
 
-	pool.AddInstance(inst1)
+	if err := pool.AddInstance(inst1); err != nil {
+		t.Fatalf("AddInstance(inst1) failed: %v", err)
+	}
 	if pool.Len() != 1 {
 		t.Errorf("After 1 add, pool size = %d, want 1", pool.Len())
 	}
 
-	pool.AddInstance(inst2)
-	pool.AddInstance(inst3)
+	if err := pool.AddInstance(inst2); err != nil {
+		t.Fatalf("AddInstance(inst2) failed: %v", err)
+	}
+	if err := pool.AddInstance(inst3); err != nil {
+		t.Fatalf("AddInstance(inst3) failed: %v", err)
+	}
 	if pool.Len() != 3 {
 		t.Errorf("After 3 adds, pool size = %d, want 3", pool.Len())
 	}
@@ -263,15 +297,41 @@ func TestReplicaPool_Len(t *testing.T) {
 	}
 }
 
+// TestNewReplicaPool_InvalidConfig tests error handling
+func TestNewReplicaPool_InvalidConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		min  int
+		max  int
+	}{
+		{"negative min", -1, 5},
+		{"max less than min", 5, 3},
+		{"both negative", -2, -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewReplicaPool("pool1", PoolMonolithic, tt.min, tt.max)
+			if err == nil {
+				t.Errorf("NewReplicaPool(%d, %d) should have returned error", tt.min, tt.max)
+			}
+		})
+	}
+}
+
 // TestReplicaPool_BoundsInvariant tests BC-3: pool bounds invariant
 func TestReplicaPool_BoundsInvariant(t *testing.T) {
-	pool, _ := NewReplicaPool("pool1", PoolMonolithic, 2, 5)
+	pool := mustCreatePool(t, "pool1", PoolMonolithic, 2, 5)
 
 	// Start with 2 instances (at MinReplicas)
 	inst1 := &InstanceSimulator{ID: "inst1"}
 	inst2 := &InstanceSimulator{ID: "inst2"}
-	pool.AddInstance(inst1)
-	pool.AddInstance(inst2)
+	if err := pool.AddInstance(inst1); err != nil {
+		t.Fatalf("AddInstance(inst1) failed: %v", err)
+	}
+	if err := pool.AddInstance(inst2); err != nil {
+		t.Fatalf("AddInstance(inst2) failed: %v", err)
+	}
 
 	// Verify invariant: MinReplicas <= Len() <= MaxReplicas
 	if pool.Len() < pool.MinReplicas || pool.Len() > pool.MaxReplicas {
@@ -281,15 +341,21 @@ func TestReplicaPool_BoundsInvariant(t *testing.T) {
 	// Add more instances
 	inst3 := &InstanceSimulator{ID: "inst3"}
 	inst4 := &InstanceSimulator{ID: "inst4"}
-	pool.AddInstance(inst3)
-	pool.AddInstance(inst4)
+	if err := pool.AddInstance(inst3); err != nil {
+		t.Fatalf("AddInstance(inst3) failed: %v", err)
+	}
+	if err := pool.AddInstance(inst4); err != nil {
+		t.Fatalf("AddInstance(inst4) failed: %v", err)
+	}
 
 	if pool.Len() < pool.MinReplicas || pool.Len() > pool.MaxReplicas {
 		t.Errorf("Invariant violated: pool size %d not in [%d, %d]", pool.Len(), pool.MinReplicas, pool.MaxReplicas)
 	}
 
 	// Remove instances
-	pool.RemoveInstance("inst4")
+	if err := pool.RemoveInstance("inst4"); err != nil {
+		t.Fatalf("RemoveInstance(inst4) failed: %v", err)
+	}
 
 	if pool.Len() < pool.MinReplicas || pool.Len() > pool.MaxReplicas {
 		t.Errorf("Invariant violated: pool size %d not in [%d, %d]", pool.Len(), pool.MinReplicas, pool.MaxReplicas)
