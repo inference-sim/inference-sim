@@ -34,6 +34,9 @@ go.work.sum
 __pycache__/*
 */__pycache__/*
 
+# Git worktrees
+.worktrees/
+
 # data files
 *.json
 data/
