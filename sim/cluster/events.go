@@ -1,9 +1,6 @@
 package cluster
 
-import "sync/atomic"
-
-// Global event ID counter for deterministic tie-breaking
-var globalEventID uint64
+// Event ID generation is handled by ClusterSimulator to ensure determinism (BC-9, BC-11)
 
 // Event represents a simulation event
 type Event interface {
@@ -20,10 +17,10 @@ type BaseEvent struct {
 	eventType EventType
 }
 
-func newBaseEvent(timestamp int64, eventType EventType) BaseEvent {
+func newBaseEvent(timestamp int64, eventType EventType, eventID uint64) BaseEvent {
 	return BaseEvent{
 		timestamp: timestamp,
-		eventID:   atomic.AddUint64(&globalEventID, 1),
+		eventID:   eventID,
 		eventType: eventType,
 	}
 }
@@ -46,9 +43,9 @@ type RequestArrivalEvent struct {
 	Request *Request
 }
 
-func NewRequestArrivalEvent(timestamp int64, req *Request) *RequestArrivalEvent {
+func NewRequestArrivalEvent(timestamp int64, req *Request, eventID uint64) *RequestArrivalEvent {
 	return &RequestArrivalEvent{
-		BaseEvent: newBaseEvent(timestamp, EventTypeRequestArrival),
+		BaseEvent: newBaseEvent(timestamp, EventTypeRequestArrival, eventID),
 		Request:   req,
 	}
 }
@@ -64,9 +61,9 @@ type RouteDecisionEvent struct {
 	TargetInstance InstanceID
 }
 
-func NewRouteDecisionEvent(timestamp int64, req *Request, target InstanceID) *RouteDecisionEvent {
+func NewRouteDecisionEvent(timestamp int64, req *Request, target InstanceID, eventID uint64) *RouteDecisionEvent {
 	return &RouteDecisionEvent{
-		BaseEvent:      newBaseEvent(timestamp, EventTypeRouteDecision),
+		BaseEvent:      newBaseEvent(timestamp, EventTypeRouteDecision, eventID),
 		Request:        req,
 		TargetInstance: target,
 	}
@@ -82,9 +79,9 @@ type InstanceStepEvent struct {
 	InstanceID InstanceID
 }
 
-func NewInstanceStepEvent(timestamp int64, instanceID InstanceID) *InstanceStepEvent {
+func NewInstanceStepEvent(timestamp int64, instanceID InstanceID, eventID uint64) *InstanceStepEvent {
 	return &InstanceStepEvent{
-		BaseEvent:  newBaseEvent(timestamp, EventTypeInstanceStep),
+		BaseEvent:  newBaseEvent(timestamp, EventTypeInstanceStep, eventID),
 		InstanceID: instanceID,
 	}
 }
@@ -100,9 +97,9 @@ type RequestCompletedEvent struct {
 	InstanceID InstanceID
 }
 
-func NewRequestCompletedEvent(timestamp int64, req *Request, instanceID InstanceID) *RequestCompletedEvent {
+func NewRequestCompletedEvent(timestamp int64, req *Request, instanceID InstanceID, eventID uint64) *RequestCompletedEvent {
 	return &RequestCompletedEvent{
-		BaseEvent:  newBaseEvent(timestamp, EventTypeRequestCompleted),
+		BaseEvent:  newBaseEvent(timestamp, EventTypeRequestCompleted, eventID),
 		Request:    req,
 		InstanceID: instanceID,
 	}

@@ -30,7 +30,7 @@ func TestDeterminism_BC9_SameSeedIdenticalResults(t *testing.T) {
 			PromptTokens: 100,
 			OutputTokens: 50,
 		}
-		sim1.ScheduleEvent(NewRequestArrivalEvent(int64(100*i), req))
+		sim1.ScheduleEvent(sim1.NewRequestArrivalEvent(int64(100*i), req))
 	}
 
 	// Simulation 2 - identical setup
@@ -52,7 +52,7 @@ func TestDeterminism_BC9_SameSeedIdenticalResults(t *testing.T) {
 			PromptTokens: 100,
 			OutputTokens: 50,
 		}
-		sim2.ScheduleEvent(NewRequestArrivalEvent(int64(100*i), req))
+		sim2.ScheduleEvent(sim2.NewRequestArrivalEvent(int64(100*i), req))
 	}
 
 	// Run both simulations (limited steps for this test)
@@ -136,7 +136,7 @@ func TestDeterminism_BC9_DifferentSeedDifferentResults(t *testing.T) {
 				PromptTokens: 100,
 				OutputTokens: 50,
 			}
-			sim.ScheduleEvent(NewRequestArrivalEvent(int64(100*i), req))
+			sim.ScheduleEvent(sim.NewRequestArrivalEvent(int64(100*i), req))
 		}
 	}
 
@@ -204,7 +204,7 @@ func TestDeterminism_BC11_NoExternalStateDependency(t *testing.T) {
 				PromptTokens: 100,
 				OutputTokens: 50,
 			}
-			sim.ScheduleEvent(NewRequestArrivalEvent(int64(100*i), req))
+			sim.ScheduleEvent(sim.NewRequestArrivalEvent(int64(100*i), req))
 		}
 
 		// Run simulation
@@ -257,10 +257,10 @@ func TestDeterminism_TieBreaking(t *testing.T) {
 		req2 := &Request{ID: "req2", PromptTokens: 100, OutputTokens: 50}
 
 		// All at timestamp 100
-		sim.ScheduleEvent(NewInstanceStepEvent(100, "inst1"))          // Priority 3
-		sim.ScheduleEvent(NewRequestArrivalEvent(100, req1))           // Priority 1
-		sim.ScheduleEvent(NewRequestCompletedEvent(100, req2, "inst1")) // Priority 4
-		sim.ScheduleEvent(NewRouteDecisionEvent(100, req1, "inst1"))   // Priority 2
+		sim.ScheduleEvent(sim.NewInstanceStepEvent(100, "inst1"))          // Priority 3
+		sim.ScheduleEvent(sim.NewRequestArrivalEvent(100, req1))           // Priority 1
+		sim.ScheduleEvent(sim.NewRequestCompletedEvent(100, req2, "inst1")) // Priority 4
+		sim.ScheduleEvent(sim.NewRouteDecisionEvent(100, req1, "inst1"))   // Priority 2
 
 		// Process events and verify order
 		expectedOrder := []EventType{
@@ -287,9 +287,9 @@ func TestDeterminism_TieBreaking(t *testing.T) {
 
 		// Schedule multiple events of same type at same timestamp
 		// EventID should provide deterministic ordering
-		e1 := NewInstanceStepEvent(100, "inst1")
-		e2 := NewInstanceStepEvent(100, "inst2")
-		e3 := NewInstanceStepEvent(100, "inst3")
+		e1 := sim.NewInstanceStepEvent(100, "inst1")
+		e2 := sim.NewInstanceStepEvent(100, "inst2")
+		e3 := sim.NewInstanceStepEvent(100, "inst3")
 
 		id1, id2, id3 := e1.EventID(), e2.EventID(), e3.EventID()
 
@@ -326,10 +326,10 @@ func TestDeterminism_EventInsertionOrderIndependence(t *testing.T) {
 		req2 := &Request{ID: "req2", PromptTokens: 100, OutputTokens: 50}
 
 		events := []Event{
-			NewRequestArrivalEvent(100, req1),
-			NewRouteDecisionEvent(150, req1, "inst1"),
-			NewInstanceStepEvent(200, "inst1"),
-			NewRequestCompletedEvent(300, req2, "inst1"),
+			sim.NewRequestArrivalEvent(100, req1),
+			sim.NewRouteDecisionEvent(150, req1, "inst1"),
+			sim.NewInstanceStepEvent(200, "inst1"),
+			sim.NewRequestCompletedEvent(300, req2, "inst1"),
 		}
 
 		// Insert in specified order
@@ -389,7 +389,7 @@ func TestDeterminism_NoGlobalRandomness(t *testing.T) {
 	sim1.AddDeployment(config1)
 
 	req1 := &Request{ID: "req1", PromptTokens: 100, OutputTokens: 50}
-	sim1.ScheduleEvent(NewRequestArrivalEvent(100, req1))
+	sim1.ScheduleEvent(sim1.NewRequestArrivalEvent(100, req1))
 
 	// Run a few steps
 	for i := 0; i < 10 && sim1.EventQueue.Len() > 0; i++ {
@@ -421,7 +421,7 @@ func TestDeterminism_NoGlobalRandomness(t *testing.T) {
 	sim2.AddDeployment(config2)
 
 	req2 := &Request{ID: "req1", PromptTokens: 100, OutputTokens: 50}
-	sim2.ScheduleEvent(NewRequestArrivalEvent(100, req2))
+	sim2.ScheduleEvent(sim2.NewRequestArrivalEvent(100, req2))
 
 	for i := 0; i < 10 && sim2.EventQueue.Len() > 0; i++ {
 		event := sim2.EventQueue.PopNext()
@@ -441,6 +441,39 @@ func TestDeterminism_NoGlobalRandomness(t *testing.T) {
 	}
 	if state1 != state2 {
 		t.Errorf("Request state differs: %s vs %s (simulation may be using global rand)", state1, state2)
+	}
+}
+
+// TestDeterminism_EventIDsIdenticalAcrossRuns verifies BC-9: event IDs are deterministic
+// This tests that creating events in a fresh simulator produces identical event IDs
+func TestDeterminism_EventIDsIdenticalAcrossRuns(t *testing.T) {
+	// First run
+	sim1 := NewClusterSimulator(10000)
+	event1_1 := sim1.NewRequestArrivalEvent(100, &Request{ID: "req1"})
+	event1_2 := sim1.NewRequestArrivalEvent(200, &Request{ID: "req2"})
+	event1_3 := sim1.NewInstanceStepEvent(300, "inst1")
+
+	// Second run (fresh simulator)
+	sim2 := NewClusterSimulator(10000)
+	event2_1 := sim2.NewRequestArrivalEvent(100, &Request{ID: "req1"})
+	event2_2 := sim2.NewRequestArrivalEvent(200, &Request{ID: "req2"})
+	event2_3 := sim2.NewInstanceStepEvent(300, "inst1")
+
+	// Verify event IDs are identical across runs
+	if event1_1.EventID() != event2_1.EventID() {
+		t.Errorf("Event IDs differ across runs: run1=%d, run2=%d", event1_1.EventID(), event2_1.EventID())
+	}
+	if event1_2.EventID() != event2_2.EventID() {
+		t.Errorf("Event IDs differ across runs: run1=%d, run2=%d", event1_2.EventID(), event2_2.EventID())
+	}
+	if event1_3.EventID() != event2_3.EventID() {
+		t.Errorf("Event IDs differ across runs: run1=%d, run2=%d", event1_3.EventID(), event2_3.EventID())
+	}
+
+	// Verify event IDs are sequential
+	if event1_1.EventID() != 1 || event1_2.EventID() != 2 || event1_3.EventID() != 3 {
+		t.Errorf("Event IDs not sequential: got %d, %d, %d, want 1, 2, 3",
+			event1_1.EventID(), event1_2.EventID(), event1_3.EventID())
 	}
 }
 

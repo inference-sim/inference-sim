@@ -20,7 +20,8 @@ type ClusterSimulator struct {
 	CompletedRequests int
 
 	// Determinism
-	RNG *PartitionedRNG
+	RNG           *PartitionedRNG
+	nextEventID   uint64 // Per-simulator event counter for deterministic event ordering (BC-9)
 
 	// Round-robin routing state (Phase 1 simple routing)
 	nextInstanceIdx int
@@ -79,6 +80,32 @@ func (c *ClusterSimulator) ScheduleEvent(e Event) {
 	c.EventQueue.Schedule(e)
 }
 
+// newEventID generates the next event ID for this simulator (BC-9 determinism)
+func (c *ClusterSimulator) newEventID() uint64 {
+	c.nextEventID++
+	return c.nextEventID
+}
+
+// NewRequestArrivalEvent creates a new request arrival event
+func (c *ClusterSimulator) NewRequestArrivalEvent(timestamp int64, req *Request) *RequestArrivalEvent {
+	return NewRequestArrivalEvent(timestamp, req, c.newEventID())
+}
+
+// NewRouteDecisionEvent creates a new route decision event
+func (c *ClusterSimulator) NewRouteDecisionEvent(timestamp int64, req *Request, targetInstance InstanceID) *RouteDecisionEvent {
+	return NewRouteDecisionEvent(timestamp, req, targetInstance, c.newEventID())
+}
+
+// NewInstanceStepEvent creates a new instance step event
+func (c *ClusterSimulator) NewInstanceStepEvent(timestamp int64, instanceID InstanceID) *InstanceStepEvent {
+	return NewInstanceStepEvent(timestamp, instanceID, c.newEventID())
+}
+
+// NewRequestCompletedEvent creates a new request completed event
+func (c *ClusterSimulator) NewRequestCompletedEvent(timestamp int64, req *Request, instanceID InstanceID) *RequestCompletedEvent {
+	return NewRequestCompletedEvent(timestamp, req, instanceID, c.newEventID())
+}
+
 // Run executes the simulation until horizon or all requests complete
 func (c *ClusterSimulator) Run() *ClusterMetrics {
 	for c.EventQueue.Len() > 0 {
@@ -119,7 +146,7 @@ func (c *ClusterSimulator) handleRequestArrival(e *RequestArrivalEvent) {
 		c.nextInstanceIdx++
 
 		// Schedule route decision immediately
-		routeEvent := NewRouteDecisionEvent(e.Timestamp(), req, targetInstance)
+		routeEvent := c.NewRouteDecisionEvent(e.Timestamp(), req, targetInstance)
 		c.ScheduleEvent(routeEvent)
 	}
 }
@@ -139,7 +166,7 @@ func (c *ClusterSimulator) handleRouteDecision(e *RouteDecisionEvent) {
 
 		// Schedule instance step if not already scheduled
 		// (In full implementation, this would check if instance is idle)
-		stepEvent := NewInstanceStepEvent(e.Timestamp()+1, e.TargetInstance)
+		stepEvent := c.NewInstanceStepEvent(e.Timestamp()+1, e.TargetInstance)
 		c.ScheduleEvent(stepEvent)
 	}
 

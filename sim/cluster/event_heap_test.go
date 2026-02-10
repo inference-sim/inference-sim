@@ -9,9 +9,9 @@ func TestEventHeap_TimestampOrdering(t *testing.T) {
 	h := NewEventHeap()
 
 	// Add events with different timestamps in random order
-	e1 := NewRequestArrivalEvent(100, &Request{ID: "r1"})
-	e2 := NewRequestArrivalEvent(50, &Request{ID: "r2"})
-	e3 := NewRequestArrivalEvent(150, &Request{ID: "r3"})
+	e1 := NewRequestArrivalEvent(100, &Request{ID: "r1"}, 1)
+	e2 := NewRequestArrivalEvent(50, &Request{ID: "r2"}, 2)
+	e3 := NewRequestArrivalEvent(150, &Request{ID: "r3"}, 3)
 
 	h.Schedule(e1)
 	h.Schedule(e2)
@@ -44,8 +44,8 @@ func TestEventHeap_TypePriorityOrdering(t *testing.T) {
 
 	// Add events at same timestamp with different types
 	// RequestArrival (priority 1) should come before InstanceStep (priority 3)
-	eStep := NewInstanceStepEvent(100, "inst1")
-	eArrival := NewRequestArrivalEvent(100, &Request{ID: "r1"})
+	eStep := NewInstanceStepEvent(100, "inst1", 1)
+	eArrival := NewRequestArrivalEvent(100, &Request{ID: "r1"}, 2)
 
 	// Add in reverse priority order
 	h.Schedule(eStep)
@@ -68,9 +68,9 @@ func TestEventHeap_EventIDOrdering(t *testing.T) {
 	h := NewEventHeap()
 
 	// Add multiple events of same type at same timestamp
-	e1 := NewInstanceStepEvent(100, "inst1")
-	e2 := NewInstanceStepEvent(100, "inst2")
-	e3 := NewInstanceStepEvent(100, "inst3")
+	e1 := NewInstanceStepEvent(100, "inst1", 1)
+	e2 := NewInstanceStepEvent(100, "inst2", 2)
+	e3 := NewInstanceStepEvent(100, "inst3", 3)
 
 	// Store event IDs (they should be increasing)
 	id1 := e1.EventID()
@@ -102,10 +102,10 @@ func TestEventHeap_EventIDOrdering(t *testing.T) {
 // TestEventHeap_DeterministicOrdering tests that ordering is deterministic regardless of insertion order
 func TestEventHeap_DeterministicOrdering(t *testing.T) {
 	// Create events at same timestamp with different types
-	eArrival := NewRequestArrivalEvent(100, &Request{ID: "r1"})
-	eRoute := NewRouteDecisionEvent(100, &Request{ID: "r1"}, "inst1")
-	eStep := NewInstanceStepEvent(100, "inst1")
-	eCompleted := NewRequestCompletedEvent(100, &Request{ID: "r1"}, "inst1")
+	eArrival := NewRequestArrivalEvent(100, &Request{ID: "r1"}, 1)
+	eRoute := NewRouteDecisionEvent(100, &Request{ID: "r1"}, "inst1", 2)
+	eStep := NewInstanceStepEvent(100, "inst1", 3)
+	eCompleted := NewRequestCompletedEvent(100, &Request{ID: "r1"}, "inst1", 4)
 
 	// Test 1: Add in priority order
 	h1 := NewEventHeap()
@@ -167,12 +167,12 @@ func TestEventHeap_ComplexOrdering(t *testing.T) {
 	// t=100: Two Steps (should be in EventID order)
 	// t=200: Completed
 
-	e1 := NewRequestArrivalEvent(50, &Request{ID: "r1"})
-	e2 := NewInstanceStepEvent(100, "inst1")
-	e3 := NewRequestArrivalEvent(100, &Request{ID: "r2"})
-	e4 := NewRouteDecisionEvent(100, &Request{ID: "r2"}, "inst1")
-	e5 := NewInstanceStepEvent(100, "inst2")
-	e6 := NewRequestCompletedEvent(200, &Request{ID: "r1"}, "inst1")
+	e1 := NewRequestArrivalEvent(50, &Request{ID: "r1"}, 1)
+	e2 := NewInstanceStepEvent(100, "inst1", 2)
+	e3 := NewRequestArrivalEvent(100, &Request{ID: "r2"}, 3)
+	e4 := NewRouteDecisionEvent(100, &Request{ID: "r2"}, "inst1", 4)
+	e5 := NewInstanceStepEvent(100, "inst2", 5)
+	e6 := NewRequestCompletedEvent(200, &Request{ID: "r1"}, "inst1", 6)
 
 	// Add in random order
 	h.Schedule(e6)
@@ -238,8 +238,8 @@ func TestEventHeap_Peek(t *testing.T) {
 		t.Error("Peek on empty heap should return nil")
 	}
 
-	e1 := NewRequestArrivalEvent(100, &Request{ID: "r1"})
-	e2 := NewRequestArrivalEvent(50, &Request{ID: "r2"})
+	e1 := NewRequestArrivalEvent(100, &Request{ID: "r1"}, 1)
+	e2 := NewRequestArrivalEvent(50, &Request{ID: "r2"}, 2)
 
 	h.Schedule(e1)
 	h.Schedule(e2)

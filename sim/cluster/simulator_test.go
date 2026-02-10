@@ -137,8 +137,8 @@ func TestClusterSimulator_BC5_ClockMonotonicity(t *testing.T) {
 	req1 := &Request{ID: "req1", PromptTokens: 100, OutputTokens: 50}
 	req2 := &Request{ID: "req2", PromptTokens: 100, OutputTokens: 50}
 
-	sim.ScheduleEvent(NewRequestArrivalEvent(100, req1))
-	sim.ScheduleEvent(NewRequestArrivalEvent(200, req2))
+	sim.ScheduleEvent(sim.NewRequestArrivalEvent(100, req1))
+	sim.ScheduleEvent(sim.NewRequestArrivalEvent(200, req2))
 
 	// Run and verify clock increases
 	lastClock := sim.Clock
@@ -177,7 +177,7 @@ func TestClusterSimulator_BC7_RequestLifecycle(t *testing.T) {
 
 	// Schedule request arrival
 	req := &Request{ID: "req1", PromptTokens: 100, OutputTokens: 50}
-	sim.ScheduleEvent(NewRequestArrivalEvent(100, req))
+	sim.ScheduleEvent(sim.NewRequestArrivalEvent(100, req))
 
 	// Process events
 	for i := 0; i < 10 && sim.EventQueue.Len() > 0; i++ {
@@ -232,7 +232,7 @@ func TestClusterSimulator_BC8_Causality(t *testing.T) {
 	}
 
 	// Should not panic - valid causality
-	event := NewRequestCompletedEvent(500, req, "inst1")
+	event := sim.NewRequestCompletedEvent(500, req, "inst1")
 	sim.handleRequestCompleted(event)
 
 	// Test invalid causality (arrival > route)
@@ -250,7 +250,7 @@ func TestClusterSimulator_BC8_Causality(t *testing.T) {
 		}
 	}()
 
-	event2 := NewRequestCompletedEvent(500, req2, "inst1")
+	event2 := sim.NewRequestCompletedEvent(500, req2, "inst1")
 	sim.handleRequestCompleted(event2)
 }
 
@@ -276,7 +276,7 @@ func TestClusterSimulator_BC14_EventQueueBounds(t *testing.T) {
 			PromptTokens: 100,
 			OutputTokens: 50,
 		}
-		sim.ScheduleEvent(NewRequestArrivalEvent(int64(100*i), req))
+		sim.ScheduleEvent(sim.NewRequestArrivalEvent(int64(100*i), req))
 	}
 
 	initialQueueSize := sim.EventQueue.Len()
