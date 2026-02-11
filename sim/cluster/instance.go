@@ -17,8 +17,9 @@ type InstanceID string
 //
 // Thread-safety: NOT thread-safe. All methods must be called from the same goroutine.
 type InstanceSimulator struct {
-	id  InstanceID
-	sim *sim.Simulator
+	id     InstanceID
+	sim    *sim.Simulator
+	hasRun bool
 }
 
 // NewInstanceSimulator creates an InstanceSimulator wrapping a new Simulator.
@@ -77,7 +78,13 @@ func NewInstanceSimulator(
 // Postconditions:
 //   - Metrics() returns populated metrics
 //   - Clock() returns final simulation time
+//
+// Panics if called more than once (run-once semantics).
 func (i *InstanceSimulator) Run() {
+	if i.hasRun {
+		panic("InstanceSimulator.Run() called more than once")
+	}
+	i.hasRun = true
 	i.sim.Run()
 }
 

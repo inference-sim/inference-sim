@@ -354,6 +354,40 @@ func TestInstanceSimulator_ZeroRequests(t *testing.T) {
 	}
 }
 
+// TestInstanceSimulator_RunOnce_PanicsOnSecondCall verifies run-once semantics:
+// GIVEN an InstanceSimulator that has already Run()
+// WHEN Run() is called again
+// THEN it panics with "InstanceSimulator.Run() called more than once"
+func TestInstanceSimulator_RunOnce_PanicsOnSecondCall(t *testing.T) {
+	instance := NewInstanceSimulator(
+		InstanceID("test"),
+		1000000, 42, 1000, 16, 256, 2048, 0,
+		[]float64{1000, 10, 5}, []float64{100, 1, 100},
+		&sim.GuideLLMConfig{Rate: 10.0 / 1e6, MaxPrompts: 5,
+			PromptTokens: 100, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 200,
+			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100},
+		sim.ModelConfig{}, sim.HardwareCalib{},
+		"test", "H100", 1, false, "",
+	)
+
+	// First run should succeed
+	instance.Run()
+
+	// Second run should panic
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Expected panic on second Run() call, but got none")
+		}
+		expected := "InstanceSimulator.Run() called more than once"
+		if r != expected {
+			t.Errorf("Panic message = %q, want %q", r, expected)
+		}
+	}()
+
+	instance.Run() // Should panic
+}
+
 // === Helper Functions ===
 
 func assertFloat64Equal(t *testing.T, name string, want, got, relTol float64) {
