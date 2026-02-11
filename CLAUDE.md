@@ -116,7 +116,8 @@ This project follows BDD/TDD practices. When implementing features:
 Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
 - 21 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~4 weeks** (after Phase 2) enables early policy experiments
-- Next steps: Phase 1 (Foundation) - PartitionedRNG, InstanceSimulator, ClusterSimulator
+- **Completed:** PR1 (PartitionedRNG for deterministic multi-subsystem simulation)
+- Next steps: PR2-3 (InstanceSimulator, ClusterSimulator)
 - Will add `sim/cluster/`, `sim/policy/`, `sim/kv/`, `sim/workload/`, `sim/trace/` packages
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
@@ -142,6 +143,7 @@ inference-sim/
 │   ├── batch.go               # Batch formation
 │   ├── queue.go               # Wait queue
 │   ├── metrics.go             # TTFT, TPOT, E2E collection
+│   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
 │   ├── roofline_step.go       # Analytical latency estimation
 │   ├── model_hardware_config.go # HF config, hardware specs
 │   └── workload_config.go     # Workload generation

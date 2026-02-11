@@ -10,6 +10,8 @@ This is deep implementation planning.
 No coding yet.
 Only design.
 
+Use behavior driven development methodology for each PR. 
+
 ======================================================================
 PHASE 0 — TARGETED RECON
 ======================================================================
@@ -136,13 +138,14 @@ Before implementation, verify:
 OUTPUT FORMAT (STRICT)
 ======================================================================
 
-A) Targeted Recon Summary  
-B) Expanded Contracts  
-C) Detailed Implementation Plan  
-D) CLI Exercise Proof  
-E) Test Matrix  
-F) Risk Analysis  
-G) Sanity Checklist  
+A) Executive summary
+B) Targeted Recon Summary  
+C) Expanded Contracts  
+D) Detailed Implementation Plan  
+E) CLI Exercise Proof  
+F) Test Matrix  
+G) Risk Analysis  
+H) Sanity Checklist  
 
 ======================================================================
 
