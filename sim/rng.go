@@ -26,12 +26,12 @@ const (
 	SubsystemWorkload = "workload"
 
 	// SubsystemRouter is the RNG subsystem for routing decisions.
-	// Used in PR 6+.
+	// Used for request routing in multi-replica cluster simulations.
 	SubsystemRouter = "router"
 )
 
 // SubsystemInstance returns the subsystem name for instance N.
-// Used in PR 2+ for per-instance RNG isolation.
+// Provides per-instance RNG isolation in multi-replica cluster simulations.
 func SubsystemInstance(id int) string {
 	return fmt.Sprintf("instance_%d", id)
 }
@@ -61,6 +61,9 @@ func NewPartitionedRNG(key SimulationKey) *PartitionedRNG {
 // ForSubsystem returns a deterministically-seeded RNG for the named subsystem.
 // The same subsystem name always returns the same *rand.Rand instance (cached).
 // Never returns nil.
+//
+// Thread-safety: Callers MUST NOT share the returned *rand.Rand across goroutines.
+// The pointer is cached internally; repeated calls return the same instance.
 func (p *PartitionedRNG) ForSubsystem(name string) *rand.Rand {
 	if rng, ok := p.subsystems[name]; ok {
 		return rng

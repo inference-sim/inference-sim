@@ -5,6 +5,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"testing"
 )
 
@@ -45,9 +47,38 @@ type GoldenTestCase struct {
 
 // GoldenMetrics represents the expected metrics from a golden test case
 type GoldenMetrics struct {
+	// Exact match metrics (integers)
 	CompletedRequests int `json:"completed_requests"`
 	TotalInputTokens  int `json:"total_input_tokens"`
 	TotalOutputTokens int `json:"total_output_tokens"`
+
+	// Deterministic floating-point metrics (derived from simulation clock)
+	VllmEstimatedDurationS float64 `json:"vllm_estimated_duration_s"`
+	ResponsesPerSec        float64 `json:"responses_per_sec"`
+	TokensPerSec           float64 `json:"tokens_per_sec"`
+
+	// E2E latency metrics
+	E2EMeanMs float64 `json:"e2e_mean_ms"`
+	E2EP90Ms  float64 `json:"e2e_p90_ms"`
+	E2EP95Ms  float64 `json:"e2e_p95_ms"`
+	E2EP99Ms  float64 `json:"e2e_p99_ms"`
+
+	// TTFT latency metrics
+	TTFTMeanMs float64 `json:"ttft_mean_ms"`
+	TTFTP90Ms  float64 `json:"ttft_p90_ms"`
+	TTFTP95Ms  float64 `json:"ttft_p95_ms"`
+	TTFTP99Ms  float64 `json:"ttft_p99_ms"`
+
+	// ITL latency metrics
+	ITLMeanMs float64 `json:"itl_mean_ms"`
+	ITLP90Ms  float64 `json:"itl_p90_ms"`
+	ITLP95Ms  float64 `json:"itl_p95_ms"`
+	ITLP99Ms  float64 `json:"itl_p99_ms"`
+
+	// Scheduling delay
+	SchedulingDelayP99Ms float64 `json:"scheduling_delay_p99_ms"`
+
+	// Note: simulation_duration_s is wall clock time and NOT deterministic, so not tested
 }
 
 // loadGoldenDataset loads the golden dataset from the testdata directory
@@ -71,7 +102,7 @@ func loadGoldenDataset(t *testing.T) *GoldenDataset {
 
 // TestSimulator_GoldenDataset verifies backward compatibility by running
 // all test cases from the golden dataset and comparing results.
-// This is the critical backward compatibility test for PR1.
+// This is the critical backward compatibility test ensuring RNG changes do not alter simulation outcomes.
 func TestSimulator_GoldenDataset(t *testing.T) {
 	dataset := loadGoldenDataset(t)
 
@@ -120,8 +151,8 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 			// Run simulation
 			sim.Run()
 
-			// Verify exact match on critical metrics
-			// These metrics prove identical RNG sequences were generated
+			// === Exact match metrics (integers) ===
+			// These prove identical RNG sequences were generated
 			if sim.Metrics.CompletedRequests != tc.Metrics.CompletedRequests {
 				t.Errorf("completed_requests: got %d, want %d",
 					sim.Metrics.CompletedRequests, tc.Metrics.CompletedRequests)
@@ -136,7 +167,81 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 				t.Errorf("total_output_tokens: got %d, want %d",
 					sim.Metrics.TotalOutputTokens, tc.Metrics.TotalOutputTokens)
 			}
+
+			// === Compute derived metrics from simulation results ===
+			vllmRuntime := float64(sim.Metrics.SimEndedTime) / float64(1e6)
+			responsesPerSec := float64(sim.Metrics.CompletedRequests) / vllmRuntime
+			tokensPerSec := float64(sim.Metrics.TotalOutputTokens) / vllmRuntime
+
+			// TTFT statistics
+			sortedTTFTs := make([]float64, 0, len(sim.Metrics.RequestTTFTs))
+			for _, v := range sim.Metrics.RequestTTFTs {
+				sortedTTFTs = append(sortedTTFTs, v)
+			}
+			sort.Float64s(sortedTTFTs)
+
+			// E2E statistics
+			sortedE2Es := make([]float64, 0, len(sim.Metrics.RequestE2Es))
+			for _, v := range sim.Metrics.RequestE2Es {
+				sortedE2Es = append(sortedE2Es, v)
+			}
+			sort.Float64s(sortedE2Es)
+
+			// ITL statistics
+			slices.Sort(sim.Metrics.AllITLs)
+
+			// Scheduling delay statistics
+			sortedSchedulingDelays := make([]float64, 0, len(sim.Metrics.RequestSchedulingDelays))
+			for _, v := range sim.Metrics.RequestSchedulingDelays {
+				sortedSchedulingDelays = append(sortedSchedulingDelays, float64(v))
+			}
+			sort.Float64s(sortedSchedulingDelays)
+
+			// === Floating-point metrics with tolerance ===
+			// Using relative tolerance of 1e-9 for deterministic floating-point comparisons
+			const relTol = 1e-9
+
+			// vLLM estimated duration (simulation clock based, deterministic)
+			assertFloat64Equal(t, "vllm_estimated_duration_s", tc.Metrics.VllmEstimatedDurationS, vllmRuntime, relTol)
+
+			// Throughput metrics
+			assertFloat64Equal(t, "responses_per_sec", tc.Metrics.ResponsesPerSec, responsesPerSec, relTol)
+			assertFloat64Equal(t, "tokens_per_sec", tc.Metrics.TokensPerSec, tokensPerSec, relTol)
+
+			// E2E latency metrics
+			assertFloat64Equal(t, "e2e_mean_ms", tc.Metrics.E2EMeanMs, CalculateMean(sortedE2Es), relTol)
+			assertFloat64Equal(t, "e2e_p90_ms", tc.Metrics.E2EP90Ms, CalculatePercentile(sortedE2Es, 90), relTol)
+			assertFloat64Equal(t, "e2e_p95_ms", tc.Metrics.E2EP95Ms, CalculatePercentile(sortedE2Es, 95), relTol)
+			assertFloat64Equal(t, "e2e_p99_ms", tc.Metrics.E2EP99Ms, CalculatePercentile(sortedE2Es, 99), relTol)
+
+			// TTFT latency metrics
+			assertFloat64Equal(t, "ttft_mean_ms", tc.Metrics.TTFTMeanMs, CalculateMean(sortedTTFTs), relTol)
+			assertFloat64Equal(t, "ttft_p90_ms", tc.Metrics.TTFTP90Ms, CalculatePercentile(sortedTTFTs, 90), relTol)
+			assertFloat64Equal(t, "ttft_p95_ms", tc.Metrics.TTFTP95Ms, CalculatePercentile(sortedTTFTs, 95), relTol)
+			assertFloat64Equal(t, "ttft_p99_ms", tc.Metrics.TTFTP99Ms, CalculatePercentile(sortedTTFTs, 99), relTol)
+
+			// ITL latency metrics
+			assertFloat64Equal(t, "itl_mean_ms", tc.Metrics.ITLMeanMs, CalculateMean(sim.Metrics.AllITLs), relTol)
+			assertFloat64Equal(t, "itl_p90_ms", tc.Metrics.ITLP90Ms, CalculatePercentile(sim.Metrics.AllITLs, 90), relTol)
+			assertFloat64Equal(t, "itl_p95_ms", tc.Metrics.ITLP95Ms, CalculatePercentile(sim.Metrics.AllITLs, 95), relTol)
+			assertFloat64Equal(t, "itl_p99_ms", tc.Metrics.ITLP99Ms, CalculatePercentile(sim.Metrics.AllITLs, 99), relTol)
+
+			// Scheduling delay
+			assertFloat64Equal(t, "scheduling_delay_p99_ms", tc.Metrics.SchedulingDelayP99Ms, CalculatePercentile(sortedSchedulingDelays, 99), relTol)
 		})
+	}
+}
+
+// assertFloat64Equal compares two float64 values with relative tolerance
+func assertFloat64Equal(t *testing.T, name string, want, got, relTol float64) {
+	t.Helper()
+	if want == 0 && got == 0 {
+		return
+	}
+	diff := math.Abs(want - got)
+	maxVal := math.Max(math.Abs(want), math.Abs(got))
+	if diff/maxVal > relTol {
+		t.Errorf("%s: got %v, want %v (diff=%v, relDiff=%v)", name, got, want, diff, diff/maxVal)
 	}
 }
 
