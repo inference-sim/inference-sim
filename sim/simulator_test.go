@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"testing"
@@ -85,8 +86,12 @@ type GoldenMetrics struct {
 func loadGoldenDataset(t *testing.T) *GoldenDataset {
 	t.Helper()
 
-	// Find testdata relative to this test file
-	path := filepath.Join("..", "testdata", "goldendataset.json")
+	// Find testdata relative to this test file using runtime.Caller
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("Failed to get current file path")
+	}
+	path := filepath.Join(filepath.Dir(thisFile), "..", "testdata", "goldendataset.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("Failed to read golden dataset: %v", err)
