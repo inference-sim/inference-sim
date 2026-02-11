@@ -113,10 +113,10 @@ This project follows BDD/TDD practices. When implementing features:
 
 ### Current Implementation Focus
 
-Active development: Evolutionary Policy Optimization extension (see `docs/plans/`):
-- Phase 1: Multi-replica cluster simulation with deterministic execution
-- Creating `sim/cluster/` package with `ClusterSimulator`, `InstanceSimulator`
-- Adding `PartitionedRNG` for deterministic replay across runs
+Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan.md`):
+- 23 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
+- Next steps: Phase 1 (Foundation) - PartitionedRNG, InstanceSimulator, ClusterSimulator
+- Will add `sim/cluster/`, `sim/policy/`, `sim/kv/`, `sim/workload/`, `sim/trace/` packages
 
 ### Code Style
 
@@ -143,7 +143,7 @@ inference-sim/
 │   ├── roofline_step.go       # Analytical latency estimation
 │   ├── model_hardware_config.go # HF config, hardware specs
 │   └── workload_config.go     # Workload generation
-├── sim/cluster/               # Multi-replica extension (in development)
+├── sim/cluster/               # Multi-replica extension (planned, not yet implemented)
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
 ├── hardware_config.json       # GPU specifications
@@ -152,5 +152,7 @@ inference-sim/
 
 ## Design Documents
 
-- `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full design for cluster simulation extension
-- `docs/plans/2026-02-09-phase1-core-engine-determinism.md`: Phase 1 implementation plan with detailed contracts and tests
+- `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
+- `docs/plans/2026-02-11-macro-implementation-plan.md`: Macro-level implementation plan (23 PRs across 6 phases)
+- `docs/plans/macroplanprompt.md`: Template for macro-level planning
+- `docs/plans/prmicroplanprompt.md`: Template for micro-level (per-PR) planning
