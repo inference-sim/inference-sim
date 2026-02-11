@@ -54,11 +54,12 @@ func NewMetrics() *Metrics {
 	}
 }
 
-func (m *Metrics) SaveResults(horizon int64, totalBlocks int64, startTime time.Time, outputFilePath string) {
+func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, startTime time.Time, outputFilePath string) {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
 	// Create an instance of our output struct to populate
 	output := MetricsOutput{
+		InstanceID:            instanceID,
 		SimStartTimestamp:     startTime.Format("2006-01-02 15:04:05"),
 		SimEndTimestamp:       time.Now().Format("2006-01-02 15:04:05"),
 		CompletedRequests:     m.CompletedRequests,

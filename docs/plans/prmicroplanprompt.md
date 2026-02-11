@@ -76,6 +76,7 @@ Explicitly confirm:
 - All new codepaths exercised via CLI
 - No unused abstractions introduced
 - No speculative scaffolding
+- All new code passes `golangci-lint`
 
 If you detect dead code risk → redesign before proceeding.
 
@@ -104,8 +105,14 @@ Define:
 - Failure mode tests
 - Golden tests (if applicable)
 - Concurrency tests (if applicable)
+- Lint verification (golangci-lint)
 
 Each test must map to a specific contract.
+
+Lint requirement:
+- Run `golangci-lint run ./...` on all new/modified packages
+- All new code must pass with zero issues
+- Pre-existing issues in untouched code may be noted but not fixed in this PR
 
 ======================================================================
 PHASE 5 — RISK ANALYSIS
@@ -133,6 +140,7 @@ Before implementation, verify:
 - No partial implementations.
 - No breaking changes without explicit contract updates.
 - No hidden global state impact.
+- All new code will pass golangci-lint.
 
 ======================================================================
 OUTPUT FORMAT (STRICT)
@@ -156,6 +164,30 @@ Quality bar:
 - Must eliminate dead code.
 - Must reduce risk of implementation bugs.
 - Must remain strictly within the scope defined in the Macro Plan.
+- Must pass golangci-lint with zero new issues.
+
+======================================================================
+LINTING REQUIREMENTS
+======================================================================
+
+This project uses golangci-lint for static analysis. The same linter
+configuration runs locally and in CI.
+
+Local verification (run before submitting PR):
+```bash
+golangci-lint run ./...
+```
+
+CI verification (.github/workflows/ci.yml):
+- Uses golangci/golangci-lint-action@v6
+- Same version as local development
+
+Rules:
+1. All NEW code must pass lint with zero issues.
+2. Do not fix pre-existing lint issues in unrelated code (scope creep).
+3. If a lint rule seems wrong, document why and discuss before disabling.
+
+======================================================================
 
 Think carefully.
 Inspect deeply.
