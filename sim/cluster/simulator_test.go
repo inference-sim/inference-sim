@@ -1,6 +1,9 @@
 package cluster
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestClusterSimulator_Creation tests cluster creation
 func TestClusterSimulator_Creation(t *testing.T) {
@@ -378,5 +381,90 @@ func TestClusterSimulator_MetricsAggregation(t *testing.T) {
 	}
 	if len(metrics.PerInstance) != 2 {
 		t.Errorf("PerInstance count = %d, want 2", len(metrics.PerInstance))
+	}
+}
+
+// TestClusterSimulator_AddDeployment_ValidatesConfig tests BC-1 and BC-2 validation
+func TestClusterSimulator_AddDeployment_ValidatesConfig(t *testing.T) {
+	sim := NewClusterSimulator(10000)
+
+	tests := []struct {
+		name        string
+		config      *DeploymentConfig
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "invalid model config - NumLayers zero",
+			config: &DeploymentConfig{
+				ConfigID: "config1",
+				ModelConfig: &HFModelConfig{
+					NumLayers:         0, // Invalid
+					HiddenSize:        4096,
+					NumAttentionHeads: 32,
+					NumKVHeads:        8,
+					BytesPerParam:     2,
+				},
+			},
+			wantErr:     true,
+			errContains: "invalid model config",
+		},
+		{
+			name: "invalid engine config - negative TP",
+			config: &DeploymentConfig{
+				ConfigID: "config2",
+				EngineConfig: &VLLMEngineConfig{
+					TensorParallelSize:   0, // Invalid
+					PipelineParallelSize: 1,
+					DataParallelSize:     1,
+					MaxNumSeqs:           256,
+					MaxNumBatchedTokens:  4096,
+					BlockSize:            16,
+					GPUMemoryUtilization: 0.9,
+				},
+			},
+			wantErr:     true,
+			errContains: "invalid engine config",
+		},
+		{
+			name: "valid config",
+			config: &DeploymentConfig{
+				ConfigID: "config3",
+				ModelConfig: &HFModelConfig{
+					NumLayers:         32,
+					HiddenSize:        4096,
+					NumAttentionHeads: 32,
+					NumKVHeads:        8,
+					BytesPerParam:     2,
+				},
+				EngineConfig: &VLLMEngineConfig{
+					TensorParallelSize:   1,
+					PipelineParallelSize: 1,
+					DataParallelSize:     1,
+					MaxNumSeqs:           256,
+					MaxNumBatchedTokens:  4096,
+					BlockSize:            16,
+					GPUMemoryUtilization: 0.9,
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := sim.AddDeployment(tt.config)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("AddDeployment() expected error, got nil")
+				} else if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("AddDeployment() error = %v, want error containing %q", err, tt.errContains)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("AddDeployment() unexpected error: %v", err)
+				}
+			}
+		})
 	}
 }

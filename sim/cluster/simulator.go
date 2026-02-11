@@ -44,12 +44,27 @@ func NewClusterSimulator(horizon int64) *ClusterSimulator {
 }
 
 // AddDeployment adds a deployment configuration to the cluster
+// Validates model and engine configs before accepting (BC-1, BC-2)
 func (c *ClusterSimulator) AddDeployment(config *DeploymentConfig) error {
 	if config == nil {
 		return fmt.Errorf("deployment config cannot be nil")
 	}
 	if _, exists := c.Deployments[config.ConfigID]; exists {
 		return fmt.Errorf("deployment %s already exists", config.ConfigID)
+	}
+
+	// Validate model configuration (BC-1)
+	if config.ModelConfig != nil {
+		if err := config.ModelConfig.Validate(); err != nil {
+			return fmt.Errorf("invalid model config for deployment %s: %w", config.ConfigID, err)
+		}
+	}
+
+	// Validate engine configuration (BC-2)
+	if config.EngineConfig != nil {
+		if err := config.EngineConfig.Validate(); err != nil {
+			return fmt.Errorf("invalid engine config for deployment %s: %w", config.ConfigID, err)
+		}
 	}
 
 	c.Deployments[config.ConfigID] = config
