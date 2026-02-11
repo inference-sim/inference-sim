@@ -113,10 +113,12 @@ This project follows BDD/TDD practices. When implementing features:
 
 ### Current Implementation Focus
 
-Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan.md`):
-- 23 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
-- Next steps: Phase 1 (Foundation) - PartitionedRNG, InstanceSimulator, ClusterSimulator
+Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
+- 24 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
+- **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
+- Next steps: Phase 1 (Foundation) - PartitionedRNG, InstanceSimulator, DeploymentConfig, ClusterSimulator
 - Will add `sim/cluster/`, `sim/policy/`, `sim/kv/`, `sim/workload/`, `sim/trace/` packages
+- Each policy type includes pathological templates for baseline testing and anomaly detection validation
 
 ### Code Style
 
@@ -143,7 +145,12 @@ inference-sim/
 │   ├── roofline_step.go       # Analytical latency estimation
 │   ├── model_hardware_config.go # HF config, hardware specs
 │   └── workload_config.go     # Workload generation
-├── sim/cluster/               # Multi-replica extension (planned, not yet implemented)
+├── sim/cluster/               # Multi-replica extension (planned)
+├── sim/policy/                # Pluggable policies (planned)
+├── sim/kv/                    # Tiered KV cache (planned, Phase 4)
+├── sim/workload/              # Enhanced workload generation (planned, Phase 3)
+├── sim/trace/                 # Decision traces (planned, Phase 4)
+├── sim/adapter/               # Framework adapters (planned, Phase 5)
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
 ├── hardware_config.json       # GPU specifications
@@ -153,6 +160,7 @@ inference-sim/
 ## Design Documents
 
 - `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
-- `docs/plans/2026-02-11-macro-implementation-plan.md`: Macro-level implementation plan (23 PRs across 6 phases)
+- `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: **Current** macro-level implementation plan (v2.1, 24 PRs across 6 phases, research-first ordering)
+- `docs/plans/2026-02-11-macro-implementation-plan.md`: Original macro-level implementation plan (v1, superseded)
 - `docs/plans/macroplanprompt.md`: Template for macro-level planning
 - `docs/plans/prmicroplanprompt.md`: Template for micro-level (per-PR) planning
