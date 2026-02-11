@@ -34,6 +34,7 @@ type RequestMetrics struct {
 
 // MetricsOutput defines the JSON structure for the saved metrics
 type MetricsOutput struct {
+	InstanceID            string           `json:"instance_id"`
 	SimStartTimestamp     string           `json:"sim_start_timestamp"`
 	SimEndTimestamp       string           `json:"sim_end_timestamp"`
 	CompletedRequests     int              `json:"completed_requests"`

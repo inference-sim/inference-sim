@@ -17,7 +17,11 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 	if err != nil {
 		logrus.Fatalf("failed to open csv file: %v", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			logrus.Warnf("failed to close csv file %q: %v", sim.TracesWorkloadFilePath, err)
+		}
+	}()
 
 	reader := csv.NewReader(file)
 

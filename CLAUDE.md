@@ -116,8 +116,8 @@ This project follows BDD/TDD practices. When implementing features:
 Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
 - 21 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~4 weeks** (after Phase 2) enables early policy experiments
-- **Completed:** PR1 (PartitionedRNG for deterministic multi-subsystem simulation)
-- Next steps: PR2-3 (InstanceSimulator, ClusterSimulator)
+- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator wrapper with run-once guard)
+- **Next:** PR3 (ClusterSimulator)
 - Will add `sim/cluster/`, `sim/policy/`, `sim/kv/`, `sim/workload/`, `sim/trace/` packages
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
@@ -127,10 +127,20 @@ Active development: Evolutionary Policy Optimization extension (see `docs/plans/
 - Explicit tie-breaking for determinism (timestamp → event type priority → event ID)
 - Partitioned RNG per subsystem to isolate randomness
 
+### CI/CD
+
+GitHub Actions CI runs on all PRs to main (`.github/workflows/ci.yml`):
+- `go build ./...` - Build verification
+- `golangci-lint run ./...` - Static analysis (v2.9.0)
+- `go test ./...` - Test suite
+
+Run lint locally before pushing: `golangci-lint run ./...`
+
 ## File Organization
 
 ```
 inference-sim/
+├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
 │   ├── root.go                # CLI commands and flags
@@ -147,7 +157,7 @@ inference-sim/
 │   ├── roofline_step.go       # Analytical latency estimation
 │   ├── model_hardware_config.go # HF config, hardware specs
 │   └── workload_config.go     # Workload generation
-├── sim/cluster/               # Multi-replica extension (planned)
+├── sim/cluster/               # Multi-replica extension (InstanceSimulator added in PR2)
 ├── sim/policy/                # Pluggable policies (planned)
 ├── sim/kv/                    # Tiered KV cache (planned, Phase 4)
 ├── sim/workload/              # Enhanced workload generation (planned, Phase 3)

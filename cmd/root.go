@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
 var (
@@ -170,8 +171,9 @@ var runCmd = &cobra.Command{
 		}
 
 		startTime := time.Now() // Get current time (start)
-		// Initialize and run the simulator
-		s := sim.NewSimulator(
+		// Initialize and run the simulator through InstanceSimulator wrapper
+		instance := cluster.NewInstanceSimulator(
+			cluster.InstanceID("default"),
 			simulationHorizon,
 			seed,
 			totalKVBlocks,
@@ -190,10 +192,10 @@ var runCmd = &cobra.Command{
 			roofline,
 			tracesWorkloadFilePath,
 		)
-		s.Run()
+		instance.Run()
 
 		// Print and save results
-		s.Metrics.SaveResults(s.Horizon, totalKVBlocks, startTime, resultsPath)
+		instance.Metrics().SaveResults(string(instance.ID()), instance.Horizon(), totalKVBlocks, startTime, resultsPath)
 
 		logrus.Info("Simulation complete.")
 	},
