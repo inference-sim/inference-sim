@@ -114,11 +114,11 @@ This project follows BDD/TDD practices. When implementing features:
 ### Current Implementation Focus
 
 Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
-- 24 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
-- **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
-- Next steps: Phase 1 (Foundation) - PartitionedRNG, InstanceSimulator, DeploymentConfig, ClusterSimulator
+- 21 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
+- **Research-ready checkpoint at ~4 weeks** (after Phase 2) enables early policy experiments
+- Next steps: Phase 1 (Foundation) - PartitionedRNG, InstanceSimulator, ClusterSimulator
 - Will add `sim/cluster/`, `sim/policy/`, `sim/kv/`, `sim/workload/`, `sim/trace/` packages
-- Each policy type includes pathological templates for baseline testing and anomaly detection validation
+- Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
 ### Code Style
 
@@ -160,6 +160,6 @@ inference-sim/
 ## Design Documents
 
 - `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
-- `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v2.1, 24 PRs across 6 phases, research-first ordering)
+- `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v2.2, 21 PRs across 6 phases, no scaffolding)
 - `docs/plans/macroplanprompt.md`: Template for macro-level planning
 - `docs/plans/prmicroplanprompt.md`: Template for micro-level (per-PR) planning

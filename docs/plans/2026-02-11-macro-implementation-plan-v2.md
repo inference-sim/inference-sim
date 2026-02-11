@@ -1,29 +1,35 @@
 # BLIS Evolutionary Policy Optimization: Macro-Level Implementation Plan (v2)
 
 **Date:** 2026-02-11
-**Revision:** v2.1 (incorporates Perplexity, Gemini, and GPT-4o review feedback)
+**Revision:** v2.2 (incorporates Perplexity, Gemini, and GPT-4o review feedback + scaffolding cleanup)
 **Status:** Draft
 **Target:** Multi-replica cluster simulation with pluggable policies
 **Based on:** [Design Document](2026-02-06-evolutionary-policy-optimization-design.md)
 
 ---
 
-## Revision Notes (v2.1)
+## Revision Notes (v2.2)
 
-This revision incorporates feedback from external review (Perplexity, Gemini, GPT-4o):
+This revision incorporates feedback from external review (Perplexity, Gemini, GPT-4o) and scaffolding cleanup:
 
 **v2 changes (Perplexity):**
 1. **Earlier research-ready checkpoint** — Metrics/fitness evaluation moved up to enable policy research after Phase 2
 2. **Deferred tiered KV** — Single-tier KV sufficient for initial policy research; tiered offload/reload moves to Phase 4
-3. **Pathological policy templates** — Added to each policy PR for baseline testing and anomaly detection validation
-4. **Mock study checkpoint** — Added after PR 4 to validate interfaces before freeze
-5. **Reordered for fastest research loop** — Research-ready in ~5 weeks vs ~6 weeks
+3. **Mock study checkpoint** — Added after PR 3 to validate interfaces before freeze
+4. **Reordered for fastest research loop** — Research-ready in ~4 weeks vs ~6 weeks
 
 **v2.1 changes (Gemini + GPT-4o):**
-6. **Interface extension point** — Added `Extended` map to `InstanceSnapshot` for Phase 4+ observables; clarified "freeze" means no breaking changes
-7. **Policy lifecycle clarification** — New section F.6 documents that policy instances persist and may maintain internal state
-8. **Edge case workloads** — Expanded PR 12-13 scope to include bursty/diurnal arrivals and multi-tenant fairness scenarios
-9. **Parallel trace collection** — Added note that real-world trace collection can begin during Phase 2 as separate workstream
+5. **Interface extension point** — Added `Extended` map to `InstanceSnapshot` for Phase 4+ observables; clarified "freeze" means no breaking changes
+6. **Policy lifecycle clarification** — New section F.6 documents that policy instances persist and may maintain internal state
+7. **Edge case workloads** — Expanded workload generator scope to include bursty/diurnal arrivals and multi-tenant fairness scenarios
+8. **Parallel trace collection** — Added note that real-world trace collection can begin during Phase 2 as separate workstream
+
+**v2.2 changes (scaffolding cleanup):**
+9. **Merged PR 3+4** — DeploymentConfig now introduced with ClusterSimulator (no scaffolding)
+10. **Merged PR 12+13** — WorkloadSpec types introduced with generator (no scaffolding)
+11. **Consolidated pathological templates** — Moved from policy PRs to anomaly validation PR (no test infrastructure in feature PRs)
+12. **Merged PR 10+11** — RawMetrics and anomaly validation combined into single PR
+13. **Reduced total PRs** — 24 → 21 PRs with no scaffolding or dead code
 
 ---
 
@@ -41,10 +47,10 @@ This plan transforms BLIS from a single-instance LLM inference simulator into a 
 **Coefficient learning is out of scope.** BLIS consumes pre-trained coefficients (alpha/beta for latency estimation). A separate instrumentation effort collects real vLLM data to train these coefficients.
 
 **Implementation:**
-- 6 phases, 24 PRs
-- **Research-ready checkpoint after Phase 2** (~5 weeks)
-- Each PR is CLI-exercisable immediately after merge
-- Estimated 10-11 weeks with 3-4 developers
+- 6 phases, 21 PRs
+- **Research-ready checkpoint after Phase 2** (~4 weeks)
+- Each PR is CLI-exercisable immediately after merge — no scaffolding
+- Estimated 9-10 weeks with 3-4 developers
 
 ---
 
@@ -392,22 +398,38 @@ autoscale:
 
 ### F.2 Built-in Policy Templates
 
+**Core templates (PR 4-7):**
+
 | Policy Type | Templates Available |
 |-------------|---------------------|
-| **Admission** | `always-admit`, `token-bucket`, `rate-limit`, `tenant-quota`, `reject-all`* |
-| **Priority** | `constant`, `slo-based`, `tenant-priority`, `deadline-aware`, `inverted-slo`* |
-| **Routing** | `round-robin`, `least-loaded`, `weighted-scoring`, `prefix-affinity`, `always-busiest`* |
-| **Scheduler** | `fcfs`, `priority-fcfs`, `sjf` (shortest job first), `reverse-priority`* |
+| **Admission** | `always-admit`, `token-bucket`, `rate-limit`, `tenant-quota` |
+| **Priority** | `constant`, `slo-based`, `tenant-priority`, `deadline-aware` |
+| **Routing** | `round-robin`, `least-loaded`, `weighted-scoring`, `prefix-affinity` |
+| **Scheduler** | `fcfs`, `priority-fcfs`, `sjf` (shortest job first) |
+
+**Pathological templates (PR 9, with anomaly detection):**
+
+| Policy Type | Pathological Template |
+|-------------|----------------------|
+| **Admission** | `reject-all` |
+| **Priority** | `inverted-slo` |
+| **Routing** | `always-busiest` |
+| **Scheduler** | `reverse-priority` |
+
+**AutoScale templates (PR 11):**
+
+| Policy Type | Templates Available |
+|-------------|---------------------|
 | **AutoScale** | `threshold`, `target-utilization`, `queue-depth`, `oscillator`* |
 
-*\* Pathological templates for baseline testing and anomaly detection validation*
+*\* Pathological template for scale oscillation testing*
 
-### F.3 Pathological Templates (New in v2)
+### F.3 Pathological Templates (Consolidated in PR 9)
 
-Each policy type includes at least one intentionally bad template to:
-1. Validate anomaly detection metrics work correctly
-2. Provide baselines for comparing evolved policies
-3. Test failure mode detection
+Pathological templates are introduced alongside anomaly detection in PR 9, not scattered across policy PRs. This ensures:
+1. No test infrastructure in feature PRs
+2. Templates are immediately testable when added
+3. Anomaly detection and validation are cohesive
 
 | Template | Purpose | Expected Anomalies |
 |----------|---------|-------------------|
@@ -415,7 +437,7 @@ Each policy type includes at least one intentionally bad template to:
 | `inverted-slo` | Priority inversion testing | High `PriorityInversionCount` |
 | `always-busiest` | Load imbalance testing | High `HOLBlockingEvents`, poor tail latency |
 | `reverse-priority` | Scheduler fairness testing | High `PriorityInversionCount` |
-| `oscillator` | Scale stability testing | High `ScaleOscillationCount` |
+| `oscillator` | Scale stability testing (PR 11) | High `ScaleOscillationCount` |
 
 ### F.4 Evolutionary Search Space
 
@@ -787,9 +809,9 @@ sim/
 
 ---
 
-## I) PR Plan (Restructured for Research-First)
+## I) PR Plan (Restructured for Research-First, No Scaffolding)
 
-### Phase 1: Foundation (Sequential)
+### Phase 1: Foundation (Sequential, 3 PRs)
 
 These PRs must be done in order—each depends on the previous.
 
@@ -818,7 +840,7 @@ These PRs must be done in order—each depends on the previous.
 | **Title** | `feat(cluster): Add InstanceSimulator wrapper` |
 | **Motivation** | Composable unit for multi-replica |
 | **In Scope** | `sim/cluster/` package, `InstanceSimulator`, `InstanceID` type |
-| **Out of Scope** | `ClusterSimulator`, `DeploymentConfig`, policies |
+| **Out of Scope** | `ClusterSimulator`, policies |
 | **Files Changed** | New: `sim/cluster/instance.go` (~150 LOC) |
 | **CLI** | Same as PR 1 (internal refactor, external behavior identical) |
 | **Tests** | `InstanceSimulator.Step()` produces identical results to `Simulator.Step()` |
@@ -827,162 +849,141 @@ These PRs must be done in order—each depends on the previous.
 
 ---
 
-#### PR 3: DeploymentConfig and ReplicaPool
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(cluster): Add DeploymentConfig and ReplicaPool` |
-| **Motivation** | Model deployment topology |
-| **In Scope** | `DeploymentConfig`, `ReplicaPool`, `ArchitectureType`, `PoolType` |
-| **Out of Scope** | `ClusterSimulator`, P/D disaggregation |
-| **Files Changed** | New: `sim/cluster/deployment.go` (~100 LOC) |
-| **CLI** | Config loading only; not yet exposed via flags |
-| **Tests** | Unit: config validation, serialization |
-| **No Dead Code** | Used by `ClusterSimulator` in PR 4 |
-| **LOC Estimate** | ~100 |
-
----
-
-#### PR 4: ClusterSimulator with Event Loop
+#### PR 3: ClusterSimulator with DeploymentConfig
 
 | Aspect | Details |
 |--------|---------|
 | **Title** | `feat(cluster): Add ClusterSimulator with multi-instance event loop` |
 | **Motivation** | Run N instances with shared clock |
-| **In Scope** | `ClusterSimulator`, `EventHeap` with ordering, `--num-instances` flag, basic round-robin dispatch |
-| **Out of Scope** | Policy interfaces (temporary hardcoded dispatch) |
-| **Files Changed** | New: `sim/cluster/cluster.go` (~300 LOC), `sim/cluster/event.go` (~150 LOC). Modified: `cmd/root.go` |
+| **In Scope** | `ClusterSimulator`, `DeploymentConfig`, `ReplicaPool`, `EventHeap` with ordering, `--num-instances` flag, basic round-robin dispatch |
+| **Out of Scope** | Policy interfaces (temporary hardcoded dispatch), P/D disaggregation |
+| **Files Changed** | New: `sim/cluster/cluster.go` (~300 LOC), `sim/cluster/deployment.go` (~100 LOC), `sim/cluster/event.go` (~150 LOC). Modified: `cmd/root.go` |
 | **CLI** | `./simulation_worker run --model X --num-instances 4 --rate 20` |
 | **Tests** | `--num-instances 1` identical to original; deterministic replay with N>1 |
 | **Benchmark** | `BenchmarkClusterSimulator_10K` added here |
-| **No Dead Code** | `--num-instances` flag exercises all paths |
-| **LOC Estimate** | ~500 |
+| **No Dead Code** | `--num-instances` flag exercises all paths; `DeploymentConfig` used by `ClusterSimulator` |
+| **LOC Estimate** | ~600 |
 
 **⚠️ CHECKPOINT: Mock Study**
 
-After PR 4 merges, before starting Phase 2:
+After PR 3 merges, before starting Phase 2:
 1. Write 2-3 hand-coded policies directly in `cluster_test.go`
 2. Exercise against simple workloads (existing `--workload distribution`)
 3. Document any missing observables or awkward patterns
-4. Adjust interface designs in PR 5-8 based on findings
+4. Adjust interface designs in PR 4-7 based on findings
 
 ---
 
-### Phase 2: Policy Interfaces + Metrics (Parallelizable after PR 4)
+### Phase 2: Policy Interfaces + Metrics (6 PRs, Parallelizable after PR 3)
 
-After PR 4 and mock study, these PRs can be developed **in parallel**.
+After PR 3 and mock study, PRs 4-7 can be developed **in parallel**.
 
 ---
 
-#### PR 5: AdmissionPolicy Interface
+#### PR 4: AdmissionPolicy Interface
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(policy): Add AdmissionPolicy with AlwaysAdmit, TokenBucket, and RejectAll` |
-| **In Scope** | `AdmissionPolicy` interface, `AlwaysAdmit`, `TokenBucket`, `RejectAll`* templates |
-| **Files Changed** | New: `sim/policy/admission.go` (~180 LOC) |
+| **Title** | `feat(policy): Add AdmissionPolicy with AlwaysAdmit and TokenBucket` |
+| **In Scope** | `AdmissionPolicy` interface, `AlwaysAdmit`, `TokenBucket`, `RateLimit`, `TenantQuota` templates |
+| **Files Changed** | New: `sim/policy/admission.go` (~150 LOC) |
 | **CLI** | `./simulation_worker run --model X --num-instances 2 --admission-policy token-bucket --admission-bucket-size 100` |
-| **Parallel With** | PR 6, PR 7, PR 8, PR 10 |
-| **LOC Estimate** | ~180 |
-
-*\* Pathological template*
-
----
-
-#### PR 6: PriorityPolicy Interface
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(policy): Add PriorityPolicy with Constant, SLOBased, and InvertedSLO` |
-| **In Scope** | `PriorityPolicy` interface, `ConstantPriority`, `SLOBasedPriority`, `InvertedSLOPriority`* templates |
-| **Files Changed** | New: `sim/policy/priority.go` (~150 LOC) |
-| **CLI** | `./simulation_worker run --model X --num-instances 2 --priority-policy slo-based` |
-| **Parallel With** | PR 5, PR 7, PR 8, PR 10 |
+| **Parallel With** | PR 5, PR 6, PR 7 |
+| **No Dead Code** | All templates exercisable via `--admission-policy` flag |
 | **LOC Estimate** | ~150 |
 
-*\* Pathological template*
-
 ---
 
-#### PR 7: RoutingPolicy Interface
+#### PR 5: PriorityPolicy Interface
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(policy): Add RoutingPolicy with RoundRobin, WeightedScoring, and AlwaysBusiest` |
-| **In Scope** | `RoutingPolicy` interface, `InstanceSnapshot`, `RoundRobin`, `WeightedScoring`, `AlwaysBusiest`* templates |
-| **Files Changed** | New: `sim/policy/routing.go` (~230 LOC) |
+| **Title** | `feat(policy): Add PriorityPolicy with Constant and SLOBased` |
+| **In Scope** | `PriorityPolicy` interface, `ConstantPriority`, `SLOBasedPriority`, `TenantPriority`, `DeadlineAware` templates |
+| **Files Changed** | New: `sim/policy/priority.go` (~120 LOC) |
+| **CLI** | `./simulation_worker run --model X --num-instances 2 --priority-policy slo-based` |
+| **Parallel With** | PR 4, PR 6, PR 7 |
+| **No Dead Code** | All templates exercisable via `--priority-policy` flag |
+| **LOC Estimate** | ~120 |
+
+---
+
+#### PR 6: RoutingPolicy Interface
+
+| Aspect | Details |
+|--------|---------|
+| **Title** | `feat(policy): Add RoutingPolicy with RoundRobin and WeightedScoring` |
+| **In Scope** | `RoutingPolicy` interface, `InstanceSnapshot`, `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity` templates |
+| **Files Changed** | New: `sim/policy/routing.go` (~200 LOC) |
 | **CLI** | `./simulation_worker run --model X --num-instances 4 --routing-policy weighted --routing-cache-weight 0.6` |
-| **Parallel With** | PR 5, PR 6, PR 8, PR 10 |
-| **LOC Estimate** | ~230 |
-
-*\* Pathological template*
-
----
-
-#### PR 8: InstanceScheduler Interface
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(policy): Add InstanceScheduler with FCFS, PriorityFCFS, and ReversePriority` |
-| **In Scope** | `InstanceScheduler` interface, `SchedulerContext`, `FCFSScheduler`, `PriorityFCFSScheduler`, `ReversePriorityScheduler`* |
-| **Files Changed** | New: `sim/policy/scheduler.go` (~210 LOC). Modified: `sim/cluster/instance.go` (delegate to scheduler) |
-| **CLI** | `./simulation_worker run --model X --num-instances 2 --scheduler priority-fcfs` |
-| **Parallel With** | PR 5, PR 6, PR 7, PR 10 |
-| **LOC Estimate** | ~230 |
-
-*\* Pathological template*
-
----
-
-#### PR 9: RouterState and PolicyBundle
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(policy): Add RouterState and PolicyBundle configuration` |
-| **Depends On** | PR 5, PR 6, PR 7, PR 8 |
-| **In Scope** | `RouterState`, `TenantState`, `GlobalMetrics`, `PolicyBundle`, YAML loading |
-| **Files Changed** | New: `sim/cluster/router_state.go` (~150 LOC), `sim/policy/bundle.go` (~100 LOC) |
-| **CLI** | `./simulation_worker run --model X --policy-config policies.yaml` |
-| **LOC Estimate** | ~250 |
-
-**⚠️ INTERFACE FREEZE after PR 9** — Policy interfaces are stable. "Freeze" means no breaking changes (no field removals, no type changes, no method signature changes). Adding new fields to structs or new keys to `Extended` maps is permitted in later phases.
-
----
-
-#### PR 10: RawMetrics, Fitness Evaluation, and Anomaly Detection
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(metrics): Add RawMetrics, FitnessFunction, and anomaly detection` |
-| **Parallel With** | PR 5, PR 6, PR 7, PR 8 (can start before PR 9) |
-| **In Scope** | `RawMetrics`, `Distribution`, `FitnessFunction`, `EvaluationResult`, anomaly counters (`PriorityInversions`, `HOLBlockingEvents`, `ScaleOscillations`) |
-| **Files Changed** | New: `sim/cluster/metrics.go` (~250 LOC). Modified: `sim/cluster/cluster.go` (~50 LOC) |
-| **CLI** | `./simulation_worker run --model X --num-instances 4 --fitness-weights "throughput:0.5,p99_ttft:0.3"` |
-| **LOC Estimate** | ~300 |
-
----
-
-#### PR 11: Anomaly Detection Validation
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `test(metrics): Add anomaly detection validation with pathological policies` |
-| **Depends On** | PR 9, PR 10 |
-| **In Scope** | Integration tests running pathological policies, asserting anomaly metrics are non-zero |
-| **Files Changed** | New: `sim/cluster/anomaly_test.go` (~200 LOC) |
-| **CLI** | `go test ./sim/cluster/... -run TestAnomalyDetection` |
+| **Parallel With** | PR 4, PR 5, PR 7 |
+| **No Dead Code** | All templates exercisable via `--routing-policy` flag |
 | **LOC Estimate** | ~200 |
 
 ---
 
-### 🎯 RESEARCH-READY CHECKPOINT (After PR 11)
+#### PR 7: InstanceScheduler Interface
 
-At this point (~5 weeks), BLIS supports:
+| Aspect | Details |
+|--------|---------|
+| **Title** | `feat(policy): Add InstanceScheduler with FCFS and PriorityFCFS` |
+| **In Scope** | `InstanceScheduler` interface, `SchedulerContext`, `FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler` |
+| **Files Changed** | New: `sim/policy/scheduler.go` (~180 LOC). Modified: `sim/cluster/instance.go` (delegate to scheduler) |
+| **CLI** | `./simulation_worker run --model X --num-instances 2 --scheduler priority-fcfs` |
+| **Parallel With** | PR 4, PR 5, PR 6 |
+| **No Dead Code** | All templates exercisable via `--scheduler` flag |
+| **LOC Estimate** | ~200 |
+
+---
+
+#### PR 8: RouterState and PolicyBundle
+
+| Aspect | Details |
+|--------|---------|
+| **Title** | `feat(policy): Add RouterState and PolicyBundle configuration` |
+| **Depends On** | PR 4, PR 5, PR 6, PR 7 |
+| **In Scope** | `RouterState`, `TenantState`, `GlobalMetrics`, `PolicyBundle`, YAML loading |
+| **Files Changed** | New: `sim/cluster/router_state.go` (~150 LOC), `sim/policy/bundle.go` (~100 LOC) |
+| **CLI** | `./simulation_worker run --model X --policy-config policies.yaml` |
+| **No Dead Code** | `--policy-config` flag exercises PolicyBundle loading |
+| **LOC Estimate** | ~250 |
+
+**⚠️ INTERFACE FREEZE after PR 8** — Policy interfaces are stable. "Freeze" means no breaking changes (no field removals, no type changes, no method signature changes). Adding new fields to structs or new keys to `Extended` maps is permitted in later phases.
+
+---
+
+#### PR 9: RawMetrics, Anomaly Detection, and Pathological Templates
+
+| Aspect | Details |
+|--------|---------|
+| **Title** | `feat(metrics): Add RawMetrics, anomaly detection, and pathological policy templates` |
+| **Depends On** | PR 4, PR 5, PR 6, PR 7 |
+| **In Scope** | `RawMetrics`, `Distribution`, `FitnessFunction`, `EvaluationResult`, anomaly counters, pathological templates (`RejectAll`, `InvertedSLO`, `AlwaysBusiest`, `ReversePriority`), validation tests |
+| **Files Changed** | New: `sim/cluster/metrics.go` (~300 LOC). Modified: `sim/policy/*.go` (~100 LOC total for pathological templates), `sim/cluster/cluster.go` (~50 LOC) |
+| **CLI** | `./simulation_worker run --model X --num-instances 4 --fitness-weights "throughput:0.5,p99_ttft:0.3"` |
+| **Tests** | Integration tests validating pathological policies trigger expected anomaly counts |
+| **No Dead Code** | Pathological templates exercisable via policy flags; anomaly metrics in output |
+| **LOC Estimate** | ~450 |
+
+**Pathological templates added:**
+
+| Template | Policy Type | Purpose | Expected Anomaly |
+|----------|-------------|---------|------------------|
+| `reject-all` | Admission | Baseline for admission metrics | 100% rejection rate |
+| `inverted-slo` | Priority | Test priority inversion detection | High `PriorityInversionCount` |
+| `always-busiest` | Routing | Test load imbalance detection | High `HOLBlockingEvents` |
+| `reverse-priority` | Scheduler | Test scheduler fairness | High `PriorityInversionCount` |
+
+---
+
+### 🎯 RESEARCH-READY CHECKPOINT (After PR 9)
+
+At this point (~4 weeks), BLIS supports:
 - ✅ Multi-instance cluster simulation
 - ✅ All 4 policy interfaces (admission, priority, routing, scheduler)
 - ✅ PolicyBundle with YAML configuration
 - ✅ RawMetrics with fitness evaluation
-- ✅ Anomaly detection validated with pathological baselines
+- ✅ Anomaly detection validated with pathological templates
 - ✅ Existing workload generation (`--workload distribution`)
 - ✅ Single-tier KV cache (existing `sim/kvcache.go`)
 
@@ -990,42 +991,29 @@ At this point (~5 weeks), BLIS supports:
 
 ---
 
-### Phase 3: Enhanced Workloads (Optional, Parallel)
+### Phase 3: Enhanced Workloads (1 PR, Optional)
 
-These PRs improve workload fidelity but are not required for initial research.
-
----
-
-#### PR 12: WorkloadSpec and TenantSpec
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(workload): Add WorkloadSpec and TenantSpec` |
-| **In Scope** | `WorkloadSpec`, `TenantSpec`, `SLOSpec`, `PrefixSpec`, `ArrivalPattern` types |
-| **Files Changed** | New: `sim/workload/spec.go` (~180 LOC) |
-| **CLI** | Config types only; generator in PR 13 |
-| **Parallel With** | PR 14, PR 15, PR 17 |
-| **LOC Estimate** | ~180 |
-
-**Arrival patterns defined (v2.1 expansion):**
-- `Poisson` — constant rate λ
-- `Bursty` — Poisson with periodic 10x spikes (configurable spike interval and duration)
-- `Diurnal` — sinusoidal rate variation (models day/night traffic patterns)
+This PR improves workload fidelity but is not required for initial research.
 
 ---
 
-#### PR 13: Workload Generator
+#### PR 10: Workload Generator with Edge Case Scenarios
 
 | Aspect | Details |
 |--------|---------|
 | **Title** | `feat(workload): Add multi-tenant workload generator with edge case scenarios` |
-| **Depends On** | PR 12 |
-| **In Scope** | `WorkloadGenerator`, all arrival patterns, prefix reuse, `--workload-spec` flag, edge case scenarios |
-| **Files Changed** | New: `sim/workload/generator.go` (~250 LOC), `sim/workload/arrival.go` (~150 LOC), `sim/workload/scenarios.go` (~100 LOC) |
+| **In Scope** | `WorkloadSpec`, `TenantSpec`, `SLOSpec`, `PrefixSpec`, `ArrivalPattern` types, `WorkloadGenerator`, all arrival patterns, prefix reuse, `--workload-spec` flag, edge case scenarios |
+| **Files Changed** | New: `sim/workload/spec.go` (~180 LOC), `sim/workload/generator.go` (~250 LOC), `sim/workload/arrival.go` (~150 LOC), `sim/workload/scenarios.go` (~100 LOC) |
 | **CLI** | `./simulation_worker run --model X --workload-spec workload.yaml` |
-| **LOC Estimate** | ~500 |
+| **No Dead Code** | `--workload-spec` flag exercises all new code |
+| **LOC Estimate** | ~680 |
 
-**Built-in edge case scenarios (v2.1 expansion):**
+**Arrival patterns:**
+- `Poisson` — constant rate λ
+- `Bursty` — Poisson with periodic 10x spikes (configurable spike interval and duration)
+- `Diurnal` — sinusoidal rate variation (models day/night traffic patterns)
+
+**Built-in edge case scenarios:**
 
 | Scenario | Description | Tests |
 |----------|-------------|-------|
@@ -1051,7 +1039,7 @@ tenants:
 
 ---
 
-### Phase 4: Advanced Features (Parallelizable)
+### Phase 4: Advanced Features (8 PRs, Parallelizable)
 
 After Research-Ready checkpoint, these three tracks can proceed **in parallel**.
 
@@ -1059,37 +1047,37 @@ After Research-Ready checkpoint, these three tracks can proceed **in parallel**.
 
 **Track A: Auto-Scaling**
 
-#### PR 14: AutoScaler Core
+#### PR 11: AutoScaler Core
 
 | Aspect | Details |
 |--------|---------|
 | **Title** | `feat(autoscaler): Add AutoScaler with ThresholdScaler and Oscillator` |
-| **In Scope** | `AutoScaler`, `AutoScalePolicy`, `AutoScaleContext`, `ThresholdScaler`, `Oscillator`* |
+| **In Scope** | `AutoScaler`, `AutoScalePolicy`, `AutoScaleContext`, `ThresholdScaler`, `Oscillator` (pathological) |
 | **Files Changed** | New: `sim/policy/autoscale.go` (~230 LOC). Modified: `sim/cluster/cluster.go` |
 | **CLI** | `./simulation_worker run --model X --num-instances 2 --autoscaler-enabled --autoscaler-max 8` |
-| **Parallel With** | PR 16, PR 18 |
+| **Parallel With** | PR 13, PR 17 |
+| **No Dead Code** | `--autoscaler-enabled` exercises all paths; `Oscillator` validates scale oscillation detection |
 | **LOC Estimate** | ~250 |
-
-*\* Pathological template*
 
 ---
 
-#### PR 15: Scaling Actuation Model
+#### PR 12: Scaling Actuation Model
 
 | Aspect | Details |
 |--------|---------|
 | **Title** | `feat(autoscaler): Add provisioning delays, warmup, and drain` |
-| **Depends On** | PR 14 |
+| **Depends On** | PR 11 |
 | **In Scope** | `WarmupProfile`, `DrainPolicy`, `InstanceState` lifecycle |
 | **Files Changed** | Modified: `sim/policy/autoscale.go` (~150 LOC), `sim/cluster/instance.go` (~50 LOC) |
 | **CLI** | `./simulation_worker run --model X --autoscaler-enabled --provisioning-delay 30s --warmup-duration 60s` |
+| **No Dead Code** | Flags exercise warmup/drain logic |
 | **LOC Estimate** | ~200 |
 
 ---
 
 **Track B: Tiered KV + P/D Disaggregation**
 
-#### PR 16: KVTier Types and Configuration
+#### PR 13: KVTier Types and Configuration
 
 | Aspect | Details |
 |--------|---------|
@@ -1097,54 +1085,58 @@ After Research-Ready checkpoint, these three tracks can proceed **in parallel**.
 | **In Scope** | `KVTier` enum, `KVTierConfig`, extend `KVBlock` with `Tier` field |
 | **Files Changed** | New: `sim/kv/tiered.go` (~100 LOC). Modified: `sim/kvcache.go` (~30 LOC) |
 | **CLI** | `./simulation_worker run --model X --kv-gpu-blocks 10000 --kv-cpu-blocks 50000` |
-| **Parallel With** | PR 14, PR 18 |
+| **Parallel With** | PR 11, PR 17 |
+| **No Dead Code** | `--kv-cpu-blocks` flag exercises tiered KV |
 | **LOC Estimate** | ~130 |
 
 ---
 
-#### PR 17: KV Offload/Reload Mechanics
+#### PR 14: KV Offload/Reload Mechanics
 
 | Aspect | Details |
 |--------|---------|
 | **Title** | `feat(kv): Add offload/reload transfer mechanics` |
-| **Depends On** | PR 16 |
+| **Depends On** | PR 13 |
 | **In Scope** | `KVTransfer` event, offload trigger, reload on CPU hit, transfer latency, `KVThrashingRate` metric |
 | **Files Changed** | New: `sim/kv/transfer.go` (~200 LOC). Modified: `sim/cluster/event.go`, `sim/cluster/metrics.go` |
 | **CLI** | `./simulation_worker run --model X --kv-gpu-blocks 1000 --kv-cpu-blocks 10000 --kv-offload-threshold 0.9` |
+| **No Dead Code** | `--kv-offload-threshold` exercises transfer logic |
 | **LOC Estimate** | ~220 |
 
 ---
 
-#### PR 18: P/D Architecture
+#### PR 15: P/D Architecture
 
 | Aspect | Details |
 |--------|---------|
 | **Title** | `feat(cluster): Add disaggregated prefill-decode architecture` |
-| **Depends On** | PR 17 |
+| **Depends On** | PR 14 |
 | **In Scope** | `DISAGGREGATED_PD` type, `PrefillPool`, `DecodePool`, `PDHandoffEvent`, routing changes |
 | **Files Changed** | Modified: `sim/cluster/deployment.go` (~50 LOC), `sim/cluster/cluster.go` (~150 LOC), `sim/cluster/event.go` (~100 LOC) |
 | **CLI** | `./simulation_worker run --model X --architecture pd --prefill-replicas 2 --decode-replicas 4` |
-| **Parallel With** | PR 14, PR 16 |
+| **Parallel With** | PR 11, PR 13 |
+| **No Dead Code** | `--architecture pd` exercises P/D paths |
 | **LOC Estimate** | ~300 |
 
 ---
 
-#### PR 19: KV Transfer for P/D
+#### PR 16: KV Transfer for P/D
 
 | Aspect | Details |
 |--------|---------|
 | **Title** | `feat(pd): Add KV transfer with ownership tracking` |
-| **Depends On** | PR 18 |
+| **Depends On** | PR 15 |
 | **In Scope** | `PDTransferConfig`, `BlockTransferState`, ownership transfer |
 | **Files Changed** | Modified: `sim/kv/transfer.go` (~150 LOC) |
 | **CLI** | `./simulation_worker run --model X --architecture pd --pd-transfer-latency 1ms --pd-transfer-bandwidth 10GB/s` |
+| **No Dead Code** | P/D transfer flags exercise ownership logic |
 | **LOC Estimate** | ~150 |
 
 ---
 
 **Track C: Observability**
 
-#### PR 20: Decision Traces
+#### PR 17: Decision Traces
 
 | Aspect | Details |
 |--------|---------|
@@ -1152,31 +1144,33 @@ After Research-Ready checkpoint, these three tracks can proceed **in parallel**.
 | **In Scope** | `SimulationTrace`, `DecisionTrace`, `RoutingRecord`, `TraceConfig`, `--trace-level` flag |
 | **Files Changed** | New: `sim/trace/trace.go` (~100 LOC), `sim/trace/record.go` (~150 LOC) |
 | **CLI** | `./simulation_worker run --model X --num-instances 4 --trace-level decisions` |
-| **Parallel With** | PR 14, PR 16 |
+| **Parallel With** | PR 11, PR 13 |
+| **No Dead Code** | `--trace-level` exercises trace collection |
 | **LOC Estimate** | ~250 |
 
 ---
 
-#### PR 21: Counterfactual Analysis and Trace Summary
+#### PR 18: Counterfactual Analysis and Trace Summary
 
 | Aspect | Details |
 |--------|---------|
 | **Title** | `feat(trace): Add counterfactual analysis and trace summarization` |
-| **Depends On** | PR 20 |
+| **Depends On** | PR 17 |
 | **In Scope** | `TopKCandidates`, `Regret` calculation, `TraceSummary`, `--summarize-trace` flag |
 | **Files Changed** | New: `sim/trace/summary.go` (~200 LOC). Modified: `sim/trace/record.go` (~50 LOC) |
 | **CLI** | `./simulation_worker run --model X --trace-level decisions --counterfactual-k 5 --summarize-trace` |
+| **No Dead Code** | `--summarize-trace` exercises summary logic |
 | **LOC Estimate** | ~250 |
 
 ---
 
-### Phase 5: Framework Adapters (Optional)
+### Phase 5: Framework Adapters (2 PRs, Optional)
 
 BLIS is fully functional without these. They provide convenience for framework integration.
 
 ---
 
-#### PR 22: GEPA Adapter
+#### PR 19: GEPA Adapter
 
 | Aspect | Details |
 |--------|---------|
@@ -1184,12 +1178,13 @@ BLIS is fully functional without these. They provide convenience for framework i
 | **In Scope** | `BLISGEPAAdapter`, `Evaluate()`, `ExtractTracesForReflection()`, `gepa-evaluate` command |
 | **Files Changed** | New: `sim/adapter/gepa.go` (~150 LOC). Modified: `cmd/root.go` |
 | **CLI** | `./simulation_worker gepa-evaluate --policy-config p.yaml --workload w.yaml` |
-| **Parallel With** | PR 23 |
+| **Parallel With** | PR 20 |
+| **No Dead Code** | `gepa-evaluate` command exercises adapter |
 | **LOC Estimate** | ~180 |
 
 ---
 
-#### PR 23: OpenEvolve Evaluator
+#### PR 20: OpenEvolve Evaluator
 
 | Aspect | Details |
 |--------|---------|
@@ -1197,14 +1192,15 @@ BLIS is fully functional without these. They provide convenience for framework i
 | **In Scope** | `BLISEvaluator`, multi-objective fitness, feature extraction, `openevolve-evaluate` command |
 | **Files Changed** | New: `sim/adapter/openevolve.go` (~150 LOC). Modified: `cmd/root.go` |
 | **CLI** | `./simulation_worker openevolve-evaluate --config oe.yaml --candidate c.yaml` |
-| **Parallel With** | PR 22 |
+| **Parallel With** | PR 19 |
+| **No Dead Code** | `openevolve-evaluate` command exercises evaluator |
 | **LOC Estimate** | ~180 |
 
 ---
 
-### Phase 6: Validation
+### Phase 6: Validation (1 PR)
 
-#### PR 24: Integration Tests and Examples
+#### PR 21: Integration Tests and Examples
 
 | Aspect | Details |
 |--------|---------|
@@ -1212,95 +1208,89 @@ BLIS is fully functional without these. They provide convenience for framework i
 | **In Scope** | Integration tests, sample configs, example policies, CI validation |
 | **Files Changed** | New: `test/integration/` (~500 LOC), `examples/` (configs) |
 | **CLI** | `go test ./test/integration/...` |
+| **No Dead Code** | Tests exercise all CLI paths |
 | **LOC Estimate** | ~500 |
 
 ---
 
-## J) Dependency DAG (Restructured)
+## J) Dependency DAG (Restructured, No Scaffolding)
 
 ### PR Dependency Graph
 
 ```
-PHASE 1: FOUNDATION (Sequential)
+PHASE 1: FOUNDATION (Sequential, 3 PRs)
 ════════════════════════════════════════════════════════════════════════════════
 
-  PR 1 ──────► PR 2 ──────► PR 3 ──────► PR 4
-  (RNG)      (Instance)   (Deploy)    (Cluster)
-                                          │
-                                          ▼
-                              ⚠️ MOCK STUDY CHECKPOINT
-                                          │
-                                          ▼
-PHASE 2: POLICY INTERFACES + METRICS ══════════════════════════════════════════
-                                          │
-              ┌───────────┬───────────┬───┴───────┬───────────┐
-              ▼           ▼           ▼           ▼           ▼
-            PR 5        PR 6        PR 7        PR 8        PR 10
-          (Admit)    (Priority)   (Route)    (Sched)    (Metrics)
-              │           │           │           │           │
-              └───────────┴─────┬─────┴───────────┘           │
-                                ▼                             │
-                              PR 9 ◄──────────────────────────┘
+  PR 1 ──────► PR 2 ──────► PR 3
+  (RNG)      (Instance)   (Cluster+Deploy)
+                                │
+                                ▼
+                    ⚠️ MOCK STUDY CHECKPOINT
+                                │
+                                ▼
+PHASE 2: POLICY INTERFACES + METRICS (6 PRs) ══════════════════════════════════
+                                │
+              ┌───────────┬─────┴─────┬───────────┐
+              ▼           ▼           ▼           ▼
+            PR 4        PR 5        PR 6        PR 7
+          (Admit)    (Priority)   (Route)    (Sched)
+              │           │           │           │
+              └───────────┴─────┬─────┴───────────┘
+                                ▼
+                              PR 8
                            (Bundle)
                                 │
                                 ▼
                     ⚠️ INTERFACE FREEZE
                                 │
                                 ▼
-                             PR 11
-                      (Anomaly Validation)
+                              PR 9
+                    (Metrics + Pathological)
                                 │
                                 ▼
                     🎯 RESEARCH-READY CHECKPOINT
                                 │
                                 ▼
-PHASE 3: ENHANCED WORKLOADS (Optional) ════════════════════════════════════════
-                                │
-                    ┌───────────┴───────────┐
-                    ▼                       │
-                  PR 12                     │
-               (Workload)                   │
-                    │                       │
-                    ▼                       │
-                  PR 13                     │
-               (Generator)                  │
-                    │                       │
-                    └───────────┬───────────┘
+PHASE 3: ENHANCED WORKLOADS (1 PR, Optional) ══════════════════════════════════
                                 │
                                 ▼
-PHASE 4: ADVANCED FEATURES ════════════════════════════════════════════════════
+                             PR 10
+                    (Workload Generator)
+                                │
+                                ▼
+PHASE 4: ADVANCED FEATURES (8 PRs) ════════════════════════════════════════════
                                 │
      ┌──────────────────────────┼──────────────────────────┐
      ▼                          ▼                          ▼
-   PR 14                      PR 16                      PR 20
+   PR 11                      PR 13                      PR 17
  (AutoScale)                (KV Tier)                  (Traces)
      │                          │                          │
      ▼                          ▼                          ▼
-   PR 15                      PR 17                      PR 21
+   PR 12                      PR 14                      PR 18
  (Actuation)               (Transfer)                 (Summary)
                                 │
                                 ▼
-                              PR 18
+                              PR 15
                               (P/D)
                                 │
                                 ▼
-                              PR 19
+                              PR 16
                            (P/D Xfer)
                                 │
                                 ▼
-PHASE 5: ADAPTERS (Optional) ══════════════════════════════════════════════════
+PHASE 5: ADAPTERS (2 PRs, Optional) ═══════════════════════════════════════════
                                 │
                     ┌───────────┴───────────┐
                     ▼                       ▼
-                  PR 22                   PR 23
+                  PR 19                   PR 20
                  (GEPA)               (OpenEvolve)
                     │                       │
                     └───────────┬───────────┘
                                 ▼
-PHASE 6: VALIDATION ═══════════════════════════════════════════════════════════
+PHASE 6: VALIDATION (1 PR) ════════════════════════════════════════════════════
                                 │
                                 ▼
-                              PR 24
+                              PR 21
                             (Tests)
 ```
 
@@ -1308,43 +1298,42 @@ PHASE 6: VALIDATION ════════════════════
 
 | Gate | Completed PRs | Unlocked for Parallel Development |
 |------|---------------|-----------------------------------|
-| **G1** | PR 4 + Mock Study | PR 5, PR 6, PR 7, PR 8, PR 10 (5 parallel) |
-| **G2** | PR 11 (Research-Ready) | PR 12, PR 14, PR 16, PR 20 (4 parallel tracks) |
-| **G3** | PR 15, PR 19, PR 21 | PR 22, PR 23 (2 parallel) |
+| **G1** | PR 3 + Mock Study | PR 4, PR 5, PR 6, PR 7 (4 parallel) |
+| **G2** | PR 9 (Research-Ready) | PR 10, PR 11, PR 13, PR 17 (4 parallel tracks) |
+| **G3** | PR 12, PR 16, PR 18 | PR 19, PR 20 (2 parallel) |
 
 ### Critical Checkpoints
 
 | Checkpoint | Verification | Failure Action |
 |------------|--------------|----------------|
-| **Mock Study (after PR 4)** | Hand-coded policies work, no missing observables | Adjust interfaces before Phase 2 |
-| **After PR 4** | Determinism: 100 runs identical | Block until fixed |
-| **Interface Freeze (after PR 9)** | Policy interfaces frozen (no breaking changes) | Additive changes (new fields, new `Extended` keys) permitted |
-| **Research-Ready (after PR 11)** | Pathological policies trigger anomalies | Required for research |
-| **After PR 21** | All observability features working | Required for adapters |
+| **Mock Study (after PR 3)** | Hand-coded policies work, no missing observables | Adjust interfaces before Phase 2 |
+| **After PR 3** | Determinism: 100 runs identical | Block until fixed |
+| **Interface Freeze (after PR 8)** | Policy interfaces frozen (no breaking changes) | Additive changes (new fields, new `Extended` keys) permitted |
+| **Research-Ready (after PR 9)** | Pathological policies trigger anomalies | Required for research |
+| **After PR 18** | All observability features working | Required for adapters |
 
 ### Timeline Estimate (3-4 developers)
 
 ```
-Week 1-2:   Phase 1 (PR 1-4, sequential, 1 dev)
+Week 1-2:   Phase 1 (PR 1-3, sequential, 1 dev)
             + Mock Study (2-3 days)
 
-Week 3-4:   Phase 2 (PR 5-10, 4-5 devs parallel)
-Week 5:     Phase 2 (PR 9, PR 11, integrates)
-            → 🎯 RESEARCH-READY
+Week 3-4:   Phase 2 (PR 4-9, 4 devs parallel on PR 4-7, then PR 8-9)
+            → 🎯 RESEARCH-READY (~4 weeks)
 
-Week 6-7:   Phase 3 (PR 12-13, optional, 1 dev)
-            Phase 4 Track A (PR 14-15, 1 dev)
-            Phase 4 Track B (PR 16-19, 1 dev)
-            Phase 4 Track C (PR 20-21, 1 dev)
+Week 5-6:   Phase 3 (PR 10, optional, 1 dev)
+            Phase 4 Track A (PR 11-12, 1 dev)
+            Phase 4 Track B (PR 13-16, 1 dev)
+            Phase 4 Track C (PR 17-18, 1 dev)
 
-Week 8-9:   Phase 4 continued
+Week 7-8:   Phase 4 continued
 
-Week 10:    Phase 5 (PR 22-23, 2 devs parallel)
+Week 9:     Phase 5 (PR 19-20, 2 devs parallel)
 
-Week 11:    Phase 6 (PR 24)
+Week 10:    Phase 6 (PR 21)
 
-Total: ~11 weeks with 3-4 developers
-Research-ready: ~5 weeks
+Total: ~10 weeks with 3-4 developers
+Research-ready: ~4 weeks
 ```
 
 ---
@@ -1529,11 +1518,11 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 | Metric | Value |
 |--------|-------|
 | **Phases** | 6 |
-| **Total PRs** | 24 |
-| **Total LOC Estimate** | ~5,400 |
-| **Max Parallel PRs** | 5 (Phase 2) |
-| **Research-Ready** | ~5 weeks |
-| **Full Implementation** | ~11 weeks (with 3-4 developers) |
+| **Total PRs** | 21 |
+| **Total LOC Estimate** | ~5,200 |
+| **Max Parallel PRs** | 4 (Phase 2, Phase 4) |
+| **Research-Ready** | ~4 weeks |
+| **Full Implementation** | ~10 weeks (with 3-4 developers) |
 
 ### Key Decisions
 
@@ -1543,32 +1532,32 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 4. **vLLM-grounded modeling** — explicit citations and simplifications documented
 5. **Routing policy freedom** — policies can maintain their own internal state; router provides observables, not mandated tracking
 6. **Research-first ordering** — metrics and anomaly detection moved up; tiered KV deferred
-7. **Pathological baselines** — every policy type has intentionally bad templates for testing
+7. **Pathological templates consolidated** — added with anomaly detection in PR 9, not scattered across policy PRs
 8. **Mock study before freeze** — validate interfaces with real experiments
 9. **Interface extension point** — `Extended` map allows Phase 4 observables without breaking freeze (v2.1)
 10. **Stateful policies supported** — policy instances persist; internal state is allowed and expected (v2.1)
+11. **No scaffolding** — every PR is CLI-exercisable immediately after merge (v2.2)
 
 ### Changes from v1
 
 | Change | Rationale |
 |--------|-----------|
-| PR 10 (Metrics) moved to Phase 2 | Enables research after Phase 2 |
-| PR 11 (Anomaly Validation) added | Validates pathological templates work |
-| Tiered KV (PR 16-17) moved to Phase 4 | Single-tier sufficient for initial research |
-| P/D (PR 18-19) depends on tiered KV | Natural dependency |
-| Pathological templates added to PR 5-8 | Baseline testing, anomaly validation |
+| Metrics moved to Phase 2 | Enables research after Phase 2 |
+| Tiered KV moved to Phase 4 | Single-tier sufficient for initial research |
+| P/D depends on tiered KV | Natural dependency |
 | Mock study checkpoint added | De-risk interface freeze |
-| Benchmarks added in PR 4 | Early performance visibility |
+| Benchmarks added in PR 3 | Early performance visibility |
 
-### Changes from v2 (v2.1)
+### Changes from v2.1 (v2.2)
 
 | Change | Rationale |
 |--------|-----------|
-| `Extended` map added to `InstanceSnapshot` | Phase 4 observables without breaking interface freeze |
-| Section F.6 (Policy Lifecycle) added | Clarifies stateful policies are supported |
-| PR 12-13 scope expanded | Edge case workloads (bursty, diurnal, unfair tenants) |
-| Parallel trace collection note added | Enables sim-to-real work during Phase 2 |
-| Interface freeze clarified | "No breaking changes" vs "no changes at all" |
+| PR 3+4 merged | DeploymentConfig introduced with ClusterSimulator (no scaffolding) |
+| PR 12+13 merged | WorkloadSpec introduced with generator (no scaffolding) |
+| PR 10+11 merged | RawMetrics and anomaly validation combined |
+| Pathological templates moved to PR 9 | Consolidated with anomaly detection (no test infra in feature PRs) |
+| 24 PRs → 21 PRs | Eliminated all scaffolding PRs |
+| Research-ready ~5 weeks → ~4 weeks | Fewer PRs in critical path |
 
 ### Research Agenda Alignment
 
@@ -1576,10 +1565,10 @@ This plan directly supports the four llm-d inference control problems:
 
 | Research Problem | BLIS Support | Key PRs |
 |-----------------|--------------|---------|
-| **Routing Policy Evolution** | `RoutingPolicy` interface, `InstanceSnapshot` observables, existing prefix caching | PR 7, PR 10-11 |
-| **Admission Control Evolution** | `AdmissionPolicy` interface, multi-tenant `TenantState`, fairness metrics | PR 5, PR 9-11 |
-| **Joint Priority Scheduling** | `PriorityPolicy` + `InstanceScheduler` separation, priority inversion detection, HOL blocking detection | PR 6, PR 8, PR 10-11 |
-| **Autoscaling Evolution** | `AutoScalePolicy` interface, provisioning/warmup modeling, cost metrics, scale oscillation detection | PR 14-15 |
+| **Routing Policy Evolution** | `RoutingPolicy` interface, `InstanceSnapshot` observables, existing prefix caching | PR 6, PR 9 |
+| **Admission Control Evolution** | `AdmissionPolicy` interface, multi-tenant `TenantState`, fairness metrics | PR 4, PR 8-9 |
+| **Joint Priority Scheduling** | `PriorityPolicy` + `InstanceScheduler` separation, priority inversion detection, HOL blocking detection | PR 5, PR 7, PR 9 |
+| **Autoscaling Evolution** | `AutoScalePolicy` interface, provisioning/warmup modeling, cost metrics, scale oscillation detection | PR 11-12 |
 
 **Architectural Locality:** Each policy interface respects control boundaries—routing sees only `RouterState` + `InstanceSnapshot`, instance schedulers see only local state, autoscalers see only aggregate metrics.
 
@@ -1594,7 +1583,7 @@ This plan directly supports the four llm-d inference control problems:
 
 ### Next Steps
 
-1. Review and approve this plan (v2.1)
-2. Create Phase 1 micro-level implementation plan (PR 1-4)
+1. Review and approve this plan (v2.2)
+2. Create Phase 1 micro-level implementation plan (PR 1-3)
 3. Begin PR 1 (PartitionedRNG)
 4. (Parallel) Set up instrumented vLLM deployment for trace collection
