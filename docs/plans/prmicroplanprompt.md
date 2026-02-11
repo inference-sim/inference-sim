@@ -179,8 +179,8 @@ golangci-lint run ./...
 ```
 
 CI verification (.github/workflows/ci.yml):
-- Uses golangci/golangci-lint-action@v6
-- Same version as local development
+- Uses golangci/golangci-lint-action@v6 with version v2.9.0
+- Keep CI version aligned with local development (v2.x line)
 
 Rules:
 1. All NEW code must pass lint with zero issues.
