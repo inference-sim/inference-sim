@@ -148,30 +148,56 @@ func TestInstanceSimulator_BC4_InstanceIsolation(t *testing.T) {
 	}
 }
 
-// TestInstanceSimulator_BC12_BatchSizeLimit tests BC-12: batch size limit
+// TestInstanceSimulator_BC12_BatchSizeLimit tests BC-12: batch respects MaxNumSeqs
+// Currently tests that MaxNumSeqs constraint is configured correctly.
+// When Step() is implemented, this will verify batch formation respects the limit.
 func TestInstanceSimulator_BC12_BatchSizeLimit(t *testing.T) {
+	maxNumSeqs := 128
 	config := &DeploymentConfig{
 		ConfigID: "config1",
 		EngineConfig: &VLLMEngineConfig{
-			MaxNumSeqs: 128,
+			MaxNumSeqs:           maxNumSeqs,
+			MaxNumBatchedTokens:  4096,
+			BlockSize:            16,
+			TensorParallelSize:   1,
+			PipelineParallelSize: 1,
+			DataParallelSize:     1,
+			GPUMemoryUtilization: 0.9,
 		},
 	}
+	inst := NewInstanceSimulator("inst1", PoolMonolithic, config, 10000, 16)
 
-	inst := NewInstanceSimulator("inst1", PoolMonolithic, config, 1000, 16)
-
-	// Verify running batch respects max size
-	// For now, this is a placeholder test since Step() is stubbed
-	// When Step() is implemented, it should enforce MaxNumSeqs
-
-	if inst.Config.EngineConfig.MaxNumSeqs != 128 {
-		t.Errorf("MaxNumSeqs = %d, want 128", inst.Config.EngineConfig.MaxNumSeqs)
+	// Verify MaxNumSeqs is accessible
+	if inst.Config.EngineConfig.MaxNumSeqs != maxNumSeqs {
+		t.Errorf("MaxNumSeqs = %d, want %d", inst.Config.EngineConfig.MaxNumSeqs, maxNumSeqs)
 	}
 
-	// Test that RunningBatchSize never exceeds MaxNumSeqs
-	// This will be fully tested when Step() is implemented
-	if inst.RunningBatchSize() > inst.Config.EngineConfig.MaxNumSeqs {
-		t.Errorf("RunningBatchSize (%d) exceeds MaxNumSeqs (%d)", inst.RunningBatchSize(), inst.Config.EngineConfig.MaxNumSeqs)
+	// Enqueue more requests than MaxNumSeqs
+	for i := 0; i < 200; i++ {
+		req := &Request{
+			ID:           fmt.Sprintf("req%d", i),
+			PromptTokens: 100,
+			OutputTokens: 50,
+			State:        RequestStateQueued,
+		}
+		inst.EnqueueRequest(req)
 	}
+
+	// Verify all requests were queued
+	queueDepth := inst.WaitQueueDepth()
+	if queueDepth != 200 {
+		t.Errorf("WaitQueueDepth() = %d, want 200", queueDepth)
+	}
+
+	// TODO: When Step() is implemented, verify:
+	// inst.Step(1000)
+	// batchSize := inst.RunningBatchSize()
+	// if batchSize > maxNumSeqs {
+	//     t.Errorf("RunningBatchSize() = %d, exceeds MaxNumSeqs = %d", batchSize, maxNumSeqs)
+	// }
+	// if batchSize != maxNumSeqs {
+	//     t.Errorf("RunningBatchSize() = %d, want %d (should fill to max)", batchSize, maxNumSeqs)
+	// }
 }
 
 // TestInstanceSimulator_BC13_KVCacheConservation tests BC-13: KV cache conservation
