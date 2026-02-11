@@ -109,7 +109,7 @@ type Simulator struct {
 	TracesWorkloadFilePath string
 	ModelConfig            ModelConfig
 	HWConfig               HardwareCalib
-	randomNumberGenerator  *rand.Rand // random number generator for request tokens
+	rng *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
 }
 
 func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
@@ -143,8 +143,7 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		TracesWorkloadFilePath:    tracesWorkloadFilePath,
 	}
 
-	src := rand.NewSource(seed)
-	s.randomNumberGenerator = rand.New(src)
+	s.rng = NewPartitionedRNG(NewSimulationKey(seed))
 	if len(s.TracesWorkloadFilePath) > 0 && s.GuideLLMConfig == nil {
 		s.Metrics.RequestRate = 0.0 // no request rate specified
 		s.generateWorkloadFromCSV()
@@ -154,6 +153,12 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 	}
 
 	return s
+}
+
+// WorkloadRNG returns the RNG for workload generation.
+// This maintains backward compatibility with the original single-RNG implementation.
+func (sim *Simulator) WorkloadRNG() *rand.Rand {
+	return sim.rng.ForSubsystem(SubsystemWorkload)
 }
 
 // Pushes an event (ArrivalEvent/StepEvent) into the simulator's EventQueue.

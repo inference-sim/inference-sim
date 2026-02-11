@@ -95,7 +95,7 @@ func (sim *Simulator) generateLengthGauss(lengthMean, lengthStd, lengthMin, leng
 	if lengthMin == lengthMax {
 		return lengthMin
 	}
-	val := sim.randomNumberGenerator.NormFloat64()*float64(lengthStd) + float64(lengthMean)
+	val := sim.WorkloadRNG().NormFloat64()*float64(lengthStd) + float64(lengthMean)
 	clampedVal := math.Min(float64(lengthMax), val)
 	clampedVal = math.Max(float64(lengthMin), clampedVal)
 	roundedVal := math.Round(clampedVal)
@@ -109,7 +109,7 @@ func (sim *Simulator) generateRandomTokenIDs(length int) []int {
 	tokens := make([]int, length)
 
 	for i := 0; i < length; i++ {
-		tokens[i] = sim.randomNumberGenerator.Intn(MaxTokenID)
+		tokens[i] = sim.WorkloadRNG().Intn(MaxTokenID)
 	}
 	return tokens
 }
