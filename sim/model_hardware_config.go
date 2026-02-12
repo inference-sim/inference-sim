@@ -5,8 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-
-	"github.com/sirupsen/logrus"
+	"sort"
 )
 
 type ModelConfig struct {
@@ -39,37 +38,46 @@ type HFConfig struct {
 }
 
 func parseHWConfig(HWConfigFilePath string) (map[string]HardwareCalib, error) {
-	data, fileReadErr := os.ReadFile(HWConfigFilePath)
-	if fileReadErr != nil {
-		logrus.Fatalf("Missing hardware config: %v\n", HWConfigFilePath)
-		panic(fileReadErr)
+	data, err := os.ReadFile(HWConfigFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("read hardware config %q: %w", HWConfigFilePath, err)
 	}
 
 	var HardwareList map[string]HardwareCalib
-
-	unmarshalErr := json.Unmarshal([]byte(data), &HardwareList)
-	if unmarshalErr != nil {
-		fmt.Printf("Error unmarshaling JSON: %s\n", unmarshalErr)
-		return nil, fmt.Errorf("parse HWConfig: %w", unmarshalErr)
+	if err := json.Unmarshal(data, &HardwareList); err != nil {
+		return nil, fmt.Errorf("parse hardware config JSON: %w", err)
 	}
 	return HardwareList, nil
 }
 
-func GetHWConfig(HWConfigFilePath string, GPU string) HardwareCalib {
-	hwConfig, _ := parseHWConfig(HWConfigFilePath)
-	return hwConfig[GPU]
+// GetHWConfig returns hardware calibration data for the specified GPU.
+// Returns an error if the config file cannot be read/parsed or if the GPU is not found.
+func GetHWConfig(HWConfigFilePath string, GPU string) (HardwareCalib, error) {
+	hwConfig, err := parseHWConfig(HWConfigFilePath)
+	if err != nil {
+		return HardwareCalib{}, fmt.Errorf("get hardware config: %w", err)
+	}
+	config, ok := hwConfig[GPU]
+	if !ok {
+		available := make([]string, 0, len(hwConfig))
+		for k := range hwConfig {
+			available = append(available, k)
+		}
+		sort.Strings(available)
+		return HardwareCalib{}, fmt.Errorf("GPU %q not found in hardware config (available: %v)", GPU, available)
+	}
+	return config, nil
 }
 
 // parseHFConfig parses arbitrary JSON into HFConfig.
 func parseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
 	data, err := os.ReadFile(HFConfigFilePath)
 	if err != nil {
-		logrus.Fatalf("Missing HF config.json: %v\n", HFConfigFilePath)
-		panic(err)
+		return nil, fmt.Errorf("read HF config %q: %w", HFConfigFilePath, err)
 	}
 	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parse HFConfig: %w", err)
+		return nil, fmt.Errorf("parse HF config JSON: %w", err)
 	}
 	// Check if this is a multimodal/composite config
 	if textCfg, ok := m["text_config"].(map[string]any); ok {
@@ -81,8 +89,13 @@ func parseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
 	return &HFConfig{Raw: m}, nil
 }
 
-func GetModelConfig(hfConfigPath string) *ModelConfig {
-	hf, _ := parseHFConfig(hfConfigPath)
+// GetModelConfig parses a HuggingFace config.json and extracts model parameters.
+// Returns an error if the config file cannot be read or parsed.
+func GetModelConfig(hfConfigPath string) (*ModelConfig, error) {
+	hf, err := parseHFConfig(hfConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("get model config: %w", err)
+	}
 	getInt := func(key string) int {
 		if val, ok := hf.Raw[key].(float64); ok {
 			return int(val)
@@ -112,7 +125,11 @@ func GetModelConfig(hfConfigPath string) *ModelConfig {
 		"nf4":      1,
 	}
 
-	bytesPerParam := precisionToBytesPerParam[hf.Raw["torch_dtype"].(string)]
+	// Safely extract torch_dtype - defaults to 0 bytes if missing or invalid
+	var bytesPerParam int
+	if dtype, ok := hf.Raw["torch_dtype"].(string); ok {
+		bytesPerParam = precisionToBytesPerParam[dtype]
+	}
 
 	modelConfig := &ModelConfig{
 		// From HFConfig.Raw
@@ -124,7 +141,7 @@ func GetModelConfig(hfConfigPath string) *ModelConfig {
 		NumKVHeads:      numKVHeads,
 		BytesPerParam:   float64(bytesPerParam),
 	}
-	return modelConfig
+	return modelConfig, nil
 }
 
 // GetString returns a string value for a key if present and of the right type.

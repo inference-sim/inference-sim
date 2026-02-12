@@ -132,8 +132,16 @@ var runCmd = &cobra.Command{
 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
 				roofline = true
 				hfPath := filepath.Join(modelConfigFolder, "config.json")
-				modelConfig = *sim.GetModelConfig(hfPath)
-				hwConfig = sim.GetHWConfig(hwConfigPath, gpu)
+				mc, err := sim.GetModelConfig(hfPath)
+				if err != nil {
+					logrus.Fatalf("Failed to load model config: %v", err)
+				}
+				modelConfig = *mc
+				hc, err := sim.GetHWConfig(hwConfigPath, gpu)
+				if err != nil {
+					logrus.Fatalf("Failed to load hardware config: %v", err)
+				}
+				hwConfig = hc
 			} else if len(modelConfigFolder) == 0 {
 				logrus.Fatalf("Please provide model config folder containing config.json for model=%v\n", model)
 			} else if len(hwConfigPath) == 0 {
