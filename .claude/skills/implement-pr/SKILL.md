@@ -42,11 +42,13 @@ The user must provide:
     - implements the intended behaviors, API contracts and functions described in the work plan for this PR
 
 ### Step 5: Update the PR Plan
-1. Consider the feedback
+1. Consider the feedback from Step 4's critical review
 2. Verify against the PR plan
-3. Evaluate validity of feedback
-4. If feedback is valid: modify the PR plan to incorporate valid feedback, return to Step 4
-5. If feedback is not valid: continue
+3. Evaluate validity of self-critique
+4. If valid: modify the PR plan to incorporate feedback, return to Step 4
+5. If not valid: continue
+
+**CHECKPOINT:** Present the PR plan to the user for approval before proceeding.
 
 ### Step 6: Execute the Plan
 1. Use superpowers:executing-plans to implement the PR plan
@@ -60,7 +62,13 @@ The user must provide:
 
 **Purpose:** Catch issues locally before creating the PR.
 
-### Step 8: Create Pull Request
+### Step 8: Update Documentation
+1. Identify and make any needed changes to `CLAUDE.md`
+2. Identify and make any needed changes to `README.md`
+
+**CHECKPOINT:** Present review results to the user for approval before creating PR.
+
+### Step 9: Create Pull Request
 1. Create a pull request for the changes
 2. The pull request title
     - SHOULD be succinct and clear
@@ -69,7 +77,7 @@ The user must provide:
     - SHOULD be succinct and clear
     - SHOULD describe the behavioral or functional changes
 
-### Step 9: Review Pull Request (Post-CI)
+### Step 10: Review Pull Request (Post-CI)
 1. Use pr-review-toolkit:review-pr to request a thorough review of the pull request:
     - validates that all GitHub Actions executed correctly
     - verifies that tests are truly behavioral
@@ -77,17 +85,13 @@ The user must provide:
 
 **Purpose:** Verify CI passed and catch issues visible only in the PR context (diff view, CI logs).
 
-### Step 10: Update Documentation
-1. Identify and make any needed changes to `CLAUDE.md`
-2. Identify and make any needed changes to `README.md`
-3. Push changes to the pull request.
-
 ### Step 11: Recommend Plan Changes
 1. Review the work plan critically in light of the code changes made
 2. Identify any new questions or concerns about the work plan
 3. Identify any recommended changes
-4. If concerns or recommendations: Raise them with your human partner
-5. If no concerns or recommendations: Stop
+4. If concerns or recommendations: Raise them with your human partner and update the work plan
+5. If no concerns or recommendations: Notify user that the PR is ready for merge
+6. If work plan was updated: Notify user of the changes made
 
 ## When to Stop and Ask for Help
 
