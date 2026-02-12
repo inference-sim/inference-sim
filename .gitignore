@@ -36,6 +36,7 @@ __pycache__/*
 
 # data files
 *.json
+!testdata/goldendataset.json
 data/
 *.txt
 
