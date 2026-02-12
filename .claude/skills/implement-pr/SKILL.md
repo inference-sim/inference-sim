@@ -1,6 +1,6 @@
 ---
 name: implement-pr
-description: Use when implementing a PR from a macro plan
+description: Use when designing and implementing an element (PR, subsection, task, objective) of a "macro" plan.
 ---
 
 # Implement PR
@@ -17,43 +17,52 @@ Load plan, review critically, execute tasks in batches, report for review betwee
 
 The user must provide:
 - **PR identifier**: The PR name from the macro plan (e.g., `PR1`, `PR5`, `PR12`)
-- **Macro plan path**: Path to the work plan file (e.g., `docs/plans/2026-02-11-macro-implementation-plan-v2.md`)
+- **Macro plan path**: Path to the plan file (e.g., `docs/plans/2026-02-11-macro-implementation-plan-v2.md`)
 
 ## The Process
 
-### Step 1: Understand the Current Implementation
-1. Review the code relevant to this PR's scope
+<!-- 
+Assume that a detailed code summary has been generated, 
+for example in PROJECT_DETAILS.md and that this has been 
+referenced by CLAUDE.md (already loaded in the context).
+-->
 
-### Step 2: Load and Review Overall Plan
-1. Read work plan file
-2. Review work plan critically
+### Step 1: Load and Review Overall Plan
+1. Read and understand the macro plan
+2. Review the macro plan critically
     - Is it well-formed?
     - Does it conform to the guidance in `docs/plans/macroplanprompt.md`
 3. Identify any questions or concerns about the work plan paying attention to the current implementation
 4. If concerns: Raise them with your human partner before starting
+5. If no concerns: continue
 
-### Step 3: Create PR Plan
-1. Create a detailed implementation plan for the PR that adheres to `docs/plans/prmicroplanprompt.md`
+### Step 2: Create PR Plan
+1. Create a detailed implementation plan for the PR that:
+    - adheres to `docs/plans/prmicroplanprompt.md`
+    - is grounded in the existing codebase
 2. Write the PR plan in `docs/plans/<PR>-plan.md`.
 
-### Step 4: Review the PR Plan
-1. Critically review the plan to verify that it:
-    - is in conformance with `docs/plans/prmicroplanprompt.md`
-    - implements the intended behaviors, API contracts and functions described in the work plan for this PR
+### Step 3: Review the PR Plan
+1. Thoroughly review the plan to verify that:
+    - it is in conformance with `docs/plans/prmicroplanprompt.md`
+    - it guarantees the intended behaviors, API contracts described in the macro plan
+    - it does not introduce regressions, bugs, dead code, or duplicate code
+    - it's tests are truly behavioral
+    - proposed changes are minimal
 
-### Step 5: Update the PR Plan
-1. Consider the feedback from Step 4's critical review
-2. Verify against the PR plan
-3. Evaluate validity of self-critique
-4. If valid: modify the PR plan to incorporate feedback, return to Step 4
+### Step 4: Update the PR Plan
+1. Consider the feedback from Step 3's critical review
+2. Verify against the PR plan and the macro plan
+3. Evaluate the validity of the self-critique
+4. If valid: modify the PR plan to incorporate feedback, return to Step 3
 5. If not valid: continue
 
 **CHECKPOINT:** Present the PR plan to the user for approval before proceeding.
 
-### Step 6: Execute the Plan
+### Step 5: Execute the Plan
 1. Use superpowers:executing-plans to implement the PR plan
 
-### Step 7: Review Changes (Local, Pre-PR)
+### Step 6: Review Changes (Local, Pre-PR)
 1. Use superpowers:requesting-code-review to request a thorough code review that, in addition to built in function:
     - validates tests execute correctly
     - verifies that tests are truly behavioral
@@ -62,13 +71,13 @@ The user must provide:
 
 **Purpose:** Catch issues locally before creating the PR.
 
-### Step 8: Update Documentation
+### Step 7: Update Documentation
 1. Identify and make any needed changes to `CLAUDE.md`
 2. Identify and make any needed changes to `README.md`
 
 **CHECKPOINT:** Present review results to the user for approval before creating PR.
 
-### Step 9: Create Pull Request
+### Step 8: Create Pull Request
 1. Create a pull request for the changes
 2. The pull request title
     - SHOULD be succinct and clear
@@ -77,7 +86,7 @@ The user must provide:
     - SHOULD be succinct and clear
     - SHOULD describe the behavioral or functional changes
 
-### Step 10: Review Pull Request (Post-CI)
+### Step 9: Review Pull Request (Post-CI)
 1. Use pr-review-toolkit:review-pr to request a thorough review of the pull request:
     - validates that all GitHub Actions executed correctly
     - verifies that tests are truly behavioral
@@ -85,7 +94,7 @@ The user must provide:
 
 **Purpose:** Verify CI passed and catch issues visible only in the PR context (diff view, CI logs).
 
-### Step 11: Recommend Plan Changes
+### Step 10: Recommend Plan Changes
 1. Review the work plan critically in light of the code changes made
 2. Identify any new questions or concerns about the work plan
 3. Identify any recommended changes
@@ -105,7 +114,7 @@ The user must provide:
 
 ## When to Revisit Earlier Steps
 
-**Return to Step 2 (Load and Review Overall Plan) when:**
+**Return to Step 1 (Load and Review Overall Plan) when:**
 - Partner updates the plan based on your feedback
 - Fundamental approach needs rethinking
 
