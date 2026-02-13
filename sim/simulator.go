@@ -232,6 +232,19 @@ func (sim *Simulator) InjectArrival(req *Request) {
 	}
 }
 
+// InjectArrivalAt schedules an ArrivalEvent at eventTime (not req.ArrivalTime).
+// Metrics.Requests uses req.ArrivalTime for ArrivedAt to preserve original arrival time.
+// Used by cluster-mode online routing where event time differs from original arrival.
+func (sim *Simulator) InjectArrivalAt(req *Request, eventTime int64) {
+	sim.Schedule(&ArrivalEvent{time: eventTime, Request: req})
+	sim.Metrics.Requests[req.ID] = RequestMetrics{
+		ID:               req.ID,
+		ArrivedAt:        float64(req.ArrivalTime) / 1e6,
+		NumPrefillTokens: len(req.InputTokens),
+		NumDecodeTokens:  len(req.OutputTokens),
+	}
+}
+
 func (sim *Simulator) Run() {
 	for sim.HasPendingEvents() {
 		sim.ProcessNextEvent()

@@ -152,3 +152,32 @@ func (i *InstanceSimulator) ProcessNextEvent() { i.sim.ProcessNextEvent() }
 
 // Finalize sets SimEndedTime and logs completion.
 func (i *InstanceSimulator) Finalize() { i.sim.Finalize() }
+
+// QueueDepth returns the number of requests in the wait queue.
+func (i *InstanceSimulator) QueueDepth() int {
+	return i.sim.WaitQ.Len()
+}
+
+// BatchSize returns the number of requests in the running batch, or 0 if nil.
+func (i *InstanceSimulator) BatchSize() int {
+	if i.sim.RunningBatch == nil {
+		return 0
+	}
+	return len(i.sim.RunningBatch.Requests)
+}
+
+// KVUtilization returns the fraction of KV cache blocks in use.
+func (i *InstanceSimulator) KVUtilization() float64 {
+	return float64(i.sim.KVCache.UsedBlockCnt) / float64(i.sim.KVCache.TotalBlocks)
+}
+
+// FreeKVBlocks returns the number of free KV cache blocks.
+func (i *InstanceSimulator) FreeKVBlocks() int64 {
+	return i.sim.KVCache.TotalBlocks - i.sim.KVCache.UsedBlockCnt
+}
+
+// InjectRequestOnline injects a request during the event loop (online routing mode).
+// Unlike InjectRequest, this does NOT check hasRun, allowing injection during simulation.
+func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int64) {
+	i.sim.InjectArrivalAt(req, eventTime)
+}

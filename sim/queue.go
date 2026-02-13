@@ -35,6 +35,11 @@ func (wq *WaitQueue) String() string {
 	return sb.String()
 }
 
+// Len returns the number of requests in the queue.
+func (wq *WaitQueue) Len() int {
+	return len(wq.queue)
+}
+
 // DequeueBatch removes a request from the front of the queue.
 // This is used by the scheduler to construct a batch for processing.
 func (wq *WaitQueue) DequeueBatch() *Request {
