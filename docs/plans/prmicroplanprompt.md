@@ -141,6 +141,9 @@ Before implementation, verify:
 - No breaking changes without explicit contract updates.
 - No hidden global state impact.
 - All new code will pass golangci-lint.
+- CLAUDE.md updated if: new files/packages added, file organization changed,
+  or plan milestone completed (PR status, "Next" field).
+- No stale references left in CLAUDE.md (file tree, completed PRs, planned packages).
 
 ======================================================================
 OUTPUT FORMAT (STRICT)
@@ -179,7 +182,7 @@ golangci-lint run ./...
 ```
 
 CI verification (.github/workflows/ci.yml):
-- Uses golangci/golangci-lint-action@v6 with version v2.9.0
+- Uses golangci/golangci-lint-action@v7 with version v2.9.0
 - Keep CI version aligned with local development (v2.x line)
 
 Rules:
