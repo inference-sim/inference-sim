@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 // ClusterSimulator orchestrates N InstanceSimulator replicas behind a shared clock.
@@ -22,7 +23,7 @@ type ClusterSimulator struct {
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
-// Panics if config.NumInstances < 1.
+// Panics if config.NumInstances < 1 or if both workload and tracesPath are unset.
 func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 	tracesPath string) *ClusterSimulator {
 	if config.NumInstances < 1 {
@@ -146,6 +147,7 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.TotalInputTokens += m.TotalInputTokens
 		merged.TotalOutputTokens += m.TotalOutputTokens
 		merged.TTFTSum += m.TTFTSum
+		merged.ITLSum += m.ITLSum
 		if m.SimEndedTime > merged.SimEndedTime {
 			merged.SimEndedTime = m.SimEndedTime
 		}
@@ -158,23 +160,42 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		// Step-indexed time series are concatenated, not interleaved by time.
 		merged.NumWaitQRequests = append(merged.NumWaitQRequests, m.NumWaitQRequests...)
 		merged.NumRunningBatchRequests = append(merged.NumRunningBatchRequests, m.NumRunningBatchRequests...)
-		// Merge per-request maps (IDs are globally unique — centrally generated as "request_N")
+		// Merge per-request maps (IDs are globally unique — centrally generated as "request_N").
+		// Log a warning if duplicate IDs are detected, as this indicates a workload generation bug.
 		for k, v := range m.RequestTTFTs {
+			if _, exists := merged.RequestTTFTs[k]; exists {
+				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestTTFTs", k)
+			}
 			merged.RequestTTFTs[k] = v
 		}
 		for k, v := range m.RequestE2Es {
+			if _, exists := merged.RequestE2Es[k]; exists {
+				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestE2Es", k)
+			}
 			merged.RequestE2Es[k] = v
 		}
 		for k, v := range m.RequestITLs {
+			if _, exists := merged.RequestITLs[k]; exists {
+				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestITLs", k)
+			}
 			merged.RequestITLs[k] = v
 		}
 		for k, v := range m.RequestSchedulingDelays {
+			if _, exists := merged.RequestSchedulingDelays[k]; exists {
+				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestSchedulingDelays", k)
+			}
 			merged.RequestSchedulingDelays[k] = v
 		}
 		for k, v := range m.RequestCompletionTimes {
+			if _, exists := merged.RequestCompletionTimes[k]; exists {
+				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestCompletionTimes", k)
+			}
 			merged.RequestCompletionTimes[k] = v
 		}
 		for k, v := range m.Requests {
+			if _, exists := merged.Requests[k]; exists {
+				logrus.Warnf("aggregateMetrics: duplicate request ID %q in Requests", k)
+			}
 			merged.Requests[k] = v
 		}
 		merged.AllITLs = append(merged.AllITLs, m.AllITLs...)

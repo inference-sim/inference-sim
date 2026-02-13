@@ -62,11 +62,20 @@ go test -cover ./...
 The simulator uses a discrete-event architecture with a min-heap event queue:
 
 - **simulator.go**: Main `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution
-- **event.go**: Event types (`ArrivalEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
+- **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
 - **request.go**: Request lifecycle and state machine (queued → running → completed)
 - **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching
 - **batch.go**: Batch formation respecting token budgets and batch size limits
 - **queue.go**: FIFO wait queue for pending requests
+
+### Cluster Simulation (`sim/cluster/`)
+
+Multi-replica extension using composition over the single-instance simulator:
+
+- **instance.go**: `InstanceSimulator` wraps `sim.Simulator` with run-once guard and cluster-level accessors
+- **cluster.go**: `ClusterSimulator` orchestrates N instances with shared-clock event loop, round-robin dispatch, and metrics aggregation
+- **deployment.go**: `DeploymentConfig` struct for homogeneous cluster configuration
+- **workload.go**: Centralized request generation (distribution-based or CSV traces) for cluster dispatch
 
 ### Latency Estimation
 
@@ -106,7 +115,7 @@ This project follows BDD/TDD practices. When implementing features:
 
 ### Key Invariants to Maintain
 
-- **Request lifecycle**: Every request reaches exactly one terminal state (COMPLETED, REJECTED, TIMED_OUT)
+- **Request lifecycle**: Requests transition queued → running → completed; requests not completed before horizon remain in current state
 - **Clock monotonicity**: Simulation clock never decreases
 - **KV cache conservation**: `allocated_blocks + free_blocks = total_blocks`
 - **Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
@@ -116,15 +125,15 @@ This project follows BDD/TDD practices. When implementing features:
 Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
 - 21 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~4 weeks** (after Phase 2) enables early policy experiments
-- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator wrapper with run-once guard)
-- **Next:** PR3 (ClusterSimulator)
-- Will add `sim/cluster/`, `sim/policy/`, `sim/kv/`, `sim/workload/`, `sim/trace/` packages
+- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests)
+- **Next:** PR4+ (routing policies, enhanced workloads, tiered KV cache, decision traces)
+- Will add `sim/policy/`, `sim/kv/`, `sim/workload/`, `sim/trace/` packages
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
 ### Code Style
 
 - Use composition over inheritance (e.g., `InstanceSimulator` wraps existing `sim` components)
-- Explicit tie-breaking for determinism (timestamp → event type priority → event ID)
+- Timestamp-based event ordering via min-heap (cluster-level ties broken by lowest instance index)
 - Partitioned RNG per subsystem to isolate randomness
 
 ### CI/CD
@@ -143,22 +152,27 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags
+│   ├── root.go                # CLI commands and flags (--num-instances for cluster mode)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
-│   ├── simulator.go           # Event loop, batch formation
-│   ├── event.go               # Event types
-│   ├── request.go             # Request state machine
-│   ├── kvcache.go             # KV cache with prefix caching
-│   ├── batch.go               # Batch formation
-│   ├── queue.go               # Wait queue
-│   ├── metrics.go             # TTFT, TPOT, E2E collection
+│   ├── simulator.go           # Event loop, batch formation, step execution
+│   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
+│   ├── request.go             # Request state machine (queued → running → completed)
+│   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching
+│   ├── batch.go               # Batch struct
+│   ├── queue.go               # FIFO wait queue
+│   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
+│   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
-│   ├── roofline_step.go       # Analytical latency estimation
-│   ├── model_hardware_config.go # HF config, hardware specs
-│   └── workload_config.go     # Workload generation
-├── sim/cluster/               # Multi-replica extension (InstanceSimulator added in PR2)
-├── sim/policy/                # Pluggable policies (planned)
+│   ├── roofline_step.go       # Analytical FLOPs/bandwidth latency estimation
+│   ├── model_hardware_config.go # HFConfig, ModelConfig, HardwareCalib structs
+│   └── workload_config.go     # CSV trace loading and distribution-based workload generation
+├── sim/cluster/               # Multi-replica cluster simulation
+│   ├── instance.go            # InstanceSimulator wrapper with run-once guard
+│   ├── cluster.go             # ClusterSimulator: shared-clock event loop, round-robin, aggregation
+│   ├── deployment.go          # DeploymentConfig struct
+│   └── workload.go            # Centralized request generation for cluster dispatch
+├── sim/policy/                # Pluggable routing policies (planned, Phase 2)
 ├── sim/kv/                    # Tiered KV cache (planned, Phase 4)
 ├── sim/workload/              # Enhanced workload generation (planned, Phase 3)
 ├── sim/trace/                 # Decision traces (planned, Phase 4)
@@ -166,6 +180,7 @@ inference-sim/
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
 ├── hardware_config.json       # GPU specifications
+├── testdata/goldendataset.json # Golden dataset for regression tests
 └── docs/plans/                # Design documents
 ```
 
