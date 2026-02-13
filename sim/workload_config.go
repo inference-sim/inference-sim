@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"os"
 	"strconv"
 
@@ -38,6 +39,9 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 		}
 		if err != nil {
 			logrus.Fatalf("error reading csv at row %d: %v", reqIdx, err)
+		}
+		if len(record) < 5 {
+			logrus.Fatalf("csv row %d has %d columns, expected at least 5", reqIdx, len(record))
 		}
 
 		// 1. Parse Arrival Time
@@ -92,30 +96,34 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 	}
 }
 
-// generateLengthGauss generates input or output length satisfying DataConfig distribution
-// The generated length is sampled from a Gaussian distribution with mean=lengthMean, std=lengthStd
-// and is clamped between (lengthMin, lengthMax)
-func (sim *Simulator) generateLengthGauss(lengthMean, lengthStd, lengthMin, lengthMax int) int {
-	if lengthMin == lengthMax {
-		return lengthMin
+// GenerateLengthGauss samples a length from a clamped Gaussian distribution.
+// RNG calls: 1 × NormFloat64() (or 0 if min == max).
+func GenerateLengthGauss(rng *rand.Rand, mean, std, min, max int) int {
+	if min == max {
+		return min
 	}
-	val := sim.WorkloadRNG().NormFloat64()*float64(lengthStd) + float64(lengthMean)
-	clampedVal := math.Min(float64(lengthMax), val)
-	clampedVal = math.Max(float64(lengthMin), clampedVal)
-	roundedVal := math.Round(clampedVal)
-	return int(roundedVal)
+	val := rng.NormFloat64()*float64(std) + float64(mean)
+	clampedVal := math.Min(float64(max), val)
+	clampedVal = math.Max(float64(min), clampedVal)
+	return int(math.Round(clampedVal))
 }
 
-// generateRandomTokenIDs creates a slice of 'length' random integers.
-// each token ID ranges between 0 to 32000.
-func (sim *Simulator) generateRandomTokenIDs(length int) []int {
-
+// GenerateRandomTokenIDs creates a slice of random token IDs in [0, MaxTokenID).
+// RNG calls: length × Intn(MaxTokenID).
+func GenerateRandomTokenIDs(rng *rand.Rand, length int) []int {
 	tokens := make([]int, length)
-
-	for i := 0; i < length; i++ {
-		tokens[i] = sim.WorkloadRNG().Intn(MaxTokenID)
+	for i := range tokens {
+		tokens[i] = rng.Intn(MaxTokenID)
 	}
 	return tokens
+}
+
+func (sim *Simulator) generateLengthGauss(lengthMean, lengthStd, lengthMin, lengthMax int) int {
+	return GenerateLengthGauss(sim.WorkloadRNG(), lengthMean, lengthStd, lengthMin, lengthMax)
+}
+
+func (sim *Simulator) generateRandomTokenIDs(length int) []int {
+	return GenerateRandomTokenIDs(sim.WorkloadRNG(), length)
 }
 
 // generateWorkloadDistribution generates request arrivals according to gen config
@@ -160,17 +168,7 @@ func (sim *Simulator) generateWorkloadDistribution() {
 			FinishedStepIdx:  0,
 		}
 
-		// push the request for arrival
-		sim.Schedule(&ArrivalEvent{time: currentTime, Request: req})
-
-		// Add to metrics.Requests
-		detail := RequestMetrics{
-			ID:               reqID,
-			ArrivedAt:        float64(currentTime) / 1e6,
-			NumPrefillTokens: len(input),
-			NumDecodeTokens:  len(output),
-		}
-		sim.Metrics.Requests[reqID] = detail
+		sim.InjectArrival(req)
 
 		// estimate arrivalTime based on constant RPS
 		currentTime += int64(1 / sim.Metrics.RequestRate)
