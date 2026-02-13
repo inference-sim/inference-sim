@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
 // newTestDeploymentConfig creates a DeploymentConfig suitable for testing.
@@ -51,7 +52,7 @@ func newTestWorkload(maxPrompts int) *sim.GuideLLMConfig {
 // WHEN Run() called
 // THEN CompletedRequests, TotalInputTokens, TotalOutputTokens match golden values exactly.
 func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
-	dataset := loadGoldenDataset(t)
+	dataset := testutil.LoadGoldenDataset(t)
 
 	if len(dataset.Tests) == 0 {
 		t.Fatal("Golden dataset contains no test cases")
@@ -110,7 +111,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 			}
 			// Verify timing: SimEndedTime must match golden vllm_estimated_duration_s
 			vllmRuntime := float64(m.SimEndedTime) / 1e6
-			assertFloat64Equal(t, "vllm_estimated_duration_s",
+			testutil.AssertFloat64Equal(t,"vllm_estimated_duration_s",
 				tc.Metrics.VllmEstimatedDurationS, vllmRuntime, 1e-9)
 		})
 	}
@@ -561,7 +562,7 @@ func BenchmarkClusterSimulator_1K_10Instances(b *testing.B) {
 // WHEN sim.NewSimulator generates workload AND ClusterSimulator generates requests
 // THEN count matches and for each request: ArrivalTime, len(InputTokens), len(OutputTokens) match.
 func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
-	dataset := loadGoldenDataset(t)
+	dataset := testutil.LoadGoldenDataset(t)
 	if len(dataset.Tests) == 0 {
 		t.Fatal("Golden dataset contains no test cases")
 	}

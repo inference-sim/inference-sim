@@ -8,8 +8,3 @@ package sim
 type Batch struct {
 	Requests []*Request // Requests included in the current batch
 }
-
-// NewBatch creates a new Batch instance from a given slice of requests.
-func NewBatch(reqs []*Request) *Batch {
-	return &Batch{Requests: reqs}
-}

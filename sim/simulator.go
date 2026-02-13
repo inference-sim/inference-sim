@@ -160,6 +160,9 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		s.Metrics.RequestRate = 0.0 // no request rate specified
 		s.generateWorkloadFromCSV()
 	} else {
+		if s.GuideLLMConfig == nil {
+			logrus.Fatalf("NewSimulator requires either tracesWorkloadFilePath or guideLLMConfig")
+		}
 		s.Metrics.RequestRate = s.GuideLLMConfig.Rate
 		s.generateWorkloadDistribution()
 	}
