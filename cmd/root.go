@@ -185,6 +185,10 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("num-instances must be >= 1")
 		}
 
+		if workloadType == "traces" && tracesWorkloadFilePath == "" {
+			logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")
+		}
+
 		startTime := time.Now() // Get current time (start)
 
 		if numInstances == 1 {
