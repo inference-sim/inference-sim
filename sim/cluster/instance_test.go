@@ -1,91 +1,12 @@
 package cluster
 
 import (
-	"encoding/json"
 	"math"
-	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
-
-// === Golden Dataset Types (mirrored from sim/simulator_test.go) ===
-
-type GoldenDataset struct {
-	Tests []GoldenTestCase `json:"tests"`
-}
-
-type GoldenTestCase struct {
-	Model                     string        `json:"model"`
-	Workload                  string        `json:"workload"`
-	Approach                  string        `json:"approach"`
-	Rate                      float64       `json:"rate"`
-	MaxPrompts                int           `json:"max-prompts"`
-	PrefixTokens              int           `json:"prefix_tokens"`
-	PromptTokens              int           `json:"prompt_tokens"`
-	PromptTokensStdev         int           `json:"prompt_tokens_stdev"`
-	PromptTokensMin           int           `json:"prompt_tokens_min"`
-	PromptTokensMax           int           `json:"prompt_tokens_max"`
-	OutputTokens              int           `json:"output_tokens"`
-	OutputTokensStdev         int           `json:"output_tokens_stdev"`
-	OutputTokensMin           int           `json:"output_tokens_min"`
-	OutputTokensMax           int           `json:"output_tokens_max"`
-	Hardware                  string        `json:"hardware"`
-	TP                        int           `json:"tp"`
-	Seed                      int64         `json:"seed"`
-	MaxNumRunningReqs         int64         `json:"max-num-running-reqs"`
-	MaxNumScheduledTokens     int64         `json:"max-num-scheduled-tokens"`
-	MaxModelLen               int           `json:"max-model-len"`
-	TotalKVBlocks             int64         `json:"total-kv-blocks"`
-	BlockSizeInTokens         int64         `json:"block-size-in-tokens"`
-	LongPrefillTokenThreshold int64         `json:"long-prefill-token-threshold"`
-	AlphaCoeffs               []float64     `json:"alpha-coeffs"`
-	BetaCoeffs                []float64     `json:"beta-coeffs"`
-	Metrics                   GoldenMetrics `json:"metrics"`
-}
-
-type GoldenMetrics struct {
-	CompletedRequests      int     `json:"completed_requests"`
-	TotalInputTokens       int     `json:"total_input_tokens"`
-	TotalOutputTokens      int     `json:"total_output_tokens"`
-	VllmEstimatedDurationS float64 `json:"vllm_estimated_duration_s"`
-	ResponsesPerSec        float64 `json:"responses_per_sec"`
-	TokensPerSec           float64 `json:"tokens_per_sec"`
-	E2EMeanMs              float64 `json:"e2e_mean_ms"`
-	E2EP90Ms               float64 `json:"e2e_p90_ms"`
-	E2EP95Ms               float64 `json:"e2e_p95_ms"`
-	E2EP99Ms               float64 `json:"e2e_p99_ms"`
-	TTFTMeanMs             float64 `json:"ttft_mean_ms"`
-	TTFTP90Ms              float64 `json:"ttft_p90_ms"`
-	TTFTP95Ms              float64 `json:"ttft_p95_ms"`
-	TTFTP99Ms              float64 `json:"ttft_p99_ms"`
-	ITLMeanMs              float64 `json:"itl_mean_ms"`
-	ITLP90Ms               float64 `json:"itl_p90_ms"`
-	ITLP95Ms               float64 `json:"itl_p95_ms"`
-	ITLP99Ms               float64 `json:"itl_p99_ms"`
-	SchedulingDelayP99Ms   float64 `json:"scheduling_delay_p99_ms"`
-}
-
-func loadGoldenDataset(t *testing.T) *GoldenDataset {
-	t.Helper()
-	// Find testdata relative to this test file using runtime.Caller
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("Failed to get current file path")
-	}
-	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "goldendataset.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("Failed to read golden dataset: %v", err)
-	}
-	var dataset GoldenDataset
-	if err := json.Unmarshal(data, &dataset); err != nil {
-		t.Fatalf("Failed to parse golden dataset: %v", err)
-	}
-	return &dataset
-}
 
 // === Equivalence Tests (Critical for BC-1) ===
 
@@ -94,7 +15,7 @@ func loadGoldenDataset(t *testing.T) *GoldenDataset {
 // WHEN run through InstanceSimulator wrapper
 // THEN all metrics match golden expected values exactly
 func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
-	dataset := loadGoldenDataset(t)
+	dataset := testutil.LoadGoldenDataset(t)
 
 	if len(dataset.Tests) == 0 {
 		t.Fatal("Golden dataset contains no test cases")
@@ -160,7 +81,7 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 			// Verify derived metrics with tolerance
 			const relTol = 1e-9
 			vllmRuntime := float64(instance.Metrics().SimEndedTime) / 1e6
-			assertFloat64Equal(t, "vllm_estimated_duration_s", tc.Metrics.VllmEstimatedDurationS, vllmRuntime, relTol)
+			testutil.AssertFloat64Equal(t, "vllm_estimated_duration_s", tc.Metrics.VllmEstimatedDurationS, vllmRuntime, relTol)
 		})
 	}
 }
@@ -393,18 +314,3 @@ func TestInstanceSimulator_RunOnce_PanicsOnSecondCall(t *testing.T) {
 
 	instance.Run() // Should panic
 }
-
-// === Helper Functions ===
-
-func assertFloat64Equal(t *testing.T, name string, want, got, relTol float64) {
-	t.Helper()
-	if want == 0 && got == 0 {
-		return
-	}
-	diff := math.Abs(want - got)
-	maxVal := math.Max(math.Abs(want), math.Abs(got))
-	if diff/maxVal > relTol {
-		t.Errorf("%s: got %v, want %v (diff=%v, relDiff=%v)", name, got, want, diff, diff/maxVal)
-	}
-}
-

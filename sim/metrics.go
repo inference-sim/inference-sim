@@ -137,7 +137,11 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 			return output.Requests[i].ArrivedAt < output.Requests[j].ArrivedAt
 		})
 
-		data, _ := json.MarshalIndent(output, "", "  ")
+		data, err := json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshalling metrics to JSON: %v\n", err)
+			return
+		}
 
 		writeErr := os.WriteFile(outputFilePath, data, 0644)
 		if writeErr != nil {
