@@ -1,16 +1,16 @@
 # BLIS Evolutionary Policy Optimization: Macro-Level Implementation Plan (v2)
 
 **Date:** 2026-02-11
-**Revision:** v2.2 (incorporates Perplexity, Gemini, and GPT-4o review feedback + scaffolding cleanup)
+**Revision:** v2.3 (incorporates mock study findings + online routing architecture)
 **Status:** Draft
 **Target:** Multi-replica cluster simulation with pluggable policies
 **Based on:** [Design Document](2026-02-06-evolutionary-policy-optimization-design.md)
 
 ---
 
-## Revision Notes (v2.2)
+## Revision Notes (v2.3)
 
-This revision incorporates feedback from external review (Perplexity, Gemini, GPT-4o) and scaffolding cleanup:
+This revision incorporates feedback from external review (Perplexity, Gemini, GPT-4o), scaffolding cleanup, and mock study findings:
 
 **v2 changes (Perplexity):**
 1. **Earlier research-ready checkpoint** — Metrics/fitness evaluation moved up to enable policy research after Phase 2
@@ -31,6 +31,14 @@ This revision incorporates feedback from external review (Perplexity, Gemini, GP
 12. **Merged PR 10+11** — RawMetrics and anomaly validation combined into single PR
 13. **Reduced total PRs** — 24 → 21 PRs with no scaffolding or dead code
 
+**v2.3 changes (mock study findings, 2026-02-13):**
+14. **Online routing architecture** — ClusterSimulator restructured: routing decisions happen at arrival time during the event loop, not pre-dispatched (mock study proved pre-dispatch breaks load-aware policies)
+15. **Cluster-level event queue** — New event types (ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent) with configurable per-event latency to model real control plane delays
+16. **InstanceSnapshot staleness model** — Immutable value type with Timestamp; SnapshotProvider interface + ObservabilityConfig control per-field refresh (immediate/periodic/on-demand)
+17. **Control plane / data plane separation** — ClusterSimulator orchestrates a ControlPlane (cluster event queue, policies, SnapshotProvider) and DataPlane (InstanceSimulators with their own event queues)
+18. **PR 4 expanded** — Now includes cluster event infrastructure + AdmissionPolicy (combined); PRs 5-7 depend on PR 4 (no longer parallel with it)
+19. **InstanceSimulator observation methods** — QueueDepth(), BatchSize(), KVUtilization(), FreeKVBlocks() added in PR 4 (mock study identified 4 observable gaps: queue depth, batch size, KV utilization, prefix cache state)
+
 ---
 
 ## A) Executive Summary
@@ -48,9 +56,9 @@ This plan transforms BLIS from a single-instance LLM inference simulator into a 
 
 **Implementation:**
 - 6 phases, 21 PRs
-- **Research-ready checkpoint after Phase 2** (~4 weeks)
+- **Research-ready checkpoint after Phase 2** (~5 weeks; PR 4 expanded with cluster event infrastructure)
 - Each PR is CLI-exercisable immediately after merge — no scaffolding
-- Estimated 9-10 weeks with 3-4 developers
+- Estimated 10-11 weeks with 3-4 developers
 
 ---
 
@@ -129,6 +137,8 @@ simulation_worker run
 **Flags this plan will add:**
 - `--num-instances INT` (PR 3)
 - `--admission-policy STRING` (PR 4)
+- `--admission-latency INT` (PR 4, microseconds, default 0)
+- `--routing-latency INT` (PR 4, microseconds, default 0)
 - `--priority-policy STRING` (PR 5)
 - `--routing-policy STRING` (PR 6)
 - `--scheduler STRING` (PR 7)
@@ -160,8 +170,8 @@ CLI flags → cmd/root.go → SimulatorConfig → Simulator.Run()
 
 | Uncertainty | Impact | Resolution |
 |-------------|--------|------------|
-| Will existing alpha/beta coefficients generalize to multi-instance? | Latency estimates may diverge | Mock study after PR 3 will reveal; may need per-instance calibration |
-| Is round-robin sufficient as default routing? | May mask policy bugs if too simple | Add `--routing-policy random` as alternative baseline |
+| Will existing alpha/beta coefficients generalize to multi-instance? | Latency estimates may diverge | **RESOLVED (mock study):** Coefficients work; primary issue was dispatch architecture, not coefficients |
+| ~~Is round-robin sufficient as default routing?~~ | ~~May mask policy bugs~~ | **RESOLVED:** Round-robin is a valid default; `--routing-policy` adds alternatives. Under-saturation masks all policy differences — contention workloads required (validates PR 9 pathological templates + PR 10 workload generator) |
 | How will CLI flag explosion be managed? | UX degradation with 20+ flags | `--policy-config YAML` consolidates policy flags (PR 8) |
 
 ---
@@ -264,6 +274,30 @@ This section documents how BLIS models real systems and where we intentionally s
 
 **Routing policy freedom:** Individual routing policy implementations are free to maintain their own internal state (e.g., predicted cache state for prefix-aware routing). The router provides observable metrics and instance snapshots; policies decide what additional tracking they need.
 
+### D.5.1 Control Plane Latency Model (New in v2.3)
+
+Policy decisions incur latency in real systems. BLIS models this as configurable per-event delays:
+
+| Decision Point | Real-World Latency | BLIS Default | Configurable |
+|---|---|---|---|
+| Admission | 10-50μs | 0 (instantaneous) | `--admission-latency` |
+| Routing | 50-200μs | 0 (instantaneous) | `--routing-latency` |
+| Scheduling | 0 (instance-local) | 0 | N/A (alpha model handles this) |
+
+With zero-latency defaults, the pipeline collapses to "route immediately on arrival" — backward compatible with v2.2 behavior.
+
+### D.5.2 InstanceSnapshot Staleness Model (New in v2.3)
+
+InstanceSnapshot is an immutable value type captured at a specific clock time. A SnapshotProvider controls when snapshots are refreshed.
+
+| Update Mode | Fields (default) | Real-World Analog |
+|---|---|---|
+| Immediate | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, InFlightRequests | Load balancer connection tracking |
+| Periodic | CacheHitRate (10ms), RecentTTFT (100ms), RecentTPOT (100ms) | Prometheus scrape, xDS push |
+| On-demand | Prefix cache state (Extended map) | Health check probe |
+
+Default: core load fields immediate; statistical fields periodic. Researchers configure staleness via ObservabilityConfig to study robustness (e.g., making KVUtilization periodic to model Prometheus scrape delay).
+
 ### D.6 Auto-Scaling
 
 **Based on:** Kubernetes HPA patterns with LLM-specific considerations.
@@ -291,7 +325,7 @@ Policies operate under **architectural locality constraints**: they may only con
 
 **Routing Policy Observables:**
 - Request: as above, plus `PriorityScore`
-- Per-instance: `QueueDepth`, `BatchSize`, `KVUtilization`, `CacheHitRate`, `RecentTTFT`, `RecentTPOT`, `EstimatedWaitTime`
+- Per-instance: `QueueDepth`, `BatchSize`, `KVUtilization`, `FreeKVBlocks`, `InFlightRequests`, `CacheHitRate`, `RecentTTFT`, `RecentTPOT`, `EstimatedWaitTime`
 - Global: aggregate metrics across instances
 
 **Instance Scheduler Observables:**
@@ -365,6 +399,8 @@ func (p *PartitionedRNG) ForSubsystem(name string) *rand.Rand {
 
 ### E.3 Event Ordering Rules
 
+**Note:** This is the target ordering for the v2.3 cluster control plane. The current implementation (PR 3) uses timestamp-only ordering within instances; cluster-level tie-breaking uses lowest instance index. PR 4 will implement the full ordering below.
+
 ```go
 // Events are ordered by: (1) timestamp, (2) type priority, (3) event ID
 func (a Event) Less(b Event) bool {
@@ -378,13 +414,16 @@ func (a Event) Less(b Event) bool {
 }
 
 // Type priorities (lower = processed first)
+// Cluster-level events (New in v2.3) precede instance-level events
 const (
-    PriorityArrival    = 1
-    PriorityAdmission  = 2
-    PriorityRouting    = 3
-    PriorityStep       = 4
-    PriorityCompletion = 5
-    PriorityScaleCheck = 6
+    PriorityClusterArrival  = 0  // Cluster-level request arrival
+    PriorityAdmission       = 1  // Admission decision
+    PriorityRouting         = 2  // Routing decision
+    PriorityArrival         = 3  // Instance-level arrival (injected after routing)
+    PriorityStep            = 4
+    PriorityCompletion      = 5
+    PriorityScaleCheck      = 6
+    PrioritySnapshotRefresh = 7  // Periodic snapshot updates
 )
 ```
 
@@ -709,10 +748,12 @@ type TenantState struct {
 type InstanceSnapshot struct {
     // Core fields (frozen after PR 8 - no removals or type changes)
     ID                InstanceID
-    PoolType          PoolType // MONOLITHIC (PR 6+), PREFILL/DECODE (PR 15+)
+    Timestamp         int64    // clock time when snapshot was captured (New in v2.3)
+    PoolType          PoolType // MONOLITHIC (PR 4+), PREFILL/DECODE (PR 15+)
     QueueDepth        int
     BatchSize         int
     KVUtilization     float64  // GPU tier utilization (0.0-1.0)
+    FreeKVBlocks      int64    // TotalBlocks - UsedBlockCnt (New in v2.3)
     InFlightRequests  int
     RecentTTFT        float64
     RecentTPOT        float64
@@ -727,6 +768,38 @@ type InstanceSnapshot struct {
     //   "PendingOffloads"    - blocks queued for GPU→CPU transfer
     //   "PendingReloads"     - blocks queued for CPU→GPU transfer
     Extended map[string]float64
+}
+
+// SnapshotProvider controls when/how snapshots are refreshed. (New in v2.3)
+type SnapshotProvider interface {
+    // Snapshot returns the current (possibly cached) snapshot for an instance.
+    Snapshot(id InstanceID, clock int64) InstanceSnapshot
+    // RefreshAll rebuilds all snapshots that are stale per ObservabilityConfig.
+    RefreshAll(clock int64)
+}
+
+type UpdateMode int
+const (
+    Immediate UpdateMode = iota // Re-read on every access
+    Periodic                     // Re-read at fixed intervals
+    OnDemand                     // Re-read only when explicitly requested
+)
+
+type FieldConfig struct {
+    Mode     UpdateMode
+    Interval int64 // ticks between updates (for Periodic mode)
+}
+
+// ObservabilityConfig controls per-field refresh behavior.
+// Fields not listed here (InFlightRequests, FreeKVBlocks, EstimatedWaitTime)
+// are always Immediate and not independently configurable.
+type ObservabilityConfig struct {
+    QueueDepth       FieldConfig // default: Immediate
+    BatchSize        FieldConfig // default: Immediate
+    KVUtilization    FieldConfig // default: Immediate (configurable to Periodic)
+    CacheHitRate     FieldConfig // default: Periodic(10000 ticks)
+    RecentTTFT       FieldConfig // default: Periodic(100000 ticks)
+    RecentTPOT       FieldConfig // default: Periodic(100000 ticks)
 }
 ```
 
@@ -792,25 +865,39 @@ type RawMetrics struct {
 ### Before → After
 
 ```
-CURRENT                              TARGET (Phase 2 Research-Ready)
-───────                              ──────────────────────────────
-┌─────────────┐                      ┌────────────────────────────────────────┐
-│  Simulator  │                      │          ClusterSimulator              │
-│  (single)   │                      │                                        │
-│             │                      │  PolicyBundle ────────────────────┐    │
-│ - WaitQueue │                      │  RouterState                      │    │
-│ - KVCache   │      ────────►       │  EventHeap (ordered)              │    │
-│ - Batch     │                      │  PartitionedRNG                   │    │
-│ - EventQ    │                      │  Clock (int64)                    │    │
-│ - Clock     │                      │  RawMetrics ◄──── Fitness eval    │    │
-│ - RNG       │                      │                                   │    │
-└─────────────┘                      │  ┌──────────┐  ┌──────────┐      │    │
-                                     │  │Instance 0│  │Instance 1│ ...  │    │
-                                     │  │-WaitQ    │  │-WaitQ    │      │    │
-                                     │  │-KVCache  │  │-KVCache  │      │    │
-                                     │  │-Scheduler│  │-Scheduler│◄─────┘    │
-                                     │  └──────────┘  └──────────┘           │
-                                     └────────────────────────────────────────┘
+CURRENT                              TARGET (Phase 2 Research-Ready, v2.3)
+───────                              ──────────────────────────────────────
+┌─────────────┐                      ┌──────────────────────────────────────────────────────┐
+│  Simulator  │                      │                  ClusterSimulator                      │
+│  (single)   │                      │                                                        │
+│             │                      │  ┌──────────────── Control Plane ──────────────────┐  │
+│ - WaitQueue │                      │  │                                                  │  │
+│ - KVCache   │      ────────►       │  │  ClusterEventQueue ──── Admission → Routing      │  │
+│ - Batch     │                      │  │  SnapshotProvider  ──── ObservabilityConfig       │  │
+│ - EventQ    │                      │  │  PolicyBundle      ──── RouterState               │  │
+│ - Clock     │                      │  │  PartitionedRNG                                   │  │
+│ - RNG       │                      │  │  RawMetrics ◄──── Fitness eval                    │  │
+└─────────────┘                      │  │                                                  │  │
+                                     │  └──────────────────────────────────────────────────┘  │
+                                     │                          │ inject request               │
+                                     │                          ▼                              │
+                                     │  ┌──────────────── Data Plane ─────────────────────┐  │
+                                     │  │                                                  │  │
+                                     │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐      │  │
+                                     │  │  │Instance 0│  │Instance 1│  │Instance 2│ ...   │  │
+                                     │  │  │-EventQ   │  │-EventQ   │  │-EventQ   │      │  │
+                                     │  │  │-WaitQ    │  │-WaitQ    │  │-WaitQ    │      │  │
+                                     │  │  │-KVCache  │  │-KVCache  │  │-KVCache  │      │  │
+                                     │  │  │-Batch    │  │-Batch    │  │-Batch    │      │  │
+                                     │  │  │-Scheduler│  │-Scheduler│  │-Scheduler│      │  │
+                                     │  │  └──────────┘  └──────────┘  └──────────┘      │  │
+                                     │  │                                                  │  │
+                                     │  └──────────────────────────────────────────────────┘  │
+                                     │                                                        │
+                                     │  Main Loop: pick earliest event across ALL queues      │
+                                     │    cluster event → execute (may inject into instance)  │
+                                     │    instance event → delegate to instance                │
+                                     └──────────────────────────────────────────────────────┘
 
 TARGET (Phase 4 Full Fidelity)
 ──────────────────────────────
@@ -846,9 +933,11 @@ sim/
 ├── metrics.go            # Existing (foundation for RawMetrics)
 ├── rng.go                # NEW: PartitionedRNG
 ├── cluster/
-│   ├── cluster.go        # ClusterSimulator
-│   ├── instance.go       # InstanceSimulator wrapper
-│   ├── event.go          # Cluster event types
+│   ├── cluster.go        # ClusterSimulator (restructured Run() with control/data plane)
+│   ├── instance.go       # InstanceSimulator wrapper (+ observation methods: QueueDepth, BatchSize, KVUtilization, FreeKVBlocks)
+│   ├── cluster_event.go  # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent (New in v2.3)
+│   ├── snapshot.go       # InstanceSnapshot, SnapshotProvider, ObservabilityConfig (New in v2.3)
+│   ├── event.go          # Instance-level cluster event types
 │   ├── deployment.go     # DeploymentConfig, ReplicaPool
 │   ├── router_state.go   # RouterState, TenantState
 │   └── metrics.go        # ClusterMetrics, RawMetrics, FitnessFunction
@@ -966,42 +1055,41 @@ These PRs must be done in order—each depends on the previous.
 | **Risks + Mitigations** | Risk: Event ordering non-determinism. Mitigation: Explicit ordering rules (timestamp, type priority, event ID). |
 | **Why Independently Reviewable** | Delivers complete multi-instance feature; usable immediately for capacity planning |
 
-**⚠️ CHECKPOINT: Mock Study**
+**✅ CHECKPOINT: Mock Study (COMPLETED 2026-02-13)**
 
-After PR 3 merges, before starting Phase 2:
-1. Write 2-3 hand-coded policies directly in `cluster_test.go`
-2. Exercise against simple workloads (existing `--workload distribution`)
-3. Document any missing observables or awkward patterns
-4. Adjust interface designs in PR 4-7 based on findings
-
----
-
-### Phase 2: Policy Interfaces + Metrics (6 PRs, Parallelizable after PR 3)
-
-After PR 3 and mock study, PRs 4-7 can be developed **in parallel**.
+Findings documented in `docs/plans/2026-02-13-mock-study-findings.md`:
+1. Pre-dispatch routing breaks load-aware policies → PR 4 restructured with online routing
+2. Four observable gaps identified → InstanceSimulator observation methods added in PR 4
+3. InstanceSnapshot + SnapshotProvider architecture validated
+4. Policy differentiation requires contention workloads (validates PR 9 pathological templates + PR 10 workload generator)
 
 ---
 
-#### PR 4: AdmissionPolicy Interface
+### Phase 2: Policy Interfaces + Metrics (6 PRs, PR 4 first then 5-7 parallel)
+
+After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). PRs 5-7 can then be developed **in parallel**.
+
+---
+
+#### PR 4: Cluster Control Plane + AdmissionPolicy
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(policy): Add AdmissionPolicy with AlwaysAdmit and TokenBucket` |
-| **Motivation** | Enable request admission control at cluster level |
-| **In Scope** | `AdmissionPolicy` interface, `AlwaysAdmit`, `TokenBucket`, `RateLimit`, `TenantQuota` templates |
-| **Out of Scope** | Pathological templates (deferred to PR 9) |
-| **Files Changed** | New: `sim/policy/admission.go` (~150 LOC). Modified: `sim/request.go` (~5 LOC for TenantID field), `cmd/root.go` (~20 LOC for flag) |
-| **CLI** | `./simulation_worker run --model X --num-instances 2 --admission-policy token-bucket --admission-bucket-size 100` |
-| **Tests** | Unit: each template. Integration: token bucket rate limiting |
-| **Parallel With** | PR 5, PR 6, PR 7 |
-| **No Dead Code** | All templates exercisable via `--admission-policy` flag |
-| **LOC Estimate** | ~170 |
-| **Architectural Impact** | Introduces policy plugin point; ClusterSimulator calls policy before routing |
-| **Behavioral Guarantees** | `always-admit` (default) preserves current behavior; `token-bucket` rejects when empty |
-| **API Surface Changes** | New CLI flags: `--admission-policy`, `--admission-bucket-size`, `--admission-refill-rate` |
-| **README Changes** | Add "Admission Policies" section |
-| **Risks + Mitigations** | Risk: Policy state not persisting. Mitigation: Test stateful TokenBucket across simulation. |
-| **Why Independently Reviewable** | Complete admission feature; default preserves existing behavior |
+| **Title** | `feat(cluster): Add cluster event infrastructure, SnapshotProvider, and AdmissionPolicy` |
+| **Motivation** | Mock study proved pre-dispatch routing breaks load-aware policies. Cluster needs event-driven control plane with online routing. Admission is the simplest policy to exercise the pipeline. |
+| **In Scope** | Cluster-level event queue (`ClusterArrivalEvent`, `AdmissionDecisionEvent`, `RoutingDecisionEvent`), `InstanceSnapshot` with `Timestamp`, `SnapshotProvider` + `CachedSnapshotProvider`, `ObservabilityConfig`, `InstanceSimulator` observation methods (`QueueDepth()`, `BatchSize()`, `KVUtilization()`, `FreeKVBlocks()`), restructured `ClusterSimulator.Run()`, `AdmissionPolicy` interface, `AlwaysAdmit` + `TokenBucket` templates, configurable per-event latency |
+| **Out of Scope** | Routing policy templates (PR 6), pathological templates (PR 9) |
+| **Files Changed** | New: `sim/cluster/cluster_event.go` (~150 LOC), `sim/cluster/snapshot.go` (~200 LOC), `sim/policy/admission.go` (~150 LOC). Modified: `sim/cluster/cluster.go` (~200 LOC restructure), `sim/cluster/instance.go` (~30 LOC observation methods), `sim/request.go` (~5 LOC TenantID), `cmd/root.go` (~30 LOC) |
+| **CLI** | `./simulation_worker run --model X --num-instances 2 --admission-policy always-admit` (default; `token-bucket` available but parameterized via `--policy-config` in PR 8) |
+| **Tests** | Unit: SnapshotProvider refresh, event ordering, admission templates. Integration: online round-robin matches old pre-dispatch (backward compat). |
+| **No Dead Code** | All code exercised via CLI flags and event pipeline |
+| **LOC Estimate** | ~450 |
+| **Architectural Impact** | Major: introduces control plane / data plane separation, cluster event queue, online routing. This is the architectural pivot point. |
+| **Behavioral Guarantees** | `always-admit` (default) + round-robin (default) preserves PR 3 behavior exactly. Zero-latency defaults mean no observable change. |
+| **API Surface Changes** | New CLI flags: `--admission-policy`, `--admission-latency`, `--routing-latency` |
+| **README Changes** | Add "Cluster Control Plane" and "Admission Policies" sections |
+| **Risks + Mitigations** | Risk: Larger PR. Mitigation: Infrastructure and admission are cohesive — infrastructure without a policy exercising it would be dead code. |
+| **Why Independently Reviewable** | Complete control plane feature with admission policy exercising the pipeline; default preserves existing behavior |
 
 ---
 
@@ -1011,12 +1099,13 @@ After PR 3 and mock study, PRs 4-7 can be developed **in parallel**.
 |--------|---------|
 | **Title** | `feat(policy): Add PriorityPolicy with Constant and SLOBased` |
 | **Motivation** | Enable request prioritization for scheduling |
+| **Depends On** | PR 4 |
 | **In Scope** | `PriorityPolicy` interface, `ConstantPriority`, `SLOBasedPriority`, `TenantPriority`, `DeadlineAware` templates |
 | **Out of Scope** | Pathological templates (deferred to PR 9) |
 | **Files Changed** | New: `sim/policy/priority.go` (~120 LOC). Modified: `cmd/root.go` (~15 LOC), `sim/request.go` (~10 LOC for Priority field) |
 | **CLI** | `./simulation_worker run --model X --num-instances 2 --priority-policy slo-based` |
 | **Tests** | Unit: each template. Integration: priority ordering in scheduling |
-| **Parallel With** | PR 4, PR 6, PR 7 |
+| **Parallel With** | PR 6, PR 7 |
 | **No Dead Code** | All templates exercisable via `--priority-policy` flag |
 | **LOC Estimate** | ~145 |
 | **Architectural Impact** | Adds Priority field to Request; routing/scheduling can use priority scores |
@@ -1034,15 +1123,16 @@ After PR 3 and mock study, PRs 4-7 can be developed **in parallel**.
 |--------|---------|
 | **Title** | `feat(policy): Add RoutingPolicy with RoundRobin and WeightedScoring` |
 | **Motivation** | Enable intelligent request routing across instances |
-| **In Scope** | `RoutingPolicy` interface, `InstanceSnapshot`, `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity` templates |
+| **Depends On** | PR 4 (InstanceSnapshot and SnapshotProvider already exist; this PR adds routing policy templates that consume snapshots) |
+| **In Scope** | `RoutingPolicy` interface, `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity` templates |
 | **Out of Scope** | Pathological templates (deferred to PR 9) |
 | **Files Changed** | New: `sim/policy/routing.go` (~200 LOC). Modified: `cmd/root.go` (~20 LOC) |
 | **CLI** | `./simulation_worker run --model X --num-instances 4 --routing-policy weighted --routing-cache-weight 0.6` |
 | **Tests** | Unit: each template. Integration: load distribution across instances |
-| **Parallel With** | PR 4, PR 5, PR 7 |
+| **Parallel With** | PR 5, PR 7 |
 | **No Dead Code** | All templates exercisable via `--routing-policy` flag |
 | **LOC Estimate** | ~220 |
-| **Architectural Impact** | Replaces hardcoded round-robin; introduces `InstanceSnapshot` observable |
+| **Architectural Impact** | Replaces hardcoded round-robin with pluggable routing; consumes `InstanceSnapshot` from PR 4 |
 | **Behavioral Guarantees** | `round-robin` (default) matches PR 3 behavior; weighted scoring respects weights |
 | **API Surface Changes** | New CLI flags: `--routing-policy`, `--routing-cache-weight`, `--routing-load-weight` |
 | **README Changes** | Add "Routing Policies" section |
@@ -1057,12 +1147,13 @@ After PR 3 and mock study, PRs 4-7 can be developed **in parallel**.
 |--------|---------|
 | **Title** | `feat(policy): Add InstanceScheduler with FCFS and PriorityFCFS` |
 | **Motivation** | Enable per-instance batch scheduling policies |
+| **Depends On** | PR 4 |
 | **In Scope** | `InstanceScheduler` interface, `SchedulerContext`, `FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler` |
 | **Out of Scope** | Pathological templates (deferred to PR 9) |
 | **Files Changed** | New: `sim/policy/scheduler.go` (~180 LOC). Modified: `sim/cluster/instance.go` (~30 LOC), `cmd/root.go` (~15 LOC) |
 | **CLI** | `./simulation_worker run --model X --num-instances 2 --scheduler priority-fcfs` |
 | **Tests** | Unit: each template. Integration: batch ordering respects policy |
-| **Parallel With** | PR 4, PR 5, PR 6 |
+| **Parallel With** | PR 5, PR 6 |
 | **No Dead Code** | All templates exercisable via `--scheduler` flag |
 | **LOC Estimate** | ~225 |
 | **Architectural Impact** | Extracts batch formation from Simulator; enables preemption policies |
@@ -1072,7 +1163,7 @@ After PR 3 and mock study, PRs 4-7 can be developed **in parallel**.
 | **Risks + Mitigations** | Risk: SJF starvation of long requests. Mitigation: Document limitation; recommend FCFS for fairness. |
 | **Why Independently Reviewable** | Complete scheduler feature; default preserves existing behavior |
 
-**Note on parallel PR integration:** PRs 4-7 each add flags to `cmd/root.go`. To avoid merge conflicts:
+**Note on parallel PR integration:** PRs 5-7 each add flags to `cmd/root.go`. To avoid merge conflicts:
 - Each PR adds its flags in a clearly separated block with comment header
 - PR 8 (PolicyBundle) consolidates flag handling and resolves any conflicts
 
@@ -1137,8 +1228,10 @@ After PR 3 and mock study, PRs 4-7 can be developed **in parallel**.
 
 ### 🎯 RESEARCH-READY CHECKPOINT (After PR 9)
 
-At this point (~4 weeks), BLIS supports:
-- ✅ Multi-instance cluster simulation
+At this point (~5 weeks), BLIS supports:
+- ✅ Multi-instance cluster simulation with control plane / data plane separation
+- ✅ Online routing (event-driven, not pre-dispatched)
+- ✅ InstanceSnapshot with configurable staleness (ObservabilityConfig)
 - ✅ All 4 policy interfaces (admission, priority, routing, scheduler)
 - ✅ PolicyBundle with YAML configuration
 - ✅ RawMetrics with fitness evaluation
@@ -1494,17 +1587,21 @@ PHASE 1: FOUNDATION (Sequential, 3 PRs)
   (RNG)      (Instance)   (Cluster+Deploy)
                                 │
                                 ▼
-                    ⚠️ MOCK STUDY CHECKPOINT
+                    ✅ MOCK STUDY CHECKPOINT (COMPLETED)
                                 │
                                 ▼
 PHASE 2: POLICY INTERFACES + METRICS (6 PRs) ══════════════════════════════════
                                 │
-              ┌───────────┬─────┴─────┬───────────┐
-              ▼           ▼           ▼           ▼
-            PR 4        PR 5        PR 6        PR 7
-          (Admit)    (Priority)   (Route)    (Sched)
-              │           │           │           │
-              └───────────┴─────┬─────┴───────────┘
+                                ▼
+                              PR 4
+                  (Control Plane + Admission)
+                                │
+              ┌─────────────────┼─────────────────┐
+              ▼                 ▼                  ▼
+            PR 5              PR 6              PR 7
+          (Priority)        (Route)           (Sched)
+              │                 │                  │
+              └─────────────────┼──────────────────┘
                                 ▼
                               PR 8
                            (Bundle)
@@ -1567,7 +1664,7 @@ PHASE 6: VALIDATION (1 PR) ═════════════════�
 
 | Gate | Completed PRs | Unlocked for Parallel Development |
 |------|---------------|-----------------------------------|
-| **G1** | PR 3 + Mock Study | PR 4, PR 5, PR 6, PR 7 (4 parallel) |
+| **G1** | PR 4 (Control Plane + Admission) | PR 5, PR 6, PR 7 (3 parallel) |
 | **G2** | PR 9 (Research-Ready) | PR 10, PR 11, PR 13, PR 17 (4 parallel tracks) |
 | **G3** | PR 18 | PR 19, PR 20 (2 parallel) |
 
@@ -1575,7 +1672,7 @@ PHASE 6: VALIDATION (1 PR) ═════════════════�
 
 | Checkpoint | Verification | Failure Action |
 |------------|--------------|----------------|
-| **Mock Study (after PR 3)** | Hand-coded policies work, no missing observables | Adjust interfaces before Phase 2 |
+| **Mock Study (after PR 3)** | ✅ COMPLETED 2026-02-13. Findings: pre-dispatch routing broken, 4 observable gaps identified | PR 4 restructured with online routing and observation methods |
 | **After PR 3** | Determinism: 100 runs identical | Block until fixed |
 | **Interface Freeze (after PR 8)** | Policy interfaces frozen (no breaking changes) | Additive changes (new fields, new `Extended` keys) permitted |
 | **Research-Ready (after PR 9)** | Pathological policies trigger anomalies | Required for research |
@@ -1585,24 +1682,26 @@ PHASE 6: VALIDATION (1 PR) ═════════════════�
 
 ```
 Week 1-2:   Phase 1 (PR 1-3, sequential, 1 dev)
-            + Mock Study (2-3 days)
+            + Mock Study (2-3 days) ✅ COMPLETED
 
-Week 3-4:   Phase 2 (PR 4-9, 4 devs parallel on PR 4-7, then PR 8-9)
-            → 🎯 RESEARCH-READY (~4 weeks)
+Week 3:     Phase 2 PR 4 (Control Plane + Admission, sequential, 1 dev)
 
-Week 5-6:   Phase 3 (PR 10, optional, 1 dev)
+Week 4-5:   Phase 2 PRs 5-7 (3 parallel), then PR 8-9
+            → 🎯 RESEARCH-READY (~5 weeks)
+
+Week 6-7:   Phase 3 (PR 10, optional, 1 dev)
             Phase 4 Track A (PR 11-12, 1 dev)
             Phase 4 Track B (PR 13-16, 1 dev)
             Phase 4 Track C (PR 17-18, 1 dev)
 
-Week 7-8:   Phase 4 continued
+Week 8-9:   Phase 4 continued
 
-Week 9:     Phase 5 (PR 19-20, 2 devs parallel)
+Week 10:    Phase 5 (PR 19-20, 2 devs parallel)
 
-Week 10:    Phase 6 (PR 21)
+Week 11:    Phase 6 (PR 21)
 
-Total: ~10 weeks with 3-4 developers
-Research-ready: ~4 weeks
+Total: ~11 weeks with 3-4 developers
+Research-ready: ~5 weeks
 ```
 
 ---
@@ -1789,10 +1888,10 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 |--------|-------|
 | **Phases** | 6 |
 | **Total PRs** | 21 |
-| **Total LOC Estimate** | ~5,200 |
-| **Max Parallel PRs** | 4 (Phase 2, Phase 4) |
-| **Research-Ready** | ~4 weeks |
-| **Full Implementation** | ~10 weeks (with 3-4 developers) |
+| **Total LOC Estimate** | ~5,500 (PR 4 expanded from ~170 to ~450 LOC) |
+| **Max Parallel PRs** | 3 (Phase 2 PRs 5-7), 4 (Phase 4) |
+| **Research-Ready** | ~5 weeks (PR 4 adds 1 sequential week) |
+| **Full Implementation** | ~11 weeks (with 3-4 developers) |
 
 ### Key Decisions
 
@@ -1807,6 +1906,9 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 9. **Interface extension point** — `Extended` map allows Phase 4 observables without breaking freeze (v2.1)
 10. **Stateful policies supported** — policy instances persist; internal state is allowed and expected (v2.1)
 11. **No scaffolding** — every PR is CLI-exercisable immediately after merge (v2.2)
+12. **Online routing architecture** — mock study proved pre-dispatch routing breaks load-aware policies; routing decisions happen during event loop (v2.3)
+13. **Control plane / data plane separation** — ClusterSimulator split into cluster event queue + instance event queues (v2.3)
+14. **InstanceSnapshot staleness model** — immutable value types with configurable refresh via ObservabilityConfig (v2.3)
 
 ### Changes from v1
 
@@ -1828,6 +1930,17 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 | Pathological templates moved to PR 9 | Consolidated with anomaly detection (no test infra in feature PRs) |
 | 24 PRs → 21 PRs | Eliminated all scaffolding PRs |
 | Research-ready ~5 weeks → ~4 weeks | Fewer PRs in critical path |
+
+### Changes from v2.2 (v2.3)
+
+| Change | Rationale |
+|--------|-----------|
+| PR 4 expanded to include cluster event infrastructure | Mock study proved pre-dispatch routing incompatible with load-aware policies |
+| Control plane / data plane separation | Online routing requires cluster-level event queue separate from instance event queues |
+| InstanceSnapshot staleness model added | Researchers need configurable observation freshness to study policy robustness |
+| PRs 5-7 now depend on PR 4 (no longer parallel) | PR 4 provides cluster event infrastructure that policies consume |
+| Research-ready ~4 weeks → ~5 weeks | PR 4 expanded scope adds 1 sequential week |
+| InstanceSimulator observation methods | Mock study identified 4 observable gaps; PR 4 adds QueueDepth(), BatchSize(), KVUtilization(), FreeKVBlocks() methods. CacheHitRate deferred (requires new KV hit/miss tracking) |
 
 ### Research Agenda Alignment
 
@@ -1853,7 +1966,7 @@ This plan directly supports the four llm-d inference control problems:
 
 ### Next Steps
 
-1. Review and approve this plan (v2.2)
-2. Create Phase 1 micro-level implementation plan (PR 1-3)
-3. Begin PR 1 (PartitionedRNG)
+1. Review and approve this plan (v2.3)
+2. Create PR 4 micro-level implementation plan (cluster control plane + admission)
+3. Begin PR 4 (Control Plane + AdmissionPolicy)
 4. (Parallel) Set up instrumented vLLM deployment for trace collection
