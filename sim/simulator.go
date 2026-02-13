@@ -112,9 +112,12 @@ type Simulator struct {
 	rng *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
 }
 
-func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
-	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, hwConfig HardwareCalib, model string, GPU string,
-	tp int, roofline bool, tracesWorkloadFilePath string) *Simulator {
+// newSimulatorBase creates a Simulator with core fields initialized but no workload
+// config or workload generation. GuideLLMConfig and TracesWorkloadFilePath are left unset.
+func newSimulatorBase(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64,
+	maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
+	betaCoeffs []float64, alphaCoeffs []float64, modelConfig ModelConfig, hwConfig HardwareCalib,
+	model string, GPU string, tp int, roofline bool) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -133,17 +136,26 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		StepCount:                 0,
 		ReqNumComputedTokens:      make(map[string]int64),
 		PreemptionHappened:        false,
-		GuideLLMConfig:            guideLLMConfig,
 		ModelConfig:               modelConfig,
 		HWConfig:                  hwConfig,
 		Model:                     model,
 		GPU:                       GPU,
 		TP:                        tp,
 		Roofline:                  roofline,
-		TracesWorkloadFilePath:    tracesWorkloadFilePath,
 	}
-
 	s.rng = NewPartitionedRNG(NewSimulationKey(seed))
+	return s
+}
+
+func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
+	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, hwConfig HardwareCalib, model string, GPU string,
+	tp int, roofline bool, tracesWorkloadFilePath string) *Simulator {
+	s := newSimulatorBase(horizon, seed, totalKVBlocks, blockSizeTokens,
+		maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold,
+		betaCoeffs, alphaCoeffs, modelConfig, hwConfig, model, GPU, tp, roofline)
+	s.GuideLLMConfig = guideLLMConfig
+	s.TracesWorkloadFilePath = tracesWorkloadFilePath
+
 	if len(s.TracesWorkloadFilePath) > 0 && s.GuideLLMConfig == nil {
 		s.Metrics.RequestRate = 0.0 // no request rate specified
 		s.generateWorkloadFromCSV()
@@ -153,6 +165,17 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 	}
 
 	return s
+}
+
+// NewSimulatorWithoutWorkload creates a Simulator with no workload generation.
+// EventQueue is empty. Caller injects requests via InjectArrival before running.
+func NewSimulatorWithoutWorkload(horizon, seed, totalKVBlocks, blockSizeTokens,
+	maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64,
+	betaCoeffs, alphaCoeffs []float64, modelConfig ModelConfig,
+	hwConfig HardwareCalib, model, GPU string, tp int, roofline bool) *Simulator {
+	return newSimulatorBase(horizon, seed, totalKVBlocks, blockSizeTokens,
+		maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold,
+		betaCoeffs, alphaCoeffs, modelConfig, hwConfig, model, GPU, tp, roofline)
 }
 
 // WorkloadRNG returns the RNG for workload generation.
@@ -167,22 +190,53 @@ func (sim *Simulator) Schedule(ev Event) {
 	heap.Push(&sim.EventQueue, ev)
 }
 
+// HasPendingEvents returns true if the EventQueue is non-empty.
+func (sim *Simulator) HasPendingEvents() bool {
+	return len(sim.EventQueue) > 0
+}
+
+// PeekNextEventTime returns the timestamp of the earliest pending event.
+// Caller MUST check HasPendingEvents() first. Panics on empty queue.
+func (sim *Simulator) PeekNextEventTime() int64 {
+	return sim.EventQueue[0].Timestamp()
+}
+
+// ProcessNextEvent pops the earliest event, advances Clock, and executes it.
+// Caller MUST check HasPendingEvents() first. Panics on empty queue.
+// Does NOT check horizon — caller is responsible.
+func (sim *Simulator) ProcessNextEvent() {
+	ev := heap.Pop(&sim.EventQueue).(Event)
+	sim.Clock = ev.Timestamp()
+	logrus.Infof("[tick %07d] Executing %T", sim.Clock, ev)
+	ev.Execute(sim)
+}
+
+// Finalize sets SimEndedTime to min(Clock, Horizon) and logs completion.
+// Call once after the event loop ends.
+func (sim *Simulator) Finalize() {
+	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
+	logrus.Infof("[tick %07d] Simulation ended", sim.Clock)
+}
+
+// InjectArrival schedules an ArrivalEvent for req and registers it in Metrics.Requests.
+func (sim *Simulator) InjectArrival(req *Request) {
+	sim.Schedule(&ArrivalEvent{time: req.ArrivalTime, Request: req})
+	sim.Metrics.Requests[req.ID] = RequestMetrics{
+		ID:               req.ID,
+		ArrivedAt:        float64(req.ArrivalTime) / 1e6,
+		NumPrefillTokens: len(req.InputTokens),
+		NumDecodeTokens:  len(req.OutputTokens),
+	}
+}
+
 func (sim *Simulator) Run() {
-	for len(sim.EventQueue) > 0 {
-		// get the next event to be simulated
-		ev := heap.Pop(&sim.EventQueue).(Event)
-		// advance the clock
-		sim.Clock = ev.Timestamp()
-		logrus.Infof("[tick %07d] Executing %T", sim.Clock, ev)
-		// process the event
-		ev.Execute(sim)
-		// end the simulation if horizon is reached or if we've run out of events
+	for sim.HasPendingEvents() {
+		sim.ProcessNextEvent()
 		if sim.Clock > sim.Horizon {
 			break
 		}
 	}
-	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
-	logrus.Infof("[tick %07d] Simulation ended", sim.Clock)
+	sim.Finalize()
 }
 
 // Adds a newly arrived request to the waiting queue

@@ -2,6 +2,7 @@ package sim
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -345,5 +346,115 @@ func TestSimulator_DeterministicWorkload(t *testing.T) {
 	if sim1.Metrics.TotalOutputTokens != sim2.Metrics.TotalOutputTokens {
 		t.Errorf("Determinism broken: total_output_tokens %d vs %d",
 			sim1.Metrics.TotalOutputTokens, sim2.Metrics.TotalOutputTokens)
+	}
+}
+
+// TestNewSimulatorWithoutWorkload_RunsEmpty verifies that a simulator created
+// without any workload runs to completion without panic and produces zero results.
+func TestNewSimulatorWithoutWorkload_RunsEmpty(t *testing.T) {
+	sim := NewSimulatorWithoutWorkload(
+		math.MaxInt64,              // horizon
+		42,                         // seed
+		10000,                      // totalKVBlocks
+		16,                         // blockSizeTokens
+		256,                        // maxRunningReqs
+		2048,                       // maxScheduledTokens
+		0,                          // longPrefillTokenThreshold
+		[]float64{1000, 10, 5},     // betaCoeffs
+		[]float64{100, 1, 100},     // alphaCoeffs
+		ModelConfig{},              // modelConfig
+		HardwareCalib{},            // hwConfig
+		"test-model",               // model
+		"H100",                     // GPU
+		1,                          // tp
+		false,                      // roofline
+	)
+
+	sim.Run()
+
+	if sim.Metrics.CompletedRequests != 0 {
+		t.Errorf("CompletedRequests: got %d, want 0", sim.Metrics.CompletedRequests)
+	}
+	if sim.Metrics.SimEndedTime != 0 {
+		t.Errorf("SimEndedTime: got %d, want 0", sim.Metrics.SimEndedTime)
+	}
+}
+
+// TestInjectArrival_RequestCompletes verifies that a single injected request
+// is processed to completion by the simulator.
+func TestInjectArrival_RequestCompletes(t *testing.T) {
+	sim := NewSimulatorWithoutWorkload(
+		math.MaxInt64,              // horizon
+		42,                         // seed
+		10000,                      // totalKVBlocks
+		16,                         // blockSizeTokens
+		256,                        // maxRunningReqs
+		2048,                       // maxScheduledTokens
+		0,                          // longPrefillTokenThreshold
+		[]float64{1000, 10, 5},     // betaCoeffs
+		[]float64{100, 1, 100},     // alphaCoeffs
+		ModelConfig{},              // modelConfig
+		HardwareCalib{},            // hwConfig
+		"test-model",               // model
+		"H100",                     // GPU
+		1,                          // tp
+		false,                      // roofline
+	)
+
+	req := &Request{
+		ID:           "request_0",
+		ArrivalTime:  0,
+		InputTokens:  make([]int, 10),
+		OutputTokens: make([]int, 5),
+		State:        "queued",
+	}
+
+	sim.InjectArrival(req)
+	sim.Run()
+
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests: got %d, want 1", sim.Metrics.CompletedRequests)
+	}
+	if len(sim.Metrics.Requests) < 1 {
+		t.Errorf("len(Metrics.Requests): got %d, want >= 1", len(sim.Metrics.Requests))
+	}
+}
+
+// TestInjectArrival_MultipleRequests verifies that multiple injected requests
+// at staggered arrival times all complete successfully.
+func TestInjectArrival_MultipleRequests(t *testing.T) {
+	sim := NewSimulatorWithoutWorkload(
+		math.MaxInt64,              // horizon
+		42,                         // seed
+		10000,                      // totalKVBlocks
+		16,                         // blockSizeTokens
+		256,                        // maxRunningReqs
+		2048,                       // maxScheduledTokens
+		0,                          // longPrefillTokenThreshold
+		[]float64{1000, 10, 5},     // betaCoeffs
+		[]float64{100, 1, 100},     // alphaCoeffs
+		ModelConfig{},              // modelConfig
+		HardwareCalib{},            // hwConfig
+		"test-model",               // model
+		"H100",                     // GPU
+		1,                          // tp
+		false,                      // roofline
+	)
+
+	for i := 0; i < 10; i++ {
+		req := &Request{
+			ID:           fmt.Sprintf("request_%d", i),
+			ArrivalTime:  int64(i * 100000),
+			InputTokens:  make([]int, 10),
+			OutputTokens: make([]int, 5),
+			State:        "queued",
+		}
+		sim.InjectArrival(req)
+	}
+
+	sim.Run()
+
+	if sim.Metrics.CompletedRequests != 10 {
+		t.Errorf("CompletedRequests: got %d, want 10", sim.Metrics.CompletedRequests)
 	}
 }

@@ -51,6 +51,9 @@ var (
 	tensorParallelism int    // TP value
 	vllmVersion       string // vllm version
 
+	// cluster config
+	numInstances int // Number of instances in the cluster
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -178,32 +181,65 @@ var runCmd = &cobra.Command{
 			guideLLMConfig = nil
 		}
 
-		startTime := time.Now() // Get current time (start)
-		// Initialize and run the simulator through InstanceSimulator wrapper
-		instance := cluster.NewInstanceSimulator(
-			cluster.InstanceID("default"),
-			simulationHorizon,
-			seed,
-			totalKVBlocks,
-			blockSizeTokens,
-			maxRunningReqs,
-			maxScheduledTokens,
-			longPrefillTokenThreshold,
-			betaCoeffs,
-			alphaCoeffs,
-			guideLLMConfig,
-			modelConfig,
-			hwConfig,
-			model,
-			gpu,
-			tensorParallelism,
-			roofline,
-			tracesWorkloadFilePath,
-		)
-		instance.Run()
+		if numInstances < 1 {
+			logrus.Fatalf("num-instances must be >= 1")
+		}
 
-		// Print and save results
-		instance.Metrics().SaveResults(string(instance.ID()), instance.Horizon(), totalKVBlocks, startTime, resultsPath)
+		startTime := time.Now() // Get current time (start)
+
+		if numInstances == 1 {
+			// Single-instance code path (existing behavior, unchanged)
+			instance := cluster.NewInstanceSimulator(
+				cluster.InstanceID("default"),
+				simulationHorizon,
+				seed,
+				totalKVBlocks,
+				blockSizeTokens,
+				maxRunningReqs,
+				maxScheduledTokens,
+				longPrefillTokenThreshold,
+				betaCoeffs,
+				alphaCoeffs,
+				guideLLMConfig,
+				modelConfig,
+				hwConfig,
+				model,
+				gpu,
+				tensorParallelism,
+				roofline,
+				tracesWorkloadFilePath,
+			)
+			instance.Run()
+			instance.Metrics().SaveResults(string(instance.ID()), instance.Horizon(), totalKVBlocks, startTime, resultsPath)
+		} else {
+			// Multi-instance cluster path
+			config := cluster.DeploymentConfig{
+				NumInstances:              numInstances,
+				Horizon:                   simulationHorizon,
+				Seed:                      seed,
+				TotalKVBlocks:             totalKVBlocks,
+				BlockSizeTokens:           blockSizeTokens,
+				MaxRunningReqs:            maxRunningReqs,
+				MaxScheduledTokens:        maxScheduledTokens,
+				LongPrefillTokenThreshold: longPrefillTokenThreshold,
+				BetaCoeffs:                betaCoeffs,
+				AlphaCoeffs:               alphaCoeffs,
+				ModelConfig:               modelConfig,
+				HWConfig:                  hwConfig,
+				Model:                     model,
+				GPU:                       gpu,
+				TP:                        tensorParallelism,
+				Roofline:                  roofline,
+			}
+			cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
+			cs.Run()
+			// Print per-instance metrics to stdout
+			for _, inst := range cs.Instances() {
+				inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, startTime, "")
+			}
+			// Save aggregated metrics to file
+			cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, startTime, resultsPath)
+		}
 
 		logrus.Info("Simulation complete.")
 	},
@@ -256,6 +292,9 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", 256, "Stddev Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", 2, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", 7000, "Max Output Token Count")
+
+	// Cluster config
+	runCmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

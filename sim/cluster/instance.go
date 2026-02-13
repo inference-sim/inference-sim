@@ -1,7 +1,7 @@
 // Package cluster provides multi-replica cluster simulation capabilities.
 //
 // This package wraps the single-instance simulator (sim.Simulator) to enable
-// multi-replica coordination in ClusterSimulator (PR3).
+// multi-replica coordination via ClusterSimulator.
 package cluster
 
 import (
@@ -108,3 +108,47 @@ func (i *InstanceSimulator) Metrics() *sim.Metrics {
 func (i *InstanceSimulator) Horizon() int64 {
 	return i.sim.Horizon
 }
+
+// NewInstanceSimulatorWithoutWorkload creates an InstanceSimulator with no workload generation.
+// Caller injects requests via InjectRequest before running.
+func NewInstanceSimulatorWithoutWorkload(
+	id InstanceID,
+	horizon, seed, totalKVBlocks, blockSizeTokens,
+	maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64,
+	betaCoeffs, alphaCoeffs []float64,
+	modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib,
+	model, GPU string, tp int, roofline bool,
+) *InstanceSimulator {
+	s := sim.NewSimulatorWithoutWorkload(horizon, seed, totalKVBlocks,
+		blockSizeTokens, maxRunningReqs, maxScheduledTokens,
+		longPrefillTokenThreshold, betaCoeffs, alphaCoeffs,
+		modelConfig, hwConfig, model, GPU, tp, roofline)
+	return &InstanceSimulator{id: id, sim: s}
+}
+
+// InjectRequest delegates to sim.InjectArrival. Panics if called after Run().
+func (i *InstanceSimulator) InjectRequest(req *sim.Request) {
+	if i.hasRun {
+		panic("InstanceSimulator.InjectRequest() called after Run()")
+	}
+	i.sim.InjectArrival(req)
+}
+
+// SetRequestRate sets the request rate on the instance's metrics.
+func (i *InstanceSimulator) SetRequestRate(rate float64) {
+	i.sim.Metrics.RequestRate = rate
+}
+
+// HasPendingEvents returns true if the instance has pending events.
+func (i *InstanceSimulator) HasPendingEvents() bool { return i.sim.HasPendingEvents() }
+
+// PeekNextEventTime returns the timestamp of the earliest pending event.
+// Caller MUST check HasPendingEvents() first; panics on empty queue.
+func (i *InstanceSimulator) PeekNextEventTime() int64 { return i.sim.PeekNextEventTime() }
+
+// ProcessNextEvent pops and executes the earliest event.
+// Caller MUST check HasPendingEvents() first; panics on empty queue.
+func (i *InstanceSimulator) ProcessNextEvent() { i.sim.ProcessNextEvent() }
+
+// Finalize sets SimEndedTime and logs completion.
+func (i *InstanceSimulator) Finalize() { i.sim.Finalize() }
