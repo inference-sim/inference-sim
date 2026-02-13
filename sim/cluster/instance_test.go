@@ -314,3 +314,119 @@ func TestInstanceSimulator_RunOnce_PanicsOnSecondCall(t *testing.T) {
 
 	instance.Run() // Should panic
 }
+
+// TestInstanceSimulator_ObservationMethods verifies BC-8:
+// GIVEN an InstanceSimulator with known state
+// WHEN QueueDepth, BatchSize, KVUtilization, FreeKVBlocks are called
+// THEN they return correct values delegating to the wrapped Simulator
+func TestInstanceSimulator_ObservationMethods(t *testing.T) {
+	tests := []struct {
+		name            string
+		totalKVBlocks   int64
+		wantQueueDepth  int
+		wantBatchSize   int
+		wantFreeKV      int64
+		wantKVUtilZero  bool // true if KVUtilization should be 0
+	}{
+		{
+			name:           "fresh instance with no requests",
+			totalKVBlocks:  100,
+			wantQueueDepth: 0,
+			wantBatchSize:  0,
+			wantFreeKV:     100,
+			wantKVUtilZero: true,
+		},
+		{
+			name:           "different KV cache size",
+			totalKVBlocks:  500,
+			wantQueueDepth: 0,
+			wantBatchSize:  0,
+			wantFreeKV:     500,
+			wantKVUtilZero: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			inst := NewInstanceSimulatorWithoutWorkload(
+				"obs-test", 1000000, 42, tc.totalKVBlocks, 16, 256, 2048, 0,
+				[]float64{1000, 10, 5}, []float64{100, 1, 100},
+				sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false,
+			)
+
+			if got := inst.QueueDepth(); got != tc.wantQueueDepth {
+				t.Errorf("QueueDepth() = %d, want %d", got, tc.wantQueueDepth)
+			}
+
+			if got := inst.BatchSize(); got != tc.wantBatchSize {
+				t.Errorf("BatchSize() = %d, want %d", got, tc.wantBatchSize)
+			}
+
+			if got := inst.FreeKVBlocks(); got != tc.wantFreeKV {
+				t.Errorf("FreeKVBlocks() = %d, want %d", got, tc.wantFreeKV)
+			}
+
+			kvUtil := inst.KVUtilization()
+			if tc.wantKVUtilZero && kvUtil != 0 {
+				t.Errorf("KVUtilization() = %f, want 0", kvUtil)
+			}
+		})
+	}
+}
+
+// TestInstanceSimulator_BatchSize_NilRunningBatch verifies BatchSize returns 0
+// when RunningBatch is nil (after simulation completes with all requests done).
+func TestInstanceSimulator_BatchSize_NilRunningBatch(t *testing.T) {
+	inst := NewInstanceSimulatorWithoutWorkload(
+		"nil-batch", 1000000, 42, 100, 16, 256, 2048, 0,
+		[]float64{1000, 10, 5}, []float64{100, 1, 100},
+		sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false,
+	)
+
+	// Inject a small request, run the simulation to completion
+	req := &sim.Request{
+		ID:           "req_0",
+		ArrivalTime:  0,
+		InputTokens:  make([]int, 16),
+		OutputTokens: make([]int, 1),
+		State:        "queued",
+	}
+	inst.InjectRequest(req)
+	inst.hasRun = true
+	inst.sim.Run()
+
+	// After completion, RunningBatch may be nil
+	got := inst.BatchSize()
+	if got != 0 {
+		t.Errorf("BatchSize() after completed sim = %d, want 0", got)
+	}
+}
+
+// TestInstanceSimulator_InjectRequestOnline verifies InjectRequestOnline
+// does NOT panic after hasRun is set (unlike InjectRequest).
+func TestInstanceSimulator_InjectRequestOnline(t *testing.T) {
+	inst := NewInstanceSimulatorWithoutWorkload(
+		"online-test", 1000000, 42, 100, 16, 256, 2048, 0,
+		[]float64{1000, 10, 5}, []float64{100, 1, 100},
+		sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false,
+	)
+
+	// Simulate that the event loop has started
+	inst.hasRun = true
+
+	req := &sim.Request{
+		ID:           "req_online",
+		ArrivalTime:  100,
+		InputTokens:  make([]int, 16),
+		OutputTokens: make([]int, 1),
+		State:        "queued",
+	}
+
+	// Should NOT panic (unlike InjectRequest which would)
+	inst.InjectRequestOnline(req, 200)
+
+	// Verify the event was injected
+	if !inst.HasPendingEvents() {
+		t.Error("expected pending events after InjectRequestOnline, got none")
+	}
+}

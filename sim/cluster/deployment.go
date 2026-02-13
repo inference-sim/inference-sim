@@ -21,4 +21,11 @@ type DeploymentConfig struct {
 	GPU                       string
 	TP                        int
 	Roofline                  bool
+
+	// Online routing pipeline configuration (PR4+)
+	AdmissionPolicy       string  // "always-admit" (default) or "token-bucket"
+	AdmissionLatency      int64   // microseconds, default 0
+	RoutingLatency        int64   // microseconds, default 0
+	TokenBucketCapacity   float64 // max tokens, default 10000
+	TokenBucketRefillRate float64 // tokens/second, default 1000
 }

@@ -1,12 +1,75 @@
 package cluster
 
 import (
+	"container/heap"
 	"fmt"
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
+
+// AdmissionPolicy decides whether a request is admitted to the cluster.
+// Implementations: AlwaysAdmit (default), TokenBucket.
+//
+// Note: This interface is duplicated in sim/policy/admission.go.
+// We cannot import that package due to import cycle (policy needs InstanceSnapshot).
+// Both packages define identical behavior and are tested independently.
+type AdmissionPolicy interface {
+	Admit(req *sim.Request, clock int64) (admitted bool, reason string)
+}
+
+// AlwaysAdmit admits all requests unconditionally.
+type AlwaysAdmit struct{}
+
+func (a *AlwaysAdmit) Admit(_ *sim.Request, _ int64) (bool, string) {
+	return true, ""
+}
+
+// TokenBucket implements rate-limiting admission control.
+type TokenBucket struct {
+	capacity      float64
+	refillRate    float64 // tokens per second
+	currentTokens float64
+	lastRefill    int64 // last refill clock time in microseconds
+}
+
+// NewTokenBucket creates a TokenBucket with the given capacity and refill rate.
+func NewTokenBucket(capacity, refillRate float64) *TokenBucket {
+	return &TokenBucket{
+		capacity:      capacity,
+		refillRate:    refillRate,
+		currentTokens: capacity,
+	}
+}
+
+// Admit checks whether the request can be admitted given current token availability.
+func (tb *TokenBucket) Admit(req *sim.Request, clock int64) (bool, string) {
+	elapsed := clock - tb.lastRefill
+	if elapsed > 0 {
+		refill := float64(elapsed) * tb.refillRate / 1e6
+		tb.currentTokens = min(tb.capacity, tb.currentTokens+refill)
+		tb.lastRefill = clock
+	}
+	cost := float64(len(req.InputTokens))
+	if tb.currentTokens >= cost {
+		tb.currentTokens -= cost
+		return true, ""
+	}
+	return false, "insufficient tokens"
+}
+
+// newAdmissionPolicy creates an admission policy by name from DeploymentConfig.
+func newAdmissionPolicy(config DeploymentConfig) AdmissionPolicy {
+	switch config.AdmissionPolicy {
+	case "", "always-admit":
+		return &AlwaysAdmit{}
+	case "token-bucket":
+		return NewTokenBucket(config.TokenBucketCapacity, config.TokenBucketRefillRate)
+	default:
+		panic(fmt.Sprintf("unknown admission policy %q; valid policies: [always-admit, token-bucket]", config.AdmissionPolicy))
+	}
+}
 
 // ClusterSimulator orchestrates N InstanceSimulator replicas behind a shared clock.
 // Events from all instances are processed in global timestamp order;
@@ -20,6 +83,16 @@ type ClusterSimulator struct {
 	tracesPath        string
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
+
+	// Online routing pipeline fields (PR4)
+	clusterEvents      ClusterEventQueue
+	seqCounter         int64
+	admissionLatency   int64
+	routingLatency     int64
+	admissionPolicy    AdmissionPolicy
+	snapshotProvider   SnapshotProvider
+	roundRobinCounter  int
+	rejectedRequests   int // EC-2: count of requests rejected by admission policy
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -53,18 +126,29 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 			config.Roofline,
 		)
 	}
+	// Build instance map for snapshot provider
+	instanceMap := make(map[InstanceID]*InstanceSimulator, len(instances))
+	for _, inst := range instances {
+		instanceMap[inst.ID()] = inst
+	}
+
 	return &ClusterSimulator{
-		config:     config,
-		instances:  instances,
-		rng:        sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed)),
-		workload:   workload,
-		tracesPath: tracesPath,
+		config:           config,
+		instances:        instances,
+		rng:              sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed)),
+		workload:         workload,
+		tracesPath:       tracesPath,
+		clusterEvents:    make(ClusterEventQueue, 0),
+		admissionLatency: config.AdmissionLatency,
+		routingLatency:   config.RoutingLatency,
+		admissionPolicy:  newAdmissionPolicy(config),
+		snapshotProvider: NewCachedSnapshotProvider(instanceMap, DefaultObservabilityConfig()),
 	}
 }
 
-// Run executes the cluster simulation: generates requests centrally,
-// dispatches them round-robin, runs a shared-clock event loop across
-// all instances, then finalizes and aggregates metrics.
+// Run executes the cluster simulation using online routing pipeline:
+// generates requests centrally, schedules ClusterArrivalEvents, runs a shared-clock
+// event loop processing cluster events before instance events, then finalizes.
 // Panics if called more than once.
 func (c *ClusterSimulator) Run() {
 	if c.hasRun {
@@ -75,49 +159,78 @@ func (c *ClusterSimulator) Run() {
 	// 1. Generate requests centrally
 	requests := c.generateRequests()
 
-	// 2. Dispatch round-robin and set request rate.
-	// Each instance gets the global rate for metrics compatibility;
-	// the actual per-instance arrival rate is Rate/N due to round-robin dispatch.
-	for i, req := range requests {
-		c.instances[i%c.config.NumInstances].InjectRequest(req)
+	// 2. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
+	heap.Init(&c.clusterEvents)
+	for _, req := range requests {
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &ClusterArrivalEvent{time: req.ArrivalTime, request: req},
+			seqID: c.nextSeqID(),
+		})
 	}
+
+	// Set request rate on all instances for metrics compatibility
 	if c.workload != nil {
 		for _, inst := range c.instances {
 			inst.SetRequestRate(c.workload.Rate)
 		}
 	}
 
-	// 3. Shared-clock event loop
+	// 3. Shared-clock event loop (BC-4: cluster events before instance events)
 	for {
-		// Find instance with earliest pending event.
-		// Ties: lowest index wins because we use strict < and iterate 0..N-1.
-		earliestTime := int64(math.MaxInt64)
-		earliestIdx := -1
+		// Find earliest cluster event time
+		clusterTime := int64(math.MaxInt64)
+		if len(c.clusterEvents) > 0 {
+			clusterTime = c.clusterEvents[0].event.Timestamp()
+		}
+
+		// Find earliest instance event time
+		instanceTime := int64(math.MaxInt64)
+		instanceIdx := -1
 		for idx, inst := range c.instances {
 			if inst.HasPendingEvents() {
 				t := inst.PeekNextEventTime()
-				if t < earliestTime {
-					earliestTime = t
-					earliestIdx = idx
+				if t < instanceTime {
+					instanceTime = t
+					instanceIdx = idx
 				}
 			}
 		}
-		if earliestIdx == -1 {
-			break // all instances drained
-		}
-		c.clock = earliestTime
-		c.instances[earliestIdx].ProcessNextEvent()
-		if c.clock > c.config.Horizon {
+
+		// Both queues empty: done
+		if clusterTime == math.MaxInt64 && instanceIdx == -1 {
 			break
+		}
+
+		// BC-4: Cluster events at time T processed before instance events at time T
+		// Using <= ensures cluster events drain first when timestamps are equal
+		if clusterTime <= instanceTime {
+			entry := heap.Pop(&c.clusterEvents).(clusterEventEntry)
+			c.clock = entry.event.Timestamp()
+			if c.clock > c.config.Horizon {
+				break
+			}
+			entry.event.Execute(c)
+		} else {
+			c.clock = instanceTime
+			if c.clock > c.config.Horizon {
+				break
+			}
+			c.instances[instanceIdx].ProcessNextEvent()
 		}
 	}
 
-	// 4. Finalize all instances. Each instance's SimEndedTime = min(its Clock, Horizon).
-	// Instances that never advanced past time 0 (no events) get SimEndedTime = 0.
+	// 4. Finalize all instances
 	for _, inst := range c.instances {
 		inst.Finalize()
 	}
 	c.aggregatedMetrics = c.aggregateMetrics()
+}
+
+// nextSeqID returns the next monotonically increasing sequence ID for event ordering.
+func (c *ClusterSimulator) nextSeqID() int64 {
+	id := c.seqCounter
+	c.seqCounter++
+	return id
 }
 
 // Clock returns the cluster's current simulation clock.
@@ -139,6 +252,32 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 	return c.aggregatedMetrics
 }
 
+// RejectedRequests returns the count of requests rejected by the admission policy (EC-2).
+// Returns 0 if AlwaysAdmit is used or if no requests were rejected by TokenBucket.
+func (c *ClusterSimulator) RejectedRequests() int {
+	return c.rejectedRequests
+}
+
+// mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
+func mergeFloat64Map(dst, src map[string]float64, mapName string) {
+	for k, v := range src {
+		if _, exists := dst[k]; exists {
+			logrus.Warnf("aggregateMetrics: duplicate request ID %q in %s", k, mapName)
+		}
+		dst[k] = v
+	}
+}
+
+// mergeInt64Map merges src into dst, logging a warning on duplicate keys.
+func mergeInt64Map(dst, src map[string]int64, mapName string) {
+	for k, v := range src {
+		if _, exists := dst[k]; exists {
+			logrus.Warnf("aggregateMetrics: duplicate request ID %q in %s", k, mapName)
+		}
+		dst[k] = v
+	}
+}
+
 func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 	merged := sim.NewMetrics()
 	for _, inst := range c.instances {
@@ -151,47 +290,21 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		if m.SimEndedTime > merged.SimEndedTime {
 			merged.SimEndedTime = m.SimEndedTime
 		}
-		// KVBlocksUsed: sum of time-integrated block usage across all instances.
 		merged.KVBlocksUsed += m.KVBlocksUsed
-		// PeakKVBlocksUsed: max across instances (each instance has independent KV cache memory).
 		if m.PeakKVBlocksUsed > merged.PeakKVBlocksUsed {
 			merged.PeakKVBlocksUsed = m.PeakKVBlocksUsed
 		}
-		// Step-indexed time series are concatenated, not interleaved by time.
 		merged.NumWaitQRequests = append(merged.NumWaitQRequests, m.NumWaitQRequests...)
 		merged.NumRunningBatchRequests = append(merged.NumRunningBatchRequests, m.NumRunningBatchRequests...)
-		// Merge per-request maps (IDs are globally unique — centrally generated as "request_N").
-		// Log a warning if duplicate IDs are detected, as this indicates a workload generation bug.
-		for k, v := range m.RequestTTFTs {
-			if _, exists := merged.RequestTTFTs[k]; exists {
-				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestTTFTs", k)
-			}
-			merged.RequestTTFTs[k] = v
-		}
-		for k, v := range m.RequestE2Es {
-			if _, exists := merged.RequestE2Es[k]; exists {
-				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestE2Es", k)
-			}
-			merged.RequestE2Es[k] = v
-		}
-		for k, v := range m.RequestITLs {
-			if _, exists := merged.RequestITLs[k]; exists {
-				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestITLs", k)
-			}
-			merged.RequestITLs[k] = v
-		}
-		for k, v := range m.RequestSchedulingDelays {
-			if _, exists := merged.RequestSchedulingDelays[k]; exists {
-				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestSchedulingDelays", k)
-			}
-			merged.RequestSchedulingDelays[k] = v
-		}
-		for k, v := range m.RequestCompletionTimes {
-			if _, exists := merged.RequestCompletionTimes[k]; exists {
-				logrus.Warnf("aggregateMetrics: duplicate request ID %q in RequestCompletionTimes", k)
-			}
-			merged.RequestCompletionTimes[k] = v
-		}
+
+		// Merge per-request maps. IDs are globally unique (centrally generated as "request_N").
+		// Duplicate IDs indicate a workload generation bug.
+		mergeFloat64Map(merged.RequestTTFTs, m.RequestTTFTs, "RequestTTFTs")
+		mergeFloat64Map(merged.RequestE2Es, m.RequestE2Es, "RequestE2Es")
+		mergeFloat64Map(merged.RequestITLs, m.RequestITLs, "RequestITLs")
+		mergeInt64Map(merged.RequestSchedulingDelays, m.RequestSchedulingDelays, "RequestSchedulingDelays")
+		mergeFloat64Map(merged.RequestCompletionTimes, m.RequestCompletionTimes, "RequestCompletionTimes")
+
 		for k, v := range m.Requests {
 			if _, exists := merged.Requests[k]; exists {
 				logrus.Warnf("aggregateMetrics: duplicate request ID %q in Requests", k)
