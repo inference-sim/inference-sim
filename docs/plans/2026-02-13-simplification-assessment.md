@@ -156,7 +156,7 @@ The comment at `cluster.go:15-17` explains: import cycle prevents `cluster` from
 
 ### 2.3 Revised Plan (Teammate 3: plan-reviser)
 
-**Reduction: 17 remaining PRs → 13 remaining PRs (PR 5 through PR 17)**
+**Reduction: 17 remaining PRs → 12 remaining PRs (PR 5 through PR 16)**
 
 Changes from v2.3:
 1. **New PR 5 "Simplification"** — constructor collapse + unified CLI path + field privatization + interface dedup
@@ -266,7 +266,7 @@ This revision incorporates the simplification assessment findings:
 3. **Merged old PRs 17+18 → new PR 13** — Traces + Counterfactual combined (trace without consumers is dead code)
 4. **Merged old PRs 19+20 → new PR 15** — GEPA + OpenEvolve adapters combined (both thin wrappers)
 5. **Deferred** unified event queue (S7) — not worth the risk for ~50 LOC savings
-6. **Total: 13 remaining PRs** (down from 17)
+6. **Total: 12 remaining PRs** (down from 17)
 
 ---
 

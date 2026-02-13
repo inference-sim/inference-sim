@@ -5,7 +5,7 @@ Use an agent team with 2 teammates to update the macro implementation plan, inco
 ## Context
 
 - **Current macro plan:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v2.3, 21 PRs)
-- **Simplification assessment:** `docs/plans/2026-02-13-simplification-assessment.md` (reduces to 16 PRs total, 13 remaining)
+- **Simplification assessment:** `docs/plans/2026-02-13-simplification-assessment.md` (reduces to 16 PRs total, 12 remaining)
 - **PRs 1-4:** Already merged. Their entries in the plan stay as-is.
 - **Goal:** Produce v3.0 of the macro plan as a single source of truth, replacing the assessment as the active planning document.
 
@@ -19,9 +19,9 @@ Read both documents thoroughly. Then update the macro plan:
    - Dropped backward compatibility constraint (golden tests remain)
    - Simplification assessment conducted (reference file path)
    - Constructor collapse, unified CLI path, field privatization, interface dedup
-   - 5 PRs merged (Priority+Scheduler, AutoScaler+Actuation, TieredKV+Transfer, Traces+Counterfactual, Adapters combined, P/D+KVTransfer combined)
+   - 6 PRs merged (Priority+Scheduler, AutoScaler+Actuation, TieredKV+Transfer, Traces+Counterfactual, P/D+KVTransfer combined, Adapters combined)
    - Unified event queue assessed but deferred
-   - 21 PRs reduced to 16 total (13 remaining after PR 4)
+   - 21 PRs reduced to 16 total (12 remaining after PR 4)
 
 2. **Replace Section I (PR Series)** from PR 5 onward with the assessment's revised PR series:
    - PR 5: Architectural Simplification (NEW)
