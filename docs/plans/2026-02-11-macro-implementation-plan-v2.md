@@ -1,14 +1,14 @@
-# BLIS Evolutionary Policy Optimization: Macro-Level Implementation Plan (v2)
+# BLIS Evolutionary Policy Optimization: Macro-Level Implementation Plan (v3)
 
 **Date:** 2026-02-11
-**Revision:** v2.3 (incorporates mock study findings + online routing architecture)
+**Revision:** v3.0 (incorporates simplification assessment — 16 total PRs, 12 remaining)
 **Status:** Draft
 **Target:** Multi-replica cluster simulation with pluggable policies
 **Based on:** [Design Document](2026-02-06-evolutionary-policy-optimization-design.md)
 
 ---
 
-## Revision Notes (v2.3)
+## Revision Notes
 
 This revision incorporates feedback from external review (Perplexity, Gemini, GPT-4o), scaffolding cleanup, and mock study findings:
 
@@ -39,6 +39,14 @@ This revision incorporates feedback from external review (Perplexity, Gemini, GP
 18. **PR 4 expanded** — Now includes cluster event infrastructure + AdmissionPolicy (combined); PRs 5-7 depend on PR 4 (no longer parallel with it)
 19. **InstanceSimulator observation methods** — QueueDepth(), BatchSize(), KVUtilization(), FreeKVBlocks() added in PR 4 (mock study identified 4 observable gaps: queue depth, batch size, KV utilization, prefix cache state)
 
+**v3.0 changes (simplification assessment, 2026-02-13):**
+20. **Dropped backward compatibility constraint** — Golden dataset tests (`testdata/goldendataset.json`) remain the verification gate; all other backward compatibility constraints relaxed
+21. **Simplification assessment conducted** — Four independent analyses (see `docs/plans/2026-02-13-simplification-assessment.md`) identified constructor collapse, unified CLI path, field privatization, and interface deduplication as high-value simplifications
+22. **New PR 5: Architectural Simplification** — `SimConfig` struct replaces 17-param constructors; CLI always uses `ClusterSimulator` (even N=1); ~15 internal `Simulator` fields privatized; `AdmissionPolicy` interface deduplicated to `sim/` base package
+23. **6 PR merges** — Priority+Scheduler (→PR 7), AutoScaler+Actuation (→PR 11), TieredKV+Transfer (→PR 12), Traces+Counterfactual (→PR 13), P/D+KVTransfer combined (→PR 14), Adapters combined (→PR 15)
+24. **Unified event queue assessed but deferred** — Feasible but low ROI (~50 LOC savings) with risk to golden tests and P/D disaggregation
+25. **21 PRs reduced to 16 total** (12 remaining after PR 4): constructor collapse and unified CLI path make every subsequent PR simpler
+
 ---
 
 ## A) Executive Summary
@@ -55,10 +63,10 @@ This plan transforms BLIS from a single-instance LLM inference simulator into a 
 **Coefficient learning is out of scope.** BLIS consumes pre-trained coefficients (alpha/beta for latency estimation). A separate instrumentation effort collects real vLLM data to train these coefficients.
 
 **Implementation:**
-- 6 phases, 21 PRs
+- 6 phases, 16 PRs
 - **Research-ready checkpoint after Phase 2** (~5 weeks; PR 4 expanded with cluster event infrastructure)
 - Each PR is CLI-exercisable immediately after merge — no scaffolding
-- Estimated 10-11 weeks with 3-4 developers
+- Estimated ~10 weeks with 3-4 developers
 
 ---
 
@@ -68,15 +76,16 @@ This plan transforms BLIS from a single-instance LLM inference simulator into a 
 
 | Package | SLOC | Responsibility |
 |---------|------|----------------|
-| `sim/` | 2051 | Core single-instance discrete-event simulator |
-| `cmd/` | 373 | CLI interface (Cobra), configuration loading |
-| `main.go` | 12 | Entry point |
+| `sim/` | ~3100 | Core single-instance discrete-event simulator |
+| `sim/cluster/` | ~1600 | Multi-replica cluster simulation |
+| `cmd/` | ~420 | CLI interface (Cobra), configuration loading |
+| `main.go` | 11 | Entry point |
 
 ### B.2 Core Data Structures
 
 **Simulator** (`sim/simulator.go:72-113`):
 - Event queue (min-heap), clock (`int64` ticks), wait queue, KV cache, running batch
-- Single `*rand.Rand`, alpha/beta coefficients for latency estimation
+- `*PartitionedRNG` (partitioned per subsystem), alpha/beta coefficients for latency estimation
 
 **Request** (`sim/request.go:18-34`):
 - Lifecycle: `queued → running → completed`
@@ -111,7 +120,7 @@ This plan transforms BLIS from a single-instance LLM inference simulator into a 
 
 - **Composition over modification**: `ClusterSimulator` wraps `InstanceSimulator` instances
 - **Interface extraction**: Pull hardcoded behaviors into pluggable interfaces
-- **Backward compatibility**: `--num-instances 1` produces identical results to current
+- **Unified CLI path**: CLI always uses `ClusterSimulator` (even N=1); `--num-instances 1` produces identical results via cluster path
 
 ### B.6 CLI Entrypoints and Flag Surface
 
@@ -134,13 +143,17 @@ simulation_worker run
   --results-path STRING    # output JSON path
 ```
 
-**Flags this plan will add:**
+**Flags already added (PRs 1-4, merged):**
 - `--num-instances INT` (PR 3)
 - `--admission-policy STRING` (PR 4)
 - `--admission-latency INT` (PR 4, microseconds, default 0)
 - `--routing-latency INT` (PR 4, microseconds, default 0)
-- `--priority-policy STRING` (PR 5)
+
+**Flags to be added (PRs 5+):**
 - `--routing-policy STRING` (PR 6)
+- `--routing-cache-weight FLOAT` (PR 6)
+- `--routing-load-weight FLOAT` (PR 6)
+- `--priority-policy STRING` (PR 7)
 - `--scheduler STRING` (PR 7)
 - `--policy-config STRING` (PR 8)
 - `--fitness-weights STRING` (PR 9)
@@ -161,7 +174,7 @@ CLI flags → cmd/root.go → SimulatorConfig → Simulator.Run()
 
 | Area | Risk | Mitigation |
 |------|------|------------|
-| `Simulator` struct has 17 fields | Adding more fields increases constructor complexity | Use options pattern in new code |
+| `Simulator` constructors accept up to 17 parameters | Adding more params increases constructor complexity | Collapsed to `SimConfig` struct in PR 5 |
 | Event execution mutates `Simulator` directly | Hard to intercept for cluster coordination | `InstanceSimulator` wrapper provides interception point |
 | Metrics collection tightly coupled to `Simulator` | `RawMetrics` needs different aggregation for cluster | New `ClusterMetrics` aggregates per-instance metrics |
 | Single RNG shared across all randomness | Changing workload affects scheduler randomness | `PartitionedRNG` (PR 1) isolates subsystems |
@@ -200,8 +213,9 @@ CLI flags → cmd/root.go → SimulatorConfig → Simulator.Run()
 ### Compatibility Guarantees
 
 - Existing `./simulation_worker run` commands unchanged
-- Single-instance mode identical to current implementation
+- Golden dataset tests remain the verification gate for all refactors
 - Output JSON schema: additions only, no breaking changes
+- **Dropped (v3.0):** Separate single-instance CLI path removed; `ClusterSimulator` handles N=1 transparently
 
 ---
 
@@ -399,7 +413,7 @@ func (p *PartitionedRNG) ForSubsystem(name string) *rand.Rand {
 
 ### E.3 Event Ordering Rules
 
-**Note:** This is the target ordering for the v2.3 cluster control plane. The current implementation (PR 3) uses timestamp-only ordering within instances; cluster-level tie-breaking uses lowest instance index. PR 4 will implement the full ordering below.
+**Note:** PR 4 implemented `(timestamp, priority, seqID)` ordering for the `ClusterEventQueue`. The per-instance `EventQueue` retains timestamp-only ordering; cluster-level tie-breaking uses lowest instance index.
 
 ```go
 // Events are ordered by: (1) timestamp, (2) type priority, (3) event ID
@@ -446,6 +460,15 @@ done
 md5sum /tmp/run_*.json | awk '{print $1}' | sort -u | wc -l
 # Expected output: 1 (all identical)
 ```
+
+### E.6 Simplification Risks (New in v3.0)
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Golden test breakage from unified CLI path | BLOCKS adoption | Run ALL golden tests through cluster path with N=1 before merging PR 5; existing `TestClusterSimulator_SingleInstance_MatchesGoldenDataset` validates this |
+| RNG stream divergence from constructor collapse | BLOCKS adoption | `SimConfig` constructor must call `NewPartitionedRNG(NewSimulationKey(cfg.Seed))` at same point as `newSimulatorBase`; test identical request generation through both paths |
+| Big-bang PR risk (PR 5 touches 10+ files) | COMPLICATES review | Atomic commits per simplification: SimConfig → unified CLI → privatization → interface dedup |
+| Performance regression from field privatization | COSMETIC | Hot-path fields kept public or use inline accessors; benchmark before/after |
 
 ---
 
@@ -496,7 +519,7 @@ autoscale:
 
 ### F.2 Built-in Policy Templates
 
-**Core templates (PR 4-7):**
+**Core templates (PR 4, PR 6-7):**
 
 | Policy Type | Templates Available |
 |-------------|---------------------|
@@ -624,6 +647,9 @@ const (
     Delay  AdmissionAction = "delay"
 )
 
+// Current PR 4 implementation uses simpler signature:
+//   Admit(req *sim.Request, clock int64) (admitted bool, reason string)
+// Target signature below will be adopted when RouterState is introduced in PR 8.
 type AdmissionPolicy interface {
     Decide(req *Request, state *RouterState, clock int64) AdmissionDecision
 }
@@ -645,8 +671,8 @@ type RoutingDecision struct {
     // For monolithic architecture (PR 6+)
     TargetInstance InstanceID
 
-    // For disaggregated P/D (PR 15+, zero-valued until then)
-    // Forward-compatible: defined in PR 6, exercised in PR 15
+    // For disaggregated P/D (PR 14+, zero-valued until then)
+    // Forward-compatible: defined in PR 6, exercised in PR 14
     PrefillInstance InstanceID
     DecodeInstance  InstanceID
 
@@ -749,7 +775,7 @@ type InstanceSnapshot struct {
     // Core fields (frozen after PR 8 - no removals or type changes)
     ID                InstanceID
     Timestamp         int64    // clock time when snapshot was captured (New in v2.3)
-    PoolType          PoolType // MONOLITHIC (PR 4+), PREFILL/DECODE (PR 15+)
+    PoolType          PoolType // MONOLITHIC (PR 4+), PREFILL/DECODE (PR 14+)
     QueueDepth        int
     BatchSize         int
     KVUtilization     float64  // GPU tier utilization (0.0-1.0)
@@ -865,7 +891,7 @@ type RawMetrics struct {
 ### Before → After
 
 ```
-CURRENT                              TARGET (Phase 2 Research-Ready, v2.3)
+CURRENT                              TARGET (Phase 2 Research-Ready)
 ───────                              ──────────────────────────────────────
 ┌─────────────┐                      ┌──────────────────────────────────────────────────────┐
 │  Simulator  │                      │                  ClusterSimulator                      │
@@ -931,13 +957,13 @@ sim/
 ├── event.go              # Existing (kept for single-instance compat)
 ├── kvcache.go            # Existing (single-tier, sufficient for Phase 2)
 ├── metrics.go            # Existing (foundation for RawMetrics)
-├── rng.go                # NEW: PartitionedRNG
+├── rng.go                # PartitionedRNG
 ├── cluster/
 │   ├── cluster.go        # ClusterSimulator (restructured Run() with control/data plane)
 │   ├── instance.go       # InstanceSimulator wrapper (+ observation methods: QueueDepth, BatchSize, KVUtilization, FreeKVBlocks)
 │   ├── cluster_event.go  # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent (New in v2.3)
 │   ├── snapshot.go       # InstanceSnapshot, SnapshotProvider, ObservabilityConfig (New in v2.3)
-│   ├── event.go          # Instance-level cluster event types
+│   ├── workload.go       # Centralized request generation for cluster dispatch
 │   ├── deployment.go     # DeploymentConfig, ReplicaPool
 │   ├── router_state.go   # RouterState, TenantState
 │   └── metrics.go        # ClusterMetrics, RawMetrics, FitnessFunction
@@ -978,7 +1004,7 @@ The following components are **not modified** by this plan:
 | Output JSON schema | Results output | Additions only, no field removals or type changes |
 | Existing CLI flags | `cmd/root.go` | All existing flags continue to work identically |
 
-**Backward compatibility guarantee:** `./simulation_worker run --model X` (without new flags) produces identical output to current implementation.
+**Golden test guarantee:** `./simulation_worker run --model X` (without new flags) produces identical output to golden dataset tests via unified `ClusterSimulator` path.
 
 ---
 
@@ -1065,9 +1091,9 @@ Findings documented in `docs/plans/2026-02-13-mock-study-findings.md`:
 
 ---
 
-### Phase 2: Policy Interfaces + Metrics (6 PRs, PR 4 first then 5-7 parallel)
+### Phase 2: Policy Interfaces + Metrics (PR 4 first, then PR 5, then PRs 6-9)
 
-After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). PRs 5-7 can then be developed **in parallel**.
+After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). PR 5 (simplification) must land before policy PRs. PRs 6-7 can then be developed **in parallel**.
 
 ---
 
@@ -1093,27 +1119,36 @@ After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). 
 
 ---
 
-#### PR 5: PriorityPolicy Interface
+### Phase 2a: Simplification (1 PR)
+
+#### PR 5: Architectural Simplification
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(policy): Add PriorityPolicy with Constant and SLOBased` |
-| **Motivation** | Enable request prioritization for scheduling |
+| **Title** | `refactor: SimConfig struct, unified CLI path, field privatization, interface dedup` |
+| **Motivation** | Reduce codebase complexity before adding policy features; eliminate duplicated code and multi-param constructors |
 | **Depends On** | PR 4 |
-| **In Scope** | `PriorityPolicy` interface, `ConstantPriority`, `SLOBasedPriority`, `TenantPriority`, `DeadlineAware` templates |
-| **Out of Scope** | Pathological templates (deferred to PR 9) |
-| **Files Changed** | New: `sim/policy/priority.go` (~120 LOC). Modified: `cmd/root.go` (~15 LOC), `sim/request.go` (~10 LOC for Priority field) |
-| **CLI** | `./simulation_worker run --model X --num-instances 2 --priority-policy slo-based` |
-| **Tests** | Unit: each template. Integration: priority ordering in scheduling |
-| **Parallel With** | PR 6, PR 7 |
-| **No Dead Code** | All templates exercisable via `--priority-policy` flag |
-| **LOC Estimate** | ~145 |
-| **Architectural Impact** | Adds Priority field to Request; routing/scheduling can use priority scores |
-| **Behavioral Guarantees** | `constant` (default) assigns equal priority; priority affects scheduling order |
-| **API Surface Changes** | New CLI flag: `--priority-policy` |
-| **README Changes** | Add "Priority Policies" section |
-| **Risks + Mitigations** | Risk: Priority affecting determinism. Mitigation: Tie-breaking rules documented. |
-| **Why Independently Reviewable** | Complete priority feature; default preserves existing behavior |
+| **In Scope** | (1) `SimConfig` options struct replacing 17-param constructors, (2) Unified CLI path (always ClusterSimulator, even N=1), (3) Privatize ~15 internal Simulator fields, (4) Move `AdmissionPolicy` interface to `sim/` base package |
+| **Out of Scope** | Unified event queue, workload deduplication, package restructuring |
+| **Files Changed** | Modified: `sim/simulator.go` (~80 LOC), `sim/cluster/instance.go` (~40 LOC), `sim/cluster/cluster.go` (~20 LOC), `sim/cluster/deployment.go` (~10 LOC), `cmd/root.go` (~60 LOC), `sim/policy/admission.go` (~10 LOC), test files (~100 LOC). New: none |
+| **CLI** | `./simulation_worker run --model X` (same interface, but internally always uses ClusterSimulator) |
+| **Tests** | All golden tests must pass. New: `TestUnifiedCLIPath_MatchesGoldenDataset` (verifies N=1 cluster path = single-instance results) |
+| **No Dead Code** | SimConfig used by all constructors; unified path eliminates dead single-instance path |
+| **LOC Estimate** | ~320 changed, ~200 net reduction |
+| **Architectural Impact** | Major internal cleanup; no behavioral change; all golden tests pass |
+| **Behavioral Guarantees** | Bit-exact golden test output preserved; CLI interface unchanged |
+| **API Surface Changes** | None (internal refactor) |
+| **README Changes** | None |
+| **Risks + Mitigations** | Risk: RNG stream divergence. Mitigation: Test that request generation produces identical tokens through both paths before removing old path. Risk: Big PR. Mitigation: Atomic commits per simplification (SimConfig first, then unified CLI, then privatization, then interface dedup). |
+| **Why Independently Reviewable** | Pure refactor with golden test verification; no new features |
+
+**v2.3 → v3.0 change:** NEW PR. Justified by dropping backward compatibility constraint — this cleanup makes every subsequent PR simpler.
+
+---
+
+### Phase 2b: Policy Interfaces + Metrics (4 PRs, PRs 6-7 parallel after PR 5)
+
+After PR 5 (simplification), PRs 6-7 can be developed **in parallel**.
 
 ---
 
@@ -1123,47 +1158,51 @@ After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). 
 |--------|---------|
 | **Title** | `feat(policy): Add RoutingPolicy with RoundRobin and WeightedScoring` |
 | **Motivation** | Enable intelligent request routing across instances |
-| **Depends On** | PR 4 (InstanceSnapshot and SnapshotProvider already exist; this PR adds routing policy templates that consume snapshots) |
+| **Depends On** | PR 5 |
 | **In Scope** | `RoutingPolicy` interface, `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity` templates |
 | **Out of Scope** | Pathological templates (deferred to PR 9) |
-| **Files Changed** | New: `sim/policy/routing.go` (~200 LOC). Modified: `cmd/root.go` (~20 LOC) |
+| **Files Changed** | New: `sim/policy/routing.go` (~200 LOC). Modified: `sim/cluster/cluster.go` (~30 LOC), `sim/cluster/cluster_event.go` (~20 LOC), `cmd/root.go` (~20 LOC) |
 | **CLI** | `./simulation_worker run --model X --num-instances 4 --routing-policy weighted --routing-cache-weight 0.6` |
 | **Tests** | Unit: each template. Integration: load distribution across instances |
-| **Parallel With** | PR 5, PR 7 |
+| **Parallel With** | PR 7 |
 | **No Dead Code** | All templates exercisable via `--routing-policy` flag |
-| **LOC Estimate** | ~220 |
-| **Architectural Impact** | Replaces hardcoded round-robin with pluggable routing; consumes `InstanceSnapshot` from PR 4 |
-| **Behavioral Guarantees** | `round-robin` (default) matches PR 3 behavior; weighted scoring respects weights |
+| **LOC Estimate** | ~270 |
+| **Architectural Impact** | Replaces hardcoded round-robin in `RoutingDecisionEvent.Execute` with pluggable policy |
+| **Behavioral Guarantees** | `round-robin` (default) matches existing behavior |
 | **API Surface Changes** | New CLI flags: `--routing-policy`, `--routing-cache-weight`, `--routing-load-weight` |
 | **README Changes** | Add "Routing Policies" section |
 | **Risks + Mitigations** | Risk: Prefix affinity cache misses. Mitigation: Fallback to least-loaded on miss. |
 | **Why Independently Reviewable** | Complete routing feature; default preserves existing behavior |
 
+**v2.3 → v3.0 change:** Now depends on PR 5 (uses `SimConfig`). Otherwise identical to v2.3 PR 6.
+
 ---
 
-#### PR 7: InstanceScheduler Interface
+#### PR 7: PriorityPolicy + InstanceScheduler
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(policy): Add InstanceScheduler with FCFS and PriorityFCFS` |
-| **Motivation** | Enable per-instance batch scheduling policies |
-| **Depends On** | PR 4 |
-| **In Scope** | `InstanceScheduler` interface, `SchedulerContext`, `FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler` |
+| **Title** | `feat(policy): Add PriorityPolicy and InstanceScheduler with templates` |
+| **Motivation** | Enable request prioritization and per-instance batch scheduling policies |
+| **Depends On** | PR 5 |
+| **In Scope** | `PriorityPolicy` interface (`ConstantPriority`, `SLOBasedPriority`), `InstanceScheduler` interface (`FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler`), `Priority` field on `Request`, `SchedulerContext` |
 | **Out of Scope** | Pathological templates (deferred to PR 9) |
-| **Files Changed** | New: `sim/policy/scheduler.go` (~180 LOC). Modified: `sim/cluster/instance.go` (~30 LOC), `cmd/root.go` (~15 LOC) |
-| **CLI** | `./simulation_worker run --model X --num-instances 2 --scheduler priority-fcfs` |
-| **Tests** | Unit: each template. Integration: batch ordering respects policy |
-| **Parallel With** | PR 5, PR 6 |
-| **No Dead Code** | All templates exercisable via `--scheduler` flag |
-| **LOC Estimate** | ~225 |
-| **Architectural Impact** | Extracts batch formation from Simulator; enables preemption policies |
-| **Behavioral Guarantees** | `fcfs` (default) matches existing FIFO behavior; priority-fcfs respects Priority field |
-| **API Surface Changes** | New CLI flag: `--scheduler` |
-| **README Changes** | Add "Instance Schedulers" section |
-| **Risks + Mitigations** | Risk: SJF starvation of long requests. Mitigation: Document limitation; recommend FCFS for fairness. |
-| **Why Independently Reviewable** | Complete scheduler feature; default preserves existing behavior |
+| **Files Changed** | New: `sim/policy/priority.go` (~120 LOC), `sim/policy/scheduler.go` (~180 LOC). Modified: `sim/request.go` (~10 LOC), `sim/cluster/instance.go` (~30 LOC), `cmd/root.go` (~30 LOC) |
+| **CLI** | `./simulation_worker run --model X --priority-policy slo-based --scheduler priority-fcfs` |
+| **Tests** | Unit: each template. Integration: priority ordering in scheduling, batch formation respects scheduler |
+| **Parallel With** | PR 6 |
+| **No Dead Code** | All templates exercisable via `--priority-policy` and `--scheduler` flags |
+| **LOC Estimate** | ~370 |
+| **Architectural Impact** | Adds Priority field to Request; extracts batch formation policy |
+| **Behavioral Guarantees** | `constant` priority + `fcfs` scheduler (defaults) match existing behavior |
+| **API Surface Changes** | New CLI flags: `--priority-policy`, `--scheduler` |
+| **README Changes** | Add "Priority Policies" and "Instance Schedulers" sections |
+| **Risks + Mitigations** | Risk: SJF starvation. Mitigation: Document limitation. Risk: Priority affecting determinism. Mitigation: Tie-breaking rules documented. |
+| **Why Independently Reviewable** | Complete priority + scheduling feature; defaults preserve existing behavior |
 
-**Note on parallel PR integration:** PRs 5-7 each add flags to `cmd/root.go`. To avoid merge conflicts:
+**v2.3 → v3.0 change:** MERGED from v2.3 PR 5 (Priority) + PR 7 (Scheduler). Both affect request ordering and share the `Priority` field on `Request`. Natural cohesion reduces CLI flag PRs that touch `cmd/root.go`.
+
+**Note on parallel PR integration:** PRs 6-7 each add flags to `cmd/root.go`. To avoid merge conflicts:
 - Each PR adds its flags in a clearly separated block with comment header
 - PR 8 (PolicyBundle) consolidates flag handling and resolves any conflicts
 
@@ -1175,7 +1214,7 @@ After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). 
 |--------|---------|
 | **Title** | `feat(policy): Add RouterState and PolicyBundle configuration` |
 | **Motivation** | Unified policy configuration via YAML |
-| **Depends On** | PR 4, PR 5, PR 6, PR 7 |
+| **Depends On** | PR 6, PR 7 |
 | **In Scope** | `RouterState`, `TenantState`, `GlobalMetrics`, `PolicyBundle`, YAML loading |
 | **Out of Scope** | AutoScale policy (Phase 4) |
 | **Files Changed** | New: `sim/cluster/router_state.go` (~150 LOC), `sim/policy/bundle.go` (~100 LOC). Modified: `cmd/root.go` (~30 LOC) |
@@ -1188,9 +1227,11 @@ After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). 
 | **API Surface Changes** | New CLI flag: `--policy-config` |
 | **README Changes** | Add "Policy Configuration" section with YAML example |
 | **Risks + Mitigations** | Risk: YAML parsing errors. Mitigation: Validate on load; clear error messages. |
-| **Why Independently Reviewable** | Integrates PRs 4-7; provides unified config interface |
+| **Why Independently Reviewable** | Integrates PRs 6-7; provides unified config interface |
 
-**⚠️ INTERFACE FREEZE after PR 8** — Policy interfaces are stable. "Freeze" means no breaking changes (no field removals, no type changes, no method signature changes). Adding new fields to structs or new keys to `Extended` maps is permitted in later phases.
+**v2.3 → v3.0 change:** Unchanged from v2.3 PR 8. Dependencies updated.
+
+**INTERFACE FREEZE after PR 8** — Policy interfaces are stable. "Freeze" means no breaking changes (no field removals, no type changes, no method signature changes). Adding new fields to structs or new keys to `Extended` maps is permitted in later phases.
 
 ---
 
@@ -1200,7 +1241,7 @@ After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). 
 |--------|---------|
 | **Title** | `feat(metrics): Add RawMetrics, anomaly detection, and pathological policy templates` |
 | **Motivation** | Enable fitness evaluation and validate anomaly detection |
-| **Depends On** | PR 4, PR 5, PR 6, PR 7 |
+| **Depends On** | PR 8 (sequenced after Interface Freeze; PR 8 transitively depends on PR 6, PR 7) |
 | **In Scope** | `RawMetrics`, `Distribution`, `FitnessFunction`, `EvaluationResult`, anomaly counters, pathological templates (`RejectAll`, `InvertedSLO`, `AlwaysBusiest`, `ReversePriority`), validation tests |
 | **Out of Scope** | Scale oscillation detection (requires AutoScaler in PR 11) |
 | **Files Changed** | New: `sim/cluster/metrics.go` (~300 LOC). Modified: `sim/policy/*.go` (~100 LOC total for pathological templates), `sim/cluster/cluster.go` (~50 LOC), `cmd/root.go` (~20 LOC) |
@@ -1215,6 +1256,8 @@ After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). 
 | **Risks + Mitigations** | Risk: False positive anomaly detection. Mitigation: Pathological policy tests validate detection accuracy. |
 | **Why Independently Reviewable** | Complete metrics feature; pathological templates immediately testable |
 
+**v2.3 → v3.0 change:** Unchanged from v2.3 PR 9. Dependencies updated (now depends on PR 8 instead of PR 4-7 directly).
+
 **Pathological templates added:**
 
 | Template | Policy Type | Purpose | Expected Anomaly |
@@ -1226,18 +1269,18 @@ After PR 3 and mock study, PR 4 must land first (cluster event infrastructure). 
 
 ---
 
-### 🎯 RESEARCH-READY CHECKPOINT (After PR 9)
+### RESEARCH-READY CHECKPOINT (After PR 9)
 
 At this point (~5 weeks), BLIS supports:
-- ✅ Multi-instance cluster simulation with control plane / data plane separation
-- ✅ Online routing (event-driven, not pre-dispatched)
-- ✅ InstanceSnapshot with configurable staleness (ObservabilityConfig)
-- ✅ All 4 policy interfaces (admission, priority, routing, scheduler)
-- ✅ PolicyBundle with YAML configuration
-- ✅ RawMetrics with fitness evaluation
-- ✅ Anomaly detection validated with pathological templates
-- ✅ Existing workload generation (`--workload distribution`)
-- ✅ Single-tier KV cache (existing `sim/kvcache.go`)
+- Multi-instance cluster simulation with control plane / data plane separation
+- Online routing (event-driven, not pre-dispatched)
+- InstanceSnapshot with configurable staleness (ObservabilityConfig)
+- All 4 policy interfaces (admission, priority, routing, scheduler)
+- PolicyBundle with YAML configuration
+- RawMetrics with fitness evaluation
+- Anomaly detection validated with pathological templates
+- Existing workload generation (`--workload distribution`)
+- Single-tier KV cache (existing `sim/kvcache.go`)
 
 **You can begin policy research experiments here.**
 
@@ -1255,6 +1298,7 @@ This PR improves workload fidelity but is not required for initial research.
 |--------|---------|
 | **Title** | `feat(workload): Add multi-tenant workload generator with edge case scenarios` |
 | **Motivation** | Enable realistic multi-tenant workloads for policy research |
+| **Depends On** | PR 9 (Research-Ready checkpoint) |
 | **In Scope** | `WorkloadSpec`, `TenantSpec`, `SLOSpec`, `PrefixSpec`, `ArrivalPattern` types, `WorkloadGenerator`, all arrival patterns, prefix reuse, `--workload-spec` flag, edge case scenarios |
 | **Out of Scope** | Trace replay (existing `--workload traces` preserved) |
 | **Files Changed** | New: `sim/workload/spec.go` (~180 LOC), `sim/workload/generator.go` (~250 LOC), `sim/workload/arrival.go` (~150 LOC), `sim/workload/scenarios.go` (~100 LOC). Modified: `cmd/root.go` (~20 LOC) |
@@ -1268,6 +1312,8 @@ This PR improves workload fidelity but is not required for initial research.
 | **README Changes** | Add "Workload Specification" section with YAML examples |
 | **Risks + Mitigations** | Risk: Complex YAML schema. Mitigation: Provide built-in scenarios as starting points. |
 | **Why Independently Reviewable** | Complete workload feature; existing workload modes preserved |
+
+**v2.3 → v3.0 change:** Unchanged from v2.3 PR 10.
 
 **Arrival patterns:**
 - `Poisson` — constant rate λ
@@ -1300,265 +1346,155 @@ tenants:
 
 ---
 
-### Phase 4: Advanced Features (8 PRs, Parallelizable)
+### Phase 4: Advanced Features (4 PRs, Parallelizable)
 
-After Research-Ready checkpoint, these three tracks can proceed **in parallel**.
-
----
-
-**Track A: Auto-Scaling**
-
-#### PR 11: AutoScaler Core
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(autoscaler): Add AutoScaler with ThresholdScaler and Oscillator` |
-| **Motivation** | Enable dynamic scaling based on load |
-| **In Scope** | `AutoScaler`, `AutoScalePolicy`, `AutoScaleContext`, `ThresholdScaler`, `Oscillator` (pathological) |
-| **Out of Scope** | Provisioning delays (PR 12) |
-| **Files Changed** | New: `sim/policy/autoscale.go` (~230 LOC). Modified: `sim/cluster/cluster.go` (~40 LOC), `cmd/root.go` (~30 LOC) |
-| **CLI** | `./simulation_worker run --model X --num-instances 2 --autoscaler-enabled --autoscaler-max 8` |
-| **Tests** | Unit: threshold logic. Integration: scale up/down triggers |
-| **Parallel With** | PR 13, PR 17 |
-| **No Dead Code** | `--autoscaler-enabled` exercises all paths; `Oscillator` validates scale oscillation detection |
-| **LOC Estimate** | ~300 |
-| **Architectural Impact** | Adds periodic scale check event to ClusterSimulator |
-| **Behavioral Guarantees** | Scale decisions respect min/max bounds; oscillation detected and counted |
-| **API Surface Changes** | New CLI flags: `--autoscaler-enabled`, `--autoscaler-min`, `--autoscaler-max`, `--autoscaler-threshold` |
-| **README Changes** | Add "Auto-Scaling" section |
-| **Risks + Mitigations** | Risk: Scale oscillation. Mitigation: Cooldown period; `Oscillator` template validates detection. |
-| **Why Independently Reviewable** | Complete autoscaler feature (instant scaling); actuation delays in PR 12 |
+After Research-Ready checkpoint, three tracks can proceed **in parallel**.
 
 ---
 
-#### PR 12: Scaling Actuation Model
+#### PR 11: AutoScaler Core + Actuation
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(autoscaler): Add provisioning delays, warmup, and drain` |
-| **Motivation** | Model realistic scaling latency |
-| **Depends On** | PR 11 |
-| **In Scope** | `WarmupProfile`, `DrainPolicy`, `InstanceState` lifecycle |
+| **Title** | `feat(autoscaler): Add AutoScaler with ThresholdScaler, provisioning delays, and warmup` |
+| **Motivation** | Enable dynamic scaling based on load with realistic timing |
+| **Depends On** | PR 9 |
+| **In Scope** | `AutoScaler`, `AutoScalePolicy`, `ThresholdScaler`, `Oscillator` (pathological), `WarmupProfile`, `DrainPolicy`, `InstanceState` lifecycle |
 | **Out of Scope** | Predictive scaling |
-| **Files Changed** | Modified: `sim/policy/autoscale.go` (~150 LOC), `sim/cluster/instance.go` (~50 LOC), `cmd/root.go` (~20 LOC) |
-| **CLI** | `./simulation_worker run --model X --autoscaler-enabled --provisioning-delay 30s --warmup-duration 60s` |
-| **Tests** | Integration: verify delay between scale decision and instance ready |
-| **No Dead Code** | Flags exercise warmup/drain logic |
-| **LOC Estimate** | ~220 |
-| **Architectural Impact** | Adds instance lifecycle states (provisioning, warming, ready, draining) |
-| **Behavioral Guarantees** | New instances not routed until warmup complete; draining instances finish existing requests |
-| **API Surface Changes** | New CLI flags: `--provisioning-delay`, `--warmup-duration`, `--drain-policy` |
-| **README Changes** | Extend "Auto-Scaling" section with actuation model |
-| **Risks + Mitigations** | Risk: Complex state machine. Mitigation: Clear state diagram in code comments. |
-| **Why Independently Reviewable** | Extends PR 11 with realistic timing; PR 11 works without this |
+| **Files Changed** | New: `sim/policy/autoscale.go` (~380 LOC). Modified: `sim/cluster/cluster.go` (~70 LOC), `sim/cluster/instance.go` (~50 LOC), `cmd/root.go` (~50 LOC) |
+| **CLI** | `./simulation_worker run --model X --autoscaler-enabled --autoscaler-max 8 --provisioning-delay 30s` |
+| **Tests** | Unit: threshold logic. Integration: scale up/down with warmup, drain, oscillation detection |
+| **Parallel With** | PR 12, PR 13 |
+| **No Dead Code** | `--autoscaler-enabled` exercises all paths; `Oscillator` validates scale oscillation detection |
+| **LOC Estimate** | ~520 |
+| **Architectural Impact** | Adds periodic scale check event to ClusterSimulator; instance lifecycle states (provisioning, warming, ready, draining) |
+| **Behavioral Guarantees** | Scale decisions respect min/max bounds; oscillation detected and counted; new instances not routed until warmup complete; draining instances finish existing requests |
+| **API Surface Changes** | New CLI flags: `--autoscaler-enabled`, `--autoscaler-min`, `--autoscaler-max`, `--autoscaler-threshold`, `--provisioning-delay`, `--warmup-duration`, `--drain-policy` |
+| **README Changes** | Add "Auto-Scaling" section with actuation model |
+| **Risks + Mitigations** | Risk: Scale oscillation. Mitigation: Cooldown period; `Oscillator` template validates detection. Risk: Complex state machine. Mitigation: Clear state diagram in code comments. |
+| **Why Independently Reviewable** | Complete autoscaler with realistic timing in one PR |
+
+**v2.3 → v3.0 change:** MERGED from v2.3 PR 11 (AutoScaler Core) + PR 12 (Actuation). Actuation without the core is dead code; core without actuation is unrealistic. Combined PR is ~520 LOC, still reviewable.
 
 ---
 
-**Track B: Tiered KV + P/D Disaggregation**
-
-#### PR 13: KVTier Types and Configuration
+#### PR 12: Tiered KV Cache + Transfer
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(kv): Add KVTier types and multi-tier configuration` |
-| **Motivation** | Enable GPU+CPU KV cache modeling |
-| **In Scope** | `KVTier` enum, `KVTierConfig`, extend `KVBlock` with `Tier` field |
-| **Out of Scope** | Offload/reload mechanics (PR 14) |
-| **Files Changed** | New: `sim/kv/tiered.go` (~100 LOC). Modified: `sim/kvcache.go` (~30 LOC), `cmd/root.go` (~15 LOC) |
-| **CLI** | `./simulation_worker run --model X --kv-gpu-blocks 10000 --kv-cpu-blocks 50000` |
-| **Tests** | Unit: tier assignment. Integration: CPU blocks available |
-| **Parallel With** | PR 11, PR 17 |
-| **No Dead Code** | `--kv-cpu-blocks` flag exercises tiered KV |
-| **LOC Estimate** | ~145 |
-| **Architectural Impact** | Extends KVCacheState with tier awareness |
-| **Behavioral Guarantees** | `--kv-cpu-blocks 0` (default) preserves existing behavior |
-| **API Surface Changes** | New CLI flag: `--kv-cpu-blocks` |
-| **README Changes** | Add "Tiered KV Cache" section |
-| **Risks + Mitigations** | Risk: Tier confusion in existing code. Mitigation: Default to GPU tier. |
-| **Why Independently Reviewable** | Adds tier types; transfer mechanics in PR 14 |
-
----
-
-#### PR 14: KV Offload/Reload Mechanics
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(kv): Add offload/reload transfer mechanics` |
-| **Motivation** | Model GPU↔CPU KV transfer latency |
-| **Depends On** | PR 13 |
-| **In Scope** | `KVTransfer` event, offload trigger, reload on CPU hit, transfer latency, `KVThrashingRate` metric |
-| **Out of Scope** | P/D architecture (PR 15) |
-| **Files Changed** | New: `sim/kv/transfer.go` (~200 LOC). Modified: `sim/cluster/event.go` (~30 LOC), `sim/cluster/metrics.go` (~20 LOC), `cmd/root.go` (~15 LOC) |
+| **Title** | `feat(kv): Add tiered KV cache with GPU/CPU offload/reload mechanics` |
+| **Motivation** | Model GPU+CPU KV cache with transfer latency |
+| **Depends On** | PR 9 |
+| **In Scope** | `KVTier` enum, `KVTierConfig`, offload trigger, reload on CPU hit, transfer latency, `KVThrashingRate` metric |
+| **Out of Scope** | P/D architecture (PR 14) |
+| **Files Changed** | New: `sim/kv/tiered.go` (~100 LOC), `sim/kv/transfer.go` (~200 LOC). Modified: `sim/kvcache.go` (~30 LOC), `cmd/root.go` (~30 LOC) |
 | **CLI** | `./simulation_worker run --model X --kv-gpu-blocks 1000 --kv-cpu-blocks 10000 --kv-offload-threshold 0.9` |
-| **Tests** | Unit: transfer timing. Integration: thrashing detection |
-| **No Dead Code** | `--kv-offload-threshold` exercises transfer logic |
-| **LOC Estimate** | ~265 |
-| **Architectural Impact** | Adds KVTransfer events to event queue |
-| **Behavioral Guarantees** | Offload when GPU > threshold; reload adds latency; thrashing counted |
-| **API Surface Changes** | New CLI flags: `--kv-offload-threshold`, `--kv-transfer-bandwidth` |
-| **README Changes** | Extend "Tiered KV Cache" with transfer mechanics |
-| **Risks + Mitigations** | Risk: Transfer deadlock. Mitigation: Timeout on pending transfers. |
-| **Why Independently Reviewable** | Complete tiered KV feature; P/D in PR 15 |
-
----
-
-#### PR 15: P/D Architecture
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(cluster): Add disaggregated prefill-decode architecture` |
-| **Motivation** | Model DistServe/Splitwise style deployments |
-| **Depends On** | PR 14 |
-| **In Scope** | `DISAGGREGATED_PD` type, `PrefillPool`, `DecodePool`, `PDHandoffEvent`, routing changes |
-| **Out of Scope** | KV ownership transfer (PR 16) |
-| **Files Changed** | Modified: `sim/cluster/deployment.go` (~50 LOC), `sim/cluster/cluster.go` (~150 LOC), `sim/cluster/event.go` (~100 LOC), `cmd/root.go` (~25 LOC) |
-| **CLI** | `./simulation_worker run --model X --architecture pd --prefill-replicas 2 --decode-replicas 4` |
-| **Tests** | Integration: request flows P→D; separate pools visible |
+| **Tests** | Unit: tier assignment, transfer timing. Integration: CPU blocks available, thrashing detection |
 | **Parallel With** | PR 11, PR 13 |
-| **No Dead Code** | `--architecture pd` exercises P/D paths |
-| **LOC Estimate** | ~325 |
-| **Architectural Impact** | Major: separate prefill and decode pools with handoff |
-| **Behavioral Guarantees** | `--architecture monolithic` (default) preserves existing behavior |
-| **API Surface Changes** | New CLI flags: `--architecture`, `--prefill-replicas`, `--decode-replicas` |
-| **README Changes** | Add "Prefill-Decode Disaggregation" section |
-| **Risks + Mitigations** | Risk: Handoff timing complexity. Mitigation: Model as discrete event. |
-| **Why Independently Reviewable** | Complete P/D architecture; KV ownership in PR 16 |
+| **No Dead Code** | `--kv-cpu-blocks` and `--kv-offload-threshold` flags exercise all tiered KV code |
+| **LOC Estimate** | ~360 |
+| **Architectural Impact** | Extends KVCacheState with tier awareness; adds KVTransfer events to event queue |
+| **Behavioral Guarantees** | `--kv-cpu-blocks 0` (default) preserves existing behavior; offload when GPU > threshold; thrashing counted |
+| **API Surface Changes** | New CLI flags: `--kv-gpu-blocks`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth` |
+| **README Changes** | Add "Tiered KV Cache" section with transfer mechanics |
+| **Risks + Mitigations** | Risk: Transfer deadlock. Mitigation: Timeout on pending transfers. Risk: Tier confusion in existing code. Mitigation: Default to GPU tier. |
+| **Why Independently Reviewable** | Complete tiered KV feature; `--kv-cpu-blocks 0` preserves existing behavior |
+
+**v2.3 → v3.0 change:** MERGED from v2.3 PR 13 (KV Tier Types) + PR 14 (Transfer). Types without transfer is dead code.
 
 ---
 
-#### PR 16: KV Transfer for P/D
+#### PR 13: Decision Traces + Counterfactual Analysis
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(pd): Add KV transfer with ownership tracking` |
-| **Motivation** | Model KV cache handoff from prefill to decode |
-| **Depends On** | PR 15 |
-| **In Scope** | `PDTransferConfig`, `BlockTransferState`, ownership transfer |
-| **Out of Scope** | Multi-hop transfers |
-| **Files Changed** | Modified: `sim/kv/transfer.go` (~150 LOC), `cmd/root.go` (~15 LOC) |
-| **CLI** | `./simulation_worker run --model X --architecture pd --pd-transfer-latency 1ms --pd-transfer-bandwidth 10GB/s` |
-| **Tests** | Unit: ownership invariant. Integration: P→D transfer timing |
-| **No Dead Code** | P/D transfer flags exercise ownership logic |
-| **LOC Estimate** | ~165 |
-| **Architectural Impact** | Adds ownership tracking to BlockTransferState |
-| **Behavioral Guarantees** | Block has exactly one owner at any time; transfer adds latency |
-| **API Surface Changes** | New CLI flags: `--pd-transfer-latency`, `--pd-transfer-bandwidth` |
-| **README Changes** | Extend "Prefill-Decode Disaggregation" with KV transfer |
-| **Risks + Mitigations** | Risk: Ownership bugs (double-free). Mitigation: Conservation invariant enforced. |
-| **Why Independently Reviewable** | Completes P/D feature; ownership clearly tracked |
-
----
-
-**Track C: Observability**
-
-#### PR 17: Decision Traces
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(trace): Add DecisionTrace with RoutingRecord` |
-| **Motivation** | Enable policy decision debugging and analysis |
-| **In Scope** | `SimulationTrace`, `DecisionTrace`, `RoutingRecord`, `TraceConfig`, `--trace-level` flag |
-| **Out of Scope** | Counterfactual analysis (PR 18) |
-| **Files Changed** | New: `sim/trace/trace.go` (~100 LOC), `sim/trace/record.go` (~150 LOC). Modified: `cmd/root.go` (~20 LOC) |
-| **CLI** | `./simulation_worker run --model X --num-instances 4 --trace-level decisions` |
-| **Tests** | Integration: trace JSON includes routing decisions |
-| **Parallel With** | PR 11, PR 13 |
-| **No Dead Code** | `--trace-level` exercises trace collection |
-| **LOC Estimate** | ~270 |
-| **Architectural Impact** | Adds trace collection to ClusterSimulator; policies log decisions |
-| **Behavioral Guarantees** | `--trace-level none` (default) has no overhead; `decisions` captures all policy calls |
-| **API Surface Changes** | New CLI flag: `--trace-level` (none/decisions/detailed) |
-| **README Changes** | Add "Decision Tracing" section |
-| **Risks + Mitigations** | Risk: Trace memory bloat. Mitigation: Configurable verbosity levels. |
-| **Why Independently Reviewable** | Complete trace feature; counterfactual analysis separate |
-
----
-
-#### PR 18: Counterfactual Analysis and Trace Summary
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(trace): Add counterfactual analysis and trace summarization` |
-| **Motivation** | Enable "what-if" analysis of routing decisions |
-| **Depends On** | PR 17 |
-| **In Scope** | `TopKCandidates`, `Regret` calculation, `TraceSummary`, `--summarize-trace` flag |
+| **Title** | `feat(trace): Add DecisionTrace with RoutingRecord and counterfactual analysis` |
+| **Motivation** | Enable policy decision debugging and "what-if" analysis |
+| **Depends On** | PR 9 |
+| **In Scope** | `SimulationTrace`, `DecisionTrace`, `RoutingRecord`, `TraceConfig`, `TopKCandidates`, `Regret`, `TraceSummary` |
 | **Out of Scope** | LLM-based reflection (framework-specific) |
-| **Files Changed** | New: `sim/trace/summary.go` (~200 LOC). Modified: `sim/trace/record.go` (~50 LOC), `cmd/root.go` (~15 LOC) |
+| **Files Changed** | New: `sim/trace/trace.go` (~100 LOC), `sim/trace/record.go` (~150 LOC), `sim/trace/summary.go` (~200 LOC). Modified: `cmd/root.go` (~35 LOC) |
 | **CLI** | `./simulation_worker run --model X --trace-level decisions --counterfactual-k 5 --summarize-trace` |
-| **Tests** | Unit: regret calculation. Integration: summary includes counterfactuals |
-| **No Dead Code** | `--summarize-trace` exercises summary logic |
-| **LOC Estimate** | ~265 |
-| **Architectural Impact** | Extends trace with counterfactual analysis |
-| **Behavioral Guarantees** | Top-k candidates stored per routing decision; regret computed as best-alternative - actual |
-| **API Surface Changes** | New CLI flags: `--counterfactual-k`, `--summarize-trace` |
-| **README Changes** | Extend "Decision Tracing" with counterfactual analysis |
-| **Risks + Mitigations** | Risk: Expensive for large k. Mitigation: Default k=3; document performance. |
-| **Why Independently Reviewable** | Extends PR 17; trace works without counterfactuals |
+| **Tests** | Unit: regret calculation. Integration: trace JSON includes routing decisions and counterfactuals |
+| **Parallel With** | PR 11, PR 12 |
+| **No Dead Code** | `--trace-level` and `--summarize-trace` exercise all trace code |
+| **LOC Estimate** | ~485 |
+| **Architectural Impact** | Adds trace collection to ClusterSimulator; policies log decisions |
+| **Behavioral Guarantees** | `--trace-level none` (default) has no overhead; `decisions` captures all policy calls; top-k candidates stored per routing decision |
+| **API Surface Changes** | New CLI flags: `--trace-level` (none/decisions/detailed), `--counterfactual-k`, `--summarize-trace` |
+| **README Changes** | Add "Decision Tracing" section with counterfactual analysis |
+| **Risks + Mitigations** | Risk: Trace memory bloat. Mitigation: Configurable verbosity levels. Risk: Expensive for large k. Mitigation: Default k=3; document performance. |
+| **Why Independently Reviewable** | Complete trace + analysis feature; `--trace-level none` has no overhead |
+
+**v2.3 → v3.0 change:** MERGED from v2.3 PR 17 (Traces) + PR 18 (Counterfactual). Traces without counterfactual has limited value; combined is ~485 LOC, still reviewable.
 
 ---
 
-### Phase 5: Framework Adapters (2 PRs, Optional)
-
-BLIS is fully functional without these. They provide convenience for framework integration.
-
----
-
-#### PR 19: GEPA Adapter
+#### PR 14: P/D Disaggregated Architecture + KV Transfer
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(adapter): Add GEPA adapter` |
-| **Motivation** | Enable GEPA framework integration |
-| **Depends On** | PR 18 (traces for `ExtractTracesForReflection()`) |
-| **In Scope** | `BLISGEPAAdapter`, `Evaluate()`, `ExtractTracesForReflection()`, `gepa-evaluate` command |
-| **Out of Scope** | GEPA framework itself (external dependency) |
-| **Files Changed** | New: `sim/adapter/gepa.go` (~150 LOC). Modified: `cmd/root.go` (~40 LOC) |
-| **CLI** | `./simulation_worker gepa-evaluate --policy-config p.yaml --workload w.yaml` |
-| **Tests** | Integration: adapter returns expected format |
-| **Parallel With** | PR 20 |
-| **No Dead Code** | `gepa-evaluate` command exercises adapter |
-| **LOC Estimate** | ~190 |
-| **Architectural Impact** | Adds new CLI subcommand; wraps Run() with GEPA-specific format |
-| **Behavioral Guarantees** | Returns fitness + traces in GEPA format |
-| **API Surface Changes** | New subcommand: `gepa-evaluate` |
+| **Title** | `feat(cluster): Add disaggregated prefill-decode architecture with KV transfer` |
+| **Motivation** | Model DistServe/Splitwise style deployments |
+| **Depends On** | PR 12 (tiered KV) |
+| **In Scope** | `DISAGGREGATED_PD` type, `PrefillPool`, `DecodePool`, `PDHandoffEvent`, `PDTransferConfig`, `BlockTransferState`, routing changes, ownership tracking |
+| **Out of Scope** | Multi-hop transfers |
+| **Files Changed** | Modified: `sim/cluster/deployment.go` (~50 LOC), `sim/cluster/cluster.go` (~200 LOC), `sim/cluster/cluster_event.go` (~100 LOC), `sim/kv/transfer.go` (~150 LOC), `cmd/root.go` (~40 LOC) |
+| **CLI** | `./simulation_worker run --model X --architecture pd --prefill-replicas 2 --decode-replicas 4` |
+| **Tests** | Integration: request flows P→D; separate pools visible; KV transfer timing; ownership invariant |
+| **No Dead Code** | `--architecture pd` exercises all P/D paths |
+| **LOC Estimate** | ~540 |
+| **Architectural Impact** | Major: separate prefill and decode pools with handoff and KV ownership transfer |
+| **Behavioral Guarantees** | `--architecture monolithic` (default) preserves existing behavior; block has exactly one owner at any time; transfer adds latency |
+| **API Surface Changes** | New CLI flags: `--architecture`, `--prefill-replicas`, `--decode-replicas`, `--pd-transfer-latency`, `--pd-transfer-bandwidth` |
+| **README Changes** | Add "Prefill-Decode Disaggregation" section with KV transfer |
+| **Risks + Mitigations** | Risk: Handoff timing complexity. Mitigation: Model as discrete event. Risk: Ownership bugs (double-free). Mitigation: Conservation invariant enforced. |
+| **Why Independently Reviewable** | Complete P/D feature; `--architecture monolithic` (default) preserves existing behavior |
+
+**v2.3 → v3.0 change:** MERGED from v2.3 PR 15 (P/D Architecture) + PR 16 (KV Transfer for P/D). P/D without KV transfer is unrealistic.
+
+---
+
+### Phase 5: Framework Adapters (1 PR, Optional)
+
+BLIS is fully functional without this. It provides convenience for framework integration.
+
+---
+
+#### PR 15: Framework Adapters (GEPA + OpenEvolve)
+
+| Aspect | Details |
+|--------|---------|
+| **Title** | `feat(adapter): Add GEPA and OpenEvolve framework adapters` |
+| **Motivation** | Enable framework integration for evolutionary policy optimization |
+| **Depends On** | PR 13 (traces) |
+| **In Scope** | `BLISGEPAAdapter`, `BLISEvaluator`, `gepa-evaluate` command, `openevolve-evaluate` command |
+| **Out of Scope** | GEPA and OpenEvolve frameworks themselves (external dependencies) |
+| **Files Changed** | New: `sim/adapter/gepa.go` (~150 LOC), `sim/adapter/openevolve.go` (~150 LOC). Modified: `cmd/root.go` (~80 LOC) |
+| **CLI** | `./simulation_worker gepa-evaluate --policy-config p.yaml` and `./simulation_worker openevolve-evaluate --config oe.yaml` |
+| **Tests** | Integration: each adapter returns expected format |
+| **No Dead Code** | `gepa-evaluate` and `openevolve-evaluate` commands exercise both adapters |
+| **LOC Estimate** | ~380 |
+| **Architectural Impact** | Adds two CLI subcommands; wraps Run() with framework-specific formats |
+| **Behavioral Guarantees** | Returns fitness + traces in framework-specific formats |
+| **API Surface Changes** | New subcommands: `gepa-evaluate`, `openevolve-evaluate` |
 | **README Changes** | Add "Framework Integration" section |
-| **Risks + Mitigations** | Risk: GEPA format changes. Mitigation: Version adapter with GEPA release. |
-| **Why Independently Reviewable** | Self-contained adapter; BLIS core unchanged |
+| **Risks + Mitigations** | Risk: Framework format changes. Mitigation: Version adapters with framework releases. |
+| **Why Independently Reviewable** | Self-contained adapters; BLIS core unchanged |
 
----
-
-#### PR 20: OpenEvolve Evaluator
-
-| Aspect | Details |
-|--------|---------|
-| **Title** | `feat(adapter): Add OpenEvolve evaluator` |
-| **Motivation** | Enable OpenEvolve framework integration |
-| **Depends On** | PR 18 (trace summary for feature extraction) |
-| **In Scope** | `BLISEvaluator`, multi-objective fitness, feature extraction, `openevolve-evaluate` command |
-| **Out of Scope** | OpenEvolve framework itself (external dependency) |
-| **Files Changed** | New: `sim/adapter/openevolve.go` (~150 LOC). Modified: `cmd/root.go` (~40 LOC) |
-| **CLI** | `./simulation_worker openevolve-evaluate --config oe.yaml --candidate c.yaml` |
-| **Tests** | Integration: adapter returns expected format |
-| **Parallel With** | PR 19 |
-| **No Dead Code** | `openevolve-evaluate` command exercises evaluator |
-| **LOC Estimate** | ~190 |
-| **Architectural Impact** | Adds new CLI subcommand; wraps Run() with OpenEvolve-specific format |
-| **Behavioral Guarantees** | Returns multi-objective fitness in OpenEvolve format |
-| **API Surface Changes** | New subcommand: `openevolve-evaluate` |
-| **README Changes** | Extend "Framework Integration" section |
-| **Risks + Mitigations** | Risk: OpenEvolve format changes. Mitigation: Version adapter with OpenEvolve release. |
-| **Why Independently Reviewable** | Self-contained adapter; BLIS core unchanged |
+**v2.3 → v3.0 change:** MERGED from v2.3 PR 19 + PR 20. Both are thin wrappers (~150 LOC each) with no cross-dependencies.
 
 ---
 
 ### Phase 6: Validation (1 PR)
 
-#### PR 21: Integration Tests and Examples
+#### PR 16: Integration Tests and Examples
 
 | Aspect | Details |
 |--------|---------|
 | **Title** | `test: Add comprehensive integration test suite and examples` |
 | **Motivation** | Validate end-to-end workflows and provide usage examples |
+| **Depends On** | PR 11, PR 13, PR 14 (tests autoscaling, traces, and P/D features) |
 | **In Scope** | Integration tests, sample configs, example policies, CI validation |
 | **Out of Scope** | Performance benchmarks (already in PRs) |
 | **Files Changed** | New: `test/integration/` (~500 LOC), `examples/` (configs) |
@@ -1573,9 +1509,11 @@ BLIS is fully functional without these. They provide convenience for framework i
 | **Risks + Mitigations** | Risk: Flaky tests. Mitigation: Deterministic seed for all tests. |
 | **Why Independently Reviewable** | Test suite validates cumulative work; examples document usage |
 
+**v2.3 → v3.0 change:** Renumbered from PR 21. Content unchanged.
+
 ---
 
-## J) Dependency DAG (Restructured, No Scaffolding)
+## J) Dependency DAG (Restructured, v3.0)
 
 ### PR Dependency Graph
 
@@ -1587,122 +1525,140 @@ PHASE 1: FOUNDATION (Sequential, 3 PRs)
   (RNG)      (Instance)   (Cluster+Deploy)
                                 │
                                 ▼
-                    ✅ MOCK STUDY CHECKPOINT (COMPLETED)
+                    MOCK STUDY CHECKPOINT (COMPLETED)
                                 │
                                 ▼
-PHASE 2: POLICY INTERFACES + METRICS (6 PRs) ══════════════════════════════════
+PHASE 2: POLICY INTERFACES + METRICS ══════════════════════════════════════════
                                 │
                                 ▼
                               PR 4
                   (Control Plane + Admission)
                                 │
-              ┌─────────────────┼─────────────────┐
-              ▼                 ▼                  ▼
-            PR 5              PR 6              PR 7
-          (Priority)        (Route)           (Sched)
-              │                 │                  │
-              └─────────────────┼──────────────────┘
+PHASE 2a: SIMPLIFICATION ═════════════════════════════════════════════════════
+                                │
+                              PR 5
+                     (SimConfig + Unified
+                      CLI + Privatization)
+                                │
+PHASE 2b: POLICY INTERFACES ══════════════════════════════════════════════════
+                                │
+              ┌─────────────────┼───────────────┐
+              ▼                                 ▼
+            PR 6                              PR 7
+          (Routing)                     (Priority+Sched)
+              │                                 │
+              └─────────────────┬───────────────┘
                                 ▼
                               PR 8
                            (Bundle)
                                 │
                                 ▼
-                    ⚠️ INTERFACE FREEZE
+                    INTERFACE FREEZE
                                 │
                                 ▼
                               PR 9
                     (Metrics + Pathological)
                                 │
                                 ▼
-                    🎯 RESEARCH-READY CHECKPOINT
+                    RESEARCH-READY CHECKPOINT
                                 │
-                                ▼
-PHASE 3: ENHANCED WORKLOADS (1 PR, Optional) ══════════════════════════════════
+         ┌──────────────────────┼──────────────────────────────────────┐
+         ▼                      │                                      │
+       PR 10                    │                                      │
+ (Workload, Optional)           │                                      │
+                                │                                      │
+PHASE 4: ADVANCED FEATURES (4 PRs) ═══════════════════════════════════════════
                                 │
-                                ▼
-                             PR 10
-                    (Workload Generator)
-                                │
-                                ▼
-PHASE 4: ADVANCED FEATURES (8 PRs) ════════════════════════════════════════════
-                                │
-     ┌──────────────────────────┼──────────────────────────┐
-     ▼                          ▼                          ▼
-   PR 11                      PR 13                      PR 17
- (AutoScale)                (KV Tier)                  (Traces)
-     │                          │                          │
-     ▼                          ▼                          ▼
-   PR 12                      PR 14                      PR 18
- (Actuation)               (Transfer)                 (Summary)
-                                │
-                                ▼
-                              PR 15
-                              (P/D)
-                                │
-                                ▼
-                              PR 16
-                           (P/D Xfer)
-                                │
-                                ▼
-PHASE 5: ADAPTERS (2 PRs, Optional) ═══════════════════════════════════════════
-                                │
-                    ┌───────────┴───────────┐
-                    ▼                       ▼
-                  PR 19                   PR 20
-                 (GEPA)               (OpenEvolve)
-                    │                       │
-                    └───────────┬───────────┘
-                                ▼
-PHASE 6: VALIDATION (1 PR) ════════════════════════════════════════════════════
-                                │
-                                ▼
-                              PR 21
-                            (Tests)
+     ┌──────────────────────────┼──────────────────────┐
+     ▼                        ▼                        ▼
+   PR 11                    PR 12                    PR 13
+ (AutoScale              (Tiered KV              (Traces +
+  + Actuation)            + Transfer)             Counterfactual)
+     │                        │                        │
+     │                        ▼                        ├──────────────┐
+     │                      PR 14                      │              ▼
+     │                  (P/D + KV Xfer)                │        PHASE 5: ADAPTERS
+     │                        │                        │        (Optional)
+     │                        │                        │              │
+     │                        │                        │            PR 15
+     │                        │                        │      (GEPA + OpenEvolve)
+     │                        │                        │
+PHASE 6: VALIDATION ══════════════════════════════════════════════════════════
+     │                        │                        │
+     └────────────────────────┼────────────────────────┘
+                              ▼
+                            PR 16
+                    (Tests: depends on 11+13+14)
 ```
 
 ### Parallel Development Matrix
 
 | Gate | Completed PRs | Unlocked for Parallel Development |
 |------|---------------|-----------------------------------|
-| **G1** | PR 4 (Control Plane + Admission) | PR 5, PR 6, PR 7 (3 parallel) |
-| **G2** | PR 9 (Research-Ready) | PR 10, PR 11, PR 13, PR 17 (4 parallel tracks) |
-| **G3** | PR 18 | PR 19, PR 20 (2 parallel) |
+| **G1** | PR 5 (Simplification) | PR 6, PR 7 (2 parallel) |
+| **G2** | PR 9 (Research-Ready) | PR 10, PR 11, PR 12, PR 13 (4 parallel tracks) |
+| **G3** | PR 13 | PR 15 |
 
 ### Critical Checkpoints
 
 | Checkpoint | Verification | Failure Action |
 |------------|--------------|----------------|
-| **Mock Study (after PR 3)** | ✅ COMPLETED 2026-02-13. Findings: pre-dispatch routing broken, 4 observable gaps identified | PR 4 restructured with online routing and observation methods |
+| **Mock Study (after PR 3)** | COMPLETED 2026-02-13. Findings: pre-dispatch routing broken, 4 observable gaps identified | PR 4 restructured with online routing and observation methods |
 | **After PR 3** | Determinism: 100 runs identical | Block until fixed |
+| **After PR 5** | Golden tests pass through unified cluster path | Block until fixed |
 | **Interface Freeze (after PR 8)** | Policy interfaces frozen (no breaking changes) | Additive changes (new fields, new `Extended` keys) permitted |
 | **Research-Ready (after PR 9)** | Pathological policies trigger anomalies | Required for research |
-| **After PR 18** | All observability features working | Required for adapters |
+| **After PR 13** | All observability features working | Required for adapters |
 
 ### Timeline Estimate (3-4 developers)
 
 ```
 Week 1-2:   Phase 1 (PR 1-3, sequential, 1 dev)
-            + Mock Study (2-3 days) ✅ COMPLETED
+            + Mock Study (2-3 days) COMPLETED
 
 Week 3:     Phase 2 PR 4 (Control Plane + Admission, sequential, 1 dev)
+            PR 5 (Simplification, 1 dev, ~2 days)
 
-Week 4-5:   Phase 2 PRs 5-7 (3 parallel), then PR 8-9
-            → 🎯 RESEARCH-READY (~5 weeks)
+Week 3-4:   PR 6-7 (2 parallel devs), then PR 8
 
-Week 6-7:   Phase 3 (PR 10, optional, 1 dev)
-            Phase 4 Track A (PR 11-12, 1 dev)
-            Phase 4 Track B (PR 13-16, 1 dev)
-            Phase 4 Track C (PR 17-18, 1 dev)
+Week 4-5:   PR 9
+            → RESEARCH-READY (~5 weeks)
 
-Week 8-9:   Phase 4 continued
+Week 6-7:   PR 10 (optional, 1 dev)
+            PR 11 (1 dev)
+            PR 12 (1 dev)
+            PR 13 (1 dev)
 
-Week 10:    Phase 5 (PR 19-20, 2 devs parallel)
+Week 7-8:   PR 14 (1 dev, depends on PR 12)
 
-Week 11:    Phase 6 (PR 21)
+Week 9:     PR 15 (adapters, 1 dev)
 
-Total: ~11 weeks with 3-4 developers
+Week 10:    PR 16 (tests, 1 dev)
+
+Total: ~10 weeks with 3-4 developers
 Research-ready: ~5 weeks
 ```
+
+### v2.3 → v3.0 PR Mapping
+
+| v3.0 PR | v2.3 PR(s) | Change |
+|---------|-----------|--------|
+| PR 1 | PR 1 | PartitionedRNG — unchanged |
+| PR 2 | PR 2 | InstanceSimulator — unchanged |
+| PR 3 | PR 3 | ClusterSimulator — unchanged |
+| PR 4 | PR 4 | Control Plane + Admission — unchanged |
+| PR 5 | NEW | Simplification (constructor collapse, unified CLI, field privatization, interface dedup) |
+| PR 6 | PR 6 | Routing — unchanged except depends on PR 5 |
+| PR 7 | PR 5 + PR 7 | MERGED: Priority + Scheduler |
+| PR 8 | PR 8 | PolicyBundle — unchanged |
+| PR 9 | PR 9 | RawMetrics — unchanged |
+| PR 10 | PR 10 | Workload — unchanged |
+| PR 11 | PR 11 + PR 12 | MERGED: AutoScaler + Actuation |
+| PR 12 | PR 13 + PR 14 | MERGED: Tiered KV + Transfer |
+| PR 13 | PR 17 + PR 18 | MERGED: Traces + Counterfactual |
+| PR 14 | PR 15 + PR 16 | MERGED: P/D Architecture + KV Transfer |
+| PR 15 | PR 19 + PR 20 | MERGED: GEPA + OpenEvolve adapters |
+| PR 16 | PR 21 | Integration Tests — renumbered |
 
 ---
 
@@ -1727,9 +1683,10 @@ Research-ready: ~5 weeks
 | `TestDeterministicReplay` | 100 runs with same seed produce identical output | PR 3 |
 | `TestPolicyPipeline` | Admission → Priority → Routing → Scheduling flow | PR 9 |
 | `TestAnomalyDetection_PathologicalPolicies` | Pathological policies trigger expected anomalies | PR 9 |
-| `TestKVTierTransfer` | Offload/reload timing and conservation | PR 14 |
-| `TestPDHandoff` | Prefill → Transfer → Decode lifecycle | PR 15 |
-| `TestAutoScaling` | Scale up/down with warmup and drain | PR 12 |
+| `TestUnifiedCLIPath` | N=1 cluster path matches single-instance golden tests | PR 5 |
+| `TestKVTierTransfer` | Offload/reload timing and conservation | PR 12 |
+| `TestPDHandoff` | Prefill → Transfer → Decode lifecycle | PR 14 |
+| `TestAutoScaling` | Scale up/down with warmup and drain | PR 11 |
 
 ### K.3 Behavioral Validation
 
@@ -1887,11 +1844,11 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 | Metric | Value |
 |--------|-------|
 | **Phases** | 6 |
-| **Total PRs** | 21 |
-| **Total LOC Estimate** | ~5,500 (PR 4 expanded from ~170 to ~450 LOC) |
-| **Max Parallel PRs** | 3 (Phase 2 PRs 5-7), 4 (Phase 4) |
-| **Research-Ready** | ~5 weeks (PR 4 adds 1 sequential week) |
-| **Full Implementation** | ~11 weeks (with 3-4 developers) |
+| **Total PRs** | 16 |
+| **Total LOC Estimate** | ~5,200 (net reduction from PR 5 simplification) |
+| **Max Parallel PRs** | 2 (Phase 2b PRs 6-7), 4 (G2 gate: PRs 10-13 parallel) |
+| **Research-Ready** | ~5 weeks |
+| **Full Implementation** | ~10 weeks (with 3-4 developers) |
 
 ### Key Decisions
 
@@ -1909,6 +1866,8 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 12. **Online routing architecture** — mock study proved pre-dispatch routing breaks load-aware policies; routing decisions happen during event loop (v2.3)
 13. **Control plane / data plane separation** — ClusterSimulator split into cluster event queue + instance event queues (v2.3)
 14. **InstanceSnapshot staleness model** — immutable value types with configurable refresh via ObservabilityConfig (v2.3)
+15. **Backward compatibility dropped** — golden tests are the verification gate; CLI always uses ClusterSimulator (v3.0)
+16. **Constructor collapse** — `SimConfig` struct replaces 17-param constructors (v3.0)
 
 ### Changes from v1
 
@@ -1942,6 +1901,22 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 | Research-ready ~4 weeks → ~5 weeks | PR 4 expanded scope adds 1 sequential week |
 | InstanceSimulator observation methods | Mock study identified 4 observable gaps; PR 4 adds QueueDepth(), BatchSize(), KVUtilization(), FreeKVBlocks() methods. CacheHitRate deferred (requires new KV hit/miss tracking) |
 
+### Changes from v2.3 (v3.0)
+
+| Change | Rationale |
+|--------|-----------|
+| New PR 5: Architectural Simplification | Constructor collapse, unified CLI path, field privatization, interface dedup reduce complexity for all subsequent PRs |
+| Priority + Scheduler merged (→ PR 7) | Both affect request ordering and share `Priority` field on `Request`; natural cohesion |
+| AutoScaler + Actuation merged (→ PR 11) | Actuation without core is dead code; core without actuation is unrealistic |
+| Tiered KV + Transfer merged (→ PR 12) | Types without transfer is dead code |
+| Traces + Counterfactual merged (→ PR 13) | Traces without counterfactual has limited value |
+| P/D + KV Transfer merged (→ PR 14) | P/D without KV transfer is unrealistic |
+| GEPA + OpenEvolve merged (→ PR 15) | Both thin wrappers (~150 LOC each) with no cross-dependencies |
+| Integration Tests renumbered (→ PR 16) | Content unchanged |
+| 21 PRs → 16 PRs | 6 merges + 1 new simplification PR; ~300 LOC net reduction |
+| Backward compatibility dropped | Golden tests remain; separate single-instance path eliminated |
+| Unified event queue deferred | Low ROI (~50 LOC), risk to golden tests, complicates P/D |
+
 ### Research Agenda Alignment
 
 This plan directly supports the four llm-d inference control problems:
@@ -1950,8 +1925,8 @@ This plan directly supports the four llm-d inference control problems:
 |-----------------|--------------|---------|
 | **Routing Policy Evolution** | `RoutingPolicy` interface, `InstanceSnapshot` observables, existing prefix caching | PR 6, PR 9 |
 | **Admission Control Evolution** | `AdmissionPolicy` interface, multi-tenant `TenantState`, fairness metrics | PR 4, PR 8-9 |
-| **Joint Priority Scheduling** | `PriorityPolicy` + `InstanceScheduler` separation, priority inversion detection, HOL blocking detection | PR 5, PR 7, PR 9 |
-| **Autoscaling Evolution** | `AutoScalePolicy` interface, provisioning/warmup modeling, cost metrics, scale oscillation detection | PR 11-12 |
+| **Joint Priority Scheduling** | `PriorityPolicy` + `InstanceScheduler` separation, priority inversion detection, HOL blocking detection | PR 7, PR 9 |
+| **Autoscaling Evolution** | `AutoScalePolicy` interface, provisioning/warmup modeling, cost metrics, scale oscillation detection | PR 11 |
 
 **Architectural Locality:** Each policy interface respects control boundaries—routing sees only `RouterState` + `InstanceSnapshot`, instance schedulers see only local state, autoscalers see only aggregate metrics.
 
@@ -1966,7 +1941,7 @@ This plan directly supports the four llm-d inference control problems:
 
 ### Next Steps
 
-1. Review and approve this plan (v2.3)
-2. Create PR 4 micro-level implementation plan (cluster control plane + admission)
-3. Begin PR 4 (Control Plane + AdmissionPolicy)
+1. Review and approve this plan (v3.0)
+2. Create PR 5 micro-level implementation plan (architectural simplification)
+3. Begin PR 5 (SimConfig + Unified CLI + Privatization + Interface Dedup)
 4. (Parallel) Set up instrumented vLLM deployment for trace collection
