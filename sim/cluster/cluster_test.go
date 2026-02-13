@@ -271,14 +271,19 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 	cs.Run()
 
 	var sumCompleted, sumInput, sumOutput int
-	var maxSimEnded int64
+	var maxSimEnded, maxPeakKV int64
+	var sumKVBlocksUsed float64
 	for _, inst := range cs.Instances() {
 		m := inst.Metrics()
 		sumCompleted += m.CompletedRequests
 		sumInput += m.TotalInputTokens
 		sumOutput += m.TotalOutputTokens
+		sumKVBlocksUsed += m.KVBlocksUsed
 		if m.SimEndedTime > maxSimEnded {
 			maxSimEnded = m.SimEndedTime
+		}
+		if m.PeakKVBlocksUsed > maxPeakKV {
+			maxPeakKV = m.PeakKVBlocksUsed
 		}
 	}
 
@@ -295,10 +300,16 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 	if agg.SimEndedTime != maxSimEnded {
 		t.Errorf("aggregated SimEndedTime: got %d, want %d (max)", agg.SimEndedTime, maxSimEnded)
 	}
+	if agg.KVBlocksUsed != sumKVBlocksUsed {
+		t.Errorf("aggregated KVBlocksUsed: got %v, want %v (sum)", agg.KVBlocksUsed, sumKVBlocksUsed)
+	}
+	if agg.PeakKVBlocksUsed != maxPeakKV {
+		t.Errorf("aggregated PeakKVBlocksUsed: got %d, want %d (max)", agg.PeakKVBlocksUsed, maxPeakKV)
+	}
 
 	// Verify per-request map merging
 	var sumRequests, sumTTFTs, sumE2Es, sumITLs, sumAllITLs int
-	var sumTTFTSum int64
+	var sumTTFTSum, sumITLSum int64
 	for _, inst := range cs.Instances() {
 		m := inst.Metrics()
 		sumRequests += len(m.Requests)
@@ -307,6 +318,7 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 		sumITLs += len(m.RequestITLs)
 		sumAllITLs += len(m.AllITLs)
 		sumTTFTSum += m.TTFTSum
+		sumITLSum += m.ITLSum
 	}
 	if len(agg.Requests) != sumRequests {
 		t.Errorf("aggregated len(Requests): got %d, want %d (sum)", len(agg.Requests), sumRequests)
@@ -322,6 +334,9 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 	}
 	if agg.TTFTSum != sumTTFTSum {
 		t.Errorf("aggregated TTFTSum: got %d, want %d (sum)", agg.TTFTSum, sumTTFTSum)
+	}
+	if agg.ITLSum != sumITLSum {
+		t.Errorf("aggregated ITLSum: got %d, want %d (sum)", agg.ITLSum, sumITLSum)
 	}
 	if agg.RequestRate != workload.Rate {
 		t.Errorf("aggregated RequestRate: got %v, want %v", agg.RequestRate, workload.Rate)

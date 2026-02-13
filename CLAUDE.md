@@ -115,7 +115,7 @@ This project follows BDD/TDD practices. When implementing features:
 
 ### Key Invariants to Maintain
 
-- **Request lifecycle**: Every request reaches exactly one terminal state (COMPLETED, REJECTED, TIMED_OUT)
+- **Request lifecycle**: Requests transition queued → running → completed; requests not completed before horizon remain in current state
 - **Clock monotonicity**: Simulation clock never decreases
 - **KV cache conservation**: `allocated_blocks + free_blocks = total_blocks`
 - **Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
@@ -133,7 +133,7 @@ Active development: Evolutionary Policy Optimization extension (see `docs/plans/
 ### Code Style
 
 - Use composition over inheritance (e.g., `InstanceSimulator` wraps existing `sim` components)
-- Explicit tie-breaking for determinism (timestamp → event type priority → event ID)
+- Timestamp-based event ordering via min-heap (cluster-level ties broken by lowest instance index)
 - Partitioned RNG per subsystem to isolate randomness
 
 ### CI/CD
