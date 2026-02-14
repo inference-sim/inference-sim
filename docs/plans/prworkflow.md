@@ -14,6 +14,39 @@ This document describes the complete workflow for implementing a PR from the mac
 
 ---
 
+## Prerequisites
+
+This workflow requires the following Claude Code skills to be available:
+
+| Skill | Purpose | Used In |
+|-------|---------|---------|
+| `superpowers:using-git-worktrees` | Create isolated workspace for PR work | Step 1 |
+| `superpowers:writing-plans` | Generate implementation plan from templates | Step 2 |
+| `pr-review-toolkit:review-pr` | Automated multi-agent review | Step 2.5, Step 4.5 |
+| `superpowers:executing-plans` | Execute plan tasks in batches | Step 4 |
+| `commit-commands:commit-push-pr` | Commit, push, and create PR | Step 5 |
+
+**Verification:**
+```bash
+# List all available skills
+/agents
+```
+
+**If a required skill is unavailable:**
+- Check Claude Code version (skills may be added in newer versions)
+- Check skill installation in `~/.claude/plugins/` or `~/.claude/skills/`
+- For official superpowers skills, ensure plugins are up to date
+
+**Alternative workflows:**
+If skills are unavailable, you can implement each step manually:
+- Step 1: Use `git worktree add ../repo-prN -b prN-name` directly
+- Step 2: Follow `prmicroplanprompt-v2.md` template manually
+- Step 2.5/4.5: Manual code review or skip automated review
+- Step 4: Implement tasks manually following plan
+- Step 5: Use standard git commands (`git add`, `git commit`, `git push`, `gh pr create`)
+
+---
+
 ## Overview
 
 ```
