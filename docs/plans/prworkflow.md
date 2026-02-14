@@ -423,11 +423,11 @@ After each batch, Claude shows:
 
 ---
 
-### Step 5: Commit, Push, and Create PR Using `/commit-commands:commit-push-pr`
+### Step 5: Commit, Push, and Create PR Using `commit-commands:commit-push-pr`
 
 **Context:** Session 2 (worktree, after code review passed and all issues fixed)
 
-**Skill:** `/commit-commands:commit-push-pr`
+**Skill:** `commit-commands:commit-push-pr`
 
 **Invocation (simplified):**
 ```
@@ -435,14 +435,15 @@ After each batch, Claude shows:
 ```
 
 **What Happens:**
-- Creates git commit with ALL changes (plan + implementation)
+- Reviews git status and staged/unstaged changes
+- Creates a commit with appropriate message (or amends if per-task commits exist)
 - Pushes branch to origin
 - Creates GitHub PR automatically
 - All in one command!
 
 **The skill automatically:**
-1. Stages all changes via `git add` (includes plan file + implementation files)
-2. Creates commit with appropriate message (references behavioral contracts)
+1. Analyzes current git state (per-task commits from Step 4, or uncommitted changes)
+2. Creates/amends commit with appropriate message (references behavioral contracts)
 3. Pushes branch to origin with `-u` flag
 4. Creates PR using `gh pr create` with title and description
 
@@ -459,11 +460,15 @@ After each batch, Claude shows:
 - Checklist of completed items
 
 **Output:**
-- Single commit created with plan + implementation
-- Branch pushed to GitHub
+- Commit(s) pushed to GitHub (per-task commits from Step 4 + plan file)
 - PR URL (e.g., `https://github.com/user/repo/pull/123`)
 
-**Result:** PR contains one clean commit with both the plan document and its implementation.
+**Note:** If you prefer a single squashed commit, manually squash before Step 5:
+```bash
+git reset --soft HEAD~N  # N = number of task commits
+git commit -m "PR<N>: <title>"
+/commit-commands:commit-push-pr
+```
 
 ---
 

@@ -493,7 +493,7 @@ After creating the plan, the workflow continues with:
 - Open new session in worktree
 - Invoke superpowers:executing-plans with this plan
 - Batch execution with checkpoint reviews
-- Invoke superpowers:finishing-a-development-branch when complete
+- Invoke commit-commands:commit-push-pr when complete
 
 ======================================================================
 QUALITY BAR
