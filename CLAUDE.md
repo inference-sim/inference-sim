@@ -61,7 +61,8 @@ go test -cover ./...
 
 The simulator uses a discrete-event architecture with a min-heap event queue:
 
-- **simulator.go**: Main `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution
+- **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution
+- **admission.go**: `AdmissionPolicy` interface, `AlwaysAdmit`, `TokenBucket`, `NewAdmissionPolicy` factory
 - **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
 - **request.go**: Request lifecycle and state machine (queued → running → completed)
 - **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching
@@ -72,9 +73,9 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 
 Multi-replica extension using composition over the single-instance simulator:
 
-- **instance.go**: `InstanceSimulator` wraps `sim.Simulator` with run-once guard and cluster-level accessors
-- **cluster.go**: `ClusterSimulator` orchestrates N instances with shared-clock event loop, round-robin dispatch, and metrics aggregation
-- **deployment.go**: `DeploymentConfig` struct for homogeneous cluster configuration
+- **instance.go**: `InstanceSimulator` wraps `sim.Simulator` via `NewInstanceSimulator(id, SimConfig)` with run-once guard and cluster-level accessors
+- **cluster.go**: `ClusterSimulator` orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation
+- **deployment.go**: `DeploymentConfig` struct with `ToSimConfig()` for per-instance construction
 - **workload.go**: Centralized request generation (distribution-based or CSV traces) for cluster dispatch
 
 ### Latency Estimation
@@ -125,9 +126,9 @@ This project follows BDD/TDD practices. When implementing features:
 Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
 - 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
-- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue)
-- **Next:** PR5 (architectural simplification: SimConfig struct, unified CLI path, field privatization, interface dedup), then PR6+ (routing policies, enhanced workloads, tiered KV cache, decision traces)
-- Will add to `sim/policy/`, `sim/kv/`, `sim/workload/`, `sim/trace/` packages
+- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`)
+- **Next:** PR6 (routing policies), then PR7+ (priority+scheduler, policy bundles, raw metrics, tiered KV cache, decision traces)
+- Will add to `sim/kv/`, `sim/workload/`, `sim/trace/` packages
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
 ### Code Style
@@ -152,10 +153,11 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances for cluster mode)
+│   ├── root.go                # CLI commands and flags (always uses ClusterSimulator, --num-instances defaults to 1)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
-│   ├── simulator.go           # Event loop, batch formation, step execution
+│   ├── simulator.go           # SimConfig struct, NewSimulator(SimConfig), event loop, batch formation, step execution
+│   ├── admission.go           # AdmissionPolicy interface, AlwaysAdmit, TokenBucket, NewAdmissionPolicy factory
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
 │   ├── request.go             # Request state machine (queued → running → completed)
 │   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching
@@ -174,8 +176,6 @@ inference-sim/
 │   ├── snapshot.go            # InstanceSnapshot, CachedSnapshotProvider, ObservabilityConfig
 │   ├── deployment.go          # DeploymentConfig struct
 │   └── workload.go            # Centralized request generation for cluster dispatch
-├── sim/policy/                # Pluggable policies
-│   └── admission.go           # AdmissionPolicy interface, AlwaysAdmit, TokenBucket templates
 ├── sim/kv/                    # Tiered KV cache (planned, Phase 4)
 ├── sim/workload/              # Enhanced workload generation (planned, Phase 3)
 ├── sim/trace/                 # Decision traces (planned, Phase 4)

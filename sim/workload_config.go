@@ -14,13 +14,13 @@ import (
 )
 
 func (sim *Simulator) generateWorkloadFromCSV() {
-	file, err := os.Open(sim.TracesWorkloadFilePath)
+	file, err := os.Open(sim.tracesWorkloadFilePath)
 	if err != nil {
 		logrus.Fatalf("failed to open csv file: %v", err)
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			logrus.Warnf("failed to close csv file %q: %v", sim.TracesWorkloadFilePath, err)
+			logrus.Warnf("failed to close csv file %q: %v", sim.tracesWorkloadFilePath, err)
 		}
 	}()
 
@@ -134,24 +134,24 @@ func (sim *Simulator) generateWorkloadDistribution() {
 	reqIdx := 0
 
 	// generate prefix here; this is a random sequence of tokens of prefix len
-	prefix := sim.generateRandomTokenIDs(sim.GuideLLMConfig.PrefixTokens)
+	prefix := sim.generateRandomTokenIDs(sim.guideLLMConfig.PrefixTokens)
 
 	// create request arrivals iteratively
-	for currentTime < sim.Horizon && reqIdx < sim.GuideLLMConfig.MaxPrompts {
+	for currentTime < sim.Horizon && reqIdx < sim.guideLLMConfig.MaxPrompts {
 		// In a Poisson process, the arrival rate is inversely proportional
 		// to the mean interarrival time
 		// go through the workload requests one by one
 		// ToDo: create flags for max input and output lengths
 
 		// get input token length given DataConfig distribution
-		promptLen := sim.generateLengthGauss(sim.GuideLLMConfig.PromptTokens, sim.GuideLLMConfig.PromptTokensStdDev, sim.GuideLLMConfig.PromptTokensMin, sim.GuideLLMConfig.PromptTokensMax)
+		promptLen := sim.generateLengthGauss(sim.guideLLMConfig.PromptTokens, sim.guideLLMConfig.PromptTokensStdDev, sim.guideLLMConfig.PromptTokensMin, sim.guideLLMConfig.PromptTokensMax)
 		// generate random input tokens of above promptLen
 		prompt := sim.generateRandomTokenIDs(promptLen)
 		// combine prefix and prompt
 		input := append(prefix, prompt...)
 
 		// get output token len given DataConfig distribution
-		outputLen := sim.generateLengthGauss(sim.GuideLLMConfig.OutputTokens, sim.GuideLLMConfig.OutputTokensStdDev, sim.GuideLLMConfig.OutputTokensMin, sim.GuideLLMConfig.OutputTokensMax)
+		outputLen := sim.generateLengthGauss(sim.guideLLMConfig.OutputTokens, sim.guideLLMConfig.OutputTokensStdDev, sim.guideLLMConfig.OutputTokensMin, sim.guideLLMConfig.OutputTokensMax)
 		// generate random output tokens of above outputLen
 		output := sim.generateRandomTokenIDs(outputLen)
 

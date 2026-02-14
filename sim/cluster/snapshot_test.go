@@ -8,11 +8,20 @@ import (
 
 // newTestInstance creates a minimal InstanceSimulator for snapshot tests.
 func newTestInstance(id InstanceID, totalKVBlocks int64) *InstanceSimulator {
-	return NewInstanceSimulatorWithoutWorkload(
-		id, 1000000, 42, totalKVBlocks, 16, 256, 2048, 0,
-		[]float64{1000, 10, 5}, []float64{100, 1, 100},
-		sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false,
-	)
+	cfg := sim.SimConfig{
+		Horizon:            1000000,
+		Seed:               42,
+		TotalKVBlocks:      totalKVBlocks,
+		BlockSizeTokens:    16,
+		MaxRunningReqs:     256,
+		MaxScheduledTokens: 2048,
+		BetaCoeffs:         []float64{1000, 10, 5},
+		AlphaCoeffs:        []float64{100, 1, 100},
+		Model:              "test",
+		GPU:                "H100",
+		TP:                 1,
+	}
+	return NewInstanceSimulator(id, cfg)
 }
 
 // TestInstanceSnapshot_Immutability verifies BC-5, NC-2:
