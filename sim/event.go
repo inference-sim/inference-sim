@@ -56,7 +56,7 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 	sim.EnqueueRequest(e.Request)
 
 	// If there's no Step scheduled, trigger one immediately
-	if sim.StepEvent == nil {
+	if sim.stepEvent == nil {
 		sim.Schedule(&StepEvent{
 			time: e.time,
 		})

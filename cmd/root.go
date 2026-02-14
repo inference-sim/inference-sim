@@ -198,64 +198,41 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
-		if numInstances == 1 {
-			// Single-instance code path (existing behavior, unchanged)
-			instance := cluster.NewInstanceSimulator(
-				cluster.InstanceID("default"),
-				simulationHorizon,
-				seed,
-				totalKVBlocks,
-				blockSizeTokens,
-				maxRunningReqs,
-				maxScheduledTokens,
-				longPrefillTokenThreshold,
-				betaCoeffs,
-				alphaCoeffs,
-				guideLLMConfig,
-				modelConfig,
-				hwConfig,
-				model,
-				gpu,
-				tensorParallelism,
-				roofline,
-				tracesWorkloadFilePath,
-			)
-			instance.Run()
-			instance.Metrics().SaveResults(string(instance.ID()), instance.Horizon(), totalKVBlocks, startTime, resultsPath)
-		} else {
-			// Multi-instance cluster path
-			config := cluster.DeploymentConfig{
-				NumInstances:              numInstances,
-				Horizon:                   simulationHorizon,
-				Seed:                      seed,
-				TotalKVBlocks:             totalKVBlocks,
-				BlockSizeTokens:           blockSizeTokens,
-				MaxRunningReqs:            maxRunningReqs,
-				MaxScheduledTokens:        maxScheduledTokens,
-				LongPrefillTokenThreshold: longPrefillTokenThreshold,
-				BetaCoeffs:                betaCoeffs,
-				AlphaCoeffs:               alphaCoeffs,
-				ModelConfig:               modelConfig,
-				HWConfig:                  hwConfig,
-				Model:                     model,
-				GPU:                       gpu,
-				TP:                        tensorParallelism,
-				Roofline:                  roofline,
-				AdmissionPolicy:           admissionPolicy,
-				AdmissionLatency:          admissionLatency,
-				RoutingLatency:            routingLatency,
-				TokenBucketCapacity:       tokenBucketCapacity,
-				TokenBucketRefillRate:     tokenBucketRefillRate,
-			}
-			cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
-			cs.Run()
-			// Print per-instance metrics to stdout
+		// Unified cluster path (used for all values of numInstances)
+		config := cluster.DeploymentConfig{
+			NumInstances:              numInstances,
+			Horizon:                   simulationHorizon,
+			Seed:                      seed,
+			TotalKVBlocks:             totalKVBlocks,
+			BlockSizeTokens:           blockSizeTokens,
+			MaxRunningReqs:            maxRunningReqs,
+			MaxScheduledTokens:        maxScheduledTokens,
+			LongPrefillTokenThreshold: longPrefillTokenThreshold,
+			BetaCoeffs:                betaCoeffs,
+			AlphaCoeffs:               alphaCoeffs,
+			ModelConfig:               modelConfig,
+			HWConfig:                  hwConfig,
+			Model:                     model,
+			GPU:                       gpu,
+			TP:                        tensorParallelism,
+			Roofline:                  roofline,
+			AdmissionPolicy:           admissionPolicy,
+			AdmissionLatency:          admissionLatency,
+			RoutingLatency:            routingLatency,
+			TokenBucketCapacity:       tokenBucketCapacity,
+			TokenBucketRefillRate:     tokenBucketRefillRate,
+		}
+		cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
+		cs.Run()
+
+		if numInstances > 1 {
+			// Print per-instance metrics to stdout (multi-instance only)
 			for _, inst := range cs.Instances() {
 				inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, startTime, "")
 			}
-			// Save aggregated metrics to file
-			cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, startTime, resultsPath)
 		}
+		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
+		cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, startTime, resultsPath)
 
 		logrus.Info("Simulation complete.")
 	},

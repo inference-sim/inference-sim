@@ -29,3 +29,27 @@ type DeploymentConfig struct {
 	TokenBucketCapacity   float64 // max tokens, default 10000
 	TokenBucketRefillRate float64 // tokens/second, default 1000
 }
+
+// ToSimConfig converts DeploymentConfig to SimConfig for per-instance construction.
+// All instances receive the same config including Seed (identical RNG streams).
+// GuideLLMConfig and TracesWorkloadFilePath are intentionally omitted:
+// cluster mode generates workload centrally and injects requests via InjectRequestOnline.
+func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
+	return sim.SimConfig{
+		Horizon:                   d.Horizon,
+		Seed:                      d.Seed,
+		TotalKVBlocks:             d.TotalKVBlocks,
+		BlockSizeTokens:           d.BlockSizeTokens,
+		MaxRunningReqs:            d.MaxRunningReqs,
+		MaxScheduledTokens:        d.MaxScheduledTokens,
+		LongPrefillTokenThreshold: d.LongPrefillTokenThreshold,
+		BetaCoeffs:                d.BetaCoeffs,
+		AlphaCoeffs:               d.AlphaCoeffs,
+		ModelConfig:               d.ModelConfig,
+		HWConfig:                  d.HWConfig,
+		Model:                     d.Model,
+		GPU:                       d.GPU,
+		TP:                        d.TP,
+		Roofline:                  d.Roofline,
+	}
+}

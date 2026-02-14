@@ -1,21 +1,17 @@
-package policy
+package sim
 
-import (
-	"fmt"
+import "fmt"
 
-	"github.com/inference-sim/inference-sim/sim"
-)
-
-// AdmissionPolicy decides whether a request should be admitted to the cluster.
-// This interface matches cluster.AdmissionPolicy for duck-typing compatibility.
+// AdmissionPolicy decides whether a request is admitted for processing.
+// Used by ClusterSimulator's online routing pipeline to gate incoming requests.
 type AdmissionPolicy interface {
-	Admit(req *sim.Request, clock int64) (admitted bool, reason string)
+	Admit(req *Request, clock int64) (admitted bool, reason string)
 }
 
 // AlwaysAdmit admits all requests unconditionally.
 type AlwaysAdmit struct{}
 
-func (a *AlwaysAdmit) Admit(_ *sim.Request, _ int64) (bool, string) {
+func (a *AlwaysAdmit) Admit(_ *Request, _ int64) (bool, string) {
 	return true, ""
 }
 
@@ -37,7 +33,7 @@ func NewTokenBucket(capacity, refillRate float64) *TokenBucket {
 }
 
 // Admit checks whether the request can be admitted given current token availability.
-func (tb *TokenBucket) Admit(req *sim.Request, clock int64) (bool, string) {
+func (tb *TokenBucket) Admit(req *Request, clock int64) (bool, string) {
 	elapsed := clock - tb.lastRefill
 	if elapsed > 0 {
 		refill := float64(elapsed) * tb.refillRate / 1e6
@@ -54,14 +50,16 @@ func (tb *TokenBucket) Admit(req *sim.Request, clock int64) (bool, string) {
 
 // NewAdmissionPolicy creates an admission policy by name.
 // Valid names: "always-admit", "token-bucket".
+// An empty string defaults to AlwaysAdmit (for CLI flag default compatibility).
 // For token-bucket, capacity and refillRate configure the bucket.
+// Panics on unrecognized names.
 func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPolicy {
 	switch name {
-	case "always-admit":
+	case "", "always-admit":
 		return &AlwaysAdmit{}
 	case "token-bucket":
 		return NewTokenBucket(capacity, refillRate)
 	default:
-		panic(fmt.Sprintf("unknown admission policy %q; valid policies: [always-admit, token-bucket]", name))
+		panic(fmt.Sprintf("unknown admission policy %q", name))
 	}
 }

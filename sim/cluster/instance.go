@@ -22,53 +22,14 @@ type InstanceSimulator struct {
 	hasRun bool
 }
 
-// NewInstanceSimulator creates an InstanceSimulator wrapping a new Simulator.
-// All parameters except `id` are passed directly to sim.NewSimulator.
+// NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
 //
 // Thread-safety: NOT thread-safe. Must be called from single goroutine.
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
-func NewInstanceSimulator(
-	id InstanceID,
-	horizon int64,
-	seed int64,
-	totalKVBlocks int64,
-	blockSizeTokens int64,
-	maxRunningReqs int64,
-	maxScheduledTokens int64,
-	longPrefillTokenThreshold int64,
-	betaCoeffs []float64,
-	alphaCoeffs []float64,
-	guideLLMConfig *sim.GuideLLMConfig,
-	modelConfig sim.ModelConfig,
-	hwConfig sim.HardwareCalib,
-	model string,
-	GPU string,
-	tp int,
-	roofline bool,
-	tracesWorkloadFilePath string,
-) *InstanceSimulator {
-	s := sim.NewSimulator(
-		horizon,
-		seed,
-		totalKVBlocks,
-		blockSizeTokens,
-		maxRunningReqs,
-		maxScheduledTokens,
-		longPrefillTokenThreshold,
-		betaCoeffs,
-		alphaCoeffs,
-		guideLLMConfig,
-		modelConfig,
-		hwConfig,
-		model,
-		GPU,
-		tp,
-		roofline,
-		tracesWorkloadFilePath,
-	)
+func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	return &InstanceSimulator{
 		id:  id,
-		sim: s,
+		sim: sim.NewSimulator(cfg),
 	}
 }
 
@@ -109,22 +70,6 @@ func (i *InstanceSimulator) Horizon() int64 {
 	return i.sim.Horizon
 }
 
-// NewInstanceSimulatorWithoutWorkload creates an InstanceSimulator with no workload generation.
-// Caller injects requests via InjectRequest before running.
-func NewInstanceSimulatorWithoutWorkload(
-	id InstanceID,
-	horizon, seed, totalKVBlocks, blockSizeTokens,
-	maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64,
-	betaCoeffs, alphaCoeffs []float64,
-	modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib,
-	model, GPU string, tp int, roofline bool,
-) *InstanceSimulator {
-	s := sim.NewSimulatorWithoutWorkload(horizon, seed, totalKVBlocks,
-		blockSizeTokens, maxRunningReqs, maxScheduledTokens,
-		longPrefillTokenThreshold, betaCoeffs, alphaCoeffs,
-		modelConfig, hwConfig, model, GPU, tp, roofline)
-	return &InstanceSimulator{id: id, sim: s}
-}
 
 // InjectRequest delegates to sim.InjectArrival. Panics if called after Run().
 func (i *InstanceSimulator) InjectRequest(req *sim.Request) {
