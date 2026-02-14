@@ -189,4 +189,5 @@ inference-sim/
 - `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
 - `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v2.3, 21 PRs across 6 phases, online routing architecture)
 - `docs/plans/macroplanprompt.md`: Template for macro-level planning
-- `docs/plans/prmicroplanprompt.md`: Template for micro-level (per-PR) planning
+- `docs/plans/prmicroplanprompt-v2.md`: Template for micro-level (per-PR) planning with executable tasks
+- `docs/plans/prworkflow.md`: Complete PR development workflow (planning through PR creation)

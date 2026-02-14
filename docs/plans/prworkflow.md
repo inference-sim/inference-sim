@@ -85,7 +85,7 @@ This document describes the complete workflow for implementing a PR from the mac
 
 # ========================================
 # SESSION 2: Open NEW Claude Code session in worktree
-# Terminal: cd ../inference-sim-pr6/ && claude-code
+# Terminal: cd ../inference-sim-pr6/ && claude
 # ========================================
 
 # Step 2: Create plan
@@ -144,7 +144,7 @@ This document describes the complete workflow for implementing a PR from the mac
 ```bash
 # In your terminal:
 cd ../inference-sim-pr6/
-claude-code
+claude
 ```
 
 **All remaining steps happen in the new Claude Code session (Session 2) in the worktree.**
@@ -479,7 +479,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 # ========================================
 # SESSION 2: Open NEW Claude Code session in worktree
-# Terminal: cd ../inference-sim-pr6/ && claude-code
+# Terminal: cd ../inference-sim-pr6/ && claude
 # ========================================
 
 # Step 2: Create plan (one simple command with @ references)
@@ -583,7 +583,7 @@ Pay special attention to:
 
 ### Issue: Tasks miss behavioral contracts during execution
 
-**Solution:** In Step 5 checkpoint review, verify:
+**Solution:** In Step 4 checkpoint review, verify:
 ```
 "Before continuing, confirm all contracts from Batch 1 are tested:
 - BC-1: Show test results
@@ -592,7 +592,7 @@ Pay special attention to:
 
 ### Issue: Lint fails at the end with many issues
 
-**Solution:** Ensure Step 6 of each task includes lint check:
+**Solution:** Ensure task Step 5 (lint check) runs in each task:
 ```
 Each task Step 5 must run:
 golangci-lint run ./path/to/modified/package/...
@@ -643,13 +643,13 @@ golangci-lint run ./path/to/modified/package/...
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/macroplan.md`)
 - **Single planning stage:** Produces both design contracts and executable tasks
 - **Automated plan review:** Catches design issues before implementation (Step 2.5)
-- **Automated code review:** Catches implementation issues before PR creation (Step 5.5)
-- **Built-in checkpoint reviews:** During execution (Step 5)
+- **Automated code review:** Catches implementation issues before PR creation (Step 4.5)
+- **Built-in checkpoint reviews:** During execution (Step 4)
 - **Reduced manual overhead:** Skills handle context extraction automatically
 
 **Example workflow brevity:**
 - **v1.0:** ~200 words of manual prompts per PR
-- **v2.0:** 6 simple commands with @ references
+- **v2.0:** 5 simple commands with @ references
 
 ---
 
