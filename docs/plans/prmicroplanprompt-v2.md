@@ -208,13 +208,26 @@ PHASE 4 — EXECUTABLE TASK BREAKDOWN
 Break implementation into 6-12 tasks following TDD principles.
 Each task is completable in one focused session (~30-45 minutes).
 
-**Group tasks into 3-4 batches for checkpoint reviews.**
+**Group tasks into 2-4 batches for checkpoint reviews.**
 
-BATCH STRUCTURE:
+BATCH STRUCTURE (scale based on PR complexity):
+
+**Small PRs (3-4 tasks):** 2 batches
+- Batch 1 (Tasks 1-2): Core implementation
+- Batch 2 (Tasks 3-4): Tests and documentation
+
+**Medium PRs (5-8 tasks):** 3 batches
+- Batch 1 (Tasks 1-3): Core types, interfaces, scaffolding
+- Batch 2 (Tasks 4-6): Business logic, integration
+- Batch 3 (Tasks 7-8): Tests, edge cases, documentation
+
+**Large PRs (9-12 tasks):** 4 batches
 - Batch 1 (Tasks 1-3): Core types, interfaces, scaffolding
 - Batch 2 (Tasks 4-6): Business logic, integration
 - Batch 3 (Tasks 7-9): Tests, edge cases, documentation
-- Batch 4 (Optional): Performance, optimization, extras
+- Batch 4 (Tasks 10-12): Performance, optimization, extras
+
+**General principle:** Each batch should represent a logical checkpoint where partial work can be reviewed. Aim for 2-4 tasks per batch to balance review granularity with progress velocity.
 
 TASK TEMPLATE:
 
