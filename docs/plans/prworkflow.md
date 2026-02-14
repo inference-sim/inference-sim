@@ -79,29 +79,39 @@ This document describes the complete workflow for implementing a PR from the mac
 
 **Example for PR 6:**
 ```bash
-# Step 1: In main worktree
+# ========================================
+# SESSION 1: Main repo (inference-sim)
+# ========================================
+
+# Step 1: Select PR
 "I want to implement PR 6: RoutingPolicy Interface"
 
-# Step 2: Create worktree and switch to it
+# Step 2: Create worktree
 /superpowers:using-git-worktrees pr6-routing-policy
-cd ../inference-sim-pr6/
 
-# Step 3: Create plan (in worktree)
+# Output: Worktree created at ../inference-sim-pr6/
+
+# ========================================
+# SESSION 2: Open NEW Claude Code session in worktree
+# Terminal: cd ../inference-sim-pr6/ && claude-code
+# ========================================
+
+# Step 3: Create plan
 /superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
-# Step 3.5: Review plan (in worktree)
+# Step 3.5: Review plan
 /pr-review-toolkit:review-pr
 
-# Step 4: Human review plan (in worktree)
+# Step 4: Human review
 # [Read plan, verify contracts and tasks, approve to proceed]
 
-# Step 5: Execute implementation (in worktree)
+# Step 5: Execute implementation
 /superpowers:executing-plans @docs/plans/pr6-routing-policy-plan.md
 
-# Step 5.5: Review code (in worktree)
+# Step 5.5: Review code
 /pr-review-toolkit:review-pr
 
-# Step 6: Commit, push, and create PR (in worktree)
+# Step 6: Commit, push, and create PR
 /commit-commands:commit-push-pr
 ```
 
@@ -110,6 +120,8 @@ cd ../inference-sim-pr6/
 ## Step-by-Step Process
 
 ### Step 1: Select PR from Macro Plan
+
+**Context:** Session 1 (main repo - inference-sim)
 
 **Input:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md`
 
@@ -123,6 +135,8 @@ cd ../inference-sim-pr6/
 ---
 
 ### Step 2: Create Isolated Worktree Using `using-git-worktrees` Skill
+
+**Context:** Session 1 (main repo - inference-sim)
 
 **Skill:** `superpowers:using-git-worktrees`
 
@@ -149,18 +163,20 @@ cd ../inference-sim-pr6/
 
 **Output:** Path to worktree directory (e.g., `/Users/sri/Documents/Projects/inference-sim-pr6/`)
 
-**Next:** Switch to the worktree directory for all subsequent work:
+**Next:** Open a new Claude Code session in the worktree:
 ```bash
+# In your terminal:
 cd ../inference-sim-pr6/
+claude-code
 ```
 
-**All remaining steps happen in the worktree.**
+**All remaining steps happen in the new Claude Code session (Session 2) in the worktree.**
 
 ---
 
 ### Step 3: Create Implementation Plan Using `writing-plans` Skill
 
-**Context:** In worktree directory (switched in Step 2)
+**Context:** NEW Claude Code session in worktree directory (opened after Step 2)
 
 **Skill:** `superpowers:writing-plans`
 
@@ -195,7 +211,7 @@ cd ../inference-sim-pr6/
 
 ### Step 3.5: Automated Plan Review Using `pr-review-toolkit:review-pr`
 
-**Context:** In worktree directory
+**Context:** Session 2 (worktree)
 
 **Skill:** `pr-review-toolkit:review-pr`
 
@@ -246,7 +262,7 @@ cd ../inference-sim-pr6/
 
 ### Step 4: Human Review of Plan
 
-**Context:** In worktree directory
+**Context:** Session 2 (worktree)
 
 **Action:** Final human review of the plan (after automated review)
 
@@ -273,7 +289,7 @@ cd ../inference-sim-pr6/
 
 ### Step 5: Execute Plan Using `executing-plans` Skill
 
-**Context:** In worktree directory (where plan was created and committed)
+**Context:** Session 2 (worktree)
 
 **Skill:** `superpowers:executing-plans`
 
@@ -321,7 +337,7 @@ After each batch, Claude shows:
 
 ### Step 5.5: Automated Code Review Using `pr-review-toolkit:review-pr`
 
-**Context:** In worktree directory (after implementation complete)
+**Context:** Session 2 (worktree, after implementation complete)
 
 **Skill:** `pr-review-toolkit:review-pr`
 
@@ -389,7 +405,7 @@ After each batch, Claude shows:
 
 ### Step 6: Commit, Push, and Create PR Using `/commit-commands:commit-push-pr`
 
-**Context:** In worktree directory (after code review passed and all issues fixed)
+**Context:** Session 2 (worktree, after code review passed and all issues fixed)
 
 **Skill:** `/commit-commands:commit-push-pr`
 
@@ -475,37 +491,44 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 ## Example: Complete PR 6 Workflow (Simplified Invocations)
 
 ```bash
-# Step 1: Select PR (in main worktree)
+# ========================================
+# SESSION 1: Main repo (inference-sim)
+# ========================================
+
+# Step 1: Select PR
 "I want to implement PR 6: RoutingPolicy Interface"
 
-# Step 2: Create worktree FIRST
+# Step 2: Create worktree
 /superpowers:using-git-worktrees pr6-routing-policy
 
 # Output: Worktree created at ../inference-sim-pr6/
-# Switch to it:
-cd ../inference-sim-pr6/
 
-# Step 3: Create plan (in worktree, one simple command with @ references)
+# ========================================
+# SESSION 2: Open NEW Claude Code session in worktree
+# Terminal: cd ../inference-sim-pr6/ && claude-code
+# ========================================
+
+# Step 3: Create plan (one simple command with @ references)
 /superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
-# Output: Plan created at docs/plans/pr6-routing-policy-plan.md (in worktree)
+# Output: Plan created at docs/plans/pr6-routing-policy-plan.md
 
-# Step 3.5: Automated plan review (in worktree)
+# Step 3.5: Automated plan review
 /pr-review-toolkit:review-pr
 
 # Output: Review report with any issues
 # [Fix critical/important issues if found]
 # [Re-run: /pr-review-toolkit:review-pr]
 
-# Step 4: Human review plan (in worktree)
+# Step 4: Human review plan
 # [Read plan, verify contracts and tasks, approve to proceed]
 
-# Step 5: Execute implementation (in worktree)
+# Step 5: Execute implementation
 /superpowers:executing-plans @docs/plans/pr6-routing-policy-plan.md
 
 # Output: Batch 1 → checkpoint → Batch 2 → checkpoint → Batch 3 → done
 
-# Step 5.5: Automated code review (in worktree)
+# Step 5.5: Automated code review
 /pr-review-toolkit:review-pr
 
 # Output: Comprehensive review report
