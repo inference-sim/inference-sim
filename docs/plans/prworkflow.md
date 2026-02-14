@@ -7,57 +7,52 @@ This document describes the complete workflow for implementing a PR from the mac
 ## Overview
 
 ```
-┌─────────────┐
-│ Macro Plan  │ (Select PR to implement)
-└──────┬──────┘
-       │
-       ▼
 ┌─────────────────────────┐
-│ Step 2: using-worktrees │ (Create isolated workspace FIRST)
+│ Step 1: using-worktrees │ (Create isolated workspace for PR)
 └──────────┬──────────────┘
            │
            ▼
 ┌─────────────────────────┐
-│ Step 3: writing-plans   │ (Create behavioral contracts + executable tasks)
+│ Step 2: writing-plans   │ (Create behavioral contracts + executable tasks)
 └──────────┬──────────────┘
            │
            ▼
 ┌─────────────────────────┐
-│ Step 3.5: review-pr     │ (Automated plan review)
+│ Step 2.5: review-pr     │ (Automated plan review)
 └──────────┬──────────────┘
            │
            ▼
 ┌─────────────────────────┐
-│ Step 4: Human Review    │ (Approve plan)
+│ Step 3: Human Review    │ (Approve plan)
 └──────────┬──────────────┘
            │
            ▼
 ┌─────────────────────────┐
-│ Step 5: executing-plans │ (Implement in batches with checkpoints)
+│ Step 4: executing-plans │ (Implement in batches with checkpoints)
 └──────────┬──────────────┘
            │
            ▼
 ┌─────────────────────────┐
-│ Step 5.5: review-pr     │ (Automated code review)
+│ Step 4.5: review-pr     │ (Automated code review)
 └──────────┬──────────────┘
            │
            ▼
 ┌─────────────────────────┐
-│ Step 6: commit-push-pr  │ (Commit, push, create PR - all in one)
+│ Step 5: commit-push-pr  │ (Commit, push, create PR - all in one)
 └─────────────────────────┘
 ```
 
 **Key insights:**
-1. **Worktree isolation from start** (Step 2) - Create worktree BEFORE any work
+1. **Worktree isolation from start** (Step 1) - Create worktree BEFORE any work
    - Entire PR lifecycle (planning + implementation) in isolated workspace
    - Main worktree never touched
    - Enables parallel work on multiple PRs
 
 2. **Two-stage automated review** with `pr-review-toolkit:review-pr`:
-   - **Plan Review** (Step 3.5) - Reviews plan markdown file (uncommitted in worktree)
+   - **Plan Review** (Step 2.5) - Reviews plan markdown file (uncommitted in worktree)
      - Validates behavioral contracts, task breakdown, test strategy
      - Catches design issues before implementation
-   - **Code Review** (Step 5.5) - Reviews implementation changes (git diff in worktree)
+   - **Code Review** (Step 4.5) - Reviews implementation changes (git diff in worktree)
      - Validates code quality, tests, error handling, types
      - Catches implementation issues before PR creation
 
@@ -69,13 +64,13 @@ This document describes the complete workflow for implementing a PR from the mac
 
 | Step | Command |
 |------|---------|
-| **2. Create worktree** | `/superpowers:using-git-worktrees pr<N>-<name>` |
-| **3. Create plan** | `/superpowers:writing-plans for PR<N> in @docs/plans/pr<N>-<name>-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md` |
-| **3.5. Review plan** | `/pr-review-toolkit:review-pr` |
-| **4. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
-| **5. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
-| **5.5. Review code** | `/pr-review-toolkit:review-pr` |
-| **6. Commit, push, PR** | `/commit-commands:commit-push-pr` |
+| **1. Create worktree** | `/superpowers:using-git-worktrees pr<N>-<name>` |
+| **2. Create plan** | `/superpowers:writing-plans for PR<N> in @docs/plans/pr<N>-<name>-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md` |
+| **2.5. Review plan** | `/pr-review-toolkit:review-pr` |
+| **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
+| **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
+| **4.5. Review code** | `/pr-review-toolkit:review-pr` |
+| **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
 **Example for PR 6:**
 ```bash
@@ -83,10 +78,7 @@ This document describes the complete workflow for implementing a PR from the mac
 # SESSION 1: Main repo (inference-sim)
 # ========================================
 
-# Step 1: Select PR
-"I want to implement PR 6: RoutingPolicy Interface"
-
-# Step 2: Create worktree
+# Step 1: Create worktree
 /superpowers:using-git-worktrees pr6-routing-policy
 
 # Output: Worktree created at ../inference-sim-pr6/
@@ -96,22 +88,22 @@ This document describes the complete workflow for implementing a PR from the mac
 # Terminal: cd ../inference-sim-pr6/ && claude-code
 # ========================================
 
-# Step 3: Create plan
+# Step 2: Create plan
 /superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
-# Step 3.5: Review plan
+# Step 2.5: Review plan
 /pr-review-toolkit:review-pr
 
-# Step 4: Human review
+# Step 3: Human review
 # [Read plan, verify contracts and tasks, approve to proceed]
 
-# Step 5: Execute implementation
+# Step 4: Execute implementation
 /superpowers:executing-plans @docs/plans/pr6-routing-policy-plan.md
 
-# Step 5.5: Review code
+# Step 4.5: Review code
 /pr-review-toolkit:review-pr
 
-# Step 6: Commit, push, and create PR
+# Step 5: Commit, push, and create PR
 /commit-commands:commit-push-pr
 ```
 
@@ -119,22 +111,7 @@ This document describes the complete workflow for implementing a PR from the mac
 
 ## Step-by-Step Process
 
-### Step 1: Select PR from Macro Plan
-
-**Context:** Session 1 (main repo - inference-sim)
-
-**Input:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md`
-
-**Action:** Identify the next PR to implement based on:
-- Phase sequencing (Phase 1 → Phase 2 → ...)
-- PR dependencies (check dependency graph in macro plan)
-- Current completion status (marked in macro plan or CLAUDE.md)
-
-**Output:** PR number and title (e.g., "PR 5: Architectural Simplification")
-
----
-
-### Step 2: Create Isolated Worktree Using `using-git-worktrees` Skill
+### Step 1: Create Isolated Worktree Using `using-git-worktrees` Skill
 
 **Context:** Session 1 (main repo - inference-sim)
 
@@ -174,9 +151,9 @@ claude-code
 
 ---
 
-### Step 3: Create Implementation Plan Using `writing-plans` Skill
+### Step 2: Create Implementation Plan Using `writing-plans` Skill
 
-**Context:** NEW Claude Code session in worktree directory (opened after Step 2)
+**Context:** NEW Claude Code session in worktree directory (opened after Step 1)
 
 **Skill:** `superpowers:writing-plans`
 
@@ -209,7 +186,7 @@ claude-code
 
 ---
 
-### Step 3.5: Automated Plan Review Using `pr-review-toolkit:review-pr`
+### Step 2.5: Automated Plan Review Using `pr-review-toolkit:review-pr`
 
 **Context:** Session 2 (worktree)
 
@@ -250,7 +227,7 @@ claude-code
 **Action After Review:**
 - If critical/important issues found: Fix plan with Claude, re-run review
 - If only suggestions: Human judgment on whether to incorporate
-- If clean: Proceed to Step 4
+- If clean: Proceed to Step 3
 
 **Alternative:** You can specify which aspects to review:
 ```
@@ -260,7 +237,7 @@ claude-code
 
 ---
 
-### Step 4: Human Review of Plan
+### Step 3: Human Review of Plan
 
 **Context:** Session 2 (worktree)
 
@@ -280,14 +257,14 @@ claude-code
 - Dead code or scaffolding
 
 **Outcome:**
-- ✅ Approve plan → proceed to Step 5 (implementation)
-- ❌ Need revisions → iterate with Claude, re-review (Step 3.5), then approve
+- ✅ Approve plan → proceed to Step 4 (implementation)
+- ❌ Need revisions → iterate with Claude, re-review (Step 2.5), then approve
 
-**Note:** The plan will be committed together with the implementation in Step 6 (single commit for entire PR).
+**Note:** The plan will be committed together with the implementation in Step 5 (single commit for entire PR).
 
 ---
 
-### Step 5: Execute Plan Using `executing-plans` Skill
+### Step 4: Execute Plan Using `executing-plans` Skill
 
 **Context:** Session 2 (worktree)
 
@@ -335,7 +312,7 @@ After each batch, Claude shows:
 
 ---
 
-### Step 5.5: Automated Code Review Using `pr-review-toolkit:review-pr`
+### Step 4.5: Automated Code Review Using `pr-review-toolkit:review-pr`
 
 **Context:** Session 2 (worktree, after implementation complete)
 
@@ -387,7 +364,7 @@ After each batch, Claude shows:
    /pr-review-toolkit:review-pr code errors tests
    # Re-run specific aspects after fixes
    ```
-5. **Proceed to Step 6** when all critical/important issues resolved
+5. **Proceed to Step 5** when all critical/important issues resolved
 
 **Parallel Review Option:**
 ```
@@ -403,7 +380,7 @@ After each batch, Claude shows:
 
 ---
 
-### Step 6: Commit, Push, and Create PR Using `/commit-commands:commit-push-pr`
+### Step 5: Commit, Push, and Create PR Using `/commit-commands:commit-push-pr`
 
 **Context:** Session 2 (worktree, after code review passed and all issues fixed)
 
@@ -451,7 +428,7 @@ After each batch, Claude shows:
 
 ### Option A: Subagent-Driven Development (In-Session)
 
-**Alternative to Step 5** - Use for simpler PRs where you want tighter iteration:
+**Alternative to Step 4** - Use for simpler PRs where you want tighter iteration:
 
 **Skill:** `superpowers:subagent-driven-development`
 
@@ -478,13 +455,13 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 | Skill | When to Use | Input | Output |
 |-------|-------------|-------|--------|
-| `using-git-worktrees` | **Step 2** - Create isolated workspace FIRST | Branch name | Worktree directory path |
-| `writing-plans` | **Step 3** - Create implementation plan from macro plan | Macro plan PR section + prmicroplanprompt-v2.md | Plan file with contracts + tasks |
-| `pr-review-toolkit:review-pr` | **Step 3.5** - Review plan document | Plan file (uncommitted in worktree) | Critical/important issues + suggestions |
-| `pr-review-toolkit:review-pr` | **Step 5.5** - Review implementation | Code changes (git diff in worktree) | Critical/important issues + suggestions |
-| `executing-plans` | **Step 5** - Execute plan in batches | Plan file path | Implemented code + commits |
-| `subagent-driven-development` | **Step 5 (alt)** - Execute plan in-session | Plan file path | Implemented code + commits |
-| `commit-commands:commit-push-pr` | **Step 6** - Commit, push, create PR (all in one) | Current branch state | Commit + push + PR URL |
+| `using-git-worktrees` | **Step 1** - Create isolated workspace FIRST | Branch name | Worktree directory path |
+| `writing-plans` | **Step 2** - Create implementation plan from macro plan | Macro plan PR section + prmicroplanprompt-v2.md | Plan file with contracts + tasks |
+| `pr-review-toolkit:review-pr` | **Step 2.5** - Review plan document | Plan file (uncommitted in worktree) | Critical/important issues + suggestions |
+| `pr-review-toolkit:review-pr` | **Step 4.5** - Review implementation | Code changes (git diff in worktree) | Critical/important issues + suggestions |
+| `executing-plans` | **Step 4** - Execute plan in batches | Plan file path | Implemented code + commits |
+| `subagent-driven-development` | **Step 4 (alt)** - Execute plan in-session | Plan file path | Implemented code + commits |
+| `commit-commands:commit-push-pr` | **Step 5** - Commit, push, create PR (all in one) | Current branch state | Commit + push + PR URL |
 
 ---
 
@@ -495,10 +472,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # SESSION 1: Main repo (inference-sim)
 # ========================================
 
-# Step 1: Select PR
-"I want to implement PR 6: RoutingPolicy Interface"
-
-# Step 2: Create worktree
+# Step 1: Create worktree
 /superpowers:using-git-worktrees pr6-routing-policy
 
 # Output: Worktree created at ../inference-sim-pr6/
@@ -508,34 +482,34 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # Terminal: cd ../inference-sim-pr6/ && claude-code
 # ========================================
 
-# Step 3: Create plan (one simple command with @ references)
+# Step 2: Create plan (one simple command with @ references)
 /superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 # Output: Plan created at docs/plans/pr6-routing-policy-plan.md
 
-# Step 3.5: Automated plan review
+# Step 2.5: Automated plan review
 /pr-review-toolkit:review-pr
 
 # Output: Review report with any issues
 # [Fix critical/important issues if found]
 # [Re-run: /pr-review-toolkit:review-pr]
 
-# Step 4: Human review plan
+# Step 3: Human review plan
 # [Read plan, verify contracts and tasks, approve to proceed]
 
-# Step 5: Execute implementation
+# Step 4: Execute implementation
 /superpowers:executing-plans @docs/plans/pr6-routing-policy-plan.md
 
 # Output: Batch 1 → checkpoint → Batch 2 → checkpoint → Batch 3 → done
 
-# Step 5.5: Automated code review
+# Step 4.5: Automated code review
 /pr-review-toolkit:review-pr
 
 # Output: Comprehensive review report
 # [Fix critical/important issues]
 # [Re-run targeted: /pr-review-toolkit:review-pr code tests]
 
-# Step 6: Commit plan + implementation, push, and create PR (all in one!)
+# Step 5: Commit plan + implementation, push, and create PR (all in one!)
 /commit-commands:commit-push-pr
 
 # Output:
