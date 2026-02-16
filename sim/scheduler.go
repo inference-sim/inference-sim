@@ -61,6 +61,9 @@ func (s *SJFScheduler) OrderQueue(reqs []*Request, _ int64) {
 // Empty string defaults to FCFSScheduler (for CLI flag default compatibility).
 // Panics on unrecognized names.
 func NewScheduler(name string) InstanceScheduler {
+	if !ValidSchedulers[name] {
+		panic(fmt.Sprintf("unknown scheduler %q", name))
+	}
 	switch name {
 	case "", "fcfs":
 		return &FCFSScheduler{}
@@ -69,6 +72,6 @@ func NewScheduler(name string) InstanceScheduler {
 	case "sjf":
 		return &SJFScheduler{}
 	default:
-		panic(fmt.Sprintf("unknown scheduler %q", name))
+		panic(fmt.Sprintf("unhandled scheduler %q", name))
 	}
 }

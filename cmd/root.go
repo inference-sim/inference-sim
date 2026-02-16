@@ -218,24 +218,25 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Invalid policy config: %v", err)
 			}
 
-			// Apply bundle values as defaults; CLI flags override via Changed()
+			// Apply bundle values as defaults; CLI flags override via Changed().
+			// Pointer fields (nil = not set in YAML) correctly distinguish "0.0" from "unset".
 			if bundle.Admission.Policy != "" && !cmd.Flags().Changed("admission-policy") {
 				admissionPolicy = bundle.Admission.Policy
 			}
-			if bundle.Admission.TokenBucketCapacity != 0 && !cmd.Flags().Changed("token-bucket-capacity") {
-				tokenBucketCapacity = bundle.Admission.TokenBucketCapacity
+			if bundle.Admission.TokenBucketCapacity != nil && !cmd.Flags().Changed("token-bucket-capacity") {
+				tokenBucketCapacity = *bundle.Admission.TokenBucketCapacity
 			}
-			if bundle.Admission.TokenBucketRefillRate != 0 && !cmd.Flags().Changed("token-bucket-refill-rate") {
-				tokenBucketRefillRate = bundle.Admission.TokenBucketRefillRate
+			if bundle.Admission.TokenBucketRefillRate != nil && !cmd.Flags().Changed("token-bucket-refill-rate") {
+				tokenBucketRefillRate = *bundle.Admission.TokenBucketRefillRate
 			}
 			if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
 				routingPolicy = bundle.Routing.Policy
 			}
-			if bundle.Routing.CacheWeight != 0 && !cmd.Flags().Changed("routing-cache-weight") {
-				routingCacheWeight = bundle.Routing.CacheWeight
+			if bundle.Routing.CacheWeight != nil && !cmd.Flags().Changed("routing-cache-weight") {
+				routingCacheWeight = *bundle.Routing.CacheWeight
 			}
-			if bundle.Routing.LoadWeight != 0 && !cmd.Flags().Changed("routing-load-weight") {
-				routingLoadWeight = bundle.Routing.LoadWeight
+			if bundle.Routing.LoadWeight != nil && !cmd.Flags().Changed("routing-load-weight") {
+				routingLoadWeight = *bundle.Routing.LoadWeight
 			}
 			if bundle.Priority.Policy != "" && !cmd.Flags().Changed("priority-policy") {
 				priorityPolicy = bundle.Priority.Policy

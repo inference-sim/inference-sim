@@ -51,17 +51,20 @@ func (tb *TokenBucket) Admit(req *Request, state *RouterState) (bool, string) {
 }
 
 // NewAdmissionPolicy creates an admission policy by name.
-// Valid names: "always-admit", "token-bucket".
+// Valid names are defined in ValidAdmissionPolicies (bundle.go).
 // An empty string defaults to AlwaysAdmit (for CLI flag default compatibility).
 // For token-bucket, capacity and refillRate configure the bucket.
 // Panics on unrecognized names.
 func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPolicy {
+	if !ValidAdmissionPolicies[name] {
+		panic(fmt.Sprintf("unknown admission policy %q", name))
+	}
 	switch name {
 	case "", "always-admit":
 		return &AlwaysAdmit{}
 	case "token-bucket":
 		return NewTokenBucket(capacity, refillRate)
 	default:
-		panic(fmt.Sprintf("unknown admission policy %q", name))
+		panic(fmt.Sprintf("unhandled admission policy %q", name))
 	}
 }

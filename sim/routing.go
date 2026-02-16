@@ -19,7 +19,13 @@ type RoutingDecision struct {
 	TargetInstance string             // Instance ID to route to (must match a snapshot ID)
 	Reason         string             // Human-readable explanation
 	Scores         map[string]float64 // Instance ID → composite score (nil for policies without scoring)
-	Priority       float64            // Cluster-level priority hint; 0 = defer to instance PriorityPolicy (BC-9)
+	// Priority is a one-shot cluster-level priority hint applied before instance injection.
+	// Zero (default) means defer to instance-level PriorityPolicy entirely.
+	// Non-zero value sets req.Priority for initial queue ordering only — the instance-level
+	// PriorityPolicy recomputes priority each step, so this hint affects first-step scheduling
+	// but does not persist. This is intentional: it allows priority to evolve over time
+	// (e.g., SLOBasedPriority ages requests) while giving routing a way to influence initial placement.
+	Priority float64
 }
 
 // RoutingPolicy decides which instance should handle a request.
@@ -182,6 +188,9 @@ func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecisio
 // For weighted scoring, cacheWeight and loadWeight configure the composite score.
 // Panics on unrecognized names.
 func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolicy {
+	if !ValidRoutingPolicies[name] {
+		panic(fmt.Sprintf("unknown routing policy %q", name))
+	}
 	switch name {
 	case "", "round-robin":
 		return &RoundRobin{}
@@ -192,6 +201,6 @@ func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolic
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string)}
 	default:
-		panic(fmt.Sprintf("unknown routing policy %q", name))
+		panic(fmt.Sprintf("unhandled routing policy %q", name))
 	}
 }

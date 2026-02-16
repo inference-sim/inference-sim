@@ -39,12 +39,15 @@ func (s *SLOBasedPriority) Compute(req *Request, clock int64) float64 {
 // Empty string defaults to ConstantPriority (for CLI flag default compatibility).
 // Panics on unrecognized names.
 func NewPriorityPolicy(name string) PriorityPolicy {
+	if !ValidPriorityPolicies[name] {
+		panic(fmt.Sprintf("unknown priority policy %q", name))
+	}
 	switch name {
 	case "", "constant":
 		return &ConstantPriority{Score: 0.0}
 	case "slo-based":
 		return &SLOBasedPriority{BaseScore: 0.0, AgeWeight: 1e-6}
 	default:
-		panic(fmt.Sprintf("unknown priority policy %q", name))
+		panic(fmt.Sprintf("unhandled priority policy %q", name))
 	}
 }
