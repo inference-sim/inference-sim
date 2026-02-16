@@ -4,14 +4,15 @@ import "fmt"
 
 // AdmissionPolicy decides whether a request is admitted for processing.
 // Used by ClusterSimulator's online routing pipeline to gate incoming requests.
+// Receives *RouterState with cluster-wide snapshots and clock.
 type AdmissionPolicy interface {
-	Admit(req *Request, clock int64) (admitted bool, reason string)
+	Admit(req *Request, state *RouterState) (admitted bool, reason string)
 }
 
 // AlwaysAdmit admits all requests unconditionally.
 type AlwaysAdmit struct{}
 
-func (a *AlwaysAdmit) Admit(_ *Request, _ int64) (bool, string) {
+func (a *AlwaysAdmit) Admit(_ *Request, _ *RouterState) (bool, string) {
 	return true, ""
 }
 
@@ -33,7 +34,8 @@ func NewTokenBucket(capacity, refillRate float64) *TokenBucket {
 }
 
 // Admit checks whether the request can be admitted given current token availability.
-func (tb *TokenBucket) Admit(req *Request, clock int64) (bool, string) {
+func (tb *TokenBucket) Admit(req *Request, state *RouterState) (bool, string) {
+	clock := state.Clock
 	elapsed := clock - tb.lastRefill
 	if elapsed > 0 {
 		refill := float64(elapsed) * tb.refillRate / 1e6

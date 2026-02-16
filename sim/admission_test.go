@@ -13,26 +13,15 @@ func TestAlwaysAdmit_AdmitsAll(t *testing.T) {
 		req   *Request
 		clock int64
 	}{
-		{
-			name:  "empty request",
-			req:   &Request{ID: "r0", InputTokens: []int{}},
-			clock: 0,
-		},
-		{
-			name:  "small request",
-			req:   &Request{ID: "r1", InputTokens: make([]int, 10)},
-			clock: 1000,
-		},
-		{
-			name:  "large request",
-			req:   &Request{ID: "r2", InputTokens: make([]int, 10000)},
-			clock: 5_000_000,
-		},
+		{name: "empty request", req: &Request{ID: "r0", InputTokens: []int{}}, clock: 0},
+		{name: "small request", req: &Request{ID: "r1", InputTokens: make([]int, 10)}, clock: 1000},
+		{name: "large request", req: &Request{ID: "r2", InputTokens: make([]int, 10000)}, clock: 5_000_000},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			admitted, reason := policy.Admit(tt.req, tt.clock)
+			state := &RouterState{Clock: tt.clock}
+			admitted, reason := policy.Admit(tt.req, state)
 			if !admitted {
 				t.Errorf("expected admitted=true, got false")
 			}
@@ -48,7 +37,7 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 	t.Run("admits when tokens available", func(t *testing.T) {
 		tb := NewTokenBucket(100, 10)
 		req := &Request{ID: "r0", InputTokens: make([]int, 50)}
-		admitted, reason := tb.Admit(req, 0)
+		admitted, reason := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
 			t.Fatal("expected admission with sufficient tokens")
 		}
@@ -61,12 +50,12 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 		tb := NewTokenBucket(10, 0)
 		req := &Request{ID: "r0", InputTokens: make([]int, 10)}
 
-		admitted, _ := tb.Admit(req, 0)
+		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
 			t.Fatal("first request should be admitted")
 		}
 
-		admitted, reason := tb.Admit(req, 0)
+		admitted, reason := tb.Admit(req, &RouterState{Clock: 0})
 		if admitted {
 			t.Fatal("expected rejection with exhausted tokens")
 		}
@@ -79,19 +68,19 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 		tb := NewTokenBucket(100, 1_000_000)
 		req := &Request{ID: "r0", InputTokens: make([]int, 100)}
 
-		admitted, _ := tb.Admit(req, 0)
+		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
 			t.Fatal("first request should be admitted")
 		}
 
 		// At t=50us, refill = 50 tokens. Cost=100, should reject.
-		admitted, _ = tb.Admit(req, 50)
+		admitted, _ = tb.Admit(req, &RouterState{Clock: 50})
 		if admitted {
 			t.Fatal("expected rejection: only 50 tokens refilled, need 100")
 		}
 
 		// At t=150us, refill = 100 more tokens, capped at capacity=100. Should admit.
-		admitted, reason := tb.Admit(req, 150)
+		admitted, reason := tb.Admit(req, &RouterState{Clock: 150})
 		if !admitted {
 			t.Fatalf("expected admission after refill, reason: %s", reason)
 		}
@@ -101,23 +90,23 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 		tb := NewTokenBucket(10, 1_000_000)
 		req := &Request{ID: "r0", InputTokens: make([]int, 5)}
 
-		admitted, _ := tb.Admit(req, 0)
+		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
 			t.Fatal("should admit")
 		}
 
 		// At t=1s, refill huge but capped at capacity=10
-		admitted, _ = tb.Admit(req, 1_000_000)
+		admitted, _ = tb.Admit(req, &RouterState{Clock: 1_000_000})
 		if !admitted {
 			t.Fatal("should admit after refill")
 		}
 
-		admitted, _ = tb.Admit(req, 1_000_000)
+		admitted, _ = tb.Admit(req, &RouterState{Clock: 1_000_000})
 		if !admitted {
 			t.Fatal("should admit: 5 tokens remain")
 		}
 
-		admitted, _ = tb.Admit(req, 1_000_000)
+		admitted, _ = tb.Admit(req, &RouterState{Clock: 1_000_000})
 		if admitted {
 			t.Fatal("should reject: 0 tokens remain, no time elapsed for refill")
 		}
@@ -127,7 +116,7 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 		tb := NewTokenBucket(0, 0)
 		req := &Request{ID: "r0", InputTokens: []int{}}
 
-		admitted, _ := tb.Admit(req, 0)
+		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
 			t.Fatal("zero-cost request should always be admitted")
 		}

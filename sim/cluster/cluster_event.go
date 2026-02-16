@@ -52,6 +52,27 @@ func (q *ClusterEventQueue) Pop() any {
 	return item
 }
 
+// buildRouterState constructs a RouterState from current cluster state.
+// Collects snapshots from all instances via SnapshotProvider and bundles with clock.
+// Used by both AdmissionDecisionEvent and RoutingDecisionEvent (BC-8).
+func buildRouterState(cs *ClusterSimulator) *sim.RouterState {
+	snapshots := make([]sim.RoutingSnapshot, len(cs.instances))
+	for i, inst := range cs.instances {
+		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
+		snapshots[i] = sim.RoutingSnapshot{
+			ID:            string(snap.ID),
+			QueueDepth:    snap.QueueDepth,
+			BatchSize:     snap.BatchSize,
+			KVUtilization: snap.KVUtilization,
+			FreeKVBlocks:  snap.FreeKVBlocks,
+		}
+	}
+	return &sim.RouterState{
+		Snapshots: snapshots,
+		Clock:     cs.clock,
+	}
+}
+
 // ClusterArrivalEvent represents a request arriving at the cluster control plane.
 // Priority 0 (highest): processed before admission and routing at the same timestamp.
 type ClusterArrivalEvent struct {
@@ -83,10 +104,12 @@ type AdmissionDecisionEvent struct {
 func (e *AdmissionDecisionEvent) Timestamp() int64 { return e.time }
 func (e *AdmissionDecisionEvent) Priority() int     { return 1 }
 
-// Execute checks admission policy. If admitted, schedules a RoutingDecisionEvent.
+// Execute checks admission policy with full RouterState (BC-8: includes snapshots).
+// If admitted, schedules a RoutingDecisionEvent.
 // If rejected, increments cs.rejectedRequests counter (EC-2).
 func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
-	admitted, _ := cs.admissionPolicy.Admit(e.request, cs.clock)
+	state := buildRouterState(cs)
+	admitted, _ := cs.admissionPolicy.Admit(e.request, state)
 	if !admitted {
 		cs.rejectedRequests++
 		return
@@ -112,21 +135,13 @@ func (e *RoutingDecisionEvent) Priority() int     { return 2 }
 
 // Execute routes the request using the configured routing policy and injects it.
 func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
-	// Convert InstanceSnapshots to RoutingSnapshots for the policy
-	routingSnapshots := make([]sim.RoutingSnapshot, len(cs.instances))
-	for i, inst := range cs.instances {
-		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
-		routingSnapshots[i] = sim.RoutingSnapshot{
-			ID:            string(snap.ID),
-			QueueDepth:    snap.QueueDepth,
-			BatchSize:     snap.BatchSize,
-			KVUtilization: snap.KVUtilization,
-			FreeKVBlocks:  snap.FreeKVBlocks,
-		}
-	}
+	state := buildRouterState(cs)
+	decision := cs.routingPolicy.Route(e.request, state)
 
-	// Invoke routing policy
-	decision := cs.routingPolicy.Route(e.request, routingSnapshots, cs.clock)
+	// BC-9: Apply cluster-level priority hint if set by routing policy
+	if decision.Priority != 0 {
+		e.request.Priority = decision.Priority
+	}
 
 	// Find target instance and inject request
 	for _, inst := range cs.instances {
