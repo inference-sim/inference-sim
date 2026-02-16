@@ -61,7 +61,8 @@ go test -cover ./...
 
 The simulator uses a discrete-event architecture with a min-heap event queue:
 
-- **simulator.go**: Main `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution
+- **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution
+- **admission.go**: `AdmissionPolicy` interface, `AlwaysAdmit`, `TokenBucket`, `NewAdmissionPolicy` factory
 - **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
 - **request.go**: Request lifecycle and state machine (queued → running → completed)
 - **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching
@@ -72,9 +73,9 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 
 Multi-replica extension using composition over the single-instance simulator:
 
-- **instance.go**: `InstanceSimulator` wraps `sim.Simulator` with run-once guard and cluster-level accessors
-- **cluster.go**: `ClusterSimulator` orchestrates N instances with shared-clock event loop, round-robin dispatch, and metrics aggregation
-- **deployment.go**: `DeploymentConfig` struct for homogeneous cluster configuration
+- **instance.go**: `InstanceSimulator` wraps `sim.Simulator` via `NewInstanceSimulator(id, SimConfig)` with run-once guard and cluster-level accessors
+- **cluster.go**: `ClusterSimulator` orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation
+- **deployment.go**: `DeploymentConfig` struct with `ToSimConfig()` for per-instance construction
 - **workload.go**: Centralized request generation (distribution-based or CSV traces) for cluster dispatch
 
 ### Latency Estimation
@@ -123,17 +124,17 @@ This project follows BDD/TDD practices. When implementing features:
 ### Current Implementation Focus
 
 Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
-- 21 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
+- 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
-- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (Control Plane + AdmissionPolicy with cluster event pipeline, instance snapshots, observability)
-- **Next:** PR5+ (architectural simplification, routing policies, priority policies, scheduler interface, enhanced workloads, tiered KV cache, decision traces)
-- Will add `sim/kv/`, `sim/workload/`, `sim/trace/` packages (sim/policy/ added in PR4)
+- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`)
+- **Next:** PR6 (routing policies), then PR7+ (priority+scheduler, policy bundles, raw metrics, tiered KV cache, decision traces)
+- Will add to `sim/kv/`, `sim/workload/`, `sim/trace/` packages
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
 ### Code Style
 
 - Use composition over inheritance (e.g., `InstanceSimulator` wraps existing `sim` components)
-- Timestamp-based event ordering via min-heap (cluster-level ties broken by lowest instance index)
+- Timestamp-based event ordering via min-heap; cluster event queue uses `(timestamp, priority, seqID)` ordering; per-instance queues use timestamp-only; cluster-level instance ties broken by lowest instance index
 - Partitioned RNG per subsystem to isolate randomness
 
 ### CI/CD
@@ -152,10 +153,11 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances for cluster mode)
+│   ├── root.go                # CLI commands and flags (always uses ClusterSimulator, --num-instances defaults to 1)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
-│   ├── simulator.go           # Event loop, batch formation, step execution
+│   ├── simulator.go           # SimConfig struct, NewSimulator(SimConfig), event loop, batch formation, step execution
+│   ├── admission.go           # AdmissionPolicy interface, AlwaysAdmit, TokenBucket, NewAdmissionPolicy factory
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
 │   ├── request.go             # Request state machine (queued → running → completed)
 │   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching
@@ -169,12 +171,11 @@ inference-sim/
 │   └── workload_config.go     # CSV trace loading and distribution-based workload generation
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wrapper with run-once guard
-│   ├── cluster.go             # ClusterSimulator: shared-clock event loop, round-robin, aggregation
-│   ├── cluster_event.go       # Cluster-level events (Arrival, Admission, Routing) with priority ordering
-│   ├── snapshot.go            # InstanceSnapshot and CachedSnapshotProvider for observability
+│   ├── cluster.go             # ClusterSimulator: shared-clock event loop, online routing, aggregation
+│   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent
+│   ├── snapshot.go            # InstanceSnapshot, CachedSnapshotProvider, ObservabilityConfig
 │   ├── deployment.go          # DeploymentConfig struct
 │   └── workload.go            # Centralized request generation for cluster dispatch
-├── sim/policy/                # Pluggable admission policies (AdmissionPolicy interface)
 ├── sim/kv/                    # Tiered KV cache (planned, Phase 4)
 ├── sim/workload/              # Enhanced workload generation (planned, Phase 3)
 ├── sim/trace/                 # Decision traces (planned, Phase 4)
@@ -189,7 +190,7 @@ inference-sim/
 ## Design Documents
 
 - `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
-- `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v2.3, 21 PRs across 6 phases, online routing architecture)
+- `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v3.0, 16 PRs across 6 phases, online routing architecture)
+- `docs/plans/2026-02-13-simplification-assessment.md`: Architectural simplification assessment (constructor collapse, unified CLI, field privatization, interface dedup)
 - `docs/plans/macroplanprompt.md`: Template for macro-level planning
-- `docs/plans/prmicroplanprompt-v2.md`: Template for micro-level (per-PR) planning with executable tasks
-- `docs/plans/prworkflow.md`: Complete PR development workflow (planning through PR creation)
+- `docs/plans/prmicroplanprompt.md`: Template for micro-level (per-PR) planning with team-based agent process

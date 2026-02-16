@@ -47,6 +47,76 @@ func newTestWorkload(maxPrompts int) *sim.GuideLLMConfig {
 	}
 }
 
+// TestDeploymentConfig_ToSimConfig_FieldMapping verifies all fields are correctly mapped
+// and workload fields are intentionally omitted.
+func TestDeploymentConfig_ToSimConfig_FieldMapping(t *testing.T) {
+	dc := DeploymentConfig{
+		NumInstances:              3,
+		Horizon:                   999,
+		Seed:                      7,
+		TotalKVBlocks:             500,
+		BlockSizeTokens:           32,
+		MaxRunningReqs:            128,
+		MaxScheduledTokens:        4096,
+		LongPrefillTokenThreshold: 512,
+		BetaCoeffs:                []float64{1, 2, 3},
+		AlphaCoeffs:               []float64{4, 5, 6},
+		Model:                     "test-model",
+		GPU:                       "H100",
+		TP:                        2,
+		Roofline:                  true,
+	}
+
+	sc := dc.ToSimConfig()
+
+	if sc.Horizon != 999 {
+		t.Errorf("Horizon: got %d, want 999", sc.Horizon)
+	}
+	if sc.Seed != 7 {
+		t.Errorf("Seed: got %d, want 7", sc.Seed)
+	}
+	if sc.TotalKVBlocks != 500 {
+		t.Errorf("TotalKVBlocks: got %d, want 500", sc.TotalKVBlocks)
+	}
+	if sc.BlockSizeTokens != 32 {
+		t.Errorf("BlockSizeTokens: got %d, want 32", sc.BlockSizeTokens)
+	}
+	if sc.MaxRunningReqs != 128 {
+		t.Errorf("MaxRunningReqs: got %d, want 128", sc.MaxRunningReqs)
+	}
+	if sc.MaxScheduledTokens != 4096 {
+		t.Errorf("MaxScheduledTokens: got %d, want 4096", sc.MaxScheduledTokens)
+	}
+	if sc.LongPrefillTokenThreshold != 512 {
+		t.Errorf("LongPrefillTokenThreshold: got %d, want 512", sc.LongPrefillTokenThreshold)
+	}
+	if len(sc.BetaCoeffs) != 3 || sc.BetaCoeffs[0] != 1 {
+		t.Errorf("BetaCoeffs: got %v, want [1 2 3]", sc.BetaCoeffs)
+	}
+	if len(sc.AlphaCoeffs) != 3 || sc.AlphaCoeffs[0] != 4 {
+		t.Errorf("AlphaCoeffs: got %v, want [4 5 6]", sc.AlphaCoeffs)
+	}
+	if sc.Model != "test-model" {
+		t.Errorf("Model: got %q, want %q", sc.Model, "test-model")
+	}
+	if sc.GPU != "H100" {
+		t.Errorf("GPU: got %q, want %q", sc.GPU, "H100")
+	}
+	if sc.TP != 2 {
+		t.Errorf("TP: got %d, want 2", sc.TP)
+	}
+	if !sc.Roofline {
+		t.Error("Roofline: got false, want true")
+	}
+	// Workload fields must be intentionally omitted
+	if sc.GuideLLMConfig != nil {
+		t.Error("GuideLLMConfig should be nil (workload generated centrally)")
+	}
+	if sc.TracesWorkloadFilePath != "" {
+		t.Error("TracesWorkloadFilePath should be empty (workload generated centrally)")
+	}
+}
+
 // TestClusterSimulator_SingleInstance_GoldenEquivalence verifies BC-7, BC-9:
 // GIVEN each golden dataset test case configured as NumInstances=1 via ClusterSimulator
 // WHEN Run() called
@@ -412,11 +482,7 @@ func TestNewClusterSimulator_ZeroInstances_Panics(t *testing.T) {
 // WHEN InjectRequest() called
 // THEN panic.
 func TestInstanceSimulator_InjectAfterRun_Panics(t *testing.T) {
-	inst := NewInstanceSimulatorWithoutWorkload(
-		"test", math.MaxInt64, 42, 10000, 16, 256, 2048, 0,
-		[]float64{1000, 10, 5}, []float64{100, 1, 100},
-		sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false,
-	)
+	inst := NewInstanceSimulator("test", newTestDeploymentConfig(1).ToSimConfig())
 	inst.Run()
 
 	defer func() {
@@ -584,13 +650,21 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 			}
 
 			// Reference: sim.NewSimulator generates workload internally
-			refSim := sim.NewSimulator(
-				math.MaxInt64, tc.Seed, tc.TotalKVBlocks, tc.BlockSizeInTokens,
-				tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens,
-				tc.LongPrefillTokenThreshold, tc.BetaCoeffs, tc.AlphaCoeffs,
-				guideLLMConfig, sim.ModelConfig{}, sim.HardwareCalib{},
-				tc.Model, tc.Hardware, tc.TP, false, "",
-			)
+			refSim := sim.NewSimulator(sim.SimConfig{
+				Horizon:                   math.MaxInt64,
+				Seed:                      tc.Seed,
+				TotalKVBlocks:             tc.TotalKVBlocks,
+				BlockSizeTokens:           tc.BlockSizeInTokens,
+				MaxRunningReqs:            tc.MaxNumRunningReqs,
+				MaxScheduledTokens:        tc.MaxNumScheduledTokens,
+				LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
+				BetaCoeffs:                tc.BetaCoeffs,
+				AlphaCoeffs:               tc.AlphaCoeffs,
+				Model:                     tc.Model,
+				GPU:                       tc.Hardware,
+				TP:                        tc.TP,
+				GuideLLMConfig:            guideLLMConfig,
+			})
 
 			// Cluster workload generation
 			config := DeploymentConfig{
