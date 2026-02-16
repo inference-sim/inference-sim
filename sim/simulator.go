@@ -89,6 +89,8 @@ type SimConfig struct {
 	// Workload config (optional — nil/empty means no workload generation)
 	GuideLLMConfig         *GuideLLMConfig
 	TracesWorkloadFilePath string
+	PriorityPolicy         string // "constant" (default) or "slo-based"
+	Scheduler              string // "fcfs" (default), "priority-fcfs", "sjf"
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -133,6 +135,8 @@ type Simulator struct {
 	modelConfig            ModelConfig
 	hwConfig               HardwareCalib
 	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
+	priorityPolicy         PriorityPolicy
+	scheduler              InstanceScheduler
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct.
@@ -184,6 +188,8 @@ func NewSimulator(cfg SimConfig) *Simulator {
 		roofline:                  cfg.Roofline,
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
+	s.priorityPolicy = NewPriorityPolicy(cfg.PriorityPolicy)
+	s.scheduler = NewScheduler(cfg.Scheduler)
 
 	if cfg.TracesWorkloadFilePath != "" && cfg.GuideLLMConfig == nil {
 		s.Metrics.RequestRate = 0.0
@@ -501,6 +507,12 @@ func (sim *Simulator) Step(now int64) {
 		TotalDecodeTokens:    0,
 		TotalCacheMissTokens: 0,
 	}
+	// Assign priorities to queued requests and order queue per scheduler policy
+	for _, req := range sim.WaitQ.queue {
+		req.Priority = sim.priorityPolicy.Compute(req, now)
+	}
+	sim.scheduler.OrderQueue(sim.WaitQ.queue, now)
+
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch(now)
 

@@ -1178,7 +1178,7 @@ After PR 5 (simplification), PRs 6-7 can be developed **in parallel**.
 
 ---
 
-#### PR 7: PriorityPolicy + InstanceScheduler
+#### PR 7: PriorityPolicy + InstanceScheduler — ✅ COMPLETED 2026-02-16
 
 | Aspect | Details |
 |--------|---------|
@@ -1199,6 +1199,8 @@ After PR 5 (simplification), PRs 6-7 can be developed **in parallel**.
 | **README Changes** | Add "Priority Policies" and "Instance Schedulers" sections |
 | **Risks + Mitigations** | Risk: SJF starvation. Mitigation: Document limitation. Risk: Priority affecting determinism. Mitigation: Tie-breaking rules documented. |
 | **Why Independently Reviewable** | Complete priority + scheduling feature; defaults preserve existing behavior |
+
+**Implementation notes (COMPLETED 2026-02-16):** Files placed in `sim/priority.go` and `sim/scheduler.go` (not `sim/policy/`) to avoid circular dependency — follows PR5 precedent with `sim/admission.go`. `InstanceScheduler` uses simplified `OrderQueue(requests, clock)` interface that sorts the WaitQueue before existing `makeRunningBatch()`, deferring full `MakeBatch`/`SchedulerContext` to when needed. Wiring in `sim/simulator.go` (not `sim/cluster/instance.go`) since the integration point is `Simulator.Step()`. See `docs/plans/pr7-priority-plus-sched-plan.md` for full plan with behavioral contracts.
 
 **v2.3 → v3.0 change:** MERGED from v2.3 PR 5 (Priority) + PR 7 (Scheduler). Both affect request ordering and share the `Priority` field on `Request`. Natural cohesion reduces CLI flag PRs that touch `cmd/root.go`.
 
@@ -1619,7 +1621,7 @@ Week 1-2:   Phase 1 (PR 1-3, sequential, 1 dev)
 Week 3:     Phase 2 PR 4 (Control Plane + Admission, sequential, 1 dev)
             PR 5 (Simplification, 1 dev, ~2 days)
 
-Week 3-4:   PR 6-7 (2 parallel devs), then PR 8
+Week 3-4:   PR 6-7 (2 parallel devs), then PR 8  [PR 7 COMPLETED 2026-02-16]
 
 Week 4-5:   PR 9
             → RESEARCH-READY (~5 weeks)
