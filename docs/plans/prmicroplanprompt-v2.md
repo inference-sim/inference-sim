@@ -92,7 +92,7 @@ F) Implementation Overview (Phase 4 summary)
 
 G) Task Breakdown (Phase 4 detailed)
    - 6-12 tasks in TDD format (see Phase 4 template below)
-   - Grouped into 3-4 batches for checkpoint reviews
+   - Continuous execution (no pause points between tasks)
    - Each task: test → fail → implement → pass → lint → commit
 
 H) Test Strategy (Phase 6)
@@ -208,26 +208,10 @@ PHASE 4 — EXECUTABLE TASK BREAKDOWN
 Break implementation into 6-12 tasks following TDD principles.
 Each task is completable in one focused session (~30-45 minutes).
 
-**Group tasks into 2-4 batches for checkpoint reviews.**
-
-BATCH STRUCTURE (scale based on PR complexity):
-
-**Small PRs (3-4 tasks):** 2 batches
-- Batch 1 (Tasks 1-2): Core implementation
-- Batch 2 (Tasks 3-4): Tests and documentation
-
-**Medium PRs (5-8 tasks):** 3 batches
-- Batch 1 (Tasks 1-3): Core types, interfaces, scaffolding
-- Batch 2 (Tasks 4-6): Business logic, integration
-- Batch 3 (Tasks 7-8): Tests, edge cases, documentation
-
-**Large PRs (9-12 tasks):** 4 batches
-- Batch 1 (Tasks 1-3): Core types, interfaces, scaffolding
-- Batch 2 (Tasks 4-6): Business logic, integration
-- Batch 3 (Tasks 7-9): Tests, edge cases, documentation
-- Batch 4 (Tasks 10-12): Performance, optimization, extras
-
-**General principle:** Each batch should represent a logical checkpoint where partial work can be reviewed. Aim for 2-4 tasks per batch to balance review granularity with progress velocity.
+**Execution is continuous** — all tasks run sequentially without pausing
+for human input. Execution only stops on test failure, lint failure, or
+build error. Group tasks into logical sections (e.g., core types,
+integration, edge cases) for readability, but these are NOT pause points.
 
 TASK TEMPLATE:
 
@@ -328,7 +312,7 @@ IMPORTANT TASK DESIGN RULES:
    previous completed work
 
 7. **No dead code** - every struct field, every method, every parameter must
-   be used by the end of the task or a subsequent task in the same batch
+   be used by the end of the task or a subsequent task in this PR
 
 8. **Commit messages** - use conventional commits format with contract references
    (feat/fix/refactor/test/docs)
@@ -488,11 +472,11 @@ After creating the plan, the workflow continues with:
 - Code review between tasks
 - Fast iteration
 
-**Option 2: Separate Session with Checkpoints (recommended for complex PRs)**
+**Option 2: Worktree with executing-plans (recommended for complex PRs)**
 - Create isolated worktree (superpowers:using-git-worktrees)
-- Open new session in worktree
+- Continue in same session (.worktrees/) or open new session (sibling directory)
 - Invoke superpowers:executing-plans with this plan
-- Batch execution with checkpoint reviews
+- Continuous execution (stops only on failure)
 - Invoke commit-commands:commit-push-pr when complete
 
 ======================================================================

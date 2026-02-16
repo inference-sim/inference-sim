@@ -32,7 +32,8 @@ type Request struct {
 	NumNewTokens     int     // Number of new tokens to be generated in the curren step
 	ITL              []int64  // List of inter-token latencies
 	Priority         float64  // Scheduling priority score, recomputed each step by PriorityPolicy.
-	                          // Higher = more urgent. Set by Simulator.Step(); read by schedulers.
+	                          // Higher = more urgent. Set by Simulator.Step() and optionally by
+	                          // RoutingDecisionEvent as a one-shot cluster-level hint; read by schedulers.
 	                          // Only meaningful for queued requests; zero-value (0.0) is the default.
 }
 

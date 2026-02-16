@@ -70,6 +70,9 @@ var (
 	priorityPolicy string // Priority policy name
 	scheduler      string // Scheduler name
 
+	// Policy bundle config (PR8)
+	policyConfigPath string // Path to YAML policy configuration file
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -205,6 +208,58 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")
 		}
 
+		// Load policy bundle if specified (BC-6: CLI flags override YAML values)
+		if policyConfigPath != "" {
+			bundle, err := sim.LoadPolicyBundle(policyConfigPath)
+			if err != nil {
+				logrus.Fatalf("Failed to load policy config: %v", err)
+			}
+			if err := bundle.Validate(); err != nil {
+				logrus.Fatalf("Invalid policy config: %v", err)
+			}
+
+			// Apply bundle values as defaults; CLI flags override via Changed().
+			// Pointer fields (nil = not set in YAML) correctly distinguish "0.0" from "unset".
+			if bundle.Admission.Policy != "" && !cmd.Flags().Changed("admission-policy") {
+				admissionPolicy = bundle.Admission.Policy
+			}
+			if bundle.Admission.TokenBucketCapacity != nil && !cmd.Flags().Changed("token-bucket-capacity") {
+				tokenBucketCapacity = *bundle.Admission.TokenBucketCapacity
+			}
+			if bundle.Admission.TokenBucketRefillRate != nil && !cmd.Flags().Changed("token-bucket-refill-rate") {
+				tokenBucketRefillRate = *bundle.Admission.TokenBucketRefillRate
+			}
+			if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
+				routingPolicy = bundle.Routing.Policy
+			}
+			if bundle.Routing.CacheWeight != nil && !cmd.Flags().Changed("routing-cache-weight") {
+				routingCacheWeight = *bundle.Routing.CacheWeight
+			}
+			if bundle.Routing.LoadWeight != nil && !cmd.Flags().Changed("routing-load-weight") {
+				routingLoadWeight = *bundle.Routing.LoadWeight
+			}
+			if bundle.Priority.Policy != "" && !cmd.Flags().Changed("priority-policy") {
+				priorityPolicy = bundle.Priority.Policy
+			}
+			if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
+				scheduler = bundle.Scheduler
+			}
+		}
+
+		// Validate policy names (catches CLI typos before they become panics)
+		if !sim.IsValidAdmissionPolicy(admissionPolicy) {
+			logrus.Fatalf("Unknown admission policy %q. Valid: always-admit, token-bucket", admissionPolicy)
+		}
+		if !sim.IsValidRoutingPolicy(routingPolicy) {
+			logrus.Fatalf("Unknown routing policy %q. Valid: round-robin, least-loaded, weighted, prefix-affinity", routingPolicy)
+		}
+		if !sim.IsValidPriorityPolicy(priorityPolicy) {
+			logrus.Fatalf("Unknown priority policy %q. Valid: constant, slo-based", priorityPolicy)
+		}
+		if !sim.IsValidScheduler(scheduler) {
+			logrus.Fatalf("Unknown scheduler %q. Valid: fcfs, priority-fcfs, sjf", scheduler)
+		}
+
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances)
@@ -318,6 +373,9 @@ func init() {
 	// Priority and scheduler config (PR7)
 	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based")
 	runCmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf")
+
+	// Policy bundle config (PR8)
+	runCmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

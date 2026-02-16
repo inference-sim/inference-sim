@@ -23,7 +23,7 @@ func (c *ConstantPriority) Compute(_ *Request, _ int64) float64 {
 // Formula: BaseScore + AgeWeight * float64(clock - req.ArrivalTime)
 //
 // With default AgeWeight=1e-6, a request waiting 1 second (1e6 ticks) gets +1.0 priority.
-// Full SLO class integration (using TenantState) is planned for PR8.
+// Full SLO class integration (using TenantState) is planned for PR9+.
 type SLOBasedPriority struct {
 	BaseScore float64
 	AgeWeight float64
@@ -39,12 +39,15 @@ func (s *SLOBasedPriority) Compute(req *Request, clock int64) float64 {
 // Empty string defaults to ConstantPriority (for CLI flag default compatibility).
 // Panics on unrecognized names.
 func NewPriorityPolicy(name string) PriorityPolicy {
+	if !IsValidPriorityPolicy(name) {
+		panic(fmt.Sprintf("unknown priority policy %q", name))
+	}
 	switch name {
 	case "", "constant":
 		return &ConstantPriority{Score: 0.0}
 	case "slo-based":
 		return &SLOBasedPriority{BaseScore: 0.0, AgeWeight: 1e-6}
 	default:
-		panic(fmt.Sprintf("unknown priority policy %q", name))
+		panic(fmt.Sprintf("unhandled priority policy %q", name))
 	}
 }
