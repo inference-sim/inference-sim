@@ -70,8 +70,10 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 - **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution
 - **admission.go**: `AdmissionPolicy` interface, `AlwaysAdmit`, `TokenBucket`, `NewAdmissionPolicy` factory
 - **routing.go**: `RoutingPolicy` interface, `RoutingSnapshot`, `RoutingDecision`, `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity` templates, `NewRoutingPolicy` factory
+- **priority.go**: `PriorityPolicy` interface with `ConstantPriority` and `SLOBasedPriority` templates, `NewPriorityPolicy` factory
+- **scheduler.go**: `InstanceScheduler` interface with `FCFSScheduler`, `PriorityFCFSScheduler`, and `SJFScheduler` templates, `NewScheduler` factory
 - **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
-- **request.go**: Request lifecycle and state machine (queued → running → completed)
+- **request.go**: Request lifecycle and state machine (queued → running → completed), `Priority` field for scheduler-aware ordering
 - **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching
 - **batch.go**: Batch formation respecting token budgets and batch size limits
 - **queue.go**: FIFO wait queue for pending requests
@@ -133,8 +135,8 @@ This project follows BDD/TDD practices. When implementing features:
 Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
 - 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
-- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type)
-- **Next:** PR7 (priority+scheduler), then PR8+ (policy bundles, raw metrics, tiered KV cache, decision traces)
+- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type), PR7 (PriorityPolicy with ConstantPriority + SLOBasedPriority templates, InstanceScheduler with FCFS + PriorityFCFS + SJF templates, Priority field on Request, CLI flags `--priority-policy` and `--scheduler`)
+- **Next:** PR8+ (policy bundles, raw metrics, tiered KV cache, decision traces)
 - Will add to `sim/kv/`, `sim/workload/`, `sim/trace/` packages
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
@@ -160,14 +162,16 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (always uses ClusterSimulator, --num-instances defaults to 1)
+│   ├── root.go                # CLI commands and flags (always uses ClusterSimulator, --num-instances defaults to 1, --priority-policy, --scheduler)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
 │   ├── simulator.go           # SimConfig struct, NewSimulator(SimConfig), event loop, batch formation, step execution
 │   ├── admission.go           # AdmissionPolicy interface, AlwaysAdmit, TokenBucket, NewAdmissionPolicy factory
 │   ├── routing.go             # RoutingPolicy interface, RoutingSnapshot, RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity
+│   ├── priority.go            # PriorityPolicy interface, ConstantPriority, SLOBasedPriority, NewPriorityPolicy factory
+│   ├── scheduler.go           # InstanceScheduler interface, FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, NewScheduler factory
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
-│   ├── request.go             # Request state machine (queued → running → completed)
+│   ├── request.go             # Request state machine (queued → running → completed), Priority field
 │   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching
 │   ├── batch.go               # Batch struct
 │   ├── queue.go               # FIFO wait queue
