@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v2.0 - updated 2026-02-14)
+**Status:** Active (v2.1 - updated 2026-02-16)
 
 This document describes the complete workflow for implementing a PR from the macro plan.
 
@@ -8,7 +8,7 @@ This document describes the complete workflow for implementing a PR from the mac
 
 **Update this section when templates change. All examples below reference these versions.**
 
-- **Micro-planning template:** `docs/plans/prmicroplanprompt-v2.md` (updated 2026-02-14)
+- **Micro-planning template:** `docs/plans/prmicroplanprompt-v2.md` (updated 2026-02-16)
 - **Macro-planning template:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v2.3)
 - **Deprecated micro-planning:** `docs/plans/prmicroplanprompt-v1-deprecated.md` (for reference only)
 
@@ -23,7 +23,7 @@ This workflow requires the following Claude Code skills to be available:
 | `superpowers:using-git-worktrees` | Create isolated workspace for PR work | Step 1 |
 | `superpowers:writing-plans` | Generate implementation plan from templates | Step 2 |
 | `pr-review-toolkit:review-pr` | Automated multi-agent review | Step 2.5, Step 4.5 |
-| `superpowers:executing-plans` | Execute plan tasks in batches | Step 4 |
+| `superpowers:executing-plans` | Execute plan tasks continuously | Step 4 |
 | `commit-commands:commit-push-pr` | Commit, push, and create PR | Step 5 |
 
 **Verification:**
@@ -71,7 +71,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 4: executing-plans │ (Implement in batches with checkpoints)
+│ Step 4: executing-plans │ (Implement tasks continuously)
 └──────────┬──────────────┘
            │
            ▼
@@ -115,24 +115,16 @@ If skills are unavailable, you can implement each step manually:
 | **4.5. Review code** | `/pr-review-toolkit:review-pr` |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
-**Example for PR 6:**
+**Example for PR 8 (same-session workflow with `.worktrees/`):**
 ```bash
-# ========================================
-# SESSION 1: Main repo (inference-sim)
-# ========================================
+# Step 1: Create worktree (stays in same session)
+/superpowers:using-git-worktrees pr8-routing-state-and-policy-bundle
 
-# Step 1: Create worktree
-/superpowers:using-git-worktrees pr6-routing-policy
-
-# Output: Worktree created at ../inference-sim-pr6/
-
-# ========================================
-# SESSION 2: Open NEW Claude Code session in worktree
-# Terminal: cd ../inference-sim-pr6/ && claude
-# ========================================
+# Output: Worktree ready at .worktrees/pr8-routing-state-and-policy-bundle/
+# (shell cwd already switched — continue directly)
 
 # Step 2: Create plan
-/superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 # Step 2.5: Review plan
 /pr-review-toolkit:review-pr
@@ -141,7 +133,7 @@ If skills are unavailable, you can implement each step manually:
 # [Read plan, verify contracts and tasks, approve to proceed]
 
 # Step 4: Execute implementation
-/superpowers:executing-plans @docs/plans/pr6-routing-policy-plan.md
+/superpowers:executing-plans @docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
 # Step 4.5: Review code
 /pr-review-toolkit:review-pr
@@ -150,13 +142,25 @@ If skills are unavailable, you can implement each step manually:
 /commit-commands:commit-push-pr
 ```
 
+**Example (separate-session workflow with sibling directory):**
+```bash
+# Step 1: Create worktree
+/superpowers:using-git-worktrees pr6-routing-policy
+# Output: Worktree created at ../inference-sim-pr6/
+
+# Open NEW Claude Code session in worktree:
+# Terminal: cd ../inference-sim-pr6/ && claude
+
+# Steps 2-5: Same as above, in the new session
+```
+
 ---
 
 ## Step-by-Step Process
 
 ### Step 1: Create Isolated Worktree Using `using-git-worktrees` Skill
 
-**Context:** Session 1 (main repo - inference-sim)
+**Context:** Main repo (inference-sim)
 
 **Skill:** `superpowers:using-git-worktrees`
 
@@ -177,26 +181,30 @@ If skills are unavailable, you can implement each step manually:
 ```
 
 **What Happens:**
-- Creates a new git worktree in a separate directory (e.g., `../inference-sim-pr6/`)
+- Creates a new git worktree (project-local in `.worktrees/` or as a sibling directory)
 - Creates and checks out a new branch (`pr6-routing-policy`)
+- Shell working directory switches to the worktree
 - Isolates work from main development
 
-**Output:** Path to worktree directory (e.g., `/Users/sri/Documents/Projects/inference-sim-pr6/`)
+**Output:** Path to worktree directory (e.g., `.worktrees/pr6-routing-policy/`)
 
-**Next:** Open a new Claude Code session in the worktree:
-```bash
-# In your terminal:
-cd ../inference-sim-pr6/
-claude
-```
+**Next — choose one:**
 
-**All remaining steps happen in the new Claude Code session (Session 2) in the worktree.**
+- **Continue in same session (recommended for `.worktrees/`):** The skill already switched your working directory into the worktree. You can proceed directly to Step 2 in the same Claude Code session.
+
+- **Open a new session (required for sibling directories):** If the worktree is outside the project (e.g., `../inference-sim-pr6/`), open a new Claude Code session there:
+  ```bash
+  cd ../inference-sim-pr6/
+  claude
+  ```
+
+**All remaining steps happen in the worktree (same session or new session).**
 
 ---
 
 ### Step 2: Create Implementation Plan Using `writing-plans` Skill
 
-**Context:** NEW Claude Code session in worktree directory (opened after Step 1)
+**Context:** Worktree (same or new session)
 
 **Skill:** `superpowers:writing-plans`
 
@@ -231,7 +239,7 @@ claude
 
 ### Step 2.5: Automated Plan Review Using `pr-review-toolkit:review-pr`
 
-**Context:** Session 2 (worktree)
+**Context:** Worktree (same or new session)
 
 **Skill:** `pr-review-toolkit:review-pr`
 
@@ -282,7 +290,7 @@ claude
 
 ### Step 3: Human Review of Plan
 
-**Context:** Session 2 (worktree)
+**Context:** Worktree (same or new session)
 
 **Action:** Final human review of the plan (after automated review)
 
@@ -309,7 +317,7 @@ claude
 
 ### Step 4: Execute Plan Using `executing-plans` Skill
 
-**Context:** Session 2 (worktree)
+**Context:** Worktree (same or new session)
 
 **Skill:** `superpowers:executing-plans`
 
@@ -325,27 +333,15 @@ claude
 
 **That's it!** The skill automatically:
 - Reads the plan
-- Executes tasks in batches
-- Shows checkpoints with test/lint results
+- Executes all tasks continuously (no pausing for human input)
+- Stops only on test failure, lint failure, or build error
 
 **What Happens:**
 - Claude reads the plan file
-- Claude executes Task 1-3 (first batch)
+- Claude executes all tasks sequentially without pausing
   - Each task: write test → verify fail → implement → verify pass → lint → commit
-- Claude reports batch completion and waits for feedback
-- Repeat for remaining batches
-
-**Checkpoints:**
-After each batch, Claude shows:
-- Summary of implemented contracts
-- Test output (all passing)
-- Lint output (no new issues)
-- Commit log
-
-**Your Response Options:**
-- "Continue" → proceed to next batch
-- "Fix [issue]" → Claude addresses issue and re-verifies
-- "Explain [decision]" → Claude clarifies implementation choice
+- If a failure occurs, Claude stops and reports the issue
+- On success, all tasks complete and Claude reports a summary
 
 **Output:**
 - Implemented code in working directory
@@ -357,7 +353,7 @@ After each batch, Claude shows:
 
 ### Step 4.5: Automated Code Review Using `pr-review-toolkit:review-pr`
 
-**Context:** Session 2 (worktree, after implementation complete)
+**Context:** Worktree (after implementation complete)
 
 **Skill:** `pr-review-toolkit:review-pr`
 
@@ -425,7 +421,7 @@ After each batch, Claude shows:
 
 ### Step 5: Commit, Push, and Create PR Using `commit-commands:commit-push-pr`
 
-**Context:** Session 2 (worktree, after code review passed and all issues fixed)
+**Context:** Worktree (after code review passed and all issues fixed)
 
 **Skill:** `commit-commands:commit-push-pr`
 
@@ -495,7 +491,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 - ✅ Faster for simple PRs (no session switching)
 - ✅ Better for iterative refinement
 - ⚠️ Uses current session's context (can grow large)
-- ⚠️ No built-in checkpoint batching (review after every task)
+- ⚠️ Review after every task (vs continuous execution in executing-plans)
 
 ---
 
@@ -507,33 +503,25 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 | `writing-plans` | **Step 2** - Create implementation plan from macro plan | Macro plan PR section + prmicroplanprompt-v2.md | Plan file with contracts + tasks |
 | `pr-review-toolkit:review-pr` | **Step 2.5** - Review plan document | Plan file (uncommitted in worktree) | Critical/important issues + suggestions |
 | `pr-review-toolkit:review-pr` | **Step 4.5** - Review implementation | Code changes (git diff in worktree) | Critical/important issues + suggestions |
-| `executing-plans` | **Step 4** - Execute plan in batches | Plan file path | Implemented code + commits |
+| `executing-plans` | **Step 4** - Execute plan tasks continuously | Plan file path | Implemented code + commits |
 | `subagent-driven-development` | **Step 4 (alt)** - Execute plan in-session | Plan file path | Implemented code + commits |
 | `commit-commands:commit-push-pr` | **Step 5** - Commit, push, create PR (all in one) | Current branch state | Commit + push + PR URL |
 
 ---
 
-## Example: Complete PR 6 Workflow (Simplified Invocations)
+## Example: Complete PR Workflow (Same-Session with `.worktrees/`)
 
 ```bash
-# ========================================
-# SESSION 1: Main repo (inference-sim)
-# ========================================
+# Step 1: Create worktree (shell cwd switches automatically)
+/superpowers:using-git-worktrees pr8-routing-state-and-policy-bundle
 
-# Step 1: Create worktree
-/superpowers:using-git-worktrees pr6-routing-policy
-
-# Output: Worktree created at ../inference-sim-pr6/
-
-# ========================================
-# SESSION 2: Open NEW Claude Code session in worktree
-# Terminal: cd ../inference-sim-pr6/ && claude
-# ========================================
+# Output: Worktree ready at .worktrees/pr8-routing-state-and-policy-bundle/
+# (continue directly — no new session needed)
 
 # Step 2: Create plan (one simple command with @ references)
-/superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
-# Output: Plan created at docs/plans/pr6-routing-policy-plan.md
+# Output: Plan created at docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
 # Step 2.5: Automated plan review
 /pr-review-toolkit:review-pr
@@ -546,9 +534,9 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # [Read plan, verify contracts and tasks, approve to proceed]
 
 # Step 4: Execute implementation
-/superpowers:executing-plans @docs/plans/pr6-routing-policy-plan.md
+/superpowers:executing-plans @docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
-# Output: Batch 1 → checkpoint → Batch 2 → checkpoint → Batch 3 → done
+# Output: Tasks execute continuously → done (stops on failure)
 
 # Step 4.5: Automated code review
 /pr-review-toolkit:review-pr
@@ -567,7 +555,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # - PR URL returned
 ```
 
-**Key benefit:** No copy-pasting! Just use @ file references and let Claude extract the context.
+**Key benefit:** No copy-pasting! Just use @ file references and let Claude extract the context. No session switching needed with project-local `.worktrees/`.
 
 ---
 
@@ -577,7 +565,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 2. **Fix critical issues immediately** - Don't proceed with known critical issues (they compound)
 3. **Re-run targeted reviews after fixes** - Verify fixes worked: `/pr-review-toolkit:review-pr code tests`
 4. **Use worktrees for complex PRs** - Avoid disrupting main workspace
-5. **Don't skip checkpoints** - Review after each batch, fix issues before continuing
+5. **Review after execution** - Use automated code review (Step 4.5) after all tasks complete
 6. **Reference contracts in commits** - Makes review easier and more traceable
 7. **Update CLAUDE.md immediately** - Don't defer documentation
 8. **Keep macro plan updated** - Mark PRs as completed
@@ -631,9 +619,9 @@ Pay special attention to:
 
 ### Issue: Tasks miss behavioral contracts during execution
 
-**Solution:** In Step 4 checkpoint review, verify:
+**Solution:** After execution completes, verify all contracts are tested:
 ```
-"Before continuing, confirm all contracts from Batch 1 are tested:
+"Confirm all contracts are tested:
 - BC-1: Show test results
 - BC-2: Show test results"
 ```
@@ -686,13 +674,14 @@ golangci-lint run ./path/to/modified/package/...
 
 **v1.0 (pre-2026-02-14):** Manual agent team prompts, separate design/execution plans
 **v2.0 (2026-02-14):** Unified planning with `writing-plans` skill, batch execution with `executing-plans` skill, automated two-stage review with `pr-review-toolkit:review-pr`, simplified invocations with @ file references
+**v2.1 (2026-02-16):** Same-session worktree workflow (project-local `.worktrees/` no longer requires new session); continuous execution replaces batch checkpoints (tasks run without pausing, stop only on failure)
 
 **Key improvements in v2.0:**
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/macroplan.md`)
 - **Single planning stage:** Produces both design contracts and executable tasks
 - **Automated plan review:** Catches design issues before implementation (Step 2.5)
 - **Automated code review:** Catches implementation issues before PR creation (Step 4.5)
-- **Built-in checkpoint reviews:** During execution (Step 4)
+- **Built-in checkpoint reviews:** During execution (Step 4) — *replaced by continuous execution in v2.1*
 - **Reduced manual overhead:** Skills handle context extraction automatically
 
 **Example workflow brevity:**
