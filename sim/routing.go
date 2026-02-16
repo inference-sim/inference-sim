@@ -46,6 +46,33 @@ func (rr *RoundRobin) Route(req *Request, snapshots []RoutingSnapshot, clock int
 	}
 }
 
+// LeastLoaded routes requests to the instance with minimum (QueueDepth + BatchSize).
+// Ties are broken by first occurrence in snapshot order (lowest index).
+type LeastLoaded struct{}
+
+// Route implements RoutingPolicy for LeastLoaded.
+func (ll *LeastLoaded) Route(req *Request, snapshots []RoutingSnapshot, clock int64) RoutingDecision {
+	if len(snapshots) == 0 {
+		panic("LeastLoaded.Route: empty snapshots")
+	}
+
+	minLoad := snapshots[0].QueueDepth + snapshots[0].BatchSize
+	target := snapshots[0]
+
+	for i := 1; i < len(snapshots); i++ {
+		load := snapshots[i].QueueDepth + snapshots[i].BatchSize
+		if load < minLoad {
+			minLoad = load
+			target = snapshots[i]
+		}
+	}
+
+	return RoutingDecision{
+		TargetInstance: target.ID,
+		Reason:         fmt.Sprintf("least-loaded (load=%d)", minLoad),
+	}
+}
+
 // NewRoutingPolicy creates a routing policy by name.
 // Valid names: "", "round-robin", "least-loaded", "weighted", "prefix-affinity".
 // Empty string defaults to round-robin.
@@ -55,6 +82,8 @@ func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolic
 	switch name {
 	case "", "round-robin":
 		return &RoundRobin{}
+	case "least-loaded":
+		return &LeastLoaded{}
 	default:
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}

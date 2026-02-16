@@ -97,3 +97,64 @@ func TestNewRoutingPolicy_DefaultName(t *testing.T) {
 		t.Errorf("Expected RoundRobin for empty string, got %T", policy)
 	}
 }
+
+// TestLeastLoaded_LoadBasedSelection verifies BC-3.
+func TestLeastLoaded_LoadBasedSelection(t *testing.T) {
+	policy := NewRoutingPolicy("least-loaded", 0, 0)
+
+	tests := []struct {
+		name      string
+		snapshots []RoutingSnapshot
+		expected  string
+	}{
+		{
+			name: "instance 1 has lowest load",
+			snapshots: []RoutingSnapshot{
+				{ID: "instance_0", QueueDepth: 10, BatchSize: 5},
+				{ID: "instance_1", QueueDepth: 3, BatchSize: 2},
+				{ID: "instance_2", QueueDepth: 7, BatchSize: 8},
+			},
+			expected: "instance_1",
+		},
+		{
+			name: "tie broken by first occurrence (lowest index)",
+			snapshots: []RoutingSnapshot{
+				{ID: "instance_0", QueueDepth: 5, BatchSize: 5},
+				{ID: "instance_1", QueueDepth: 8, BatchSize: 2},
+				{ID: "instance_2", QueueDepth: 3, BatchSize: 12},
+			},
+			expected: "instance_0",
+		},
+		{
+			name: "all instances equal load",
+			snapshots: []RoutingSnapshot{
+				{ID: "instance_0", QueueDepth: 5, BatchSize: 5},
+				{ID: "instance_1", QueueDepth: 5, BatchSize: 5},
+			},
+			expected: "instance_0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &Request{ID: "req1"}
+			decision := policy.Route(req, tt.snapshots, 1000)
+			if decision.TargetInstance != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, decision.TargetInstance)
+			}
+		})
+	}
+}
+
+// TestLeastLoaded_EmptySnapshots_Panics verifies BC-10.
+func TestLeastLoaded_EmptySnapshots_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic on empty snapshots, got none")
+		}
+	}()
+
+	policy := NewRoutingPolicy("least-loaded", 0, 0)
+	req := &Request{ID: "req1"}
+	policy.Route(req, []RoutingSnapshot{}, 1000)
+}
