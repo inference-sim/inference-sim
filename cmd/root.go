@@ -61,6 +61,15 @@ var (
 	tokenBucketCapacity   float64 // Token bucket capacity
 	tokenBucketRefillRate float64 // Token bucket refill rate (tokens/second)
 
+	// routing policy config (PR 6)
+	routingPolicy      string  // Routing policy name
+	routingCacheWeight float64 // Cache affinity weight for weighted scoring
+	routingLoadWeight  float64 // Load balance weight for weighted scoring
+
+	// Priority and scheduler config (PR7)
+	priorityPolicy string // Priority policy name
+	scheduler      string // Scheduler name
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -221,6 +230,11 @@ var runCmd = &cobra.Command{
 			RoutingLatency:            routingLatency,
 			TokenBucketCapacity:       tokenBucketCapacity,
 			TokenBucketRefillRate:     tokenBucketRefillRate,
+			RoutingPolicy:             routingPolicy,
+			RoutingCacheWeight:        routingCacheWeight,
+			RoutingLoadWeight:         routingLoadWeight,
+			PriorityPolicy:           priorityPolicy,
+			Scheduler:                scheduler,
 		}
 		cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
 		cs.Run()
@@ -295,6 +309,15 @@ func init() {
 	runCmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
 	runCmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")
 	runCmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
+
+	// Routing policy config
+	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, prefix-affinity")
+	runCmd.Flags().Float64Var(&routingCacheWeight, "routing-cache-weight", 0.6, "Cache affinity weight for weighted routing")
+	runCmd.Flags().Float64Var(&routingLoadWeight, "routing-load-weight", 0.4, "Load balance weight for weighted routing")
+
+	// Priority and scheduler config (PR7)
+	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based")
+	runCmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

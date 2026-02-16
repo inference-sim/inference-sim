@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"container/heap"
+	"fmt"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -109,9 +110,32 @@ type RoutingDecisionEvent struct {
 func (e *RoutingDecisionEvent) Timestamp() int64 { return e.time }
 func (e *RoutingDecisionEvent) Priority() int     { return 2 }
 
-// Execute routes the request to an instance via round-robin and injects it.
+// Execute routes the request using the configured routing policy and injects it.
 func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
-	target := cs.instances[cs.roundRobinCounter%len(cs.instances)]
-	target.InjectRequestOnline(e.request, e.time)
-	cs.roundRobinCounter++
+	// Convert InstanceSnapshots to RoutingSnapshots for the policy
+	routingSnapshots := make([]sim.RoutingSnapshot, len(cs.instances))
+	for i, inst := range cs.instances {
+		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
+		routingSnapshots[i] = sim.RoutingSnapshot{
+			ID:            string(snap.ID),
+			QueueDepth:    snap.QueueDepth,
+			BatchSize:     snap.BatchSize,
+			KVUtilization: snap.KVUtilization,
+			FreeKVBlocks:  snap.FreeKVBlocks,
+		}
+	}
+
+	// Invoke routing policy
+	decision := cs.routingPolicy.Route(e.request, routingSnapshots, cs.clock)
+
+	// Find target instance and inject request
+	for _, inst := range cs.instances {
+		if string(inst.ID()) == decision.TargetInstance {
+			inst.InjectRequestOnline(e.request, e.time)
+			return
+		}
+	}
+
+	// Should never reach here (policy contract ensures valid target)
+	panic(fmt.Sprintf("RoutingDecisionEvent: invalid TargetInstance %q", decision.TargetInstance))
 }

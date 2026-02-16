@@ -117,6 +117,31 @@ func TestDeploymentConfig_ToSimConfig_FieldMapping(t *testing.T) {
 	}
 }
 
+func TestDeploymentConfig_ToSimConfig_PrioritySchedulerFields(t *testing.T) {
+	dc := DeploymentConfig{
+		NumInstances:       1,
+		Horizon:            999,
+		Seed:               7,
+		TotalKVBlocks:      500,
+		BlockSizeTokens:    32,
+		MaxRunningReqs:     128,
+		MaxScheduledTokens: 4096,
+		BetaCoeffs:         []float64{1, 2, 3},
+		AlphaCoeffs:        []float64{4, 5, 6},
+		PriorityPolicy:     "slo-based",
+		Scheduler:          "priority-fcfs",
+	}
+
+	sc := dc.ToSimConfig()
+
+	if sc.PriorityPolicy != "slo-based" {
+		t.Errorf("PriorityPolicy: got %q, want %q", sc.PriorityPolicy, "slo-based")
+	}
+	if sc.Scheduler != "priority-fcfs" {
+		t.Errorf("Scheduler: got %q, want %q", sc.Scheduler, "priority-fcfs")
+	}
+}
+
 // TestClusterSimulator_SingleInstance_GoldenEquivalence verifies BC-7, BC-9:
 // GIVEN each golden dataset test case configured as NumInstances=1 via ClusterSimulator
 // WHEN Run() called
@@ -590,6 +615,71 @@ func TestClusterSimulator_AggregatedMetrics_BeforeRun_Panics(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	cs := NewClusterSimulator(config, newTestWorkload(10), "")
 	cs.AggregatedMetrics()
+}
+
+// === Routing Policy Tests ===
+
+// TestClusterSimulator_RoutingPolicy_RoundRobinDefault verifies BC-6 (backward compatibility).
+func TestClusterSimulator_RoutingPolicy_RoundRobinDefault(t *testing.T) {
+	config := newTestDeploymentConfig(3)
+	config.RoutingPolicy = "round-robin"
+	workload := newTestWorkload(10)
+
+	cs := NewClusterSimulator(config, workload, "")
+	cs.Run()
+
+	// Requests distributed evenly: 4, 3, 3 (or variant)
+	counts := make(map[InstanceID]int)
+	for _, inst := range cs.Instances() {
+		counts[inst.ID()] = inst.Metrics().CompletedRequests
+	}
+
+	total := 0
+	for _, count := range counts {
+		total += count
+		if count < 3 || count > 4 {
+			t.Errorf("Expected 3-4 requests per instance, got %d", count)
+		}
+	}
+	if total != 10 {
+		t.Errorf("Expected 10 total completed requests, got %d", total)
+	}
+}
+
+// TestClusterSimulator_RoutingPolicy_LeastLoaded verifies load-aware routing completes.
+func TestClusterSimulator_RoutingPolicy_LeastLoaded(t *testing.T) {
+	config := newTestDeploymentConfig(2)
+	config.RoutingPolicy = "least-loaded"
+	workload := newTestWorkload(5)
+
+	cs := NewClusterSimulator(config, workload, "")
+	cs.Run()
+
+	if cs.AggregatedMetrics().CompletedRequests == 0 {
+		t.Errorf("Expected non-zero completed requests, got 0")
+	}
+}
+
+// TestClusterSimulator_AllRoutingPolicies_Smoke verifies all policies are exercisable.
+func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
+	policies := []string{"round-robin", "least-loaded", "weighted", "prefix-affinity"}
+
+	for _, policyName := range policies {
+		t.Run(policyName, func(t *testing.T) {
+			config := newTestDeploymentConfig(2)
+			config.RoutingPolicy = policyName
+			config.RoutingCacheWeight = 0.6
+			config.RoutingLoadWeight = 0.4
+			workload := newTestWorkload(5)
+
+			cs := NewClusterSimulator(config, workload, "")
+			cs.Run()
+
+			if cs.AggregatedMetrics().CompletedRequests == 0 {
+				t.Errorf("Policy %q: expected non-zero completed requests", policyName)
+			}
+		})
+	}
 }
 
 // === Benchmarks ===
