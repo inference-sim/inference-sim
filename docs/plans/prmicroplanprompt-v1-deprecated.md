@@ -1,3 +1,28 @@
+⚠️ **DEPRECATED - Use prmicroplanprompt-v2.md instead**
+
+**This version is kept for reference only.**
+
+**Active version:** `prmicroplanprompt-v2.md`
+
+**Migration date:** 2026-02-14
+
+**Reason for deprecation:** v2 merges design rigor (behavioral contracts, architecture validation) with executable task breakdown (TDD format, complete code examples) for use with the `executing-plans` skill. This enables a single planning stage that produces both human-reviewable design and agent-executable implementation steps.
+
+**What v2 adds:**
+- Executable task breakdown with TDD steps (test → fail → implement → pass → lint → commit)
+- Complete code in task steps (no placeholders)
+- Batch structure for checkpoint reviews
+- Direct compatibility with `executing-plans` and `subagent-driven-development` skills
+- Required document header for skill integration
+
+**To migrate:** Use `prmicroplanprompt-v2.md` with the workflow in `prworkflow.md`
+
+---
+
+# ORIGINAL CONTENT BELOW (v1 - deprecated)
+
+---
+
 You are operating inside a real repository with full code access.
 
 You are tasked with producing a PR-SPECIFIC MICRO-DESIGN PLAN for
