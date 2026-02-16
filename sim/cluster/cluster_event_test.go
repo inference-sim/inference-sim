@@ -173,3 +173,24 @@ func TestClusterEventTimestamps(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildRouterState_PopulatesSnapshots verifies BC-8:
+// buildRouterState must produce a RouterState with one snapshot per instance and the current clock.
+func TestBuildRouterState_PopulatesSnapshots(t *testing.T) {
+	config := newTestDeploymentConfig(3)
+	cs := NewClusterSimulator(config, newTestWorkload(1), "")
+
+	state := buildRouterState(cs)
+
+	if len(state.Snapshots) != 3 {
+		t.Errorf("expected 3 snapshots, got %d", len(state.Snapshots))
+	}
+	if state.Clock != cs.Clock() {
+		t.Errorf("expected clock %d, got %d", cs.Clock(), state.Clock)
+	}
+	for i, snap := range state.Snapshots {
+		if snap.ID == "" {
+			t.Errorf("snapshot %d has empty ID", i)
+		}
+	}
+}
