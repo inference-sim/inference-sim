@@ -312,3 +312,108 @@ func TestScheduler_EmptyQueue_NoOp(t *testing.T) {
 		})
 	}
 }
+
+func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
+	// BC-4 + BC-5: SJF should schedule shorter input request first.
+	// Uses zero alpha delay so both requests queue simultaneously at tick 0,
+	// and MaxRunningReqs=256 so both enter the batch in the same step.
+	// SJF sorts short before long; short request gets lower E2E latency
+	// because it has fewer prefill tokens to process.
+	cfg := SimConfig{
+		Horizon:            10000000,
+		Seed:               42,
+		TotalKVBlocks:      1000,
+		BlockSizeTokens:    16,
+		MaxRunningReqs:     256,
+		MaxScheduledTokens: 2048,
+		BetaCoeffs:         []float64{1000, 10, 5},
+		AlphaCoeffs:        []float64{0, 0, 100}, // zero queueing delay so both queue at arrival time
+		Scheduler:          "sjf",
+	}
+	s := NewSimulator(cfg)
+
+	// Long request injected first — SJF should move it behind short
+	reqLong := &Request{
+		ID:           "req_long",
+		InputTokens:  make([]int, 200),
+		OutputTokens: make([]int, 2),
+		ArrivalTime:  0,
+		State:        "queued",
+	}
+	// Short request injected second — SJF should move it to front
+	reqShort := &Request{
+		ID:           "req_short",
+		InputTokens:  make([]int, 20),
+		OutputTokens: make([]int, 2),
+		ArrivalTime:  0,
+		State:        "queued",
+	}
+
+	s.InjectArrival(reqLong)
+	s.InjectArrival(reqShort)
+
+	s.Run()
+
+	if s.Metrics.CompletedRequests != 2 {
+		t.Fatalf("completed: got %d, want 2", s.Metrics.CompletedRequests)
+	}
+
+	// Both scheduled in same step (both queue before first step fires).
+	// SJF puts short first in batch → short gets processed first → lower E2E.
+	shortE2E := s.Metrics.RequestE2Es["req_short"]
+	longE2E := s.Metrics.RequestE2Es["req_long"]
+	if shortE2E > longE2E {
+		t.Errorf("SJF violation: short E2E=%f > long E2E=%f (short should finish first)",
+			shortE2E, longE2E)
+	}
+}
+
+func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
+	// BC-7 + BC-5: SLO-based priority with priority-fcfs scheduler
+	// Older requests should get higher priority and schedule first
+	cfg := SimConfig{
+		Horizon:            10000000,
+		Seed:               42,
+		TotalKVBlocks:      1000,
+		BlockSizeTokens:    16,
+		MaxRunningReqs:     1, // only 1 slot: forces sequential scheduling
+		MaxScheduledTokens: 2048,
+		BetaCoeffs:         []float64{1000, 10, 5},
+		AlphaCoeffs:        []float64{100, 1, 100},
+		PriorityPolicy:     "slo-based",
+		Scheduler:          "priority-fcfs",
+	}
+	s := NewSimulator(cfg)
+
+	// Newer request injected first (arrives at t=500000)
+	reqNew := &Request{
+		ID:           "req_new",
+		InputTokens:  make([]int, 20),
+		OutputTokens: make([]int, 2),
+		ArrivalTime:  500000,
+		State:        "queued",
+	}
+	// Older request injected second (arrives at t=0)
+	reqOld := &Request{
+		ID:           "req_old",
+		InputTokens:  make([]int, 20),
+		OutputTokens: make([]int, 2),
+		ArrivalTime:  0,
+		State:        "queued",
+	}
+
+	s.InjectArrival(reqNew)
+	s.InjectArrival(reqOld)
+
+	s.Run()
+
+	if s.Metrics.CompletedRequests != 2 {
+		t.Fatalf("completed: got %d, want 2", s.Metrics.CompletedRequests)
+	}
+
+	// Older request should be scheduled first (higher priority from age)
+	if reqOld.ScheduledStepIdx > reqNew.ScheduledStepIdx {
+		t.Errorf("SLO-based priority violation: old scheduled at step %d, new at step %d",
+			reqOld.ScheduledStepIdx, reqNew.ScheduledStepIdx)
+	}
+}
