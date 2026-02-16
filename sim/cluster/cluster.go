@@ -29,7 +29,7 @@ type ClusterSimulator struct {
 	routingLatency     int64
 	admissionPolicy    sim.AdmissionPolicy
 	snapshotProvider   SnapshotProvider
-	roundRobinCounter  int
+	routingPolicy      sim.RoutingPolicy
 	rejectedRequests   int // EC-2: count of requests rejected by admission policy
 }
 
@@ -68,6 +68,7 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 		routingLatency:   config.RoutingLatency,
 		admissionPolicy:  sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
 		snapshotProvider: NewCachedSnapshotProvider(instanceMap, DefaultObservabilityConfig()),
+		routingPolicy:    sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingCacheWeight, config.RoutingLoadWeight),
 	}
 }
 

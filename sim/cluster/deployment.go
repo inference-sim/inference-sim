@@ -28,6 +28,11 @@ type DeploymentConfig struct {
 	RoutingLatency        int64   // microseconds, default 0
 	TokenBucketCapacity   float64 // max tokens, default 10000
 	TokenBucketRefillRate float64 // tokens/second, default 1000
+
+	// Routing policy configuration (PR6)
+	RoutingPolicy      string  // "round-robin" (default), "least-loaded", "weighted", "prefix-affinity"
+	RoutingCacheWeight float64 // for weighted scoring, default 0.6
+	RoutingLoadWeight  float64 // for weighted scoring, default 0.4
 }
 
 // ToSimConfig converts DeploymentConfig to SimConfig for per-instance construction.

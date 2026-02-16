@@ -34,6 +34,12 @@ go build -o simulation_worker main.go
   --model meta-llama/llama-3.1-8b-instruct \
   --model-config-folder model_configs/llama-3.1-8b-instruct \
   --hardware-config hardware_config.json --hardware H100 --tp 1
+
+# Run multi-instance with routing policy
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --routing-policy weighted \
+  --routing-cache-weight 0.6 --routing-load-weight 0.4
 ```
 
 ## Testing
@@ -63,6 +69,7 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 
 - **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution
 - **admission.go**: `AdmissionPolicy` interface, `AlwaysAdmit`, `TokenBucket`, `NewAdmissionPolicy` factory
+- **routing.go**: `RoutingPolicy` interface, `RoutingSnapshot`, `RoutingDecision`, `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity` templates, `NewRoutingPolicy` factory
 - **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
 - **request.go**: Request lifecycle and state machine (queued → running → completed)
 - **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching
@@ -126,8 +133,8 @@ This project follows BDD/TDD practices. When implementing features:
 Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
 - 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
-- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`)
-- **Next:** PR6 (routing policies), then PR7+ (priority+scheduler, policy bundles, raw metrics, tiered KV cache, decision traces)
+- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type)
+- **Next:** PR7 (priority+scheduler), then PR8+ (policy bundles, raw metrics, tiered KV cache, decision traces)
 - Will add to `sim/kv/`, `sim/workload/`, `sim/trace/` packages
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
@@ -158,6 +165,7 @@ inference-sim/
 ├── sim/                       # Core single-instance simulator
 │   ├── simulator.go           # SimConfig struct, NewSimulator(SimConfig), event loop, batch formation, step execution
 │   ├── admission.go           # AdmissionPolicy interface, AlwaysAdmit, TokenBucket, NewAdmissionPolicy factory
+│   ├── routing.go             # RoutingPolicy interface, RoutingSnapshot, RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
 │   ├── request.go             # Request state machine (queued → running → completed)
 │   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching
