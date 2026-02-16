@@ -73,6 +73,62 @@ func (ll *LeastLoaded) Route(req *Request, snapshots []RoutingSnapshot, clock in
 	}
 }
 
+// WeightedScoring routes requests using a weighted combination of cache affinity and load balance.
+// Score = (1 - KVUtilization) * cacheWeight + (1 - normalizedLoad) * loadWeight.
+// Higher scores are preferred. Ties broken by first occurrence in snapshot order.
+type WeightedScoring struct {
+	cacheWeight float64
+	loadWeight  float64
+}
+
+// Route implements RoutingPolicy for WeightedScoring.
+func (ws *WeightedScoring) Route(req *Request, snapshots []RoutingSnapshot, clock int64) RoutingDecision {
+	if len(snapshots) == 0 {
+		panic("WeightedScoring.Route: empty snapshots")
+	}
+
+	// Compute loads and find max for normalization
+	loads := make([]int, len(snapshots))
+	maxLoad := 0
+	for i, snap := range snapshots {
+		loads[i] = snap.QueueDepth + snap.BatchSize
+		if loads[i] > maxLoad {
+			maxLoad = loads[i]
+		}
+	}
+
+	// Compute scores
+	scores := make(map[string]float64, len(snapshots))
+	bestScore := -1.0
+	bestIdx := 0
+
+	for i, snap := range snapshots {
+		// Normalize load to [0,1] (handle uniform load: all zero → normalizedLoad = 0)
+		normalizedLoad := 0.0
+		if maxLoad > 0 {
+			normalizedLoad = float64(loads[i]) / float64(maxLoad)
+		}
+
+		// Composite score
+		cacheScore := (1.0 - snap.KVUtilization) * ws.cacheWeight
+		loadScore := (1.0 - normalizedLoad) * ws.loadWeight
+		score := cacheScore + loadScore
+		scores[snap.ID] = score
+
+		// Select argmax; first occurrence wins on tie (strict >)
+		if score > bestScore {
+			bestScore = score
+			bestIdx = i
+		}
+	}
+
+	return RoutingDecision{
+		TargetInstance: snapshots[bestIdx].ID,
+		Reason:         fmt.Sprintf("weighted-scoring (score=%.3f)", bestScore),
+		Scores:         scores,
+	}
+}
+
 // NewRoutingPolicy creates a routing policy by name.
 // Valid names: "", "round-robin", "least-loaded", "weighted", "prefix-affinity".
 // Empty string defaults to round-robin.
@@ -84,6 +140,8 @@ func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolic
 		return &RoundRobin{}
 	case "least-loaded":
 		return &LeastLoaded{}
+	case "weighted":
+		return &WeightedScoring{cacheWeight: cacheWeight, loadWeight: loadWeight}
 	default:
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}

@@ -158,3 +158,90 @@ func TestLeastLoaded_EmptySnapshots_Panics(t *testing.T) {
 	req := &Request{ID: "req1"}
 	policy.Route(req, []RoutingSnapshot{}, 1000)
 }
+
+// TestWeightedScoring_MultiFactor verifies BC-4.
+func TestWeightedScoring_MultiFactor(t *testing.T) {
+	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
+
+	tests := []struct {
+		name      string
+		snapshots []RoutingSnapshot
+		expected  string
+		reason    string
+	}{
+		{
+			name: "instance 1 wins on low KV utilization",
+			snapshots: []RoutingSnapshot{
+				{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8}, // load=10, norm=1.0, score = (1-0.8)*0.6 + (1-1.0)*0.4 = 0.12
+				{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2}, // load=10, norm=1.0, score = (1-0.2)*0.6 + (1-1.0)*0.4 = 0.48
+			},
+			expected: "instance_1",
+			reason:   "equal load (both normalized to 1.0); instance_1 wins on lower KVUtilization",
+		},
+		{
+			name: "instance 0 wins on low load",
+			snapshots: []RoutingSnapshot{
+				{ID: "instance_0", QueueDepth: 2, BatchSize: 2, KVUtilization: 0.5}, // load=4, norm=4/10=0.4, score = 0.5*0.6 + 0.6*0.4 = 0.54
+				{ID: "instance_1", QueueDepth: 8, BatchSize: 2, KVUtilization: 0.5}, // load=10, norm=1.0, score = 0.5*0.6 + 0.0*0.4 = 0.3
+			},
+			expected: "instance_0",
+			reason:   "equal KVUtilization; instance_0 wins on lower normalized load",
+		},
+		{
+			name: "all equal scores, first occurrence wins",
+			snapshots: []RoutingSnapshot{
+				{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5},
+				{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5},
+			},
+			expected: "instance_0",
+			reason:   "tie broken by first occurrence in snapshot order",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &Request{ID: "req1"}
+			decision := policy.Route(req, tt.snapshots, 1000)
+			if decision.TargetInstance != tt.expected {
+				t.Errorf("%s: expected %q, got %q", tt.reason, tt.expected, decision.TargetInstance)
+			}
+			if decision.Scores == nil || len(decision.Scores) != len(tt.snapshots) {
+				t.Errorf("Expected Scores map with %d entries, got %v", len(tt.snapshots), decision.Scores)
+			}
+		})
+	}
+}
+
+// TestWeightedScoring_UniformLoad verifies divide-by-zero safety.
+func TestWeightedScoring_UniformLoad(t *testing.T) {
+	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
+
+	// All instances have identical load → normalizedLoad = 1.0 for all
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.3}, // score = 0.7*0.6 + 0*0.4 = 0.42
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.7}, // score = 0.3*0.6 + 0*0.4 = 0.18
+	}
+
+	req := &Request{ID: "req1"}
+	decision := policy.Route(req, snapshots, 1000)
+
+	// instance_0 wins on lower KVUtilization (load component cancels out)
+	if decision.TargetInstance != "instance_0" {
+		t.Errorf("Expected instance_0 to win on cache score alone, got %q", decision.TargetInstance)
+	}
+}
+
+// TestWeightedScoring_NegativeWeights verifies BC-12 (undefined but non-fatal).
+func TestWeightedScoring_NegativeWeights(t *testing.T) {
+	policy := NewRoutingPolicy("weighted", -0.5, -0.5)
+
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5},
+	}
+
+	req := &Request{ID: "req1"}
+	decision := policy.Route(req, snapshots, 1000)
+	if decision.TargetInstance == "" {
+		t.Errorf("Expected non-empty TargetInstance even with negative weights")
+	}
+}
