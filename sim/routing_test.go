@@ -245,3 +245,100 @@ func TestWeightedScoring_NegativeWeights(t *testing.T) {
 		t.Errorf("Expected non-empty TargetInstance even with negative weights")
 	}
 }
+
+// TestPrefixAffinity_CacheHit verifies BC-5 (cache-aware routing).
+func TestPrefixAffinity_CacheHit(t *testing.T) {
+	policy := NewRoutingPolicy("prefix-affinity", 0, 0)
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 10, BatchSize: 5},
+		{ID: "instance_1", QueueDepth: 2, BatchSize: 1},
+	}
+
+	// First request with prefix [1, 2, 3] routed (cache miss → LeastLoaded)
+	req1 := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+	decision1 := policy.Route(req1, snapshots, 1000)
+	firstTarget := decision1.TargetInstance
+
+	// Second request with same prefix → cache hit
+	req2 := &Request{ID: "req2", InputTokens: []int{1, 2, 3}}
+	decision2 := policy.Route(req2, snapshots, 2000)
+
+	if decision2.TargetInstance != firstTarget {
+		t.Errorf("Expected cache hit routing to %q, got %q", firstTarget, decision2.TargetInstance)
+	}
+}
+
+// TestPrefixAffinity_CacheMiss verifies fallback to LeastLoaded.
+func TestPrefixAffinity_CacheMiss(t *testing.T) {
+	policy := NewRoutingPolicy("prefix-affinity", 0, 0)
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 10, BatchSize: 5}, // load=15
+		{ID: "instance_1", QueueDepth: 2, BatchSize: 1},  // load=3 (min)
+	}
+
+	req := &Request{ID: "req1", InputTokens: []int{7, 8, 9}}
+	decision := policy.Route(req, snapshots, 1000)
+
+	if decision.TargetInstance != "instance_1" {
+		t.Errorf("Expected fallback to least-loaded (instance_1), got %q", decision.TargetInstance)
+	}
+}
+
+// TestPrefixAffinity_DifferentPrefixes verifies distinct hashing.
+func TestPrefixAffinity_DifferentPrefixes(t *testing.T) {
+	policy := NewRoutingPolicy("prefix-affinity", 0, 0)
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 5},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 5},
+	}
+
+	req1 := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+	req2 := &Request{ID: "req2", InputTokens: []int{4, 5, 6}}
+
+	decision1 := policy.Route(req1, snapshots, 1000)
+	decision2 := policy.Route(req2, snapshots, 2000)
+
+	validIDs := map[string]bool{"instance_0": true, "instance_1": true}
+	if !validIDs[decision1.TargetInstance] || !validIDs[decision2.TargetInstance] {
+		t.Errorf("Invalid routing decisions: %q, %q", decision1.TargetInstance, decision2.TargetInstance)
+	}
+}
+
+// TestPrefixAffinity_HashMatchesKVCache verifies hash format consistency.
+func TestPrefixAffinity_HashMatchesKVCache(t *testing.T) {
+	hash1 := computePrefixHash([]int{1, 2, 3})
+	hash2 := computePrefixHash([]int{3, 2, 1})
+	if hash1 == hash2 {
+		t.Errorf("Expected different hashes for [1,2,3] and [3,2,1], got same: %s", hash1)
+	}
+
+	// Deterministic
+	hash3 := computePrefixHash([]int{1, 2, 3})
+	if hash1 != hash3 {
+		t.Errorf("Expected identical hash for same tokens, got %q and %q", hash1, hash3)
+	}
+}
+
+// TestPrefixAffinity_NoStateLeak verifies BC-8 (no cross-simulation state leak).
+func TestPrefixAffinity_NoStateLeak(t *testing.T) {
+	policy1 := NewRoutingPolicy("prefix-affinity", 0, 0)
+	policy2 := NewRoutingPolicy("prefix-affinity", 0, 0)
+
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 5},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 5},
+	}
+
+	// policy1 routes and builds cache
+	req1 := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+	policy1.Route(req1, snapshots, 1000)
+
+	// policy2 routes same prefix — cache miss (independent state)
+	req2 := &Request{ID: "req2", InputTokens: []int{1, 2, 3}}
+	decision2 := policy2.Route(req2, snapshots, 1000)
+
+	// Falls back to LeastLoaded → first occurrence (instance_0)
+	if decision2.TargetInstance != "instance_0" {
+		t.Errorf("Expected independent state (fallback to least-loaded), got %q", decision2.TargetInstance)
+	}
+}

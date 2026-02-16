@@ -1,6 +1,12 @@
 package sim
 
-import "fmt"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // RoutingSnapshot is a lightweight view of instance state for routing decisions.
 // Populated by ClusterSimulator from cluster.InstanceSnapshot at routing time.
@@ -129,6 +135,62 @@ func (ws *WeightedScoring) Route(req *Request, snapshots []RoutingSnapshot, cloc
 	}
 }
 
+// PrefixAffinity routes requests with matching prefixes to the same instance (cache-aware).
+// On cache miss, falls back to LeastLoaded. Maintains prefix-to-instance mapping.
+type PrefixAffinity struct {
+	prefixMap map[string]string // prefix hash → instance ID
+}
+
+// Route implements RoutingPolicy for PrefixAffinity.
+func (pa *PrefixAffinity) Route(req *Request, snapshots []RoutingSnapshot, clock int64) RoutingDecision {
+	if len(snapshots) == 0 {
+		panic("PrefixAffinity.Route: empty snapshots")
+	}
+
+	// Compute prefix hash (matching KVCache format: pipe-delimited decimal strings)
+	prefixHash := computePrefixHash(req.InputTokens)
+
+	// Check cache for existing mapping
+	if targetID, found := pa.prefixMap[prefixHash]; found {
+		// Verify target still in snapshots (instance may have been removed)
+		for _, snap := range snapshots {
+			if snap.ID == targetID {
+				return RoutingDecision{
+					TargetInstance: targetID,
+					Reason:         "prefix-affinity (cache-hit)",
+				}
+			}
+		}
+	}
+
+	// Cache miss or stale entry: fallback to LeastLoaded
+	ll := &LeastLoaded{}
+	decision := ll.Route(req, snapshots, clock)
+
+	// Update cache with new mapping
+	pa.prefixMap[prefixHash] = decision.TargetInstance
+
+	return RoutingDecision{
+		TargetInstance: decision.TargetInstance,
+		Reason:         "prefix-affinity (cache-miss, fallback to least-loaded)",
+	}
+}
+
+// computePrefixHash computes SHA256 hash of input tokens using pipe-delimited
+// decimal string format, matching KVCache hash computation (kvcache.go:108-116).
+func computePrefixHash(tokens []int) string {
+	h := sha256.New()
+	var b strings.Builder
+	for i, token := range tokens {
+		if i > 0 {
+			b.WriteString("|")
+		}
+		b.WriteString(strconv.Itoa(token))
+	}
+	h.Write([]byte(b.String()))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // NewRoutingPolicy creates a routing policy by name.
 // Valid names: "", "round-robin", "least-loaded", "weighted", "prefix-affinity".
 // Empty string defaults to round-robin.
@@ -142,6 +204,8 @@ func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolic
 		return &LeastLoaded{}
 	case "weighted":
 		return &WeightedScoring{cacheWeight: cacheWeight, loadWeight: loadWeight}
+	case "prefix-affinity":
+		return &PrefixAffinity{prefixMap: make(map[string]string)}
 	default:
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
