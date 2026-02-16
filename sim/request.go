@@ -31,7 +31,9 @@ type Request struct {
 	FinishedStepIdx  int     // Step index when this request got scheduled (waiting -> running)
 	NumNewTokens     int     // Number of new tokens to be generated in the curren step
 	ITL              []int64  // List of inter-token latencies
-	Priority         float64  // Priority score assigned by PriorityPolicy (higher = more urgent)
+	Priority         float64  // Scheduling priority score, recomputed each step by PriorityPolicy.
+	                          // Higher = more urgent. Set by Simulator.Step(); read by schedulers.
+	                          // Only meaningful for queued requests; zero-value (0.0) is the default.
 }
 
 // This method returns a human-readable string representation of a Request.

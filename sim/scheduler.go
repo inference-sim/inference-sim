@@ -25,6 +25,8 @@ func (f *FCFSScheduler) OrderQueue(_ []*Request, _ int64) {
 type PriorityFCFSScheduler struct{}
 
 func (p *PriorityFCFSScheduler) OrderQueue(reqs []*Request, _ int64) {
+	// Float != comparison is safe here: current policies produce exact arithmetic
+	// (constant return or int-derived multiply+add). Revisit if policies use division/log.
 	sort.SliceStable(reqs, func(i, j int) bool {
 		if reqs[i].Priority != reqs[j].Priority {
 			return reqs[i].Priority > reqs[j].Priority
