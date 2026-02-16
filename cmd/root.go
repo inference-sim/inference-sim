@@ -70,6 +70,9 @@ var (
 	priorityPolicy string // Priority policy name
 	scheduler      string // Scheduler name
 
+	// Policy bundle config (PR8)
+	policyConfigPath string // Path to YAML policy configuration file
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -205,6 +208,43 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")
 		}
 
+		// Load policy bundle if specified (BC-6: CLI flags override YAML values)
+		if policyConfigPath != "" {
+			bundle, err := sim.LoadPolicyBundle(policyConfigPath)
+			if err != nil {
+				logrus.Fatalf("Failed to load policy config: %v", err)
+			}
+			if err := bundle.Validate(); err != nil {
+				logrus.Fatalf("Invalid policy config: %v", err)
+			}
+
+			// Apply bundle values as defaults; CLI flags override via Changed()
+			if bundle.Admission.Policy != "" && !cmd.Flags().Changed("admission-policy") {
+				admissionPolicy = bundle.Admission.Policy
+			}
+			if bundle.Admission.TokenBucketCapacity != 0 && !cmd.Flags().Changed("token-bucket-capacity") {
+				tokenBucketCapacity = bundle.Admission.TokenBucketCapacity
+			}
+			if bundle.Admission.TokenBucketRefillRate != 0 && !cmd.Flags().Changed("token-bucket-refill-rate") {
+				tokenBucketRefillRate = bundle.Admission.TokenBucketRefillRate
+			}
+			if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
+				routingPolicy = bundle.Routing.Policy
+			}
+			if bundle.Routing.CacheWeight != 0 && !cmd.Flags().Changed("routing-cache-weight") {
+				routingCacheWeight = bundle.Routing.CacheWeight
+			}
+			if bundle.Routing.LoadWeight != 0 && !cmd.Flags().Changed("routing-load-weight") {
+				routingLoadWeight = bundle.Routing.LoadWeight
+			}
+			if bundle.Priority.Policy != "" && !cmd.Flags().Changed("priority-policy") {
+				priorityPolicy = bundle.Priority.Policy
+			}
+			if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
+				scheduler = bundle.Scheduler
+			}
+		}
+
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances)
@@ -318,6 +358,9 @@ func init() {
 	// Priority and scheduler config (PR7)
 	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based")
 	runCmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf")
+
+	// Policy bundle config (PR8)
+	runCmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
