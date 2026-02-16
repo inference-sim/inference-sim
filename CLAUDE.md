@@ -154,7 +154,7 @@ To add a new policy template (e.g., a new routing algorithm):
    - Note: `RouterState` is a bridge type in `sim/` to avoid import cycles — see `sim/router_state.go`
 
 2. **Register in two places** (both required):
-   - Add policy name to valid names map in `sim/bundle.go` (e.g., `ValidRoutingPolicies`)
+   - Add policy name to valid names map in `sim/bundle.go` (e.g., `validRoutingPolicies`) and corresponding `IsValid*` function
    - Add `case` to factory function in the same policy file (e.g., `NewRoutingPolicy` in `sim/routing.go`)
 
 3. **Add tests** following BDD naming: `TestMyPolicy_Scenario_Behavior`
@@ -208,7 +208,8 @@ inference-sim/
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
 │   ├── roofline_step.go       # Analytical FLOPs/bandwidth latency estimation
 │   ├── model_hardware_config.go # HFConfig, ModelConfig, HardwareCalib structs
-│   └── workload_config.go     # CSV trace loading and distribution-based workload generation
+│   ├── workload_config.go     # CSV trace loading and distribution-based workload generation
+│   └── internal/testutil/     # Shared test infrastructure (golden dataset loading)
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wrapper with run-once guard
 │   ├── cluster.go             # ClusterSimulator: shared-clock event loop, online routing, aggregation
@@ -223,6 +224,7 @@ inference-sim/
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
 ├── hardware_config.json       # GPU specifications
+├── examples/                  # Example configuration files (policy-config.yaml)
 ├── testdata/goldendataset.json # Golden dataset for regression tests
 └── docs/plans/                # Design documents
 ```
