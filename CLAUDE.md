@@ -142,6 +142,26 @@ Active development: Evolutionary Policy Optimization extension (see `docs/plans/
 - Will add to `sim/kv/`, `sim/workload/`, `sim/trace/` packages
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
+### Adding New Policy Templates
+
+To add a new policy template (e.g., a new routing algorithm):
+
+1. **Implement the interface** in the corresponding file:
+   - `AdmissionPolicy` → `sim/admission.go` (receives `*RouterState` with cluster-wide snapshots)
+   - `RoutingPolicy` → `sim/routing.go` (receives `*RouterState` with cluster-wide snapshots)
+   - `PriorityPolicy` → `sim/priority.go` (instance-level, receives `clock` only)
+   - `InstanceScheduler` → `sim/scheduler.go` (instance-level, receives `clock` only)
+
+2. **Add policy name to valid names map** in `sim/bundle.go` (e.g., `ValidRoutingPolicies`)
+
+3. **Extend factory function** (e.g., `NewRoutingPolicy` in `sim/routing.go`) with a new `case`
+
+4. **Add tests** following BDD naming: `TestMyPolicy_Scenario_Behavior`
+
+5. **Update documentation**: CLAUDE.md file organization, README policy lists
+
+Example: See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with fallback.
+
 ### Code Style
 
 - Use composition over inheritance (e.g., `InstanceSimulator` wraps existing `sim` components)

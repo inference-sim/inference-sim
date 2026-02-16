@@ -23,6 +23,7 @@ The simulator is CPU-only, extremely fast, and designed for capacity planning, s
 - **Priority policies**: constant, slo-based (request prioritization)
 - **Instance schedulers**: fcfs, priority-fcfs, sjf (batch formation policies)
 - **Admission control**: always-admit or token-bucket rate limiting
+- **YAML policy configuration**: define all policies in a single config file (`--policy-config`)
 
 ---
 
@@ -161,6 +162,19 @@ Available schedulers:
 - `priority-fcfs` — orders by priority descending, then arrival time
 - `sjf` — shortest job first by input token count
 
+### Policy Configuration Files (YAML)
+
+Define all policies in a single YAML file for easier management:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --policy-config examples/policy-config.yaml
+```
+
+YAML values serve as defaults; CLI flags override YAML settings. See `examples/policy-config.yaml` for format and available options.
+
 ---
 
 ## Latency Estimation Approaches
@@ -240,11 +254,12 @@ BLIS supports multi-replica cluster simulation with pluggable control policies f
 - **Priority policies**: constant, slo-based (request prioritization)
 - **Instance schedulers**: fcfs, priority-fcfs, sjf (batch formation order)
 - **Instance observability**: snapshot-based monitoring with configurable staleness
+- **Policy bundles** with YAML configuration (`--policy-config`)
+- **Interface freeze**: policy interfaces are stable (additive changes only)
 
 Upcoming:
 
-- **Policy bundles** with YAML configuration (PR 8)
-- **Raw metrics and anomaly detection** (PR 9)
+- **Raw metrics and anomaly detection** (PR 9) → Research-Ready Checkpoint
 - **Auto-scaling, tiered KV cache, decision traces** (PRs 10-13)
 - **Framework integration** with OpenEvolve and GEPA for policy evolution (PR 15)
 
@@ -263,6 +278,8 @@ inference-sim/
 │   ├── routing.go          # Routing policy interface and templates
 │   ├── priority.go         # Priority policy interface and templates
 │   ├── scheduler.go        # Instance scheduler interface and templates
+│   ├── router_state.go     # RouterState bridge type for cluster-level policies
+│   ├── bundle.go           # PolicyBundle YAML configuration
 │   ├── kvcache.go          # KV cache modeling
 │   ├── batch.go            # Batch formation
 │   ├── request.go          # Request lifecycle
@@ -272,7 +289,8 @@ inference-sim/
 │   ├── instance.go         # Per-instance simulator wrapper
 │   ├── cluster_event.go    # Cluster-level event types
 │   └── snapshot.go         # Instance observability snapshots
-├── cmd/                    # CLI commands
+├── cmd/                    # CLI commands (--policy-config, --routing-policy, etc.)
+├── examples/               # Example configuration files
 ├── model_configs/          # HuggingFace config.json files
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
 ├── hardware_config.json    # GPU hardware specifications

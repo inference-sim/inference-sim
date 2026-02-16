@@ -2,10 +2,11 @@ package sim
 
 import "fmt"
 
-// RoutingSnapshot is a lightweight view of instance state for routing decisions.
-// Populated by ClusterSimulator from cluster.InstanceSnapshot at routing time.
+// RoutingSnapshot is a lightweight view of instance state for policy decisions.
+// Populated by ClusterSimulator from cluster.InstanceSnapshot when building RouterState
+// (used by both AdmissionPolicy and RoutingPolicy).
 // Timestamp is intentionally excluded: snapshot freshness is managed by
-// CachedSnapshotProvider and is not a routing concern.
+// CachedSnapshotProvider and is not a policy concern.
 type RoutingSnapshot struct {
 	ID            string
 	QueueDepth    int

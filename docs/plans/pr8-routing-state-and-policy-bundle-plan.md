@@ -130,9 +130,8 @@
               │          │
               └────┬─────┘
                    ▼
-             *RouterState ─────────────────── shared: built once per
-          (Snapshots + Clock)                 arrival pipeline, reused
-                                              by admission and routing
+             *RouterState ─────────────────── built fresh for each policy
+          (Snapshots + Clock)                 invocation via buildRouterState()
 ```
 
 **API Contracts:**
@@ -143,7 +142,7 @@
 - `PolicyBundle` — struct in `sim/` with YAML tags, `LoadPolicyBundle(path) (*PolicyBundle, error)`, `Validate() error`
 
 **State Changes:**
-- `ClusterSimulator` builds `RouterState` once per arrival pipeline (snapshot collection + clock), reused by both admission and routing events
+- `ClusterSimulator` builds `RouterState` independently for each policy invocation via `buildRouterState()` — both admission and routing events call this, producing fresh snapshots each time
 - `RoutingDecisionEvent.Execute` applies `decision.Priority` to request if non-zero
 - `PolicyBundle` is stateless (loaded once, applied to config)
 

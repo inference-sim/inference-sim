@@ -1,0 +1,27 @@
+# BLIS Policy Configuration
+#
+# Use with: ./simulation_worker run --model <model> --policy-config policy-config.yaml
+#
+# All fields are optional. Omit any field to use CLI flags or built-in defaults.
+# CLI flags always override YAML values when both are specified.
+#
+# Available policies:
+#   admission: always-admit (default), token-bucket
+#   routing:   round-robin (default), least-loaded, weighted, prefix-affinity
+#   priority:  constant (default), slo-based
+#   scheduler: fcfs (default), priority-fcfs, sjf
+
+admission:
+  policy: always-admit
+  # token_bucket_capacity: 10000      # max tokens (only for token-bucket)
+  # token_bucket_refill_rate: 1000    # tokens/second (only for token-bucket)
+
+routing:
+  policy: round-robin
+  # cache_weight: 0.6                 # cache affinity weight (only for weighted)
+  # load_weight: 0.4                  # load balance weight (only for weighted)
+
+priority:
+  policy: constant
+
+scheduler: fcfs
