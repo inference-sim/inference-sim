@@ -30,7 +30,8 @@ type Request struct {
 	ScheduledStepIdx int     // Step index when this request got scheduled (waiting -> running)
 	FinishedStepIdx  int     // Step index when this request got scheduled (waiting -> running)
 	NumNewTokens     int     // Number of new tokens to be generated in the curren step
-	ITL              []int64 // List of inter-token latencies
+	ITL              []int64  // List of inter-token latencies
+	Priority         float64  // Priority score assigned by PriorityPolicy (higher = more urgent)
 }
 
 // This method returns a human-readable string representation of a Request.
