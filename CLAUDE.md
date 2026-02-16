@@ -147,20 +147,24 @@ Active development: Evolutionary Policy Optimization extension (see `docs/plans/
 To add a new policy template (e.g., a new routing algorithm):
 
 1. **Implement the interface** in the corresponding file:
-   - `AdmissionPolicy` → `sim/admission.go` (receives `*RouterState` with cluster-wide snapshots)
-   - `RoutingPolicy` → `sim/routing.go` (receives `*RouterState` with cluster-wide snapshots)
-   - `PriorityPolicy` → `sim/priority.go` (instance-level, receives `clock` only)
-   - `InstanceScheduler` → `sim/scheduler.go` (instance-level, receives `clock` only)
+   - `AdmissionPolicy` → `sim/admission.go` (cluster-level: receives `*RouterState` with snapshots + clock)
+   - `RoutingPolicy` → `sim/routing.go` (cluster-level: receives `*RouterState` with snapshots + clock)
+   - `PriorityPolicy` → `sim/priority.go` (instance-level: receives `req` + `clock` only)
+   - `InstanceScheduler` → `sim/scheduler.go` (instance-level: receives `requests` + `clock` only)
+   - Note: `RouterState` is a bridge type in `sim/` to avoid import cycles — see `sim/router_state.go`
 
-2. **Add policy name to valid names map** in `sim/bundle.go` (e.g., `ValidRoutingPolicies`)
+2. **Register in two places** (both required):
+   - Add policy name to valid names map in `sim/bundle.go` (e.g., `ValidRoutingPolicies`)
+   - Add `case` to factory function in the same policy file (e.g., `NewRoutingPolicy` in `sim/routing.go`)
 
-3. **Extend factory function** (e.g., `NewRoutingPolicy` in `sim/routing.go`) with a new `case`
+3. **Add tests** following BDD naming: `TestMyPolicy_Scenario_Behavior`
+   - Test observable behavior, not internal structure
+   - Include empty-snapshots panic test (defensive programming convention)
+   - Use `&RouterState{Snapshots: snapshots, Clock: clock}` in test setup
 
-4. **Add tests** following BDD naming: `TestMyPolicy_Scenario_Behavior`
+4. **Update documentation**: CLAUDE.md file organization, README policy lists
 
-5. **Update documentation**: CLAUDE.md file organization, README policy lists
-
-Example: See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with fallback.
+Example: See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback.
 
 ### Code Style
 

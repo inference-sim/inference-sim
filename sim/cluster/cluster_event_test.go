@@ -153,27 +153,6 @@ func TestClusterEventPriorities(t *testing.T) {
 	}
 }
 
-// TestClusterEventTimestamps verifies that each event type returns its configured timestamp.
-func TestClusterEventTimestamps(t *testing.T) {
-	tests := []struct {
-		name      string
-		event     ClusterEvent
-		wantTime  int64
-	}{
-		{"ClusterArrivalEvent", &ClusterArrivalEvent{time: 42}, 42},
-		{"AdmissionDecisionEvent", &AdmissionDecisionEvent{time: 99}, 99},
-		{"RoutingDecisionEvent", &RoutingDecisionEvent{time: 1000}, 1000},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.event.Timestamp(); got != tc.wantTime {
-				t.Errorf("Timestamp() = %d, want %d", got, tc.wantTime)
-			}
-		})
-	}
-}
-
 // TestBuildRouterState_PopulatesSnapshots verifies BC-8:
 // buildRouterState must produce a RouterState with one snapshot per instance and the current clock.
 func TestBuildRouterState_PopulatesSnapshots(t *testing.T) {

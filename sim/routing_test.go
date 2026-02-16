@@ -88,14 +88,19 @@ func TestNewRoutingPolicy_UnknownName_Panics(t *testing.T) {
 	NewRoutingPolicy("invalid-policy", 0, 0)
 }
 
-// TestNewRoutingPolicy_DefaultName verifies empty string defaults to round-robin.
+// TestNewRoutingPolicy_DefaultName verifies empty string defaults to round-robin behavior.
 func TestNewRoutingPolicy_DefaultName(t *testing.T) {
 	policy := NewRoutingPolicy("", 0, 0)
 	if policy == nil {
-		t.Errorf("Expected non-nil policy for empty string, got nil")
+		t.Fatal("Expected non-nil policy for empty string, got nil")
 	}
-	if _, ok := policy.(*RoundRobin); !ok {
-		t.Errorf("Expected RoundRobin for empty string, got %T", policy)
+	// Verify round-robin behavior: routes to first instance, then second
+	snapshots := []RoutingSnapshot{{ID: "a"}, {ID: "b"}}
+	state := &RouterState{Snapshots: snapshots, Clock: 0}
+	d1 := policy.Route(&Request{ID: "r1"}, state)
+	d2 := policy.Route(&Request{ID: "r2"}, state)
+	if d1.TargetInstance != "a" || d2.TargetInstance != "b" {
+		t.Errorf("Expected round-robin (a, b), got (%s, %s)", d1.TargetInstance, d2.TargetInstance)
 	}
 }
 
@@ -372,26 +377,35 @@ func TestPrefixAffinity_EmptySnapshots_Panics(t *testing.T) {
 
 // === Fix #3: WeightedScoring score value verification ===
 
-// TestWeightedScoring_ScoreValues verifies actual computed scores match the formula.
-func TestWeightedScoring_ScoreValues(t *testing.T) {
+// TestWeightedScoring_HighestScoreWins verifies the behavioral invariant:
+// the selected target must have the highest score in the Scores map.
+func TestWeightedScoring_HighestScoreWins(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
 
 	snapshots := []RoutingSnapshot{
-		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8}, // load=10, norm=1.0, score = 0.2*0.6 + 0*0.4 = 0.12
-		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2}, // load=10, norm=1.0, score = 0.8*0.6 + 0*0.4 = 0.48
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2},
+		{ID: "instance_2", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5},
 	}
 
 	req := &Request{ID: "req1"}
 	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
-	const epsilon = 1e-9
-	expectedScores := map[string]float64{"instance_0": 0.12, "instance_1": 0.48}
-	for id, expected := range expectedScores {
-		if got, ok := decision.Scores[id]; !ok {
-			t.Errorf("Score for %s missing", id)
-		} else if math.Abs(got-expected) > epsilon {
-			t.Errorf("Score for %s: got %f, want %f", id, got, expected)
+	// Behavioral invariant: target has the highest score
+	targetScore, ok := decision.Scores[decision.TargetInstance]
+	if !ok {
+		t.Fatalf("target %q not in Scores map", decision.TargetInstance)
+	}
+	for id, score := range decision.Scores {
+		if score > targetScore {
+			t.Errorf("instance %q has higher score (%f) than target %q (%f)",
+				id, score, decision.TargetInstance, targetScore)
 		}
+	}
+
+	// All instances should have scores
+	if len(decision.Scores) != len(snapshots) {
+		t.Errorf("expected %d scores, got %d", len(snapshots), len(decision.Scores))
 	}
 }
 

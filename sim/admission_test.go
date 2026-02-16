@@ -123,26 +123,32 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 	})
 }
 
-// TestNewAdmissionPolicy_ValidNames verifies the factory returns correct types.
+// TestNewAdmissionPolicy_ValidNames verifies the factory produces correct behavioral policies.
 func TestNewAdmissionPolicy_ValidNames(t *testing.T) {
-	t.Run("always-admit", func(t *testing.T) {
+	req := &Request{ID: "r0", InputTokens: make([]int, 10)}
+	state := &RouterState{Clock: 0}
+
+	t.Run("always-admit admits all", func(t *testing.T) {
 		p := NewAdmissionPolicy("always-admit", 0, 0)
-		if _, ok := p.(*AlwaysAdmit); !ok {
-			t.Errorf("expected *AlwaysAdmit, got %T", p)
+		admitted, _ := p.Admit(req, state)
+		if !admitted {
+			t.Error("always-admit policy should admit")
 		}
 	})
 
-	t.Run("empty string returns AlwaysAdmit", func(t *testing.T) {
+	t.Run("empty string defaults to always-admit", func(t *testing.T) {
 		p := NewAdmissionPolicy("", 0, 0)
-		if _, ok := p.(*AlwaysAdmit); !ok {
-			t.Errorf("expected *AlwaysAdmit for empty string, got %T", p)
+		admitted, _ := p.Admit(req, state)
+		if !admitted {
+			t.Error("default policy should admit")
 		}
 	})
 
-	t.Run("token-bucket", func(t *testing.T) {
-		p := NewAdmissionPolicy("token-bucket", 100, 10)
-		if _, ok := p.(*TokenBucket); !ok {
-			t.Errorf("expected *TokenBucket, got %T", p)
+	t.Run("token-bucket rate-limits", func(t *testing.T) {
+		p := NewAdmissionPolicy("token-bucket", 5, 0) // capacity=5, no refill
+		admitted, _ := p.Admit(req, state)             // cost=10 > capacity=5
+		if admitted {
+			t.Error("token-bucket should reject request exceeding capacity")
 		}
 	})
 }

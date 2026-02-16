@@ -242,6 +242,14 @@ This requires the HuggingFace `config.json` for the model saved under the `model
 }
 ```
 
+**Key metrics:**
+- **TTFT** (Time to First Token): Latency from request arrival to first output token
+- **ITL** (Inter-Token Latency): Average time between consecutive output tokens
+- **E2E** (End-to-End): Total latency from request arrival to completion
+- **Scheduling Delay**: Time spent waiting in queue before batch formation
+- **Tokens/sec**: Aggregate throughput across all completed requests
+- `_p90`, `_p95`, `_p99` suffixes indicate percentile values
+
 ---
 
 ## Evolutionary Policy Optimization (In Progress)
