@@ -19,13 +19,13 @@ type RoutingDecision struct {
 	TargetInstance string             // Instance ID to route to (must match a snapshot ID)
 	Reason         string             // Human-readable explanation
 	Scores         map[string]float64 // Instance ID → composite score (nil for policies without scoring)
+	Priority       float64            // Cluster-level priority hint; 0 = defer to instance PriorityPolicy (BC-9)
 }
 
 // RoutingPolicy decides which instance should handle a request.
-// Implementations receive request, instance snapshots, and current clock.
-// This is a transitional interface for PR 6; PR 8 will extend with RouterState parameter.
+// Implementations receive request and cluster-wide state via *RouterState.
 type RoutingPolicy interface {
-	Route(req *Request, snapshots []RoutingSnapshot, clock int64) RoutingDecision
+	Route(req *Request, state *RouterState) RoutingDecision
 }
 
 // RoundRobin routes requests in round-robin order across instances.
@@ -34,7 +34,8 @@ type RoundRobin struct {
 }
 
 // Route implements RoutingPolicy for RoundRobin.
-func (rr *RoundRobin) Route(req *Request, snapshots []RoutingSnapshot, clock int64) RoutingDecision {
+func (rr *RoundRobin) Route(req *Request, state *RouterState) RoutingDecision {
+	snapshots := state.Snapshots
 	if len(snapshots) == 0 {
 		panic("RoundRobin.Route: empty snapshots")
 	}
@@ -51,7 +52,8 @@ func (rr *RoundRobin) Route(req *Request, snapshots []RoutingSnapshot, clock int
 type LeastLoaded struct{}
 
 // Route implements RoutingPolicy for LeastLoaded.
-func (ll *LeastLoaded) Route(req *Request, snapshots []RoutingSnapshot, clock int64) RoutingDecision {
+func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
+	snapshots := state.Snapshots
 	if len(snapshots) == 0 {
 		panic("LeastLoaded.Route: empty snapshots")
 	}
@@ -82,7 +84,8 @@ type WeightedScoring struct {
 }
 
 // Route implements RoutingPolicy for WeightedScoring.
-func (ws *WeightedScoring) Route(req *Request, snapshots []RoutingSnapshot, clock int64) RoutingDecision {
+func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecision {
+	snapshots := state.Snapshots
 	if len(snapshots) == 0 {
 		panic("WeightedScoring.Route: empty snapshots")
 	}
@@ -138,7 +141,8 @@ type PrefixAffinity struct {
 }
 
 // Route implements RoutingPolicy for PrefixAffinity.
-func (pa *PrefixAffinity) Route(req *Request, snapshots []RoutingSnapshot, clock int64) RoutingDecision {
+func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecision {
+	snapshots := state.Snapshots
 	if len(snapshots) == 0 {
 		panic("PrefixAffinity.Route: empty snapshots")
 	}
@@ -159,9 +163,9 @@ func (pa *PrefixAffinity) Route(req *Request, snapshots []RoutingSnapshot, clock
 		}
 	}
 
-	// Cache miss or stale entry: fallback to LeastLoaded
+	// Cache miss or stale entry: fallback to LeastLoaded, passing state through
 	ll := &LeastLoaded{}
-	decision := ll.Route(req, snapshots, clock)
+	decision := ll.Route(req, state)
 
 	// Update cache with new mapping
 	pa.prefixMap[prefixHash] = decision.TargetInstance

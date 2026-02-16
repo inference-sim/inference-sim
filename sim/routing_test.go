@@ -17,7 +17,7 @@ func TestRoutingPolicy_Interface_Contract(t *testing.T) {
 		{ID: "instance_0", QueueDepth: 5},
 		{ID: "instance_1", QueueDepth: 3},
 	}
-	decision := policy.Route(req, snapshots, 1000)
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// THEN RoutingDecision must have TargetInstance set
 	if decision.TargetInstance == "" {
@@ -51,7 +51,7 @@ func TestRoundRobin_DeterministicOrdering(t *testing.T) {
 	var targets []string
 	for i := 0; i < 6; i++ {
 		req := &Request{ID: fmt.Sprintf("req%d", i)}
-		decision := policy.Route(req, snapshots, int64(i*1000))
+		decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: int64(i * 1000)})
 		targets = append(targets, decision.TargetInstance)
 	}
 
@@ -74,7 +74,7 @@ func TestRoundRobin_EmptySnapshots_Panics(t *testing.T) {
 
 	policy := NewRoutingPolicy("round-robin", 0, 0)
 	req := &Request{ID: "req1"}
-	policy.Route(req, []RoutingSnapshot{}, 1000)
+	policy.Route(req, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 1000})
 }
 
 // TestNewRoutingPolicy_UnknownName_Panics verifies BC-11.
@@ -139,7 +139,7 @@ func TestLeastLoaded_LoadBasedSelection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := &Request{ID: "req1"}
-			decision := policy.Route(req, tt.snapshots, 1000)
+			decision := policy.Route(req, &RouterState{Snapshots: tt.snapshots, Clock: 1000})
 			if decision.TargetInstance != tt.expected {
 				t.Errorf("Expected %q, got %q", tt.expected, decision.TargetInstance)
 			}
@@ -157,7 +157,7 @@ func TestLeastLoaded_EmptySnapshots_Panics(t *testing.T) {
 
 	policy := NewRoutingPolicy("least-loaded", 0, 0)
 	req := &Request{ID: "req1"}
-	policy.Route(req, []RoutingSnapshot{}, 1000)
+	policy.Route(req, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 1000})
 }
 
 // TestWeightedScoring_MultiFactor verifies BC-4.
@@ -202,7 +202,7 @@ func TestWeightedScoring_MultiFactor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := &Request{ID: "req1"}
-			decision := policy.Route(req, tt.snapshots, 1000)
+			decision := policy.Route(req, &RouterState{Snapshots: tt.snapshots, Clock: 1000})
 			if decision.TargetInstance != tt.expected {
 				t.Errorf("%s: expected %q, got %q", tt.reason, tt.expected, decision.TargetInstance)
 			}
@@ -224,7 +224,7 @@ func TestWeightedScoring_UniformLoad(t *testing.T) {
 	}
 
 	req := &Request{ID: "req1"}
-	decision := policy.Route(req, snapshots, 1000)
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// instance_0 wins on lower KVUtilization (load component cancels out)
 	if decision.TargetInstance != "instance_0" {
@@ -241,7 +241,7 @@ func TestWeightedScoring_NegativeWeights(t *testing.T) {
 	}
 
 	req := &Request{ID: "req1"}
-	decision := policy.Route(req, snapshots, 1000)
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 	if decision.TargetInstance == "" {
 		t.Errorf("Expected non-empty TargetInstance even with negative weights")
 	}
@@ -257,12 +257,12 @@ func TestPrefixAffinity_CacheHit(t *testing.T) {
 
 	// First request with prefix [1, 2, 3] routed (cache miss → LeastLoaded)
 	req1 := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
-	decision1 := policy.Route(req1, snapshots, 1000)
+	decision1 := policy.Route(req1, &RouterState{Snapshots: snapshots, Clock: 1000})
 	firstTarget := decision1.TargetInstance
 
 	// Second request with same prefix → cache hit
 	req2 := &Request{ID: "req2", InputTokens: []int{1, 2, 3}}
-	decision2 := policy.Route(req2, snapshots, 2000)
+	decision2 := policy.Route(req2, &RouterState{Snapshots: snapshots, Clock: 2000})
 
 	if decision2.TargetInstance != firstTarget {
 		t.Errorf("Expected cache hit routing to %q, got %q", firstTarget, decision2.TargetInstance)
@@ -278,7 +278,7 @@ func TestPrefixAffinity_CacheMiss(t *testing.T) {
 	}
 
 	req := &Request{ID: "req1", InputTokens: []int{7, 8, 9}}
-	decision := policy.Route(req, snapshots, 1000)
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	if decision.TargetInstance != "instance_1" {
 		t.Errorf("Expected fallback to least-loaded (instance_1), got %q", decision.TargetInstance)
@@ -296,8 +296,8 @@ func TestPrefixAffinity_DifferentPrefixes(t *testing.T) {
 	req1 := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
 	req2 := &Request{ID: "req2", InputTokens: []int{4, 5, 6}}
 
-	decision1 := policy.Route(req1, snapshots, 1000)
-	decision2 := policy.Route(req2, snapshots, 2000)
+	decision1 := policy.Route(req1, &RouterState{Snapshots: snapshots, Clock: 1000})
+	decision2 := policy.Route(req2, &RouterState{Snapshots: snapshots, Clock: 2000})
 
 	validIDs := map[string]bool{"instance_0": true, "instance_1": true}
 	if !validIDs[decision1.TargetInstance] || !validIDs[decision2.TargetInstance] {
@@ -332,11 +332,11 @@ func TestPrefixAffinity_NoStateLeak(t *testing.T) {
 
 	// policy1 routes and builds cache
 	req1 := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
-	policy1.Route(req1, snapshots, 1000)
+	policy1.Route(req1, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// policy2 routes same prefix — cache miss (independent state)
 	req2 := &Request{ID: "req2", InputTokens: []int{1, 2, 3}}
-	decision2 := policy2.Route(req2, snapshots, 1000)
+	decision2 := policy2.Route(req2, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// Falls back to LeastLoaded → first occurrence (instance_0)
 	if decision2.TargetInstance != "instance_0" {
@@ -355,7 +355,7 @@ func TestWeightedScoring_EmptySnapshots_Panics(t *testing.T) {
 	}()
 
 	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
-	policy.Route(&Request{ID: "req1"}, []RoutingSnapshot{}, 1000)
+	policy.Route(&Request{ID: "req1"}, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 1000})
 }
 
 // TestPrefixAffinity_EmptySnapshots_Panics verifies BC-10.
@@ -367,7 +367,7 @@ func TestPrefixAffinity_EmptySnapshots_Panics(t *testing.T) {
 	}()
 
 	policy := NewRoutingPolicy("prefix-affinity", 0, 0)
-	policy.Route(&Request{ID: "req1", InputTokens: []int{1}}, []RoutingSnapshot{}, 1000)
+	policy.Route(&Request{ID: "req1", InputTokens: []int{1}}, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 1000})
 }
 
 // === Fix #3: WeightedScoring score value verification ===
@@ -382,7 +382,7 @@ func TestWeightedScoring_ScoreValues(t *testing.T) {
 	}
 
 	req := &Request{ID: "req1"}
-	decision := policy.Route(req, snapshots, 1000)
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	const epsilon = 1e-9
 	expectedScores := map[string]float64{"instance_0": 0.12, "instance_1": 0.48}
@@ -407,7 +407,7 @@ func TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded(t *testing.T) {
 		{ID: "instance_1", QueueDepth: 2, BatchSize: 1},
 	}
 	req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
-	decision1 := policy.Route(req, snapshots1, 1000)
+	decision1 := policy.Route(req, &RouterState{Snapshots: snapshots1, Clock: 1000})
 	if decision1.TargetInstance != "instance_1" {
 		t.Fatalf("setup: expected instance_1, got %q", decision1.TargetInstance)
 	}
@@ -418,7 +418,7 @@ func TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded(t *testing.T) {
 		{ID: "instance_2", QueueDepth: 1, BatchSize: 0},
 	}
 	req2 := &Request{ID: "req2", InputTokens: []int{1, 2, 3}}
-	decision2 := policy.Route(req2, snapshots2, 2000)
+	decision2 := policy.Route(req2, &RouterState{Snapshots: snapshots2, Clock: 2000})
 
 	// Should fallback to least-loaded (instance_2)
 	if decision2.TargetInstance != "instance_2" {
@@ -437,7 +437,7 @@ func TestWeightedScoring_AllIdle_NoDivisionByZero(t *testing.T) {
 	}
 
 	req := &Request{ID: "req1"}
-	decision := policy.Route(req, snapshots, 1000)
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// With zero load, normalizedLoad=0, loadScore=1.0*0.4=0.4 for all.
 	// instance_0 wins on lower KVUtilization: (0.7*0.6 + 0.4) = 0.82 vs (0.3*0.6 + 0.4) = 0.58
@@ -450,5 +450,33 @@ func TestWeightedScoring_AllIdle_NoDivisionByZero(t *testing.T) {
 		if math.IsNaN(score) || math.IsInf(score, 0) {
 			t.Errorf("Score for %s is not finite: %f", id, score)
 		}
+	}
+}
+
+// TestRoutingDecision_PriorityHint_DefaultZero verifies BC-9: default Priority is zero.
+func TestRoutingDecision_PriorityHint_DefaultZero(t *testing.T) {
+	policies := []struct {
+		name string
+	}{
+		{"round-robin"},
+		{"least-loaded"},
+		{"weighted"},
+		{"prefix-affinity"},
+	}
+
+	for _, tt := range policies {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := NewRoutingPolicy(tt.name, 0.6, 0.4)
+			state := &RouterState{
+				Snapshots: []RoutingSnapshot{{ID: "instance_0", QueueDepth: 1}},
+				Clock:     1000,
+			}
+			req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+			decision := policy.Route(req, state)
+
+			if decision.Priority != 0 {
+				t.Errorf("expected default Priority 0, got %f", decision.Priority)
+			}
+		})
 	}
 }
