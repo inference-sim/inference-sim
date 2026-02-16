@@ -117,6 +117,31 @@ func TestDeploymentConfig_ToSimConfig_FieldMapping(t *testing.T) {
 	}
 }
 
+func TestDeploymentConfig_ToSimConfig_PrioritySchedulerFields(t *testing.T) {
+	dc := DeploymentConfig{
+		NumInstances:       1,
+		Horizon:            999,
+		Seed:               7,
+		TotalKVBlocks:      500,
+		BlockSizeTokens:    32,
+		MaxRunningReqs:     128,
+		MaxScheduledTokens: 4096,
+		BetaCoeffs:         []float64{1, 2, 3},
+		AlphaCoeffs:        []float64{4, 5, 6},
+		PriorityPolicy:     "slo-based",
+		Scheduler:          "priority-fcfs",
+	}
+
+	sc := dc.ToSimConfig()
+
+	if sc.PriorityPolicy != "slo-based" {
+		t.Errorf("PriorityPolicy: got %q, want %q", sc.PriorityPolicy, "slo-based")
+	}
+	if sc.Scheduler != "priority-fcfs" {
+		t.Errorf("Scheduler: got %q, want %q", sc.Scheduler, "priority-fcfs")
+	}
+}
+
 // TestClusterSimulator_SingleInstance_GoldenEquivalence verifies BC-7, BC-9:
 // GIVEN each golden dataset test case configured as NumInstances=1 via ClusterSimulator
 // WHEN Run() called
