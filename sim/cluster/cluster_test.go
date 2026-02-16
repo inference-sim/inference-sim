@@ -635,6 +635,28 @@ func TestClusterSimulator_RoutingPolicy_LeastLoaded(t *testing.T) {
 	}
 }
 
+// TestClusterSimulator_AllRoutingPolicies_Smoke verifies all policies are exercisable.
+func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
+	policies := []string{"round-robin", "least-loaded", "weighted", "prefix-affinity"}
+
+	for _, policyName := range policies {
+		t.Run(policyName, func(t *testing.T) {
+			config := newTestDeploymentConfig(2)
+			config.RoutingPolicy = policyName
+			config.RoutingCacheWeight = 0.6
+			config.RoutingLoadWeight = 0.4
+			workload := newTestWorkload(5)
+
+			cs := NewClusterSimulator(config, workload, "")
+			cs.Run()
+
+			if cs.AggregatedMetrics().CompletedRequests == 0 {
+				t.Errorf("Policy %q: expected non-zero completed requests", policyName)
+			}
+		})
+	}
+}
+
 // === Benchmarks ===
 
 func BenchmarkClusterSimulator_1K_1Instance(b *testing.B) {
