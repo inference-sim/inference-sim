@@ -214,6 +214,84 @@ func TestNewScheduler_UnknownName_Panics(t *testing.T) {
 	NewScheduler("unknown")
 }
 
+func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
+	// BC-2 + BC-5: SLO-based priority assigns higher priority to older requests;
+	// priority-fcfs scheduler should schedule the older (higher-priority) request first.
+	// Uses MaxRunningReqs=1 to force sequential scheduling so step index proves ordering.
+	cfg := SimConfig{
+		Horizon:            10000000,
+		Seed:               42,
+		TotalKVBlocks:      1000,
+		BlockSizeTokens:    16,
+		MaxRunningReqs:     1,
+		MaxScheduledTokens: 2048,
+		BetaCoeffs:         []float64{1000, 10, 5},
+		AlphaCoeffs:        []float64{100, 1, 100},
+		PriorityPolicy:     "slo-based",
+		Scheduler:          "priority-fcfs",
+	}
+	s := NewSimulator(cfg)
+
+	// reqNewer arrives later (lower age → lower priority from SLO-based policy)
+	// Inject it first so FCFS would schedule it first — but priority should override.
+	reqNewer := &Request{
+		ID:           "req_newer",
+		InputTokens:  make([]int, 20),
+		OutputTokens: make([]int, 5),
+		ArrivalTime:  500000,
+		State:        "queued",
+	}
+	// reqOlder arrives earlier (higher age → higher priority)
+	reqOlder := &Request{
+		ID:           "req_older",
+		InputTokens:  make([]int, 20),
+		OutputTokens: make([]int, 5),
+		ArrivalTime:  0,
+		State:        "queued",
+	}
+
+	// Inject newer first, then older — priority-fcfs should reorder
+	s.InjectArrival(reqNewer)
+	s.InjectArrival(reqOlder)
+
+	s.Run()
+
+	// Both should complete
+	if s.Metrics.CompletedRequests != 2 {
+		t.Fatalf("completed: got %d, want 2", s.Metrics.CompletedRequests)
+	}
+
+	// Older request (higher priority) should have been scheduled first
+	if reqOlder.ScheduledStepIdx > reqNewer.ScheduledStepIdx {
+		t.Errorf("priority inversion: older scheduled at step %d, newer at step %d",
+			reqOlder.ScheduledStepIdx, reqNewer.ScheduledStepIdx)
+	}
+}
+
+func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
+	// BC-1: default config (empty strings) uses ConstantPriority + FCFSScheduler
+	cfg := SimConfig{
+		Horizon:            1000000,
+		Seed:               42,
+		TotalKVBlocks:      1000,
+		BlockSizeTokens:    16,
+		MaxRunningReqs:     256,
+		MaxScheduledTokens: 2048,
+		BetaCoeffs:         []float64{1000, 10, 5},
+		AlphaCoeffs:        []float64{100, 1, 100},
+		// PriorityPolicy and Scheduler left empty (defaults)
+	}
+	s := NewSimulator(cfg)
+
+	// Verify correct types were created
+	if _, ok := s.priorityPolicy.(*ConstantPriority); !ok {
+		t.Errorf("default priorityPolicy: got %T, want *ConstantPriority", s.priorityPolicy)
+	}
+	if _, ok := s.scheduler.(*FCFSScheduler); !ok {
+		t.Errorf("default scheduler: got %T, want *FCFSScheduler", s.scheduler)
+	}
+}
+
 func TestScheduler_EmptyQueue_NoOp(t *testing.T) {
 	// Edge case: empty queue must not panic or modify slice
 	schedulers := []struct {
