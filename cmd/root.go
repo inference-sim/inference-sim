@@ -246,6 +246,20 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// Validate policy names (catches CLI typos before they become panics)
+		if !sim.IsValidAdmissionPolicy(admissionPolicy) {
+			logrus.Fatalf("Unknown admission policy %q. Valid: always-admit, token-bucket", admissionPolicy)
+		}
+		if !sim.IsValidRoutingPolicy(routingPolicy) {
+			logrus.Fatalf("Unknown routing policy %q. Valid: round-robin, least-loaded, weighted, prefix-affinity", routingPolicy)
+		}
+		if !sim.IsValidPriorityPolicy(priorityPolicy) {
+			logrus.Fatalf("Unknown priority policy %q. Valid: constant, slo-based", priorityPolicy)
+		}
+		if !sim.IsValidScheduler(scheduler) {
+			logrus.Fatalf("Unknown scheduler %q. Valid: fcfs, priority-fcfs, sjf", scheduler)
+		}
+
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances)

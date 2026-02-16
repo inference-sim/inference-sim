@@ -349,9 +349,7 @@ func TestPrefixAffinity_NoStateLeak(t *testing.T) {
 	}
 }
 
-// === Fix #2: Missing empty-snapshot panic tests for WeightedScoring and PrefixAffinity (BC-10) ===
-
-// TestWeightedScoring_EmptySnapshots_Panics verifies BC-10.
+// TestWeightedScoring_EmptySnapshots_Panics verifies empty snapshots cause panic.
 func TestWeightedScoring_EmptySnapshots_Panics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -374,8 +372,6 @@ func TestPrefixAffinity_EmptySnapshots_Panics(t *testing.T) {
 	policy := NewRoutingPolicy("prefix-affinity", 0, 0)
 	policy.Route(&Request{ID: "req1", InputTokens: []int{1}}, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 1000})
 }
-
-// === Fix #3: WeightedScoring score value verification ===
 
 // TestWeightedScoring_HighestScoreWins verifies the behavioral invariant:
 // the selected target must have the highest score in the Scores map.
@@ -409,8 +405,6 @@ func TestWeightedScoring_HighestScoreWins(t *testing.T) {
 	}
 }
 
-// === Fix #4: PrefixAffinity stale cache entry test ===
-
 // TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded verifies stale cache path.
 func TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded(t *testing.T) {
 	policy := NewRoutingPolicy("prefix-affinity", 0, 0)
@@ -440,8 +434,6 @@ func TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded(t *testing.T) {
 	}
 }
 
-// === Fix #5: WeightedScoring all-idle (maxLoad==0) edge case ===
-
 // TestWeightedScoring_AllIdle_NoDivisionByZero verifies zero-load edge case.
 func TestWeightedScoring_AllIdle_NoDivisionByZero(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
@@ -469,18 +461,11 @@ func TestWeightedScoring_AllIdle_NoDivisionByZero(t *testing.T) {
 
 // TestRoutingDecision_PriorityHint_DefaultZero verifies BC-9: default Priority is zero.
 func TestRoutingDecision_PriorityHint_DefaultZero(t *testing.T) {
-	policies := []struct {
-		name string
-	}{
-		{"round-robin"},
-		{"least-loaded"},
-		{"weighted"},
-		{"prefix-affinity"},
-	}
+	policyNames := []string{"round-robin", "least-loaded", "weighted", "prefix-affinity"}
 
-	for _, tt := range policies {
-		t.Run(tt.name, func(t *testing.T) {
-			policy := NewRoutingPolicy(tt.name, 0.6, 0.4)
+	for _, name := range policyNames {
+		t.Run(name, func(t *testing.T) {
+			policy := NewRoutingPolicy(name, 0.6, 0.4)
 			state := &RouterState{
 				Snapshots: []RoutingSnapshot{{ID: "instance_0", QueueDepth: 1}},
 				Clock:     1000,

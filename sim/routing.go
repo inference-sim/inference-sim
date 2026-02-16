@@ -189,7 +189,7 @@ func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecisio
 // For weighted scoring, cacheWeight and loadWeight configure the composite score.
 // Panics on unrecognized names.
 func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolicy {
-	if !ValidRoutingPolicies[name] {
+	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
 	switch name {

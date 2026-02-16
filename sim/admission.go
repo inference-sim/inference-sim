@@ -56,7 +56,7 @@ func (tb *TokenBucket) Admit(req *Request, state *RouterState) (bool, string) {
 // For token-bucket, capacity and refillRate configure the bucket.
 // Panics on unrecognized names.
 func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPolicy {
-	if !ValidAdmissionPolicies[name] {
+	if !IsValidAdmissionPolicy(name) {
 		panic(fmt.Sprintf("unknown admission policy %q", name))
 	}
 	switch name {

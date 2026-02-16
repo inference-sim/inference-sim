@@ -1,8 +1,12 @@
 package sim
 
 import (
+	"bytes"
 	"fmt"
+	"math"
 	"os"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -37,57 +41,94 @@ type PriorityConfig struct {
 }
 
 // LoadPolicyBundle reads and parses a YAML policy configuration file.
+// Uses strict parsing: unrecognized keys (typos) are rejected.
 func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading policy config: %w", err)
 	}
 	var bundle PolicyBundle
-	if err := yaml.Unmarshal(data, &bundle); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&bundle); err != nil {
 		return nil, fmt.Errorf("parsing policy config: %w", err)
 	}
 	return &bundle, nil
 }
 
-// ValidAdmissionPolicies is the set of recognized admission policy names.
-// Shared by Validate() and NewAdmissionPolicy() to avoid duplication.
-var ValidAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true}
+// Valid policy name registries. Unexported to prevent external mutation.
+// Used by Validate(), factory functions, and ValidatePolicyName().
+var (
+	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true}
+	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "prefix-affinity": true}
+	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true}
+	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true}
+)
 
-// ValidRoutingPolicies is the set of recognized routing policy names.
-var ValidRoutingPolicies = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "prefix-affinity": true}
+// IsValidAdmissionPolicy returns true if name is a recognized admission policy.
+func IsValidAdmissionPolicy(name string) bool { return validAdmissionPolicies[name] }
 
-// ValidPriorityPolicies is the set of recognized priority policy names.
-var ValidPriorityPolicies = map[string]bool{"": true, "constant": true, "slo-based": true}
+// IsValidRoutingPolicy returns true if name is a recognized routing policy.
+func IsValidRoutingPolicy(name string) bool { return validRoutingPolicies[name] }
 
-// ValidSchedulers is the set of recognized scheduler names.
-var ValidSchedulers = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true}
+// IsValidPriorityPolicy returns true if name is a recognized priority policy.
+func IsValidPriorityPolicy(name string) bool { return validPriorityPolicies[name] }
+
+// IsValidScheduler returns true if name is a recognized scheduler.
+func IsValidScheduler(name string) bool { return validSchedulers[name] }
+
+// validNames returns a sorted comma-separated list of valid names (excluding empty string).
+func validNames(m map[string]bool) string {
+	names := make([]string, 0, len(m))
+	for k := range m {
+		if k != "" {
+			names = append(names, k)
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
 
 // Validate checks that all policy names and parameter ranges in the bundle are valid.
 func (b *PolicyBundle) Validate() error {
-	if !ValidAdmissionPolicies[b.Admission.Policy] {
-		return fmt.Errorf("unknown admission policy %q", b.Admission.Policy)
+	if !validAdmissionPolicies[b.Admission.Policy] {
+		return fmt.Errorf("unknown admission policy %q; valid options: %s", b.Admission.Policy, validNames(validAdmissionPolicies))
 	}
-	if !ValidRoutingPolicies[b.Routing.Policy] {
-		return fmt.Errorf("unknown routing policy %q", b.Routing.Policy)
+	if !validRoutingPolicies[b.Routing.Policy] {
+		return fmt.Errorf("unknown routing policy %q; valid options: %s", b.Routing.Policy, validNames(validRoutingPolicies))
 	}
-	if !ValidPriorityPolicies[b.Priority.Policy] {
-		return fmt.Errorf("unknown priority policy %q", b.Priority.Policy)
+	if !validPriorityPolicies[b.Priority.Policy] {
+		return fmt.Errorf("unknown priority policy %q; valid options: %s", b.Priority.Policy, validNames(validPriorityPolicies))
 	}
-	if !ValidSchedulers[b.Scheduler] {
-		return fmt.Errorf("unknown scheduler %q", b.Scheduler)
+	if !validSchedulers[b.Scheduler] {
+		return fmt.Errorf("unknown scheduler %q; valid options: %s", b.Scheduler, validNames(validSchedulers))
 	}
-	// Parameter range validation
-	if b.Admission.TokenBucketCapacity != nil && *b.Admission.TokenBucketCapacity < 0 {
-		return fmt.Errorf("token_bucket_capacity must be non-negative, got %f", *b.Admission.TokenBucketCapacity)
+	// Parameter range validation (reject negative, NaN, and Inf)
+	if err := validateFloat("token_bucket_capacity", b.Admission.TokenBucketCapacity); err != nil {
+		return err
 	}
-	if b.Admission.TokenBucketRefillRate != nil && *b.Admission.TokenBucketRefillRate < 0 {
-		return fmt.Errorf("token_bucket_refill_rate must be non-negative, got %f", *b.Admission.TokenBucketRefillRate)
+	if err := validateFloat("token_bucket_refill_rate", b.Admission.TokenBucketRefillRate); err != nil {
+		return err
 	}
-	if b.Routing.CacheWeight != nil && *b.Routing.CacheWeight < 0 {
-		return fmt.Errorf("cache_weight must be non-negative, got %f", *b.Routing.CacheWeight)
+	if err := validateFloat("cache_weight", b.Routing.CacheWeight); err != nil {
+		return err
 	}
-	if b.Routing.LoadWeight != nil && *b.Routing.LoadWeight < 0 {
-		return fmt.Errorf("load_weight must be non-negative, got %f", *b.Routing.LoadWeight)
+	if err := validateFloat("load_weight", b.Routing.LoadWeight); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateFloat checks that a float parameter is non-negative and finite.
+func validateFloat(name string, val *float64) error {
+	if val == nil {
+		return nil
+	}
+	if math.IsNaN(*val) || math.IsInf(*val, 0) {
+		return fmt.Errorf("%s must be a finite number, got %f", name, *val)
+	}
+	if *val < 0 {
+		return fmt.Errorf("%s must be non-negative, got %f", name, *val)
 	}
 	return nil
 }
