@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math"
 	"testing"
 )
 
@@ -306,14 +307,14 @@ func TestPrefixAffinity_DifferentPrefixes(t *testing.T) {
 
 // TestPrefixAffinity_HashMatchesKVCache verifies hash format consistency.
 func TestPrefixAffinity_HashMatchesKVCache(t *testing.T) {
-	hash1 := computePrefixHash([]int{1, 2, 3})
-	hash2 := computePrefixHash([]int{3, 2, 1})
+	hash1 := hashTokens([]int{1, 2, 3})
+	hash2 := hashTokens([]int{3, 2, 1})
 	if hash1 == hash2 {
 		t.Errorf("Expected different hashes for [1,2,3] and [3,2,1], got same: %s", hash1)
 	}
 
 	// Deterministic
-	hash3 := computePrefixHash([]int{1, 2, 3})
+	hash3 := hashTokens([]int{1, 2, 3})
 	if hash1 != hash3 {
 		t.Errorf("Expected identical hash for same tokens, got %q and %q", hash1, hash3)
 	}
@@ -340,5 +341,114 @@ func TestPrefixAffinity_NoStateLeak(t *testing.T) {
 	// Falls back to LeastLoaded → first occurrence (instance_0)
 	if decision2.TargetInstance != "instance_0" {
 		t.Errorf("Expected independent state (fallback to least-loaded), got %q", decision2.TargetInstance)
+	}
+}
+
+// === Fix #2: Missing empty-snapshot panic tests for WeightedScoring and PrefixAffinity (BC-10) ===
+
+// TestWeightedScoring_EmptySnapshots_Panics verifies BC-10.
+func TestWeightedScoring_EmptySnapshots_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic on empty snapshots, got none")
+		}
+	}()
+
+	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
+	policy.Route(&Request{ID: "req1"}, []RoutingSnapshot{}, 1000)
+}
+
+// TestPrefixAffinity_EmptySnapshots_Panics verifies BC-10.
+func TestPrefixAffinity_EmptySnapshots_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic on empty snapshots, got none")
+		}
+	}()
+
+	policy := NewRoutingPolicy("prefix-affinity", 0, 0)
+	policy.Route(&Request{ID: "req1", InputTokens: []int{1}}, []RoutingSnapshot{}, 1000)
+}
+
+// === Fix #3: WeightedScoring score value verification ===
+
+// TestWeightedScoring_ScoreValues verifies actual computed scores match the formula.
+func TestWeightedScoring_ScoreValues(t *testing.T) {
+	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
+
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8}, // load=10, norm=1.0, score = 0.2*0.6 + 0*0.4 = 0.12
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2}, // load=10, norm=1.0, score = 0.8*0.6 + 0*0.4 = 0.48
+	}
+
+	req := &Request{ID: "req1"}
+	decision := policy.Route(req, snapshots, 1000)
+
+	const epsilon = 1e-9
+	expectedScores := map[string]float64{"instance_0": 0.12, "instance_1": 0.48}
+	for id, expected := range expectedScores {
+		if got, ok := decision.Scores[id]; !ok {
+			t.Errorf("Score for %s missing", id)
+		} else if math.Abs(got-expected) > epsilon {
+			t.Errorf("Score for %s: got %f, want %f", id, got, expected)
+		}
+	}
+}
+
+// === Fix #4: PrefixAffinity stale cache entry test ===
+
+// TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded verifies stale cache path.
+func TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded(t *testing.T) {
+	policy := NewRoutingPolicy("prefix-affinity", 0, 0)
+
+	// First call: maps prefix to instance_1 (least loaded)
+	snapshots1 := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 10, BatchSize: 5},
+		{ID: "instance_1", QueueDepth: 2, BatchSize: 1},
+	}
+	req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+	decision1 := policy.Route(req, snapshots1, 1000)
+	if decision1.TargetInstance != "instance_1" {
+		t.Fatalf("setup: expected instance_1, got %q", decision1.TargetInstance)
+	}
+
+	// Second call: instance_1 is gone, only instance_0 and instance_2
+	snapshots2 := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 10, BatchSize: 5},
+		{ID: "instance_2", QueueDepth: 1, BatchSize: 0},
+	}
+	req2 := &Request{ID: "req2", InputTokens: []int{1, 2, 3}}
+	decision2 := policy.Route(req2, snapshots2, 2000)
+
+	// Should fallback to least-loaded (instance_2)
+	if decision2.TargetInstance != "instance_2" {
+		t.Errorf("Expected fallback to instance_2, got %q", decision2.TargetInstance)
+	}
+}
+
+// === Fix #5: WeightedScoring all-idle (maxLoad==0) edge case ===
+
+// TestWeightedScoring_AllIdle_NoDivisionByZero verifies zero-load edge case.
+func TestWeightedScoring_AllIdle_NoDivisionByZero(t *testing.T) {
+	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.3},
+		{ID: "instance_1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.7},
+	}
+
+	req := &Request{ID: "req1"}
+	decision := policy.Route(req, snapshots, 1000)
+
+	// With zero load, normalizedLoad=0, loadScore=1.0*0.4=0.4 for all.
+	// instance_0 wins on lower KVUtilization: (0.7*0.6 + 0.4) = 0.82 vs (0.3*0.6 + 0.4) = 0.58
+	if decision.TargetInstance != "instance_0" {
+		t.Errorf("Expected instance_0, got %q", decision.TargetInstance)
+	}
+
+	// Verify scores are finite (no NaN from division by zero)
+	for id, score := range decision.Scores {
+		if math.IsNaN(score) || math.IsInf(score, 0) {
+			t.Errorf("Score for %s is not finite: %f", id, score)
+		}
 	}
 }

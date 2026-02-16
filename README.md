@@ -18,6 +18,9 @@ The simulator is CPU-only, extremely fast, and designed for capacity planning, s
 - **Two latency estimation modes**: blackbox (data-driven) and roofline (analytical)
 - **Multiple workload types**: preset (chatbot, summarization) or custom distributions
 - **Trace replay**: replay recorded request traces for deterministic testing
+- **Multi-instance cluster simulation** with shared-clock event loop
+- **Pluggable routing policies**: round-robin, least-loaded, weighted-scoring, prefix-affinity
+- **Admission control**: always-admit or token-bucket rate limiting
 
 ---
 
@@ -119,6 +122,23 @@ Define custom workload distribution to sample input/output lengths from:
 
 Simulation results will be saved to `results.json`. If `--results-path` is not provided, the results are only printed.
 
+### Multi-Instance Cluster Simulation
+
+Run multiple instances with a routing policy:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --routing-policy weighted \
+  --routing-cache-weight 0.6 --routing-load-weight 0.4
+```
+
+Available routing policies:
+- `round-robin` (default) — even distribution across instances
+- `least-loaded` — routes to instance with minimum queue + batch size
+- `weighted` — composite score combining cache affinity and load balance
+- `prefix-affinity` — routes matching prefixes to the same instance, falls back to least-loaded
+
 ---
 
 ## Latency Estimation Approaches
@@ -188,15 +208,22 @@ This requires the HuggingFace `config.json` for the model saved under the `model
 
 ---
 
-## Future: Evolutionary Policy Optimization
+## Evolutionary Policy Optimization (In Progress)
 
-BLIS is being extended to support multi-replica cluster simulation with pluggable control policies for evolutionary optimization research. This enables:
+BLIS supports multi-replica cluster simulation with pluggable control policies for evolutionary optimization research. Currently implemented:
 
-- **Multi-replica simulation** with shared event loop
-- **Pluggable policies** for admission, routing, priority, and scheduling
-- **Auto-scaling simulation** with realistic provisioning delays
-- **Prefill-decode disaggregation** (P/D architecture)
-- **Framework integration** with OpenEvolve and GEPA for policy evolution
+- **Multi-replica simulation** with shared-clock event loop and online routing pipeline
+- **Admission policies**: always-admit, token-bucket rate limiting
+- **Routing policies**: round-robin, least-loaded, weighted-scoring, prefix-affinity
+- **Instance observability**: snapshot-based monitoring with configurable staleness
+
+Upcoming:
+
+- **Priority and scheduling policies** (PR 7)
+- **Policy bundles** with YAML configuration (PR 8)
+- **Raw metrics and anomaly detection** (PR 9)
+- **Auto-scaling, tiered KV cache, decision traces** (PRs 10-13)
+- **Framework integration** with OpenEvolve and GEPA for policy evolution (PR 15)
 
 See [design documentation](./docs/plans/) for details.
 
@@ -209,10 +236,17 @@ inference-sim/
 ├── main.go                 # CLI entry point
 ├── sim/                    # Core simulation engine
 │   ├── simulator.go        # Discrete-event simulation loop
+│   ├── admission.go        # Admission policy interface and templates
+│   ├── routing.go          # Routing policy interface and templates
 │   ├── kvcache.go          # KV cache modeling
 │   ├── batch.go            # Batch formation
 │   ├── request.go          # Request lifecycle
 │   └── model_hardware_config.go  # HuggingFace/hardware config
+├── sim/cluster/            # Multi-replica cluster simulation
+│   ├── cluster.go          # Shared-clock event loop, online routing
+│   ├── instance.go         # Per-instance simulator wrapper
+│   ├── cluster_event.go    # Cluster-level event types
+│   └── snapshot.go         # Instance observability snapshots
 ├── cmd/                    # CLI commands
 ├── model_configs/          # HuggingFace config.json files
 ├── defaults.yaml           # Pre-trained coefficients, model defaults

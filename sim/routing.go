@@ -1,12 +1,6 @@
 package sim
 
-import (
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"strconv"
-	"strings"
-)
+import "fmt"
 
 // RoutingSnapshot is a lightweight view of instance state for routing decisions.
 // Populated by ClusterSimulator from cluster.InstanceSnapshot at routing time.
@@ -137,8 +131,10 @@ func (ws *WeightedScoring) Route(req *Request, snapshots []RoutingSnapshot, cloc
 
 // PrefixAffinity routes requests with matching prefixes to the same instance (cache-aware).
 // On cache miss, falls back to LeastLoaded. Maintains prefix-to-instance mapping.
+// Note: prefixMap grows with unique prefix count and is not evicted. This is acceptable
+// for finite-duration simulations; large-cardinality workloads will consume proportional memory.
 type PrefixAffinity struct {
-	prefixMap map[string]string // prefix hash → instance ID
+	prefixMap map[string]string // prefix hash → instance ID (unbounded; grows with unique prefix count)
 }
 
 // Route implements RoutingPolicy for PrefixAffinity.
@@ -147,8 +143,8 @@ func (pa *PrefixAffinity) Route(req *Request, snapshots []RoutingSnapshot, clock
 		panic("PrefixAffinity.Route: empty snapshots")
 	}
 
-	// Compute prefix hash (matching KVCache format: pipe-delimited decimal strings)
-	prefixHash := computePrefixHash(req.InputTokens)
+	// Compute prefix hash using KVCache's hashTokens (pipe-delimited decimal strings)
+	prefixHash := hashTokens(req.InputTokens)
 
 	// Check cache for existing mapping
 	if targetID, found := pa.prefixMap[prefixHash]; found {
@@ -174,21 +170,6 @@ func (pa *PrefixAffinity) Route(req *Request, snapshots []RoutingSnapshot, clock
 		TargetInstance: decision.TargetInstance,
 		Reason:         "prefix-affinity (cache-miss, fallback to least-loaded)",
 	}
-}
-
-// computePrefixHash computes SHA256 hash of input tokens using pipe-delimited
-// decimal string format, matching KVCache hash computation (kvcache.go:108-116).
-func computePrefixHash(tokens []int) string {
-	h := sha256.New()
-	var b strings.Builder
-	for i, token := range tokens {
-		if i > 0 {
-			b.WriteString("|")
-		}
-		b.WriteString(strconv.Itoa(token))
-	}
-	h.Write([]byte(b.String()))
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 // NewRoutingPolicy creates a routing policy by name.

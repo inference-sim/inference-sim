@@ -34,6 +34,12 @@ go build -o simulation_worker main.go
   --model meta-llama/llama-3.1-8b-instruct \
   --model-config-folder model_configs/llama-3.1-8b-instruct \
   --hardware-config hardware_config.json --hardware H100 --tp 1
+
+# Run multi-instance with routing policy
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --routing-policy weighted \
+  --routing-cache-weight 0.6 --routing-load-weight 0.4
 ```
 
 ## Testing
