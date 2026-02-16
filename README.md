@@ -20,6 +20,8 @@ The simulator is CPU-only, extremely fast, and designed for capacity planning, s
 - **Trace replay**: replay recorded request traces for deterministic testing
 - **Multi-instance cluster simulation** with shared-clock event loop
 - **Pluggable routing policies**: round-robin, least-loaded, weighted-scoring, prefix-affinity
+- **Priority policies**: constant, slo-based (request prioritization)
+- **Instance schedulers**: fcfs, priority-fcfs, sjf (batch formation policies)
 - **Admission control**: always-admit or token-bucket rate limiting
 
 ---
@@ -139,6 +141,26 @@ Available routing policies:
 - `weighted` — composite score combining cache affinity and load balance
 - `prefix-affinity` — routes matching prefixes to the same instance, falls back to least-loaded
 
+### Priority and Scheduling Policies
+
+Control request prioritization and batch formation order:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --priority-policy slo-based \
+  --scheduler priority-fcfs
+```
+
+Available priority policies:
+- `constant` (default) — assigns fixed priority (0.0) to all requests
+- `slo-based` — higher priority for older requests (age-based urgency)
+
+Available schedulers:
+- `fcfs` (default) — first-come-first-served (existing behavior)
+- `priority-fcfs` — orders by priority descending, then arrival time
+- `sjf` — shortest job first by input token count
+
 ---
 
 ## Latency Estimation Approaches
@@ -215,11 +237,12 @@ BLIS supports multi-replica cluster simulation with pluggable control policies f
 - **Multi-replica simulation** with shared-clock event loop and online routing pipeline
 - **Admission policies**: always-admit, token-bucket rate limiting
 - **Routing policies**: round-robin, least-loaded, weighted-scoring, prefix-affinity
+- **Priority policies**: constant, slo-based (request prioritization)
+- **Instance schedulers**: fcfs, priority-fcfs, sjf (batch formation order)
 - **Instance observability**: snapshot-based monitoring with configurable staleness
 
 Upcoming:
 
-- **Priority and scheduling policies** (PR 7)
 - **Policy bundles** with YAML configuration (PR 8)
 - **Raw metrics and anomaly detection** (PR 9)
 - **Auto-scaling, tiered KV cache, decision traces** (PRs 10-13)
@@ -238,6 +261,8 @@ inference-sim/
 │   ├── simulator.go        # Discrete-event simulation loop
 │   ├── admission.go        # Admission policy interface and templates
 │   ├── routing.go          # Routing policy interface and templates
+│   ├── priority.go         # Priority policy interface and templates
+│   ├── scheduler.go        # Instance scheduler interface and templates
 │   ├── kvcache.go          # KV cache modeling
 │   ├── batch.go            # Batch formation
 │   ├── request.go          # Request lifecycle
