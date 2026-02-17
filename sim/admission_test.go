@@ -175,3 +175,27 @@ func TestNewAdmissionPolicy_InvalidName_Panics(t *testing.T) {
 		})
 	}
 }
+
+// TestRejectAll_RejectsAll verifies BC-4.
+func TestRejectAll_RejectsAll(t *testing.T) {
+	policy := NewAdmissionPolicy("reject-all", 0, 0)
+	tests := []struct {
+		name string
+		req  *Request
+	}{
+		{name: "empty request", req: &Request{ID: "r0", InputTokens: []int{}}},
+		{name: "normal request", req: &Request{ID: "r1", InputTokens: make([]int, 100)}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			admitted, reason := policy.Admit(tt.req, &RouterState{Clock: 1000})
+			if admitted {
+				t.Error("expected reject-all to reject, but it admitted")
+			}
+			if reason != "reject-all" {
+				t.Errorf("expected reason %q, got %q", "reject-all", reason)
+			}
+		})
+	}
+}
