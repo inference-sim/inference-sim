@@ -289,3 +289,52 @@ func makeMetricsWithQueueDepth(depths []int) *sim.Metrics {
 	m.NumWaitQRequests = depths
 	return m
 }
+
+// TestPathological_RejectAll_AllRejected verifies BC-4 + rejection counting.
+func TestPathological_RejectAll_AllRejected(t *testing.T) {
+	config := newTestDeploymentConfig(2)
+	config.AdmissionPolicy = "reject-all"
+
+	cs := NewClusterSimulator(config, newTestWorkload(20), "")
+	cs.Run()
+
+	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests())
+
+	// ALL requests should be rejected
+	if raw.RejectedRequests == 0 {
+		t.Error("expected rejected requests > 0 with reject-all policy")
+	}
+	// No requests should complete
+	if cs.AggregatedMetrics().CompletedRequests != 0 {
+		t.Errorf("expected 0 completed requests, got %d", cs.AggregatedMetrics().CompletedRequests)
+	}
+}
+
+// TestPathological_AlwaysBusiest_CausesImbalance verifies BC-6 + BC-9.
+func TestPathological_AlwaysBusiest_CausesImbalance(t *testing.T) {
+	config := newTestDeploymentConfig(3)
+	config.RoutingPolicy = "always-busiest"
+
+	cs := NewClusterSimulator(config, newTestWorkload(20), "")
+	cs.Run()
+
+	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests())
+
+	// With always-busiest routing, all requests should pile onto one instance.
+	perInstance := cs.PerInstanceMetrics()
+	maxCompleted := 0
+	minCompleted := int(^uint(0) >> 1)
+	for _, m := range perInstance {
+		if m.CompletedRequests > maxCompleted {
+			maxCompleted = m.CompletedRequests
+		}
+		if m.CompletedRequests < minCompleted {
+			minCompleted = m.CompletedRequests
+		}
+	}
+
+	if maxCompleted <= minCompleted && raw.HOLBlockingEvents == 0 {
+		t.Logf("maxCompleted=%d, minCompleted=%d, HOL=%d", maxCompleted, minCompleted, raw.HOLBlockingEvents)
+		t.Error("expected significant load imbalance or HOL blocking with always-busiest")
+	}
+}
