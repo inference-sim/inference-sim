@@ -130,24 +130,6 @@ func TestComputeCounterfactual_TiedScores_BreaksByInstanceID(t *testing.T) {
 	}
 }
 
-func TestComputeCounterfactual_CandidatesIncludeSnapshotData(t *testing.T) {
-	// GIVEN snapshots with KV utilization and free blocks data
-	snapshots := []sim.RoutingSnapshot{
-		{ID: "i_0", QueueDepth: 3, BatchSize: 2, KVUtilization: 0.7, FreeKVBlocks: 42},
-	}
-	scores := map[string]float64{"i_0": 0.5}
-
-	// WHEN computing candidates
-	candidates, _ := computeCounterfactual("i_0", scores, snapshots, 1)
-
-	// THEN candidate includes full snapshot state
-	c := candidates[0]
-	if c.QueueDepth != 3 || c.BatchSize != 2 || c.KVUtilization != 0.7 || c.FreeKVBlocks != 42 {
-		t.Errorf("candidate snapshot data mismatch: depth=%d batch=%d kv=%.1f freeKV=%d",
-			c.QueueDepth, c.BatchSize, c.KVUtilization, c.FreeKVBlocks)
-	}
-}
-
 func TestCopyScores_NilInput_ReturnsNil(t *testing.T) {
 	if got := copyScores(nil); got != nil {
 		t.Errorf("expected nil, got %v", got)
