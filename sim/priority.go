@@ -48,7 +48,7 @@ func (s *InvertedSLO) Compute(req *Request, clock int64) float64 {
 }
 
 // NewPriorityPolicy creates a PriorityPolicy by name.
-// Valid names: "constant" (default), "slo-based".
+// Valid names: "constant" (default), "slo-based", "inverted-slo".
 // Empty string defaults to ConstantPriority (for CLI flag default compatibility).
 // Panics on unrecognized names.
 func NewPriorityPolicy(name string) PriorityPolicy {
