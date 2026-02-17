@@ -318,7 +318,7 @@ InstanceSnapshot is an immutable value type captured at a specific clock time. A
 | Update Mode | Fields (default) | Real-World Analog |
 |---|---|---|
 | Immediate | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks | Load balancer connection tracking |
-| Periodic | CacheHitRate (10ms), RecentTTFT (100ms), RecentTPOT (100ms) | Prometheus scrape, xDS push (planned, PR9+) |
+| Periodic | CacheHitRate (10ms), RecentTTFT (100ms), RecentTPOT (100ms) | Prometheus scrape, xDS push (planned, PR10/12) |
 | On-demand | Prefix cache state (Extended map) | Health check probe |
 
 Default: core load fields immediate; statistical fields periodic. Researchers configure staleness via ObservabilityConfig to study robustness (e.g., making KVUtilization periodic to model Prometheus scrape delay).
@@ -543,8 +543,8 @@ autoscale:
 
 | Policy Type | Planned Template | Target PR |
 |-------------|-----------------|-----------|
-| **Admission** | `rate-limit`, `tenant-quota` | PR9+ (requires TenantID) |
-| **Priority** | `tenant-priority`, `deadline-aware` | PR9+ (requires TenantState) |
+| **Admission** | `rate-limit`, `tenant-quota` | PR10+ (requires TenantID) |
+| **Priority** | `tenant-priority`, `deadline-aware` | PR10+ (requires TenantState) |
 
 **Pathological templates (PR 9, with anomaly detection):**
 
@@ -673,7 +673,7 @@ type PriorityPolicy interface {
     Compute(req *Request, clock int64) float64
 }
 // Templates: ConstantPriority, SLOBasedPriority
-// Note: SLO class integration using TenantState planned for PR9+
+// Note: SLO class integration using TenantState planned for PR10+
 
 // === Routing === (sim/routing.go)
 // Cluster-level: called by RoutingDecisionEvent.Execute with *RouterState
@@ -737,11 +737,11 @@ type RouterState struct {
     Snapshots  []RoutingSnapshot           // Current (PR8): one per instance, deterministic order
     Clock      int64                        // Current (PR8): simulation clock in microseconds
     // Planned additions (additive, no breaking change):
-    // PerTenant  map[TenantID]*TenantState // PR9+: requires TenantID on Request
-    // Global     GlobalMetrics             // PR9+: cluster-wide aggregate metrics
+    // PerTenant  map[TenantID]*TenantState // PR10: requires TenantID on Request
+    // Global     GlobalMetrics             // PR10: cluster-wide aggregate metrics
 }
 
-type TenantState struct {               // Planned for PR9+
+type TenantState struct {               // Planned for PR10
     RequestCount   int
     ActiveRequests int
     RecentRate     float64 // requests/sec over sliding window
@@ -760,11 +760,11 @@ type InstanceSnapshot struct {
 
     // Planned fields (additive, to be added in future PRs):
     // PoolType          PoolType   // PR14: MONOLITHIC (default), PREFILL, DECODE
-    // InFlightRequests  int        // PR9+: requires tracking in InstanceSimulator
-    // RecentTTFT        float64    // PR9+: requires sliding window metrics
-    // RecentTPOT        float64    // PR9+: requires sliding window metrics
-    // CacheHitRate      float64    // PR9+: requires KV hit/miss tracking
-    // EstimatedWaitTime float64    // PR9+: derived from queue + batch state
+    // InFlightRequests  int        // PR10+: requires tracking in InstanceSimulator
+    // RecentTTFT        float64    // PR10+: requires sliding window metrics
+    // RecentTPOT        float64    // PR10+: requires sliding window metrics
+    // CacheHitRate      float64    // PR12: requires KV hit/miss tracking
+    // EstimatedWaitTime float64    // PR10+: derived from queue + batch state
     // Extended map[string]float64  // Phase 4: CPUKVUtilization, TransferQueueDepth, etc.
 }
 
@@ -783,9 +783,9 @@ type ObservabilityConfig struct {
     BatchSize     FieldConfig // default: Immediate
     KVUtilization FieldConfig // default: Immediate
     // Planned (future PRs):
-    // CacheHitRate  FieldConfig // PR9+: default Periodic(10000 ticks)
-    // RecentTTFT    FieldConfig // PR9+: default Periodic(100000 ticks)
-    // RecentTPOT    FieldConfig // PR9+: default Periodic(100000 ticks)
+    // CacheHitRate  FieldConfig // PR12: default Periodic(10000 ticks)
+    // RecentTTFT    FieldConfig // PR10+: default Periodic(100000 ticks)
+    // RecentTPOT    FieldConfig // PR10+: default Periodic(100000 ticks)
 }
 ```
 
@@ -813,34 +813,36 @@ type EvaluationResult struct {
 }
 
 type RawMetrics struct {
-    // Latency distributions (per SLO class)
-    TTFT map[string]*Distribution
-    TPOT map[string]*Distribution
-    E2E  map[string]*Distribution
+    // === PR9 (Research-Ready): aggregate distributions + anomaly counters ===
+    // Latency distributions (single aggregate; per-SLO-class maps deferred to PR10)
+    TTFT Distribution              // PR9: aggregate across all requests
+    E2E  Distribution              // PR9: aggregate across all requests
 
     // Throughput
-    RequestsPerSec float64
-    TokensPerSec   float64
+    RequestsPerSec float64         // PR9: CompletedRequests / SimEndedTime
+    TokensPerSec   float64         // PR9: TotalOutputTokens / SimEndedTime
 
-    // SLO attainment
-    SLOAttainment map[string]float64 // class -> fraction meeting target
+    // Failure mode detection (anomaly counters)
+    PriorityInversions int         // PR9: heuristic E2E-based detection
+    HOLBlockingEvents  int         // PR9: queue depth imbalance detection
+    RejectedRequests   int         // PR9: from admission policy rejection count
 
-    // Fairness
-    JainFairnessIndex float64
+    // === PR10 (needs TenantID on Request + WorkloadSpec): per-tenant metrics ===
+    // TTFT_PerClass map[string]*Distribution  // PR10: per SLO class
+    // TPOT_PerClass map[string]*Distribution  // PR10: per SLO class (needs per-request ITL grouping)
+    // E2E_PerClass  map[string]*Distribution  // PR10: per SLO class
+    // SLOAttainment map[string]float64        // PR10: class -> fraction meeting target
+    // JainFairnessIndex float64               // PR10: requires per-tenant throughput
 
-    // Efficiency
-    CacheHitRate    float64  // single value for Phase 2; per-tier in Phase 4
-    PreemptionRate  float64
+    // === PR11 (needs AutoScaler): scale events and cost ===
+    // ScaleUpCount       int                  // PR11
+    // ScaleDownCount     int                  // PR11
+    // TotalReplicaSeconds float64             // PR11: for cost modeling
+    // ScaleOscillations  int                  // PR11: UP→DOWN or DOWN→UP within cooldown
 
-    // Scale events and cost
-    ScaleUpCount       int
-    ScaleDownCount     int
-    TotalReplicaSeconds float64 // for cost modeling
-    ScaleOscillations  int      // UP→DOWN or DOWN→UP within cooldown
-
-    // Failure mode detection
-    PriorityInversions int     // higher-priority scheduled after lower
-    HOLBlockingEvents  int     // head-of-line blocking detected
+    // === PR12 (needs tiered KV + hit/miss tracking): efficiency ===
+    // CacheHitRate    float64                 // PR12: single value; per-tier in Phase 4
+    // PreemptionRate  float64                 // PR12: requires preemption event counting
 }
 ```
 
@@ -913,7 +915,7 @@ TARGET (Phase 4 Full Fidelity)
 ```
 sim/
 ├── simulator.go          # Existing: SimConfig, Simulator, event loop, batch formation
-├── request.go            # Existing (extended with Priority in PR7; TenantID planned for PR9+)
+├── request.go            # Existing (extended with Priority in PR7; TenantID planned for PR10)
 ├── event.go              # Existing: ArrivalEvent, StepEvent, etc.
 ├── kvcache.go            # Existing (single-tier, sufficient for Phase 2)
 ├── metrics.go            # Existing (foundation for RawMetrics)
@@ -1179,7 +1181,7 @@ After PR 5 (simplification), PRs 6-7 can be developed **in parallel**.
 | **Motivation** | Unified policy configuration via YAML |
 | **Depends On** | PR 6, PR 7 |
 | **In Scope** | `RouterState` (bridge type in `sim/`), `PolicyBundle` YAML loading, `RoutingDecision.Priority` field, interface signature updates for `AdmissionPolicy` and `RoutingPolicy` to accept `*RouterState` |
-| **Out of Scope** | AutoScale policy (Phase 4), TenantState/GlobalMetrics (deferred to PR9+ — no TenantID on Request yet) |
+| **Out of Scope** | AutoScale policy (Phase 4), TenantState/GlobalMetrics (deferred to PR10 — no TenantID on Request yet) |
 | **Files Changed** | New: `sim/router_state.go` (~20 LOC), `sim/bundle.go` (~90 LOC). Modified: `sim/admission.go` (~10 LOC), `sim/routing.go` (~45 LOC), `sim/cluster/cluster_event.go` (~25 LOC), `cmd/root.go` (~40 LOC) |
 | **CLI** | `./simulation_worker run --model X --policy-config policies.yaml` |
 | **Tests** | Unit: YAML parsing, validation. Integration: policy config overrides CLI flags |
@@ -1205,8 +1207,8 @@ After PR 5 (simplification), PRs 6-7 can be developed **in parallel**.
 | **Title** | `feat(metrics): Add RawMetrics, anomaly detection, and pathological policy templates` |
 | **Motivation** | Enable fitness evaluation and validate anomaly detection |
 | **Depends On** | PR 8 (sequenced after Interface Freeze; PR 8 transitively depends on PR 6, PR 7) |
-| **In Scope** | `RawMetrics`, `Distribution`, `FitnessFunction`, `EvaluationResult`, anomaly counters, pathological templates (`RejectAll`, `InvertedSLO`, `AlwaysBusiest`, `ReversePriority`), validation tests |
-| **Out of Scope** | Scale oscillation detection (requires AutoScaler in PR 11) |
+| **In Scope** | `RawMetrics` (aggregate TTFT/E2E distributions, throughput, anomaly counters), `Distribution`, `FitnessResult`, `ComputeFitness`, `ParseFitnessWeights`, anomaly detection (priority inversion heuristic, HOL blocking), pathological templates (`RejectAll`, `InvertedSLO`, `AlwaysBusiest`, `ReversePriority`), `--fitness-weights` CLI flag, validation tests |
+| **Out of Scope** | Scale oscillation detection (PR 11), `EvaluationResult` wrapper (PR 13 — needs traces/summary), per-SLO-class distributions and `SLOAttainment`/`JainFairnessIndex` (PR 10 — needs TenantID), `TPOT` distribution (needs per-request ITL grouping), `CacheHitRate`/`PreemptionRate` (PR 12 — needs KV hit tracking), InstanceSnapshot sliding-window fields (deferred, see G.2 annotations) |
 | **Files Changed** | New: `sim/cluster/metrics.go` (~300 LOC). Modified: `sim/admission.go`, `sim/routing.go`, `sim/priority.go`, `sim/scheduler.go` (~100 LOC total for pathological templates), `sim/cluster/cluster.go` (~50 LOC), `cmd/root.go` (~20 LOC) |
 | **CLI** | `./simulation_worker run --model X --num-instances 4 --fitness-weights "throughput:0.5,p99_ttft:0.3"` |
 | **Tests** | Integration tests validating pathological policies trigger expected anomaly counts |
@@ -1219,7 +1221,9 @@ After PR 5 (simplification), PRs 6-7 can be developed **in parallel**.
 | **Risks + Mitigations** | Risk: False positive anomaly detection. Mitigation: Pathological policy tests validate detection accuracy. |
 | **Why Independently Reviewable** | Complete metrics feature; pathological templates immediately testable |
 
-**v2.3 → v3.0 change:** Unchanged from v2.3 PR 9. Dependencies updated (now depends on PR 8 instead of PR 4-7 directly).
+**v2.3 → v3.0 change:** Dependencies updated (now depends on PR 8 instead of PR 4-7 directly).
+
+**v3.0 → v3.1 change (PR9 micro plan):** Scope narrowed to aggregate metrics + anomaly heuristics + pathological templates. `EvaluationResult` deferred to PR13 (needs traces). Per-SLO-class distributions, `SLOAttainment`, `JainFairnessIndex` deferred to PR10 (needs TenantID). `CacheHitRate`/`PreemptionRate` deferred to PR12 (needs KV hit tracking). `TPOT` distribution deferred to PR10 (needs per-request ITL grouping). All deferred items explicitly assigned to future PRs — see annotated `RawMetrics` struct in G.3 and updated In Scope for PRs 10, 12, 13.
 
 **Pathological templates added:**
 
@@ -1262,8 +1266,8 @@ This PR improves workload fidelity but is not required for initial research.
 | **Title** | `feat(workload): Add multi-tenant workload generator with edge case scenarios` |
 | **Motivation** | Enable realistic multi-tenant workloads for policy research |
 | **Depends On** | PR 9 (Research-Ready checkpoint) |
-| **In Scope** | `WorkloadSpec`, `TenantSpec`, `SLOSpec`, `PrefixSpec`, `ArrivalPattern` types, `WorkloadGenerator`, all arrival patterns, prefix reuse, `--workload-spec` flag, edge case scenarios |
-| **Out of Scope** | Trace replay (existing `--workload traces` preserved) |
+| **In Scope** | `WorkloadSpec`, `TenantSpec`, `SLOSpec`, `PrefixSpec`, `ArrivalPattern` types, `WorkloadGenerator`, all arrival patterns, prefix reuse, `--workload-spec` flag, edge case scenarios. Also: `TenantID` on `Request`, `TenantState` in `RouterState`, per-SLO-class `Distribution` maps in `RawMetrics` (TTFT/TPOT/E2E), `SLOAttainment`, `JainFairnessIndex` (deferred from PR9 — requires TenantID) |
+| **Out of Scope** | Trace replay (existing `--workload traces` preserved), InstanceSnapshot sliding-window fields (RecentTTFT/RecentTPOT/EstimatedWaitTime — deferred to PR10+ micro plan) |
 | **Files Changed** | New: `sim/workload/spec.go` (~180 LOC), `sim/workload/generator.go` (~250 LOC), `sim/workload/arrival.go` (~150 LOC), `sim/workload/scenarios.go` (~100 LOC). Modified: `cmd/root.go` (~20 LOC) |
 | **CLI** | `./simulation_worker run --model X --workload-spec workload.yaml` |
 | **Tests** | Unit: arrival patterns. Integration: scenario generation |
@@ -1348,7 +1352,7 @@ After Research-Ready checkpoint, three tracks can proceed **in parallel**.
 | **Title** | `feat(kv): Add tiered KV cache with GPU/CPU offload/reload mechanics` |
 | **Motivation** | Model GPU+CPU KV cache with transfer latency |
 | **Depends On** | PR 9 |
-| **In Scope** | `KVTier` enum, `KVTierConfig`, offload trigger, reload on CPU hit, transfer latency, `KVThrashingRate` metric |
+| **In Scope** | `KVTier` enum, `KVTierConfig`, offload trigger, reload on CPU hit, transfer latency, `KVThrashingRate` metric, `CacheHitRate` and `PreemptionRate` fields in `RawMetrics` (deferred from PR9 — requires KV hit/miss tracking), `CacheHitRate` on `InstanceSnapshot` |
 | **Out of Scope** | P/D architecture (PR 14) |
 | **Files Changed** | New: `sim/kv/tiered.go` (~100 LOC), `sim/kv/transfer.go` (~200 LOC). Modified: `sim/kvcache.go` (~30 LOC), `cmd/root.go` (~30 LOC) |
 | **CLI** | `./simulation_worker run --model X --kv-gpu-blocks 1000 --kv-cpu-blocks 10000 --kv-offload-threshold 0.9` |
@@ -1374,7 +1378,7 @@ After Research-Ready checkpoint, three tracks can proceed **in parallel**.
 | **Title** | `feat(trace): Add DecisionTrace with RoutingRecord and counterfactual analysis` |
 | **Motivation** | Enable policy decision debugging and "what-if" analysis |
 | **Depends On** | PR 9 |
-| **In Scope** | `SimulationTrace`, `DecisionTrace`, `RoutingRecord`, `TraceConfig`, `TopKCandidates`, `Regret`, `TraceSummary` |
+| **In Scope** | `SimulationTrace`, `DecisionTrace`, `RoutingRecord`, `TraceConfig`, `TopKCandidates`, `Regret`, `TraceSummary`, `EvaluationResult` wrapper (deferred from PR9 — wraps `RawMetrics` + `FitnessResult` + `SimulationTrace` + `TraceSummary`) |
 | **Out of Scope** | LLM-based reflection (framework-specific) |
 | **Files Changed** | New: `sim/trace/trace.go` (~100 LOC), `sim/trace/record.go` (~150 LOC), `sim/trace/summary.go` (~200 LOC). Modified: `cmd/root.go` (~35 LOC) |
 | **CLI** | `./simulation_worker run --model X --trace-level decisions --counterfactual-k 5 --summarize-trace` |
@@ -1614,7 +1618,7 @@ Research-ready: ~5 weeks
 | PR 6 | PR 6 | Routing — unchanged except depends on PR 5 |
 | PR 7 | PR 5 + PR 7 | MERGED: Priority + Scheduler |
 | PR 8 | PR 8 | PolicyBundle — unchanged |
-| PR 9 | PR 9 | RawMetrics — unchanged |
+| PR 9 | PR 9 | COMPLETED: RawMetrics + pathological templates → RESEARCH-READY |
 | PR 10 | PR 10 | Workload — unchanged |
 | PR 11 | PR 11 + PR 12 | MERGED: AutoScaler + Actuation |
 | PR 12 | PR 13 + PR 14 | MERGED: Tiered KV + Transfer |

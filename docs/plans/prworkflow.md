@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v2.2 - updated 2026-02-16)
+**Status:** Active (v2.3 - updated 2026-02-16)
 
 This document describes the complete workflow for implementing a PR from the macro plan.
 
@@ -61,7 +61,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 2.5: plan review   │ (3 focused review passes — see checklist)
+│ Step 2.5: plan review   │ (4 focused review passes — see checklist)
 └──────────┬──────────────┘
            │
            ▼
@@ -109,7 +109,7 @@ If skills are unavailable, you can implement each step manually:
 |------|---------|
 | **1. Create worktree** | `/superpowers:using-git-worktrees pr<N>-<name>` |
 | **2. Create plan** | `/superpowers:writing-plans for PR<N> in @docs/plans/pr<N>-<name>-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md` |
-| **2.5. Review plan** | 3 focused passes: cross-doc consistency, architecture boundary, codebase readiness |
+| **2.5. Review plan** | 4 focused passes: cross-doc consistency, architecture boundary, codebase readiness, structural validation |
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
 | **4.5. Review code** | 4 focused passes: code quality, test behavioral quality, getting-started, automated reviewer sim |
@@ -241,12 +241,11 @@ If skills are unavailable, you can implement each step manually:
 
 **Context:** Worktree (same or new session)
 
-> **For Claude:** When the user asks you to execute Step 2.5, run all 3 review passes below
-> sequentially. For each pass: invoke `/pr-review-toolkit:review-pr` with the **exact prompt
-> text** shown in the `Prompt:` field (substituting `<N>` and `<name>` with the actual PR
-> number and plan filename). After each pass, summarize findings and fix all critical/important
-> issues before starting the next pass. After all 3 passes complete, report a summary to the
-> user and wait for approval to proceed.
+> **For Claude:** When the user asks you to execute Step 2.5, run all 4 review passes below
+> sequentially. Passes 1-3 use `/pr-review-toolkit:review-pr` with the **exact prompt text**
+> shown in the `Prompt:` field. Pass 4 is done directly (no agent needed). After each pass,
+> summarize findings and fix all critical/important issues before starting the next pass.
+> After all 4 passes complete, report a summary to the user and wait for approval to proceed.
 
 **Why focused passes?** Generic "review everything" misses issues that targeted reviews catch. PR8 experience: Pass 1 found 6 categories of stale macro plan content. Pass 2 found priority overwrite semantics. Pass 3 found stale comments in files to be modified. None of these were found by generic review.
 
@@ -293,7 +292,43 @@ Verify the files to be modified are clean and ready for the planned changes.
 
 **Catches:** Stale comments ("planned for PR N"), pre-existing bugs, missing dependencies, unclear insertion points.
 
-**Fix all critical/important issues. Then report summary to user.**
+**Fix all critical/important issues. Then proceed to Pass 4.**
+
+---
+
+#### Pass 4: Plan Structural Validation
+
+Verify the plan is complete, internally consistent, and implementation-ready.
+
+> **For Claude:** Perform these 4 checks directly (no agent needed). Report all issues found.
+
+**Check 1: Task Dependencies**
+- For each task, verify it can actually start given what comes before it.
+- Trace the dependency chain: what files does each task create/modify? Does any task require a file or type that hasn't been created yet?
+- Flag tasks that modify the same file and could conflict.
+
+**Check 2: Template Completeness**
+- Verify all sections from `prmicroplanprompt-v2.md` are present and non-empty:
+  - Header (Goal, Architecture, Macro Plan Reference)
+  - Part 1: A) Executive Summary, B) Behavioral Contracts, C) Component Interaction, D) Deviation Log, E) Review Guide
+  - Part 2: F) Implementation Overview, G) Task Breakdown, H) Test Strategy, I) Risk Analysis
+  - Part 3: J) Sanity Checklist
+  - Appendix: File-Level Details
+
+**Check 3: Executive Summary Clarity**
+- Read the executive summary as if you're a new team member with no context.
+- Is it clear what the PR does and why?
+- Can you understand the scope without reading the rest of the plan?
+
+**Check 4: Under-specified Tasks**
+- For each task, verify it has complete code in every step (no "add validation" without showing exact code).
+- Verify exact test commands with expected output.
+- Verify exact commit commands.
+- Flag any step that an executing agent would need to figure out on its own.
+
+**Catches:** Broken task ordering, missing template sections, unclear summaries, vague implementation steps that will cause agent confusion.
+
+**Fix all issues. Then report summary to user.**
 
 ---
 
@@ -528,7 +563,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 |-------|-------------|-------|--------|
 | `using-git-worktrees` | **Step 1** - Create isolated workspace FIRST | Branch name | Worktree directory path |
 | `writing-plans` | **Step 2** - Create implementation plan from macro plan | Macro plan PR section + prmicroplanprompt-v2.md | Plan file with contracts + tasks |
-| `pr-review-toolkit:review-pr` | **Step 2.5** - 3 focused plan review passes | Targeted prompts (see checklist) | Critical/important issues per pass |
+| `pr-review-toolkit:review-pr` | **Step 2.5** - 4 focused plan review passes (3 agent + 1 direct) | Targeted prompts (see checklist) | Critical/important issues per pass |
 | `pr-review-toolkit:review-pr` | **Step 4.5** - 4 focused code review passes | Targeted prompts (see checklist) | Critical/important issues per pass |
 | `executing-plans` | **Step 4** - Execute plan tasks continuously | Plan file path | Implemented code + commits |
 | `subagent-driven-development` | **Step 4 (alt)** - Execute plan in-session | Plan file path | Implemented code + commits |
@@ -550,7 +585,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 # Output: Plan created at docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
-# Step 2.5: Focused plan review (3 passes)
+# Step 2.5: Focused plan review (4 passes)
 # Pass 1: Cross-doc consistency (micro plan vs macro plan)
 /pr-review-toolkit:review-pr Does the micro plan match the macro plan? @docs/plans/pr8-plan.md and @docs/plans/macro-plan.md
 # Pass 2: Architecture boundary verification
@@ -612,6 +647,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 | Cross-doc consistency | Stale macro plan references, scope mismatch, wrong file paths |
 | Architecture boundary | Import cycles, boundary violations, wrong abstraction level |
 | Codebase readiness | Stale comments, pre-existing bugs, missing dependencies |
+| Structural validation | Broken task dependencies, missing sections, vague steps, unclear summaries |
 | Code quality | Logic errors, silent failures, convention violations |
 | Test behavioral quality | Structural tests, type assertions, formula-coupled assertions |
 | Getting-started experience | Missing examples, undocumented output, contributor friction |
@@ -702,6 +738,7 @@ golangci-lint run ./path/to/modified/package/...
 **v2.0 (2026-02-14):** Unified planning with `writing-plans` skill, batch execution with `executing-plans` skill, automated two-stage review with `pr-review-toolkit:review-pr`, simplified invocations with @ file references
 **v2.1 (2026-02-16):** Same-session worktree workflow (project-local `.worktrees/` no longer requires new session); continuous execution replaces batch checkpoints (tasks run without pausing, stop only on failure)
 **v2.2 (2026-02-16):** Focused review passes replace generic review-pr invocations. Step 2.5 expanded to 3 passes (cross-doc consistency, architecture boundary, codebase readiness). Step 4.5 expanded to 4 passes (code quality, test behavioral quality, getting-started experience, automated reviewer simulation). Based on PR8 experience where each focused pass caught issues the others missed.
+**v2.3 (2026-02-16):** Step 2.5 expanded to 4 passes — added Pass 4 (structural validation: task dependencies, template completeness, executive summary clarity, under-specified task detection). Based on PR9 experience where deferred items fell through cracks in the macro plan, and an under-specified documentation task would have confused the executing agent.
 
 **Key improvements in v2.0:**
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/macroplan.md`)
