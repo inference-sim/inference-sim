@@ -24,7 +24,7 @@ routing:
   policy: round-robin
   # cache_weight: 0.6                 # cache availability weight (only for weighted; FreeKVBlocks)
   # load_weight: 0.4                  # queue pressure weight (only for weighted; QueueDepth)
-  # Weights must sum to 1.0 when using weighted routing.
+  # Weights should sum to 1.0 (auto-normalized if they don't).
 
 priority:
   policy: constant

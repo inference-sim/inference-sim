@@ -504,7 +504,7 @@ func init() {
 	runCmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
 
 	// Online routing pipeline config
-	runCmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket")
+	runCmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket, reject-all")
 	runCmd.Flags().Int64Var(&admissionLatency, "admission-latency", 0, "Admission latency in microseconds")
 	runCmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
 	runCmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")

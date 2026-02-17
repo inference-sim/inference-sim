@@ -8,7 +8,7 @@
 #   score       = cache_score * cache_weight + load_score * load_weight
 #
 # Higher scores are preferred. The instance with the highest score receives
-# the request. Weights must sum to 1.0.
+# the request. Weights should sum to 1.0 (auto-normalized if they don't).
 #
 # Usage (multi-instance required for routing to have effect):
 #

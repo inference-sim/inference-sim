@@ -165,7 +165,7 @@ Run multiple instances with a routing policy:
 Available routing policies:
 - `round-robin` (default) — even distribution across instances
 - `least-loaded` — routes to instance with minimum queue + batch size
-- `weighted` — composite score combining cache availability (FreeKVBlocks) and queue pressure (QueueDepth). Weights must sum to 1.0. Most effective when instances have different cache states (e.g., prefix caching, heterogeneous capacity). For symmetric clusters with balanced load, `least-loaded` is simpler and equally effective.
+- `weighted` — composite score combining cache availability (FreeKVBlocks) and queue pressure (QueueDepth). Weights should sum to 1.0 (auto-normalized if they don't). Most effective when instances have different cache states (e.g., prefix caching, heterogeneous capacity). For symmetric clusters with balanced load, `least-loaded` is simpler and equally effective.
 - `prefix-affinity` — routes matching prefixes to the same instance, falls back to least-loaded
 - `always-busiest` — pathological: routes to most-loaded instance (for anomaly detection testing)
 
