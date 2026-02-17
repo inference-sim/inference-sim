@@ -91,6 +91,11 @@ type SimConfig struct {
 	TracesWorkloadFilePath string
 	PriorityPolicy         string // "constant" (default) or "slo-based"
 	Scheduler              string // "fcfs" (default), "priority-fcfs", "sjf"
+	// Tiered KV cache configuration (PR12)
+	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
+	KVOffloadThreshold    float64 // GPU utilization threshold for offload (default 0.9)
+	KVTransferBandwidth   float64 // blocks/tick transfer rate (default 100.0)
+	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
