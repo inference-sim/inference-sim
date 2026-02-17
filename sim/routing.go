@@ -183,6 +183,35 @@ func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecisio
 	}
 }
 
+// AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize).
+// Pathological template for testing load imbalance detection.
+// Ties broken by first occurrence in snapshot order (lowest index).
+type AlwaysBusiest struct{}
+
+// Route implements RoutingPolicy for AlwaysBusiest.
+func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
+	snapshots := state.Snapshots
+	if len(snapshots) == 0 {
+		panic("AlwaysBusiest.Route: empty snapshots")
+	}
+
+	maxLoad := snapshots[0].QueueDepth + snapshots[0].BatchSize
+	target := snapshots[0]
+
+	for i := 1; i < len(snapshots); i++ {
+		load := snapshots[i].QueueDepth + snapshots[i].BatchSize
+		if load > maxLoad {
+			maxLoad = load
+			target = snapshots[i]
+		}
+	}
+
+	return RoutingDecision{
+		TargetInstance: target.ID,
+		Reason:         fmt.Sprintf("always-busiest (load=%d)", maxLoad),
+	}
+}
+
 // NewRoutingPolicy creates a routing policy by name.
 // Valid names: "", "round-robin", "least-loaded", "weighted", "prefix-affinity".
 // Empty string defaults to round-robin.
@@ -201,6 +230,8 @@ func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolic
 		return &WeightedScoring{cacheWeight: cacheWeight, loadWeight: loadWeight}
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string)}
+	case "always-busiest":
+		return &AlwaysBusiest{}
 	default:
 		panic(fmt.Sprintf("unhandled routing policy %q", name))
 	}
