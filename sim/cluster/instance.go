@@ -113,12 +113,12 @@ func (i *InstanceSimulator) BatchSize() int {
 
 // KVUtilization returns the fraction of KV cache blocks in use.
 func (i *InstanceSimulator) KVUtilization() float64 {
-	return float64(i.sim.KVCache.UsedBlockCnt) / float64(i.sim.KVCache.TotalBlocks)
+	return float64(i.sim.KVCache.UsedBlocks()) / float64(i.sim.KVCache.TotalCapacity())
 }
 
 // FreeKVBlocks returns the number of free KV cache blocks.
 func (i *InstanceSimulator) FreeKVBlocks() int64 {
-	return i.sim.KVCache.TotalBlocks - i.sim.KVCache.UsedBlockCnt
+	return i.sim.KVCache.TotalCapacity() - i.sim.KVCache.UsedBlocks()
 }
 
 // InjectRequestOnline injects a request during the event loop (online routing mode).
