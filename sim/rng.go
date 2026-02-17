@@ -28,6 +28,13 @@ const (
 	// SubsystemRouter is the RNG subsystem for routing decisions.
 	// Used for request routing in multi-replica cluster simulations.
 	SubsystemRouter = "router"
+
+	// SubsystemWorkloadGen is the RNG subsystem for sim/workload/ generation.
+	// Intentionally separate from SubsystemWorkload: the legacy constant uses
+	// master seed directly for backward compat; this one gets an isolated
+	// XOR-derived stream. Existing code in sim/cluster/workload.go continues
+	// using SubsystemWorkload unchanged.
+	SubsystemWorkloadGen = "workload-gen"
 )
 
 // SubsystemInstance returns the subsystem name for instance N.

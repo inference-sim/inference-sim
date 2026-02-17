@@ -1,0 +1,274 @@
+package workload
+
+import (
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestLoadWorkloadSpec_ValidYAML_LoadsCorrectly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.yaml")
+	yaml := `
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 100.0
+clients:
+  - id: "client-a"
+    tenant_id: "tenant-1"
+    slo_class: "batch"
+    rate_fraction: 0.7
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 128
+        min: 10
+        max: 4096
+    output_distribution:
+      type: exponential
+      params:
+        mean: 256
+`
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := LoadWorkloadSpec(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Version != "1" {
+		t.Errorf("version = %q, want %q", spec.Version, "1")
+	}
+	if spec.Seed != 42 {
+		t.Errorf("seed = %d, want 42", spec.Seed)
+	}
+	if spec.AggregateRate != 100.0 {
+		t.Errorf("aggregate_rate = %f, want 100.0", spec.AggregateRate)
+	}
+	if len(spec.Clients) != 1 {
+		t.Fatalf("clients count = %d, want 1", len(spec.Clients))
+	}
+	c := spec.Clients[0]
+	if c.ID != "client-a" || c.TenantID != "tenant-1" || c.SLOClass != "batch" {
+		t.Errorf("client fields mismatch: id=%q tenant=%q slo=%q", c.ID, c.TenantID, c.SLOClass)
+	}
+	if c.RateFraction != 0.7 {
+		t.Errorf("rate_fraction = %f, want 0.7", c.RateFraction)
+	}
+	if c.Arrival.Process != "poisson" {
+		t.Errorf("arrival process = %q, want poisson", c.Arrival.Process)
+	}
+	if c.InputDist.Type != "gaussian" {
+		t.Errorf("input dist type = %q, want gaussian", c.InputDist.Type)
+	}
+	if c.InputDist.Params["mean"] != 512 {
+		t.Errorf("input dist mean = %f, want 512", c.InputDist.Params["mean"])
+	}
+}
+
+func TestLoadWorkloadSpec_UnknownKey_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.yaml")
+	yaml := `
+version: "1"
+seed: 42
+aggreate_rate: 100.0
+`
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadWorkloadSpec(path)
+	if err == nil {
+		t.Fatal("expected error for unknown key, got nil")
+	}
+}
+
+func TestWorkloadSpec_Validate_EmptyClients_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "1",
+		AggregateRate: 100.0,
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for empty clients")
+	}
+}
+
+func TestWorkloadSpec_Validate_InvalidArrivalProcess_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "1",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: "invalid"},
+			InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 1000}},
+			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid arrival process")
+	}
+}
+
+func TestWorkloadSpec_Validate_InvalidDistType_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "1",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist:    DistSpec{Type: "unknown_dist"},
+			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid distribution type")
+	}
+}
+
+func TestWorkloadSpec_Validate_InvalidCategory_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "1",
+		Category:      "invalid_category",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 1000}},
+			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid category")
+	}
+}
+
+func TestWorkloadSpec_Validate_InvalidSLOClass_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "1",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			SLOClass:     "premium",
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 1000}},
+			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid SLO class")
+	}
+}
+
+func TestWorkloadSpec_Validate_NegativeRate_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "1",
+		AggregateRate: -10.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 1000}},
+			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative aggregate rate")
+	}
+}
+
+func TestWorkloadSpec_Validate_ValidSpec_NoError(t *testing.T) {
+	cv := 2.0
+	spec := &WorkloadSpec{
+		Version:       "1",
+		Category:      "language",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{
+			{
+				ID:           "c1",
+				TenantID:     "t1",
+				SLOClass:     "batch",
+				RateFraction: 0.7,
+				Arrival:      ArrivalSpec{Process: "gamma", CV: &cv},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 512, "std_dev": 128, "min": 10, "max": 4096}},
+				OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 256}},
+			},
+			{
+				ID:           "c2",
+				SLOClass:     "realtime",
+				RateFraction: 0.3,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "exponential", Params: map[string]float64{"mean": 128}},
+				OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 64}},
+			},
+		},
+	}
+	if err := spec.Validate(); err != nil {
+		t.Errorf("expected no error for valid spec, got: %v", err)
+	}
+}
+
+func TestWorkloadSpec_Validate_NaNParam_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "1",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist: DistSpec{
+				Type:   "exponential",
+				Params: map[string]float64{"mean": nanVal()},
+			},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for NaN parameter")
+	}
+	if !strings.Contains(err.Error(), "NaN") && !strings.Contains(err.Error(), "finite") {
+		t.Errorf("error should mention NaN: %v", err)
+	}
+}
+
+func nanVal() float64 {
+	return math.NaN()
+}
+
+func TestWorkloadSpec_Validate_WeibullCVOutOfRange_ReturnsError(t *testing.T) {
+	cv := 20.0 // > 10.4, outside Weibull convergence range
+	spec := &WorkloadSpec{
+		Version:       "1",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: "weibull", CV: &cv},
+			InputDist:    DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for Weibull CV > 10.4")
+	}
+}

@@ -251,6 +251,8 @@ func (sim *Simulator) InjectArrival(req *Request) {
 		ArrivedAt:        float64(req.ArrivalTime) / 1e6,
 		NumPrefillTokens: len(req.InputTokens),
 		NumDecodeTokens:  len(req.OutputTokens),
+		SLOClass:         req.SLOClass,
+		TenantID:         req.TenantID,
 	}
 }
 
@@ -264,6 +266,8 @@ func (sim *Simulator) InjectArrivalAt(req *Request, eventTime int64) {
 		ArrivedAt:        float64(req.ArrivalTime) / 1e6,
 		NumPrefillTokens: len(req.InputTokens),
 		NumDecodeTokens:  len(req.OutputTokens),
+		SLOClass:         req.SLOClass,
+		TenantID:         req.TenantID,
 	}
 }
 

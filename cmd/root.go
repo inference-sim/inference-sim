@@ -15,6 +15,7 @@ import (
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/trace"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 var (
@@ -83,6 +84,9 @@ var (
 	traceLevel      string // Trace verbosity level
 	counterfactualK int    // Number of counterfactual candidates
 	summarizeTrace  bool   // Print trace summary after simulation
+
+	// Workload spec config (PR10)
+	workloadSpecPath string // Path to YAML workload specification file
 
 	// results file path
 	resultsPath string // File to save BLIS results to
@@ -188,8 +192,31 @@ var runCmd = &cobra.Command{
 
 		// Workload configuration
 		var guideLLMConfig *sim.GuideLLMConfig
+		var preGeneratedRequests []*sim.Request
 
-		if workloadType == "distribution" { // if workloadType distribution, use args.
+		// --workload-spec takes precedence over --workload if set
+		if workloadSpecPath != "" {
+			spec, err := workload.LoadWorkloadSpec(workloadSpecPath)
+			if err != nil {
+				logrus.Fatalf("Failed to load workload spec: %v", err)
+			}
+			if err := spec.Validate(); err != nil {
+				logrus.Fatalf("Invalid workload spec: %v", err)
+			}
+			horizon := simulationHorizon
+			if spec.Horizon > 0 {
+				horizon = spec.Horizon
+			}
+			reqs, err := workload.GenerateRequests(spec, horizon)
+			if err != nil {
+				logrus.Fatalf("Failed to generate workload: %v", err)
+			}
+			preGeneratedRequests = reqs
+			// Set a placeholder GuideLLMConfig to satisfy constructor validation.
+			// The actual requests come from preGeneratedRequests.
+			guideLLMConfig = &sim.GuideLLMConfig{Rate: spec.AggregateRate / 1e6}
+			logrus.Infof("Generated %d requests from workload spec", len(reqs))
+		} else if workloadType == "distribution" { // if workloadType distribution, use args.
 			// error handling for prompt and output lengths
 			if promptTokensMean > promptTokensMax || promptTokensMean < promptTokensMin || promptTokensStdev > promptTokensMax || promptTokensStdev < promptTokensMin {
 				logrus.Fatalf("prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]")
@@ -320,6 +347,9 @@ var runCmd = &cobra.Command{
 			CounterfactualK:          counterfactualK,
 		}
 		cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
+		if len(preGeneratedRequests) > 0 {
+			cs.SetPreGeneratedRequests(preGeneratedRequests)
+		}
 		cs.Run()
 
 		if numInstances > 1 {
@@ -469,6 +499,9 @@ func init() {
 	runCmd.Flags().StringVar(&traceLevel, "trace-level", "none", "Trace verbosity: none, decisions")
 	runCmd.Flags().IntVar(&counterfactualK, "counterfactual-k", 0, "Number of counterfactual candidates per routing decision")
 	runCmd.Flags().BoolVar(&summarizeTrace, "summarize-trace", false, "Print trace summary after simulation")
+
+	// Workload spec config (PR10)
+	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

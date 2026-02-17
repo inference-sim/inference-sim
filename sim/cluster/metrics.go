@@ -67,11 +67,20 @@ func percentile(sorted []float64, p float64) float64 {
 	return sorted[lower] + frac*(sorted[upper]-sorted[lower])
 }
 
+// SLOMetrics holds per-SLO-class latency distributions.
+type SLOMetrics struct {
+	TTFT Distribution
+	E2E  Distribution
+}
+
 // RawMetrics holds cluster-level metrics aggregated after simulation.
 type RawMetrics struct {
 	// Latency distributions (in ticks)
 	TTFT Distribution
 	E2E  Distribution
+
+	// Per-SLO-class distributions (PR10: keyed by SLOClass string)
+	PerSLOClass map[string]*SLOMetrics
 
 	// Throughput
 	RequestsPerSec float64
@@ -184,6 +193,105 @@ func detectHOLBlocking(perInstance []*sim.Metrics) int {
 		}
 	}
 	return count
+}
+
+// ComputePerSLODistributions builds per-SLO-class latency distributions.
+// Filters requests by their SLOClass field and computes distributions per class.
+func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics {
+	// Group TTFT and E2E values by SLO class
+	ttftByClass := make(map[string][]float64)
+	e2eByClass := make(map[string][]float64)
+
+	for reqID, ttft := range aggregated.RequestTTFTs {
+		req, ok := aggregated.Requests[reqID]
+		if !ok {
+			continue
+		}
+		sloClass := req.SLOClass
+		if sloClass == "" {
+			sloClass = "default"
+		}
+		ttftByClass[sloClass] = append(ttftByClass[sloClass], ttft)
+	}
+	for reqID, e2e := range aggregated.RequestE2Es {
+		req, ok := aggregated.Requests[reqID]
+		if !ok {
+			continue
+		}
+		sloClass := req.SLOClass
+		if sloClass == "" {
+			sloClass = "default"
+		}
+		e2eByClass[sloClass] = append(e2eByClass[sloClass], e2e)
+	}
+
+	result := make(map[string]*SLOMetrics)
+	// Collect all classes from both maps
+	allClasses := make(map[string]bool)
+	for k := range ttftByClass {
+		allClasses[k] = true
+	}
+	for k := range e2eByClass {
+		allClasses[k] = true
+	}
+	for cls := range allClasses {
+		result[cls] = &SLOMetrics{
+			TTFT: NewDistribution(ttftByClass[cls]),
+			E2E:  NewDistribution(e2eByClass[cls]),
+		}
+	}
+	return result
+}
+
+// SLOAttainment computes the fraction of requests meeting their SLO target.
+// targets maps SLO class to max acceptable E2E latency (in ticks).
+// Returns a value in [0.0, 1.0].
+func SLOAttainment(aggregated *sim.Metrics, targets map[string]float64) float64 {
+	if len(aggregated.RequestE2Es) == 0 {
+		return 0
+	}
+	met := 0
+	total := 0
+	for reqID, e2e := range aggregated.RequestE2Es {
+		req, ok := aggregated.Requests[reqID]
+		if !ok {
+			continue
+		}
+		total++
+		sloClass := req.SLOClass
+		if target, ok := targets[sloClass]; ok {
+			if e2e <= target {
+				met++
+			}
+		} else {
+			// No target for this class = always meets SLO
+			met++
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	return float64(met) / float64(total)
+}
+
+// JainFairnessIndex computes the Jain's fairness index across tenant throughputs.
+// Formula: (Σxi)² / (N * Σxi²) where xi = per-tenant throughput.
+// Returns a value in [1/N, 1.0] where 1.0 means perfect fairness.
+func JainFairnessIndex(throughputs map[string]float64) float64 {
+	n := float64(len(throughputs))
+	if n == 0 {
+		return 0
+	}
+	sumX := 0.0
+	sumX2 := 0.0
+	for _, x := range throughputs {
+		sumX += x
+		sumX2 += x * x
+	}
+	if sumX2 == 0 {
+		return 0
+	}
+	return (sumX * sumX) / (n * sumX2)
 }
 
 // mapValues extracts values from a map into a slice.

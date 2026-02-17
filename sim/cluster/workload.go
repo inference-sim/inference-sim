@@ -12,9 +12,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// generateRequests creates the request list from either CSV traces or distribution config.
-// The constructor validates that at least one of workload or tracesPath is set.
+// generateRequests creates the request list from pre-generated requests, CSV traces, or distribution config.
+// Precedence: preGenerated → traces → distribution.
 func (c *ClusterSimulator) generateRequests() []*sim.Request {
+	if len(c.preGeneratedRequests) > 0 {
+		return c.preGeneratedRequests
+	}
 	if c.tracesPath != "" && c.workload == nil {
 		return c.generateRequestsFromCSV()
 	}
