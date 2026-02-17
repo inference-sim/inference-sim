@@ -17,9 +17,9 @@ Problem statement:
 
 Create a collection of subagents with the following cumulative exercise:
 
-0. @docs/plans/inference-modeling-ideas.md contains all the background.
-1. idea creator: comes up with new proposals that solve the problem. Append the idea to a running document @docs/plans/inference-modeling-ideas.md. Make the idea brief.
-2. three judges, each that will execute the /review-plan skill against the newly generated idea in latest iteration. Copy @docs/plans/inference-modeling-ideas.md as context. Use a different model for idea evaluation. You can select from `aws/claude-opus-4-6`, `Azure/gpt-4o`, `GCP/gemini-2.5-flash`. The judges will provide independently review feedback.
+0. @docs/plans/inference-modeling-ideas-2.md contains all the background.
+1. idea creator: comes up with new proposals that solve the problem. Append the idea to a running document @docs/plans/inference-modeling-ideas-2.md. Make the idea brief.
+2. three judges, each that will execute the /review-plan skill against the newly generated idea in latest iteration. Copy @docs/plans/inference-modeling-ideas-2.md as context. Use a different model for idea evaluation. You can select from `aws/claude-opus-4-6`, `Azure/gpt-4o`, `GCP/gemini-2.5-flash`. YOU HAVE TO USE THE /review-plan SKILL AND INVOKE THE TWO NON-ANTHROPIC MODELS. The judges will provide independently review feedback.
 3. a summarizer appends the review summaries to a running document. The intent is that we will generate a single idea per `n` iteration.
 4. In each iteration, the idea creator will run first, followed by the three judges in parallel, followed by the summarizer. In any iteration, the idea creator can use all the feedback previously given available in the document.
 5. The document contains the proposal and review summary for all the iterations finished so far.
