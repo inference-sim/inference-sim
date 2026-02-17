@@ -1,15 +1,19 @@
-# BLIS Policy Configuration
+# BLIS Policy Configuration (defaults)
 #
 # Use with: ./simulation_worker run --model <model> --policy-config policy-config.yaml
 #
 # All fields are optional. Omit any field to use CLI flags or built-in defaults.
 # CLI flags always override YAML values when both are specified.
 #
+# To verify which policies are active, run with --log info.
+#
 # Available policies:
-#   admission: always-admit (default), token-bucket
-#   routing:   round-robin (default), least-loaded, weighted, prefix-affinity
-#   priority:  constant (default), slo-based
-#   scheduler: fcfs (default), priority-fcfs, sjf
+#   admission: always-admit (default), token-bucket, reject-all
+#   routing:   round-robin (default), least-loaded, weighted, prefix-affinity, always-busiest
+#   priority:  constant (default), slo-based, inverted-slo
+#   scheduler: fcfs (default), priority-fcfs, sjf, reverse-priority
+#
+# See also: examples/weighted-routing.yaml for a weighted routing example.
 
 admission:
   policy: always-admit

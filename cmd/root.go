@@ -313,6 +313,18 @@ var runCmd = &cobra.Command{
 			logrus.Infof("Decision tracing enabled (trace-level=%s). Use --summarize-trace to print summary.", traceLevel)
 		}
 
+		// Log active policy configuration so users can verify which policies are in effect
+		logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
+			admissionPolicy, routingPolicy, priorityPolicy, scheduler)
+		if routingPolicy == "weighted" {
+			logrus.Infof("Weighted routing: cache-weight=%.2f, load-weight=%.2f",
+				routingCacheWeight, routingLoadWeight)
+		}
+		if admissionPolicy == "token-bucket" {
+			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
+				tokenBucketCapacity, tokenBucketRefillRate)
+		}
+
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances)

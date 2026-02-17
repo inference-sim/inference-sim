@@ -1,0 +1,41 @@
+# BLIS Weighted Routing Configuration
+#
+# This example enables weighted scoring routing, which routes requests using
+# a composite score of cache affinity and load balance:
+#
+#   score = (1 - KVUtilization) * cache_weight + (1 - normalizedLoad) * load_weight
+#
+# Higher scores are preferred. The instance with the highest score receives the request.
+#
+# Usage (multi-instance required for routing to have effect):
+#
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 \
+#     --policy-config examples/weighted-routing.yaml \
+#     --log info
+#
+# To verify routing decisions, add decision tracing:
+#
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 \
+#     --policy-config examples/weighted-routing.yaml \
+#     --trace-level decisions --summarize-trace \
+#     --log info
+#
+# The trace summary shows target distribution across instances,
+# confirming that weighted routing is active and balancing load.
+
+admission:
+  policy: always-admit
+
+routing:
+  policy: weighted
+  cache_weight: 0.6    # weight for cache affinity (prefer instances with free KV blocks)
+  load_weight: 0.4     # weight for load balance (prefer instances with fewer queued requests)
+
+priority:
+  policy: constant
+
+scheduler: fcfs

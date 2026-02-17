@@ -52,6 +52,7 @@ largesweep/
 *.zip
 *.yaml
 !examples/*.yaml
+!defaults.yaml
 
 # uv files
 .python-version
