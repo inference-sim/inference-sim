@@ -12,10 +12,13 @@ type TraceSummary struct {
 }
 
 // Summarize computes aggregate statistics from a SimulationTrace.
-// Safe for empty traces (returns zero-value fields).
+// Safe for nil or empty traces (returns zero-value fields).
 func Summarize(st *SimulationTrace) *TraceSummary {
 	summary := &TraceSummary{
 		TargetDistribution: make(map[string]int),
+	}
+	if st == nil {
+		return summary
 	}
 
 	summary.TotalDecisions = len(st.Admissions)

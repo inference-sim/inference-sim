@@ -41,6 +41,7 @@ func computeCounterfactual(chosenID string, scores map[string]float64, snapshots
 
 	all := make([]scored, len(snapshots))
 	var chosenScore float64
+	chosenFound := false
 	for i, snap := range snapshots {
 		s := 0.0
 		if scores != nil {
@@ -52,7 +53,13 @@ func computeCounterfactual(chosenID string, scores map[string]float64, snapshots
 		all[i] = scored{snap: snap, score: s}
 		if snap.ID == chosenID {
 			chosenScore = s
+			chosenFound = true
 		}
+	}
+
+	// If chosen ID not in snapshots (should not happen), return candidates with 0 regret
+	if !chosenFound {
+		return nil, 0
 	}
 
 	// Sort by score descending; tie-break by instance ID ascending for determinism

@@ -273,6 +273,9 @@ var runCmd = &cobra.Command{
 		if !trace.IsValidTraceLevel(traceLevel) {
 			logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
 		}
+		if counterfactualK < 0 {
+			logrus.Fatalf("--counterfactual-k must be >= 0, got %d", counterfactualK)
+		}
 
 		startTime := time.Now() // Get current time (start)
 
@@ -354,38 +357,27 @@ var runCmd = &cobra.Command{
 			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
 		}
 
-		// Build trace summary if requested (BC-9)
-		var traceSummary *trace.TraceSummary
+		// Build and print trace summary if requested (BC-9)
 		if cs.Trace() != nil && summarizeTrace {
-			traceSummary = trace.Summarize(cs.Trace())
-		}
-
-		// Construct unified EvaluationResult (BC-8)
-		evalResult := cluster.NewEvaluationResult(
-			rawMetrics, fitness, cs.Trace(), traceSummary,
-			cs.Clock(), time.Since(startTime),
-		)
-
-		// Print trace summary if requested
-		if evalResult.Summary != nil {
+			traceSummary := trace.Summarize(cs.Trace())
 			fmt.Printf("\n=== Trace Summary ===\n")
-			fmt.Printf("Total Decisions: %d\n", evalResult.Summary.TotalDecisions)
-			fmt.Printf("  Admitted: %d\n", evalResult.Summary.AdmittedCount)
-			fmt.Printf("  Rejected: %d\n", evalResult.Summary.RejectedCount)
-			fmt.Printf("Unique Targets: %d\n", evalResult.Summary.UniqueTargets)
-			if len(evalResult.Summary.TargetDistribution) > 0 {
+			fmt.Printf("Total Decisions: %d\n", traceSummary.TotalDecisions)
+			fmt.Printf("  Admitted: %d\n", traceSummary.AdmittedCount)
+			fmt.Printf("  Rejected: %d\n", traceSummary.RejectedCount)
+			fmt.Printf("Unique Targets: %d\n", traceSummary.UniqueTargets)
+			if len(traceSummary.TargetDistribution) > 0 {
 				fmt.Printf("Target Distribution:\n")
-				targetKeys := make([]string, 0, len(evalResult.Summary.TargetDistribution))
-				for k := range evalResult.Summary.TargetDistribution {
+				targetKeys := make([]string, 0, len(traceSummary.TargetDistribution))
+				for k := range traceSummary.TargetDistribution {
 					targetKeys = append(targetKeys, k)
 				}
 				sort.Strings(targetKeys)
 				for _, k := range targetKeys {
-					fmt.Printf("  %s: %d\n", k, evalResult.Summary.TargetDistribution[k])
+					fmt.Printf("  %s: %d\n", k, traceSummary.TargetDistribution[k])
 				}
 			}
-			fmt.Printf("Mean Regret: %.6f\n", evalResult.Summary.MeanRegret)
-			fmt.Printf("Max Regret: %.6f\n", evalResult.Summary.MaxRegret)
+			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
+			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
 		}
 
 		logrus.Info("Simulation complete.")
