@@ -234,3 +234,58 @@ func TestParseFitnessWeights_InvalidFormat(t *testing.T) {
 		t.Error("expected error for non-numeric weight")
 	}
 }
+
+// TestDetectPriorityInversions_InvertedRequests verifies BC-8.
+func TestDetectPriorityInversions_InvertedRequests(t *testing.T) {
+	m := sim.NewMetrics()
+	m.Requests["high"] = sim.RequestMetrics{ID: "high", ArrivedAt: 100}
+	m.RequestE2Es["high"] = 50000.0
+	m.Requests["low"] = sim.RequestMetrics{ID: "low", ArrivedAt: 200}
+	m.RequestE2Es["low"] = 5000.0
+
+	inversions := detectPriorityInversions([]*sim.Metrics{m})
+
+	if inversions < 0 {
+		t.Errorf("inversions should be >= 0, got %d", inversions)
+	}
+	// Earlier request (high) has 10× worse E2E than later request (low) → inversion detected
+	if inversions == 0 {
+		t.Error("expected at least 1 inversion for 10× E2E difference")
+	}
+}
+
+// TestDetectHOLBlocking_ImbalancedInstances verifies BC-9.
+func TestDetectHOLBlocking_ImbalancedInstances(t *testing.T) {
+	perInstance := []*sim.Metrics{
+		makeMetricsWithQueueDepth([]int{50, 50, 50, 50}),
+		makeMetricsWithQueueDepth([]int{1, 1, 1, 1}),
+		makeMetricsWithQueueDepth([]int{2, 2, 2, 2}),
+	}
+
+	blocking := detectHOLBlocking(perInstance)
+
+	if blocking <= 0 {
+		t.Errorf("expected HOL blocking events > 0, got %d", blocking)
+	}
+}
+
+// TestDetectHOLBlocking_BalancedInstances_NoBlocking verifies no false positives.
+func TestDetectHOLBlocking_BalancedInstances_NoBlocking(t *testing.T) {
+	perInstance := []*sim.Metrics{
+		makeMetricsWithQueueDepth([]int{10, 10, 10}),
+		makeMetricsWithQueueDepth([]int{11, 11, 11}),
+		makeMetricsWithQueueDepth([]int{9, 9, 9}),
+	}
+
+	blocking := detectHOLBlocking(perInstance)
+
+	if blocking != 0 {
+		t.Errorf("expected 0 HOL blocking events for balanced instances, got %d", blocking)
+	}
+}
+
+func makeMetricsWithQueueDepth(depths []int) *sim.Metrics {
+	m := sim.NewMetrics()
+	m.NumWaitQRequests = depths
+	return m
+}

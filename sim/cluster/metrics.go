@@ -104,7 +104,81 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 		raw.TokensPerSec = float64(aggregated.TotalOutputTokens) / durationSec
 	}
 
+	// Anomaly detection
+	if perInstance != nil {
+		raw.PriorityInversions = detectPriorityInversions(perInstance)
+		raw.HOLBlockingEvents = detectHOLBlocking(perInstance)
+	}
+
 	return raw
+}
+
+// detectPriorityInversions counts priority inversion events from per-instance metrics.
+// Simplified PR9 heuristic: counts pairs where an earlier-arriving request has
+// worse E2E than a later-arriving request (with 2× threshold).
+// Full decision-trace-based detection deferred to PR13.
+func detectPriorityInversions(perInstance []*sim.Metrics) int {
+	count := 0
+	for _, m := range perInstance {
+		if len(m.Requests) < 2 {
+			continue
+		}
+		type reqInfo struct {
+			arrived float64
+			e2e     float64
+		}
+		var reqs []reqInfo
+		for id, rm := range m.Requests {
+			if e2e, ok := m.RequestE2Es[id]; ok {
+				reqs = append(reqs, reqInfo{arrived: rm.ArrivedAt, e2e: e2e})
+			}
+		}
+		sort.Slice(reqs, func(i, j int) bool {
+			return reqs[i].arrived < reqs[j].arrived
+		})
+		for i := 0; i < len(reqs)-1; i++ {
+			for j := i + 1; j < len(reqs); j++ {
+				if reqs[i].e2e > reqs[j].e2e*2.0 {
+					count++
+				}
+			}
+		}
+	}
+	return count
+}
+
+// detectHOLBlocking counts head-of-line blocking events from per-instance metrics.
+// HOL blocking is detected when any instance's average queue depth exceeds
+// 2× the mean average queue depth across all instances.
+func detectHOLBlocking(perInstance []*sim.Metrics) int {
+	if len(perInstance) < 2 {
+		return 0
+	}
+
+	avgDepths := make([]float64, len(perInstance))
+	totalAvg := 0.0
+	for i, m := range perInstance {
+		if len(m.NumWaitQRequests) == 0 {
+			continue
+		}
+		sum := 0
+		for _, d := range m.NumWaitQRequests {
+			sum += d
+		}
+		avgDepths[i] = float64(sum) / float64(len(m.NumWaitQRequests))
+		totalAvg += avgDepths[i]
+	}
+	meanAvg := totalAvg / float64(len(perInstance))
+
+	count := 0
+	if meanAvg > 0 {
+		for _, avg := range avgDepths {
+			if avg > 2.0*meanAvg {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 // mapValues extracts values from a map into a slice.
