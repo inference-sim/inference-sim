@@ -31,12 +31,14 @@ type ClusterSimulator struct {
 	admissionPolicy    sim.AdmissionPolicy
 	snapshotProvider   SnapshotProvider
 	routingPolicy      sim.RoutingPolicy
-	rejectedRequests   int // EC-2: count of requests rejected by admission policy
-	trace              *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
+	rejectedRequests       int // EC-2: count of requests rejected by admission policy
+	trace                  *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
+	preGeneratedRequests   []*sim.Request // Pre-generated requests from workload-spec (PR10)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
-// Panics if config.NumInstances < 1 or if both workload and tracesPath are unset.
+// Panics if config.NumInstances < 1 or if both workload and tracesPath are unset
+// (unless pre-generated requests will be provided via SetPreGeneratedRequests before Run).
 func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 	tracesPath string) *ClusterSimulator {
 	if config.NumInstances < 1 {
@@ -188,6 +190,12 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 		panic("ClusterSimulator.AggregatedMetrics() called before Run()")
 	}
 	return c.aggregatedMetrics
+}
+
+// SetPreGeneratedRequests sets pre-generated requests for workload-spec mode.
+// Must be called before Run(). These requests bypass the normal generation pipeline.
+func (c *ClusterSimulator) SetPreGeneratedRequests(reqs []*sim.Request) {
+	c.preGeneratedRequests = reqs
 }
 
 // RejectedRequests returns the count of requests rejected by the admission policy (EC-2).

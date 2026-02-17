@@ -35,6 +35,18 @@ type Request struct {
 	                          // Higher = more urgent. Set by Simulator.Step() and optionally by
 	                          // RoutingDecisionEvent as a one-shot cluster-level hint; read by schedulers.
 	                          // Only meaningful for queued requests; zero-value (0.0) is the default.
+
+	// Workload metadata (PR10). All fields are zero-value safe for backward compatibility.
+	TenantID        string  // Client/tenant identifier (empty for legacy workloads)
+	SLOClass        string  // "realtime", "interactive", "batch" (empty for legacy)
+	Streaming       bool    // Whether this request uses streaming response mode
+	SessionID       string  // Multi-turn session link (empty for single-turn)
+	RoundIndex      int     // Round within session (0-based)
+	TextTokenCount  int     // Text input tokens (multimodal breakdown)
+	ImageTokenCount int     // Image input tokens
+	AudioTokenCount int     // Audio input tokens
+	VideoTokenCount int     // Video input tokens
+	ReasonRatio     float64 // reason_tokens / total_output_tokens (part of OutputTokens, not additional)
 }
 
 // This method returns a human-readable string representation of a Request.
