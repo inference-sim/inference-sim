@@ -15,6 +15,13 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64) ([]*sim.Request, error)
 	if horizon <= 0 {
 		return nil, nil // EC-5: zero/negative horizon returns empty
 	}
+	// Load ServeGen data if specified (populates spec.Clients)
+	if spec.ServeGenData != nil && len(spec.Clients) == 0 {
+		if err := loadServeGenData(spec); err != nil {
+			return nil, fmt.Errorf("loading ServeGen data: %w", err)
+		}
+	}
+
 	if err := spec.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid workload spec: %w", err)
 	}
