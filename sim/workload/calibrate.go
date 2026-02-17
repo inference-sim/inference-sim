@@ -117,6 +117,12 @@ func PrepareCalibrationPairs(
 		realTTFT := float64(rec.FirstChunkTimeUs - rec.SendTimeUs)
 		realE2E := float64(rec.LastChunkTimeUs - rec.SendTimeUs)
 
+		// Guard against negative latencies (clock skew or data corruption)
+		if realTTFT < 0 || realE2E < 0 {
+			pairs.UnmatchedReal++ // treat as unmatched rather than corrupt the data
+			continue
+		}
+
 		// Compute sim client-perspective latencies (server-side + network)
 		// Reuse network.go helpers for bandwidth delay computation
 		networkAdjust := float64(config.NetworkRTTUs)

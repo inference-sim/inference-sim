@@ -102,6 +102,10 @@ func (s *WeibullSampler) SampleIAT(rng *rand.Rand) int64 {
 // NewArrivalSampler creates an ArrivalSampler from a spec and rate.
 // ratePerMicrosecond is the client's request rate in requests/microsecond.
 func NewArrivalSampler(spec ArrivalSpec, ratePerMicrosecond float64) ArrivalSampler {
+	// Defensive floor: avoid division by zero or numerical instability
+	if ratePerMicrosecond < 1e-15 {
+		ratePerMicrosecond = 1e-15
+	}
 	switch spec.Process {
 	case "poisson":
 		return &PoissonSampler{rateMicros: ratePerMicrosecond}
