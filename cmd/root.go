@@ -252,16 +252,16 @@ var runCmd = &cobra.Command{
 
 		// Validate policy names (catches CLI typos before they become panics)
 		if !sim.IsValidAdmissionPolicy(admissionPolicy) {
-			logrus.Fatalf("Unknown admission policy %q. Valid: always-admit, token-bucket", admissionPolicy)
+			logrus.Fatalf("Unknown admission policy %q. Valid: always-admit, token-bucket, reject-all", admissionPolicy)
 		}
 		if !sim.IsValidRoutingPolicy(routingPolicy) {
-			logrus.Fatalf("Unknown routing policy %q. Valid: round-robin, least-loaded, weighted, prefix-affinity", routingPolicy)
+			logrus.Fatalf("Unknown routing policy %q. Valid: round-robin, least-loaded, weighted, prefix-affinity, always-busiest", routingPolicy)
 		}
 		if !sim.IsValidPriorityPolicy(priorityPolicy) {
-			logrus.Fatalf("Unknown priority policy %q. Valid: constant, slo-based", priorityPolicy)
+			logrus.Fatalf("Unknown priority policy %q. Valid: constant, slo-based, inverted-slo", priorityPolicy)
 		}
 		if !sim.IsValidScheduler(scheduler) {
-			logrus.Fatalf("Unknown scheduler %q. Valid: fcfs, priority-fcfs, sjf", scheduler)
+			logrus.Fatalf("Unknown scheduler %q. Valid: fcfs, priority-fcfs, sjf, reverse-priority", scheduler)
 		}
 
 		startTime := time.Now() // Get current time (start)

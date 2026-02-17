@@ -155,9 +155,10 @@ func detectHOLBlocking(perInstance []*sim.Metrics) int {
 		return 0
 	}
 
-	avgDepths := make([]float64, len(perInstance))
+	// Only include instances with queue depth samples in the mean calculation
+	var avgDepths []float64
 	totalAvg := 0.0
-	for i, m := range perInstance {
+	for _, m := range perInstance {
 		if len(m.NumWaitQRequests) == 0 {
 			continue
 		}
@@ -165,10 +166,15 @@ func detectHOLBlocking(perInstance []*sim.Metrics) int {
 		for _, d := range m.NumWaitQRequests {
 			sum += d
 		}
-		avgDepths[i] = float64(sum) / float64(len(m.NumWaitQRequests))
-		totalAvg += avgDepths[i]
+		avg := float64(sum) / float64(len(m.NumWaitQRequests))
+		avgDepths = append(avgDepths, avg)
+		totalAvg += avg
 	}
-	meanAvg := totalAvg / float64(len(perInstance))
+
+	if len(avgDepths) < 2 {
+		return 0 // need at least 2 instances with samples
+	}
+	meanAvg := totalAvg / float64(len(avgDepths))
 
 	count := 0
 	if meanAvg > 0 {
@@ -229,6 +235,7 @@ func ComputeFitness(metrics *RawMetrics, weights map[string]float64) *FitnessRes
 
 // extractMetric returns a normalized [0,1] metric value for the given key.
 // Throughput: value / (value + reference). Latency: 1 / (1 + value/reference).
+// Both formulas are safe for zero values: 0/(0+ref)=0, 1/(1+0/ref)=1.
 // Returns (value, true) on success, (0, false) for unknown keys.
 func extractMetric(m *RawMetrics, key string) (float64, bool) {
 	switch key {
