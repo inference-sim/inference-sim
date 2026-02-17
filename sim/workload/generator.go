@@ -66,6 +66,21 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64) ([]*sim.Request, error)
 			prefix = prefixes[client.PrefixGroup]
 		}
 
+		// Handle reasoning/multi-turn clients separately
+		if client.Reasoning != nil && client.Reasoning.MultiTurn != nil {
+			reasoningReqs, err := GenerateReasoningRequests(
+				clientRNG, client.Reasoning,
+				inputSampler, outputSampler,
+				0, // startTime
+				client.ID, client.TenantID, client.SLOClass,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+			}
+			allRequests = append(allRequests, reasoningReqs...)
+			continue
+		}
+
 		// Generate requests for this client
 		currentTime := int64(0)
 		for currentTime < horizon {
@@ -80,16 +95,30 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64) ([]*sim.Request, error)
 				continue
 			}
 
-			// Sample token lengths
-			inputLen := inputSampler.Sample(clientRNG)
-			outputLen := outputSampler.Sample(clientRNG)
+			var inputTokens []int
+			var outputTokens []int
+			var textCount, imageCount, audioCount, videoCount int
 
-			// Generate token IDs
-			inputTokens := sim.GenerateRandomTokenIDs(clientRNG, inputLen)
+			if client.Multimodal != nil {
+				// Multimodal generation (BC-8)
+				var err error
+				inputTokens, textCount, imageCount, audioCount, videoCount, err = GenerateMultimodalTokens(clientRNG, client.Multimodal)
+				if err != nil {
+					return nil, fmt.Errorf("client %q multimodal: %w", client.ID, err)
+				}
+				outputLen := outputSampler.Sample(clientRNG)
+				outputTokens = sim.GenerateRandomTokenIDs(clientRNG, outputLen)
+			} else {
+				// Standard language generation
+				inputLen := inputSampler.Sample(clientRNG)
+				outputLen := outputSampler.Sample(clientRNG)
+				inputTokens = sim.GenerateRandomTokenIDs(clientRNG, inputLen)
+				outputTokens = sim.GenerateRandomTokenIDs(clientRNG, outputLen)
+			}
+
 			if len(prefix) > 0 {
 				inputTokens = append(append([]int{}, prefix...), inputTokens...)
 			}
-			outputTokens := sim.GenerateRandomTokenIDs(clientRNG, outputLen)
 
 			req := &sim.Request{
 				ID:               "", // assigned after merge+sort
@@ -102,6 +131,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64) ([]*sim.Request, error)
 				TenantID:         client.TenantID,
 				SLOClass:         client.SLOClass,
 				Streaming:        client.Streaming,
+				TextTokenCount:   textCount,
+				ImageTokenCount:  imageCount,
+				AudioTokenCount:  audioCount,
+				VideoTokenCount:  videoCount,
 			}
 			allRequests = append(allRequests, req)
 		}
