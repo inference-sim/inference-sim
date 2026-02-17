@@ -118,21 +118,12 @@ func PrepareCalibrationPairs(
 		realE2E := float64(rec.LastChunkTimeUs - rec.SendTimeUs)
 
 		// Compute sim client-perspective latencies (server-side + network)
+		// Reuse network.go helpers for bandwidth delay computation
 		networkAdjust := float64(config.NetworkRTTUs)
-		uploadDelay := 0.0
-		if config.BandwidthMbps > 0 {
-			inputBytes := float64(sr.InputTokens * 4) // 4 bytes per token
-			inputBits := inputBytes * 8
-			uploadDelay = inputBits / (config.BandwidthMbps * 1e6) * 1e6 // µs
-		}
+		uploadDelay := computeUploadDelay(config.BandwidthMbps, sr.InputTokens)
+		downloadDelay := computeDownloadDelay(config.BandwidthMbps, sr.OutputTokens)
 		simTTFT := sr.TTFT + networkAdjust + uploadDelay
-		simE2E := sr.E2E + networkAdjust + uploadDelay
-		if config.BandwidthMbps > 0 {
-			outputBytes := float64(sr.OutputTokens * 4)
-			outputBits := outputBytes * 8
-			downloadDelay := outputBits / (config.BandwidthMbps * 1e6) * 1e6
-			simE2E += downloadDelay
-		}
+		simE2E := sr.E2E + networkAdjust + uploadDelay + downloadDelay
 
 		pairs.TTFT.Real = append(pairs.TTFT.Real, realTTFT)
 		pairs.TTFT.Sim = append(pairs.TTFT.Sim, simTTFT)

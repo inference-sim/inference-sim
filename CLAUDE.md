@@ -254,7 +254,8 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (always uses ClusterSimulator, --num-instances defaults to 1, --priority-policy, --scheduler, --policy-config, --trace-level, --counterfactual-k, --summarize-trace)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --workload-spec, --trace-level, --fitness-weights)
+│   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
 │   ├── simulator.go           # SimConfig struct, NewSimulator(SimConfig), event loop, batch formation, step execution
@@ -265,7 +266,7 @@ inference-sim/
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
-│   ├── request.go             # Request state machine (queued → running → completed), Priority field
+│   ├── request.go             # Request state machine (queued → running → completed), Priority field, workload metadata (TenantID, SLOClass, etc.)
 │   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching
 │   ├── batch.go               # Batch struct
 │   ├── queue.go               # FIFO wait queue
@@ -281,12 +282,25 @@ inference-sim/
 │   ├── cluster.go             # ClusterSimulator: shared-clock event loop, online routing, aggregation
 │   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent
 │   ├── snapshot.go            # InstanceSnapshot, CachedSnapshotProvider, ObservabilityConfig
-│   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, anomaly detection
+│   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, anomaly detection, per-SLO-class metrics, JainFairnessIndex
 │   ├── deployment.go          # DeploymentConfig struct
 │   └── workload.go            # Centralized request generation for cluster dispatch
+├── sim/workload/              # ServeGen-informed workload generation (PR10)
+│   ├── spec.go                # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
+│   ├── arrival.go             # ArrivalSampler: Poisson, Gamma (Marsaglia-Tsang), Weibull (bisection)
+│   ├── distribution.go        # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF
+│   ├── client.go              # Rate normalization, prefix group management
+│   ├── generator.go           # GenerateRequests pipeline with client decomposition
+│   ├── servegen.go            # Native ServeGen data file loading (chunk-*-trace.csv + dataset.json)
+│   ├── tracev2.go             # Trace v2 format (YAML header + CSV data)
+│   ├── replay.go              # Trace v2 → sim.Request with synthetic token IDs
+│   ├── calibrate.go           # CalibrationReport, PrepareCalibrationPairs, MAPE/Pearson r
+│   ├── multimodal.go          # Multimodal token generation (text+image+audio+video)
+│   ├── reasoning.go           # Reasoning multi-turn with context accumulation
+│   ├── network.go             # Client-perspective latency (RTT + bandwidth)
+│   └── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 ├── sim/kv/                    # Tiered KV cache (planned, Phase 4)
-├── sim/workload/              # Enhanced workload generation (planned, Phase 3)
-├── sim/trace/                 # Decision trace recording
+├── sim/trace/                 # Decision trace recording (PR13)
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore
 │   └── summary.go             # TraceSummary, Summarize()
@@ -294,7 +308,7 @@ inference-sim/
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
 ├── hardware_config.json       # GPU specifications
-├── examples/                  # Example configuration files (policy-config.yaml)
+├── examples/                  # Example configuration files (policy-config.yaml, servegen-language.yaml)
 ├── testdata/goldendataset.json # Golden dataset for regression tests
 └── docs/plans/                # Design documents
 ```
