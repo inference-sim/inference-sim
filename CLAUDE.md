@@ -46,6 +46,12 @@ go build -o simulation_worker main.go
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 \
   --fitness-weights "throughput:0.5,p99_ttft:0.3,mean_e2e:0.2"
+
+# Run with decision tracing and counterfactual analysis
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --routing-policy weighted \
+  --trace-level decisions --counterfactual-k 5 --summarize-trace
 ```
 
 ## Testing
@@ -95,6 +101,16 @@ Multi-replica extension using composition over the single-instance simulator:
 - **metrics.go**: `RawMetrics`, `Distribution`, `FitnessResult`, `CollectRawMetrics`, `ComputeFitness`, anomaly detection
 - **deployment.go**: `DeploymentConfig` struct with `ToSimConfig()` for per-instance construction
 - **workload.go**: Centralized request generation (distribution-based or CSV traces) for cluster dispatch
+- **counterfactual.go**: `computeCounterfactual()` for top-k candidate ranking and regret computation
+- **evaluation.go**: `EvaluationResult` wrapper (RawMetrics + FitnessResult + trace + summary)
+
+### Decision Tracing (`sim/trace/`)
+
+Observation-only trace recording for cluster-level policy decisions:
+
+- **trace.go**: `TraceLevel`, `TraceConfig`, `SimulationTrace`, `NewSimulationTrace`, recording methods
+- **record.go**: `AdmissionRecord`, `RoutingRecord`, `CandidateScore` (pure data types, no `sim/` dependency)
+- **summary.go**: `TraceSummary`, `Summarize()` aggregation
 
 ### Latency Estimation
 
@@ -168,8 +184,9 @@ Active development: Evolutionary Policy Optimization extension (see `docs/plans/
 - 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
 - **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type), PR7 (PriorityPolicy with ConstantPriority + SLOBasedPriority templates, InstanceScheduler with FCFS + PriorityFCFS + SJF templates, Priority field on Request, CLI flags `--priority-policy` and `--scheduler`), PR8 (RouterState bridge type in `sim/router_state.go`, PolicyBundle YAML config in `sim/bundle.go`, `--policy-config` CLI flag, AdmissionPolicy and RoutingPolicy accept `*RouterState`, `RoutingDecision.Priority` hint field, **INTERFACE FREEZE**), PR9 (RawMetrics with Distribution + FitnessResult, anomaly detection with priority inversion + HOL blocking counters, pathological templates: reject-all, inverted-slo, always-busiest, reverse-priority, `--fitness-weights` CLI flag, **RESEARCH-READY CHECKPOINT**)
+- **Completed (cont'd):** PR13 (DecisionTrace with RoutingRecord, counterfactual analysis with top-k candidates and regret, TraceSummary, EvaluationResult wrapper, `--trace-level decisions --counterfactual-k --summarize-trace` CLI flags)
 - **Next:** Policy research experiments (research-ready checkpoint reached), or PR10 (ServeGen-informed Workload Generator + Observe-Predict-Calibrate loop — see `docs/plans/2026-02-16-workload-generator-design.md`) and subsequent parallel tracks
-- Will add to `sim/kv/`, `sim/workload/`, `sim/trace/` packages
+- Will add to `sim/kv/`, `sim/workload/` packages
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
 ### Adding New Policy Templates
@@ -221,7 +238,7 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (always uses ClusterSimulator, --num-instances defaults to 1, --priority-policy, --scheduler, --policy-config)
+│   ├── root.go                # CLI commands and flags (always uses ClusterSimulator, --num-instances defaults to 1, --priority-policy, --scheduler, --policy-config, --trace-level, --counterfactual-k, --summarize-trace)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
 │   ├── simulator.go           # SimConfig struct, NewSimulator(SimConfig), event loop, batch formation, step execution
@@ -253,7 +270,10 @@ inference-sim/
 │   └── workload.go            # Centralized request generation for cluster dispatch
 ├── sim/kv/                    # Tiered KV cache (planned, Phase 4)
 ├── sim/workload/              # Enhanced workload generation (planned, Phase 3)
-├── sim/trace/                 # Decision traces (planned, Phase 4)
+├── sim/trace/                 # Decision trace recording
+│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace
+│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore
+│   └── summary.go             # TraceSummary, Summarize()
 ├── sim/adapter/               # Framework adapters (planned, Phase 5)
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
