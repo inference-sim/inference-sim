@@ -225,6 +225,9 @@ CacheHitRate float64  // cumulative cache hit rate for this instance (0.0-1.0)
 2. `InstanceSimulator` gets a new accessor: `CacheHitRate() float64 { return i.sim.KVCache.CacheHitRate() }`
 3. `CachedSnapshotProvider` calls `inst.CacheHitRate()` when building `RoutingSnapshot` (same pattern as `KVUtilization()`)
 4. `RoutingSnapshot.CacheHitRate` is populated and available to routing policies
+5. `buildRouterState()` in `sim/cluster/cluster_event.go:63-69` must also copy `CacheHitRate` when constructing `RoutingSnapshot` from `InstanceSnapshot` (PR13 added trace recording that reads from `RoutingSnapshot` — the field must be populated there too)
+
+**PR13 interaction note (post-merge):** PR13 added `CandidateScore` in `sim/trace/record.go` which captures `KVUtilization` and `FreeKVBlocks` from `RoutingSnapshot`. When PR12 adds `CacheHitRate` to `RoutingSnapshot`, consider adding it to `CandidateScore` too for trace completeness. This is optional (not a correctness issue) and can be done as a follow-up.
 
 **Tracking counters added to `TieredKVCache`:**
 - `cpuHitCount` / `cpuMissCount` — for CacheHitRate (combined with GPU counters)
