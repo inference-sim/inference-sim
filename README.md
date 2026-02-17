@@ -122,6 +122,8 @@ Define custom workload distribution to sample input/output lengths from:
 
 ### Replay Workload Traces
 
+Replay a CSV file of recorded requests for deterministic, reproducible simulation:
+
 ```bash
 ./simulation_worker run \
   --model meta-llama/llama-3.1-8b-instruct \
@@ -130,6 +132,24 @@ Define custom workload distribution to sample input/output lengths from:
 ```
 
 Simulation results will be saved to `results.json`. If `--results-path` is not provided, the results are only printed.
+
+**CSV trace format** (5 columns, header row required):
+
+```csv
+arrival_time,request_id,model,prefill_tokens,decode_tokens
+0.0,req_0,llama,"[1,2,3,4,5]","[101,102,103]"
+0.05,req_1,llama,"[10,20,30]","[201,202,203,204]"
+```
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `arrival_time` | float | Request arrival time in **seconds** (converted to microseconds internally) |
+| `request_id` | string | Identifier (ignored; BLIS generates `request_0`, `request_1`, ...) |
+| `model` | string | Model name (ignored; uses `--model` flag) |
+| `prefill_tokens` | JSON array | Input token IDs as JSON (e.g., `"[1,2,3]"`) |
+| `decode_tokens` | JSON array | Output token IDs as JSON (e.g., `"[101,102]"`) |
+
+Token arrays must be valid JSON integers. The length of each array determines the request's input/output token count.
 
 ### Multi-Instance Cluster Simulation
 
@@ -235,18 +255,26 @@ This records each routing decision with candidate scores and computes regret (ho
 
 ## Latency Estimation Approaches
 
-BLIS uses two estimation techniques:
+BLIS uses two estimation techniques. Choose based on your model support:
+
+| | Blackbox (Data-Driven) | Roofline (Analytical) |
+|---|---|---|
+| **Accuracy** | High (trained on real measurements) | Moderate (first-principles estimate) |
+| **Setup** | Requires pre-trained coefficients | Requires HuggingFace `config.json` + hardware spec |
+| **When to use** | Supported model/GPU/TP combos in `defaults.yaml` | New models, unsupported configurations |
+| **Required flags** | `--model` (coefficients loaded automatically) | `--model-config-folder` + `--hardware-config` |
 
 ### Blackbox Optimization (Data-Driven)
-- Uses pre-trained linear regression coefficients (α/β)
-- Requires pre-training for each (model, GPU, TP, vLLM version) combination
-- High accuracy for supported configurations
+- Uses pre-trained linear regression coefficients (α/β) from `defaults.yaml`
+- **Alpha coefficients**: model queueing time as a function of batch state
+- **Beta coefficients**: model step execution time from batch features (running requests, new tokens, cached tokens)
+- Automatically selected when `defaults.yaml` contains coefficients for the requested (model, GPU, TP, vLLM version) combination
 - See [Blackbox Approach](./docs/approach.md)
 
 ### Roofline Approach (Analytical)
-- No pre-training required
-- Works with any model via HuggingFace config.json
-- Based on FLOPs/memory bandwidth analysis
+- No pre-training required — estimates latency from FLOPs and memory bandwidth
+- Requires a HuggingFace `config.json` for the model (architecture parameters) and `hardware_config.json` (GPU specifications)
+- Automatically activated when `--model-config-folder` is provided and no matching coefficients exist
 - See [Roofline Approach](./docs/roofline.md)
 
 ### Using Roofline Mode
@@ -305,6 +333,83 @@ This requires the HuggingFace `config.json` for the model saved under the `model
 - **Scheduling Delay**: Time spent waiting in queue before batch formation
 - **Tokens/sec**: Aggregate throughput across all completed requests
 - `_p90`, `_p95`, `_p99` suffixes indicate percentile values
+
+---
+
+## Debugging and Observability
+
+### Log Levels
+
+Control verbosity with `--log` (default: `warn`):
+
+```bash
+# See policy configuration and workload generation details
+./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --log info
+
+# Full event-level tracing (very verbose)
+./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --log debug
+```
+
+Available levels: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`
+
+### Decision Tracing
+
+Record every routing and admission decision for post-hoc analysis:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --routing-policy weighted \
+  --trace-level decisions --summarize-trace
+```
+
+The trace summary shows:
+- Total admission decisions (admitted vs rejected)
+- Target distribution across instances (routing balance)
+- Unique targets used
+
+### Counterfactual Analysis
+
+Evaluate "what if" scenarios — how much better would alternative routing choices have been:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --routing-policy weighted \
+  --trace-level decisions --counterfactual-k 5 --summarize-trace
+```
+
+The `--counterfactual-k 5` flag computes regret for the top 5 alternative candidates at each routing decision. Mean and max regret indicate how often the routing policy made suboptimal choices.
+
+### Fitness Evaluation
+
+Compare policy configurations using a single composite score:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --fitness-weights "throughput:0.5,p99_ttft:0.3,mean_e2e:0.2"
+```
+
+Available fitness metric keys:
+
+| Key | Direction | Description |
+|-----|-----------|-------------|
+| `throughput` | higher is better | Completed requests per second |
+| `tokens_per_sec` | higher is better | Aggregate token throughput |
+| `p99_ttft`, `p50_ttft`, `mean_ttft` | lower is better | Time to first token |
+| `p99_e2e`, `p50_e2e`, `mean_e2e` | lower is better | End-to-end latency |
+
+### Anomaly Detection
+
+BLIS automatically detects and reports anomalies at the end of each simulation:
+
+- **Priority Inversions**: older requests receiving worse latencies than newer ones (indicates scheduling issues)
+- **HOL Blocking**: instances with queue depth significantly exceeding cluster average (indicates routing imbalance)
+- **Rejected Requests**: admission control rejection count (indicates capacity pressure)
+
+Anomaly counters are always computed and printed when non-zero. Use pathological policies (`inverted-slo`, `always-busiest`, `reverse-priority`) to verify anomaly detection works.
 
 ---
 
@@ -389,6 +494,71 @@ inference-sim/
 ├── hardware_config.json    # GPU hardware specifications
 └── docs/                   # Documentation and design plans
 ```
+
+---
+
+## CLI Reference
+
+### Core Simulation
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | (required) | LLM model name (e.g., `meta-llama/llama-3.1-8b-instruct`) |
+| `--hardware` | auto | GPU type (`H100`, `A100-80`) |
+| `--tp` | auto | Tensor parallelism degree |
+| `--vllm-version` | auto | vLLM version string |
+| `--horizon` | max int64 | Simulation horizon in ticks (microseconds) |
+| `--seed` | 42 | RNG seed for deterministic simulation |
+| `--results-path` | (none) | Save JSON results to file |
+| `--log` | warn | Log level: trace, debug, info, warn, error, fatal, panic |
+
+### Workload Configuration
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--workload` | distribution | Workload type: `chatbot`, `summarization`, `contentgen`, `multidoc`, `distribution`, `traces` |
+| `--workload-spec` | (none) | YAML workload spec file (overrides `--workload`). See `examples/servegen-language.yaml` |
+| `--workload-traces-filepath` | (none) | CSV trace file (required when `--workload traces`) |
+| `--rate` | 1.0 | Requests per second (for distribution workloads) |
+| `--max-prompts` | 100 | Number of requests to generate |
+| `--prompt-tokens` | 512 | Mean input token count |
+| `--prompt-tokens-stdev` | 256 | Input token count standard deviation |
+| `--output-tokens` | 512 | Mean output token count |
+| `--output-tokens-stdev` | 256 | Output token count standard deviation |
+
+### Cluster and Routing
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--num-instances` | 1 | Number of instances in the cluster |
+| `--routing-policy` | round-robin | Routing: `round-robin`, `least-loaded`, `weighted`, `prefix-affinity`, `always-busiest` |
+| `--routing-cache-weight` | 0.6 | Cache availability weight for weighted routing (FreeKVBlocks) |
+| `--routing-load-weight` | 0.4 | Queue pressure weight for weighted routing (QueueDepth) |
+| `--admission-policy` | always-admit | Admission: `always-admit`, `token-bucket`, `reject-all` |
+| `--token-bucket-capacity` | 10000 | Token bucket max tokens |
+| `--token-bucket-refill-rate` | 1000 | Token bucket refill rate (tokens/sec) |
+| `--priority-policy` | constant | Priority: `constant`, `slo-based`, `inverted-slo` |
+| `--scheduler` | fcfs | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority` |
+| `--policy-config` | (none) | YAML policy bundle file. See `examples/policy-config.yaml` |
+
+### Observability
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--trace-level` | none | Trace verbosity: `none`, `decisions` |
+| `--counterfactual-k` | 0 | Number of counterfactual candidates per routing decision |
+| `--summarize-trace` | false | Print trace summary after simulation |
+| `--fitness-weights` | (none) | Fitness weights as `key:val,key:val` (e.g., `throughput:0.5,p99_ttft:0.3`) |
+
+### vLLM Server Parameters
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--total-kv-blocks` | 1000000 | Total KV cache blocks |
+| `--max-num-running-reqs` | 256 | Max concurrent requests in running batch |
+| `--max-num-scheduled-tokens` | 2048 | Max new tokens per step across all running requests |
+| `--block-size-in-tokens` | 16 | Tokens per KV cache block |
+| `--max-model-len` | 2048 | Max request length (input + output tokens) |
 
 ---
 
