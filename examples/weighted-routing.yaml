@@ -1,21 +1,16 @@
 # BLIS Weighted Routing Configuration
 #
-# This example enables weighted scoring routing, which routes requests using
-# a composite score of cache affinity and load balance:
+# Weighted scoring routes requests using a composite score of cache availability
+# and queue pressure:
 #
-#   score = (1 - KVUtilization) * cache_weight + (1 - normalizedLoad) * load_weight
+#   cache_score = FreeKVBlocks / maxFreeKVBlocks   (memory availability)
+#   load_score  = 1 / (1 + QueueDepth)             (queue pressure)
+#   score       = cache_score * cache_weight + load_score * load_weight
 #
-# Higher scores are preferred. The instance with the highest score receives the request.
+# Higher scores are preferred. The instance with the highest score receives
+# the request. Weights must sum to 1.0.
 #
 # Usage (multi-instance required for routing to have effect):
-#
-#   ./simulation_worker run \
-#     --model meta-llama/llama-3.1-8b-instruct \
-#     --num-instances 4 \
-#     --policy-config examples/weighted-routing.yaml \
-#     --log info
-#
-# To verify routing decisions, add decision tracing:
 #
 #   ./simulation_worker run \
 #     --model meta-llama/llama-3.1-8b-instruct \
@@ -24,16 +19,25 @@
 #     --trace-level decisions --summarize-trace \
 #     --log info
 #
-# The trace summary shows target distribution across instances,
-# confirming that weighted routing is active and balancing load.
+# When weights matter:
+#   Weights affect routing when cache availability (FreeKVBlocks) and queue
+#   pressure (QueueDepth) rank instances differently. This occurs when:
+#   - Instances have different KV cache capacities (heterogeneous clusters)
+#   - Prefix caching creates uneven memory usage across instances
+#   - Some instances retain KV blocks from completed requests while others
+#     have freed theirs (transient asymmetry during load spikes)
+#
+# In symmetric clusters with balanced load, instances converge to similar
+# states, so weight values have minimal effect. For such clusters,
+# "least-loaded" routing is simpler and equally effective.
 
 admission:
   policy: always-admit
 
 routing:
   policy: weighted
-  cache_weight: 0.6    # weight for cache affinity (prefer instances with free KV blocks)
-  load_weight: 0.4     # weight for load balance (prefer instances with fewer queued requests)
+  cache_weight: 0.6    # weight for cache availability (prefer instances with free KV blocks)
+  load_weight: 0.4     # weight for queue pressure (prefer instances with fewer queued requests)
 
 priority:
   policy: constant

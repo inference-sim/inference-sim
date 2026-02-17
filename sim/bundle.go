@@ -116,6 +116,13 @@ func (b *PolicyBundle) Validate() error {
 	if err := validateFloat("load_weight", b.Routing.LoadWeight); err != nil {
 		return err
 	}
+	// Validate routing weights sum to 1.0 when weighted policy is used and both are set
+	if b.Routing.Policy == "weighted" && b.Routing.CacheWeight != nil && b.Routing.LoadWeight != nil {
+		sum := *b.Routing.CacheWeight + *b.Routing.LoadWeight
+		if math.Abs(sum-1.0) > 0.01 {
+			return fmt.Errorf("routing weights must sum to 1.0 (got cache_weight=%.2f + load_weight=%.2f = %.2f)", *b.Routing.CacheWeight, *b.Routing.LoadWeight, sum)
+		}
+	}
 	return nil
 }
 

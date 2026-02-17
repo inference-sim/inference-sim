@@ -24,6 +24,12 @@ The simulator is CPU-only, extremely fast, and designed for capacity planning, s
 - **Instance schedulers**: fcfs, priority-fcfs, sjf (batch formation policies)
 - **Admission control**: always-admit or token-bucket rate limiting
 - **YAML policy configuration**: define all policies in a single config file (`--policy-config`)
+- **ServeGen-informed workload generation**: multi-client specs with Poisson/Gamma/Weibull arrivals (`--workload-spec`)
+- **Decision tracing and counterfactual analysis**: record routing decisions and evaluate alternative choices (`--trace-level`, `--counterfactual-k`)
+- **Fitness evaluation**: weighted multi-objective scoring with configurable metric weights (`--fitness-weights`)
+- **Real-mode HTTP client**: observe-predict-calibrate loop against live inference endpoints (`observe` subcommand)
+- **Per-SLO-class metrics**: breakdown by SLO class with Jain fairness index
+- **Calibration framework**: MAPE and Pearson r for simulator-vs-real accuracy assessment
 
 ---
 
@@ -139,7 +145,7 @@ Run multiple instances with a routing policy:
 Available routing policies:
 - `round-robin` (default) — even distribution across instances
 - `least-loaded` — routes to instance with minimum queue + batch size
-- `weighted` — composite score combining cache affinity and load balance
+- `weighted` — composite score combining cache availability (FreeKVBlocks) and queue pressure (QueueDepth). Weights must sum to 1.0. Most effective when instances have different cache states (e.g., prefix caching, heterogeneous capacity). For symmetric clusters with balanced load, `least-loaded` is simpler and equally effective.
 - `prefix-affinity` — routes matching prefixes to the same instance, falls back to least-loaded
 - `always-busiest` — pathological: routes to most-loaded instance (for anomaly detection testing)
 
@@ -198,6 +204,32 @@ Define all policies in a single YAML file for easier management:
 ```
 
 YAML values serve as defaults; CLI flags override YAML settings. See `examples/policy-config.yaml` for format and available options.
+
+### ServeGen-Informed Workload Generation
+
+Generate realistic workloads from a ServeGen-style YAML specification with multi-client traffic classes, configurable arrival processes, and length distributions:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --workload-spec examples/servegen-language.yaml
+```
+
+See `examples/servegen-language.yaml` for the full specification format including client decomposition, arrival processes (Poisson, Gamma, Weibull), and length distributions (Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF).
+
+### Decision Tracing and Counterfactual Analysis
+
+Record routing decisions and evaluate what would have happened with alternative choices:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --routing-policy weighted \
+  --trace-level decisions --counterfactual-k 5 --summarize-trace
+```
+
+This records each routing decision with candidate scores and computes regret (how much better the best alternative would have been). The `--summarize-trace` flag prints aggregated statistics at the end of the simulation.
 
 ---
 
@@ -291,11 +323,17 @@ BLIS supports multi-replica cluster simulation with pluggable control policies f
 - **Policy bundles** with YAML configuration (`--policy-config`)
 - **Interface freeze**: policy interfaces are stable (additive changes only)
 
+Completed:
+
+- **Raw metrics and anomaly detection** (PR9) -- Research-Ready Checkpoint
+- **ServeGen-informed workload generator** with observe-predict-calibrate loop (PR10)
+- **Decision tracing and counterfactual analysis** with top-k regret computation (PR13)
+
 Upcoming:
 
-- **Raw metrics and anomaly detection** (PR 9) → Research-Ready Checkpoint
-- **Auto-scaling, tiered KV cache, decision traces** (PRs 10-13)
-- **Framework integration** with OpenEvolve and GEPA for policy evolution (PR 15)
+- **Auto-scaling** (PR11) and **tiered KV cache** (PR12)
+- **Framework adapters** for OpenEvolve and GEPA policy evolution (PR15)
+- **Integration tests** (PR16)
 
 See [design documentation](./docs/plans/) for details.
 
@@ -306,6 +344,10 @@ See [design documentation](./docs/plans/) for details.
 ```
 inference-sim/
 ├── main.go                 # CLI entry point
+├── cmd/                    # CLI commands
+│   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, etc.)
+│   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
+│   └── default_config.go   # defaults.yaml loading
 ├── sim/                    # Core simulation engine
 │   ├── simulator.go        # Discrete-event simulation loop
 │   ├── admission.go        # Admission policy interface and templates
@@ -322,9 +364,26 @@ inference-sim/
 │   ├── cluster.go          # Shared-clock event loop, online routing
 │   ├── instance.go         # Per-instance simulator wrapper
 │   ├── cluster_event.go    # Cluster-level event types
-│   └── snapshot.go         # Instance observability snapshots
-├── cmd/                    # CLI commands (--policy-config, --routing-policy, etc.)
+│   ├── snapshot.go         # Instance observability snapshots
+│   ├── metrics.go          # RawMetrics, FitnessResult, anomaly detection, per-SLO-class metrics
+│   ├── counterfactual.go   # Top-k candidate ranking and regret computation
+│   └── evaluation.go       # EvaluationResult wrapper (metrics + trace + summary)
+├── sim/workload/           # ServeGen-informed workload generation
+│   ├── spec.go             # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
+│   ├── arrival.go          # ArrivalSampler: Poisson, Gamma, Weibull
+│   ├── distribution.go     # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF
+│   ├── generator.go        # GenerateRequests pipeline with client decomposition
+│   ├── servegen.go         # Native ServeGen data file loading
+│   ├── calibrate.go        # CalibrationReport, MAPE, Pearson r
+│   └── replay.go           # Trace v2 replay
+├── sim/trace/              # Decision trace recording
+│   ├── trace.go            # TraceLevel, TraceConfig, SimulationTrace
+│   ├── record.go           # AdmissionRecord, RoutingRecord, CandidateScore
+│   └── summary.go          # TraceSummary, Summarize()
 ├── examples/               # Example configuration files
+│   ├── policy-config.yaml  # Policy bundle example
+│   ├── weighted-routing.yaml  # Weighted routing example
+│   └── servegen-language.yaml # ServeGen workload spec example
 ├── model_configs/          # HuggingFace config.json files
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
 ├── hardware_config.json    # GPU hardware specifications

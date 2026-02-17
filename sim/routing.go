@@ -82,8 +82,18 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 	}
 }
 
-// WeightedScoring routes requests using a weighted combination of cache affinity and load balance.
-// Score = (1 - KVUtilization) * cacheWeight + (1 - normalizedLoad) * loadWeight.
+// WeightedScoring routes requests using a weighted combination of cache availability and load balance.
+//
+// The two scoring dimensions use independent signals to ensure weight changes produce
+// measurably different routing decisions:
+//   - Cache dimension: FreeKVBlocks / maxFreeKVBlocks — measures memory availability
+//   - Load dimension:  1 / (1 + QueueDepth) — measures queue pressure (inverse, not max-normalized)
+//
+// Using QueueDepth (not QueueDepth+BatchSize) for load and FreeKVBlocks (not KVUtilization)
+// for cache ensures the signals can rank instances differently — e.g., an instance with few
+// large requests has low queue depth but high KV usage, while an instance with many small
+// requests has high queue depth but low KV usage.
+//
 // Higher scores are preferred. Ties broken by first occurrence in snapshot order.
 type WeightedScoring struct {
 	cacheWeight float64
@@ -97,32 +107,34 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		panic("WeightedScoring.Route: empty snapshots")
 	}
 
-	// Compute loads and find max for normalization
-	loads := make([]int, len(snapshots))
-	maxLoad := 0
-	for i, snap := range snapshots {
-		loads[i] = snap.QueueDepth + snap.BatchSize
-		if loads[i] > maxLoad {
-			maxLoad = loads[i]
+	// Find max FreeKVBlocks for normalization
+	maxFreeKV := int64(0)
+	for _, snap := range snapshots {
+		if snap.FreeKVBlocks > maxFreeKV {
+			maxFreeKV = snap.FreeKVBlocks
 		}
 	}
 
-	// Compute scores
+	// Compute scores using independent signals
 	scores := make(map[string]float64, len(snapshots))
 	bestScore := -1.0
 	bestIdx := 0
 
 	for i, snap := range snapshots {
-		// Normalize load to [0,1] (handle uniform load: all zero → normalizedLoad = 0)
-		normalizedLoad := 0.0
-		if maxLoad > 0 {
-			normalizedLoad = float64(loads[i]) / float64(maxLoad)
+		// Cache dimension: FreeKVBlocks / maxFreeKVBlocks (0 to 1)
+		// Uses absolute block availability, not utilization ratio — decorrelated from queue depth
+		cacheScore := 0.0
+		if maxFreeKV > 0 {
+			cacheScore = float64(snap.FreeKVBlocks) / float64(maxFreeKV)
 		}
 
-		// Composite score
-		cacheScore := (1.0 - snap.KVUtilization) * ws.cacheWeight
-		loadScore := (1.0 - normalizedLoad) * ws.loadWeight
-		score := cacheScore + loadScore
+		// Load dimension: 1/(1+QueueDepth) — diminishing returns, not max-normalized
+		// Uses only QueueDepth (waiting requests), not BatchSize (running requests)
+		// This ensures an instance with many queued small requests scores differently
+		// from one with few queued large requests (which would have similar KV usage)
+		loadScore := 1.0 / (1.0 + float64(snap.QueueDepth))
+
+		score := cacheScore*ws.cacheWeight + loadScore*ws.loadWeight
 		scores[snap.ID] = score
 
 		// Select argmax; first occurrence wins on tie (strict >)
@@ -227,6 +239,15 @@ func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolic
 	case "least-loaded":
 		return &LeastLoaded{}
 	case "weighted":
+		// Normalize weights so they sum to 1.0 (preserves ratio).
+		// This ensures (0.6, 0.2) behaves identically to (0.75, 0.25).
+		// Panics on non-positive sum (CLI validates before reaching here).
+		sum := cacheWeight + loadWeight
+		if sum <= 0 {
+			panic(fmt.Sprintf("WeightedScoring requires positive weight sum, got cacheWeight=%f + loadWeight=%f = %f", cacheWeight, loadWeight, sum))
+		}
+		cacheWeight = cacheWeight / sum
+		loadWeight = loadWeight / sum
 		return &WeightedScoring{cacheWeight: cacheWeight, loadWeight: loadWeight}
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string)}
