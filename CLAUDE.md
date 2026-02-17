@@ -228,6 +228,22 @@ Examples:
 - See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
 - See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback
 
+### Extending KV Cache Tiers
+
+To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
+
+1. **Implement the `KVStore` interface** in `sim/kvcache_*.go` (9 methods: allocate, get cached, release, capacity queries, metrics)
+2. **Compose existing tiers** — e.g., wrap `TieredKVCache` (GPU+CPU) with NVMe logic, following the same delegation pattern
+3. **Update `NewKVStore` factory** in `sim/kv_store.go` to instantiate your tier based on `SimConfig` fields
+4. **Add CLI flags** in `cmd/root.go` for new parameters (e.g., `--kv-nvme-blocks`)
+5. **Aggregate metrics** — combine hit/miss/thrashing counters from all tiers; see `TieredKVCache.CacheHitRate()` for the 2-tier pattern
+6. **Add behavioral tests** in `sim/kvcache_*_test.go`
+
+Examples:
+- See `TieredKVCache` in `sim/kvcache_tiered.go` for 2-tier GPU+CPU composition
+- See `KVCacheState` in `sim/kvcache.go` for single-tier baseline (also implements `KVStore`)
+- See `docs/plans/pr12-architectural-predesign.md` for the design decisions behind the tiered architecture
+
 ### Adding New Trace Record Types
 
 To add a new trace record type (e.g., `ScaleRecord` for autoscaling events):
