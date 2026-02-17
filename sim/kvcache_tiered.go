@@ -83,9 +83,15 @@ func (t *TieredKVCache) AllocateKVBlocks(req *Request, startIndex, endIndex int6
 	return false
 }
 
-// tryReloadFromCPU attempts to reload blocks from CPU to GPU, freeing GPU blocks in the process.
+// tryReloadFromCPU attempts to reload blocks from CPU to GPU hash table.
 // Iterates in deterministic order (sorted by block ID) for reproducibility.
 // Returns true if any blocks were reloaded.
+//
+// Limitation: each reload reuses a GPU free block (pop + re-append). If only 1 GPU free
+// block is available and multiple CPU blocks are reloaded, each reload overwrites the
+// previous block's content in the same GPU slot. The last-reloaded block survives in the
+// hash table; earlier ones are lost. This is acceptable because GetCachedBlocks walks
+// prefixes sequentially — only the longest contiguous cached prefix matters.
 func (t *TieredKVCache) tryReloadFromCPU() bool {
 	// Sort CPU block IDs for deterministic iteration order
 	cpuBlockIDs := make([]int64, 0, len(t.cpu.blocks))
@@ -178,8 +184,10 @@ func (t *TieredKVCache) SetClock(clock int64) {
 	t.clock = clock
 }
 
-// maybeOffload moves cached free blocks from GPU to CPU until GPU utilization ≤ threshold.
-// Scans the free list for blocks with cached content (Hash != ""); skips empty blocks.
+// maybeOffload preserves cached content by moving free blocks with hashes from GPU to CPU.
+// Activated when GPU utilization exceeds threshold after a release. Since offloaded blocks
+// are already free, this doesn't reduce UsedBlocks — the threshold controls activation,
+// and the loop runs until no more cached free blocks remain or CPU is full.
 func (t *TieredKVCache) maybeOffload() {
 	for t.gpu.TotalCapacity() > 0 {
 		util := float64(t.gpu.UsedBlocks()) / float64(t.gpu.TotalCapacity())
