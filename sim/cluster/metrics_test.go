@@ -3,6 +3,8 @@ package cluster
 import (
 	"math"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // TestDistribution_FromValues_ComputesCorrectStats verifies BC-2.
@@ -67,5 +69,63 @@ func TestDistribution_EmptyValues_ReturnsZero(t *testing.T) {
 	}
 }
 
-// suppress unused import
-var _ = math.Floor
+// TestCollectRawMetrics_BasicAggregation verifies BC-1.
+func TestCollectRawMetrics_BasicAggregation(t *testing.T) {
+	// GIVEN aggregated metrics with known TTFT and E2E values
+	m := sim.NewMetrics()
+	m.RequestTTFTs = map[string]float64{
+		"r0": 1000.0,
+		"r1": 2000.0,
+		"r2": 3000.0,
+	}
+	m.RequestE2Es = map[string]float64{
+		"r0": 5000.0,
+		"r1": 10000.0,
+		"r2": 15000.0,
+	}
+	m.CompletedRequests = 3
+	m.TotalOutputTokens = 300
+	m.SimEndedTime = 1_000_000 // 1 second
+
+	// WHEN collecting RawMetrics
+	raw := CollectRawMetrics(m, nil, 0)
+
+	// THEN TTFT distribution should be populated
+	if raw.TTFT.Count != 3 {
+		t.Errorf("TTFT.Count: got %d, want 3", raw.TTFT.Count)
+	}
+	if raw.TTFT.Min != 1000.0 {
+		t.Errorf("TTFT.Min: got %f, want 1000.0", raw.TTFT.Min)
+	}
+
+	// THEN throughput should be computed
+	wantRPS := 3.0 / 1.0
+	if math.Abs(raw.RequestsPerSec-wantRPS) > 0.01 {
+		t.Errorf("RequestsPerSec: got %f, want %f", raw.RequestsPerSec, wantRPS)
+	}
+	wantTPS := 300.0 / 1.0
+	if math.Abs(raw.TokensPerSec-wantTPS) > 0.01 {
+		t.Errorf("TokensPerSec: got %f, want %f", raw.TokensPerSec, wantTPS)
+	}
+}
+
+// TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions verifies edge case.
+func TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions(t *testing.T) {
+	m := sim.NewMetrics()
+	raw := CollectRawMetrics(m, nil, 0)
+	if raw.TTFT.Count != 0 {
+		t.Errorf("TTFT.Count: got %d, want 0", raw.TTFT.Count)
+	}
+	if raw.RequestsPerSec != 0 {
+		t.Errorf("RequestsPerSec: got %f, want 0", raw.RequestsPerSec)
+	}
+}
+
+// TestCollectRawMetrics_RejectedRequests verifies rejected count is captured.
+func TestCollectRawMetrics_RejectedRequests(t *testing.T) {
+	m := sim.NewMetrics()
+	raw := CollectRawMetrics(m, nil, 42)
+	if raw.RejectedRequests != 42 {
+		t.Errorf("RejectedRequests: got %d, want 42", raw.RejectedRequests)
+	}
+}
