@@ -1,29 +1,31 @@
 package sim
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestKVCacheState_ImplementsKVStore(t *testing.T) {
-	// GIVEN a KVCacheState
-	kvc := NewKVCacheState(100, 16)
+func TestKVStore_SingleTier_BackwardCompatible(t *testing.T) {
+	// BC-1: GIVEN KVCPUBlocks == 0 (default)
+	cfg := SimConfig{TotalKVBlocks: 10, BlockSizeTokens: 2}
+	store := NewKVStore(cfg)
 
-	// WHEN assigned to KVStore interface
-	var store KVStore = kvc
-
-	// THEN all accessor methods return expected values
-	if store.BlockSize() != 16 {
-		t.Errorf("BlockSize() = %d, want 16", store.BlockSize())
+	// WHEN we allocate, use, and release blocks through the interface
+	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	ok := store.AllocateKVBlocks(req, 0, 4, []int64{})
+	if !ok {
+		t.Fatal("AllocateKVBlocks should succeed")
 	}
-	if store.TotalCapacity() != 100 {
-		t.Errorf("TotalCapacity() = %d, want 100", store.TotalCapacity())
+	if store.UsedBlocks() != 2 {
+		t.Errorf("UsedBlocks() = %d, want 2 after allocating 2 blocks", store.UsedBlocks())
 	}
+	store.ReleaseKVBlocks(req)
+
+	// THEN behavior matches pre-interface KVCacheState: used returns to 0, capacity unchanged
 	if store.UsedBlocks() != 0 {
-		t.Errorf("UsedBlocks() = %d, want 0", store.UsedBlocks())
+		t.Errorf("UsedBlocks() = %d, want 0 after release", store.UsedBlocks())
 	}
-	if store.CacheHitRate() != 0 {
-		t.Errorf("CacheHitRate() = %f, want 0 (no lookups)", store.CacheHitRate())
+	if store.TotalCapacity() != 10 {
+		t.Errorf("TotalCapacity() = %d, want 10", store.TotalCapacity())
 	}
+	// Single-tier: transfer latency and thrashing are always 0
 	if store.PendingTransferLatency() != 0 {
 		t.Errorf("PendingTransferLatency() = %d, want 0 (single-tier)", store.PendingTransferLatency())
 	}
@@ -32,46 +34,27 @@ func TestKVCacheState_ImplementsKVStore(t *testing.T) {
 	}
 }
 
-func TestKVCacheState_CacheHitRate_ReflectsLookups(t *testing.T) {
-	// GIVEN a KVCacheState with block size 2
-	kvc := NewKVCacheState(10, 2)
-	var store KVStore = kvc
+func TestKVStore_CacheHitRate_ReflectsLookups(t *testing.T) {
+	// BC-5: GIVEN a fresh KVStore
+	store := NewKVStore(SimConfig{TotalKVBlocks: 10, BlockSizeTokens: 2})
 
-	// Initial: no lookups
+	// Initial: no lookups → rate is 0
 	if rate := store.CacheHitRate(); rate != 0 {
 		t.Errorf("initial CacheHitRate() = %f, want 0", rate)
 	}
 
-	// WHEN we allocate blocks for a request (all misses)
-	req := &Request{
-		ID:          "req1",
-		InputTokens: []int{1, 2, 3, 4}, // 2 blocks
-	}
-	ok := store.AllocateKVBlocks(req, 0, 4, []int64{})
-	if !ok {
-		t.Fatal("AllocateKVBlocks failed")
-	}
-
-	// THEN CacheMisses should be > 0 (blocks were freshly allocated)
-	if kvc.CacheMisses == 0 {
-		t.Error("expected CacheMisses > 0 after fresh allocation")
-	}
-
-	// WHEN we release and re-lookup the same prefix
+	// WHEN we allocate blocks (all misses) then release and re-lookup (hits)
+	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	store.AllocateKVBlocks(req, 0, 4, []int64{})
 	store.ReleaseKVBlocks(req)
 	cached := store.GetCachedBlocks([]int{1, 2, 3, 4})
 
-	// THEN we should get cache hits (blocks are still in hash table)
+	// THEN cache hits occurred and CacheHitRate is between 0 and 1
 	if len(cached) == 0 {
 		t.Error("expected cache hits for previously allocated prefix")
 	}
-	if kvc.CacheHits == 0 {
-		t.Error("expected CacheHits > 0 after prefix lookup")
-	}
-
-	// AND CacheHitRate should be between 0 and 1
 	rate := store.CacheHitRate()
 	if rate <= 0 || rate >= 1 {
-		t.Errorf("CacheHitRate() = %f, want 0 < rate < 1", rate)
+		t.Errorf("CacheHitRate() = %f, want 0 < rate < 1 (mix of hits and misses)", rate)
 	}
 }

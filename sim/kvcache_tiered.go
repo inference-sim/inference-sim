@@ -64,10 +64,19 @@ func (t *TieredKVCache) AllocateKVBlocks(req *Request, startIndex, endIndex int6
 	if ok {
 		return true
 	}
-	// GPU allocation failed — try to reload blocks from CPU to free up GPU space
+	// GPU allocation failed — try to reload blocks from CPU to GPU hash table.
+	// After reload, re-check cached blocks: reloaded hashes may now match the request's prefix,
+	// reducing the number of new blocks needed.
 	reloaded := t.tryReloadFromCPU()
 	if reloaded {
-		// Retry GPU allocation after freeing space via reload
+		// Re-compute cached blocks now that CPU content is back on GPU
+		newCached := t.gpu.GetCachedBlocks(req.InputTokens)
+		newStart := int64(len(newCached)) * t.gpu.BlockSize()
+		if newStart > startIndex {
+			// More cache hits after reload — retry with reduced allocation range
+			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
+		}
+		// No new cache hits — retry with original params (reload freed up space)
 		return t.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
 	}
 	t.cpuMissCount++
