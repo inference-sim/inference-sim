@@ -81,11 +81,11 @@ sim/workload/           # NEW — pure request generation (no HTTP, no metrics)
   scenarios.go          # Built-in scenario presets
   multimodal.go         # Multimodal distribution sampling, modality token generation
   reasoning.go          # Reasoning model multi-turn, reason_ratio, conversation chains
+  tracev2.go            # Trace v2 format — loading, parsing, header, export
+  calibrate.go          # Real-vs-sim comparison, statistical metrics, report
 
 sim/cluster/
-  ...                   # Existing files
-  tracev2.go            # NEW: Trace v2 format — loading, parsing, header, export
-  calibrate.go          # NEW: Real-vs-sim comparison, statistical metrics, report
+  ...                   # Existing files (no new files in this package)
 
 cmd/
   ...                   # Existing files

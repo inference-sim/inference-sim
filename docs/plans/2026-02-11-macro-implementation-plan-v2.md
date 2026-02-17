@@ -1281,9 +1281,9 @@ This phase extends BLIS from simulation-only to a full **observe-predict-calibra
 | **In Scope** | Full scope from design doc: (1) `WorkloadSpec`/`ClientSpec`/`ArrivalSpec`/`DistSpec` types with strict YAML loading, (2) `ArrivalSampler` (Poisson/Gamma/Weibull), `LengthSampler` (ParetoLogNormal/Exponential/Gaussian/EmpiricalPDF), (3) `GenerateRequests` pipeline with client decomposition, (4) real mode HTTP client (OpenAI-compatible, streaming + non-streaming), (5) trace v2 format (header YAML + data CSV), (6) trace v2 replay with synthetic token generation, (7) calibration framework (MAPE/Pearson r/per-percentile), (8) multimodal + reasoning workloads, (9) network latency model, (10) per-SLO-class metrics + JainFairnessIndex |
 | **Out of Scope** | Automated alpha/beta fitting, continuous batching model, Prometheus scraping |
 | **Files Changed** | New: `sim/workload/spec.go`, `sim/workload/arrival.go`, `sim/workload/distribution.go`, `sim/workload/client.go`, `sim/workload/generator.go`, `sim/workload/network.go`, `sim/workload/multimodal.go`, `sim/workload/reasoning.go`, `sim/workload/scenarios.go`, `sim/workload/tracev2.go`, `sim/workload/calibrate.go`, `cmd/observe.go`. Modified: `sim/request.go`, `cmd/root.go`, `sim/cluster/workload.go`, `sim/cluster/metrics.go` |
-| **CLI** | `--workload-spec`, `--real-mode`, `--server-url`, `--trace-output`, `--calibrate`, `--calibration-output`, `--fitness-weights` with SLO extensions |
+| **CLI** | `--workload-spec`, `--real-mode`, `--server-url`, `--server-type`, `--server-config`, `--api-type`, `--api-key`, `--trace-output`, `--calibrate`, `--calibration-output`, `--fitness-weights` with SLO extensions |
 | **LOC Estimate** | ~3,900 |
-| **Behavioral Guarantees** | Deterministic generation from seed. Existing workload modes unaffected. Real mode uses mock server in tests. |
+| **Behavioral Guarantees** | 10 contracts in micro plan: deterministic generation (BC-1), client rate proportionality (BC-2), bursty arrivals (BC-3), empirical PDF faithfulness (BC-4), backward compatibility (BC-5), trace v2 round-trip (BC-6), calibration statistics (BC-7), multimodal token accounting (BC-8), network latency adjustment (BC-9), per-SLO-class segregation (BC-10). Real mode uses mock server in tests. |
 
 ---
 
