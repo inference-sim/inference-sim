@@ -517,7 +517,7 @@ func (sim *Simulator) Step(now int64) {
 		TotalDecodeTokens:    0,
 		TotalCacheMissTokens: 0,
 	}
-	// Synchronize tiered KV cache clock for thrashing detection
+	// Synchronize tiered KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
 	if tiered, ok := sim.KVCache.(*TieredKVCache); ok {
 		tiered.SetClock(now)
 	}

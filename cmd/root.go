@@ -320,11 +320,11 @@ var runCmd = &cobra.Command{
 		if kvCPUBlocks < 0 {
 			logrus.Fatalf("--kv-cpu-blocks must be >= 0, got %d", kvCPUBlocks)
 		}
-		if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 {
-			logrus.Fatalf("--kv-offload-threshold must be in [0, 1], got %f", kvOffloadThreshold)
+		if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
+			logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
 		}
-		if kvCPUBlocks > 0 && kvTransferBandwidth <= 0 {
-			logrus.Fatalf("--kv-transfer-bandwidth must be > 0 when --kv-cpu-blocks > 0, got %f", kvTransferBandwidth)
+		if kvCPUBlocks > 0 && (kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0)) {
+			logrus.Fatalf("--kv-transfer-bandwidth must be a finite value > 0 when --kv-cpu-blocks > 0, got %f", kvTransferBandwidth)
 		}
 
 		// Log active policy configuration so users can verify which policies are in effect

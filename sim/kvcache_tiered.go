@@ -6,8 +6,8 @@ import (
 	"sort"
 )
 
-// OffloadedBlock represents a KV block offloaded from GPU to CPU tier.
-type OffloadedBlock struct {
+// offloadedBlock represents a KV block offloaded from GPU to CPU tier.
+type offloadedBlock struct {
 	OriginalID  int64  // block ID on GPU tier
 	Tokens      []int  // token content (for reload)
 	Hash        string // prefix hash (for cache hit detection)
@@ -16,7 +16,7 @@ type OffloadedBlock struct {
 
 // cpuTier is a simple capacity-tracked block store for CPU-offloaded blocks.
 type cpuTier struct {
-	blocks   map[int64]*OffloadedBlock // keyed by original GPU block ID
+	blocks   map[int64]*offloadedBlock // keyed by original GPU block ID
 	capacity int64
 	used     int64
 }
@@ -50,7 +50,7 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 	return &TieredKVCache{
 		gpu: gpu,
 		cpu: cpuTier{
-			blocks:   make(map[int64]*OffloadedBlock),
+			blocks:   make(map[int64]*offloadedBlock),
 			capacity: cpuBlocks,
 		},
 		offloadThreshold:  threshold,
@@ -195,7 +195,7 @@ func (t *TieredKVCache) maybeOffload() {
 			break // No cached free blocks to offload
 		}
 		// Copy to CPU
-		t.cpu.blocks[blk.ID] = &OffloadedBlock{
+		t.cpu.blocks[blk.ID] = &offloadedBlock{
 			OriginalID:  blk.ID,
 			Tokens:      append([]int{}, blk.Tokens...),
 			Hash:        blk.Hash,
