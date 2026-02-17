@@ -67,8 +67,8 @@ var (
 
 	// routing policy config (PR 6)
 	routingPolicy      string  // Routing policy name
-	routingCacheWeight float64 // Cache affinity weight for weighted scoring
-	routingLoadWeight  float64 // Load balance weight for weighted scoring
+	routingCacheWeight float64 // Cache availability weight for weighted scoring
+	routingLoadWeight  float64 // Queue pressure weight for weighted scoring
 
 	// Priority and scheduler config (PR7)
 	priorityPolicy string // Priority policy name
@@ -313,6 +313,36 @@ var runCmd = &cobra.Command{
 			logrus.Infof("Decision tracing enabled (trace-level=%s). Use --summarize-trace to print summary.", traceLevel)
 		}
 
+		// Log active policy configuration so users can verify which policies are in effect
+		logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
+			admissionPolicy, routingPolicy, priorityPolicy, scheduler)
+		if routingPolicy == "weighted" {
+			if math.IsNaN(routingCacheWeight) || math.IsInf(routingCacheWeight, 0) ||
+				math.IsNaN(routingLoadWeight) || math.IsInf(routingLoadWeight, 0) {
+				logrus.Fatalf("Routing weights must be finite numbers, got cache=%v, load=%v",
+					routingCacheWeight, routingLoadWeight)
+			}
+			if routingCacheWeight < 0 || routingLoadWeight < 0 {
+				logrus.Fatalf("Routing weights must be non-negative, got cache=%.2f, load=%.2f",
+					routingCacheWeight, routingLoadWeight)
+			}
+			weightSum := routingCacheWeight + routingLoadWeight
+			if weightSum <= 0 {
+				logrus.Fatalf("Routing weights must have a positive sum, got cache=%.2f + load=%.2f = %.2f",
+					routingCacheWeight, routingLoadWeight, weightSum)
+			}
+			if math.Abs(weightSum-1.0) > 0.01 {
+				logrus.Warnf("Routing weights sum to %.2f (expected 1.0); weights will be auto-normalized to cache=%.2f, load=%.2f",
+					weightSum, routingCacheWeight/weightSum, routingLoadWeight/weightSum)
+			}
+			logrus.Infof("Weighted routing: cache-weight=%.2f, load-weight=%.2f",
+				routingCacheWeight, routingLoadWeight)
+		}
+		if admissionPolicy == "token-bucket" {
+			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
+				tokenBucketCapacity, tokenBucketRefillRate)
+		}
+
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances)
@@ -474,7 +504,7 @@ func init() {
 	runCmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
 
 	// Online routing pipeline config
-	runCmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket")
+	runCmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket, reject-all")
 	runCmd.Flags().Int64Var(&admissionLatency, "admission-latency", 0, "Admission latency in microseconds")
 	runCmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
 	runCmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")
@@ -482,8 +512,8 @@ func init() {
 
 	// Routing policy config
 	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, prefix-affinity, always-busiest")
-	runCmd.Flags().Float64Var(&routingCacheWeight, "routing-cache-weight", 0.6, "Cache affinity weight for weighted routing")
-	runCmd.Flags().Float64Var(&routingLoadWeight, "routing-load-weight", 0.4, "Load balance weight for weighted routing")
+	runCmd.Flags().Float64Var(&routingCacheWeight, "routing-cache-weight", 0.6, "Cache availability weight for weighted routing (FreeKVBlocks)")
+	runCmd.Flags().Float64Var(&routingLoadWeight, "routing-load-weight", 0.4, "Queue pressure weight for weighted routing (QueueDepth)")
 
 	// Priority and scheduler config (PR7)
 	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")

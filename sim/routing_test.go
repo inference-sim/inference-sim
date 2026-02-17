@@ -176,28 +176,28 @@ func TestWeightedScoring_MultiFactor(t *testing.T) {
 		reason    string
 	}{
 		{
-			name: "instance 1 wins on low KV utilization",
+			name: "instance 1 wins on more free KV blocks",
 			snapshots: []RoutingSnapshot{
-				{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8}, // load=10, norm=1.0, score = (1-0.8)*0.6 + (1-1.0)*0.4 = 0.12
-				{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2}, // load=10, norm=1.0, score = (1-0.2)*0.6 + (1-1.0)*0.4 = 0.48
+				{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8, FreeKVBlocks: 200},
+				{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2, FreeKVBlocks: 800},
 			},
 			expected: "instance_1",
-			reason:   "equal load (both normalized to 1.0); instance_1 wins on lower KVUtilization",
+			reason:   "equal queue depth; instance_1 wins on more FreeKVBlocks",
 		},
 		{
-			name: "instance 0 wins on low load",
+			name: "instance 0 wins on low queue depth",
 			snapshots: []RoutingSnapshot{
-				{ID: "instance_0", QueueDepth: 2, BatchSize: 2, KVUtilization: 0.5}, // load=4, norm=4/10=0.4, score = 0.5*0.6 + 0.6*0.4 = 0.54
-				{ID: "instance_1", QueueDepth: 8, BatchSize: 2, KVUtilization: 0.5}, // load=10, norm=1.0, score = 0.5*0.6 + 0.0*0.4 = 0.3
+				{ID: "instance_0", QueueDepth: 2, BatchSize: 2, KVUtilization: 0.5, FreeKVBlocks: 500},
+				{ID: "instance_1", QueueDepth: 8, BatchSize: 2, KVUtilization: 0.5, FreeKVBlocks: 500},
 			},
 			expected: "instance_0",
-			reason:   "equal KVUtilization; instance_0 wins on lower normalized load",
+			reason:   "equal FreeKVBlocks; instance_0 wins on lower QueueDepth",
 		},
 		{
 			name: "all equal scores, first occurrence wins",
 			snapshots: []RoutingSnapshot{
-				{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5},
-				{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5},
+				{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5, FreeKVBlocks: 500},
+				{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5, FreeKVBlocks: 500},
 			},
 			expected: "instance_0",
 			reason:   "tie broken by first occurrence in snapshot order",
@@ -218,38 +218,34 @@ func TestWeightedScoring_MultiFactor(t *testing.T) {
 	}
 }
 
-// TestWeightedScoring_UniformLoad verifies divide-by-zero safety.
+// TestWeightedScoring_UniformLoad verifies cache differentiation when load is equal.
 func TestWeightedScoring_UniformLoad(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
 
-	// All instances have identical load → normalizedLoad = 1.0 for all
+	// All instances have identical QueueDepth → loadScore equal for all.
+	// instance_0 has more FreeKVBlocks → higher cacheScore → wins.
 	snapshots := []RoutingSnapshot{
-		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.3}, // score = 0.7*0.6 + 0*0.4 = 0.42
-		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.7}, // score = 0.3*0.6 + 0*0.4 = 0.18
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.3, FreeKVBlocks: 700},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.7, FreeKVBlocks: 300},
 	}
 
 	req := &Request{ID: "req1"}
 	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
-	// instance_0 wins on lower KVUtilization (load component cancels out)
+	// instance_0 wins on more FreeKVBlocks (load scores cancel out)
 	if decision.TargetInstance != "instance_0" {
 		t.Errorf("Expected instance_0 to win on cache score alone, got %q", decision.TargetInstance)
 	}
 }
 
-// TestWeightedScoring_NegativeWeights verifies BC-12 (undefined but non-fatal).
-func TestWeightedScoring_NegativeWeights(t *testing.T) {
-	policy := NewRoutingPolicy("weighted", -0.5, -0.5)
-
-	snapshots := []RoutingSnapshot{
-		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5},
-	}
-
-	req := &Request{ID: "req1"}
-	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
-	if decision.TargetInstance == "" {
-		t.Errorf("Expected non-empty TargetInstance even with negative weights")
-	}
+// TestWeightedScoring_NegativeWeights_Panics verifies negative weight sum is rejected.
+func TestWeightedScoring_NegativeWeights_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for negative weight sum")
+		}
+	}()
+	NewRoutingPolicy("weighted", -0.5, -0.5)
 }
 
 // TestPrefixAffinity_CacheHit verifies BC-5 (cache-aware routing).
@@ -379,15 +375,15 @@ func TestWeightedScoring_HighestScoreWins(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
 
 	snapshots := []RoutingSnapshot{
-		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8},
-		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2},
-		{ID: "instance_2", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5},
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8, FreeKVBlocks: 200},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2, FreeKVBlocks: 800},
+		{ID: "instance_2", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5, FreeKVBlocks: 500},
 	}
 
 	req := &Request{ID: "req1"}
 	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
-	// Behavioral invariant: target has the highest score
+	// Behavioral invariant: target has the highest score (instance_1 has most FreeKVBlocks)
 	targetScore, ok := decision.Scores[decision.TargetInstance]
 	if !ok {
 		t.Fatalf("target %q not in Scores map", decision.TargetInstance)
@@ -438,15 +434,15 @@ func TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded(t *testing.T) {
 func TestWeightedScoring_AllIdle_NoDivisionByZero(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
 	snapshots := []RoutingSnapshot{
-		{ID: "instance_0", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.3},
-		{ID: "instance_1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.7},
+		{ID: "instance_0", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.3, FreeKVBlocks: 700},
+		{ID: "instance_1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.7, FreeKVBlocks: 300},
 	}
 
 	req := &Request{ID: "req1"}
 	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
-	// With zero load, normalizedLoad=0, loadScore=1.0*0.4=0.4 for all.
-	// instance_0 wins on lower KVUtilization: (0.7*0.6 + 0.4) = 0.82 vs (0.3*0.6 + 0.4) = 0.58
+	// Both idle: QueueDepth=0 → loadScore=1.0 for both (equal).
+	// instance_0 has more FreeKVBlocks (700 vs 300) → higher cacheScore → wins.
 	if decision.TargetInstance != "instance_0" {
 		t.Errorf("Expected instance_0, got %q", decision.TargetInstance)
 	}
@@ -495,6 +491,110 @@ func TestAlwaysBusiest_RouteToHighestLoad(t *testing.T) {
 	if decision.TargetInstance != "instance_1" {
 		t.Errorf("expected instance_1 (busiest), got %q", decision.TargetInstance)
 	}
+}
+
+// TestWeightedScoring_DifferentWeights_UncorrelatedDimensions verifies that
+// changing weights produces different routing decisions when cache utilization
+// and load rank instances differently (issue #169).
+func TestWeightedScoring_DifferentWeights_UncorrelatedDimensions(t *testing.T) {
+	// GIVEN two instances where cache and load rankings disagree:
+	// - instance_0: lots of free KV (cache favors), high queue depth (load disfavors)
+	// - instance_1: few free KV blocks (cache disfavors), empty queue (load favors)
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 8, BatchSize: 2, KVUtilization: 0.1, FreeKVBlocks: 900},
+		{ID: "instance_1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.9, FreeKVBlocks: 100},
+	}
+
+	// WHEN cache weight dominates (0.9 vs 0.1)
+	cacheDominant := NewRoutingPolicy("weighted", 0.9, 0.1)
+	d1 := cacheDominant.Route(&Request{ID: "r1"}, &RouterState{Snapshots: snapshots, Clock: 1000})
+
+	// THEN instance_0 wins (better cache score)
+	if d1.TargetInstance != "instance_0" {
+		t.Errorf("cache-dominant: expected instance_0, got %q", d1.TargetInstance)
+	}
+
+	// WHEN load weight dominates (0.1 vs 0.9)
+	loadDominant := NewRoutingPolicy("weighted", 0.1, 0.9)
+	d2 := loadDominant.Route(&Request{ID: "r2"}, &RouterState{Snapshots: snapshots, Clock: 1000})
+
+	// THEN instance_1 wins (better load score)
+	if d2.TargetInstance != "instance_1" {
+		t.Errorf("load-dominant: expected instance_1, got %q", d2.TargetInstance)
+	}
+
+	// THEN different weights produce different decisions
+	if d1.TargetInstance == d2.TargetInstance {
+		t.Errorf("expected different routing decisions for different weights, both chose %q", d1.TargetInstance)
+	}
+}
+
+// TestWeightedScoring_HomogeneousCluster_WeightsAffectDecisions verifies
+// issue #169: in a realistic 4-instance cluster where one instance has
+// slightly more load, different weight ratios MUST produce different
+// routing decisions. This is the user-facing behavioral contract.
+func TestWeightedScoring_HomogeneousCluster_WeightsAffectDecisions(t *testing.T) {
+	// GIVEN a 4-instance cluster where cache availability and queue depth disagree:
+	// instance_0: many small queued requests → high queue depth, lots of free KV
+	// instance_1: few large running requests → low queue depth, few free KV blocks
+	// instance_2 & 3: moderate (balanced)
+	// Cache signal (FreeKVBlocks) ranks:  0 > 2 > 3 > 1
+	// Load signal (QueueDepth) ranks:     1 > 3 > 2 > 0
+	// These rankings DISAGREE — so weight changes must flip the winner.
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 12, BatchSize: 2, KVUtilization: 0.2, FreeKVBlocks: 800},
+		{ID: "instance_1", QueueDepth: 1, BatchSize: 3, KVUtilization: 0.8, FreeKVBlocks: 200},
+		{ID: "instance_2", QueueDepth: 6, BatchSize: 2, KVUtilization: 0.4, FreeKVBlocks: 600},
+		{ID: "instance_3", QueueDepth: 3, BatchSize: 2, KVUtilization: 0.6, FreeKVBlocks: 400},
+	}
+
+	// WHEN using extreme weight ratios
+	cacheDominant := NewRoutingPolicy("weighted", 0.95, 0.05)
+	loadDominant := NewRoutingPolicy("weighted", 0.05, 0.95)
+
+	req := &Request{ID: "r1"}
+	d1 := cacheDominant.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
+	d2 := loadDominant.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
+
+	// THEN different weight ratios produce different routing decisions
+	if d1.TargetInstance == d2.TargetInstance {
+		t.Errorf("issue #169: cache-dominant and load-dominant weights both chose %q; "+
+			"weights must affect routing decisions", d1.TargetInstance)
+	}
+}
+
+// TestWeightedScoring_WeightsNormalized verifies that weights are auto-normalized
+// so that (0.6, 0.2) behaves as (0.75, 0.25) — the ratio matters, not the sum.
+func TestWeightedScoring_WeightsNormalized(t *testing.T) {
+	// GIVEN uncorrelated instances where the crossover depends on exact weight ratio
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 8, BatchSize: 2, KVUtilization: 0.1, FreeKVBlocks: 900}, // lots of free KV, high queue
+		{ID: "instance_1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.9, FreeKVBlocks: 100}, // little free KV, empty queue
+	}
+
+	// WHEN using unnormalized weights (0.6, 0.2) which sum to 0.8
+	unnormalized := NewRoutingPolicy("weighted", 0.6, 0.2)
+	// AND using equivalent normalized weights (0.75, 0.25) which sum to 1.0
+	normalized := NewRoutingPolicy("weighted", 0.75, 0.25)
+
+	d1 := unnormalized.Route(&Request{ID: "r1"}, &RouterState{Snapshots: snapshots, Clock: 1000})
+	d2 := normalized.Route(&Request{ID: "r2"}, &RouterState{Snapshots: snapshots, Clock: 1000})
+
+	// THEN both produce the same decision (same ratio = same behavior)
+	if d1.TargetInstance != d2.TargetInstance {
+		t.Errorf("expected same decision for proportional weights, got %q vs %q",
+			d1.TargetInstance, d2.TargetInstance)
+	}
+}
+
+// TestWeightedScoring_ZeroWeightSum_Panics verifies that zero weight sum is rejected.
+func TestWeightedScoring_ZeroWeightSum_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for zero weight sum")
+		}
+	}()
+	NewRoutingPolicy("weighted", 0, 0)
 }
 
 // TestAlwaysBusiest_EmptySnapshots_Panics verifies defensive convention.

@@ -1,0 +1,45 @@
+# BLIS Weighted Routing Configuration
+#
+# Weighted scoring routes requests using a composite score of cache availability
+# and queue pressure:
+#
+#   cache_score = FreeKVBlocks / maxFreeKVBlocks   (memory availability)
+#   load_score  = 1 / (1 + QueueDepth)             (queue pressure)
+#   score       = cache_score * cache_weight + load_score * load_weight
+#
+# Higher scores are preferred. The instance with the highest score receives
+# the request. Weights should sum to 1.0 (auto-normalized if they don't).
+#
+# Usage (multi-instance required for routing to have effect):
+#
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 \
+#     --policy-config examples/weighted-routing.yaml \
+#     --trace-level decisions --summarize-trace \
+#     --log info
+#
+# When weights matter:
+#   Weights affect routing when cache availability (FreeKVBlocks) and queue
+#   pressure (QueueDepth) rank instances differently. This occurs when:
+#   - Instances have different KV cache capacities (heterogeneous clusters)
+#   - Prefix caching creates uneven memory usage across instances
+#   - Some instances retain KV blocks from completed requests while others
+#     have freed theirs (transient asymmetry during load spikes)
+#
+# In symmetric clusters with balanced load, instances converge to similar
+# states, so weight values have minimal effect. For such clusters,
+# "least-loaded" routing is simpler and equally effective.
+
+admission:
+  policy: always-admit
+
+routing:
+  policy: weighted
+  cache_weight: 0.6    # weight for cache availability (prefer instances with free KV blocks)
+  load_weight: 0.4     # weight for queue pressure (prefer instances with fewer queued requests)
+
+priority:
+  policy: constant
+
+scheduler: fcfs

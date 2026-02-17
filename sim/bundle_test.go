@@ -199,6 +199,64 @@ func TestPolicyBundle_Validate_ZeroParametersAreValid(t *testing.T) {
 	}
 }
 
+func TestPolicyBundle_Validate_WeightSumNotOne(t *testing.T) {
+	// GIVEN routing weights that don't sum to 1.0
+	tests := []struct {
+		name   string
+		cache  float64
+		load   float64
+	}{
+		{"sum 0.8", 0.6, 0.2},
+		{"sum 1.5", 1.0, 0.5},
+		{"sum 0.0 (both zero)", 0.0, 0.0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bundle := &PolicyBundle{
+				Routing: RoutingConfig{
+					Policy:      "weighted",
+					CacheWeight: float64Ptr(tt.cache),
+					LoadWeight:  float64Ptr(tt.load),
+				},
+			}
+			// THEN Validate should return an error for non-unit sum
+			if err := bundle.Validate(); err == nil {
+				t.Errorf("expected validation error for weights summing to %.1f", tt.cache+tt.load)
+			}
+		})
+	}
+}
+
+func TestPolicyBundle_Validate_WeightSumOne(t *testing.T) {
+	// GIVEN routing weights that sum to 1.0
+	bundle := &PolicyBundle{
+		Routing: RoutingConfig{
+			Policy:      "weighted",
+			CacheWeight: float64Ptr(0.7),
+			LoadWeight:  float64Ptr(0.3),
+		},
+	}
+	// THEN Validate should pass
+	if err := bundle.Validate(); err != nil {
+		t.Errorf("expected no error for weights summing to 1.0, got: %v", err)
+	}
+}
+
+func TestPolicyBundle_Validate_WeightSumSkippedForNonWeighted(t *testing.T) {
+	// GIVEN a non-weighted routing policy with arbitrary weight values
+	bundle := &PolicyBundle{
+		Routing: RoutingConfig{
+			Policy:      "round-robin",
+			CacheWeight: float64Ptr(0.6),
+			LoadWeight:  float64Ptr(0.2),
+		},
+	}
+	// THEN Validate should not check weight sum (weights are irrelevant)
+	if err := bundle.Validate(); err != nil {
+		t.Errorf("expected no error for non-weighted policy, got: %v", err)
+	}
+}
+
 func writeTempYAML(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()

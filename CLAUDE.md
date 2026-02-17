@@ -52,6 +52,12 @@ go build -o simulation_worker main.go
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --trace-level decisions --counterfactual-k 5 --summarize-trace
+
+# Run with ServeGen-informed workload specification
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --workload-spec examples/servegen-language.yaml
 ```
 
 ## Testing
@@ -163,7 +169,6 @@ When using Task agents: 1) Do NOT poll TaskList repeatedly — check at reasonab
 ### Code Review Standards
 
 During PR reviews, check for: unexported mutable maps, missing pointer types for YAML ambiguity, lack of strict YAML parsing, NaN/Inf validation gaps, and preservation of structural tests. Always run `go test ./...` and lint after fixes.
-Add under ## PR Workflow section or as a sub-section ## Plan Document Updates.
 
 ### Macro Plan Updates
 
@@ -184,9 +189,9 @@ Active development: Evolutionary Policy Optimization extension (see `docs/plans/
 - 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
 - **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type), PR7 (PriorityPolicy with ConstantPriority + SLOBasedPriority templates, InstanceScheduler with FCFS + PriorityFCFS + SJF templates, Priority field on Request, CLI flags `--priority-policy` and `--scheduler`), PR8 (RouterState bridge type in `sim/router_state.go`, PolicyBundle YAML config in `sim/bundle.go`, `--policy-config` CLI flag, AdmissionPolicy and RoutingPolicy accept `*RouterState`, `RoutingDecision.Priority` hint field, **INTERFACE FREEZE**), PR9 (RawMetrics with Distribution + FitnessResult, anomaly detection with priority inversion + HOL blocking counters, pathological templates: reject-all, inverted-slo, always-busiest, reverse-priority, `--fitness-weights` CLI flag, **RESEARCH-READY CHECKPOINT**)
-- **Completed (cont'd):** PR13 (DecisionTrace with RoutingRecord, counterfactual analysis with top-k candidates and regret, TraceSummary, EvaluationResult wrapper, `--trace-level decisions --counterfactual-k --summarize-trace` CLI flags)
-- **Next:** Policy research experiments (research-ready checkpoint reached), or PR10 (ServeGen-informed Workload Generator + Observe-Predict-Calibrate loop — see `docs/plans/2026-02-16-workload-generator-design.md`) and subsequent parallel tracks
-- Will add to `sim/kv/`, `sim/workload/` packages
+- **Completed (cont'd):** PR13 (DecisionTrace with RoutingRecord, counterfactual analysis with top-k candidates and regret, TraceSummary, EvaluationResult wrapper, `--trace-level decisions --counterfactual-k --summarize-trace` CLI flags), PR10 (ServeGen-informed Workload Generator in `sim/workload/` with multi-client specs, Poisson/Gamma/Weibull arrivals, Gaussian/Exponential/ParetoLogNormal/EmpiricalPDF distributions, native ServeGen loading, trace v2 replay, CalibrationReport with MAPE/Pearson r, real-mode HTTP client in `cmd/observe.go`, per-SLO-class metrics with Jain fairness index, `--workload-spec` CLI flag)
+- **Next:** PR11 (autoscaling), PR12 (tiered KV cache), PR15 (framework adapters), PR16 (integration tests)
+- Will add to `sim/kv/` package
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
 ### Adding New Policy Templates
@@ -318,5 +323,8 @@ inference-sim/
 - `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
 - `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v3.3, 16 PRs across 6 phases, online routing architecture)
 - `docs/plans/2026-02-13-simplification-assessment.md`: Architectural simplification assessment (constructor collapse, unified CLI, field privatization, interface dedup)
+- `docs/plans/2026-02-16-workload-generator-design.md`: ServeGen-informed workload generator design (multi-client specs, arrival processes, calibration)
+- `docs/plans/2026-02-17-pr13-decision-traces.md`: PR13 decision trace design (RoutingRecord, counterfactual analysis, TraceSummary)
+- `docs/plans/pr10-workload-generator-plan.md`: PR10 micro-level implementation plan (workload generator)
 - `docs/plans/macroplanprompt.md`: Template for macro-level planning
 - `docs/plans/prmicroplanprompt.md`: Template for micro-level (per-PR) planning with team-based agent process
