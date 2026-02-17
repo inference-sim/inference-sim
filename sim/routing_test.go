@@ -479,3 +479,31 @@ func TestRoutingDecision_PriorityHint_DefaultZero(t *testing.T) {
 		})
 	}
 }
+
+// TestAlwaysBusiest_RouteToHighestLoad verifies BC-6.
+func TestAlwaysBusiest_RouteToHighestLoad(t *testing.T) {
+	policy := NewRoutingPolicy("always-busiest", 0, 0)
+	req := &Request{ID: "r1", InputTokens: []int{1, 2}}
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 2, BatchSize: 1},
+		{ID: "instance_1", QueueDepth: 10, BatchSize: 5},
+		{ID: "instance_2", QueueDepth: 0, BatchSize: 0},
+	}
+
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
+
+	if decision.TargetInstance != "instance_1" {
+		t.Errorf("expected instance_1 (busiest), got %q", decision.TargetInstance)
+	}
+}
+
+// TestAlwaysBusiest_EmptySnapshots_Panics verifies defensive convention.
+func TestAlwaysBusiest_EmptySnapshots_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic on empty snapshots")
+		}
+	}()
+	policy := NewRoutingPolicy("always-busiest", 0, 0)
+	policy.Route(&Request{ID: "r1"}, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 0})
+}

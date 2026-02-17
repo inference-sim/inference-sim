@@ -417,3 +417,26 @@ func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
 			reqOld.ScheduledStepIdx, reqNew.ScheduledStepIdx)
 	}
 }
+
+// TestReversePriority_LowestPriorityFirst verifies BC-7.
+func TestReversePriority_LowestPriorityFirst(t *testing.T) {
+	scheduler := NewScheduler("reverse-priority")
+	reqs := []*Request{
+		{ID: "high", Priority: 10.0, ArrivalTime: 100},
+		{ID: "low", Priority: 1.0, ArrivalTime: 200},
+		{ID: "mid", Priority: 5.0, ArrivalTime: 150},
+	}
+
+	scheduler.OrderQueue(reqs, 1_000_000)
+
+	// THEN lowest priority should be first (reverse of PriorityFCFSScheduler)
+	if reqs[0].ID != "low" {
+		t.Errorf("expected 'low' first, got %q (priority=%f)", reqs[0].ID, reqs[0].Priority)
+	}
+	if reqs[1].ID != "mid" {
+		t.Errorf("expected 'mid' second, got %q (priority=%f)", reqs[1].ID, reqs[1].Priority)
+	}
+	if reqs[2].ID != "high" {
+		t.Errorf("expected 'high' last, got %q (priority=%f)", reqs[2].ID, reqs[2].Priority)
+	}
+}

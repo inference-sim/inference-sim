@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -72,6 +74,9 @@ var (
 
 	// Policy bundle config (PR8)
 	policyConfigPath string // Path to YAML policy configuration file
+
+	// Fitness evaluation config (PR9)
+	fitnessWeights string // Fitness weights string "key:val,key:val"
 
 	// results file path
 	resultsPath string // File to save BLIS results to
@@ -248,16 +253,16 @@ var runCmd = &cobra.Command{
 
 		// Validate policy names (catches CLI typos before they become panics)
 		if !sim.IsValidAdmissionPolicy(admissionPolicy) {
-			logrus.Fatalf("Unknown admission policy %q. Valid: always-admit, token-bucket", admissionPolicy)
+			logrus.Fatalf("Unknown admission policy %q. Valid: always-admit, token-bucket, reject-all", admissionPolicy)
 		}
 		if !sim.IsValidRoutingPolicy(routingPolicy) {
-			logrus.Fatalf("Unknown routing policy %q. Valid: round-robin, least-loaded, weighted, prefix-affinity", routingPolicy)
+			logrus.Fatalf("Unknown routing policy %q. Valid: round-robin, least-loaded, weighted, prefix-affinity, always-busiest", routingPolicy)
 		}
 		if !sim.IsValidPriorityPolicy(priorityPolicy) {
-			logrus.Fatalf("Unknown priority policy %q. Valid: constant, slo-based", priorityPolicy)
+			logrus.Fatalf("Unknown priority policy %q. Valid: constant, slo-based, inverted-slo", priorityPolicy)
 		}
 		if !sim.IsValidScheduler(scheduler) {
-			logrus.Fatalf("Unknown scheduler %q. Valid: fcfs, priority-fcfs, sjf", scheduler)
+			logrus.Fatalf("Unknown scheduler %q. Valid: fcfs, priority-fcfs, sjf, reverse-priority", scheduler)
 		}
 
 		startTime := time.Now() // Get current time (start)
@@ -302,6 +307,40 @@ var runCmd = &cobra.Command{
 		}
 		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
 		cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, startTime, resultsPath)
+
+		// Collect RawMetrics and compute fitness (PR9)
+		rawMetrics := cluster.CollectRawMetrics(
+			cs.AggregatedMetrics(),
+			cs.PerInstanceMetrics(),
+			cs.RejectedRequests(),
+		)
+
+		if fitnessWeights != "" {
+			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
+			if err != nil {
+				logrus.Fatalf("Invalid fitness weights: %v", err)
+			}
+			fitness := cluster.ComputeFitness(rawMetrics, weights)
+			fmt.Printf("\n=== Fitness Evaluation ===\n")
+			fmt.Printf("Score: %.6f\n", fitness.Score)
+			// Sort keys for deterministic output order
+			componentKeys := make([]string, 0, len(fitness.Components))
+			for k := range fitness.Components {
+				componentKeys = append(componentKeys, k)
+			}
+			sort.Strings(componentKeys)
+			for _, k := range componentKeys {
+				fmt.Printf("  %s: %.6f\n", k, fitness.Components[k])
+			}
+		}
+
+		// Print anomaly counters if any detected
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 {
+			fmt.Printf("\n=== Anomaly Counters ===\n")
+			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
+			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
+			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
+		}
 
 		logrus.Info("Simulation complete.")
 	},
@@ -376,6 +415,9 @@ func init() {
 
 	// Policy bundle config (PR8)
 	runCmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
+
+	// Fitness evaluation config (PR9)
+	runCmd.Flags().StringVar(&fitnessWeights, "fitness-weights", "", "Fitness weights as key:value pairs (e.g., throughput:0.5,p99_ttft:0.3)")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

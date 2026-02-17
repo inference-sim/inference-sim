@@ -118,3 +118,20 @@ func TestPriorityPolicy_Compute_NoSideEffects(t *testing.T) {
 		})
 	}
 }
+
+// TestInvertedSLO_OlderRequestsGetLowerPriority verifies BC-5.
+func TestInvertedSLO_OlderRequestsGetLowerPriority(t *testing.T) {
+	policy := NewPriorityPolicy("inverted-slo")
+
+	oldReq := &Request{ID: "old", ArrivalTime: 0}
+	newReq := &Request{ID: "new", ArrivalTime: 900_000}
+	clock := int64(1_000_000)
+
+	oldPriority := policy.Compute(oldReq, clock)
+	newPriority := policy.Compute(newReq, clock)
+
+	// THEN older request MUST have lower priority than newer request
+	if oldPriority >= newPriority {
+		t.Errorf("expected older request priority (%f) < newer request priority (%f)", oldPriority, newPriority)
+	}
+}

@@ -50,6 +50,13 @@ func (tb *TokenBucket) Admit(req *Request, state *RouterState) (bool, string) {
 	return false, "insufficient tokens"
 }
 
+// RejectAll rejects all requests unconditionally (pathological template for testing).
+type RejectAll struct{}
+
+func (r *RejectAll) Admit(_ *Request, _ *RouterState) (bool, string) {
+	return false, "reject-all"
+}
+
 // NewAdmissionPolicy creates an admission policy by name.
 // Valid names are defined in ValidAdmissionPolicies (bundle.go).
 // An empty string defaults to AlwaysAdmit (for CLI flag default compatibility).
@@ -64,6 +71,8 @@ func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPoli
 		return &AlwaysAdmit{}
 	case "token-bucket":
 		return NewTokenBucket(capacity, refillRate)
+	case "reject-all":
+		return &RejectAll{}
 	default:
 		panic(fmt.Sprintf("unhandled admission policy %q", name))
 	}
