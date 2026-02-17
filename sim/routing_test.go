@@ -375,15 +375,15 @@ func TestWeightedScoring_HighestScoreWins(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", 0.6, 0.4)
 
 	snapshots := []RoutingSnapshot{
-		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8},
-		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2},
-		{ID: "instance_2", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5},
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.8, FreeKVBlocks: 200},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.2, FreeKVBlocks: 800},
+		{ID: "instance_2", QueueDepth: 5, BatchSize: 5, KVUtilization: 0.5, FreeKVBlocks: 500},
 	}
 
 	req := &Request{ID: "req1"}
 	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
-	// Behavioral invariant: target has the highest score
+	// Behavioral invariant: target has the highest score (instance_1 has most FreeKVBlocks)
 	targetScore, ok := decision.Scores[decision.TargetInstance]
 	if !ok {
 		t.Fatalf("target %q not in Scores map", decision.TargetInstance)

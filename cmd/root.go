@@ -317,6 +317,11 @@ var runCmd = &cobra.Command{
 		logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
 			admissionPolicy, routingPolicy, priorityPolicy, scheduler)
 		if routingPolicy == "weighted" {
+			if math.IsNaN(routingCacheWeight) || math.IsInf(routingCacheWeight, 0) ||
+				math.IsNaN(routingLoadWeight) || math.IsInf(routingLoadWeight, 0) {
+				logrus.Fatalf("Routing weights must be finite numbers, got cache=%v, load=%v",
+					routingCacheWeight, routingLoadWeight)
+			}
 			if routingCacheWeight < 0 || routingLoadWeight < 0 {
 				logrus.Fatalf("Routing weights must be non-negative, got cache=%.2f, load=%.2f",
 					routingCacheWeight, routingLoadWeight)
