@@ -2,6 +2,23 @@ package trace
 
 import "testing"
 
+func TestSummarize_NilTrace_ReturnsZeroValueSummary(t *testing.T) {
+	// GIVEN a nil trace (e.g., tracing was disabled)
+	// WHEN summarized
+	summary := Summarize(nil)
+
+	// THEN returns non-nil summary with all zero values
+	if summary == nil {
+		t.Fatal("expected non-nil summary for nil input")
+	}
+	if summary.TotalDecisions != 0 {
+		t.Errorf("expected 0 total decisions, got %d", summary.TotalDecisions)
+	}
+	if len(summary.TargetDistribution) != 0 {
+		t.Error("expected empty target distribution")
+	}
+}
+
 func TestSummarize_EmptyTrace_ZeroValues(t *testing.T) {
 	// GIVEN an empty trace
 	st := NewSimulationTrace(TraceConfig{Level: TraceLevelDecisions})
