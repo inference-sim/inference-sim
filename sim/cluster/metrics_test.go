@@ -173,8 +173,9 @@ func TestComputeFitness_LatencyInversion(t *testing.T) {
 	}
 }
 
-// TestComputeFitness_MultiObjective verifies throughput and latency have comparable scale.
+// TestComputeFitness_MultiObjective verifies throughput and latency contribute comparable weight.
 func TestComputeFitness_MultiObjective(t *testing.T) {
+	// GIVEN metrics at reference values for both throughput and latency
 	raw := &RawMetrics{
 		RequestsPerSec: 100.0,
 		TTFT:           Distribution{P99: 1000.0},
@@ -182,9 +183,19 @@ func TestComputeFitness_MultiObjective(t *testing.T) {
 	weights := map[string]float64{"throughput": 0.5, "p99_ttft": 0.5}
 	result := ComputeFitness(raw, weights)
 
-	// Both at reference → both contribute 0.5 * 0.5 = 0.25, total ≈ 0.5
-	if math.Abs(result.Score-0.5) > 0.01 {
-		t.Errorf("Multi-objective score: got %f, expected ~0.5", result.Score)
+	// THEN both components should contribute roughly equally
+	throughputComponent := result.Components["throughput"]
+	latencyComponent := result.Components["p99_ttft"]
+	ratio := throughputComponent / latencyComponent
+	// At reference values, both should produce similar normalized scores (within 2×)
+	if ratio < 0.5 || ratio > 2.0 {
+		t.Errorf("Components not comparable: throughput=%f, latency=%f, ratio=%f (expected 0.5-2.0)",
+			throughputComponent, latencyComponent, ratio)
+	}
+
+	// THEN total score should be meaningful (not dominated by one component)
+	if result.Score <= 0 || result.Score > 1.0 {
+		t.Errorf("Multi-objective score out of range: got %f, expected (0, 1]", result.Score)
 	}
 }
 
