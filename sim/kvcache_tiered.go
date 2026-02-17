@@ -60,8 +60,57 @@ func (t *TieredKVCache) AllocateKVBlocks(req *Request, startIndex, endIndex int6
 	if ok {
 		return true
 	}
-	// GPU allocation failed — reload logic added in Task 5
+	// GPU allocation failed — try to reload blocks from CPU to free up GPU space
+	reloaded := t.tryReloadFromCPU()
+	if reloaded {
+		// Retry GPU allocation after freeing space via reload
+		return t.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
+	}
+	t.cpuMissCount++
 	return false
+}
+
+// tryReloadFromCPU attempts to reload blocks from CPU to GPU, freeing GPU blocks in the process.
+// Returns true if any blocks were reloaded.
+func (t *TieredKVCache) tryReloadFromCPU() bool {
+	reloaded := false
+	for cpuBlockID, offloaded := range t.cpu.blocks {
+		if offloaded.Hash == "" {
+			continue
+		}
+		// Check if this hash is already on GPU (no need to reload)
+		if _, inGPU := t.gpu.HashToBlock[offloaded.Hash]; inGPU {
+			continue
+		}
+		// Reload: pop a GPU free block, fill with CPU content
+		blk := t.gpu.popFreeBlock()
+		if blk == nil {
+			break // no GPU free blocks available
+		}
+		blk.Tokens = append([]int{}, offloaded.Tokens...)
+		blk.Hash = offloaded.Hash
+		blk.RefCount = 0
+		blk.InUse = false
+		t.gpu.HashToBlock[offloaded.Hash] = blk.ID
+		t.gpu.appendToFreeList(blk)
+
+		// Accumulate transfer latency: baseLatency + ceil(blockSize / bandwidth)
+		blockSize := t.gpu.BlockSize()
+		transferTime := t.baseLatency + (blockSize+int64(t.transferBandwidth)-1)/int64(t.transferBandwidth)
+		t.pendingLatency += transferTime
+
+		// Check thrashing (BC-6): offload followed by reload within 1000 ticks
+		if t.clock-offloaded.OffloadTime < 1000 {
+			t.thrashingCount++
+		}
+
+		// Remove from CPU
+		delete(t.cpu.blocks, cpuBlockID)
+		t.cpu.used--
+		t.cpuHitCount++
+		reloaded = true
+	}
+	return reloaded
 }
 
 func (t *TieredKVCache) GetCachedBlocks(tokens []int) []int64 {
@@ -106,7 +155,8 @@ func (t *TieredKVCache) SetClock(clock int64) {
 	t.clock = clock
 }
 
-// maybeOffload moves LRU free blocks from GPU to CPU until GPU utilization ≤ threshold.
+// maybeOffload moves cached free blocks from GPU to CPU until GPU utilization ≤ threshold.
+// Scans the free list for blocks with cached content (Hash != ""); skips empty blocks.
 func (t *TieredKVCache) maybeOffload() {
 	for t.gpu.TotalCapacity() > 0 {
 		util := float64(t.gpu.UsedBlocks()) / float64(t.gpu.TotalCapacity())
@@ -116,14 +166,10 @@ func (t *TieredKVCache) maybeOffload() {
 		if t.cpu.used >= t.cpu.capacity {
 			break // CPU full (BC-10)
 		}
-		// Find a free block on GPU to offload (from free list head)
-		blk := t.gpu.FreeHead
+		// Find a free block with cached content to offload
+		blk := t.findCachedFreeBlock()
 		if blk == nil {
-			break // No free blocks to offload
-		}
-		// Only offload blocks that have cached content (hash != "")
-		if blk.Hash == "" {
-			break // Empty block, nothing useful to offload
+			break // No cached free blocks to offload
 		}
 		// Copy to CPU
 		t.cpu.blocks[blk.ID] = &OffloadedBlock{
@@ -142,4 +188,16 @@ func (t *TieredKVCache) maybeOffload() {
 		// Re-add to free list as empty block (at tail — will be popped last)
 		t.gpu.appendToFreeList(blk)
 	}
+}
+
+// findCachedFreeBlock walks the GPU free list to find a block with cached content (Hash != "").
+func (t *TieredKVCache) findCachedFreeBlock() *KVBlock {
+	blk := t.gpu.FreeHead
+	for blk != nil {
+		if blk.Hash != "" {
+			return blk
+		}
+		blk = blk.NextFree
+	}
+	return nil
 }
