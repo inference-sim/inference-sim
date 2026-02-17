@@ -1,6 +1,10 @@
 package sim
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+	"sort"
+)
 
 // OffloadedBlock represents a KV block offloaded from GPU to CPU tier.
 type OffloadedBlock struct {
@@ -71,10 +75,19 @@ func (t *TieredKVCache) AllocateKVBlocks(req *Request, startIndex, endIndex int6
 }
 
 // tryReloadFromCPU attempts to reload blocks from CPU to GPU, freeing GPU blocks in the process.
+// Iterates in deterministic order (sorted by block ID) for reproducibility.
 // Returns true if any blocks were reloaded.
 func (t *TieredKVCache) tryReloadFromCPU() bool {
+	// Sort CPU block IDs for deterministic iteration order
+	cpuBlockIDs := make([]int64, 0, len(t.cpu.blocks))
+	for id := range t.cpu.blocks {
+		cpuBlockIDs = append(cpuBlockIDs, id)
+	}
+	sort.Slice(cpuBlockIDs, func(i, j int) bool { return cpuBlockIDs[i] < cpuBlockIDs[j] })
+
 	reloaded := false
-	for cpuBlockID, offloaded := range t.cpu.blocks {
+	for _, cpuBlockID := range cpuBlockIDs {
+		offloaded := t.cpu.blocks[cpuBlockID]
 		if offloaded.Hash == "" {
 			continue
 		}
@@ -95,9 +108,10 @@ func (t *TieredKVCache) tryReloadFromCPU() bool {
 		t.gpu.appendToFreeList(blk)
 
 		// Accumulate transfer latency: baseLatency + ceil(blockSize / bandwidth)
-		blockSize := t.gpu.BlockSize()
-		transferTime := t.baseLatency + (blockSize+int64(t.transferBandwidth)-1)/int64(t.transferBandwidth)
-		t.pendingLatency += transferTime
+		// Uses float64 to avoid division by zero when bandwidth < 1.0
+		blockSize := float64(t.gpu.BlockSize())
+		transferTicks := int64(math.Ceil(blockSize / t.transferBandwidth))
+		t.pendingLatency += t.baseLatency + transferTicks
 
 		// Check thrashing (BC-6): offload followed by reload within 1000 ticks
 		if t.clock-offloaded.OffloadTime < 1000 {
