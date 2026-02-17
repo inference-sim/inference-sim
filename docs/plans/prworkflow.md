@@ -46,7 +46,8 @@ If skills are unavailable, you can implement each step manually:
 - Step 1: Use `git worktree add ../repo-prN -b prN-name` directly
 - Step 2: Follow `prmicroplanprompt-v2.md` template manually
 - Step 2.5/4.5: Manual code review or skip automated review
-- Step 4: Implement tasks manually following plan
+- Step 4: Implement tasks manually following plan; on failure, debug manually
+- Step 4.75: Self-audit is always available (no skill required — just critical thinking)
 - Step 5: Use standard git commands (`git add`, `git commit`, `git push`, `gh pr create`)
 
 ---
@@ -100,13 +101,13 @@ If skills are unavailable, you can implement each step manually:
    - Main worktree never touched
    - Enables parallel work on multiple PRs
 
-2. **Two-stage automated review** with `pr-review-toolkit:review-pr`:
-   - **Plan Review** (Step 2.5) - Reviews plan markdown file (uncommitted in worktree)
-     - Validates behavioral contracts, task breakdown, test strategy
+2. **Three-stage quality assurance:**
+   - **Plan Review** (Step 2.5) - 5 passes: external LLM, cross-doc, architecture, codebase, structural
      - Catches design issues before implementation
-   - **Code Review** (Step 4.5) - Reviews implementation changes (git diff in worktree)
-     - Validates code quality, tests, error handling, types
+   - **Code Review** (Step 4.5) - 4 passes: code quality, test quality, getting-started, automated reviewer
      - Catches implementation issues before PR creation
+   - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 6 dimensions
+     - Catches substance bugs that pattern-matching agents miss
 
 ---
 
@@ -648,7 +649,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 | `using-git-worktrees` | **Step 1** - Create isolated workspace FIRST | Branch name | Worktree directory path |
 | `writing-plans` | **Step 2** - Create implementation plan from macro plan | Macro plan PR section + prmicroplanprompt-v2.md | Plan file with contracts + tasks |
 | `review-plan` | **Step 2.5 Pass 0** - External LLM review (catches design bugs) | Plan file path | Independent review feedback |
-| `pr-review-toolkit:review-pr` | **Step 2.5** - 4 focused plan review passes (3 agent + 1 direct) | Targeted prompts (see checklist) | Critical/important issues per pass |
+| `pr-review-toolkit:review-pr` | **Step 2.5 Passes 1-3** - Focused plan review passes | Targeted prompts (see checklist) | Critical/important issues per pass |
 | `executing-plans` | **Step 4** - Execute plan tasks continuously | Plan file path | Implemented code + commits |
 | `systematic-debugging` | **Step 4 (on failure)** - Structured root-cause analysis | Failing test/error context | Root cause + fix |
 | `subagent-driven-development` | **Step 4 (alt)** - Execute plan in-session | Plan file path | Implemented code + commits |
