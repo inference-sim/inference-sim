@@ -129,3 +129,108 @@ func TestCollectRawMetrics_RejectedRequests(t *testing.T) {
 		t.Errorf("RejectedRequests: got %d, want 42", raw.RejectedRequests)
 	}
 }
+
+// TestComputeFitness_WeightedScore verifies BC-3.
+func TestComputeFitness_WeightedScore(t *testing.T) {
+	raw := &RawMetrics{
+		RequestsPerSec: 100.0,
+		TTFT:           Distribution{P99: 5000.0},
+	}
+
+	weights := map[string]float64{
+		"throughput": 1.0,
+	}
+
+	result := ComputeFitness(raw, weights)
+
+	// THEN Score should be in (0, 1] range (normalized)
+	// throughput=100, reference=100 → 100/(100+100) = 0.5
+	if result.Score <= 0 || result.Score > 1.0 {
+		t.Errorf("Score: got %f, expected in (0, 1]", result.Score)
+	}
+	if math.Abs(result.Components["throughput"]-0.5) > 0.01 {
+		t.Errorf("throughput component: got %f, expected ~0.5", result.Components["throughput"])
+	}
+}
+
+// TestComputeFitness_LatencyInversion verifies latency metrics are inverted (lower is better).
+func TestComputeFitness_LatencyInversion(t *testing.T) {
+	lowLatency := &RawMetrics{TTFT: Distribution{P99: 1000.0}}   // 1ms
+	highLatency := &RawMetrics{TTFT: Distribution{P99: 10000.0}} // 10ms
+
+	weights := map[string]float64{"p99_ttft": 1.0}
+
+	lowResult := ComputeFitness(lowLatency, weights)
+	highResult := ComputeFitness(highLatency, weights)
+
+	// THEN lower latency should produce higher fitness score
+	if lowResult.Score <= highResult.Score {
+		t.Errorf("Expected low latency score (%f) > high latency score (%f)", lowResult.Score, highResult.Score)
+	}
+	// 1ms: 1/(1+1000/1000) = 0.5
+	if math.Abs(lowResult.Score-0.5) > 0.01 {
+		t.Errorf("1ms latency score: got %f, expected ~0.5", lowResult.Score)
+	}
+}
+
+// TestComputeFitness_MultiObjective verifies throughput and latency have comparable scale.
+func TestComputeFitness_MultiObjective(t *testing.T) {
+	raw := &RawMetrics{
+		RequestsPerSec: 100.0,
+		TTFT:           Distribution{P99: 1000.0},
+	}
+	weights := map[string]float64{"throughput": 0.5, "p99_ttft": 0.5}
+	result := ComputeFitness(raw, weights)
+
+	// Both at reference → both contribute 0.5 * 0.5 = 0.25, total ≈ 0.5
+	if math.Abs(result.Score-0.5) > 0.01 {
+		t.Errorf("Multi-objective score: got %f, expected ~0.5", result.Score)
+	}
+}
+
+// TestComputeFitness_UnknownKey_Ignored verifies EC-1.
+func TestComputeFitness_UnknownKey_Ignored(t *testing.T) {
+	raw := &RawMetrics{RequestsPerSec: 100.0}
+	weights := map[string]float64{"nonexistent": 1.0}
+
+	result := ComputeFitness(raw, weights)
+	if result.Score != 0 {
+		t.Errorf("Score: got %f, expected 0 for unknown key", result.Score)
+	}
+}
+
+// TestParseFitnessWeights_ValidInput verifies parsing.
+func TestParseFitnessWeights_ValidInput(t *testing.T) {
+	weights, err := ParseFitnessWeights("throughput:0.5,p99_ttft:0.3")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(weights) != 2 {
+		t.Fatalf("expected 2 weights, got %d", len(weights))
+	}
+	if weights["throughput"] != 0.5 {
+		t.Errorf("throughput: got %f, want 0.5", weights["throughput"])
+	}
+	if weights["p99_ttft"] != 0.3 {
+		t.Errorf("p99_ttft: got %f, want 0.3", weights["p99_ttft"])
+	}
+}
+
+// TestParseFitnessWeights_Empty verifies EC-2.
+func TestParseFitnessWeights_Empty(t *testing.T) {
+	weights, err := ParseFitnessWeights("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(weights) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(weights))
+	}
+}
+
+// TestParseFitnessWeights_InvalidFormat verifies error on bad input.
+func TestParseFitnessWeights_InvalidFormat(t *testing.T) {
+	_, err := ParseFitnessWeights("throughput:abc")
+	if err == nil {
+		t.Error("expected error for non-numeric weight")
+	}
+}

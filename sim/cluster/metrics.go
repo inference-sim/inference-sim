@@ -1,10 +1,14 @@
 package cluster
 
 import (
+	"fmt"
 	"math"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 // Distribution captures statistical summary of a metric.
@@ -105,9 +109,97 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 
 // mapValues extracts values from a map into a slice.
 func mapValues(m map[string]float64) []float64 {
-	values := make([]float64, 0, len(m))
+	vals := make([]float64, 0, len(m))
 	for _, v := range m {
-		values = append(values, v)
+		vals = append(vals, v)
 	}
-	return values
+	return vals
+}
+
+// Reference scales for normalizing metrics to [0,1] range.
+// Without reference scales, throughput (raw value ~100) dominates latency (1/(1+5000) ≈ 0.0002)
+// by 500,000×, making multi-objective optimization impossible.
+const (
+	referenceRPS   = 100.0  // 100 requests/sec as reference throughput
+	referenceTicks = 1000.0 // 1ms (1000 ticks) as reference latency
+)
+
+// FitnessResult holds the computed fitness score and per-component breakdown.
+type FitnessResult struct {
+	Score      float64            // Weighted sum of normalized metric components
+	Components map[string]float64 // Per-component normalized scores before weighting
+}
+
+// ComputeFitness computes a weighted fitness score from RawMetrics.
+// All metrics are normalized to [0,1] range before weighting:
+// - Throughput: value / (value + referenceRPS) — higher is better, saturates at 1.0
+// - Latency: 1.0 / (1.0 + value/referenceTicks) — lower is better, 1ms → 0.5
+// Unknown weight keys are logged as warnings and ignored (EC-1).
+func ComputeFitness(metrics *RawMetrics, weights map[string]float64) *FitnessResult {
+	result := &FitnessResult{
+		Components: make(map[string]float64, len(weights)),
+	}
+
+	for key, weight := range weights {
+		value, ok := extractMetric(metrics, key)
+		if !ok {
+			logrus.Warnf("ComputeFitness: unknown metric key %q, ignoring", key)
+			continue
+		}
+		result.Components[key] = value
+		result.Score += value * weight
+	}
+
+	return result
+}
+
+// extractMetric returns a normalized [0,1] metric value for the given key.
+// Throughput: value / (value + reference). Latency: 1 / (1 + value/reference).
+// Returns (value, true) on success, (0, false) for unknown keys.
+func extractMetric(m *RawMetrics, key string) (float64, bool) {
+	switch key {
+	// Higher is better — normalized via value / (value + reference)
+	case "throughput":
+		return m.RequestsPerSec / (m.RequestsPerSec + referenceRPS), true
+	case "tokens_per_sec":
+		return m.TokensPerSec / (m.TokensPerSec + referenceRPS), true
+	// Lower is better — normalized via 1 / (1 + value/reference)
+	case "p99_ttft":
+		return 1.0 / (1.0 + m.TTFT.P99/referenceTicks), true
+	case "p50_ttft":
+		return 1.0 / (1.0 + m.TTFT.P50/referenceTicks), true
+	case "mean_ttft":
+		return 1.0 / (1.0 + m.TTFT.Mean/referenceTicks), true
+	case "p99_e2e":
+		return 1.0 / (1.0 + m.E2E.P99/referenceTicks), true
+	case "p50_e2e":
+		return 1.0 / (1.0 + m.E2E.P50/referenceTicks), true
+	case "mean_e2e":
+		return 1.0 / (1.0 + m.E2E.Mean/referenceTicks), true
+	default:
+		return 0, false
+	}
+}
+
+// ParseFitnessWeights parses a "key:value,key:value" string into a weight map.
+// Returns empty map for empty input (EC-2). Returns error for malformed entries.
+func ParseFitnessWeights(s string) (map[string]float64, error) {
+	if s == "" {
+		return map[string]float64{}, nil
+	}
+	weights := make(map[string]float64)
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid fitness weight %q: expected key:value", pair)
+		}
+		key := strings.TrimSpace(parts[0])
+		val, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid fitness weight value for %q: %w", key, err)
+		}
+		weights[key] = val
+	}
+	return weights, nil
 }
