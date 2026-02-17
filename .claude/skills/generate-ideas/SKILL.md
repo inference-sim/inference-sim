@@ -1,7 +1,7 @@
 ---
 name: generate-ideas
 description: You are a researcher generating ideas to be developed and published in top conferences. Your ideas are creative and novel as well as practical.
-argument-hint: <problem_dir> [num_iterations] [num_reviewers]
+argument-hint: <problem_dir> [num_iterations]
 allowed-tools:
   - Skill(review-plan *)
   - Bash(.claude/skills/review-plan/scripts/review.sh *)
@@ -13,7 +13,6 @@ allowed-tools:
 
 - `[PROBLEM_DIR]` (required): Directory containing `problem.md` and `background/`
 - `[NUM_ITERATIONS]` (optional, default: 1): Number of ideas to generate
-- `[NUM_REVIEWERS]` (optional, default: 3): Number of reviewers per idea
 
 # TASK
 
@@ -78,7 +77,10 @@ For i = 1 to [NUM_ITERATIONS], execute the following steps **strictly sequential
 
   ---
 
-  Ask [NUM_REVIEWERS] reviewers to review idea-<i> **in parallel**, passing them the temp file path.
+  Ask 3 judges to review idea-<i> **in parallel** using the /review-plan skill, passing it the temp file path containing the problem statement, backgroud and the idea.
+  Each judge should use a different model for each idea evaluation. You can select from aws/claude-opus-4-6, Azure/gpt-4o, GCP/gemini-2.5-flash. 
+  
+  YOU MUST USE THE /review-plan SKILL AND INVOKE THE TWO NON-ANTHROPIC MODELS. The judges must provide independent review feedback. They must not share context with each other.
 
   ## Step 4: Append Feedback
 
