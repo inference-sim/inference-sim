@@ -62,7 +62,7 @@ This PR adds two capabilities that together reach the Research-Ready Checkpoint:
 - GIVEN a `RawMetrics` and a weight map `map[string]float64` (e.g., `{"throughput": 0.5, "p99_ttft": 0.3}`)
 - WHEN `ComputeFitness(metrics, weights)` is called
 - THEN it MUST return a `FitnessResult` with a scalar `Score` (weighted sum) and per-component `Components` map
-- MECHANISM: For each weight key, extract the corresponding metric from `RawMetrics`, normalize to [0,1] range, multiply by weight, sum. Throughput normalized as `value / (value + referenceRPS)` where referenceRPS=100. Latency normalized as `1.0 / (1.0 + value/referenceTicks)` where referenceTicks=1000 (1ms). This ensures both metric types produce scores in comparable [0,1] ranges for meaningful multi-objective optimization.
+- MECHANISM: For each weight key, extract the corresponding metric from `RawMetrics`, normalize to [0,1] range, multiply by weight, sum. Throughput normalized as `value / (value + referenceRPS)` where referenceRPS=100. Token throughput uses `referenceTPS=10000`. Latency normalized as `1.0 / (1.0 + value/referenceTicks)` where referenceTicks=1000 (1ms). This ensures all metric types produce scores in comparable [0,1] ranges for meaningful multi-objective optimization.
 
 **BC-4: RejectAll Admission**
 - GIVEN a `RejectAll` admission policy
@@ -1779,7 +1779,8 @@ type FitnessResult struct {
 - `mapValues(m map[string]float64) []float64` (unexported)
 
 **Constants:**
-- `referenceRPS = 100.0` — reference throughput for normalization (100 req/s → score 0.5)
+- `referenceRPS = 100.0` — reference request throughput for normalization (100 req/s → score 0.5)
+- `referenceTPS = 10000.0` — reference token throughput for normalization (10K tok/s → score 0.5)
 - `referenceTicks = 1000.0` — reference latency for normalization (1ms → score 0.5)
 
 **Key notes:**
