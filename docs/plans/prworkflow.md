@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v2.4 - updated 2026-02-16)
+**Status:** Active (v2.5 - updated 2026-02-16)
 
 This document describes the complete workflow for implementing a PR from the macro plan.
 
@@ -85,6 +85,11 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
+│ Step 4.75: self-audit   │ (Deliberate critical thinking — no agent)
+└──────────┬──────────────┘
+           │
+           ▼
+┌─────────────────────────┐
 │ Step 5: commit-push-pr  │ (Commit, push, create PR - all in one)
 └─────────────────────────┘
 ```
@@ -117,6 +122,7 @@ If skills are unavailable, you can implement each step manually:
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
 | **4.5. Review code** | 4 focused passes: code quality, test behavioral quality, getting-started, automated reviewer sim |
+| **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
 **Example for PR 8 (same-session workflow with `.worktrees/`):**
@@ -528,7 +534,33 @@ This skill enforces running verification commands and confirming output before m
 **Why a skill instead of prose?** In PR9, the manual "run these commands" instruction was easy to skip or half-execute. The skill makes verification non-optional and evidence-based.
 
 Report: build exit code, test pass/fail counts, lint issue count, working tree status.
-Wait for user approval before proceeding to Step 5.
+Wait for user approval before proceeding to Step 4.75.
+
+---
+
+### Step 4.75: Pre-Commit Self-Audit (No Agent — Deliberate Thinking)
+
+**Context:** Worktree (after verification gate passes)
+
+> **For Claude:** This is NOT an agent pass. Stop, think critically, and answer each question
+> below from your own reasoning. Do NOT dispatch agents or read files — you already have the
+> full context. Report all issues found. If you find zero issues, explain why you're confident
+> for each dimension.
+
+**Why this step exists:** In PR9, the 4-pass automated code review (Step 4.5) found 0 new issues in Pass 4. Then the user asked "are you confident?" and Claude found 3 real bugs by thinking critically: a wrong reference scale for token throughput normalization, non-deterministic map iteration in output, and inconsistent comment patterns. Automated review passes check structure; this step checks substance.
+
+**Self-audit dimensions — think through each one:**
+
+1. **Logic bugs:** Trace through the core algorithm mentally. Are there edge cases where the math breaks? Division by zero? Off-by-one? Wrong comparisons?
+2. **Design bugs:** Does the design actually achieve what the contracts promise? Would a user get the expected behavior? Are there scale mismatches, unit confusions, or semantic errors?
+3. **Determinism:** Is all output deterministic? Any map iteration used for ordered output? Any floating-point accumulation order dependencies?
+4. **Consistency:** Are naming patterns consistent across all changed files? Do comments match code? Do doc strings match implementations? Are there stale references?
+5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md, README, `--help`)?
+6. **Defensive edge cases:** What happens with zero input? Empty collections? Maximum values? What if the user passes unusual but valid flag combinations?
+
+**Fix all issues found. Then wait for user approval before Step 5.**
+
+**Why no agent?** Agents are good at pattern-matching (finding style violations, checking structure). They're bad at stepping back and asking "does this actually make sense?" That requires the kind of critical thinking that only happens when you deliberately pause and reflect.
 
 ---
 
@@ -674,6 +706,10 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # Enforced verification gate
 /superpowers:verification-before-completion
 
+# Step 4.75: Self-audit (no agent — deliberate critical thinking)
+# Think through: logic bugs, design bugs, determinism, consistency, docs, edge cases
+# [Fix any issues found, re-verify]
+
 # Step 5: Commit plan + implementation, push, and create PR (all in one!)
 /commit-commands:commit-push-pr
 
@@ -698,6 +734,35 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 6. **Reference contracts in commits** - Makes review easier and more traceable
 7. **Update CLAUDE.md immediately** - Don't defer documentation
 8. **Keep macro plan updated** - Mark PRs as completed
+9. **Don't trust automated passes alone** - The self-audit (Step 4.75) catches substance bugs that pattern-matching agents miss. In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues.
+10. **Checkpoint long sessions** - For PRs with 8+ tasks or multi-round reviews, write a checkpoint summary to `.claude/checkpoint.md` after each major phase (planning, implementation, review). If you hit context limits or need to continue in a new session, read the checkpoint first. This prevents losing progress and avoids re-reading the entire conversation history.
+
+### Headless Mode for Reviews (Context Overflow Workaround)
+
+If multi-agent review passes hit "Prompt is too long" errors during consolidation (a recurring friction point), switch to headless mode: run each review agent as an isolated invocation that writes findings to a file, then consolidate in a lightweight final pass.
+
+```bash
+#!/bin/bash
+# headless-review.sh — Run review agents with full context each
+BRANCH=$(git branch --show-current)
+PLAN="docs/plans/pr<N>-<name>-plan.md"
+mkdir -p .review
+
+# Run each pass in its own context (no overflow)
+claude -p "Pass 1: Code quality review of branch $BRANCH. Read all changed Go files. Write findings to .review/01-code-quality.md" \
+  --allowedTools "Read,Grep,Glob,Bash" &
+claude -p "Pass 2: Test behavioral quality review. Rate each new test. Write findings to .review/02-test-quality.md" \
+  --allowedTools "Read,Grep,Glob,Bash" &
+claude -p "Pass 3: Getting-started review. Simulate user + contributor journeys. Write findings to .review/03-getting-started.md" \
+  --allowedTools "Read,Grep,Glob,Bash" &
+wait
+
+# Lightweight consolidation (reads only the small finding files)
+claude -p "Read .review/*.md files. Produce a consolidated summary sorted by severity." \
+  --allowedTools "Read,Glob"
+```
+
+**When to use:** When Step 2.5 or Step 4.5 hits context limits. Not needed for most PRs — only when the conversation history is already long.
 
 ### Review Strategy Tips
 
@@ -802,6 +867,7 @@ golangci-lint run ./path/to/modified/package/...
 **v2.2 (2026-02-16):** Focused review passes replace generic review-pr invocations. Step 2.5 expanded to 3 passes (cross-doc consistency, architecture boundary, codebase readiness). Step 4.5 expanded to 4 passes (code quality, test behavioral quality, getting-started experience, automated reviewer simulation). Based on PR8 experience where each focused pass caught issues the others missed.
 **v2.3 (2026-02-16):** Step 2.5 expanded to 4 passes — added Pass 4 (structural validation: task dependencies, template completeness, executive summary clarity, under-specified task detection). Based on PR9 experience where deferred items fell through cracks in the macro plan, and an under-specified documentation task would have confused the executing agent.
 **v2.4 (2026-02-16):** Four targeted skill integrations addressing real failure modes: (1) `review-plan` as Pass 0 in Step 2.5 — external LLM review catches design bugs that self-review misses (PR9: fitness normalization bug passed 3 focused passes). (2) `superpowers:systematic-debugging` as on-failure handler in Step 4 — structured root-cause analysis instead of ad-hoc debugging. (3) `superpowers:verification-before-completion` replaces manual verification prose after Step 4.5 — makes build/test/lint gate non-skippable. (4) `commit-commands:clean_gone` as pre-cleanup in Step 1 — prevents stale branch accumulation.
+**v2.5 (2026-02-16):** Three additions from `/insights` analysis of 212 sessions: (1) Step 4.75 (pre-commit self-audit) — deliberate critical thinking step with no agent, checking logic/design/determinism/consistency/docs/edge-cases. In PR9, this step found 3 real bugs (wrong reference scale, non-deterministic output, inconsistent comments) that 4 automated passes missed. (2) Headless mode documentation for review passes — workaround for context overflow during multi-agent consolidation, the #1 recurring friction point across 212 sessions. (3) Checkpointing tip for long sessions — prevents progress loss when hitting context limits mid-PR.
 
 **Key improvements in v2.0:**
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/macroplan.md`)
