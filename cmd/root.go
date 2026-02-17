@@ -282,6 +282,9 @@ var runCmd = &cobra.Command{
 		if traceLevel == "none" && summarizeTrace {
 			logrus.Warnf("--summarize-trace has no effect without --trace-level decisions")
 		}
+		if traceLevel != "none" && !summarizeTrace {
+			logrus.Infof("Decision tracing enabled (trace-level=%s). Use --summarize-trace to print summary.", traceLevel)
+		}
 
 		startTime := time.Now() // Get current time (start)
 
@@ -335,13 +338,12 @@ var runCmd = &cobra.Command{
 			cs.RejectedRequests(),
 		)
 
-		var fitness *cluster.FitnessResult
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
 			if err != nil {
 				logrus.Fatalf("Invalid fitness weights: %v", err)
 			}
-			fitness = cluster.ComputeFitness(rawMetrics, weights)
+			fitness := cluster.ComputeFitness(rawMetrics, weights)
 			fmt.Printf("\n=== Fitness Evaluation ===\n")
 			fmt.Printf("Score: %.6f\n", fitness.Score)
 			// Sort keys for deterministic output order
