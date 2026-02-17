@@ -14,6 +14,7 @@ import (
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
 var (
@@ -77,6 +78,11 @@ var (
 
 	// Fitness evaluation config (PR9)
 	fitnessWeights string // Fitness weights string "key:val,key:val"
+
+	// Decision trace config (PR13)
+	traceLevel      string // Trace verbosity level
+	counterfactualK int    // Number of counterfactual candidates
+	summarizeTrace  bool   // Print trace summary after simulation
 
 	// results file path
 	resultsPath string // File to save BLIS results to
@@ -264,6 +270,21 @@ var runCmd = &cobra.Command{
 		if !sim.IsValidScheduler(scheduler) {
 			logrus.Fatalf("Unknown scheduler %q. Valid: fcfs, priority-fcfs, sjf, reverse-priority", scheduler)
 		}
+		if !trace.IsValidTraceLevel(traceLevel) {
+			logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
+		}
+		if counterfactualK < 0 {
+			logrus.Fatalf("--counterfactual-k must be >= 0, got %d", counterfactualK)
+		}
+		if traceLevel == "none" && counterfactualK > 0 {
+			logrus.Warnf("--counterfactual-k=%d has no effect without --trace-level decisions", counterfactualK)
+		}
+		if traceLevel == "none" && summarizeTrace {
+			logrus.Warnf("--summarize-trace has no effect without --trace-level decisions")
+		}
+		if traceLevel != "none" && !summarizeTrace {
+			logrus.Infof("Decision tracing enabled (trace-level=%s). Use --summarize-trace to print summary.", traceLevel)
+		}
 
 		startTime := time.Now() // Get current time (start)
 
@@ -295,6 +316,8 @@ var runCmd = &cobra.Command{
 			RoutingLoadWeight:         routingLoadWeight,
 			PriorityPolicy:           priorityPolicy,
 			Scheduler:                scheduler,
+			TraceLevel:               traceLevel,
+			CounterfactualK:          counterfactualK,
 		}
 		cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
 		cs.Run()
@@ -340,6 +363,29 @@ var runCmd = &cobra.Command{
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
 			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
+		}
+
+		// Build and print trace summary if requested (BC-9)
+		if cs.Trace() != nil && summarizeTrace {
+			traceSummary := trace.Summarize(cs.Trace())
+			fmt.Printf("\n=== Trace Summary ===\n")
+			fmt.Printf("Total Decisions: %d\n", traceSummary.TotalDecisions)
+			fmt.Printf("  Admitted: %d\n", traceSummary.AdmittedCount)
+			fmt.Printf("  Rejected: %d\n", traceSummary.RejectedCount)
+			fmt.Printf("Unique Targets: %d\n", traceSummary.UniqueTargets)
+			if len(traceSummary.TargetDistribution) > 0 {
+				fmt.Printf("Target Distribution:\n")
+				targetKeys := make([]string, 0, len(traceSummary.TargetDistribution))
+				for k := range traceSummary.TargetDistribution {
+					targetKeys = append(targetKeys, k)
+				}
+				sort.Strings(targetKeys)
+				for _, k := range targetKeys {
+					fmt.Printf("  %s: %d\n", k, traceSummary.TargetDistribution[k])
+				}
+			}
+			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
+			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
 		}
 
 		logrus.Info("Simulation complete.")
@@ -405,19 +451,24 @@ func init() {
 	runCmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
 
 	// Routing policy config
-	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, prefix-affinity")
+	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, prefix-affinity, always-busiest")
 	runCmd.Flags().Float64Var(&routingCacheWeight, "routing-cache-weight", 0.6, "Cache affinity weight for weighted routing")
 	runCmd.Flags().Float64Var(&routingLoadWeight, "routing-load-weight", 0.4, "Load balance weight for weighted routing")
 
 	// Priority and scheduler config (PR7)
-	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based")
-	runCmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf")
+	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
+	runCmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
 
 	// Policy bundle config (PR8)
 	runCmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
 
 	// Fitness evaluation config (PR9)
 	runCmd.Flags().StringVar(&fitnessWeights, "fitness-weights", "", "Fitness weights as key:value pairs (e.g., throughput:0.5,p99_ttft:0.3)")
+
+	// Decision trace config (PR13)
+	runCmd.Flags().StringVar(&traceLevel, "trace-level", "none", "Trace verbosity: none, decisions")
+	runCmd.Flags().IntVar(&counterfactualK, "counterfactual-k", 0, "Number of counterfactual candidates per routing decision")
+	runCmd.Flags().BoolVar(&summarizeTrace, "summarize-trace", false, "Print trace summary after simulation")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

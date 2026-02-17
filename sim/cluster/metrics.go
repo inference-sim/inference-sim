@@ -114,9 +114,8 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 }
 
 // detectPriorityInversions counts priority inversion events from per-instance metrics.
-// Simplified PR9 heuristic: counts pairs where an earlier-arriving request has
+// PR9 heuristic: counts pairs where an earlier-arriving request has
 // worse E2E than a later-arriving request (with 2× threshold).
-// Full decision-trace-based detection deferred to PR13.
 func detectPriorityInversions(perInstance []*sim.Metrics) int {
 	count := 0
 	for _, m := range perInstance {

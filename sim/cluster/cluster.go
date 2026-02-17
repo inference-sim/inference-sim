@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,6 +32,7 @@ type ClusterSimulator struct {
 	snapshotProvider   SnapshotProvider
 	routingPolicy      sim.RoutingPolicy
 	rejectedRequests   int // EC-2: count of requests rejected by admission policy
+	trace              *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -57,6 +59,15 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 		instanceMap[inst.ID()] = inst
 	}
 
+	// Initialize trace collector if tracing is enabled (BC-1: nil when none)
+	var simTrace *trace.SimulationTrace
+	if config.TraceLevel != "" && trace.TraceLevel(config.TraceLevel) != trace.TraceLevelNone {
+		simTrace = trace.NewSimulationTrace(trace.TraceConfig{
+			Level:           trace.TraceLevel(config.TraceLevel),
+			CounterfactualK: config.CounterfactualK,
+		})
+	}
+
 	return &ClusterSimulator{
 		config:           config,
 		instances:        instances,
@@ -69,6 +80,7 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 		admissionPolicy:  sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
 		snapshotProvider: NewCachedSnapshotProvider(instanceMap, DefaultObservabilityConfig()),
 		routingPolicy:    sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingCacheWeight, config.RoutingLoadWeight),
+		trace:            simTrace,
 	}
 }
 
@@ -182,6 +194,12 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 // Returns 0 if AlwaysAdmit is used or if no requests were rejected by TokenBucket.
 func (c *ClusterSimulator) RejectedRequests() int {
 	return c.rejectedRequests
+}
+
+// Trace returns the decision trace collected during simulation.
+// Returns nil if trace-level was "none" (default).
+func (c *ClusterSimulator) Trace() *trace.SimulationTrace {
+	return c.trace
 }
 
 // PerInstanceMetrics returns the metrics for each individual instance.

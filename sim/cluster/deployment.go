@@ -37,6 +37,10 @@ type DeploymentConfig struct {
 	// Priority and scheduler configuration (PR7)
 	PriorityPolicy string // "constant" (default) or "slo-based"
 	Scheduler      string // "fcfs" (default), "priority-fcfs", "sjf"
+
+	// Decision trace configuration (PR13)
+	TraceLevel      string // "none" (default), "decisions"
+	CounterfactualK int    // number of counterfactual candidates, default 0
 }
 
 // ToSimConfig converts DeploymentConfig to SimConfig for per-instance construction.

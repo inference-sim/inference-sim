@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
 // ClusterEvent defines the interface for cluster-level events.
@@ -109,7 +110,18 @@ func (e *AdmissionDecisionEvent) Priority() int     { return 1 }
 // If rejected, increments cs.rejectedRequests counter (EC-2).
 func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	state := buildRouterState(cs)
-	admitted, _ := cs.admissionPolicy.Admit(e.request, state)
+	admitted, reason := cs.admissionPolicy.Admit(e.request, state)
+
+	// Record admission decision if tracing is enabled (BC-2)
+	if cs.trace != nil {
+		cs.trace.RecordAdmission(trace.AdmissionRecord{
+			RequestID: e.request.ID,
+			Clock:     cs.clock,
+			Admitted:  admitted,
+			Reason:    reason,
+		})
+	}
+
 	if !admitted {
 		cs.rejectedRequests++
 		return
@@ -141,6 +153,25 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 	// BC-9: Apply cluster-level priority hint if set by routing policy
 	if decision.Priority != 0 {
 		e.request.Priority = decision.Priority
+	}
+
+	// Record routing decision if tracing is enabled (BC-3, BC-4, BC-5, BC-6)
+	// Placed after priority assignment to minimize diff; recording reads decision, not request.Priority
+	if cs.trace != nil {
+		record := trace.RoutingRecord{
+			RequestID:      e.request.ID,
+			Clock:          cs.clock,
+			ChosenInstance: decision.TargetInstance,
+			Reason:         decision.Reason,
+			Scores:         copyScores(decision.Scores),
+		}
+		if cs.trace.Config.CounterfactualK > 0 {
+			record.Candidates, record.Regret = computeCounterfactual(
+				decision.TargetInstance, decision.Scores,
+				state.Snapshots, cs.trace.Config.CounterfactualK,
+			)
+		}
+		cs.trace.RecordRouting(record)
 	}
 
 	// Find target instance and inject request
