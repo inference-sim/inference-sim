@@ -22,6 +22,9 @@ type Metrics struct {
 	SimEndedTime      int64   // Sim clock time in ticks when simulation ends
 	KVBlocksUsed      float64 // Integral of KVBlockUsage over time
 	PeakKVBlocksUsed  int64   // Max number of simultaneously used KV blocks
+	PreemptionCount   int64   // Total preemption events (PR12)
+	CacheHitRate      float64 // Cumulative cache hit rate at finalization (PR12)
+	KVThrashingRate   float64 // KV thrashing rate at finalization (PR12)
 
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	ITLSum  int64 // Total ITL sum across requests (in ticks)

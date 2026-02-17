@@ -1,7 +1,7 @@
 # BLIS Evolutionary Policy Optimization: Macro-Level Implementation Plan (v3)
 
 **Date:** 2026-02-11
-**Revision:** v3.3 (post-PR9, PR10 collapsed to single PR — 16 total PRs, 7 remaining)
+**Revision:** v3.4 (PR12 architectural pre-design added — 16 total PRs, 7 remaining)
 **Status:** Draft
 **Target:** Multi-replica cluster simulation with pluggable policies
 **Based on:** [Design Document](2026-02-06-evolutionary-policy-optimization-design.md)
@@ -50,6 +50,11 @@ This revision incorporates feedback from external review (Perplexity, Gemini, GP
 **v3.2 changes (PR10 expansion, 2026-02-16):**
 33. **Design document added** — Full technical design at `docs/plans/2026-02-16-workload-generator-design.md`. Covers observe-predict-calibrate loop, ServeGen client decomposition, arrival samplers (Gamma/Weibull/Poisson), distribution samplers (ParetoLogNormal/Exponential/EmpiricalPDF), trace v2 format with server config capture.
 34. **Phase 3 renamed** — "Enhanced Workloads" → "ServeGen-Informed Workload Generator + Observe-Predict-Calibrate Loop"
+
+**v3.4 changes (PR12 architectural pre-design, 2026-02-17):**
+37. **PR 12 architectural pre-design added** — `docs/plans/pr12-architectural-predesign.md` resolves 9 binding design decisions that blocked micro-planning: `sim/kv/` package deferred to PR14 (import cycle), `KVStore` interface introduced in `sim/`, `TieredKVCache` composes `*KVCacheState` + simple `cpuTier`, transfer latency is synchronous (not event-based), recommended 8-task ordering.
+38. **PR 12 macro entry updated** with resolved architecture, corrected file paths (`sim/kv_store.go`, `sim/kvcache_tiered.go`), and link to pre-design document.
+39. **Package structure updated** — `sim/kv/` contents replaced with `sim/kv_store.go` and `sim/kvcache_tiered.go` (PR12); `sim/kv/transfer.go` deferred to PR14 (P/D cross-instance transfer).
 
 **v3.3 changes (PR10 consolidation, 2026-02-17):**
 35. **PR 10 collapsed from 7 sub-PRs to single PR** — PR 10a-g merged back into one PR 10 with multiple commits. The 7-PR split created coordination overhead without proportional review benefit; all code lives in `sim/workload/` with no architectural boundary between sub-PRs. The design doc (`docs/plans/2026-02-16-workload-generator-design.md`) remains the authoritative reference; commit-level grouping replaces PR-level decomposition.
@@ -943,9 +948,10 @@ sim/
 │   ├── workload.go       # Centralized request generation for cluster dispatch
 │   ├── deployment.go     # DeploymentConfig
 │   └── metrics.go        # ClusterMetrics, RawMetrics, FitnessFunction (planned, PR9)
-├── kv/                   # Phase 4
-│   ├── tiered.go         # TieredKVCache
-│   └── transfer.go       # Offload/reload, P/D transfer
+├── kv_store.go           # KVStore interface + NewKVStore factory (PR12)
+├── kvcache_tiered.go     # TieredKVCache: GPU+CPU composition (PR12)
+├── kv/                   # Phase 4 (PR14: P/D cross-instance transfer)
+│   └── transfer.go       # P/D KV transfer coordination
 ├── workload/             # Phase 3 (optional enhancement)
 │   ├── spec.go           # WorkloadSpec, TenantSpec
 │   ├── generator.go      # Workload generation
@@ -1326,22 +1332,25 @@ After Research-Ready checkpoint, three tracks can proceed **in parallel**.
 | **Title** | `feat(kv): Add tiered KV cache with GPU/CPU offload/reload mechanics` |
 | **Motivation** | Model GPU+CPU KV cache with transfer latency |
 | **Depends On** | PR 9 |
-| **In Scope** | `KVTier` enum, `KVTierConfig`, offload trigger, reload on CPU hit, transfer latency, `KVThrashingRate` metric, `CacheHitRate` and `PreemptionRate` fields in `RawMetrics` (deferred from PR9 — requires KV hit/miss tracking), `CacheHitRate` on `InstanceSnapshot` |
-| **Out of Scope** | P/D architecture (PR 14) |
-| **Files Changed** | New: `sim/kv/tiered.go` (~100 LOC), `sim/kv/transfer.go` (~200 LOC). Modified: `sim/kvcache.go` (~30 LOC), `cmd/root.go` (~30 LOC) |
-| **CLI** | `./simulation_worker run --model X --kv-gpu-blocks 1000 --kv-cpu-blocks 10000 --kv-offload-threshold 0.9` |
-| **Tests** | Unit: tier assignment, transfer timing. Integration: CPU blocks available, thrashing detection |
+| **In Scope** | `KVStore` interface (abstracts KV operations for simulator), `TieredKVCache` (GPU+CPU composition), offload trigger, reload on CPU hit, synchronous transfer latency, `KVThrashingRate` metric, `CacheHitRate` and `PreemptionRate` fields in `RawMetrics` (deferred from PR9 — requires KV hit/miss tracking), `CacheHitRate` on `RoutingSnapshot` |
+| **Out of Scope** | P/D architecture (PR 14), async transfer events (PR 14), `sim/kv/` package (deferred to PR 14) |
+| **Files Changed** | New: `sim/kv_store.go` (~40 LOC: `KVStore` interface + factory), `sim/kvcache_tiered.go` (~200 LOC: `TieredKVCache` + `cpuTier`). Modified: `sim/kvcache.go` (~15 LOC: 3 accessor methods + 2 counter fields), `sim/simulator.go` (~10 LOC: `KVStore` interface + method calls), `sim/cluster/instance.go` (~5 LOC: use accessor methods), `cmd/root.go` (~30 LOC: new flags) |
+| **CLI** | `./simulation_worker run --model X --kv-cpu-blocks 10000 --kv-offload-threshold 0.9 --kv-transfer-bandwidth 100` |
+| **Tests** | Unit: tier assignment, offload trigger, transfer latency formula, thrashing detection, CPU hit/reload. Integration: `--kv-cpu-blocks 0` produces identical golden output |
 | **Parallel With** | PR 11, PR 13 |
 | **No Dead Code** | `--kv-cpu-blocks` and `--kv-offload-threshold` flags exercise all tiered KV code |
-| **LOC Estimate** | ~360 |
-| **Architectural Impact** | Extends KVCacheState with tier awareness; adds KVTransfer events to event queue |
-| **Behavioral Guarantees** | `--kv-cpu-blocks 0` (default) preserves existing behavior; offload when GPU > threshold; thrashing counted |
-| **API Surface Changes** | New CLI flags: `--kv-gpu-blocks`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth` |
+| **LOC Estimate** | ~300 |
+| **Architecture** | Introduces `KVStore` interface in `sim/kv_store.go` with 8 methods (3 existing + 3 accessor + CacheHitRate + PendingTransferLatency). `Simulator.KVCache` changes from `*KVCacheState` to `KVStore`. `TieredKVCache` composes `*KVCacheState` (GPU tier) + simple `cpuTier` map (no LRU/prefix needed for CPU). Transfer latency is synchronous (added to step time), not event-based — event-based transfer deferred to PR14 for P/D cross-instance case. See `docs/plans/pr12-architectural-predesign.md` for binding decisions. |
+| **Behavioral Guarantees** | `--kv-cpu-blocks 0` (default) preserves existing behavior; offload when GPU > threshold; thrashing counted; transfer adds `baseLatency + ceil(blocks * blockSize / bandwidth)` to step time |
+| **API Surface Changes** | New CLI flags: `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`. Existing `--total-kv-blocks` unchanged (GPU tier). New interface: `sim.KVStore` (8 methods) |
 | **README Changes** | Add "Tiered KV Cache" section with transfer mechanics |
-| **Risks + Mitigations** | Risk: Transfer deadlock. Mitigation: Timeout on pending transfers. Risk: Tier confusion in existing code. Mitigation: Default to GPU tier. |
-| **Why Independently Reviewable** | Complete tiered KV feature; `--kv-cpu-blocks 0` preserves existing behavior |
+| **Risks + Mitigations** | Risk: Interface introduction breaks existing code. Mitigation: Tasks 1-2 are pure refactor with full test pass. Risk: Tier confusion in existing code. Mitigation: Default to single-tier `*KVCacheState`. Risk: Transfer latency too coarse. Mitigation: Synchronous model sufficient for single-instance; event-based upgrade in PR14. |
+| **Why Independently Reviewable** | Complete tiered KV feature; `--kv-cpu-blocks 0` preserves existing behavior; interface introduction enables PR14 cleanly |
+| **Pre-Design** | **REQUIRED READING:** `docs/plans/pr12-architectural-predesign.md` — 9 binding design decisions. The micro-planner MUST read this file during Phase 0 and treat all decisions as resolved. Do not re-derive package structure, interface shape, or transfer model. |
 
 **v2.3 → v3.0 change:** MERGED from v2.3 PR 13 (KV Tier Types) + PR 14 (Transfer). Types without transfer is dead code.
+
+**v3.0 → v3.4 change:** Architecture clarified: `sim/kv/` package deferred to PR14 (import cycle avoidance); `KVStore` interface introduced; transfer latency is synchronous (not event-based). Pre-design document added. See `docs/plans/pr12-architectural-predesign.md`.
 
 ---
 

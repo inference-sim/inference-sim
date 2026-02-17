@@ -58,6 +58,12 @@ go build -o simulation_worker main.go
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 \
   --workload-spec examples/servegen-language.yaml
+
+# Run with tiered KV cache (GPU + CPU offloading)
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --kv-cpu-blocks 10000 --kv-offload-threshold 0.9 --kv-transfer-bandwidth 100
 ```
 
 ## Testing
@@ -94,7 +100,9 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 - **bundle.go**: `PolicyBundle` struct with YAML loading (`LoadPolicyBundle`), validation (`Validate`)
 - **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
 - **request.go**: Request lifecycle and state machine (queued → running → completed), `Priority` field for scheduler-aware ordering
-- **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching
+- **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching, `CacheHits`/`CacheMisses` counters
+- **kv_store.go**: `KVStore` interface (9 methods), `NewKVStore` factory (returns single-tier or tiered based on config)
+- **kvcache_tiered.go**: `TieredKVCache` (GPU+CPU composition), `cpuTier`, `OffloadedBlock`, offload/reload/transfer latency
 - **batch.go**: Batch formation respecting token budgets and batch size limits
 - **queue.go**: FIFO wait queue for pending requests
 
@@ -189,9 +197,8 @@ Active development: Evolutionary Policy Optimization extension (see `docs/plans/
 - 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
 - **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type), PR7 (PriorityPolicy with ConstantPriority + SLOBasedPriority templates, InstanceScheduler with FCFS + PriorityFCFS + SJF templates, Priority field on Request, CLI flags `--priority-policy` and `--scheduler`), PR8 (RouterState bridge type in `sim/router_state.go`, PolicyBundle YAML config in `sim/bundle.go`, `--policy-config` CLI flag, AdmissionPolicy and RoutingPolicy accept `*RouterState`, `RoutingDecision.Priority` hint field, **INTERFACE FREEZE**), PR9 (RawMetrics with Distribution + FitnessResult, anomaly detection with priority inversion + HOL blocking counters, pathological templates: reject-all, inverted-slo, always-busiest, reverse-priority, `--fitness-weights` CLI flag, **RESEARCH-READY CHECKPOINT**)
-- **Completed (cont'd):** PR13 (DecisionTrace with RoutingRecord, counterfactual analysis with top-k candidates and regret, TraceSummary, EvaluationResult wrapper, `--trace-level decisions --counterfactual-k --summarize-trace` CLI flags), PR10 (ServeGen-informed Workload Generator in `sim/workload/` with multi-client specs, Poisson/Gamma/Weibull arrivals, Gaussian/Exponential/ParetoLogNormal/EmpiricalPDF distributions, native ServeGen loading, trace v2 replay, CalibrationReport with MAPE/Pearson r, real-mode HTTP client in `cmd/observe.go`, per-SLO-class metrics with Jain fairness index, `--workload-spec` CLI flag)
-- **Next:** PR11 (autoscaling), PR12 (tiered KV cache), PR15 (framework adapters), PR16 (integration tests)
-- Will add to `sim/kv/` package
+- **Completed (cont'd):** PR13 (DecisionTrace with RoutingRecord, counterfactual analysis with top-k candidates and regret, TraceSummary, EvaluationResult wrapper, `--trace-level decisions --counterfactual-k --summarize-trace` CLI flags), PR10 (ServeGen-informed Workload Generator in `sim/workload/` with multi-client specs, Poisson/Gamma/Weibull arrivals, Gaussian/Exponential/ParetoLogNormal/EmpiricalPDF distributions, native ServeGen loading, trace v2 replay, CalibrationReport with MAPE/Pearson r, real-mode HTTP client in `cmd/observe.go`, per-SLO-class metrics with Jain fairness index, `--workload-spec` CLI flag), PR12 (KVStore interface, TieredKVCache with GPU+CPU offload/reload, synchronous transfer latency, CacheHitRate/PreemptionRate/KVThrashingRate metrics, `--kv-cpu-blocks --kv-offload-threshold --kv-transfer-bandwidth` CLI flags)
+- **Next:** PR11 (autoscaling), PR14 (P/D disaggregation), PR15 (framework adapters), PR16 (integration tests)
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
 ### Adding New Policy Templates
@@ -220,6 +227,22 @@ To add a new policy template (e.g., a new routing algorithm):
 Examples:
 - See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
 - See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback
+
+### Extending KV Cache Tiers
+
+To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
+
+1. **Implement the `KVStore` interface** in `sim/kvcache_*.go` (9 methods: allocate, get cached, release, capacity queries, metrics)
+2. **Compose existing tiers** — e.g., wrap `TieredKVCache` (GPU+CPU) with NVMe logic, following the same delegation pattern
+3. **Update `NewKVStore` factory** in `sim/kv_store.go` to instantiate your tier based on `SimConfig` fields
+4. **Add CLI flags** in `cmd/root.go` for new parameters (e.g., `--kv-nvme-blocks`)
+5. **Aggregate metrics** — combine hit/miss/thrashing counters from all tiers; see `TieredKVCache.CacheHitRate()` for the 2-tier pattern
+6. **Add behavioral tests** in `sim/kvcache_*_test.go`
+
+Examples:
+- See `TieredKVCache` in `sim/kvcache_tiered.go` for 2-tier GPU+CPU composition
+- See `KVCacheState` in `sim/kvcache.go` for single-tier baseline (also implements `KVStore`)
+- See `docs/plans/pr12-architectural-predesign.md` for the design decisions behind the tiered architecture
 
 ### Adding New Trace Record Types
 
@@ -259,7 +282,7 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --workload-spec, --trace-level, --fitness-weights)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
@@ -273,6 +296,8 @@ inference-sim/
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
 │   ├── request.go             # Request state machine (queued → running → completed), Priority field, workload metadata (TenantID, SLOClass, etc.)
 │   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching
+│   ├── kv_store.go            # KVStore interface, NewKVStore factory
+│   ├── kvcache_tiered.go      # TieredKVCache: GPU+CPU composition, offload/reload, transfer latency
 │   ├── batch.go               # Batch struct
 │   ├── queue.go               # FIFO wait queue
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
@@ -304,7 +329,7 @@ inference-sim/
 │   ├── reasoning.go           # Reasoning multi-turn with context accumulation
 │   ├── network.go             # Client-perspective latency (RTT + bandwidth)
 │   └── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
-├── sim/kv/                    # Tiered KV cache (planned, Phase 4)
+├── sim/kv/                    # P/D cross-instance KV transfer (planned, PR14)
 ├── sim/trace/                 # Decision trace recording (PR13)
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore

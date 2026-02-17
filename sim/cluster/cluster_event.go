@@ -66,6 +66,7 @@ func buildRouterState(cs *ClusterSimulator) *sim.RouterState {
 			BatchSize:     snap.BatchSize,
 			KVUtilization: snap.KVUtilization,
 			FreeKVBlocks:  snap.FreeKVBlocks,
+			CacheHitRate:  snap.CacheHitRate,
 		}
 	}
 	return &sim.RouterState{

@@ -38,6 +38,8 @@ type KVCacheState struct {
 	FreeHead        *KVBlock           // Head of free list
 	FreeTail        *KVBlock           // Tail of free list
 	UsedBlockCnt    int64              // Total number of used blocks (tracked incrementally)
+	CacheHits       int64              // blocks found via prefix cache (PR12)
+	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
 }
 
 func Len64[T any](v []T) int64 {
@@ -129,6 +131,7 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
 		if !ok {
 			break
 		}
+		kvc.CacheHits++
 		blockIDs = append(blockIDs, blockId)
 	}
 	return
@@ -284,6 +287,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 				blk.RefCount = 1
 				blk.InUse = true
 				kvc.UsedBlockCnt++
+				kvc.CacheMisses++
 
 				if Len64(blk.Tokens) == kvc.BlockSizeTokens {
 					fullPrefix := req.InputTokens[:end]
@@ -399,3 +403,28 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *Request) {
 		}
 	}
 }
+
+// BlockSize returns the number of tokens per block.
+func (kvc *KVCacheState) BlockSize() int64 { return kvc.BlockSizeTokens }
+
+// UsedBlocks returns the number of blocks currently in use.
+func (kvc *KVCacheState) UsedBlocks() int64 { return kvc.UsedBlockCnt }
+
+// TotalCapacity returns the total number of blocks.
+func (kvc *KVCacheState) TotalCapacity() int64 { return kvc.TotalBlocks }
+
+// CacheHitRate returns the cumulative cache hit rate.
+// Returns 0 if no lookups have been performed.
+func (kvc *KVCacheState) CacheHitRate() float64 {
+	total := kvc.CacheHits + kvc.CacheMisses
+	if total == 0 {
+		return 0
+	}
+	return float64(kvc.CacheHits) / float64(total)
+}
+
+// PendingTransferLatency returns 0 for single-tier cache (no transfers).
+func (kvc *KVCacheState) PendingTransferLatency() int64 { return 0 }
+
+// KVThrashingRate returns 0 for single-tier cache (no offload/reload).
+func (kvc *KVCacheState) KVThrashingRate() float64 { return 0 }

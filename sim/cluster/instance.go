@@ -95,8 +95,13 @@ func (i *InstanceSimulator) PeekNextEventTime() int64 { return i.sim.PeekNextEve
 // Caller MUST check HasPendingEvents() first; panics on empty queue.
 func (i *InstanceSimulator) ProcessNextEvent() { i.sim.ProcessNextEvent() }
 
-// Finalize sets SimEndedTime and logs completion.
-func (i *InstanceSimulator) Finalize() { i.sim.Finalize() }
+// Finalize sets SimEndedTime, captures KV metrics, and logs completion.
+func (i *InstanceSimulator) Finalize() {
+	i.sim.Finalize()
+	// Capture KV metrics at finalization for CollectRawMetrics
+	i.sim.Metrics.CacheHitRate = i.sim.KVCache.CacheHitRate()
+	i.sim.Metrics.KVThrashingRate = i.sim.KVCache.KVThrashingRate()
+}
 
 // QueueDepth returns the number of requests in the wait queue.
 func (i *InstanceSimulator) QueueDepth() int {
@@ -113,12 +118,17 @@ func (i *InstanceSimulator) BatchSize() int {
 
 // KVUtilization returns the fraction of KV cache blocks in use.
 func (i *InstanceSimulator) KVUtilization() float64 {
-	return float64(i.sim.KVCache.UsedBlockCnt) / float64(i.sim.KVCache.TotalBlocks)
+	return float64(i.sim.KVCache.UsedBlocks()) / float64(i.sim.KVCache.TotalCapacity())
 }
 
 // FreeKVBlocks returns the number of free KV cache blocks.
 func (i *InstanceSimulator) FreeKVBlocks() int64 {
-	return i.sim.KVCache.TotalBlocks - i.sim.KVCache.UsedBlockCnt
+	return i.sim.KVCache.TotalCapacity() - i.sim.KVCache.UsedBlocks()
+}
+
+// CacheHitRate returns the cumulative cache hit rate.
+func (i *InstanceSimulator) CacheHitRate() float64 {
+	return i.sim.KVCache.CacheHitRate()
 }
 
 // InjectRequestOnline injects a request during the event loop (online routing mode).

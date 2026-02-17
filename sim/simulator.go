@@ -91,6 +91,11 @@ type SimConfig struct {
 	TracesWorkloadFilePath string
 	PriorityPolicy         string // "constant" (default) or "slo-based"
 	Scheduler              string // "fcfs" (default), "priority-fcfs", "sjf"
+	// Tiered KV cache configuration (PR12)
+	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
+	KVOffloadThreshold    float64 // GPU utilization threshold for offload (default 0.9)
+	KVTransferBandwidth   float64 // blocks/tick transfer rate (default 100.0)
+	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -101,7 +106,7 @@ type Simulator struct {
 	eventQueue EventQueue
 	// WaitQ aka request waiting queue before it is scheduled
 	WaitQ   *WaitQueue
-	KVCache *KVCacheState
+	KVCache KVStore
 	// Running batch contains the set of requests that go into the model for execution per Step.
 	// In vLLM, running is a list (not queue) of requests, hence we don't call it RunningQ here.
 	// Requests are ordered by First-Come-First-Served in WaitQ, and the same order is maintained
@@ -165,7 +170,7 @@ func NewSimulator(cfg SimConfig) *Simulator {
 		Horizon:                   cfg.Horizon,
 		eventQueue:                make(EventQueue, 0),
 		WaitQ:                     &WaitQueue{},
-		KVCache:                   NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens),
+		KVCache:                   NewKVStore(cfg),
 		RunningBatch:              &Batch{},
 		Metrics:                   NewMetrics(),
 		maxRunningReqs:            cfg.MaxRunningReqs,
@@ -354,6 +359,7 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 			// Could not allocate (e.g., no free blocks)
 			logrus.Warnf("[Preemption]")
 			sim.preemptionHappened = true
+			sim.Metrics.PreemptionCount++
 			preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
 			preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
 			sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
@@ -447,14 +453,14 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 
 		// first find cache hits. This only happens once per prefill (regardless of chunked)
 		cachedBlocks := sim.KVCache.GetCachedBlocks(next.InputTokens)
-		numNewTokens := Len64(next.InputTokens) - Len64(cachedBlocks)*sim.KVCache.BlockSizeTokens
+		numNewTokens := Len64(next.InputTokens) - Len64(cachedBlocks)*sim.KVCache.BlockSize()
 
 		// now check for chunked prefill
 		if 0 < sim.longPrefillTokenThreshold && sim.longPrefillTokenThreshold < numNewTokens {
 			numNewTokens = sim.longPrefillTokenThreshold
 		}
 		numNewTokens = min(numNewTokens, tokenBudget)
-		startIndex := Len64(cachedBlocks) * sim.KVCache.BlockSizeTokens
+		startIndex := Len64(cachedBlocks) * sim.KVCache.BlockSize()
 		endIndex := startIndex + numNewTokens
 
 		// estimate the number of new blocks needed for the next request
@@ -493,7 +499,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		sim.runningBatchFeatures.TotalPrefillTokens += numNewTokens
 		sim.runningBatchFeatures.TotalCacheMissTokens += numNewTokens
 		sim.runningBatchFeatures.MaxPrefillTokens = max(sim.runningBatchFeatures.MaxPrefillTokens, numNewTokens)
-		sim.reqNumComputedTokens[next.ID] = numNewTokens + Len64(cachedBlocks)*sim.KVCache.BlockSizeTokens
+		sim.reqNumComputedTokens[next.ID] = numNewTokens + Len64(cachedBlocks)*sim.KVCache.BlockSize()
 	}
 }
 
@@ -511,6 +517,11 @@ func (sim *Simulator) Step(now int64) {
 		TotalDecodeTokens:    0,
 		TotalCacheMissTokens: 0,
 	}
+	// Synchronize tiered KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
+	if tiered, ok := sim.KVCache.(*TieredKVCache); ok {
+		tiered.SetClock(now)
+	}
+
 	// Assign priorities to queued requests and order queue per scheduler policy
 	for _, req := range sim.WaitQ.queue {
 		req.Priority = sim.priorityPolicy.Compute(req, now)
@@ -533,6 +544,9 @@ func (sim *Simulator) Step(now int64) {
 	} else {
 		currStepAdvance = sim.getStepTime()
 	}
+
+	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
+	currStepAdvance += sim.KVCache.PendingTransferLatency()
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
@@ -560,10 +574,10 @@ func (sim *Simulator) Step(now int64) {
 
 	// Write KVBlocks usage metrics
 
-	if sim.KVCache.UsedBlockCnt > sim.Metrics.PeakKVBlocksUsed {
-		sim.Metrics.PeakKVBlocksUsed = sim.KVCache.UsedBlockCnt
+	if sim.KVCache.UsedBlocks() > sim.Metrics.PeakKVBlocksUsed {
+		sim.Metrics.PeakKVBlocksUsed = sim.KVCache.UsedBlocks()
 	}
-	sim.Metrics.KVBlocksUsed += float64(sim.KVCache.UsedBlockCnt) * float64(currStepAdvance)
+	sim.Metrics.KVBlocksUsed += float64(sim.KVCache.UsedBlocks()) * float64(currStepAdvance)
 
 	// handle completed and remaining requests
 	remaining := []*Request{}

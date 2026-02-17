@@ -41,6 +41,11 @@ type DeploymentConfig struct {
 	// Decision trace configuration (PR13)
 	TraceLevel      string // "none" (default), "decisions"
 	CounterfactualK int    // number of counterfactual candidates, default 0
+
+	// Tiered KV cache configuration (PR12)
+	KVCPUBlocks         int64   // CPU tier KV blocks (0 = single-tier, default)
+	KVOffloadThreshold  float64 // GPU utilization threshold for offload (default 0.9)
+	KVTransferBandwidth float64 // blocks/tick transfer rate (default 100.0)
 }
 
 // ToSimConfig converts DeploymentConfig to SimConfig for per-instance construction.
@@ -66,5 +71,8 @@ func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
 		Roofline:                  d.Roofline,
 		PriorityPolicy:            d.PriorityPolicy,
 		Scheduler:                 d.Scheduler,
+		KVCPUBlocks:               d.KVCPUBlocks,
+		KVOffloadThreshold:        d.KVOffloadThreshold,
+		KVTransferBandwidth:       d.KVTransferBandwidth,
 	}
 }
