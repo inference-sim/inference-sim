@@ -88,6 +88,11 @@ var (
 	// Workload spec config (PR10)
 	workloadSpecPath string // Path to YAML workload specification file
 
+	// Tiered KV cache config (PR12)
+	kvCPUBlocks         int64
+	kvOffloadThreshold  float64
+	kvTransferBandwidth float64
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -312,6 +317,15 @@ var runCmd = &cobra.Command{
 		if traceLevel != "none" && !summarizeTrace {
 			logrus.Infof("Decision tracing enabled (trace-level=%s). Use --summarize-trace to print summary.", traceLevel)
 		}
+		if kvCPUBlocks < 0 {
+			logrus.Fatalf("--kv-cpu-blocks must be >= 0, got %d", kvCPUBlocks)
+		}
+		if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 {
+			logrus.Fatalf("--kv-offload-threshold must be in [0, 1], got %f", kvOffloadThreshold)
+		}
+		if kvCPUBlocks > 0 && kvTransferBandwidth <= 0 {
+			logrus.Fatalf("--kv-transfer-bandwidth must be > 0 when --kv-cpu-blocks > 0, got %f", kvTransferBandwidth)
+		}
 
 		// Log active policy configuration so users can verify which policies are in effect
 		logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
@@ -375,6 +389,9 @@ var runCmd = &cobra.Command{
 			Scheduler:                scheduler,
 			TraceLevel:               traceLevel,
 			CounterfactualK:          counterfactualK,
+			KVCPUBlocks:             kvCPUBlocks,
+			KVOffloadThreshold:      kvOffloadThreshold,
+			KVTransferBandwidth:     kvTransferBandwidth,
 		}
 		cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
 		if len(preGeneratedRequests) > 0 {
@@ -532,6 +549,11 @@ func init() {
 
 	// Workload spec config (PR10)
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
+
+	// Tiered KV cache (PR12)
+	runCmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of --total-kv-blocks")
+	runCmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
+	runCmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
