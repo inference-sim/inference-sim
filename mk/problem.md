@@ -1,0 +1,16 @@
+Problem statement:
+- objective: currently blis contains two modeling techniques for inference performance:
+  - blackbox optimization approach as documented in @docs/approach.md and
+  - roofline approach in @docs/roofline.md
+- come up with a third approach that can simulate diverse settings such as
+  - model type/architecture: i.e. dense vs. MoE
+  - different workload types: i.e. prefill- and decode-heavy and mixed/balanced workloads
+  - different hardware: i.e. A100, H100
+  - different tensor parallelism sizes and expert parallel settings
+  - different vLLM knobs: i.e. chunk size, max-model-len, and --cpu-offloading
+- constraints
+  - We still want alpha (used to compute the delay between request arrival and queuing) and beta (used to compute the vLLM busy-loop step time) coefficients, but you have freedom to determine what alpha and beta coefficients need to be to achieve objective.
+  - We can heavily featurize each setting. You can derive any new features using a model's config.json, the hardware specs (will be provided through data sheets in JSON), vLLM configuration specs, and request characteristics. These are known for each simulation.
+  - carefully look into the request journey tracing, step tracing, and KV event streams documented in @vllm.md. Make sure the coefficient vectors alpha and beta can be learned using the tracing and KV event stream data. Provide a short description of the training pipeline. It can include anything from simple linear regression to advanced techniques like expectation maximization, convex optimization, or anything else that is relevant
+  - The arrival to queuing latency is alpha * feature_vec_1 and the step-time latency is beta * feature_vec_2 (the `*` represents dot product). Feel free to derive the features in any way you think is appropriate. Show your reasoning and explain why the features meet the constraints and objectives.
+  - we want the training procedure to not overfit but be robust
