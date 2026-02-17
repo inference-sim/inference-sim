@@ -13,6 +13,7 @@ type RoutingSnapshot struct {
 	BatchSize     int
 	KVUtilization float64
 	FreeKVBlocks  int64
+	CacheHitRate  float64
 }
 
 // RoutingDecision encapsulates the routing decision for a request.

@@ -9,6 +9,7 @@ type InstanceSnapshot struct {
 	BatchSize     int
 	KVUtilization float64
 	FreeKVBlocks  int64
+	CacheHitRate  float64
 }
 
 // UpdateMode controls when a snapshot field is refreshed.
@@ -102,6 +103,7 @@ func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) InstanceSn
 	if p.shouldRefresh(p.config.KVUtilization, lr.KVUtilization, clock) {
 		snap.KVUtilization = inst.KVUtilization()
 		snap.FreeKVBlocks = inst.FreeKVBlocks()
+		snap.CacheHitRate = inst.CacheHitRate()
 		lr.KVUtilization = clock
 	}
 
@@ -120,6 +122,7 @@ func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 			BatchSize:     inst.BatchSize(),
 			KVUtilization: inst.KVUtilization(),
 			FreeKVBlocks:  inst.FreeKVBlocks(),
+			CacheHitRate:  inst.CacheHitRate(),
 		}
 		p.cache[id] = snap
 		p.lastRefresh[id] = fieldTimestamps{

@@ -90,6 +90,11 @@ type RawMetrics struct {
 	PriorityInversions int
 	HOLBlockingEvents  int
 	RejectedRequests   int
+
+	// KV cache metrics (PR12)
+	CacheHitRate    float64
+	PreemptionRate  float64
+	KVThrashingRate float64
 }
 
 // CollectRawMetrics builds RawMetrics from aggregated and per-instance metrics.
@@ -117,6 +122,25 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 	if perInstance != nil {
 		raw.PriorityInversions = detectPriorityInversions(perInstance)
 		raw.HOLBlockingEvents = detectHOLBlocking(perInstance)
+
+		// KV cache metrics (PR12)
+		totalPreemptions := int64(0)
+		cacheHitSum := 0.0
+		thrashingSum := 0.0
+		count := 0
+		for _, m := range perInstance {
+			totalPreemptions += m.PreemptionCount
+			cacheHitSum += m.CacheHitRate
+			thrashingSum += m.KVThrashingRate
+			count++
+		}
+		if aggregated.CompletedRequests > 0 {
+			raw.PreemptionRate = float64(totalPreemptions) / float64(aggregated.CompletedRequests)
+		}
+		if count > 0 {
+			raw.CacheHitRate = cacheHitSum / float64(count)
+			raw.KVThrashingRate = thrashingSum / float64(count)
+		}
 	}
 
 	return raw
