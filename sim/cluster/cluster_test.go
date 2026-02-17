@@ -47,6 +47,18 @@ func newTestWorkload(maxPrompts int) *sim.GuideLLMConfig {
 	}
 }
 
+// TestPerInstanceMetrics_BeforeRun_Panics verifies run-once guard.
+func TestPerInstanceMetrics_BeforeRun_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic when calling PerInstanceMetrics before Run")
+		}
+	}()
+	config := newTestDeploymentConfig(1)
+	cs := NewClusterSimulator(config, newTestWorkload(5), "")
+	cs.PerInstanceMetrics() // should panic
+}
+
 // TestDeploymentConfig_ToSimConfig_FieldMapping verifies all fields are correctly mapped
 // and workload fields are intentionally omitted.
 func TestDeploymentConfig_ToSimConfig_FieldMapping(t *testing.T) {

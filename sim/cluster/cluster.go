@@ -184,6 +184,19 @@ func (c *ClusterSimulator) RejectedRequests() int {
 	return c.rejectedRequests
 }
 
+// PerInstanceMetrics returns the metrics for each individual instance.
+// Panics if called before Run() has completed.
+func (c *ClusterSimulator) PerInstanceMetrics() []*sim.Metrics {
+	if !c.hasRun {
+		panic("ClusterSimulator.PerInstanceMetrics() called before Run()")
+	}
+	metrics := make([]*sim.Metrics, len(c.instances))
+	for i, inst := range c.instances {
+		metrics[i] = inst.Metrics()
+	}
+	return metrics
+}
+
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
 func mergeFloat64Map(dst, src map[string]float64, mapName string) {
 	for k, v := range src {

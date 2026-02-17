@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -72,6 +73,9 @@ var (
 
 	// Policy bundle config (PR8)
 	policyConfigPath string // Path to YAML policy configuration file
+
+	// Fitness evaluation config (PR9)
+	fitnessWeights string // Fitness weights string "key:val,key:val"
 
 	// results file path
 	resultsPath string // File to save BLIS results to
@@ -303,6 +307,34 @@ var runCmd = &cobra.Command{
 		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
 		cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, startTime, resultsPath)
 
+		// Collect RawMetrics and compute fitness (PR9)
+		rawMetrics := cluster.CollectRawMetrics(
+			cs.AggregatedMetrics(),
+			cs.PerInstanceMetrics(),
+			cs.RejectedRequests(),
+		)
+
+		if fitnessWeights != "" {
+			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
+			if err != nil {
+				logrus.Fatalf("Invalid fitness weights: %v", err)
+			}
+			fitness := cluster.ComputeFitness(rawMetrics, weights)
+			fmt.Printf("\n=== Fitness Evaluation ===\n")
+			fmt.Printf("Score: %.6f\n", fitness.Score)
+			for k, v := range fitness.Components {
+				fmt.Printf("  %s: %.6f\n", k, v)
+			}
+		}
+
+		// Print anomaly counters if any detected
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 {
+			fmt.Printf("\n=== Anomaly Counters ===\n")
+			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
+			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
+			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
+		}
+
 		logrus.Info("Simulation complete.")
 	},
 }
@@ -376,6 +408,9 @@ func init() {
 
 	// Policy bundle config (PR8)
 	runCmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
+
+	// Fitness evaluation config (PR9)
+	runCmd.Flags().StringVar(&fitnessWeights, "fitness-weights", "", "Fitness weights as key:value pairs (e.g., throughput:0.5,p99_ttft:0.3)")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
