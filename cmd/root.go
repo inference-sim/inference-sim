@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -322,8 +323,14 @@ var runCmd = &cobra.Command{
 			fitness := cluster.ComputeFitness(rawMetrics, weights)
 			fmt.Printf("\n=== Fitness Evaluation ===\n")
 			fmt.Printf("Score: %.6f\n", fitness.Score)
-			for k, v := range fitness.Components {
-				fmt.Printf("  %s: %.6f\n", k, v)
+			// Sort keys for deterministic output order
+			componentKeys := make([]string, 0, len(fitness.Components))
+			for k := range fitness.Components {
+				componentKeys = append(componentKeys, k)
+			}
+			sort.Strings(componentKeys)
+			for _, k := range componentKeys {
+				fmt.Printf("  %s: %.6f\n", k, fitness.Components[k])
 			}
 		}
 

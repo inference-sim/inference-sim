@@ -200,8 +200,9 @@ func mapValues(m map[string]float64) []float64 {
 // Without reference scales, throughput (raw value ~100) dominates latency (1/(1+5000) ≈ 0.0002)
 // by 500,000×, making multi-objective optimization impossible.
 const (
-	referenceRPS   = 100.0  // 100 requests/sec as reference throughput
-	referenceTicks = 1000.0 // 1ms (1000 ticks) as reference latency
+	referenceRPS   = 100.0   // 100 requests/sec as reference throughput
+	referenceTPS   = 10000.0 // 10,000 tokens/sec as reference token throughput
+	referenceTicks = 1000.0  // 1ms (1000 ticks) as reference latency
 )
 
 // FitnessResult holds the computed fitness score and per-component breakdown.
@@ -243,7 +244,7 @@ func extractMetric(m *RawMetrics, key string) (float64, bool) {
 	case "throughput":
 		return m.RequestsPerSec / (m.RequestsPerSec + referenceRPS), true
 	case "tokens_per_sec":
-		return m.TokensPerSec / (m.TokensPerSec + referenceRPS), true
+		return m.TokensPerSec / (m.TokensPerSec + referenceTPS), true
 	// Lower is better — normalized via 1 / (1 + value/reference)
 	case "p99_ttft":
 		return 1.0 / (1.0 + m.TTFT.P99/referenceTicks), true

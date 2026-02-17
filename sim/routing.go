@@ -213,7 +213,7 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 }
 
 // NewRoutingPolicy creates a routing policy by name.
-// Valid names: "", "round-robin", "least-loaded", "weighted", "prefix-affinity", "always-busiest".
+// Valid names are defined in validRoutingPolicies (bundle.go).
 // Empty string defaults to round-robin.
 // For weighted scoring, cacheWeight and loadWeight configure the composite score.
 // Panics on unrecognized names.
