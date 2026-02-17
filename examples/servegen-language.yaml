@@ -1,0 +1,52 @@
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 100.0  # 100 requests/second total
+
+clients:
+  - id: "high-volume-batch"
+    tenant_id: "tenant-A"
+    slo_class: "batch"
+    rate_fraction: 0.7          # 70% of traffic
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 3.5                   # Bursty (ServeGen Finding 1: Gamma fits M-large)
+    input_distribution:
+      type: pareto_lognormal
+      params:
+        alpha: 1.5
+        xm: 50
+        mu: 5.5
+        sigma: 1.2
+        mix_weight: 0.3
+    output_distribution:
+      type: exponential
+      params:
+        mean: 256
+    prefix_group: "shared-system-prompt"
+    network:
+      rtt_ms: 2.0
+      bandwidth_mbps: 1000
+
+  - id: "realtime-chat"
+    tenant_id: "tenant-B"
+    slo_class: "realtime"
+    rate_fraction: 0.3          # 30% of traffic
+    streaming: true
+    arrival:
+      process: poisson          # Less bursty (interactive users)
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 50
+        min: 10
+        max: 2048
+    output_distribution:
+      type: exponential
+      params:
+        mean: 64
+    network:
+      rtt_ms: 50.0              # Remote users
+      bandwidth_mbps: 100
