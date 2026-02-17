@@ -276,6 +276,12 @@ var runCmd = &cobra.Command{
 		if counterfactualK < 0 {
 			logrus.Fatalf("--counterfactual-k must be >= 0, got %d", counterfactualK)
 		}
+		if traceLevel == "none" && counterfactualK > 0 {
+			logrus.Warnf("--counterfactual-k=%d has no effect without --trace-level decisions", counterfactualK)
+		}
+		if traceLevel == "none" && summarizeTrace {
+			logrus.Warnf("--summarize-trace has no effect without --trace-level decisions")
+		}
 
 		startTime := time.Now() // Get current time (start)
 
@@ -443,13 +449,13 @@ func init() {
 	runCmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
 
 	// Routing policy config
-	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, prefix-affinity")
+	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, prefix-affinity, always-busiest")
 	runCmd.Flags().Float64Var(&routingCacheWeight, "routing-cache-weight", 0.6, "Cache affinity weight for weighted routing")
 	runCmd.Flags().Float64Var(&routingLoadWeight, "routing-load-weight", 0.4, "Load balance weight for weighted routing")
 
 	// Priority and scheduler config (PR7)
-	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based")
-	runCmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf")
+	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
+	runCmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
 
 	// Policy bundle config (PR8)
 	runCmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")

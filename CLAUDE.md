@@ -216,6 +216,22 @@ Examples:
 - See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
 - See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback
 
+### Adding New Trace Record Types
+
+To add a new trace record type (e.g., `ScaleRecord` for autoscaling events):
+
+1. **Define the record struct** in `sim/trace/record.go` (pure data, no `sim/` dependency)
+2. **Add a slice field** to `SimulationTrace` in `sim/trace/trace.go` (e.g., `Scales []ScaleRecord`)
+3. **Add a recording method** to `SimulationTrace` (e.g., `RecordScale(ScaleRecord)`)
+4. **Hook recording** into the cluster event pipeline in `sim/cluster/cluster_event.go` (guard with `if cs.trace != nil` for zero-overhead default)
+5. **Update `Summarize()`** in `sim/trace/summary.go` to aggregate the new record type
+6. **Add behavioral tests** in `sim/trace/*_test.go`
+
+Examples:
+- See `AdmissionRecord` in `sim/trace/record.go` for a simple record
+- See `RoutingRecord` with `CandidateScore` for a record with nested counterfactual data
+- See `computeCounterfactual()` in `sim/cluster/counterfactual.go` for derived computation that lives in `sim/cluster/` (not `sim/trace/`) because it needs `sim.RoutingSnapshot`
+
 ### Code Style
 
 - Use composition over inheritance (e.g., `InstanceSimulator` wraps existing `sim` components)
