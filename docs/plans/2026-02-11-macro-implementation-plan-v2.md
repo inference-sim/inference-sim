@@ -1,7 +1,7 @@
 # BLIS Evolutionary Policy Optimization: Macro-Level Implementation Plan (v3)
 
 **Date:** 2026-02-11
-**Revision:** v3.1 (post-PR7 accuracy update — 16 total PRs, 9 remaining)
+**Revision:** v3.3 (post-PR9, PR10 collapsed to single PR — 16 total PRs, 7 remaining)
 **Status:** Draft
 **Target:** Multi-replica cluster simulation with pluggable policies
 **Based on:** [Design Document](2026-02-06-evolutionary-policy-optimization-design.md)
@@ -46,6 +46,14 @@ This revision incorporates feedback from external review (Perplexity, Gemini, GP
 23. **6 PR merges** — Priority+Scheduler (→PR 7), AutoScaler+Actuation (→PR 11), TieredKV+Transfer (→PR 12), Traces+Counterfactual (→PR 13), P/D+KVTransfer combined (→PR 14), Adapters combined (→PR 15)
 24. **Unified event queue assessed but deferred** — Feasible but low ROI (~50 LOC savings) with risk to golden tests and P/D disaggregation
 25. **21 PRs reduced to 16 total** (12 remaining after PR 4): constructor collapse and unified CLI path make every subsequent PR simpler
+
+**v3.2 changes (PR10 expansion, 2026-02-16):**
+33. **Design document added** — Full technical design at `docs/plans/2026-02-16-workload-generator-design.md`. Covers observe-predict-calibrate loop, ServeGen client decomposition, arrival samplers (Gamma/Weibull/Poisson), distribution samplers (ParetoLogNormal/Exponential/EmpiricalPDF), trace v2 format with server config capture.
+34. **Phase 3 renamed** — "Enhanced Workloads" → "ServeGen-Informed Workload Generator + Observe-Predict-Calibrate Loop"
+
+**v3.3 changes (PR10 consolidation, 2026-02-17):**
+35. **PR 10 collapsed from 7 sub-PRs to single PR** — PR 10a-g merged back into one PR 10 with multiple commits. The 7-PR split created coordination overhead without proportional review benefit; all code lives in `sim/workload/` with no architectural boundary between sub-PRs. The design doc (`docs/plans/2026-02-16-workload-generator-design.md`) remains the authoritative reference; commit-level grouping replaces PR-level decomposition.
+36. **Total PRs updated** — 22 → 16 (7 sub-PRs → 1). Remaining: 7 (PR 10-16).
 
 **v3.1 changes (post-PR7 accuracy update, 2026-02-16):**
 26. **PR 6 and PR 7 marked completed** with implementation notes documenting actual file placements (`sim/routing.go`, `sim/priority.go`, `sim/scheduler.go` — all in `sim/`, not `sim/policy/`)
@@ -1253,63 +1261,29 @@ At this point (~5 weeks), BLIS supports:
 
 ---
 
-### Phase 3: Enhanced Workloads (1 PR, Optional)
+### Phase 3: ServeGen-Informed Workload Generator + Observe-Predict-Calibrate Loop (1 PR)
 
-This PR improves workload fidelity but is not required for initial research.
+**Design document:** `docs/plans/2026-02-16-workload-generator-design.md`
+
+This phase extends BLIS from simulation-only to a full **observe-predict-calibrate loop** informed by ServeGen's production workload characterization (arxiv:2505.09999). It enables users to: (1) generate realistic workloads based on per-client decomposition, (2) run those workloads against real inference servers, (3) replay recorded traces through the simulator, and (4) compare real vs predicted KPIs for calibration.
+
+**v3.3 change:** PR 10 consolidated from 7 sub-PRs (PR 10a-g) back to a single PR with multiple commits. All code lives in `sim/workload/` with no architectural boundary between the former sub-PRs. Commit-level grouping provides the same logical structure without coordination overhead.
 
 ---
 
-#### PR 10: Workload Generator with Edge Case Scenarios
+#### PR 10: ServeGen-Informed Workload Generator
 
 | Aspect | Details |
 |--------|---------|
-| **Title** | `feat(workload): Add multi-tenant workload generator with edge case scenarios` |
-| **Motivation** | Enable realistic multi-tenant workloads for policy research |
+| **Title** | `feat(workload): Add ServeGen-informed workload generator with observe-predict-calibrate loop` |
+| **Motivation** | Enable realistic workloads, real server observation, and calibration of simulator predictions |
 | **Depends On** | PR 9 (Research-Ready checkpoint) |
-| **In Scope** | `WorkloadSpec`, `TenantSpec`, `SLOSpec`, `PrefixSpec`, `ArrivalPattern` types, `WorkloadGenerator`, all arrival patterns, prefix reuse, `--workload-spec` flag, edge case scenarios. Also: `TenantID` on `Request`, `TenantState` in `RouterState`, per-SLO-class `Distribution` maps in `RawMetrics` (TTFT/TPOT/E2E), `SLOAttainment`, `JainFairnessIndex` (deferred from PR9 — requires TenantID) |
-| **Out of Scope** | Trace replay (existing `--workload traces` preserved), InstanceSnapshot sliding-window fields (RecentTTFT/RecentTPOT/EstimatedWaitTime — deferred to PR10+ micro plan) |
-| **Files Changed** | New: `sim/workload/spec.go` (~180 LOC), `sim/workload/generator.go` (~250 LOC), `sim/workload/arrival.go` (~150 LOC), `sim/workload/scenarios.go` (~100 LOC). Modified: `cmd/root.go` (~20 LOC) |
-| **CLI** | `./simulation_worker run --model X --workload-spec workload.yaml` |
-| **Tests** | Unit: arrival patterns. Integration: scenario generation |
-| **No Dead Code** | `--workload-spec` flag exercises all new code |
-| **LOC Estimate** | ~700 |
-| **Architectural Impact** | Adds workload package; coexists with existing workload generation |
-| **Behavioral Guarantees** | Existing `--workload distribution` unchanged; new spec is additive |
-| **API Surface Changes** | New CLI flag: `--workload-spec` |
-| **README Changes** | Add "Workload Specification" section with YAML examples |
-| **Risks + Mitigations** | Risk: Complex YAML schema. Mitigation: Provide built-in scenarios as starting points. |
-| **Why Independently Reviewable** | Complete workload feature; existing workload modes preserved |
-
-**v2.3 → v3.0 change:** Unchanged from v2.3 PR 10.
-
-**Arrival patterns:**
-- `Poisson` — constant rate λ
-- `Bursty` — Poisson with periodic 10x spikes (configurable spike interval and duration)
-- `Diurnal` — sinusoidal rate variation (models day/night traffic patterns)
-
-**Built-in edge case scenarios:**
-
-| Scenario | Description | Tests |
-|----------|-------------|-------|
-| `bursty-traffic` | Poisson baseline with 10x spikes every 60s | Admission policy resilience |
-| `diurnal-cycle` | 24-hour sinusoidal rate (10x peak-to-trough) | Autoscaler response |
-| `unfair-tenants` | 90% low-priority, 10% high-priority requests | Multi-tenant fairness, priority inversion |
-| `prefix-heavy` | 80% requests share common prefixes | Cache-aware routing effectiveness |
-| `mixed-slo` | Equal mix of realtime/interactive/batch | Joint priority scheduling |
-
-**Example scenario config:**
-```yaml
-scenario: "unfair-tenants"
-tenants:
-  - id: "low-priority-bulk"
-    weight: 0.9
-    slo_class: "batch"
-    rate_fraction: 0.9
-  - id: "high-priority-realtime"
-    weight: 0.1
-    slo_class: "realtime"
-    rate_fraction: 0.1
-```
+| **In Scope** | Full scope from design doc: (1) `WorkloadSpec`/`ClientSpec`/`ArrivalSpec`/`DistSpec` types with strict YAML loading, (2) `ArrivalSampler` (Poisson/Gamma/Weibull), `LengthSampler` (ParetoLogNormal/Exponential/Gaussian/EmpiricalPDF), (3) `GenerateRequests` pipeline with client decomposition, (4) real mode HTTP client (OpenAI-compatible, streaming + non-streaming), (5) trace v2 format (header YAML + data CSV), (6) trace v2 replay with synthetic token generation, (7) calibration framework (MAPE/Pearson r/per-percentile), (8) multimodal + reasoning workloads, (9) network latency model, (10) per-SLO-class metrics + JainFairnessIndex |
+| **Out of Scope** | Automated alpha/beta fitting, continuous batching model, Prometheus scraping |
+| **Files Changed** | New: `sim/workload/spec.go`, `sim/workload/arrival.go`, `sim/workload/distribution.go`, `sim/workload/client.go`, `sim/workload/generator.go`, `sim/workload/network.go`, `sim/workload/multimodal.go`, `sim/workload/reasoning.go`, `sim/workload/scenarios.go`, `sim/workload/tracev2.go`, `sim/workload/calibrate.go`, `cmd/observe.go`. Modified: `sim/request.go`, `cmd/root.go`, `sim/cluster/workload.go`, `sim/cluster/metrics.go` |
+| **CLI** | `--workload-spec`, `--real-mode`, `--server-url`, `--trace-output`, `--calibrate`, `--calibration-output`, `--fitness-weights` with SLO extensions |
+| **LOC Estimate** | ~3,900 |
+| **Behavioral Guarantees** | Deterministic generation from seed. Existing workload modes unaffected. Real mode uses mock server in tests. |
 
 ---
 
@@ -1619,7 +1593,7 @@ Research-ready: ~5 weeks
 | PR 7 | PR 5 + PR 7 | MERGED: Priority + Scheduler |
 | PR 8 | PR 8 | PolicyBundle — unchanged |
 | PR 9 | PR 9 | COMPLETED: RawMetrics + pathological templates → RESEARCH-READY |
-| PR 10 | PR 10 | Workload — unchanged |
+| PR 10 | PR 10 | ServeGen-informed workload generator + observe-predict-calibrate loop (single PR, multiple commits). See design doc: `docs/plans/2026-02-16-workload-generator-design.md` |
 | PR 11 | PR 11 + PR 12 | MERGED: AutoScaler + Actuation |
 | PR 12 | PR 13 + PR 14 | MERGED: Tiered KV + Transfer |
 | PR 13 | PR 17 + PR 18 | MERGED: Traces + Counterfactual |
