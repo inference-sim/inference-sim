@@ -131,6 +131,7 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
 		if !ok {
 			break
 		}
+		kvc.CacheHits++
 		blockIDs = append(blockIDs, blockId)
 	}
 	return
@@ -286,6 +287,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 				blk.RefCount = 1
 				blk.InUse = true
 				kvc.UsedBlockCnt++
+				kvc.CacheMisses++
 
 				if Len64(blk.Tokens) == kvc.BlockSizeTokens {
 					fullPrefix := req.InputTokens[:end]
