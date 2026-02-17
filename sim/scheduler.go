@@ -56,6 +56,23 @@ func (s *SJFScheduler) OrderQueue(reqs []*Request, _ int64) {
 	})
 }
 
+// ReversePriority sorts requests by priority ascending (lowest priority first).
+// Pathological template: opposite of PriorityFCFSScheduler, causes priority inversions.
+// Ties broken by arrival time ascending, then ID ascending for determinism.
+type ReversePriority struct{}
+
+func (r *ReversePriority) OrderQueue(reqs []*Request, _ int64) {
+	sort.SliceStable(reqs, func(i, j int) bool {
+		if reqs[i].Priority != reqs[j].Priority {
+			return reqs[i].Priority < reqs[j].Priority // ascending = lowest first
+		}
+		if reqs[i].ArrivalTime != reqs[j].ArrivalTime {
+			return reqs[i].ArrivalTime < reqs[j].ArrivalTime
+		}
+		return reqs[i].ID < reqs[j].ID
+	})
+}
+
 // NewScheduler creates an InstanceScheduler by name.
 // Valid names: "fcfs" (default), "priority-fcfs", "sjf".
 // Empty string defaults to FCFSScheduler (for CLI flag default compatibility).
@@ -71,6 +88,8 @@ func NewScheduler(name string) InstanceScheduler {
 		return &PriorityFCFSScheduler{}
 	case "sjf":
 		return &SJFScheduler{}
+	case "reverse-priority":
+		return &ReversePriority{}
 	default:
 		panic(fmt.Sprintf("unhandled scheduler %q", name))
 	}
