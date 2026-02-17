@@ -40,6 +40,12 @@ go build -o simulation_worker main.go
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-cache-weight 0.6 --routing-load-weight 0.4
+
+# Run with fitness evaluation and anomaly detection
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --fitness-weights "throughput:0.5,p99_ttft:0.3,mean_e2e:0.2"
 ```
 
 ## Testing
@@ -177,18 +183,21 @@ To add a new policy template (e.g., a new routing algorithm):
    - `InstanceScheduler` → `sim/scheduler.go` (instance-level: receives `requests` + `clock` only)
    - Note: `RouterState` is a bridge type in `sim/` to avoid import cycles — see `sim/router_state.go`
 
-2. **Register in two places** (both required):
+2. **Register in three places** (all required):
    - Add policy name to valid names map in `sim/bundle.go` (e.g., `validRoutingPolicies`) and corresponding `IsValid*` function
    - Add `case` to factory function in the same policy file (e.g., `NewRoutingPolicy` in `sim/routing.go`)
+   - Update CLI validation error message in `cmd/root.go` to list the new policy name
 
 3. **Add tests** following BDD naming: `TestMyPolicy_Scenario_Behavior`
    - Test observable behavior, not internal structure
-   - Include empty-snapshots panic test (defensive programming convention)
+   - Include empty-snapshots panic test for routing policies (defensive programming convention)
    - Use `&RouterState{Snapshots: snapshots, Clock: clock}` in test setup
 
 4. **Update documentation**: CLAUDE.md file organization, README policy lists
 
-Example: See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback.
+Examples:
+- See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
+- See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback
 
 ### Code Style
 

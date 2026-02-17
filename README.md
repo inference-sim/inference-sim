@@ -141,6 +141,7 @@ Available routing policies:
 - `least-loaded` — routes to instance with minimum queue + batch size
 - `weighted` — composite score combining cache affinity and load balance
 - `prefix-affinity` — routes matching prefixes to the same instance, falls back to least-loaded
+- `always-busiest` — pathological: routes to most-loaded instance (for anomaly detection testing)
 
 ### Priority and Scheduling Policies
 
@@ -156,11 +157,34 @@ Control request prioritization and batch formation order:
 Available priority policies:
 - `constant` (default) — assigns fixed priority (0.0) to all requests
 - `slo-based` — higher priority for older requests (age-based urgency)
+- `inverted-slo` — pathological: higher priority for newer requests (causes starvation)
 
 Available schedulers:
 - `fcfs` (default) — first-come-first-served (existing behavior)
 - `priority-fcfs` — orders by priority descending, then arrival time
 - `sjf` — shortest job first by input token count
+- `reverse-priority` — pathological: schedules lowest priority first (causes inversions)
+
+### Fitness Evaluation and Anomaly Detection
+
+Evaluate policy fitness using a weighted combination of metrics:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --fitness-weights "throughput:0.5,p99_ttft:0.3,mean_e2e:0.2"
+```
+
+Available fitness metric keys:
+- `throughput`, `tokens_per_sec` — higher is better
+- `p99_ttft`, `p50_ttft`, `mean_ttft` — lower is better (TTFT latency)
+- `p99_e2e`, `p50_e2e`, `mean_e2e` — lower is better (end-to-end latency)
+
+BLIS also detects anomalies automatically:
+- **Priority Inversions** — older requests receiving worse latencies than newer ones
+- **HOL Blocking** — instances with queue depth significantly exceeding cluster average
+- **Rejected Requests** — admission control rejection count
 
 ### Policy Configuration Files (YAML)
 
@@ -257,10 +281,12 @@ This requires the HuggingFace `config.json` for the model saved under the `model
 BLIS supports multi-replica cluster simulation with pluggable control policies for evolutionary optimization research. Currently implemented:
 
 - **Multi-replica simulation** with shared-clock event loop and online routing pipeline
-- **Admission policies**: always-admit, token-bucket rate limiting
-- **Routing policies**: round-robin, least-loaded, weighted-scoring, prefix-affinity
-- **Priority policies**: constant, slo-based (request prioritization)
-- **Instance schedulers**: fcfs, priority-fcfs, sjf (batch formation order)
+- **Admission policies**: always-admit, token-bucket rate limiting, reject-all (pathological)
+- **Routing policies**: round-robin, least-loaded, weighted-scoring, prefix-affinity, always-busiest (pathological)
+- **Priority policies**: constant, slo-based, inverted-slo (pathological)
+- **Instance schedulers**: fcfs, priority-fcfs, sjf, reverse-priority (pathological)
+- **Fitness evaluation**: weighted multi-objective scoring with configurable metric weights
+- **Anomaly detection**: priority inversion, HOL blocking, rejection rate counters
 - **Instance observability**: snapshot-based monitoring with configurable staleness
 - **Policy bundles** with YAML configuration (`--policy-config`)
 - **Interface freeze**: policy interfaces are stable (additive changes only)
