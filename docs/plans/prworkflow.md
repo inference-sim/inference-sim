@@ -476,12 +476,12 @@ Verify tests are truly behavioral (testing WHAT) not structural (testing HOW).
 
 **Prompt:**
 ```
-/pr-review-toolkit:review-pr Are all the tests well written and truly behavioral? Do they test observable behavior (GIVEN/WHEN/THEN) or just assert internal structure? Would they survive a refactor? Rate each test as Behavioral, Mixed, or Structural.
+/pr-review-toolkit:review-pr Are all the tests well written and truly behavioral? Do they test observable behavior (GIVEN/WHEN/THEN) or just assert internal structure? Would they survive a refactor? Rate each test as Behavioral, Mixed, or Structural. Also check: are there any golden dataset tests (comparing against captured output values) that lack a corresponding invariant test? Golden tests encode current behavior as "correct" — if the code had a bug when the golden values were captured, the test perpetuates the bug. Flag any golden test whose expected values are not independently validated by an invariant test (e.g., request conservation, KV block conservation, causality).
 ```
 
-**Catches:** Structural tests (Go struct assignment, trivial getters), type assertions in factory tests, exact-formula assertions instead of behavioral invariants, tests that pass even if the feature is broken.
+**Catches:** Structural tests (Go struct assignment, trivial getters), type assertions in factory tests, exact-formula assertions instead of behavioral invariants, tests that pass even if the feature is broken, golden-only tests that would perpetuate pre-existing bugs (issue #183: codellama golden dataset encoded a silently-dropped request as the expected value since its initial commit).
 
-**Fix: Delete structural tests, replace type assertions with behavior assertions.**
+**Fix: Delete structural tests, replace type assertions with behavior assertions. Add invariant tests alongside any golden-only tests.**
 
 ---
 
@@ -579,6 +579,7 @@ Wait for user approval before proceeding to Step 4.75.
 4. **Consistency:** Are naming patterns consistent across all changed files? Do comments match code? Do doc strings match implementations? Are there stale references?
 5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md, README, `--help`)?
 6. **Defensive edge cases:** What happens with zero input? Empty collections? Maximum values? What if the user passes unusual but valid flag combinations?
+7. **Test epistemology:** For every test that compares against a captured/golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that's a characterization test — it can catch regressions but cannot catch pre-existing bugs. Is there a corresponding invariant test that validates the result from first principles? Issue #183 lesson: the codellama golden dataset expected 499 completions since its initial commit because one request was silently dropped — a bug the golden test perpetuated instead of catching. Conservation laws (e.g., requests in = requests out) would have caught it immediately.
 
 **Fix all issues found. Then wait for user approval before Step 5.**
 

@@ -352,6 +352,7 @@ Test types:
 - Unit: specific function/method behavior
 - Integration: cross-component or CLI-level
 - Golden: regression against known-good output (testdata/goldendataset.json)
+- Invariant: system law that must hold regardless of output values (see req 6)
 - Failure: error paths, panics, edge cases
 - Benchmark: performance-sensitive paths (optional)
 
@@ -376,6 +377,28 @@ Additional requirements:
 
 5. **Test isolation**: Each test must be independently runnable (no order
    dependencies). Use table-driven tests for multiple scenarios of the same behavior.
+
+6. **Invariant tests alongside golden tests (MANDATORY)**: Golden dataset
+   tests are characterization tests — they capture *what the code does*, not
+   *what the code should do*. If the code has a bug when the golden dataset
+   is generated, the test encodes the bug as the expected value. This has
+   happened: issue #183 found that the codellama golden dataset expected 499
+   completions because one request was silently dropped — a bug that the
+   golden test perpetuated instead of catching.
+
+   **Rule:** Every golden dataset test MUST be paired with at least one
+   invariant test that verifies a system law derived from the *specification*
+   (not from running the code). Invariant tests answer "is the code correct?"
+   while golden tests answer "did the code change?"
+
+   Key invariants for this simulator (derived from CLAUDE.md):
+   - **Request conservation:** completed + still_queued + still_running = injected
+   - **KV block conservation:** allocated_blocks + free_blocks = total_blocks
+   - **Clock monotonicity:** simulation clock never decreases
+   - **Causality:** arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time
+
+   When adding a golden test, ask: "If this golden value were wrong, would
+   any other test catch it?" If the answer is no, add an invariant test.
 
 ======================================================================
 PHASE 7 — RISK ANALYSIS & REVIEW GUIDE

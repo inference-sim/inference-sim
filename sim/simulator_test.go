@@ -53,6 +53,14 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 			// Run simulation
 			sim.Run()
 
+			// === Invariant: request conservation (issue #183) ===
+			// With Horizon=MaxInt64, all injected requests must complete.
+			// This catches silent-drop bugs independently of golden values.
+			if sim.Metrics.CompletedRequests != tc.MaxPrompts {
+				t.Errorf("request conservation violated: completed %d, injected %d",
+					sim.Metrics.CompletedRequests, tc.MaxPrompts)
+			}
+
 			// === Exact match metrics (integers) ===
 			if sim.Metrics.CompletedRequests != tc.Metrics.CompletedRequests {
 				t.Errorf("completed_requests: got %d, want %d",
@@ -252,6 +260,9 @@ func TestInjectArrival_RequestCompletes(t *testing.T) {
 	if len(sim.Metrics.Requests) < 1 {
 		t.Errorf("len(Metrics.Requests): got %d, want >= 1", len(sim.Metrics.Requests))
 	}
+	if sim.Metrics.KVAllocationFailures != 0 {
+		t.Errorf("KVAllocationFailures: got %d, want 0 (no failures expected under normal conditions)", sim.Metrics.KVAllocationFailures)
+	}
 }
 
 // TestInjectArrival_MultipleRequests verifies that multiple injected requests
@@ -274,5 +285,71 @@ func TestInjectArrival_MultipleRequests(t *testing.T) {
 
 	if sim.Metrics.CompletedRequests != 10 {
 		t.Errorf("CompletedRequests: got %d, want 10", sim.Metrics.CompletedRequests)
+	}
+}
+
+// failOnCompletionKVStore wraps a real KVStore but returns false from
+// AllocateKVBlocks when the request has State == "completed". This works
+// because simulator.go sets req.State = "completed" before calling
+// AllocateKVBlocks for the final token, so the trigger precisely targets
+// the completion-time allocation path described in issue #183.
+type failOnCompletionKVStore struct {
+	KVStore
+	failCount int
+}
+
+func (f *failOnCompletionKVStore) AllocateKVBlocks(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	if req.State == "completed" {
+		f.failCount++
+		return false
+	}
+	return f.KVStore.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
+}
+
+// TestStep_KVAllocFailAtCompletion_RequestNotSilentlyDropped verifies that
+// when KV allocation fails at request completion time, the request is still
+// counted as completed with full metrics recorded (not silently dropped).
+// Regression test for issue #183.
+func TestStep_KVAllocFailAtCompletion_RequestNotSilentlyDropped(t *testing.T) {
+	// GIVEN a simulator with a KVStore that fails allocation at completion time
+	cfg := newTestSimConfig()
+	sim := NewSimulator(cfg)
+	fakeKV := &failOnCompletionKVStore{KVStore: sim.KVCache}
+	sim.KVCache = fakeKV
+
+	// AND a request with output tokens that will reach the completion path
+	req := &Request{
+		ID:           "req-0",
+		ArrivalTime:  0,
+		InputTokens:  make([]int, 16), // 1 block worth of prefill
+		OutputTokens: make([]int, 3),  // 3 decode tokens
+		State:        "queued",
+	}
+	sim.InjectArrival(req)
+
+	// WHEN the simulation runs to completion
+	sim.Run()
+
+	// THEN the fake KV store should have been triggered
+	if fakeKV.failCount == 0 {
+		t.Fatal("failOnCompletionKVStore was never triggered — test setup is invalid")
+	}
+
+	// AND the request should still be counted as completed (not silently dropped)
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests: got %d, want 1 (request was silently dropped — issue #183)", sim.Metrics.CompletedRequests)
+	}
+
+	// AND the KV allocation failure should be tracked in metrics
+	if sim.Metrics.KVAllocationFailures != 1 {
+		t.Errorf("KVAllocationFailures: got %d, want 1", sim.Metrics.KVAllocationFailures)
+	}
+
+	// AND request E2E/TTFT metrics should still be recorded
+	if _, ok := sim.Metrics.RequestE2Es["req-0"]; !ok {
+		t.Error("RequestE2Es missing for req-0 — metrics lost due to silent drop")
+	}
+	if _, ok := sim.Metrics.RequestTTFTs["req-0"]; !ok {
+		t.Error("RequestTTFTs missing for req-0 — metrics lost due to silent drop")
 	}
 }

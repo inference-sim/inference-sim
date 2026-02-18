@@ -592,12 +592,14 @@ func (sim *Simulator) Step(now int64) {
 			if len(req.OutputTokens) > 0 {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
-					// Could not allocate (e.g., no free blocks)
-					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s — this indicates a cache accounting bug", now, req.ID)
-					continue
+					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s (request will still complete) — this indicates a cache accounting bug", now, req.ID)
+					sim.Metrics.KVAllocationFailures++
 				}
 			}
-			sim.KVCache.ReleaseKVBlocks(req)
+			// ReleaseKVBlocks is safe even when the final-token allocation failed:
+		// AllocateKVBlocks only modifies RequestMap on success, so Release
+		// frees exactly the blocks from prior successful allocations.
+		sim.KVCache.ReleaseKVBlocks(req)
 			sim.Metrics.CompletedRequests++
 			// trigger the RequestLeftEvent with no delay
 			sim.Schedule(&RequestLeftEvent{
