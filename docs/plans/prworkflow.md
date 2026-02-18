@@ -8,8 +8,8 @@ This document describes the complete workflow for implementing a PR from any sou
 
 **Update this section when templates change. All examples below reference these versions.**
 
-- **Micro-planning template:** `docs/plans/prmicroplanprompt-v2.md` (updated 2026-02-16)
-- **Macro-planning template:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v2.3)
+- **Micro-planning template:** `docs/plans/prmicroplanprompt-v2.md` (updated 2026-02-18)
+- **Macro-planning template:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v3.4)
 - **Deprecated micro-planning:** `docs/plans/prmicroplanprompt-v1-deprecated.md` (for reference only)
 
 ---
