@@ -164,10 +164,10 @@ Run multiple instances with a routing policy:
 
 Available routing policies:
 - `round-robin` (default) — even distribution across instances
-- `least-loaded` — routes to instance with minimum queue + batch size
+- `least-loaded` — routes to instance with minimum queue + batch size + pending requests
 - `weighted` — composite score combining cache availability (FreeKVBlocks) and load balance (QueueDepth + BatchSize + PendingRequests). Weights should sum to 1.0 (auto-normalized if they don't).
 - `prefix-affinity` — routes matching prefixes to the same instance, falls back to least-loaded
-- `always-busiest` — pathological: routes to most-loaded instance (for anomaly detection testing)
+- `always-busiest` — pathological: routes to instance with maximum queue + batch size + pending requests (for anomaly detection testing)
 
 **Seeing weighted routing weights in action:** Run these two commands at `--rate 1000` and compare the Target Distribution in the trace summary:
 

@@ -152,6 +152,27 @@ func TestLeastLoaded_LoadBasedSelection(t *testing.T) {
 	}
 }
 
+// TestLeastLoaded_PendingRequests_BreaksTie verifies that PendingRequests is included
+// in load calculation, preventing pile-on at high request rates (#175).
+func TestLeastLoaded_PendingRequests_BreaksTie(t *testing.T) {
+	policy := NewRoutingPolicy("least-loaded", 0, 0)
+
+	// GIVEN two instances with equal QueueDepth+BatchSize but different PendingRequests
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 3, PendingRequests: 4},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 3, PendingRequests: 0},
+	}
+
+	// WHEN routing a request
+	req := &Request{ID: "req1"}
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
+
+	// THEN instance_1 is chosen (load=8 vs load=12)
+	if decision.TargetInstance != "instance_1" {
+		t.Errorf("expected instance_1 (fewer pending), got %q", decision.TargetInstance)
+	}
+}
+
 // TestLeastLoaded_EmptySnapshots_Panics verifies BC-10.
 func TestLeastLoaded_EmptySnapshots_Panics(t *testing.T) {
 	defer func() {
@@ -548,6 +569,27 @@ func TestAlwaysBusiest_RouteToHighestLoad(t *testing.T) {
 
 	if decision.TargetInstance != "instance_1" {
 		t.Errorf("expected instance_1 (busiest), got %q", decision.TargetInstance)
+	}
+}
+
+// TestAlwaysBusiest_PendingRequests_IncludedInLoad verifies that PendingRequests
+// is included in AlwaysBusiest load calculation (#175).
+func TestAlwaysBusiest_PendingRequests_IncludedInLoad(t *testing.T) {
+	policy := NewRoutingPolicy("always-busiest", 0, 0)
+
+	// GIVEN two instances with equal QueueDepth+BatchSize but different PendingRequests
+	snapshots := []RoutingSnapshot{
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 3, PendingRequests: 0},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 3, PendingRequests: 4},
+	}
+
+	// WHEN routing a request
+	req := &Request{ID: "r1"}
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
+
+	// THEN instance_1 is chosen (load=12 vs load=8)
+	if decision.TargetInstance != "instance_1" {
+		t.Errorf("expected instance_1 (more pending = busier), got %q", decision.TargetInstance)
 	}
 }
 

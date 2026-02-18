@@ -26,7 +26,7 @@ func copyScores(scores map[string]float64) map[string]float64 {
 //
 // When scores is non-nil (from WeightedScoring), candidates are ranked by policy scores.
 // When scores is nil (RoundRobin, LeastLoaded), a synthetic load-based score is used:
-// -(QueueDepth + BatchSize), so lower-load instances rank higher.
+// -(QueueDepth + BatchSize + PendingRequests), so lower-load instances rank higher (#175).
 //
 // Returns top-k candidates sorted by score descending and regret (≥ 0).
 func computeCounterfactual(chosenID string, scores map[string]float64, snapshots []sim.RoutingSnapshot, k int) ([]trace.CandidateScore, float64) {
@@ -47,8 +47,8 @@ func computeCounterfactual(chosenID string, scores map[string]float64, snapshots
 		if scores != nil {
 			s = scores[snap.ID]
 		} else {
-			// Load-based fallback: negative load so lower load ranks higher
-			s = -float64(snap.QueueDepth + snap.BatchSize)
+			// Load-based fallback: negative load so lower load ranks higher (#175)
+			s = -float64(snap.QueueDepth + snap.BatchSize + snap.PendingRequests)
 		}
 		all[i] = scored{snap: snap, score: s}
 		if snap.ID == chosenID {
@@ -76,12 +76,13 @@ func computeCounterfactual(chosenID string, scores map[string]float64, snapshots
 	result := make([]trace.CandidateScore, n)
 	for i := 0; i < n; i++ {
 		result[i] = trace.CandidateScore{
-			InstanceID:    all[i].snap.ID,
-			Score:         all[i].score,
-			QueueDepth:    all[i].snap.QueueDepth,
-			BatchSize:     all[i].snap.BatchSize,
-			KVUtilization: all[i].snap.KVUtilization,
-			FreeKVBlocks:  all[i].snap.FreeKVBlocks,
+			InstanceID:      all[i].snap.ID,
+			Score:           all[i].score,
+			QueueDepth:      all[i].snap.QueueDepth,
+			BatchSize:       all[i].snap.BatchSize,
+			PendingRequests: all[i].snap.PendingRequests,
+			KVUtilization:   all[i].snap.KVUtilization,
+			FreeKVBlocks:    all[i].snap.FreeKVBlocks,
 		}
 	}
 
