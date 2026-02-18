@@ -1,35 +1,60 @@
 # BLIS Weighted Routing Configuration
 #
 # Weighted scoring routes requests using a composite score of cache availability
-# and queue pressure:
+# and load balance:
 #
 #   cache_score = FreeKVBlocks / maxFreeKVBlocks   (memory availability)
-#   load_score  = 1 / (1 + QueueDepth)             (queue pressure)
+#   load_score  = 1 / (1 + effectiveLoad)          (load balance)
 #   score       = cache_score * cache_weight + load_score * load_weight
+#
+# Where effectiveLoad = QueueDepth + BatchSize + PendingRequests.
+# PendingRequests counts requests routed but not yet in queue, giving routing
+# visibility into its own recent decisions.
 #
 # Higher scores are preferred. The instance with the highest score receives
 # the request. Weights should sum to 1.0 (auto-normalized if they don't).
 #
-# Usage (multi-instance required for routing to have effect):
+# ============================================================================
+# TRY IT: See weights produce different routing distributions
+# ============================================================================
 #
+# Run these two commands and compare the Target Distribution in the trace summary:
+#
+#   # Cache-dominant: favors instances with most free KV blocks
 #   ./simulation_worker run \
 #     --model meta-llama/llama-3.1-8b-instruct \
-#     --num-instances 4 \
-#     --policy-config examples/weighted-routing.yaml \
-#     --trace-level decisions --summarize-trace \
-#     --log info
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-cache-weight 0.9 --routing-load-weight 0.1 \
+#     --max-prompts 500 --rate 1000 \
+#     --trace-level decisions --summarize-trace
 #
-# When weights matter:
-#   Weights affect routing when cache availability (FreeKVBlocks) and queue
-#   pressure (QueueDepth) rank instances differently. This occurs when:
+#   # Load-dominant: spreads requests evenly across instances
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-cache-weight 0.1 --routing-load-weight 0.9 \
+#     --max-prompts 500 --rate 1000 \
+#     --trace-level decisions --summarize-trace
+#
+# Expected: cache-dominant shows skewed distribution (one instance gets many
+# more requests), load-dominant shows near-uniform distribution.
+# Use --rate 1000 or higher so requests arrive fast enough for PendingRequests
+# to accumulate and create the signal disagreement between cache and load.
+#
+# ============================================================================
+# When weights matter
+# ============================================================================
+#
+# Weights affect routing when cache availability (FreeKVBlocks) and effective
+# load (QueueDepth + BatchSize + PendingRequests) rank instances differently.
+# This occurs when:
+#   - High request rates cause PendingRequests to accumulate unevenly
 #   - Instances have different KV cache capacities (heterogeneous clusters)
 #   - Prefix caching creates uneven memory usage across instances
-#   - Some instances retain KV blocks from completed requests while others
-#     have freed theirs (transient asymmetry during load spikes)
 #
-# In symmetric clusters with balanced load, instances converge to similar
-# states, so weight values have minimal effect. For such clusters,
-# "least-loaded" routing is simpler and equally effective.
+# At low arrival rates (--rate 20), instances equalize between routing
+# decisions, so weight changes have minimal visible effect. Use --rate 1000+
+# to see weight sensitivity.
 
 admission:
   policy: always-admit
@@ -37,7 +62,7 @@ admission:
 routing:
   policy: weighted
   cache_weight: 0.6    # weight for cache availability (prefer instances with free KV blocks)
-  load_weight: 0.4     # weight for queue pressure (prefer instances with fewer queued requests)
+  load_weight: 0.4     # weight for load balance (prefer instances with lower effective load)
 
 priority:
   policy: constant
