@@ -156,6 +156,7 @@ This project follows BDD/TDD practices. When implementing features:
 1. **Write behavioral contracts first**: Define invariants and expected behavior in Gherkin-style scenarios
 2. **Implement tests before code**: Tests verify contracts hold
 3. **Use table-driven tests**: Go's table-driven test pattern for comprehensive coverage
+4. **Test laws, not just values**: Golden tests answer "did the output change?" but not "is the output correct?" Every golden test should have a companion invariant test that verifies a law the system must satisfy (conservation, causality, monotonicity)
 
 ### PR Workflow
 
@@ -179,12 +180,52 @@ When asked to update the macro implementation plan, directly edit the document. 
 
 ### Key Invariants to Maintain
 
+- **Request conservation**: `injected == completed + queued + running` at simulation end
 - **Request lifecycle**: Requests transition queued → running → completed; requests not completed before horizon remain in current state
 - **Clock monotonicity**: Simulation clock never decreases
-- **KV cache conservation**: `allocated_blocks + free_blocks = total_blocks`
+- **KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
 - **Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
+- **Determinism**: Same seed must produce byte-identical output across runs
 
+### Engineering Principles
 
+**Separation of concerns:**
+- `sim/` is a library — it must never call `os.Exit`, `logrus.Fatalf`, or terminate the process. Return errors to callers. Only `cmd/` may terminate.
+- Cluster-level policies (admission, routing) receive `*RouterState` with global view. Instance-level policies (priority, scheduler) receive only local data. Never leak cluster state to instance-level code.
+- Bridge types (`RouterState`, `RoutingSnapshot`) live in `sim/` to avoid import cycles. Conversion between package-specific types and bridge types happens at package boundaries.
+- Each package has a unidirectional dependency: `cmd/ → sim/cluster/ → sim/` and `sim/cluster/ → sim/trace/`. The `sim/` package must never import subpackages.
+
+**Interface design:**
+- Policy interfaces should be single-method when possible (see `AdmissionPolicy`, `RoutingPolicy`, `PriorityPolicy`, `InstanceScheduler`).
+- Query methods must be pure — no side effects, no state mutation, no destructive reads. If a method needs to both query and clear state, provide separate `Get()` and `Consume()` methods.
+- Factory functions must validate their inputs. Follow the pattern: `IsValid*()` check + switch/case + panic on unknown. Never silently accept invalid configuration.
+
+**Canonical constructors:**
+- Every struct that is constructed in more than one place must have a canonical constructor function (e.g., `NewRequestMetrics()`). Struct literals should appear in exactly one place.
+- Before adding a field to an existing struct, grep for ALL construction sites (`StructName{`). Either update all sites or refactor to use the canonical constructor.
+
+**Error handling boundaries:**
+- `cmd/root.go`: `logrus.Fatalf` for user input errors (this is the CLI boundary)
+- `sim/`, `sim/cluster/`, `sim/workload/`: `panic()` for internal invariant violations that represent programming errors; `error` return for recoverable failures; `bool` return for expected conditions (e.g., KV allocation failure → preempt and retry)
+- Never use `continue` in an error path without either propagating the error, counting the occurrence, or documenting why it's safe. Silent `continue` that drops data is the most common source of bugs in this codebase.
+
+### Antipattern Prevention
+
+These rules exist because each one corresponds to a real bug that was found and fixed. They are enforced by the PR workflow (self-audit dimensions 7-9) and micro-plan template (Phase 8 sanity checklist).
+
+1. **No silent data loss**: Every error path must either return an error, panic with context, or increment a counter. A `continue` or early `return` that silently drops a request, metric, or allocation is a correctness bug.
+
+2. **Sort map keys before float accumulation**: Go map iteration is non-deterministic. Any `for k, v := range someMap` that feeds a running sum (`total += v`) or determines output ordering must sort keys first. This violates the determinism invariant.
+
+3. **Validate ALL numeric CLI flags**: Every numeric flag (`--rate`, `--fitness-weights`, `--kv-cpu-blocks`, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. A missing validation can cause infinite loops (Rate=0) or silently wrong results (NaN weights).
+
+4. **Construction site audit**: Before adding a field to a struct, find every place that struct is constructed as a literal. If there are multiple sites, either add a canonical constructor or update every site. Missing a site causes silent field-zero bugs.
+
+5. **Transactional state mutation**: Any loop that allocates resources (blocks, slots, counters) must handle mid-loop failure by rolling back all mutations from previous iterations. A partial allocation that returns `false` without cleanup violates conservation invariants.
+
+6. **No logrus.Fatalf in library code**: The `sim/` package tree is a library. It must never terminate the process. Return errors and let the caller decide how to handle them. This enables embedding, testing, and framework adapters.
+
+7. **Invariant tests alongside golden tests**: Golden tests (comparing against known-good output) are regression freezes, not correctness checks. If a bug exists when the golden values are captured, the golden test perpetuates the bug. Every subsystem that has golden tests must also have invariant tests that verify conservation laws, causality, and determinism.
 
 ### Current Implementation Focus
 
