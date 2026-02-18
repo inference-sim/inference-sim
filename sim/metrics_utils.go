@@ -58,8 +58,9 @@ type MetricsOutput struct {
 	ITLP90Ms              float64          `json:"itl_p90_ms"`
 	ITLP95Ms              float64          `json:"itl_p95_ms"`
 	ITLP99Ms              float64          `json:"itl_p99_ms"`
-	SchedulingDelayP99Ms  float64          `json:"scheduling_delay_p99_ms"`
-	Requests              []RequestMetrics `json:"requests,omitempty"`
+	SchedulingDelayP99Ms     float64          `json:"scheduling_delay_p99_ms"`
+	KVAllocationFailures    int64            `json:"kv_allocation_failures,omitempty"`
+	Requests                []RequestMetrics `json:"requests,omitempty"`
 }
 
 // CalculatePercentile is a util function that calculates the p-th percentile of a data list
