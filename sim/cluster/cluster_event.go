@@ -162,6 +162,9 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 		e.request.Priority = decision.Priority
 	}
 
+	// #181: Stamp request with assigned instance for per-request metrics
+	e.request.AssignedInstance = decision.TargetInstance
+
 	// Record routing decision if tracing is enabled (BC-3, BC-4, BC-5, BC-6)
 	// Placed after priority assignment to minimize diff; recording reads decision, not request.Priority
 	if cs.trace != nil {

@@ -261,6 +261,7 @@ func (sim *Simulator) InjectArrival(req *Request) {
 		NumDecodeTokens:  len(req.OutputTokens),
 		SLOClass:         req.SLOClass,
 		TenantID:         req.TenantID,
+		HandledBy:        req.AssignedInstance,
 	}
 }
 
@@ -276,6 +277,7 @@ func (sim *Simulator) InjectArrivalAt(req *Request, eventTime int64) {
 		NumDecodeTokens:  len(req.OutputTokens),
 		SLOClass:         req.SLOClass,
 		TenantID:         req.TenantID,
+		HandledBy:        req.AssignedInstance,
 	}
 }
 

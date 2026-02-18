@@ -377,6 +377,22 @@ This requires the HuggingFace `config.json` for the model saved under the `model
 - **Tokens/sec**: Aggregate throughput across all completed requests
 - `_p90`, `_p95`, `_p99` suffixes indicate percentile values
 
+When using `--results-path`, the JSON output also includes a `requests` array with per-request details:
+
+| Field | Description |
+|-------|-------------|
+| `requestID` | Unique request identifier |
+| `arrived_at` | Arrival time (seconds) |
+| `num_prefill_tokens` | Input token count |
+| `num_decode_tokens` | Output token count |
+| `ttft_ms` | Time to first token (ms) |
+| `itl_ms` | Mean inter-token latency (ms) |
+| `e2e_ms` | End-to-end latency (ms) |
+| `scheduling_delay_ms` | Queue wait time (ms) |
+| `handled_by` | Instance ID that processed this request (meaningful when `--num-instances` > 1) |
+| `slo_class` | SLO class label (if workload-spec provides one) |
+| `tenant_id` | Tenant identifier (if workload-spec provides one) |
+
 ---
 
 ## Debugging and Observability

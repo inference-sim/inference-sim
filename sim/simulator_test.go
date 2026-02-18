@@ -265,6 +265,31 @@ func TestInjectArrival_RequestCompletes(t *testing.T) {
 	}
 }
 
+// TestInjectArrival_HandledByEmpty_StandaloneMode verifies #181 standalone boundary:
+// GIVEN a standalone simulator (no cluster routing)
+// WHEN a request is injected and completes
+// THEN HandledBy in RequestMetrics is empty (no routing happened)
+func TestInjectArrival_HandledByEmpty_StandaloneMode(t *testing.T) {
+	sim := NewSimulator(newTestSimConfig())
+	req := &Request{
+		ID:           "request_0",
+		ArrivalTime:  0,
+		InputTokens:  make([]int, 10),
+		OutputTokens: make([]int, 5),
+		State:        "queued",
+	}
+	sim.InjectArrival(req)
+	sim.Run()
+
+	rm, ok := sim.Metrics.Requests["request_0"]
+	if !ok {
+		t.Fatal("request_0 not found in Metrics.Requests")
+	}
+	if rm.HandledBy != "" {
+		t.Errorf("HandledBy: got %q, want empty (standalone mode)", rm.HandledBy)
+	}
+}
+
 // TestInjectArrival_MultipleRequests verifies that multiple injected requests
 // at staggered arrival times all complete successfully.
 func TestInjectArrival_MultipleRequests(t *testing.T) {

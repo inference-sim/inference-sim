@@ -30,8 +30,9 @@ type RequestMetrics struct {
 	ITL              float64 `json:"itl_ms"`
 	E2E              float64 `json:"e2e_ms"`
 	SchedulingDelay  float64 `json:"scheduling_delay_ms"`
-	SLOClass         string  `json:"slo_class,omitempty"` // PR10: for per-SLO-class metrics
-	TenantID         string  `json:"tenant_id,omitempty"` // PR10: for per-tenant fairness
+	SLOClass         string  `json:"slo_class,omitempty"`   // PR10: for per-SLO-class metrics
+	TenantID         string  `json:"tenant_id,omitempty"`  // PR10: for per-tenant fairness
+	HandledBy        string  `json:"handled_by,omitempty"` // #181: instance that processed this request
 }
 
 // MetricsOutput defines the JSON structure for the saved metrics

@@ -47,6 +47,10 @@ type Request struct {
 	AudioTokenCount int     // Audio input tokens
 	VideoTokenCount int     // Video input tokens
 	ReasonRatio     float64 // reason_tokens / total_output_tokens (part of OutputTokens, not additional)
+
+	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
+	// Request is used outside the cluster routing pipeline (e.g., direct sim.Simulator tests).
+	AssignedInstance string // Instance ID this request was routed to
 }
 
 // This method returns a human-readable string representation of a Request.
