@@ -10,7 +10,7 @@ The simulator is CPU-only, extremely fast, and designed for capacity planning, s
 ## Features
 
 - **Discrete-event simulation** for prefill, decode, and request scheduling
-- **KV-cache modeling** (blocks, prefix caching, prefill chunking)
+- **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
 - **CPU-only inference cost model** via learned α/β coefficients
 - **HuggingFace config.json support** for model architecture
 - **Dense and MoE model support** (Mixtral, DeepSeek-MoE, etc.)
@@ -190,6 +190,27 @@ Available routing policies:
 ```
 
 Cache-dominant produces a skewed distribution (one instance receives disproportionately more requests), while load-dominant produces a near-uniform distribution. Use `--rate 1000` or higher so requests arrive fast enough for PendingRequests to accumulate and create the signal disagreement between cache and load dimensions. See `examples/weighted-routing.yaml` for details.
+
+### Tiered KV Cache (GPU + CPU Offloading)
+
+Enable a two-tier KV cache where blocks are offloaded from GPU to CPU memory when GPU utilization exceeds a threshold, and reloaded on demand with modeled transfer latency:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --kv-cpu-blocks 500000 \
+  --kv-offload-threshold 0.8 \
+  --kv-transfer-bandwidth 50.0
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--kv-cpu-blocks` | 0 | CPU-tier KV cache blocks (0 = single-tier GPU only) |
+| `--kv-offload-threshold` | 0.9 | GPU utilization threshold that triggers offloading to CPU |
+| `--kv-transfer-bandwidth` | 100.0 | GPU↔CPU transfer bandwidth in blocks/tick |
+
+When `--kv-cpu-blocks` is 0 (default), BLIS uses the single-tier GPU-only KV cache. Setting it to any positive value activates the tiered cache.
 
 ### Priority and Scheduling Policies
 
@@ -456,9 +477,12 @@ Completed:
 - **ServeGen-informed workload generator** with observe-predict-calibrate loop (PR10)
 - **Decision tracing and counterfactual analysis** with top-k regret computation (PR13)
 
+- **Tiered KV cache** with GPU+CPU offload/reload and transfer latency modeling (PR12)
+
 Upcoming:
 
-- **Auto-scaling** (PR11) and **tiered KV cache** (PR12)
+- **Auto-scaling** with actuation policies (PR11)
+- **Prefill/Decode disaggregation** with cross-instance KV transfer (PR14)
 - **Framework adapters** for OpenEvolve and GEPA policy evolution (PR15)
 - **Integration tests** (PR16)
 
@@ -483,7 +507,9 @@ inference-sim/
 │   ├── scheduler.go        # Instance scheduler interface and templates
 │   ├── router_state.go     # RouterState bridge type for cluster-level policies
 │   ├── bundle.go           # PolicyBundle YAML configuration
-│   ├── kvcache.go          # KV cache modeling
+│   ├── kvcache.go          # KV cache modeling (single-tier, implements KVStore)
+│   ├── kv_store.go         # KVStore interface and NewKVStore factory
+│   ├── kvcache_tiered.go   # TieredKVCache: GPU+CPU offload/reload, transfer latency
 │   ├── batch.go            # Batch formation
 │   ├── request.go          # Request lifecycle
 │   └── model_hardware_config.go  # HuggingFace/hardware config
@@ -494,7 +520,8 @@ inference-sim/
 │   ├── snapshot.go         # Instance observability snapshots
 │   ├── metrics.go          # RawMetrics, FitnessResult, anomaly detection, per-SLO-class metrics
 │   ├── counterfactual.go   # Top-k candidate ranking and regret computation
-│   └── evaluation.go       # EvaluationResult wrapper (metrics + trace + summary)
+│   ├── evaluation.go       # EvaluationResult wrapper (metrics + trace + summary)
+│   └── workload.go         # Centralized request generation for cluster dispatch
 ├── sim/workload/           # ServeGen-informed workload generation
 │   ├── spec.go             # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
 │   ├── arrival.go          # ArrivalSampler: Poisson, Gamma, Weibull
@@ -581,6 +608,9 @@ inference-sim/
 | `--max-num-scheduled-tokens` | 2048 | Max new tokens per step across all running requests |
 | `--block-size-in-tokens` | 16 | Tokens per KV cache block |
 | `--max-model-len` | 2048 | Max request length (input + output tokens) |
+| `--kv-cpu-blocks` | 0 | CPU-tier KV cache blocks (0 = single-tier GPU only) |
+| `--kv-offload-threshold` | 0.9 | GPU utilization threshold to trigger offloading to CPU |
+| `--kv-transfer-bandwidth` | 100.0 | GPU↔CPU transfer bandwidth in blocks/tick |
 
 ---
 
