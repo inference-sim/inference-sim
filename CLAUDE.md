@@ -87,7 +87,7 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 
 - **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution
 - **admission.go**: `AdmissionPolicy` interface (accepts `*RouterState`), `AlwaysAdmit`, `TokenBucket`, `RejectAll`, `NewAdmissionPolicy` factory
-- **routing.go**: `RoutingPolicy` interface (accepts `*RouterState`), `RoutingSnapshot`, `RoutingDecision` (with `Priority` hint), `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity`, `AlwaysBusiest` templates, `NewRoutingPolicy` factory
+- **routing.go**: `RoutingPolicy` interface (accepts `*RouterState`), `RoutingSnapshot` (with `EffectiveLoad()` for canonical load calculation), `RoutingDecision` (with `Priority` hint), `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity`, `AlwaysBusiest` templates, `NewRoutingPolicy` factory
 - **priority.go**: `PriorityPolicy` interface with `ConstantPriority`, `SLOBasedPriority`, and `InvertedSLO` templates, `NewPriorityPolicy` factory
 - **scheduler.go**: `InstanceScheduler` interface with `FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler`, and `ReversePriority` templates, `NewScheduler` factory
 - **router_state.go**: `RouterState` bridge type (Snapshots + Clock) for cluster-level policy interfaces
@@ -260,6 +260,8 @@ To add a new policy template (e.g., a new routing algorithm):
 
 4. **Update documentation**: CLAUDE.md file organization, README policy lists
 
+**Important:** For load-based routing, use `snap.EffectiveLoad()` — never compute `QueueDepth + BatchSize + PendingRequests` inline. This ensures all routing policies use the same formula.
+
 Examples:
 - See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
 - See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback
@@ -302,7 +304,7 @@ To add a new field to per-request JSON output (appears in `--results-path` outpu
 
 1. **Add field to `Request`** in `sim/request.go` (runtime state, zero-value safe)
 2. **Add field to `RequestMetrics`** in `sim/metrics_utils.go` (JSON output struct, use `omitempty` for backward compatibility)
-3. **Wire in `InjectArrival` and `InjectArrivalAt`** in `sim/simulator.go` (copy from Request to RequestMetrics at registration time)
+3. **Update `NewRequestMetrics()` constructor** in `sim/metrics_utils.go` to propagate the new field from `Request` to `RequestMetrics`
 4. **Set the field** at the appropriate event (e.g., `RoutingDecisionEvent` for cluster-level, or completion for computed metrics)
 5. **Add behavioral tests** covering multi-instance, single-instance, and standalone boundaries
 
@@ -351,7 +353,7 @@ inference-sim/
 │   ├── batch.go               # Batch struct
 │   ├── queue.go               # FIFO wait queue
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
-│   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct
+│   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
 │   ├── roofline_step.go       # Analytical FLOPs/bandwidth latency estimation
 │   ├── model_hardware_config.go # HFConfig, ModelConfig, HardwareCalib structs
