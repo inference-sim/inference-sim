@@ -231,14 +231,17 @@ func (sim *Simulator) PeekNextEventTime() int64 {
 	return sim.eventQueue[0].Timestamp()
 }
 
-// ProcessNextEvent pops the earliest event, advances Clock, and executes it.
+// ProcessNextEvent pops the earliest event, advances Clock, executes it, and returns it.
+// The returned Event lets callers react to what happened (e.g., detect QueuedEvent for
+// pending-request tracking) without maintaining fragile before/after heuristics.
 // Caller MUST check HasPendingEvents() first. Panics on empty queue.
 // Does NOT check horizon — caller is responsible.
-func (sim *Simulator) ProcessNextEvent() {
+func (sim *Simulator) ProcessNextEvent() Event {
 	ev := heap.Pop(&sim.eventQueue).(Event)
 	sim.Clock = ev.Timestamp()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
+	return ev
 }
 
 // Finalize sets SimEndedTime to min(Clock, Horizon) and logs completion.

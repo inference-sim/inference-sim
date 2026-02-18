@@ -91,9 +91,9 @@ func (i *InstanceSimulator) HasPendingEvents() bool { return i.sim.HasPendingEve
 // Caller MUST check HasPendingEvents() first; panics on empty queue.
 func (i *InstanceSimulator) PeekNextEventTime() int64 { return i.sim.PeekNextEventTime() }
 
-// ProcessNextEvent pops and executes the earliest event.
+// ProcessNextEvent pops and executes the earliest event, returning it.
 // Caller MUST check HasPendingEvents() first; panics on empty queue.
-func (i *InstanceSimulator) ProcessNextEvent() { i.sim.ProcessNextEvent() }
+func (i *InstanceSimulator) ProcessNextEvent() sim.Event { return i.sim.ProcessNextEvent() }
 
 // Finalize sets SimEndedTime, captures KV metrics, and logs completion.
 func (i *InstanceSimulator) Finalize() {
