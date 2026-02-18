@@ -926,3 +926,72 @@ func TestClusterWorkloadGen_Determinism(t *testing.T) {
 		}
 	}
 }
+
+func TestAggregateMetrics_IncludesKVCacheFields(t *testing.T) {
+	// GIVEN a cluster simulation with 2 instances
+	cfg := newTestDeploymentConfig(2)
+	cs := NewClusterSimulator(cfg, newTestWorkload(10), "")
+	cs.Run()
+
+	agg := cs.AggregatedMetrics()
+	perInst := cs.PerInstanceMetrics()
+
+	// THEN PreemptionCount MUST be the sum of per-instance counts
+	expectedPreemption := int64(0)
+	for _, m := range perInst {
+		expectedPreemption += m.PreemptionCount
+	}
+	if agg.PreemptionCount != expectedPreemption {
+		t.Errorf("PreemptionCount: got %d, want %d (sum of per-instance)", agg.PreemptionCount, expectedPreemption)
+	}
+
+	// THEN KVAllocationFailures MUST be the sum of per-instance counts
+	expectedKVFailures := int64(0)
+	for _, m := range perInst {
+		expectedKVFailures += m.KVAllocationFailures
+	}
+	if agg.KVAllocationFailures != expectedKVFailures {
+		t.Errorf("KVAllocationFailures: got %d, want %d (sum of per-instance)", agg.KVAllocationFailures, expectedKVFailures)
+	}
+
+	// THEN CacheHitRate MUST be the average of per-instance rates
+	expectedCacheHit := 0.0
+	for _, m := range perInst {
+		expectedCacheHit += m.CacheHitRate
+	}
+	expectedCacheHit /= float64(len(perInst))
+	if math.Abs(agg.CacheHitRate-expectedCacheHit) > 1e-9 {
+		t.Errorf("CacheHitRate: got %f, want %f (average of per-instance)", agg.CacheHitRate, expectedCacheHit)
+	}
+
+	// THEN KVThrashingRate MUST be the average of per-instance rates
+	expectedThrashing := 0.0
+	for _, m := range perInst {
+		expectedThrashing += m.KVThrashingRate
+	}
+	expectedThrashing /= float64(len(perInst))
+	if math.Abs(agg.KVThrashingRate-expectedThrashing) > 1e-9 {
+		t.Errorf("KVThrashingRate: got %f, want %f (average of per-instance)", agg.KVThrashingRate, expectedThrashing)
+	}
+}
+
+func TestAggregateMetrics_SingleInstance_AverageEqualsSelf(t *testing.T) {
+	// GIVEN a cluster with exactly 1 instance (edge case: average = self)
+	cfg := newTestDeploymentConfig(1)
+	cs := NewClusterSimulator(cfg, newTestWorkload(5), "")
+	cs.Run()
+
+	agg := cs.AggregatedMetrics()
+	perInst := cs.PerInstanceMetrics()
+
+	// THEN for a single instance, aggregated values MUST equal the instance values
+	if agg.PreemptionCount != perInst[0].PreemptionCount {
+		t.Errorf("PreemptionCount: got %d, want %d (single instance)", agg.PreemptionCount, perInst[0].PreemptionCount)
+	}
+	if math.Abs(agg.CacheHitRate-perInst[0].CacheHitRate) > 1e-9 {
+		t.Errorf("CacheHitRate: got %f, want %f (single instance)", agg.CacheHitRate, perInst[0].CacheHitRate)
+	}
+	if math.Abs(agg.KVThrashingRate-perInst[0].KVThrashingRate) > 1e-9 {
+		t.Errorf("KVThrashingRate: got %f, want %f (single instance)", agg.KVThrashingRate, perInst[0].KVThrashingRate)
+	}
+}

@@ -2,6 +2,9 @@ package sim
 
 import "testing"
 
+// TestNewRequestMetrics_PropagatesAllFields is intentionally a construction-site guard test
+// (CLAUDE.md antipattern #4). It verifies the canonical constructor propagates all fields,
+// preventing silent field-zero bugs when new fields are added to RequestMetrics.
 func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
 	// GIVEN a request with all metadata fields populated
 	req := &Request{
@@ -42,7 +45,7 @@ func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
 	}
 }
 
-func TestNewRequestMetrics_ZeroValueFields_OmittedInJSON(t *testing.T) {
+func TestNewRequestMetrics_ZeroValueFields_AreEmptyStrings(t *testing.T) {
 	// GIVEN a request with empty metadata (typical CSV trace)
 	req := &Request{
 		ID:           "csv_req_1",
