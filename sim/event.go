@@ -25,7 +25,7 @@ func (e *ArrivalEvent) Timestamp() int64 {
 
 // Execute schedules the next StepEvent, if no such event is scheduled
 func (e *ArrivalEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
+	logrus.Debugf("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
 	// Trigger queued event with processing delay
 	queued_delay := sim.getQueueingTime(e.Request) // coming from alpha model
@@ -50,7 +50,7 @@ func (e *QueuedEvent) Timestamp() int64 {
 // Execute normally just enqueues the request
 // If this is the first step, Execute calls the StepEvent
 func (e *QueuedEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< Queued: %s at %d ticks", e.Request.ID, e.time)
+	logrus.Debugf("<< Queued: %s at %d ticks", e.Request.ID, e.time)
 
 	// Enqueue the arriving request into the waiting queue
 	sim.EnqueueRequest(e.Request)
@@ -76,7 +76,7 @@ func (e *ScheduledEvent) Timestamp() int64 {
 
 // Execute does nothing
 func (e *ScheduledEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< Schedule: %s at %d ticks", e.Request.ID, e.time)
+	logrus.Debugf("<< Schedule: %s at %d ticks", e.Request.ID, e.time)
 }
 
 // PreemptionEvent represents the pre-emption of an inference request in the system.
@@ -92,7 +92,7 @@ func (e *PreemptionEvent) Timestamp() int64 {
 
 // Execute does nothing
 func (e *PreemptionEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< Preemption: %s at %d ticks", e.Request.ID, e.time)
+	logrus.Debugf("<< Preemption: %s at %d ticks", e.Request.ID, e.time)
 }
 
 // RequestLeftEvent represents the leaving of an inference request from the system.
@@ -108,7 +108,7 @@ func (e *RequestLeftEvent) Timestamp() int64 {
 
 // Execute does nothing
 func (e *RequestLeftEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< RequestLeft: %s at %d ticks", e.Request.ID, e.time)
+	logrus.Debugf("<< RequestLeft: %s at %d ticks", e.Request.ID, e.time)
 }
 
 // StepEvent represents a simulation step.
@@ -127,6 +127,6 @@ func (e *StepEvent) Timestamp() int64 {
 
 // Execute the StepEvent
 func (e *StepEvent) Execute(sim *Simulator) {
-	logrus.Infof("<< StepEvent at %d ticks", e.time)
+	logrus.Debugf("<< StepEvent at %d ticks", e.time)
 	sim.Step(e.time)
 }
