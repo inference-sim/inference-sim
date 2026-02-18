@@ -96,7 +96,7 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 - **request.go**: Request lifecycle and state machine (queued → running → completed), `Priority` field for scheduler-aware ordering
 - **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching, `CacheHits`/`CacheMisses` counters
 - **kv_store.go**: `KVStore` interface (9 methods), `NewKVStore` factory (returns single-tier or tiered based on config)
-- **kvcache_tiered.go**: `TieredKVCache` (GPU+CPU composition), `cpuTier`, `OffloadedBlock`, offload/reload/transfer latency
+- **kvcache_tiered.go**: `TieredKVCache` (GPU+CPU composition), `cpuTier`, `offloadedBlock`, offload/reload/transfer latency
 - **batch.go**: Batch formation respecting token budgets and batch size limits
 - **queue.go**: FIFO wait queue for pending requests
 
@@ -141,10 +141,11 @@ Two modes controlled by `--model-config-folder` presence:
 ### Key Data Flow
 
 ```
-Request Arrival → WaitQueue → Batch Formation → Step Execution → Completion
-                     ↓              ↓
-               KV Allocation   Latency Estimation (alpha/beta or roofline)
+Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
+                                            ↓              ↓
+                                      KV Allocation   Latency Estimation (alpha/beta or roofline)
 ```
+Note: Admission and Routing steps apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
 
 ## Development Guidelines
 

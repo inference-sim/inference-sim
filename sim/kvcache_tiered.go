@@ -22,7 +22,7 @@ type cpuTier struct {
 }
 
 // TieredKVCache composes a GPU KVCacheState with a simple CPU tier.
-// Delegates all normal operations to GPU; offloads LRU blocks when pressure exceeds threshold.
+// Delegates all normal operations to GPU; offloads cached free blocks when GPU utilization exceeds threshold.
 type TieredKVCache struct {
 	gpu              *KVCacheState
 	cpu              cpuTier

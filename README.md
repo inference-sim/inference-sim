@@ -27,9 +27,9 @@ The simulator is CPU-only, extremely fast, and designed for capacity planning, s
 - **ServeGen-informed workload generation**: multi-client specs with Poisson/Gamma/Weibull arrivals (`--workload-spec`)
 - **Decision tracing and counterfactual analysis**: record routing decisions and evaluate alternative choices (`--trace-level`, `--counterfactual-k`)
 - **Fitness evaluation**: weighted multi-objective scoring with configurable metric weights (`--fitness-weights`)
-- **Real-mode HTTP client**: observe-predict-calibrate loop against live inference endpoints (`observe` subcommand)
-- **Per-SLO-class metrics**: breakdown by SLO class with Jain fairness index
-- **Calibration framework**: MAPE and Pearson r for simulator-vs-real accuracy assessment
+- **Real-mode HTTP client**: observe-predict-calibrate loop against live inference endpoints (library in `cmd/observe.go`; CLI subcommand planned)
+- **Per-SLO-class metrics**: breakdown by SLO class with Jain fairness index (computed internally; JSON output planned)
+- **Calibration framework**: MAPE and Pearson r for simulator-vs-real accuracy assessment (library in `sim/workload/calibrate.go`; CLI subcommand planned)
 
 ---
 
@@ -410,6 +410,7 @@ The trace summary shows:
 - Total admission decisions (admitted vs rejected)
 - Target distribution across instances (routing balance)
 - Unique targets used
+- Mean and max regret (when `--counterfactual-k` > 0)
 
 ### Counterfactual Analysis
 
@@ -565,9 +566,9 @@ inference-sim/
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model` | (required) | LLM model name (e.g., `meta-llama/llama-3.1-8b-instruct`) |
-| `--hardware` | auto | GPU type (`H100`, `A100-80`) |
-| `--tp` | auto | Tensor parallelism degree |
-| `--vllm-version` | auto | vLLM version string |
+| `--hardware` | (auto-detected) | GPU type (`H100`, `A100-80`). Auto-detected from `defaults.yaml` if omitted |
+| `--tp` | (auto-detected) | Tensor parallelism degree. Auto-detected from `defaults.yaml` if omitted |
+| `--vllm-version` | (auto-detected) | vLLM version string. Auto-detected from `defaults.yaml` if omitted |
 | `--horizon` | max int64 | Simulation horizon in ticks (microseconds) |
 | `--seed` | 42 | RNG seed for deterministic simulation |
 | `--results-path` | (none) | Save JSON results to file |
