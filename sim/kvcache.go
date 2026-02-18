@@ -253,10 +253,11 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 		}
 		if len(latestBlk.Tokens) > 0 && Len64(latestBlk.Tokens) < kvc.BlockSizeTokens {
 			// latest block is not full yet, append tokens to the latest block
-			toksToAppend := newTokens[:min(Len64(newTokens), kvc.BlockSizeTokens-Len64(latestBlk.Tokens))]
+			remaining := kvc.BlockSizeTokens - Len64(latestBlk.Tokens)
+			toksToAppend := newTokens[newTokenProgressIndex:min(newTokenProgressIndex+remaining, Len64(newTokens))]
 			latestBlk.Tokens = append(latestBlk.Tokens, toksToAppend...)
-			newTokenProgressIndex += min(Len64(newTokens), kvc.BlockSizeTokens-Len64(latestBlk.Tokens))
-			logrus.Debugf("Appending to latest blk: req: %s, newTokenProgressIndex = %d, endBlk=%d, tokens = %v", req.ID, newTokenProgressIndex, min(Len64(newTokens), kvc.BlockSizeTokens-Len64(latestBlk.Tokens)), toksToAppend)
+			newTokenProgressIndex += Len64(toksToAppend)
+			logrus.Debugf("Appending to latest blk: req: %s, newTokenProgressIndex = %d, appended=%d tokens", req.ID, newTokenProgressIndex, Len64(toksToAppend))
 			if Len64(latestBlk.Tokens) == kvc.BlockSizeTokens {
 				// latesBlk is full
 				fullTokens := []int{}
