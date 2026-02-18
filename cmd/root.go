@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -421,8 +420,8 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Invalid fitness weights: %v", err)
 			}
 			fitness := cluster.ComputeFitness(rawMetrics, weights)
-			fmt.Printf("\n=== Fitness Evaluation ===\n")
-			fmt.Printf("Score: %.6f\n", fitness.Score)
+			logrus.Infof("=== Fitness Evaluation ===")
+			logrus.Infof("Score: %.6f", fitness.Score)
 			// Sort keys for deterministic output order
 			componentKeys := make([]string, 0, len(fitness.Components))
 			for k := range fitness.Components {
@@ -430,39 +429,39 @@ var runCmd = &cobra.Command{
 			}
 			sort.Strings(componentKeys)
 			for _, k := range componentKeys {
-				fmt.Printf("  %s: %.6f\n", k, fitness.Components[k])
+				logrus.Infof("  %s: %.6f", k, fitness.Components[k])
 			}
 		}
 
 		// Print anomaly counters if any detected
 		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 {
-			fmt.Printf("\n=== Anomaly Counters ===\n")
-			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
-			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
-			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
+			logrus.Infof("=== Anomaly Counters ===")
+			logrus.Infof("Priority Inversions: %d", rawMetrics.PriorityInversions)
+			logrus.Infof("HOL Blocking Events: %d", rawMetrics.HOLBlockingEvents)
+			logrus.Infof("Rejected Requests: %d", rawMetrics.RejectedRequests)
 		}
 
 		// Build and print trace summary if requested (BC-9)
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())
-			fmt.Printf("\n=== Trace Summary ===\n")
-			fmt.Printf("Total Decisions: %d\n", traceSummary.TotalDecisions)
-			fmt.Printf("  Admitted: %d\n", traceSummary.AdmittedCount)
-			fmt.Printf("  Rejected: %d\n", traceSummary.RejectedCount)
-			fmt.Printf("Unique Targets: %d\n", traceSummary.UniqueTargets)
+			logrus.Infof("=== Trace Summary ===")
+			logrus.Infof("Total Decisions: %d", traceSummary.TotalDecisions)
+			logrus.Infof("  Admitted: %d", traceSummary.AdmittedCount)
+			logrus.Infof("  Rejected: %d", traceSummary.RejectedCount)
+			logrus.Infof("Unique Targets: %d", traceSummary.UniqueTargets)
 			if len(traceSummary.TargetDistribution) > 0 {
-				fmt.Printf("Target Distribution:\n")
+				logrus.Infof("Target Distribution:")
 				targetKeys := make([]string, 0, len(traceSummary.TargetDistribution))
 				for k := range traceSummary.TargetDistribution {
 					targetKeys = append(targetKeys, k)
 				}
 				sort.Strings(targetKeys)
 				for _, k := range targetKeys {
-					fmt.Printf("  %s: %d\n", k, traceSummary.TargetDistribution[k])
+					logrus.Infof("  %s: %d", k, traceSummary.TargetDistribution[k])
 				}
 			}
-			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
-			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
+			logrus.Infof("Mean Regret: %.6f", traceSummary.MeanRegret)
+			logrus.Infof("Max Regret: %.6f", traceSummary.MaxRegret)
 		}
 
 		logrus.Info("Simulation complete.")

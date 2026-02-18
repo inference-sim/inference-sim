@@ -149,7 +149,7 @@ func (kvc *KVCacheState) AllocateKVBlocksPrefill(req *Request) bool {
 
 	// Cannot allocate enough KV cache blocks
 	if numRemainingBlocks > kvc.countFreeBlocks() {
-		logrus.Warnf("Not enough KV cache space to allocate %v new blocks", numRemainingBlocks)
+		logrus.Warnf("KV cache full: cannot allocate %d blocks for prefix caching", numRemainingBlocks)
 		return false
 	}
 
@@ -206,7 +206,7 @@ func (kvc *KVCacheState) AllocateKVBlocksPrefill(req *Request) bool {
 // endIndex is non-inclusive
 func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endIndex int64, cachedBlocks []int64) bool {
 	reqID := req.ID
-	logrus.Infof("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d\n", req.ID, len(req.InputTokens), startIndex, endIndex)
+	logrus.Debugf("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d", req.ID, len(req.InputTokens), startIndex, endIndex)
 
 	var newTokens []int
 	var numNewBlocks = int64(1)
@@ -218,7 +218,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 
 		// Cannot allocate enough KV cache blocks
 		if numNewBlocks > kvc.countFreeBlocks() {
-			logrus.Warnf("Not enough KV cache space to allocate %v new blocks", numNewBlocks)
+			logrus.Warnf("KV cache full: cannot allocate %d new blocks for req %s", numNewBlocks, req.ID)
 			return false
 		}
 	} else {
@@ -247,7 +247,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 					kvc.removeFromFreeList(blk)
 				}
 				// allocated is the block IDs allocated for this request
-				logrus.Infof("Hit KV Cache for req: %s of length: %d\n", req.ID, Len64(cachedBlocks)*kvc.BlockSizeTokens)
+				logrus.Debugf("Hit KV Cache for req: %s of length: %d", req.ID, Len64(cachedBlocks)*kvc.BlockSizeTokens)
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
 			}
 		}
@@ -256,7 +256,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 			toksToAppend := newTokens[:min(Len64(newTokens), kvc.BlockSizeTokens-Len64(latestBlk.Tokens))]
 			latestBlk.Tokens = append(latestBlk.Tokens, toksToAppend...)
 			newTokenProgressIndex += min(Len64(newTokens), kvc.BlockSizeTokens-Len64(latestBlk.Tokens))
-			logrus.Infof("Appending to latest blk: req: %s, newTokenProgressIndex = %d, endBlk=%d, tokens = %v\n", req.ID, newTokenProgressIndex, min(Len64(newTokens), kvc.BlockSizeTokens-Len64(latestBlk.Tokens)), toksToAppend)
+			logrus.Debugf("Appending to latest blk: req: %s, newTokenProgressIndex = %d, endBlk=%d, tokens = %v", req.ID, newTokenProgressIndex, min(Len64(newTokens), kvc.BlockSizeTokens-Len64(latestBlk.Tokens)), toksToAppend)
 			if Len64(latestBlk.Tokens) == kvc.BlockSizeTokens {
 				// latesBlk is full
 				fullTokens := []int{}
@@ -278,7 +278,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 				// start and end are the range of tokens in blk
 				start := newTokenProgressIndex
 				end := newTokenProgressIndex + kvc.BlockSizeTokens
-				logrus.Infof("Assigning new blocks: req = %s, newTokenProgressIndex = %d, ogStartIdx= %d, ogEndIdx = %d, startBlk=%d, endBlk=%d\n", req.ID, newTokenProgressIndex, startIndex, endIndex, start, end)
+				logrus.Debugf("Assigning new blocks: req = %s, newTokenProgressIndex = %d, ogStartIdx= %d, ogEndIdx = %d, startBlk=%d, endBlk=%d", req.ID, newTokenProgressIndex, startIndex, endIndex, start, end)
 				if end > Len64(newTokens) {
 					end = Len64(newTokens)
 				}

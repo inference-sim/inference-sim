@@ -4,6 +4,8 @@ import (
 	"container/heap"
 	"fmt"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
@@ -88,6 +90,7 @@ func (e *ClusterArrivalEvent) Priority() int     { return 0 }
 
 // Execute schedules an AdmissionDecisionEvent with the configured admission latency.
 func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
+	logrus.Debugf("[cluster] req %s arrived at tick %d", e.request.ID, e.time)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &AdmissionDecisionEvent{
 			time:    e.time + cs.admissionLatency,
@@ -113,6 +116,7 @@ func (e *AdmissionDecisionEvent) Priority() int     { return 1 }
 func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	state := buildRouterState(cs)
 	admitted, reason := cs.admissionPolicy.Admit(e.request, state)
+	logrus.Debugf("[cluster] req %s: admitted=%v reason=%q", e.request.ID, admitted, reason)
 
 	// Record admission decision if tracing is enabled (BC-2)
 	if cs.trace != nil {
@@ -151,6 +155,7 @@ func (e *RoutingDecisionEvent) Priority() int     { return 2 }
 func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 	state := buildRouterState(cs)
 	decision := cs.routingPolicy.Route(e.request, state)
+	logrus.Debugf("[cluster] req %s → instance %s (reason=%s)", e.request.ID, decision.TargetInstance, decision.Reason)
 
 	// BC-9: Apply cluster-level priority hint if set by routing policy
 	if decision.Priority != 0 {

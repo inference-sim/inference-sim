@@ -237,7 +237,7 @@ func (sim *Simulator) PeekNextEventTime() int64 {
 func (sim *Simulator) ProcessNextEvent() {
 	ev := heap.Pop(&sim.eventQueue).(Event)
 	sim.Clock = ev.Timestamp()
-	logrus.Infof("[tick %07d] Executing %T", sim.Clock, ev)
+	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
 }
 
@@ -357,11 +357,11 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 		if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int64{}); !ok {
 			// ToDo: add while true here, because we will keep preempting until we are good
 			// Could not allocate (e.g., no free blocks)
-			logrus.Warnf("[Preemption]")
 			sim.preemptionHappened = true
 			sim.Metrics.PreemptionCount++
 			preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
 			preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
+			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", now, preemptedRequest.ID)
 			sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
 			sim.Schedule(&PreemptionEvent{
 				time:    now + preemptionDelay,
@@ -400,7 +400,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		if tokenBudget <= 0 {
 			// Simulator has run out of token budget. Cannot run any more requests in this Step.
 			// Wait for currently running requests to finish, and try again in next Step
-			logrus.Warnf("Simulator has run out of token budget. Trying in next step.")
+			logrus.Warnf("[tick %07d] token budget exhausted, deferring remaining requests to next step", now)
 			break
 		}
 		numNewTokens := Len64(req.InputTokens) - req.ProgressIndex
@@ -590,7 +590,7 @@ func (sim *Simulator) Step(now int64) {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					// Could not allocate (e.g., no free blocks)
-					logrus.Warnf("[THIS SHOULD NEVER HAPPEN]")
+					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s — this indicates a cache accounting bug", now, req.ID)
 					continue
 				}
 			}
@@ -612,7 +612,7 @@ func (sim *Simulator) Step(now int64) {
 			}(req.ITL)
 			lat := req.FirstTokenTime + ITLSum
 			sim.Metrics.RequestE2Es[req.ID] = float64(lat)
-			logrus.Infof("Finished req: ID: %s at time: %d\n", req.ID, lat+req.ArrivalTime)
+			logrus.Debugf("Finished req: ID: %s at time: %d", req.ID, lat+req.ArrivalTime)
 			if len(req.OutputTokens) > 0 {
 				reqTotalOutput := lat - req.FirstTokenTime
 				// TPOT calculation in vLLM excludes the first generated token, calculated in ms
