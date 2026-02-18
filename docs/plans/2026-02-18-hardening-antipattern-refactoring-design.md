@@ -375,6 +375,8 @@ Run the same simulation twice with the same seed, assert byte-identical JSON out
 
 After fixing #183, golden dataset values will change. Regenerate with fixed code. Document the regeneration command so future contributors can update golden values when intentional behavior changes occur.
 
+**Validation of regenerated values:** The regenerated golden dataset must pass ALL invariant tests (4a-4e) before being committed. This ensures the new golden values are correct, not just different. The invariant tests serve as the acceptance criteria for golden dataset regeneration.
+
 ### Phase 5: Input Validation
 
 #### 5a. Rate > 0 (#202)

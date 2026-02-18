@@ -201,8 +201,8 @@ When asked to update the macro implementation plan, directly edit the document. 
 - Factory functions must validate their inputs. Follow the pattern: `IsValid*()` check + switch/case + panic on unknown. Never silently accept invalid configuration.
 
 **Canonical constructors:**
-- Every struct that is constructed in more than one place must have a canonical constructor function (e.g., `NewRequestMetrics()`). Struct literals should appear in exactly one place.
-- Before adding a field to an existing struct, grep for ALL construction sites (`StructName{`). Either update all sites or refactor to use the canonical constructor.
+- Every struct constructed in multiple places needs a canonical constructor (e.g., `NewRequestMetrics()`). Struct literals appear in exactly one place.
+- Before adding a field to a struct, grep for ALL construction sites (`StructName{`). Update every site or refactor to use the canonical constructor.
 
 **Error handling boundaries:**
 - `cmd/root.go`: `logrus.Fatalf` for user input errors (this is the CLI boundary)
@@ -211,19 +211,19 @@ When asked to update the macro implementation plan, directly edit the document. 
 
 ### Antipattern Prevention
 
-These rules exist because each one corresponds to a real bug that was found and fixed. They are enforced by the PR workflow (self-audit dimensions 7-9) and micro-plan template (Phase 8 sanity checklist).
+Each rule traces to a real bug we found and fixed. Enforced by PR workflow (self-audit dimensions 7-9) and micro-plan template (Phase 8 checklist).
 
 1. **No silent data loss**: Every error path must either return an error, panic with context, or increment a counter. A `continue` or early `return` that silently drops a request, metric, or allocation is a correctness bug.
 
-2. **Sort map keys before float accumulation**: Go map iteration is non-deterministic. Any `for k, v := range someMap` that feeds a running sum (`total += v`) or determines output ordering must sort keys first. This violates the determinism invariant.
+2. **Sort map keys before float accumulation**: Go map iteration is non-deterministic. Any `for k, v := range someMap` that feeds a running sum (`total += v`) or determines output ordering must sort keys first. Unsorted iteration violates the determinism invariant.
 
-3. **Validate ALL numeric CLI flags**: Every numeric flag (`--rate`, `--fitness-weights`, `--kv-cpu-blocks`, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. A missing validation can cause infinite loops (Rate=0) or silently wrong results (NaN weights).
+3. **Validate ALL numeric CLI flags**: Every numeric flag (`--rate`, `--fitness-weights`, `--kv-cpu-blocks`, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).
 
 4. **Construction site audit**: Before adding a field to a struct, find every place that struct is constructed as a literal. If there are multiple sites, either add a canonical constructor or update every site. Missing a site causes silent field-zero bugs.
 
 5. **Transactional state mutation**: Any loop that allocates resources (blocks, slots, counters) must handle mid-loop failure by rolling back all mutations from previous iterations. A partial allocation that returns `false` without cleanup violates conservation invariants.
 
-6. **No logrus.Fatalf in library code**: The `sim/` package tree is a library. It must never terminate the process. Return errors and let the caller decide how to handle them. This enables embedding, testing, and framework adapters.
+6. **No logrus.Fatalf in library code**: The `sim/` package tree must never terminate the process — return errors so callers can handle them. This enables embedding, testing, and adapters.
 
 7. **Invariant tests alongside golden tests**: Golden tests (comparing against known-good output) are regression freezes, not correctness checks. If a bug exists when the golden values are captured, the golden test perpetuates the bug. Every subsystem that has golden tests must also have invariant tests that verify conservation laws, causality, and determinism.
 

@@ -1,6 +1,6 @@
 # Contributing to BLIS
 
-BLIS (Blackbox Inference Simulator) welcomes contributions. This guide covers the engineering standards and development workflow that keep the codebase correct and maintainable.
+This guide covers the engineering standards that keep BLIS (Blackbox Inference Simulator) correct and maintainable.
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ Follow `docs/plans/prworkflow.md` for the complete PR lifecycle. The workflow ap
 
 ### Test Laws, Not Just Values
 
-Golden tests ("did the output change?") are necessary but insufficient. Every golden test should have a companion **invariant test** that verifies a law the system must satisfy:
+Golden tests ("did the output change?") are necessary but insufficient. Pair each golden test with an **invariant test** that verifies a law the system must satisfy:
 
 - **Request conservation**: injected == completed + queued + running
 - **KV block conservation**: allocated + free == total
@@ -82,7 +82,7 @@ Before submitting a PR, verify:
 
 - [ ] No silent `continue` or early `return` that drops data without error propagation
 - [ ] No map iteration feeding float accumulation without sorted keys
-- [ ] No struct constructed as a literal in multiple places without a canonical constructor
+- [ ] Every struct built in multiple places has a canonical constructor
 - [ ] No `logrus.Fatalf` or `os.Exit` in library code (`sim/`, `sim/cluster/`, `sim/workload/`)
 - [ ] Every new CLI flag validated for zero, negative, NaN, Inf
 - [ ] Every loop that allocates resources handles mid-loop failure with rollback
