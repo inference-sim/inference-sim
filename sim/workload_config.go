@@ -79,18 +79,8 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 			FinishedStepIdx:  0,
 		}
 
-		// 4. Push to schedule and metrics
-		sim.Schedule(&ArrivalEvent{
-			time:    arrivalTime,
-			Request: req,
-		})
-
-		sim.Metrics.Requests[reqID] = RequestMetrics{
-			ID:               reqID,
-			ArrivedAt:        arrivalFloat,
-			NumPrefillTokens: len(inputTokens),
-			NumDecodeTokens:  len(outputTokens),
-		}
+		// 4. Inject via canonical path (handles both event scheduling and metrics registration)
+		sim.InjectArrival(req)
 
 		reqIdx++
 	}
