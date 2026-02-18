@@ -106,7 +106,7 @@ If skills are unavailable, you can implement each step manually:
      - Catches design issues before implementation
    - **Code Review** (Step 4.5) - 4 passes: code quality, test quality, getting-started, automated reviewer
      - Catches implementation issues before PR creation
-   - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 6 dimensions
+   - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 9 dimensions
      - Catches substance bugs that pattern-matching agents miss
 
 ---

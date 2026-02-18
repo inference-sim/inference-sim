@@ -101,7 +101,7 @@ Before submitting a PR, verify:
 
 ### New KV Cache Tier
 
-1. Implement `KVStore` interface (10 methods including `SetClock`)
+1. Implement `KVStore` interface (9 methods; 10 after hardening PR adds `SetClock`)
 2. Compose existing tiers using delegation pattern
 3. Update `NewKVStore` factory with validation
 4. Add CLI flags with validation (zero, negative, NaN/Inf guards)

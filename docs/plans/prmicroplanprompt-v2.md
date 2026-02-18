@@ -483,6 +483,8 @@ Before implementation, verify:
       without sorted keys.
 - [ ] Library code (sim/, sim/cluster/, sim/workload/) never calls logrus.Fatalf
       or os.Exit — errors must be returned to callers.
+- [ ] Any loop that allocates resources (blocks, slots, counters) handles mid-loop
+      failure by rolling back all mutations from previous iterations.
 
 ======================================================================
 APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS

@@ -1,7 +1,7 @@
 # Hardening PR: Antipattern Elimination, Invariant Tests, and Modularity Improvements
 
 **Date:** 2026-02-18
-**Status:** Approved design (v2 — expanded scope)
+**Status:** Approved design (v3 — expanded scope + audit findings)
 **Scope:** Dedicated hardening PR before PR11 (AutoScaler)
 **Issues addressed:** #175, #183, #189, #190, #191, #192, #195, #196, #197, #198, #199, #200, #201, #202, #203
 **Architectural issues addressed:** snapshot duplication, observation coupling, destructive-read semantics, library code calling os.Exit, CLI/bundle name drift, unvalidated KVStore factory, request state as raw string

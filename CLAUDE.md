@@ -402,4 +402,4 @@ inference-sim/
 - `docs/plans/2026-02-17-pr13-decision-traces.md`: PR13 decision trace design (RoutingRecord, counterfactual analysis, TraceSummary)
 - `docs/plans/pr10-workload-generator-plan.md`: PR10 micro-level implementation plan (workload generator)
 - `docs/plans/macroplanprompt.md`: Template for macro-level planning
-- `docs/plans/prmicroplanprompt.md`: Template for micro-level (per-PR) planning with team-based agent process
+- `docs/plans/prmicroplanprompt-v2.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts
