@@ -10,6 +10,8 @@
 
 **Key Constraint:** Python phase REQUIRES H100 cluster access via OpenShift. Go phase works on any machine (no GPU needed).
 
+**OpenShift Namespace:** All cluster experiments run in namespace `diya`. Job YAMLs specify `namespace: diya`, and submission script switches to this namespace.
+
 **Revision:** Uses Python orchestration instead of bash, OpenShift Jobs instead of SLURM.
 
 ---
@@ -816,6 +818,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: infersim-mha-h100
+  namespace: diya
   labels:
     app: infersim-benchmark
     stage: mha
@@ -874,6 +877,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: infersim-gemm-h100
+  namespace: diya
   labels:
     app: infersim-benchmark
     stage: gemm
@@ -1019,6 +1023,15 @@ def main():
 
     print(f"✓ Logged in as: {result.stdout.strip()}")
 
+    # Switch to diya namespace
+    result = run_oc_command(["project", "diya"], check=False)
+    if result.returncode != 0:
+        print("✗ Failed to switch to namespace 'diya'")
+        print("  Make sure the namespace exists: oc get namespace diya")
+        sys.exit(1)
+
+    print(f"✓ Using namespace: diya")
+
     # Submit jobs
     job_dir = Path("scripts/openshift")
 
@@ -1085,13 +1098,14 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 
 **Prerequisites:** OpenShift access, H100 nodes available, logged in via `oc login`
 
-**Step 1: Verify OpenShift login**
+**Step 1: Verify OpenShift login and namespace**
 
 ```bash
 oc whoami
+oc project diya
 ```
 
-Expected: Your username
+Expected: Your username and "Now using project 'diya'"
 
 **Step 2: Submit benchmark jobs**
 
@@ -1104,21 +1118,21 @@ Expected: Jobs submitted, monitoring output
 **Step 3: Monitor job progress (alternative)**
 
 ```bash
-# Watch job status
-oc get jobs -w
+# Watch job status (in diya namespace)
+oc get jobs -n diya -w
 
 # View logs
-oc logs -f job/infersim-mha-h100
+oc logs -n diya -f job/infersim-mha-h100
 ```
 
 **Step 4: Retrieve output data**
 
 ```bash
-# Find the pod name
-POD=$(oc get pods -l app=infersim-benchmark -o jsonpath='{.items[0].metadata.name}')
+# Find the pod name (in diya namespace)
+POD=$(oc get pods -n diya -l app=infersim-benchmark -o jsonpath='{.items[0].metadata.name}')
 
 # Copy output data
-oc rsync ${POD}:/workspace/InferSim/bench_data/h100 ./InferSim/bench_data/h100
+oc rsync -n diya ${POD}:/workspace/InferSim/bench_data/h100 ./InferSim/bench_data/h100
 ```
 
 Expected: CSV files copied locally
