@@ -35,6 +35,21 @@ type RequestMetrics struct {
 	HandledBy        string  `json:"handled_by,omitempty"` // #181: instance that processed this request
 }
 
+// NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
+// This is the canonical constructor — all production code MUST use this instead of
+// inline RequestMetrics{} literals. Test code may still use literals for partial construction.
+func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
+	return RequestMetrics{
+		ID:               req.ID,
+		ArrivedAt:        arrivedAt,
+		NumPrefillTokens: len(req.InputTokens),
+		NumDecodeTokens:  len(req.OutputTokens),
+		SLOClass:         req.SLOClass,
+		TenantID:         req.TenantID,
+		HandledBy:        req.AssignedInstance,
+	}
+}
+
 // MetricsOutput defines the JSON structure for the saved metrics
 type MetricsOutput struct {
 	InstanceID            string           `json:"instance_id"`

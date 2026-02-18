@@ -254,15 +254,7 @@ func (sim *Simulator) Finalize() {
 // InjectArrival schedules an ArrivalEvent for req and registers it in Metrics.Requests.
 func (sim *Simulator) InjectArrival(req *Request) {
 	sim.Schedule(&ArrivalEvent{time: req.ArrivalTime, Request: req})
-	sim.Metrics.Requests[req.ID] = RequestMetrics{
-		ID:               req.ID,
-		ArrivedAt:        float64(req.ArrivalTime) / 1e6,
-		NumPrefillTokens: len(req.InputTokens),
-		NumDecodeTokens:  len(req.OutputTokens),
-		SLOClass:         req.SLOClass,
-		TenantID:         req.TenantID,
-		HandledBy:        req.AssignedInstance,
-	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
 }
 
 // InjectArrivalAt schedules an ArrivalEvent at eventTime (not req.ArrivalTime).
@@ -270,15 +262,7 @@ func (sim *Simulator) InjectArrival(req *Request) {
 // Used by cluster-mode online routing where event time differs from original arrival.
 func (sim *Simulator) InjectArrivalAt(req *Request, eventTime int64) {
 	sim.Schedule(&ArrivalEvent{time: eventTime, Request: req})
-	sim.Metrics.Requests[req.ID] = RequestMetrics{
-		ID:               req.ID,
-		ArrivedAt:        float64(req.ArrivalTime) / 1e6,
-		NumPrefillTokens: len(req.InputTokens),
-		NumDecodeTokens:  len(req.OutputTokens),
-		SLOClass:         req.SLOClass,
-		TenantID:         req.TenantID,
-		HandledBy:        req.AssignedInstance,
-	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
 }
 
 func (sim *Simulator) Run() {
