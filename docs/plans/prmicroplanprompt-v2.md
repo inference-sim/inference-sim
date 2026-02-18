@@ -55,6 +55,12 @@ Identify this PR's place in the concept model from the macro plan:
 2) What are the adjacent blocks it interacts with?
 3) What invariants from the concept model does this PR touch?
 4) What state ownership changes (if any)?
+5) Construction Site Audit: For every struct this PR adds fields to,
+   grep for ALL places that struct is constructed (struct literals,
+   factory functions). List each site with file:line. If there are
+   multiple construction sites, the plan MUST either:
+   a) Add a canonical constructor and refactor all sites, OR
+   b) Update every site explicitly (list each in a task)
 
 Then inspect ONLY the relevant parts of the repository.
 
@@ -188,6 +194,13 @@ This is the "box-and-arrow" view, NOT the file-level view.
 3) State Changes
    - New mutable state and its owner
    - State lifecycle (created when, destroyed when, accessed by whom)
+
+4) Extension Friction Assessment
+   - For the main new type/field this PR adds, count: how many files
+     must change to add ONE more field of the same kind?
+   - If >3 files, document whether this is acceptable or whether a
+     structural improvement should happen first/concurrently
+   - This is not a blocker — it's awareness for the reviewer
 
 TARGET: under 40 lines. Infrastructure PRs that introduce multiple
 interacting types may go up to 60 lines with justification.
@@ -396,9 +409,12 @@ Additional requirements:
    - **KV block conservation:** allocated_blocks + free_blocks = total_blocks
    - **Clock monotonicity:** simulation clock never decreases
    - **Causality:** arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time
+   - **Determinism:** same seed produces byte-identical output across runs
 
    When adding a golden test, ask: "If this golden value were wrong, would
    any other test catch it?" If the answer is no, add an invariant test.
+   If this PR touches request lifecycle, KV cache, or metrics, at least one
+   invariant test MUST be added or extended.
 
 ======================================================================
 PHASE 7 — RISK ANALYSIS & REVIEW GUIDE
@@ -447,6 +463,15 @@ Before implementation, verify:
 - [ ] Task dependencies are correctly ordered.
 - [ ] All contracts are mapped to specific tasks.
 - [ ] Golden dataset regeneration documented (if needed).
+- [ ] Construction site audit completed (Phase 0, item 5) — all struct
+      construction sites listed and covered by tasks.
+- [ ] Every new CLI flag validated for: zero, negative, NaN, Inf, empty string.
+- [ ] Every error path either returns error, panics with context, or increments
+      a counter — no silent `continue` that drops data.
+- [ ] No map iteration feeds float accumulation or determines output ordering
+      without sorted keys.
+- [ ] Library code (sim/, sim/cluster/, sim/workload/) never calls logrus.Fatalf
+      or os.Exit — errors must be returned to callers.
 
 ======================================================================
 APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS

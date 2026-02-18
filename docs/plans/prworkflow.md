@@ -309,10 +309,10 @@ Verify the plan respects architectural boundaries and separation of concerns.
 
 **Prompt:**
 ```
-/pr-review-toolkit:review-pr Does this plan maintain architectural boundaries? Are we ensuring individual instances don't have access to cluster-level state? Are types in the right packages? Check the plan against the actual code for boundary violations. @docs/plans/pr<N>-<name>-plan.md
+/pr-review-toolkit:review-pr Does this plan maintain architectural boundaries? Are we ensuring individual instances don't have access to cluster-level state? Are types in the right packages? Check the plan against the actual code for boundary violations. Also check: (1) does the plan introduce multiple construction sites for the same type? (2) does adding one field to a new type require >3 files? (3) does library code (sim/) call logrus.Fatalf anywhere in the new code? @docs/plans/pr<N>-<name>-plan.md
 ```
 
-**Catches:** Import cycle risks, boundary violations, missing bridge types, wrong abstraction level.
+**Catches:** Import cycle risks, boundary violations, missing bridge types, wrong abstraction level, construction site proliferation, high touch-point multipliers, error handling boundary violations.
 
 **Fix all critical/important issues before Pass 3.**
 
@@ -461,10 +461,10 @@ Find bugs, logic errors, silent failures, and convention violations.
 
 **Prompt:**
 ```
-/pr-review-toolkit:review-pr
+/pr-review-toolkit:review-pr Also check: (1) any new error paths that use `continue` or early `return` — do they clean up partial state? (2) any map iteration that accumulates floats — are keys sorted? (3) any struct field added — are all construction sites updated? (4) does library code (sim/) call logrus.Fatalf anywhere in new code?
 ```
 
-**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code.
+**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling os.Exit.
 
 **Fix all critical/important issues before Pass 2.**
 
@@ -580,6 +580,8 @@ Wait for user approval before proceeding to Step 4.75.
 5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md, README, `--help`)?
 6. **Defensive edge cases:** What happens with zero input? Empty collections? Maximum values? What if the user passes unusual but valid flag combinations?
 7. **Test epistemology:** For every test that compares against a captured/golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that's a characterization test — it can catch regressions but cannot catch pre-existing bugs. Is there a corresponding invariant test that validates the result from first principles? Issue #183 lesson: the codellama golden dataset expected 499 completions since its initial commit because one request was silently dropped — a bug the golden test perpetuated instead of catching. Conservation laws (e.g., requests in = requests out) would have caught it immediately.
+8. **Construction site uniqueness:** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
+9. **Error path completeness:** For every error/failure path in new code, what happens to partially-mutated state? Does every `continue` or early `return` clean up what was started? Is there a counter or log so the failure is observable?
 
 **Fix all issues found. Then wait for user approval before Step 5.**
 
@@ -891,7 +893,7 @@ golangci-lint run ./path/to/modified/package/...
 **v2.3 (2026-02-16):** Step 2.5 expanded to 4 passes — added Pass 4 (structural validation: task dependencies, template completeness, executive summary clarity, under-specified task detection). Based on PR9 experience where deferred items fell through cracks in the macro plan, and an under-specified documentation task would have confused the executing agent.
 **v2.4 (2026-02-16):** Four targeted skill integrations addressing real failure modes: (1) `review-plan` as Pass 0 in Step 2.5 — external LLM review catches design bugs that self-review misses (PR9: fitness normalization bug passed 3 focused passes). (2) `superpowers:systematic-debugging` as on-failure handler in Step 4 — structured root-cause analysis instead of ad-hoc debugging. (3) `superpowers:verification-before-completion` replaces manual verification prose after Step 4.5 — makes build/test/lint gate non-skippable. (4) `commit-commands:clean_gone` as pre-cleanup in Step 1 — prevents stale branch accumulation.
 **v2.5 (2026-02-16):** Three additions from `/insights` analysis of 212 sessions: (1) Step 4.75 (pre-commit self-audit) — deliberate critical thinking step with no agent, checking logic/design/determinism/consistency/docs/edge-cases. In PR9, this step found 3 real bugs (wrong reference scale, non-deterministic output, inconsistent comments) that 4 automated passes missed. (2) Headless mode documentation for review passes — workaround for context overflow during multi-agent consolidation, the #1 recurring friction point across 212 sessions. (3) Checkpointing tip for long sessions — prevents progress loss when hitting context limits mid-PR.
-**v2.6 (2026-02-18):** Added "Filing Pre-Existing Issues" subsection to Step 4.5. Code review passes naturally surface bugs in surrounding code that predate the current PR. New rule: file a GitHub issue immediately, do not fix in-PR (avoids scope creep, preserves attribution, prevents losing discoveries). Based on #38 experience where silent-failure-hunter found a pre-existing request-loss bug in simulator.go that was filed as #183.
+**v2.6 (2026-02-18):** Two additions: (1) "Filing Pre-Existing Issues" subsection to Step 4.5 — file a GitHub issue immediately for pre-existing bugs found during review, do not fix in-PR. Based on #38 experience where #183 was discovered. (2) Antipattern prevention from hardening audit of 20+ issues — Step 4.75 expanded to 9 self-audit dimensions (added test epistemology, construction site uniqueness, error path completeness); Step 4.5 Pass 1 prompt expanded with 4 antipattern checks; Step 2.5 Pass 2 prompt expanded with 3 modularity checks. Companion change: `prmicroplanprompt-v2.md` updated with construction site audit (Phase 0), extension friction assessment (Phase 2), invariant test requirement (Phase 6), and 6 new sanity checklist items (Phase 8).
 
 **Key improvements in v2.0:**
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/macroplan.md`)
