@@ -298,6 +298,14 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		}
 		merged.AllITLs = append(merged.AllITLs, m.AllITLs...)
 		merged.RequestStepCounters = append(merged.RequestStepCounters, m.RequestStepCounters...)
+		merged.PreemptionCount += m.PreemptionCount
+		merged.KVAllocationFailures += m.KVAllocationFailures
+		merged.CacheHitRate += m.CacheHitRate
+		merged.KVThrashingRate += m.KVThrashingRate
+	}
+	if n := len(c.instances); n > 0 {
+		merged.CacheHitRate /= float64(n)
+		merged.KVThrashingRate /= float64(n)
 	}
 	if c.workload != nil {
 		merged.RequestRate = c.workload.Rate

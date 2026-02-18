@@ -11,6 +11,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// sortedKeys returns the keys of a map[string]float64 in sorted order.
+// Used to ensure deterministic float accumulation across map iterations.
+func sortedKeys(m map[string]float64) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // Distribution captures statistical summary of a metric.
 type Distribution struct {
 	Mean  float64
@@ -308,7 +319,8 @@ func JainFairnessIndex(throughputs map[string]float64) float64 {
 	}
 	sumX := 0.0
 	sumX2 := 0.0
-	for _, x := range throughputs {
+	for _, k := range sortedKeys(throughputs) {
+		x := throughputs[k]
 		sumX += x
 		sumX2 += x * x
 	}
@@ -321,8 +333,8 @@ func JainFairnessIndex(throughputs map[string]float64) float64 {
 // mapValues extracts values from a map into a slice.
 func mapValues(m map[string]float64) []float64 {
 	vals := make([]float64, 0, len(m))
-	for _, v := range m {
-		vals = append(vals, v)
+	for _, k := range sortedKeys(m) {
+		vals = append(vals, m[k])
 	}
 	return vals
 }
@@ -352,7 +364,8 @@ func ComputeFitness(metrics *RawMetrics, weights map[string]float64) *FitnessRes
 		Components: make(map[string]float64, len(weights)),
 	}
 
-	for key, weight := range weights {
+	for _, key := range sortedKeys(weights) {
+		weight := weights[key]
 		value, ok := extractMetric(metrics, key)
 		if !ok {
 			logrus.Warnf("ComputeFitness: unknown metric key %q, ignoring", key)

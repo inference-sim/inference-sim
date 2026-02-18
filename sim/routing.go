@@ -17,6 +17,13 @@ type RoutingSnapshot struct {
 	PendingRequests int // Requests routed to this instance but not yet in queue
 }
 
+// EffectiveLoad returns the total effective load on this instance:
+// QueueDepth + BatchSize + PendingRequests.
+// Used by routing policies and counterfactual scoring for consistent load calculations.
+func (s RoutingSnapshot) EffectiveLoad() int {
+	return s.QueueDepth + s.BatchSize + s.PendingRequests
+}
+
 // RoutingDecision encapsulates the routing decision for a request.
 type RoutingDecision struct {
 	TargetInstance string             // Instance ID to route to (must match a snapshot ID)
@@ -69,11 +76,11 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 		panic("LeastLoaded.Route: empty snapshots")
 	}
 
-	minLoad := snapshots[0].QueueDepth + snapshots[0].BatchSize + snapshots[0].PendingRequests
+	minLoad := snapshots[0].EffectiveLoad()
 	target := snapshots[0]
 
 	for i := 1; i < len(snapshots); i++ {
-		load := snapshots[i].QueueDepth + snapshots[i].BatchSize + snapshots[i].PendingRequests
+		load := snapshots[i].EffectiveLoad()
 		if load < minLoad {
 			minLoad = load
 			target = snapshots[i]
@@ -139,7 +146,7 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		}
 
 		// Load dimension: inverse of effective load (no max-normalization)
-		effectiveLoad := snap.QueueDepth + snap.BatchSize + snap.PendingRequests
+		effectiveLoad := snap.EffectiveLoad()
 		loadScore := 1.0 / (1.0 + float64(effectiveLoad))
 
 		score := cacheScore*ws.cacheWeight + loadScore*ws.loadWeight
@@ -215,11 +222,11 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 		panic("AlwaysBusiest.Route: empty snapshots")
 	}
 
-	maxLoad := snapshots[0].QueueDepth + snapshots[0].BatchSize + snapshots[0].PendingRequests
+	maxLoad := snapshots[0].EffectiveLoad()
 	target := snapshots[0]
 
 	for i := 1; i < len(snapshots); i++ {
-		load := snapshots[i].QueueDepth + snapshots[i].BatchSize + snapshots[i].PendingRequests
+		load := snapshots[i].EffectiveLoad()
 		if load > maxLoad {
 			maxLoad = load
 			target = snapshots[i]
