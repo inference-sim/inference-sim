@@ -93,7 +93,7 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 - **router_state.go**: `RouterState` bridge type (Snapshots + Clock) for cluster-level policy interfaces
 - **bundle.go**: `PolicyBundle` struct with YAML loading (`LoadPolicyBundle`), validation (`Validate`)
 - **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
-- **request.go**: Request lifecycle and state machine (queued → running → completed), `Priority` field for scheduler-aware ordering
+- **request.go**: Request lifecycle and state machine (queued → running → completed), `Priority` field for scheduler-aware ordering, `AssignedInstance` for cluster routing provenance (#181)
 - **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching, `CacheHits`/`CacheMisses` counters
 - **kv_store.go**: `KVStore` interface (9 methods), `NewKVStore` factory (returns single-tier or tiered based on config)
 - **kvcache_tiered.go**: `TieredKVCache` (GPU+CPU composition), `cpuTier`, `offloadedBlock`, offload/reload/transfer latency
@@ -254,6 +254,20 @@ Examples:
 - See `AdmissionRecord` in `sim/trace/record.go` for a simple record
 - See `RoutingRecord` with `CandidateScore` for a record with nested counterfactual data
 - See `computeCounterfactual()` in `sim/cluster/counterfactual.go` for derived computation that lives in `sim/cluster/` (not `sim/trace/`) because it needs `sim.RoutingSnapshot`
+
+### Adding New Per-Request Metric Fields
+
+To add a new field to per-request JSON output (appears in `--results-path` output):
+
+1. **Add field to `Request`** in `sim/request.go` (runtime state, zero-value safe)
+2. **Add field to `RequestMetrics`** in `sim/metrics_utils.go` (JSON output struct, use `omitempty` for backward compatibility)
+3. **Wire in `InjectArrival` and `InjectArrivalAt`** in `sim/simulator.go` (copy from Request to RequestMetrics at registration time)
+4. **Set the field** at the appropriate event (e.g., `RoutingDecisionEvent` for cluster-level, or completion for computed metrics)
+5. **Add behavioral tests** covering multi-instance, single-instance, and standalone boundaries
+
+Examples:
+- See `HandledBy` (#181) — set by `RoutingDecisionEvent`, zero-value when used outside cluster pipeline (suppressed from JSON via `omitempty`)
+- See `SLOClass`/`TenantID` (PR10) — set during workload generation, propagated at injection
 
 ### Code Style
 

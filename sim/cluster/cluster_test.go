@@ -629,6 +629,77 @@ func TestClusterSimulator_AggregatedMetrics_BeforeRun_Panics(t *testing.T) {
 	cs.AggregatedMetrics()
 }
 
+// TestClusterSimulator_HandledBy_PopulatedInMetrics verifies #181:
+// GIVEN a 3-instance cluster with round-robin routing and 15 requests
+// WHEN the simulation completes
+// THEN every completed request's metrics has a non-empty HandledBy field
+// AND each HandledBy value matches a valid instance ID
+// AND per-instance metrics only contain requests handled by that instance
+func TestClusterSimulator_HandledBy_PopulatedInMetrics(t *testing.T) {
+	config := newTestDeploymentConfig(3)
+	config.RoutingPolicy = "round-robin"
+	workload := newTestWorkload(15)
+
+	cs := NewClusterSimulator(config, workload, "")
+	cs.Run()
+
+	agg := cs.AggregatedMetrics()
+	if agg.CompletedRequests == 0 {
+		t.Fatal("expected completed requests, got 0")
+	}
+
+	// Build set of valid instance IDs
+	validIDs := make(map[string]bool, len(cs.Instances()))
+	for _, inst := range cs.Instances() {
+		validIDs[string(inst.ID())] = true
+	}
+
+	// Verify every request in aggregated metrics has a valid HandledBy
+	for reqID, rm := range agg.Requests {
+		if rm.HandledBy == "" {
+			t.Errorf("request %s: HandledBy is empty", reqID)
+			continue
+		}
+		if !validIDs[rm.HandledBy] {
+			t.Errorf("request %s: HandledBy=%q is not a valid instance ID", reqID, rm.HandledBy)
+		}
+	}
+
+	// Verify per-instance consistency: each instance's metrics should only
+	// contain requests with HandledBy matching that instance
+	for _, inst := range cs.Instances() {
+		instID := string(inst.ID())
+		m := inst.Metrics()
+		for reqID, rm := range m.Requests {
+			if rm.HandledBy != instID {
+				t.Errorf("instance %s contains request %s with HandledBy=%q (want %q)",
+					instID, reqID, rm.HandledBy, instID)
+			}
+		}
+	}
+}
+
+// TestClusterSimulator_HandledBy_SingleInstance verifies #181 boundary:
+// GIVEN a 1-instance cluster
+// WHEN the simulation completes
+// THEN all requests have HandledBy == "instance_0"
+func TestClusterSimulator_HandledBy_SingleInstance(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	workload := newTestWorkload(5)
+	cs := NewClusterSimulator(config, workload, "")
+	cs.Run()
+
+	agg := cs.AggregatedMetrics()
+	if agg.CompletedRequests == 0 {
+		t.Fatal("expected completed requests, got 0")
+	}
+	for reqID, rm := range agg.Requests {
+		if rm.HandledBy != "instance_0" {
+			t.Errorf("request %s: HandledBy=%q, want %q", reqID, rm.HandledBy, "instance_0")
+		}
+	}
+}
+
 // === Routing Policy Tests ===
 
 // TestClusterSimulator_RoutingPolicy_RoundRobinDefault verifies BC-6 (backward compatibility).
