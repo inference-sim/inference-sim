@@ -157,24 +157,29 @@ func (c *ClusterSimulator) Run() {
 			if c.clock > c.config.Horizon {
 				break
 			}
-			// Track QueueDepth before/after to sync pending counts (#170)
 			instID := string(c.instances[instanceIdx].ID())
-			prevQD := c.instances[instanceIdx].QueueDepth()
-			c.instances[instanceIdx].ProcessNextEvent()
-			newQD := c.instances[instanceIdx].QueueDepth()
-			// If QueueDepth increased, a pending request was absorbed into the queue
-			if newQD > prevQD && c.pendingRequests[instID] > 0 {
-				absorbed := newQD - prevQD
-				c.pendingRequests[instID] -= absorbed
-				if c.pendingRequests[instID] < 0 {
-					logrus.Warnf("pendingRequests for %s went negative (%d), clamping to 0", instID, c.pendingRequests[instID])
-					c.pendingRequests[instID] = 0
+			ev := c.instances[instanceIdx].ProcessNextEvent()
+			// Causal decrement: QueuedEvent is the definitive moment a request
+			// enters the WaitQ, meaning it was absorbed from pending (#178).
+			// This replaces the fragile QueueDepth before/after heuristic.
+			if _, ok := ev.(*sim.QueuedEvent); ok {
+				if c.pendingRequests[instID] > 0 {
+					c.pendingRequests[instID]--
+				} else {
+					logrus.Debugf("QueuedEvent for %s but pendingRequests already 0 (no-op)", instID)
 				}
 			}
 		}
 	}
 
-	// 4. Finalize all instances
+	// 4. Post-simulation invariant: all pending requests should have drained
+	for instID, pending := range c.pendingRequests {
+		if pending != 0 {
+			logrus.Warnf("post-simulation: pendingRequests[%s] = %d, expected 0 — possible bookkeeping bug", instID, pending)
+		}
+	}
+
+	// 5. Finalize all instances
 	for _, inst := range c.instances {
 		inst.Finalize()
 	}

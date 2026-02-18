@@ -322,6 +322,51 @@ func TestInstanceSimulator_BatchSize_NilRunningBatch(t *testing.T) {
 	}
 }
 
+// TestInstanceSimulator_ProcessNextEvent_ReturnsCorrectEventType verifies:
+// GIVEN a request injected via InjectRequestOnline
+// WHEN ProcessNextEvent is called
+// THEN the returned event is an *sim.ArrivalEvent (the first event for an injected request)
+func TestInstanceSimulator_ProcessNextEvent_ReturnsCorrectEventType(t *testing.T) {
+	cfg := newTestInstanceSimConfig()
+	cfg.Horizon = 1000000
+	cfg.TotalKVBlocks = 100
+	inst := NewInstanceSimulator("return-test", cfg)
+	inst.hasRun = true
+
+	req := &sim.Request{
+		ID:           "req_return",
+		ArrivalTime:  100,
+		InputTokens:  make([]int, 16),
+		OutputTokens: make([]int, 1),
+		State:        "queued",
+	}
+	inst.InjectRequestOnline(req, 200)
+
+	if !inst.HasPendingEvents() {
+		t.Fatal("expected pending events after injection")
+	}
+
+	ev := inst.ProcessNextEvent()
+	if ev == nil {
+		t.Fatal("ProcessNextEvent returned nil")
+	}
+
+	// First event for an injected request is an ArrivalEvent
+	if _, ok := ev.(*sim.ArrivalEvent); !ok {
+		t.Errorf("ProcessNextEvent returned %T, want *sim.ArrivalEvent", ev)
+	}
+
+	// After ArrivalEvent executes, a QueuedEvent should be scheduled
+	if !inst.HasPendingEvents() {
+		t.Fatal("expected QueuedEvent after ArrivalEvent, but no pending events")
+	}
+
+	ev2 := inst.ProcessNextEvent()
+	if _, ok := ev2.(*sim.QueuedEvent); !ok {
+		t.Errorf("second ProcessNextEvent returned %T, want *sim.QueuedEvent", ev2)
+	}
+}
+
 func TestInstanceSimulator_InjectRequestOnline(t *testing.T) {
 	cfg := newTestInstanceSimConfig()
 	cfg.Horizon = 1000000
