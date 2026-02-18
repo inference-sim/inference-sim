@@ -340,7 +340,7 @@ inference-sim/
 ## Design Documents
 
 - `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
-- `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v3.3, 16 PRs across 6 phases, online routing architecture)
+- `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v3.4, 16 PRs across 6 phases, online routing architecture)
 - `docs/plans/2026-02-13-simplification-assessment.md`: Architectural simplification assessment (constructor collapse, unified CLI, field privatization, interface dedup)
 - `docs/plans/2026-02-16-workload-generator-design.md`: ServeGen-informed workload generator design (multi-client specs, arrival processes, calibration)
 - `docs/plans/2026-02-17-pr13-decision-traces.md`: PR13 decision trace design (RoutingRecord, counterfactual analysis, TraceSummary)

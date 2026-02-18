@@ -507,11 +507,17 @@ inference-sim/
 │   ├── scheduler.go        # Instance scheduler interface and templates
 │   ├── router_state.go     # RouterState bridge type for cluster-level policies
 │   ├── bundle.go           # PolicyBundle YAML configuration
+│   ├── event.go            # Event types (Arrival, Queued, Step, Scheduled, Preemption)
 │   ├── kvcache.go          # KV cache modeling (single-tier, implements KVStore)
 │   ├── kv_store.go         # KVStore interface and NewKVStore factory
 │   ├── kvcache_tiered.go   # TieredKVCache: GPU+CPU offload/reload, transfer latency
 │   ├── batch.go            # Batch formation
+│   ├── queue.go            # FIFO wait queue
 │   ├── request.go          # Request lifecycle
+│   ├── metrics.go          # TTFT, TPOT, E2E collection
+│   ├── rng.go              # PartitionedRNG for deterministic simulation
+│   ├── roofline_step.go    # Analytical FLOPs/bandwidth latency estimation
+│   ├── workload_config.go  # CSV trace loading and distribution-based workload
 │   └── model_hardware_config.go  # HuggingFace/hardware config
 ├── sim/cluster/            # Multi-replica cluster simulation
 │   ├── cluster.go          # Shared-clock event loop, online routing
@@ -526,10 +532,16 @@ inference-sim/
 │   ├── spec.go             # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
 │   ├── arrival.go          # ArrivalSampler: Poisson, Gamma, Weibull
 │   ├── distribution.go     # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF
+│   ├── client.go           # Rate normalization, prefix group management
 │   ├── generator.go        # GenerateRequests pipeline with client decomposition
 │   ├── servegen.go         # Native ServeGen data file loading
+│   ├── tracev2.go          # Trace v2 format (YAML header + CSV data)
+│   ├── replay.go           # Trace v2 → sim.Request with synthetic token IDs
 │   ├── calibrate.go        # CalibrationReport, MAPE, Pearson r
-│   └── replay.go           # Trace v2 replay
+│   ├── multimodal.go       # Multimodal token generation (text+image+audio+video)
+│   ├── reasoning.go        # Reasoning multi-turn with context accumulation
+│   ├── network.go          # Client-perspective latency (RTT + bandwidth)
+│   └── scenarios.go        # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 ├── sim/trace/              # Decision trace recording
 │   ├── trace.go            # TraceLevel, TraceConfig, SimulationTrace
 │   ├── record.go           # AdmissionRecord, RoutingRecord, CandidateScore
@@ -560,6 +572,9 @@ inference-sim/
 | `--seed` | 42 | RNG seed for deterministic simulation |
 | `--results-path` | (none) | Save JSON results to file |
 | `--log` | warn | Log level: trace, debug, info, warn, error, fatal, panic |
+| `--defaults-filepath` | defaults.yaml | Path to trained coefficients file |
+| `--model-config-folder` | (none) | Path to folder with HuggingFace `config.json` (enables roofline mode) |
+| `--hardware-config` | (none) | Path to GPU hardware specifications file (for roofline mode) |
 
 ### Workload Configuration
 
@@ -572,8 +587,13 @@ inference-sim/
 | `--max-prompts` | 100 | Number of requests to generate |
 | `--prompt-tokens` | 512 | Mean input token count |
 | `--prompt-tokens-stdev` | 256 | Input token count standard deviation |
+| `--prefix-tokens` | 0 | Shared prefix token count |
 | `--output-tokens` | 512 | Mean output token count |
 | `--output-tokens-stdev` | 256 | Output token count standard deviation |
+| `--prompt-tokens-min` | 2 | Min input token count |
+| `--prompt-tokens-max` | 7000 | Max input token count |
+| `--output-tokens-min` | 2 | Min output token count |
+| `--output-tokens-max` | 7000 | Max output token count |
 
 ### Cluster and Routing
 
@@ -588,6 +608,8 @@ inference-sim/
 | `--token-bucket-refill-rate` | 1000 | Token bucket refill rate (tokens/sec) |
 | `--priority-policy` | constant | Priority: `constant`, `slo-based`, `inverted-slo` |
 | `--scheduler` | fcfs | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority` |
+| `--admission-latency` | 0 | Admission processing latency in microseconds |
+| `--routing-latency` | 0 | Routing processing latency in microseconds |
 | `--policy-config` | (none) | YAML policy bundle file. See `examples/policy-config.yaml` |
 
 ### Observability
@@ -608,6 +630,9 @@ inference-sim/
 | `--max-num-scheduled-tokens` | 2048 | Max new tokens per step across all running requests |
 | `--block-size-in-tokens` | 16 | Tokens per KV cache block |
 | `--max-model-len` | 2048 | Max request length (input + output tokens) |
+| `--long-prefill-token-threshold` | 0 | Chunked prefill trigger threshold (0 = disabled) |
+| `--alpha-coeffs` | 0.0,0.0,0.0 | Alpha coefficients for processing delay estimation |
+| `--beta-coeffs` | 0.0,0.0,0.0 | Beta coefficients for step time estimation |
 | `--kv-cpu-blocks` | 0 | CPU-tier KV cache blocks (0 = single-tier GPU only) |
 | `--kv-offload-threshold` | 0.9 | GPU utilization threshold to trigger offloading to CPU |
 | `--kv-transfer-bandwidth` | 100.0 | GPU↔CPU transfer bandwidth in blocks/tick |
