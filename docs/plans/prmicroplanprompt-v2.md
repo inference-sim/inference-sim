@@ -24,9 +24,15 @@ Every plan MUST start with this exact header format:
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** [One sentence from macro plan describing what this PR delivers]
+**Goal:** [One sentence a non-contributor could understand — what capability does this PR add? Avoid type names, package paths, or implementation jargon.]
 
-**Architecture:** [2-3 sentences about approach from concept model]
+**The problem today:** [2-3 sentences explaining what's missing or broken without this PR. What can't users or the system do? Why does it matter?]
+
+**What this PR adds:** [Numbered list of 2-4 concrete capabilities, each explained in plain language with a brief example. E.g., "Decision traces — a log of every routing decision: 'request_42 was sent to instance_2 because it had the highest score of 0.87'"]
+
+**Why this matters:** [1-2 sentences connecting this PR to the broader project vision. How does this enable downstream work?]
+
+**Architecture:** [2-3 sentences about the technical approach — packages, key types, integration points. Implementation jargon is OK here since the motivation is already established above.]
 
 **Macro Plan Reference:** [Link to section in macro plan, e.g., "Phase 2, PR 4"]
 
@@ -34,6 +40,10 @@ Every plan MUST start with this exact header format:
 
 ---
 ```
+
+The header has TWO audiences reading in order:
+1. A human reviewer who needs to understand WHY before HOW (Goal → Problem → What → Why)
+2. An implementing agent who needs the technical approach (Architecture)
 
 ======================================================================
 PHASE 0 — COMPONENT CONTEXT
@@ -59,8 +69,9 @@ OUTPUT FORMAT (STRICT)
 --- PART 1: Design Validation (Human Review, target <120 lines) ---
 
 A) Executive Summary (5-10 lines)
-   - Which building block from concept model
-   - Adjacent blocks
+   - What this PR builds (plain language, not type/package names)
+   - Where it fits in the system (what comes before it, what depends on it)
+   - Adjacent blocks it interacts with
    - Any DEVIATION flags from Phase 0
 
 B) Behavioral Contracts (Phase 1)
