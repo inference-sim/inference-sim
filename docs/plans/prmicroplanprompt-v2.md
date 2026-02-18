@@ -4,7 +4,11 @@ You are tasked with producing a PR-SPECIFIC IMPLEMENTATION PLAN that combines:
 1. Design rigor (behavioral contracts, architecture validation)
 2. Executable task breakdown (TDD, bite-sized steps, verifications)
 
-This plan is for PR <X> from the approved Macro Plan.
+The source of work may be:
+- A section in an approved Macro Plan (e.g., "Phase 2, PR 4")
+- One or more GitHub issues (e.g., "#183, #189, #195")
+- A design document (e.g., "docs/plans/2026-02-18-hardening-design.md")
+- A feature request or bug report description
 
 This plan has TWO AUDIENCES:
 1) A human reviewer who validates behavioral correctness
@@ -34,7 +38,11 @@ Every plan MUST start with this exact header format:
 
 **Architecture:** [2-3 sentences about the technical approach — packages, key types, integration points. Implementation jargon is OK here since the motivation is already established above.]
 
-**Macro Plan Reference:** [Link to section in macro plan, e.g., "Phase 2, PR 4"]
+**Source:** [Link to the source of work. Examples:
+  - Macro plan: "Phase 2, PR 4 in docs/plans/macro-plan.md"
+  - Issues: "GitHub issues #183, #189, #195, #196, #197, #198, #199, #200"
+  - Design doc: "docs/plans/2026-02-18-hardening-design.md"
+  - Feature request: "GitHub issue #42"]
 
 **Behavioral Contracts:** See Part 1, Section B below
 
@@ -49,18 +57,25 @@ The header has TWO audiences reading in order:
 PHASE 0 — COMPONENT CONTEXT
 ======================================================================
 
-Identify this PR's place in the concept model from the macro plan:
+Identify this PR's place in the system architecture:
 
 1) Which building block is being added or modified?
 2) What are the adjacent blocks it interacts with?
-3) What invariants from the concept model does this PR touch?
+3) What invariants does this PR touch?
 4) What state ownership changes (if any)?
+5) Construction Site Audit: For every struct this PR adds fields to,
+   grep for ALL places that struct is constructed (struct literals,
+   factory functions). List each site with file:line. If there are
+   multiple construction sites, the plan MUST either:
+   a) Add a canonical constructor and refactor all sites, OR
+   b) Update every site explicitly (list each in a task)
 
 Then inspect ONLY the relevant parts of the repository.
 
 List confirmed facts (with file:line citations).
-Flag anything from the macro plan that doesn't match current code as
-a DEVIATION — these must be resolved before implementation begins.
+Flag anything from the source document (macro plan, design doc, or
+issue description) that doesn't match current code as a DEVIATION —
+these must be resolved before implementation begins.
 
 ======================================================================
 OUTPUT FORMAT (STRICT)
@@ -85,8 +100,8 @@ C) Component Interaction (Phase 2)
    - State changes and ownership
 
 D) Deviation Log (Phase 3)
-   - Compare micro plan vs macro plan
-   - Table: | Macro Says | Micro Does | Reason |
+   - Compare micro plan vs source document
+   - Table: | Source Says | Micro Does | Reason |
 
 E) Review Guide (Phase 7-B)
    - The tricky part
@@ -189,6 +204,13 @@ This is the "box-and-arrow" view, NOT the file-level view.
    - New mutable state and its owner
    - State lifecycle (created when, destroyed when, accessed by whom)
 
+4) Extension Friction Assessment
+   - For the main new type/field this PR adds, count: how many files
+     must change to add ONE more field of the same kind?
+   - If >3 files, document whether this is acceptable or whether a
+     structural improvement should happen first/concurrently
+   - This is not a blocker — it's awareness for the reviewer
+
 TARGET: under 40 lines. Infrastructure PRs that introduce multiple
 interacting types may go up to 60 lines with justification.
 Beyond 60 lines, the PR scope is likely too broad.
@@ -197,20 +219,22 @@ Beyond 60 lines, the PR scope is likely too broad.
 PHASE 3 — DEVIATION LOG
 ======================================================================
 
-Compare this micro plan against the macro plan for this PR.
+Compare this micro plan against the source document (macro plan section,
+design doc, or issue description).
 
 For each difference:
 
-| Macro Plan Says | Micro Plan Does | Reason |
-|-----------------|-----------------|--------|
+| Source Says | Micro Plan Does | Reason |
+|-------------|-----------------|--------|
 
 Categories of deviation:
-- SIMPLIFICATION: Macro plan specified more than needed at this stage
-- CORRECTION: Macro plan was wrong about existing code or behavior
+- SIMPLIFICATION: Source specified more than needed at this stage
+- CORRECTION: Source was wrong about existing code or behavior
 - DEFERRAL: Feature moved to a later PR (explain why)
-- ADDITION: Something the macro plan missed
+- ADDITION: Something the source missed
+- SCOPE_CHANGE: Issue description expanded or narrowed during investigation
 
-If there are zero deviations, state "No deviations from macro plan."
+If there are zero deviations, state "No deviations from source document."
 
 ======================================================================
 PHASE 4 — EXECUTABLE TASK BREAKDOWN
@@ -396,9 +420,12 @@ Additional requirements:
    - **KV block conservation:** allocated_blocks + free_blocks = total_blocks
    - **Clock monotonicity:** simulation clock never decreases
    - **Causality:** arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time
+   - **Determinism:** same seed produces byte-identical output across runs
 
    When adding a golden test, ask: "If this golden value were wrong, would
    any other test catch it?" If the answer is no, add an invariant test.
+   If this PR touches request lifecycle, KV cache, or metrics, at least one
+   invariant test MUST be added or extended.
 
 ======================================================================
 PHASE 7 — RISK ANALYSIS & REVIEW GUIDE
@@ -447,6 +474,17 @@ Before implementation, verify:
 - [ ] Task dependencies are correctly ordered.
 - [ ] All contracts are mapped to specific tasks.
 - [ ] Golden dataset regeneration documented (if needed).
+- [ ] Construction site audit completed (Phase 0, item 5) — all struct
+      construction sites listed and covered by tasks.
+- [ ] Every new CLI flag validated for: zero, negative, NaN, Inf, empty string.
+- [ ] Every error path either returns error, panics with context, or increments
+      a counter — no silent `continue` that drops data.
+- [ ] No map iteration feeds float accumulation or determines output ordering
+      without sorted keys.
+- [ ] Library code (sim/, sim/cluster/, sim/workload/) never calls logrus.Fatalf
+      or os.Exit — errors must be returned to callers.
+- [ ] Any loop that allocates resources (blocks, slots, counters) handles mid-loop
+      failure by rolling back all mutations from previous iterations.
 
 ======================================================================
 APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS
@@ -522,7 +560,7 @@ This plan must:
 - Survive systems-level scrutiny (architecture is correct)
 - Eliminate dead code (all code exercisable immediately)
 - Reduce implementation bugs (TDD, explicit verifications)
-- Stay strictly within macro plan scope (deviations justified)
+- Stay strictly within source document scope (deviations justified)
 - Pass golangci-lint with zero new issues
 - Enable automated execution (complete code, exact commands)
 - Map every contract to a task (traceability)

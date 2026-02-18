@@ -1,20 +1,37 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
+about: Propose a new capability for the simulator
 title: ''
-labels: ''
+labels: 'enhancement'
 assignees: ''
 
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+**What problem does this solve?**
+Describe what's missing or limiting. What can't users or researchers do today?
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+**Proposed solution**
+Describe the capability you'd like. Include a CLI example if applicable:
+```bash
+./simulation_worker run --model <model> --new-flag <value>
+```
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+**Which components are affected?**
+- [ ] Core simulator (`sim/`)
+- [ ] Cluster simulation (`sim/cluster/`)
+- [ ] Workload generation (`sim/workload/`)
+- [ ] KV cache (`sim/kvcache*.go`)
+- [ ] Decision tracing (`sim/trace/`)
+- [ ] CLI (`cmd/`)
+- [ ] New package needed
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+**Extension friction check**
+- How many files would need to change to add this? (Estimate)
+- Does this require a new interface, or can it extend an existing one?
+- Does this affect any invariants (conservation, causality, determinism)?
+
+**Alternatives considered**
+What other approaches did you consider? Why is this one preferred?
+
+**Relationship to existing work**
+Does this relate to any open issues, the macro plan, or a design document?

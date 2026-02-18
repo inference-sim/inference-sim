@@ -1,15 +1,15 @@
 # PR Development Workflow
 
-**Status:** Active (v2.6 - updated 2026-02-18)
+**Status:** Active (v2.7 - updated 2026-02-18)
 
-This document describes the complete workflow for implementing a PR from the macro plan.
+This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request.
 
 ## Current Template Versions
 
 **Update this section when templates change. All examples below reference these versions.**
 
-- **Micro-planning template:** `docs/plans/prmicroplanprompt-v2.md` (updated 2026-02-16)
-- **Macro-planning template:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v2.3)
+- **Micro-planning template:** `docs/plans/prmicroplanprompt-v2.md` (updated 2026-02-18)
+- **Macro-planning template:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v3.4)
 - **Deprecated micro-planning:** `docs/plans/prmicroplanprompt-v1-deprecated.md` (for reference only)
 
 ---
@@ -106,7 +106,7 @@ If skills are unavailable, you can implement each step manually:
      - Catches design issues before implementation
    - **Code Review** (Step 4.5) - 4 passes: code quality, test quality, getting-started, automated reviewer
      - Catches implementation issues before PR creation
-   - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 6 dimensions
+   - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 9 dimensions
      - Catches substance bugs that pattern-matching agents miss
 
 ---
@@ -118,12 +118,12 @@ If skills are unavailable, you can implement each step manually:
 | Step | Command |
 |------|---------|
 | **1. Create worktree** | `/superpowers:using-git-worktrees pr<N>-<name>` |
-| **2. Create plan** | `/superpowers:writing-plans for PR<N> in @docs/plans/pr<N>-<name>-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md` |
+| **2. Create plan** | `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/plans/prmicroplanprompt-v2.md and @<source-document>` |
 | **2.5. Review plan** | 5 passes: external review, cross-doc consistency, architecture boundary, codebase readiness, structural validation |
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
 | **4.5. Review code** | 4 focused passes: code quality, test behavioral quality, getting-started, automated reviewer sim |
-| **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases |
+| **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
 **Example for PR 8 (same-session workflow with `.worktrees/`):**
@@ -227,16 +227,28 @@ If skills are unavailable, you can implement each step manually:
 
 **Invocation (simplified):**
 ```
-/superpowers:writing-plans for PR<N> in @docs/plans/pr<N>-<feature-name>-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/plans/prmicroplanprompt-v2.md and @<source-document>
 ```
 
-**Example:**
+The `<source-document>` can be any of:
+- A macro plan: `@docs/plans/2026-02-11-macro-implementation-plan-v2.md`
+- A design document: `@docs/plans/2026-02-18-hardening-design.md`
+- GitHub issues: reference by number in the prompt text (e.g., "for issues #183, #189, #195")
+
+**Examples:**
 ```
+# From macro plan section:
 /superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+
+# From design document:
+/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
+
+# From GitHub issues:
+/superpowers:writing-plans for issues #183 #189 #195 in @docs/plans/kv-bugfix-plan.md using @docs/plans/prmicroplanprompt-v2.md
 ```
 
 **What Happens:**
-- Claude reads the macro plan and locates PR<N> section
+- Claude reads the source document (macro plan section, design doc, or issue descriptions)
 - Claude reads prmicroplanprompt-v2.md as the template
 - Claude inspects the codebase (Phase 0: Component Context)
 - Claude creates behavioral contracts (Phase 1)
@@ -244,13 +256,14 @@ If skills are unavailable, you can implement each step manually:
 - Claude saves plan to the specified output file **in the worktree**
 
 **Output:**
-- Plan file at `docs/plans/pr<N>-<feature-name>-plan.md` (in worktree, on feature branch)
+- Plan file at `docs/plans/<name>-plan.md` (in worktree, on feature branch)
 - Contains: behavioral contracts, executable tasks, test strategy, appendix
 
 **Tips:**
 - Use @ file references instead of copy-pasting
-- Claude automatically extracts the relevant PR section from macro plan
+- Claude automatically extracts the relevant context from the source document
 - Template structure is preserved automatically
+- For issue-based work, Claude reads issue details via `gh issue view`
 
 ---
 
@@ -290,14 +303,16 @@ Get an independent second opinion on the plan before detailed passes.
 
 #### Pass 1: Cross-Document Consistency
 
-Verify the micro plan matches the macro plan and both match the codebase.
+Verify the micro plan matches the source document and both match the codebase.
 
 **Prompt:**
 ```
-/pr-review-toolkit:review-pr Does the micro plan's scope match the macro plan's PR section? Are file paths consistent? Does the deviation log account for all differences between what the macro plan says and what the micro plan does? Check for stale references in the macro plan. @docs/plans/pr<N>-<name>-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/pr-review-toolkit:review-pr Does the micro plan's scope match the source document? Are file paths consistent? Does the deviation log account for all differences between what the source says and what the micro plan does? Check for stale references. @docs/plans/<name>-plan.md and @<source-document>
 ```
 
-**Catches:** Stale macro plan references, scope mismatch, missing deviations, wrong file paths.
+For issue-based work, replace `@<source-document>` with the issue numbers in the prompt text.
+
+**Catches:** Stale references, scope mismatch, missing deviations, wrong file paths.
 
 **Fix all critical/important issues before Pass 2.**
 
@@ -309,10 +324,10 @@ Verify the plan respects architectural boundaries and separation of concerns.
 
 **Prompt:**
 ```
-/pr-review-toolkit:review-pr Does this plan maintain architectural boundaries? Are we ensuring individual instances don't have access to cluster-level state? Are types in the right packages? Check the plan against the actual code for boundary violations. @docs/plans/pr<N>-<name>-plan.md
+/pr-review-toolkit:review-pr Does this plan maintain architectural boundaries? Are we ensuring individual instances don't have access to cluster-level state? Are types in the right packages? Check the plan against the actual code for boundary violations. Also check: (1) does the plan introduce multiple construction sites for the same type? (2) does adding one field to a new type require >3 files? (3) does library code (sim/) call logrus.Fatalf anywhere in the new code? @docs/plans/pr<N>-<name>-plan.md
 ```
 
-**Catches:** Import cycle risks, boundary violations, missing bridge types, wrong abstraction level.
+**Catches:** Import cycle risks, boundary violations, missing bridge types, wrong abstraction level, construction site proliferation, high touch-point multipliers, error handling boundary violations.
 
 **Fix all critical/important issues before Pass 3.**
 
@@ -346,7 +361,7 @@ Verify the plan is complete, internally consistent, and implementation-ready.
 
 **Check 2: Template Completeness**
 - Verify all sections from `prmicroplanprompt-v2.md` are present and non-empty:
-  - Header (Goal, Architecture, Macro Plan Reference)
+  - Header (Goal, Architecture, Source Reference)
   - Part 1: A) Executive Summary, B) Behavioral Contracts, C) Component Interaction, D) Deviation Log, E) Review Guide
   - Part 2: F) Implementation Overview, G) Task Breakdown, H) Test Strategy, I) Risk Analysis
   - Part 3: J) Sanity Checklist
@@ -378,14 +393,14 @@ Verify the plan is complete, internally consistent, and implementation-ready.
 **Focus Areas:**
 1. **Part 1 (Design Validation)** - Review behavioral contracts, component interaction, risks
 2. **Part 2 (Executable Tasks)** - Verify task breakdown makes sense, no dead code
-3. **Deviation Log** - Check if deviations from macro plan are justified
+3. **Deviation Log** - Check if deviations from source document are justified
 4. **Appendix** - Spot-check file-level details for accuracy
 
 **Common Issues to Catch:**
 - Behavioral contracts too vague or missing edge cases
 - Tasks not properly ordered (dependencies)
 - Missing test coverage for contracts
-- Deviations from macro plan not justified
+- Deviations from source document not justified
 - Dead code or scaffolding
 
 **Outcome:**
@@ -461,10 +476,10 @@ Find bugs, logic errors, silent failures, and convention violations.
 
 **Prompt:**
 ```
-/pr-review-toolkit:review-pr
+/pr-review-toolkit:review-pr Also check: (1) any new error paths that use `continue` or early `return` — do they clean up partial state? (2) any map iteration that accumulates floats — are keys sorted? (3) any struct field added — are all construction sites updated? (4) does library code (sim/) call logrus.Fatalf anywhere in new code?
 ```
 
-**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code.
+**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling os.Exit.
 
 **Fix all critical/important issues before Pass 2.**
 
@@ -579,7 +594,9 @@ Wait for user approval before proceeding to Step 4.75.
 4. **Consistency:** Are naming patterns consistent across all changed files? Do comments match code? Do doc strings match implementations? Are there stale references?
 5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md, README, `--help`)?
 6. **Defensive edge cases:** What happens with zero input? Empty collections? Maximum values? What if the user passes unusual but valid flag combinations?
-7. **Test epistemology:** For every test that compares against a captured/golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that's a characterization test — it can catch regressions but cannot catch pre-existing bugs. Is there a corresponding invariant test that validates the result from first principles? Issue #183 lesson: the codellama golden dataset expected 499 completions since its initial commit because one request was silently dropped — a bug the golden test perpetuated instead of catching. Conservation laws (e.g., requests in = requests out) would have caught it immediately.
+7. **Test epistemology:** For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)
+8. **Construction site uniqueness:** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
+9. **Error path completeness:** For every error/failure path in new code, what happens to partially-mutated state? Does every `continue` or early `return` clean up what was started? Is there a counter or log so the failure is observable?
 
 **Fix all issues found. Then wait for user approval before Step 5.**
 
@@ -612,13 +629,13 @@ Wait for user approval before proceeding to Step 4.75.
 4. Creates PR using `gh pr create` with title and description
 
 **Commit message includes:**
-- PR title from macro plan
+- PR title from source document or work item
 - Multi-line description of changes
 - List of implemented behavioral contracts (BC-1, BC-2, etc.)
 - Co-authored-by line
 
 **PR description includes:**
-- Summary from macro plan
+- Summary from source document
 - Behavioral contracts (GIVEN/WHEN/THEN)
 - Testing verification
 - Checklist of completed items
@@ -669,7 +686,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 |-------|-------------|-------|--------|
 | `commit-commands:clean_gone` | **Step 1** - Pre-cleanup of stale branches | None | Removed stale branches |
 | `using-git-worktrees` | **Step 1** - Create isolated workspace FIRST | Branch name | Worktree directory path |
-| `writing-plans` | **Step 2** - Create implementation plan from macro plan | Macro plan PR section + prmicroplanprompt-v2.md | Plan file with contracts + tasks |
+| `writing-plans` | **Step 2** - Create implementation plan from source document | Source document (macro plan/design doc/issues) + prmicroplanprompt-v2.md | Plan file with contracts + tasks |
 | `review-plan` | **Step 2.5 Pass 0** - External LLM review (catches design bugs) | Plan file path | Independent review feedback |
 | `pr-review-toolkit:review-pr` | **Step 2.5 Passes 1-3** - Focused plan review passes | Targeted prompts (see checklist) | Critical/important issues per pass |
 | `executing-plans` | **Step 4** - Execute plan tasks continuously | Plan file path | Implemented code + commits |
@@ -681,7 +698,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 ---
 
-## Example: Complete PR Workflow (Same-Session with `.worktrees/`)
+## Example A: Macro Plan PR Workflow (Same-Session with `.worktrees/`)
 
 ```bash
 # Step 1: Clean up stale branches, then create worktree
@@ -691,7 +708,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # Output: Worktree ready at .worktrees/pr8-routing-state-and-policy-bundle/
 # (continue directly — no new session needed)
 
-# Step 2: Create plan (one simple command with @ references)
+# Step 2: Create plan (source = macro plan section)
 /superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 # Output: Plan created at docs/plans/pr8-routing-state-and-policy-bundle-plan.md
@@ -699,8 +716,8 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # Step 2.5: Focused plan review (5 passes)
 # Pass 0: External LLM review (catches design bugs)
 /review-plan @docs/plans/pr8-routing-state-and-policy-bundle-plan.md
-# Pass 1: Cross-doc consistency (micro plan vs macro plan)
-/pr-review-toolkit:review-pr Does the micro plan match the macro plan? @docs/plans/pr8-plan.md and @docs/plans/macro-plan.md
+# Pass 1: Cross-doc consistency (micro plan vs source document)
+/pr-review-toolkit:review-pr Does the micro plan match the source document? @docs/plans/pr8-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 # Pass 2: Architecture boundary verification
 /pr-review-toolkit:review-pr Does this plan maintain architectural boundaries?
 # Pass 3: Codebase readiness scan
@@ -747,6 +764,30 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 ---
 
+## Example B: Issue/Design-Doc PR Workflow
+
+```bash
+# Step 1: Create worktree for hardening work (source = design doc + issues)
+/commit-commands:clean_gone
+/superpowers:using-git-worktrees hardening-antipatterns
+
+# Step 2: Create plan (source = design document, not macro plan)
+/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
+
+# Step 2.5: Focused plan review (5 passes)
+# Pass 0: External LLM review
+/review-plan @docs/plans/hardening-plan.md
+# Pass 1: Cross-doc consistency (micro plan vs design doc)
+/pr-review-toolkit:review-pr Does the micro plan's scope match the design doc? @docs/plans/hardening-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
+# Passes 2-4: Same as Example A
+
+# Steps 3-5: Identical to Example A
+```
+
+**The workflow is the same regardless of source.** The only difference is what you pass as `@<source-document>` in Step 2. The template, review passes, execution, and quality gates are identical.
+
+---
+
 ## Tips for Success
 
 1. **Use automated reviews proactively** - Run `review-pr` after plan creation and after implementation (don't wait for human review to catch issues)
@@ -756,7 +797,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 5. **Review after execution** - Use automated code review (Step 4.5) after all tasks complete
 6. **Reference contracts in commits** - Makes review easier and more traceable
 7. **Update CLAUDE.md immediately** - Don't defer documentation
-8. **Keep macro plan updated** - Mark PRs as completed
+8. **Keep source documents updated** - Mark PRs as completed in macro plan; close resolved issues
 9. **Don't trust automated passes alone** - The self-audit (Step 4.75) catches substance bugs that pattern-matching agents miss. In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues.
 10. **Checkpoint long sessions** - For PRs with 8+ tasks or multi-round reviews, write a checkpoint summary to `.claude/checkpoint.md` after each major phase (planning, implementation, review). If you hit context limits or need to continue in a new session, read the checkpoint first. This prevents losing progress and avoids re-reading the entire conversation history.
 
@@ -794,7 +835,7 @@ claude -p "Read .review/*.md files. Produce a consolidated summary sorted by sev
 | Pass | What It Catches That Others Miss |
 |------|----------------------------------|
 | External LLM review | Design bugs, mathematical errors, logical flaws (substance, not structure) |
-| Cross-doc consistency | Stale macro plan references, scope mismatch, wrong file paths |
+| Cross-doc consistency | Stale source document references, scope mismatch, wrong file paths |
 | Architecture boundary | Import cycles, boundary violations, wrong abstraction level |
 | Codebase readiness | Stale comments, pre-existing bugs, missing dependencies |
 | Structural validation | Broken task dependencies, missing sections, vague steps, unclear summaries |
@@ -891,7 +932,8 @@ golangci-lint run ./path/to/modified/package/...
 **v2.3 (2026-02-16):** Step 2.5 expanded to 4 passes — added Pass 4 (structural validation: task dependencies, template completeness, executive summary clarity, under-specified task detection). Based on PR9 experience where deferred items fell through cracks in the macro plan, and an under-specified documentation task would have confused the executing agent.
 **v2.4 (2026-02-16):** Four targeted skill integrations addressing real failure modes: (1) `review-plan` as Pass 0 in Step 2.5 — external LLM review catches design bugs that self-review misses (PR9: fitness normalization bug passed 3 focused passes). (2) `superpowers:systematic-debugging` as on-failure handler in Step 4 — structured root-cause analysis instead of ad-hoc debugging. (3) `superpowers:verification-before-completion` replaces manual verification prose after Step 4.5 — makes build/test/lint gate non-skippable. (4) `commit-commands:clean_gone` as pre-cleanup in Step 1 — prevents stale branch accumulation.
 **v2.5 (2026-02-16):** Three additions from `/insights` analysis of 212 sessions: (1) Step 4.75 (pre-commit self-audit) — deliberate critical thinking step with no agent, checking logic/design/determinism/consistency/docs/edge-cases. In PR9, this step found 3 real bugs (wrong reference scale, non-deterministic output, inconsistent comments) that 4 automated passes missed. (2) Headless mode documentation for review passes — workaround for context overflow during multi-agent consolidation, the #1 recurring friction point across 212 sessions. (3) Checkpointing tip for long sessions — prevents progress loss when hitting context limits mid-PR.
-**v2.6 (2026-02-18):** Added "Filing Pre-Existing Issues" subsection to Step 4.5. Code review passes naturally surface bugs in surrounding code that predate the current PR. New rule: file a GitHub issue immediately, do not fix in-PR (avoids scope creep, preserves attribution, prevents losing discoveries). Based on #38 experience where silent-failure-hunter found a pre-existing request-loss bug in simulator.go that was filed as #183.
+**v2.6 (2026-02-18):** Two additions: (1) "Filing Pre-Existing Issues" subsection to Step 4.5 — file a GitHub issue immediately for pre-existing bugs found during review, do not fix in-PR. Based on #38 experience where #183 was discovered. (2) Antipattern prevention from hardening audit of 20+ issues — Step 4.75 expanded to 9 self-audit dimensions (added test epistemology, construction site uniqueness, error path completeness); Step 4.5 Pass 1 prompt expanded with 4 antipattern checks; Step 2.5 Pass 2 prompt expanded with 3 modularity checks. Companion change: `prmicroplanprompt-v2.md` updated with construction site audit (Phase 0), extension friction assessment (Phase 2), invariant test requirement (Phase 6), and 6 new sanity checklist items (Phase 8).
+**v2.7 (2026-02-18):** Generalized workflow from "macro plan only" to any source document (macro plan sections, design docs, GitHub issues, feature requests). Updated template references, review prompts, examples, and invocation patterns. Added Example B showing issue/design-doc workflow alongside macro plan workflow. The same rigor (behavioral contracts, TDD tasks, 5+4 review passes, self-audit) applies regardless of work source.
 
 **Key improvements in v2.0:**
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/macroplan.md`)
