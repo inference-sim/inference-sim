@@ -22,8 +22,8 @@ admission:
 
 routing:
   policy: round-robin
-  # cache_weight: 0.6                 # cache availability weight (only for weighted; FreeKVBlocks)
-  # load_weight: 0.4                  # queue pressure weight (only for weighted; QueueDepth)
+  # cache_weight: 0.6                 # cache affinity weight (only for weighted)
+  # load_weight: 0.4                  # load balance weight (only for weighted)
   # Weights should sum to 1.0 (auto-normalized if they don't).
 
 priority:

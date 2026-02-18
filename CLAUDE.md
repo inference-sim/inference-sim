@@ -58,12 +58,6 @@ go build -o simulation_worker main.go
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 \
   --workload-spec examples/servegen-language.yaml
-
-# Run with tiered KV cache (GPU + CPU offloading)
-./simulation_worker run \
-  --model meta-llama/llama-3.1-8b-instruct \
-  --num-instances 4 \
-  --kv-cpu-blocks 10000 --kv-offload-threshold 0.9 --kv-transfer-bandwidth 100
 ```
 
 ## Testing
@@ -197,8 +191,9 @@ Active development: Evolutionary Policy Optimization extension (see `docs/plans/
 - 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
 - **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type), PR7 (PriorityPolicy with ConstantPriority + SLOBasedPriority templates, InstanceScheduler with FCFS + PriorityFCFS + SJF templates, Priority field on Request, CLI flags `--priority-policy` and `--scheduler`), PR8 (RouterState bridge type in `sim/router_state.go`, PolicyBundle YAML config in `sim/bundle.go`, `--policy-config` CLI flag, AdmissionPolicy and RoutingPolicy accept `*RouterState`, `RoutingDecision.Priority` hint field, **INTERFACE FREEZE**), PR9 (RawMetrics with Distribution + FitnessResult, anomaly detection with priority inversion + HOL blocking counters, pathological templates: reject-all, inverted-slo, always-busiest, reverse-priority, `--fitness-weights` CLI flag, **RESEARCH-READY CHECKPOINT**)
-- **Completed (cont'd):** PR13 (DecisionTrace with RoutingRecord, counterfactual analysis with top-k candidates and regret, TraceSummary, EvaluationResult wrapper, `--trace-level decisions --counterfactual-k --summarize-trace` CLI flags), PR10 (ServeGen-informed Workload Generator in `sim/workload/` with multi-client specs, Poisson/Gamma/Weibull arrivals, Gaussian/Exponential/ParetoLogNormal/EmpiricalPDF distributions, native ServeGen loading, trace v2 replay, CalibrationReport with MAPE/Pearson r, real-mode HTTP client in `cmd/observe.go`, per-SLO-class metrics with Jain fairness index, `--workload-spec` CLI flag), PR12 (KVStore interface, TieredKVCache with GPU+CPU offload/reload, synchronous transfer latency, CacheHitRate/PreemptionRate/KVThrashingRate metrics, `--kv-cpu-blocks --kv-offload-threshold --kv-transfer-bandwidth` CLI flags)
-- **Next:** PR11 (autoscaling), PR14 (P/D disaggregation), PR15 (framework adapters), PR16 (integration tests)
+- **Completed (cont'd):** PR13 (DecisionTrace with RoutingRecord, counterfactual analysis with top-k candidates and regret, TraceSummary, EvaluationResult wrapper, `--trace-level decisions --counterfactual-k --summarize-trace` CLI flags), PR10 (ServeGen-informed Workload Generator in `sim/workload/` with multi-client specs, Poisson/Gamma/Weibull arrivals, Gaussian/Exponential/ParetoLogNormal/EmpiricalPDF distributions, native ServeGen loading, trace v2 replay, CalibrationReport with MAPE/Pearson r, real-mode HTTP client in `cmd/observe.go`, per-SLO-class metrics with Jain fairness index, `--workload-spec` CLI flag)
+- **Next:** PR11 (autoscaling), PR12 (tiered KV cache), PR15 (framework adapters), PR16 (integration tests)
+- Will add to `sim/kv/` package
 - Each PR is CLI-exercisable immediately after merge (no scaffolding)
 
 ### Adding New Policy Templates

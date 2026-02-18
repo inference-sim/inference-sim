@@ -165,9 +165,31 @@ Run multiple instances with a routing policy:
 Available routing policies:
 - `round-robin` (default) — even distribution across instances
 - `least-loaded` — routes to instance with minimum queue + batch size
-- `weighted` — composite score combining cache availability (FreeKVBlocks) and queue pressure (QueueDepth). Weights should sum to 1.0 (auto-normalized if they don't). Most effective when instances have different cache states (e.g., prefix caching, heterogeneous capacity). For symmetric clusters with balanced load, `least-loaded` is simpler and equally effective.
+- `weighted` — composite score combining cache availability (FreeKVBlocks) and load balance (QueueDepth + BatchSize + PendingRequests). Weights should sum to 1.0 (auto-normalized if they don't).
 - `prefix-affinity` — routes matching prefixes to the same instance, falls back to least-loaded
 - `always-busiest` — pathological: routes to most-loaded instance (for anomaly detection testing)
+
+**Seeing weighted routing weights in action:** Run these two commands at `--rate 1000` and compare the Target Distribution in the trace summary:
+
+```bash
+# Cache-dominant: favors instances with most free KV blocks
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --routing-policy weighted \
+  --routing-cache-weight 0.9 --routing-load-weight 0.1 \
+  --max-prompts 500 --rate 1000 \
+  --trace-level decisions --summarize-trace
+
+# Load-dominant: spreads requests evenly across instances
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --routing-policy weighted \
+  --routing-cache-weight 0.1 --routing-load-weight 0.9 \
+  --max-prompts 500 --rate 1000 \
+  --trace-level decisions --summarize-trace
+```
+
+Cache-dominant produces a skewed distribution (one instance receives disproportionately more requests), while load-dominant produces a near-uniform distribution. Use `--rate 1000` or higher so requests arrive fast enough for PendingRequests to accumulate and create the signal disagreement between cache and load dimensions. See `examples/weighted-routing.yaml` for details.
 
 ### Priority and Scheduling Policies
 
@@ -532,8 +554,8 @@ inference-sim/
 |------|---------|-------------|
 | `--num-instances` | 1 | Number of instances in the cluster |
 | `--routing-policy` | round-robin | Routing: `round-robin`, `least-loaded`, `weighted`, `prefix-affinity`, `always-busiest` |
-| `--routing-cache-weight` | 0.6 | Cache availability weight for weighted routing (FreeKVBlocks) |
-| `--routing-load-weight` | 0.4 | Queue pressure weight for weighted routing (QueueDepth) |
+| `--routing-cache-weight` | 0.6 | Cache affinity weight for weighted routing |
+| `--routing-load-weight` | 0.4 | Load balance weight for weighted routing |
 | `--admission-policy` | always-admit | Admission: `always-admit`, `token-bucket`, `reject-all` |
 | `--token-bucket-capacity` | 10000 | Token bucket max tokens |
 | `--token-bucket-refill-rate` | 1000 | Token bucket refill rate (tokens/sec) |

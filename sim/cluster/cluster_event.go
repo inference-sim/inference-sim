@@ -61,12 +61,13 @@ func buildRouterState(cs *ClusterSimulator) *sim.RouterState {
 	for i, inst := range cs.instances {
 		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
 		snapshots[i] = sim.RoutingSnapshot{
-			ID:            string(snap.ID),
-			QueueDepth:    snap.QueueDepth,
-			BatchSize:     snap.BatchSize,
-			KVUtilization: snap.KVUtilization,
-			FreeKVBlocks:  snap.FreeKVBlocks,
-			CacheHitRate:  snap.CacheHitRate,
+			ID:              string(snap.ID),
+			QueueDepth:      snap.QueueDepth,
+			BatchSize:       snap.BatchSize,
+			KVUtilization:   snap.KVUtilization,
+			FreeKVBlocks:    snap.FreeKVBlocks,
+			CacheHitRate:    snap.CacheHitRate,
+			PendingRequests: cs.pendingRequests[string(snap.ID)],
 		}
 	}
 	return &sim.RouterState{
@@ -175,9 +176,12 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 		cs.trace.RecordRouting(record)
 	}
 
-	// Find target instance and inject request
+	// Find target instance, increment pending count, and inject request
 	for _, inst := range cs.instances {
 		if string(inst.ID()) == decision.TargetInstance {
+			// Increment pending AFTER target validation — gives next routing decision
+			// visibility into this routing decision (#170)
+			cs.pendingRequests[decision.TargetInstance]++
 			inst.InjectRequestOnline(e.request, e.time)
 			return
 		}

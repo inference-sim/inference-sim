@@ -67,8 +67,8 @@ var (
 
 	// routing policy config (PR 6)
 	routingPolicy      string  // Routing policy name
-	routingCacheWeight float64 // Cache availability weight for weighted scoring
-	routingLoadWeight  float64 // Queue pressure weight for weighted scoring
+	routingCacheWeight float64 // Cache affinity weight for weighted scoring
+	routingLoadWeight  float64 // Load balance weight for weighted scoring
 
 	// Priority and scheduler config (PR7)
 	priorityPolicy string // Priority policy name
@@ -529,8 +529,8 @@ func init() {
 
 	// Routing policy config
 	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, prefix-affinity, always-busiest")
-	runCmd.Flags().Float64Var(&routingCacheWeight, "routing-cache-weight", 0.6, "Cache availability weight for weighted routing (FreeKVBlocks)")
-	runCmd.Flags().Float64Var(&routingLoadWeight, "routing-load-weight", 0.4, "Queue pressure weight for weighted routing (QueueDepth)")
+	runCmd.Flags().Float64Var(&routingCacheWeight, "routing-cache-weight", 0.6, "Cache affinity weight for weighted routing")
+	runCmd.Flags().Float64Var(&routingLoadWeight, "routing-load-weight", 0.4, "Load balance weight for weighted routing")
 
 	// Priority and scheduler config (PR7)
 	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")

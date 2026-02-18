@@ -8,12 +8,13 @@ import "fmt"
 // Timestamp is intentionally excluded: snapshot freshness is managed by
 // CachedSnapshotProvider and is not a policy concern.
 type RoutingSnapshot struct {
-	ID            string
-	QueueDepth    int
-	BatchSize     int
-	KVUtilization float64
-	FreeKVBlocks  int64
-	CacheHitRate  float64
+	ID              string
+	QueueDepth      int
+	BatchSize       int
+	KVUtilization   float64
+	FreeKVBlocks    int64
+	CacheHitRate    float64
+	PendingRequests int // Requests routed to this instance but not yet in queue
 }
 
 // RoutingDecision encapsulates the routing decision for a request.
@@ -85,15 +86,22 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 
 // WeightedScoring routes requests using a weighted combination of cache availability and load balance.
 //
-// The two scoring dimensions use independent signals to ensure weight changes produce
-// measurably different routing decisions:
-//   - Cache dimension: FreeKVBlocks / maxFreeKVBlocks — measures memory availability
-//   - Load dimension:  1 / (1 + QueueDepth) — measures queue pressure (inverse, not max-normalized)
+// Two scoring dimensions:
+//   - Cache: FreeKVBlocks / maxFreeKVBlocks — measures memory availability
+//   - Load:  1 / (1 + effectiveLoad) — measures load balance without max-normalization
 //
-// Using QueueDepth (not QueueDepth+BatchSize) for load and FreeKVBlocks (not KVUtilization)
-// for cache ensures the signals can rank instances differently — e.g., an instance with few
-// large requests has low queue depth but high KV usage, while an instance with many small
-// requests has high queue depth but low KV usage.
+// Where effectiveLoad = QueueDepth + BatchSize + PendingRequests.
+//
+// PendingRequests counts requests routed to an instance but not yet in its queue (#170).
+// This gives routing visibility into its own recent decisions, breaking the symmetric
+// equilibrium that otherwise makes weight changes unobservable (#169).
+// Load increases immediately (via PendingRequests) while FreeKVBlocks stays unchanged
+// (no KV blocks allocated yet for pending requests), creating signal disagreement
+// where weight changes produce different routing decisions.
+//
+// The load dimension uses 1/(1+load) instead of max-normalization to preserve
+// absolute differences between instances. Max-normalization collapses small
+// differences, making weights ineffective in balanced clusters.
 //
 // Higher scores are preferred. Ties broken by first occurrence in snapshot order.
 type WeightedScoring struct {
@@ -108,7 +116,7 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		panic("WeightedScoring.Route: empty snapshots")
 	}
 
-	// Find max FreeKVBlocks for normalization
+	// Find max FreeKVBlocks for cache normalization
 	maxFreeKV := int64(0)
 	for _, snap := range snapshots {
 		if snap.FreeKVBlocks > maxFreeKV {
@@ -122,18 +130,15 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	bestIdx := 0
 
 	for i, snap := range snapshots {
-		// Cache dimension: FreeKVBlocks / maxFreeKVBlocks (0 to 1)
-		// Uses absolute block availability, not utilization ratio — decorrelated from queue depth
+		// Cache dimension: FreeKVBlocks normalized by cluster max
 		cacheScore := 0.0
 		if maxFreeKV > 0 {
 			cacheScore = float64(snap.FreeKVBlocks) / float64(maxFreeKV)
 		}
 
-		// Load dimension: 1/(1+QueueDepth) — diminishing returns, not max-normalized
-		// Uses only QueueDepth (waiting requests), not BatchSize (running requests)
-		// This ensures an instance with many queued small requests scores differently
-		// from one with few queued large requests (which would have similar KV usage)
-		loadScore := 1.0 / (1.0 + float64(snap.QueueDepth))
+		// Load dimension: inverse of effective load (no max-normalization)
+		effectiveLoad := snap.QueueDepth + snap.BatchSize + snap.PendingRequests
+		loadScore := 1.0 / (1.0 + float64(effectiveLoad))
 
 		score := cacheScore*ws.cacheWeight + loadScore*ws.loadWeight
 		scores[snap.ID] = score
