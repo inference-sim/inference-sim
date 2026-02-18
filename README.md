@@ -10,7 +10,7 @@ The simulator is CPU-only, extremely fast, and designed for capacity planning, s
 ## Features
 
 - **Discrete-event simulation** for prefill, decode, and request scheduling
-- **KV-cache modeling** (blocks, prefix caching, prefill chunking)
+- **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
 - **CPU-only inference cost model** via learned α/β coefficients
 - **HuggingFace config.json support** for model architecture
 - **Dense and MoE model support** (Mixtral, DeepSeek-MoE, etc.)
@@ -27,9 +27,9 @@ The simulator is CPU-only, extremely fast, and designed for capacity planning, s
 - **ServeGen-informed workload generation**: multi-client specs with Poisson/Gamma/Weibull arrivals (`--workload-spec`)
 - **Decision tracing and counterfactual analysis**: record routing decisions and evaluate alternative choices (`--trace-level`, `--counterfactual-k`)
 - **Fitness evaluation**: weighted multi-objective scoring with configurable metric weights (`--fitness-weights`)
-- **Real-mode HTTP client**: observe-predict-calibrate loop against live inference endpoints (`observe` subcommand)
-- **Per-SLO-class metrics**: breakdown by SLO class with Jain fairness index
-- **Calibration framework**: MAPE and Pearson r for simulator-vs-real accuracy assessment
+- **Real-mode HTTP client**: observe-predict-calibrate loop against live inference endpoints (library in `cmd/observe.go`; CLI subcommand planned)
+- **Per-SLO-class metrics**: breakdown by SLO class with Jain fairness index (computed internally; JSON output planned)
+- **Calibration framework**: MAPE and Pearson r for simulator-vs-real accuracy assessment (library in `sim/workload/calibrate.go`; CLI subcommand planned)
 
 ---
 
@@ -190,6 +190,27 @@ Available routing policies:
 ```
 
 Cache-dominant produces a skewed distribution (one instance receives disproportionately more requests), while load-dominant produces a near-uniform distribution. Use `--rate 1000` or higher so requests arrive fast enough for PendingRequests to accumulate and create the signal disagreement between cache and load dimensions. See `examples/weighted-routing.yaml` for details.
+
+### Tiered KV Cache (GPU + CPU Offloading)
+
+Enable a two-tier KV cache where blocks are offloaded from GPU to CPU memory when GPU utilization exceeds a threshold, and reloaded on demand with modeled transfer latency:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --kv-cpu-blocks 500000 \
+  --kv-offload-threshold 0.8 \
+  --kv-transfer-bandwidth 50.0
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--kv-cpu-blocks` | 0 | CPU-tier KV cache blocks (0 = single-tier GPU only) |
+| `--kv-offload-threshold` | 0.9 | GPU utilization threshold that triggers offloading to CPU |
+| `--kv-transfer-bandwidth` | 100.0 | GPU↔CPU transfer bandwidth in blocks/tick |
+
+When `--kv-cpu-blocks` is 0 (default), BLIS uses the single-tier GPU-only KV cache. Setting it to any positive value activates the tiered cache.
 
 ### Priority and Scheduling Policies
 
@@ -389,6 +410,7 @@ The trace summary shows:
 - Total admission decisions (admitted vs rejected)
 - Target distribution across instances (routing balance)
 - Unique targets used
+- Mean and max regret (when `--counterfactual-k` > 0)
 
 ### Counterfactual Analysis
 
@@ -456,9 +478,12 @@ Completed:
 - **ServeGen-informed workload generator** with observe-predict-calibrate loop (PR10)
 - **Decision tracing and counterfactual analysis** with top-k regret computation (PR13)
 
+- **Tiered KV cache** with GPU+CPU offload/reload and transfer latency modeling (PR12)
+
 Upcoming:
 
-- **Auto-scaling** (PR11) and **tiered KV cache** (PR12)
+- **Auto-scaling** with actuation policies (PR11)
+- **Prefill/Decode disaggregation** with cross-instance KV transfer (PR14)
 - **Framework adapters** for OpenEvolve and GEPA policy evolution (PR15)
 - **Integration tests** (PR16)
 
@@ -483,9 +508,17 @@ inference-sim/
 │   ├── scheduler.go        # Instance scheduler interface and templates
 │   ├── router_state.go     # RouterState bridge type for cluster-level policies
 │   ├── bundle.go           # PolicyBundle YAML configuration
-│   ├── kvcache.go          # KV cache modeling
+│   ├── event.go            # Event types (Arrival, Queued, Step, Scheduled, Preemption)
+│   ├── kvcache.go          # KV cache modeling (single-tier, implements KVStore)
+│   ├── kv_store.go         # KVStore interface and NewKVStore factory
+│   ├── kvcache_tiered.go   # TieredKVCache: GPU+CPU offload/reload, transfer latency
 │   ├── batch.go            # Batch formation
+│   ├── queue.go            # FIFO wait queue
 │   ├── request.go          # Request lifecycle
+│   ├── metrics.go          # TTFT, TPOT, E2E collection
+│   ├── rng.go              # PartitionedRNG for deterministic simulation
+│   ├── roofline_step.go    # Analytical FLOPs/bandwidth latency estimation
+│   ├── workload_config.go  # CSV trace loading and distribution-based workload
 │   └── model_hardware_config.go  # HuggingFace/hardware config
 ├── sim/cluster/            # Multi-replica cluster simulation
 │   ├── cluster.go          # Shared-clock event loop, online routing
@@ -494,15 +527,22 @@ inference-sim/
 │   ├── snapshot.go         # Instance observability snapshots
 │   ├── metrics.go          # RawMetrics, FitnessResult, anomaly detection, per-SLO-class metrics
 │   ├── counterfactual.go   # Top-k candidate ranking and regret computation
-│   └── evaluation.go       # EvaluationResult wrapper (metrics + trace + summary)
+│   ├── evaluation.go       # EvaluationResult wrapper (metrics + trace + summary)
+│   └── workload.go         # Centralized request generation for cluster dispatch
 ├── sim/workload/           # ServeGen-informed workload generation
 │   ├── spec.go             # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
 │   ├── arrival.go          # ArrivalSampler: Poisson, Gamma, Weibull
 │   ├── distribution.go     # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF
+│   ├── client.go           # Rate normalization, prefix group management
 │   ├── generator.go        # GenerateRequests pipeline with client decomposition
 │   ├── servegen.go         # Native ServeGen data file loading
+│   ├── tracev2.go          # Trace v2 format (YAML header + CSV data)
+│   ├── replay.go           # Trace v2 → sim.Request with synthetic token IDs
 │   ├── calibrate.go        # CalibrationReport, MAPE, Pearson r
-│   └── replay.go           # Trace v2 replay
+│   ├── multimodal.go       # Multimodal token generation (text+image+audio+video)
+│   ├── reasoning.go        # Reasoning multi-turn with context accumulation
+│   ├── network.go          # Client-perspective latency (RTT + bandwidth)
+│   └── scenarios.go        # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 ├── sim/trace/              # Decision trace recording
 │   ├── trace.go            # TraceLevel, TraceConfig, SimulationTrace
 │   ├── record.go           # AdmissionRecord, RoutingRecord, CandidateScore
@@ -526,13 +566,16 @@ inference-sim/
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model` | (required) | LLM model name (e.g., `meta-llama/llama-3.1-8b-instruct`) |
-| `--hardware` | auto | GPU type (`H100`, `A100-80`) |
-| `--tp` | auto | Tensor parallelism degree |
-| `--vllm-version` | auto | vLLM version string |
+| `--hardware` | (auto-detected) | GPU type (`H100`, `A100-80`). Auto-detected from `defaults.yaml` if omitted |
+| `--tp` | (auto-detected) | Tensor parallelism degree. Auto-detected from `defaults.yaml` if omitted |
+| `--vllm-version` | (auto-detected) | vLLM version string. Auto-detected from `defaults.yaml` if omitted |
 | `--horizon` | max int64 | Simulation horizon in ticks (microseconds) |
 | `--seed` | 42 | RNG seed for deterministic simulation |
 | `--results-path` | (none) | Save JSON results to file |
 | `--log` | warn | Log level: trace, debug, info, warn, error, fatal, panic |
+| `--defaults-filepath` | defaults.yaml | Path to trained coefficients file |
+| `--model-config-folder` | (none) | Path to folder with HuggingFace `config.json` (enables roofline mode) |
+| `--hardware-config` | (none) | Path to GPU hardware specifications file (for roofline mode) |
 
 ### Workload Configuration
 
@@ -545,8 +588,13 @@ inference-sim/
 | `--max-prompts` | 100 | Number of requests to generate |
 | `--prompt-tokens` | 512 | Mean input token count |
 | `--prompt-tokens-stdev` | 256 | Input token count standard deviation |
+| `--prefix-tokens` | 0 | Shared prefix token count |
 | `--output-tokens` | 512 | Mean output token count |
 | `--output-tokens-stdev` | 256 | Output token count standard deviation |
+| `--prompt-tokens-min` | 2 | Min input token count |
+| `--prompt-tokens-max` | 7000 | Max input token count |
+| `--output-tokens-min` | 2 | Min output token count |
+| `--output-tokens-max` | 7000 | Max output token count |
 
 ### Cluster and Routing
 
@@ -561,6 +609,8 @@ inference-sim/
 | `--token-bucket-refill-rate` | 1000 | Token bucket refill rate (tokens/sec) |
 | `--priority-policy` | constant | Priority: `constant`, `slo-based`, `inverted-slo` |
 | `--scheduler` | fcfs | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority` |
+| `--admission-latency` | 0 | Admission processing latency in microseconds |
+| `--routing-latency` | 0 | Routing processing latency in microseconds |
 | `--policy-config` | (none) | YAML policy bundle file. See `examples/policy-config.yaml` |
 
 ### Observability
@@ -581,6 +631,12 @@ inference-sim/
 | `--max-num-scheduled-tokens` | 2048 | Max new tokens per step across all running requests |
 | `--block-size-in-tokens` | 16 | Tokens per KV cache block |
 | `--max-model-len` | 2048 | Max request length (input + output tokens) |
+| `--long-prefill-token-threshold` | 0 | Chunked prefill trigger threshold (0 = disabled) |
+| `--alpha-coeffs` | 0.0,0.0,0.0 | Alpha coefficients for processing delay estimation |
+| `--beta-coeffs` | 0.0,0.0,0.0 | Beta coefficients for step time estimation |
+| `--kv-cpu-blocks` | 0 | CPU-tier KV cache blocks (0 = single-tier GPU only) |
+| `--kv-offload-threshold` | 0.9 | GPU utilization threshold to trigger offloading to CPU |
+| `--kv-transfer-bandwidth` | 100.0 | GPU↔CPU transfer bandwidth in blocks/tick |
 
 ---
 
