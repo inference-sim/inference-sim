@@ -48,7 +48,7 @@ func computeCounterfactual(chosenID string, scores map[string]float64, snapshots
 			s = scores[snap.ID]
 		} else {
 			// Load-based fallback: negative load so lower load ranks higher (#175)
-			s = -float64(snap.QueueDepth + snap.BatchSize + snap.PendingRequests)
+			s = -float64(snap.EffectiveLoad())
 		}
 		all[i] = scored{snap: snap, score: s}
 		if snap.ID == chosenID {
