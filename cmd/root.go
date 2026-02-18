@@ -190,10 +190,6 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		// Log configuration
-		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
-			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs)
-
 		// Workload configuration
 		var guideLLMConfig *sim.GuideLLMConfig
 		var preGeneratedRequests []*sim.Request
@@ -207,11 +203,11 @@ var runCmd = &cobra.Command{
 			if err := spec.Validate(); err != nil {
 				logrus.Fatalf("Invalid workload spec: %v", err)
 			}
-			horizon := simulationHorizon
-			if spec.Horizon > 0 {
-				horizon = spec.Horizon
+			// Apply spec horizon as default; CLI --horizon flag overrides via Changed().
+			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
+				simulationHorizon = spec.Horizon
 			}
-			reqs, err := workload.GenerateRequests(spec, horizon)
+			reqs, err := workload.GenerateRequests(spec, simulationHorizon)
 			if err != nil {
 				logrus.Fatalf("Failed to generate workload: %v", err)
 			}
@@ -355,6 +351,10 @@ var runCmd = &cobra.Command{
 			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
 				tokenBucketCapacity, tokenBucketRefillRate)
 		}
+
+		// Log configuration after all config sources (CLI, workload spec, policy bundle) are resolved
+		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
+			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs)
 
 		startTime := time.Now() // Get current time (start)
 
