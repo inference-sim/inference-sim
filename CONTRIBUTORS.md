@@ -36,6 +36,7 @@ Follow `docs/plans/prworkflow.md` for the complete PR lifecycle. The workflow ap
 Golden tests ("did the output change?") are necessary but insufficient. Pair each golden test with an **invariant test** that verifies a law the system must satisfy:
 
 - **Request conservation**: injected == completed + queued + running
+- **Request lifecycle**: queued -> running -> completed (no invalid transitions)
 - **KV block conservation**: allocated + free == total
 - **Causality**: arrival <= schedule <= completion
 - **Clock monotonicity**: clock never decreases

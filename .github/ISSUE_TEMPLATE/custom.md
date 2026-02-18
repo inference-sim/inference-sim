@@ -12,6 +12,7 @@ Reference specific issues, audit findings, or design doc sections.
 
 **Which invariants are at risk?**
 - [ ] Request conservation
+- [ ] Request lifecycle
 - [ ] KV block conservation
 - [ ] Causality
 - [ ] Clock monotonicity

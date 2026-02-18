@@ -123,7 +123,7 @@ If skills are unavailable, you can implement each step manually:
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
 | **4.5. Review code** | 4 focused passes: code quality, test behavioral quality, getting-started, automated reviewer sim |
-| **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases |
+| **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
 **Example for PR 8 (same-session workflow with `.worktrees/`):**
@@ -594,7 +594,7 @@ Wait for user approval before proceeding to Step 4.75.
 4. **Consistency:** Are naming patterns consistent across all changed files? Do comments match code? Do doc strings match implementations? Are there stale references?
 5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md, README, `--help`)?
 6. **Defensive edge cases:** What happens with zero input? Empty collections? Maximum values? What if the user passes unusual but valid flag combinations?
-7. **Test epistemology:** For every test that compares against a captured/golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that's a characterization test — it can catch regressions but cannot catch pre-existing bugs. Is there a corresponding invariant test that validates the result from first principles? Issue #183 lesson: the codellama golden dataset expected 499 completions since its initial commit because one request was silently dropped — a bug the golden test perpetuated instead of catching. Conservation laws (e.g., requests in = requests out) would have caught it immediately.
+7. **Test epistemology:** For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)
 8. **Construction site uniqueness:** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
 9. **Error path completeness:** For every error/failure path in new code, what happens to partially-mutated state? Does every `continue` or early `return` clean up what was started? Is there a counter or log so the failure is observable?
 

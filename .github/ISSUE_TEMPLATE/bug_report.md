@@ -18,6 +18,7 @@ What is wrong? Be specific about the incorrect behavior.
 **Expected behavior**
 What should happen? Reference an invariant if applicable:
 - Request conservation: injected == completed + queued + running
+- Request lifecycle: queued -> running -> completed (no invalid transitions)
 - KV block conservation: allocated + free == total
 - Causality: arrival <= schedule <= completion
 - Clock monotonicity: clock never decreases
@@ -28,6 +29,7 @@ What happens instead? Include relevant log output or JSON metrics.
 
 **Which invariant is violated?**
 - [ ] Request conservation
+- [ ] Request lifecycle
 - [ ] KV block conservation
 - [ ] Causality
 - [ ] Clock monotonicity

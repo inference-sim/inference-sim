@@ -27,6 +27,7 @@
 <!-- Which invariants does this PR maintain or test? -->
 
 - [ ] Request conservation: injected == completed + queued + running
+- [ ] Request lifecycle: queued -> running -> completed (no invalid transitions)
 - [ ] KV block conservation: allocated + free == total
 - [ ] Causality: arrival <= schedule <= completion
 - [ ] Clock monotonicity
