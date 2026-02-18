@@ -152,11 +152,12 @@ Fixes #191.
 
 **Current:** `continue` after failed allocation -- request vanishes from simulation.
 
-**Fix:** Convert to panic with context. This path is an internal consistency violation (blocks are pre-allocated for running requests). Continuing in a corrupted state is worse than crashing for a simulator that needs deterministic, accountable results:
+**Fix:** Convert to panic with context including block accounting state for debugging. This path is an internal consistency violation (blocks are pre-allocated for running requests). Continuing in a corrupted state is worse than crashing for a simulator that needs deterministic, accountable results:
 
 ```go
 if !ok {
-    panic(fmt.Sprintf("[tick %07d] KV allocation failed for completing request %s -- cache accounting invariant violated", now, req.ID))
+    panic(fmt.Sprintf("[tick %07d] KV allocation failed for completing request %s -- cache accounting invariant violated (used=%d, free=%d, total=%d)",
+        now, req.ID, sim.KVCache.UsedBlocks(), sim.KVCache.TotalCapacity()-sim.KVCache.UsedBlocks(), sim.KVCache.TotalCapacity()))
 }
 ```
 
@@ -230,7 +231,9 @@ for i := int64(0); i < numNewBlocks; i++ {
 // Commit: apply token data and hashes to committed blocks
 ```
 
-**Design note:** Also roll back cached-block RefCount increments from earlier in the function (lines 240-252) if the new-block loop fails.
+**Design note — rollback scope (critical):** The rollback must also undo cached-block RefCount increments from lines 240-252. If cached blocks were found and their RefCount was incremented + removed from the free list, and then the new-block loop fails, those cached-block mutations must also be rolled back. The rollback function should track both `newlyAllocated` (new blocks) and `cachedBlocksUsed` (cached blocks with incremented RefCount) and undo both on failure.
+
+**Design note — deprecated function:** `AllocateKVBlocksPrefill` (kvcache.go:144-201) has the SAME partial allocation leak at lines 174-177. Since this function appears to be deprecated (superseded by the unified `AllocateKVBlocks`), it should be **removed entirely** in this PR rather than fixed. If it is still referenced, fix it with the same rollback pattern.
 
 #### 2f. PendingRequests false decrement on preemption (#192)
 
@@ -245,8 +248,31 @@ pendingByID map[string]map[string]bool
 ```
 
 When routing dispatches: `pendingByID[instID][reqID] = true`.
-When QueuedEvent fires for a tracked request: delete from set.
-Preemption does not add request IDs to the pending set, so it cannot cause false decrements.
+
+**Implementation mechanism (critical detail):** The current `ProcessNextEvent` is opaque — the cluster doesn't know which event type was processed or which request was involved. Two options:
+
+1. **Callback approach (recommended):** Add a `QueuedCallback func(reqID string)` field to `Simulator` or `InstanceSimulator`. When `QueuedEvent.Execute` fires, it invokes the callback. The cluster sets this callback during construction to remove the request ID from `pendingByID`. This is minimally invasive — one new field, one callback invocation.
+
+2. **Return-value approach:** Change `ProcessNextEvent` to return metadata about what was processed (event type, request ID). More informative but changes the method signature.
+
+Preemption does not invoke the queued callback (preemption re-enqueues via direct slice manipulation, not via `QueuedEvent`), so it cannot cause false decrements.
+
+#### 2g. Completion condition fragility for zero-output requests
+
+**File:** `sim/simulator.go` ~line 586
+
+**Current:** The completion check `req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1` is accidentally correct — it works only because the completion loop (lines 584-629) runs AFTER the prefill execution loop (lines 553-569) in separate passes over `RunningBatch.Requests`. For a request with 0 output tokens, both "prefill just completed" (line 564) and "request completed" (line 586) are true in the same step. If these loops were ever consolidated into a single pass, both branches would fire.
+
+**Fix:** Add a documenting comment explaining the two-pass dependency:
+```go
+// IMPORTANT: This completion loop MUST run as a separate pass after the
+// prefill/decode execution loop (lines 553-569). For zero-output-token
+// requests, both "prefill completed" and "request completed" conditions
+// are true in the same step. The two-pass design ensures prefill metrics
+// (TTFT) are recorded before completion metrics (E2E).
+```
+
+This is a documentation fix, not a code change. Full decomposition is deferred to the SGLang engine work.
 
 ### Phase 3: Data Loss / Metric Distortion Fixes (Tier 2)
 
@@ -262,7 +288,19 @@ Preemption does not add request IDs to the pending set, so it cannot cause false
 
 **Fix:** Replace silent `continue` with a counter. Log dropped count at Warn level. For `SLOAttainment`, include dropped requests in the denominator (conservative: treat missing data as SLO violation).
 
-#### 3c. ComputeFitness unknown keys fail-fast (#203)
+#### 3c. CacheHits double-counted in tiered mode
+
+**File:** `sim/kvcache.go` ~line 134, `sim/kvcache_tiered.go` ~line 73
+
+**Current:** `GetCachedBlocks()` increments `CacheHits++` at line 134 despite its doc comment claiming it is "pure" and does not modify state. In tiered mode, `TieredKVCache.AllocateKVBlocks` calls `t.gpu.GetCachedBlocks(req.InputTokens)` a second time after a CPU-to-GPU reload (line 73), inflating the hit counter. This distorts the `CacheHitRate()` metric.
+
+**Fix:** Move the `CacheHits++` increment out of `GetCachedBlocks` to the allocation call site that actually uses the cached blocks for allocation. `GetCachedBlocks` becomes a true query (matching its doc comment). The caller in `AllocateKVBlocks` increments `CacheHits` once per block actually reused.
+
+Alternatively, add a `countHits bool` parameter to `GetCachedBlocks`, but this pollutes the interface. The move-to-caller approach is cleaner.
+
+**Also fix:** Update the doc comment on `GetCachedBlocks` to remove the false "pure method" claim, or make it actually pure (preferred).
+
+#### 3d. ComputeFitness unknown keys fail-fast (#203)
 
 **File:** `sim/cluster/metrics.go` ~line 355
 
@@ -316,11 +354,24 @@ Would catch #200 if the guard condition ever fails.
 
 For every completed request: `ArrivalTime <= TTFT_time <= CompletionTime`. All ITL values >= 0.
 
-#### 4d. Determinism
+#### 4d. Clock Monotonicity
+
+After every event processed: `clock_after >= clock_before`. Both single-instance (`sim.Clock`) and cluster-level (`c.clock`).
+
+```go
+func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
+    // Run simulation, instrument event processing to record clock at each step
+    // Assert: clock values form a non-decreasing sequence
+}
+```
+
+Currently masked by heap ordering of event queues, but a bug in event scheduling or timestamp computation could violate it. This is documented in CLAUDE.md as a key invariant but has no test.
+
+#### 4e. Determinism
 
 Run the same simulation twice with the same seed, assert byte-identical JSON output. Catches #195 and any future non-determinism.
 
-#### 4e. Golden Dataset Regeneration
+#### 4f. Golden Dataset Regeneration
 
 After fixing #183, golden dataset values will change. Regenerate with fixed code. Document the regeneration command so future contributors can update golden values when intentional behavior changes occur.
 
@@ -343,6 +394,24 @@ if rate <= 0 {
 ```go
 if math.IsNaN(val) || math.IsInf(val, 0) || val < 0 {
     return nil, fmt.Errorf("invalid weight value for %q: %f", key, val)
+}
+```
+
+#### 5c. CalculatePercentile panics on empty input
+
+**File:** `sim/metrics_utils.go` ~line 67
+
+**Current:** `CalculatePercentile` computes `rank = p/100.0 * float64(n-1)`. When `data` is empty (`n=0`), `rank` becomes negative, producing `lowerIdx = -1` and an array index out-of-bounds panic. The cluster-side `percentile` function handles empty input with an early return, but `CalculatePercentile` does not.
+
+**Trigger path:** If all completed requests have 0 output tokens, `m.AllITLs` could be empty while `m.CompletedRequests > 0`, bypassing the `CompletedRequests > 0` guard in `SaveResults`.
+
+**Fix:** Add an empty-input guard:
+```go
+func CalculatePercentile(data []float64, p float64) float64 {
+    if len(data) == 0 {
+        return 0
+    }
+    // ... existing logic
 }
 ```
 
@@ -507,16 +576,16 @@ func NewKVStore(cfg SimConfig) KVStore {
 | File | Changes | Issues Fixed |
 |---|---|---|
 | `sim/routing.go` | Add `EffectiveLoad()`, update 3 policies | #175 |
-| `sim/metrics_utils.go` | Add `NewRequestMetrics()`, error returns for I/O | #189 |
-| `sim/simulator.go` | Fix decode numNewTokens, KV alloc panic, add observation methods, remove KV type assertion | #183, #198 |
-| `sim/kvcache.go` | Fix prefix hash, stale index, add rollback | #196, #197, #200 |
+| `sim/metrics_utils.go` | Add `NewRequestMetrics()`, error returns for I/O, CalculatePercentile empty guard | #189, panic fix |
+| `sim/simulator.go` | Fix decode numNewTokens, KV alloc panic (with accounting state), add completion condition comment, add observation methods, remove KV type assertion | #183, #198, 2g |
+| `sim/kvcache.go` | Fix prefix hash, stale index, add rollback (with cached-block rollback), move CacheHits to caller, fix GetCachedBlocks purity, remove deprecated AllocateKVBlocksPrefill | #196, #197, #200, CacheHits fix |
 | `sim/kvcache_tiered.go` | Non-destructive PendingTransferLatency, add SetClock | destructive-read fix |
 | `sim/kv_store.go` | Add SetClock to interface, add NewKVStore validation | type assertion, validation |
 | `sim/request.go` | RequestState typed constants | state enforcement |
 | `sim/metrics.go` | Iterate Requests not RequestTTFTs | #190 |
 | `sim/bundle.go` | Add ValidPolicyNames helpers | CLI name drift |
 | `sim/workload_config.go` | Return errors instead of logrus.Fatalf | library os.Exit |
-| `sim/cluster/cluster.go` | Complete aggregation, ID-based pending tracking | #191, #192 |
+| `sim/cluster/cluster.go` | Complete aggregation, ID-based pending tracking (with QueuedCallback mechanism) | #191, #192 |
 | `sim/cluster/metrics.go` | Sorted keys, fail-fast fitness, SLO counter | #195, #201, #203 |
 | `sim/cluster/instance.go` | Use Simulator observation methods | coupling reduction |
 | `sim/cluster/snapshot.go` | Use RoutingSnapshot directly (eliminate InstanceSnapshot) | snapshot duplication |
@@ -557,6 +626,12 @@ Within Phase 6, the dependency order is:
 5. **InstanceSnapshot removal (6b).** `CachedSnapshotProvider` return type changes from `InstanceSnapshot` to `sim.RoutingSnapshot`. All snapshot consumers must be updated. The `SnapshotProvider` interface signature changes.
 
 6. **Error return propagation (6e).** Changing `generateWorkloadFromCSV()` to return `error` requires updating the call chain through `NewSimulator` or `Run()`. May touch `Simulator.Run()` signature.
+
+7. **CacheHits relocation (3c).** Moving `CacheHits++` from `GetCachedBlocks` to the caller changes the counting semantics. Must verify that single-tier mode (which doesn't double-call `GetCachedBlocks`) still counts correctly.
+
+8. **QueuedCallback mechanism (2f).** Adding a callback field to `Simulator` or `InstanceSimulator` is a new coupling point. Must ensure the callback is nil-safe (no-op when cluster layer is not present, i.e., single-instance mode).
+
+9. **Deprecated function removal (2e).** Removing `AllocateKVBlocksPrefill` requires verifying no code path still calls it. If it is referenced by tests or legacy code, those references must be updated.
 
 ## Out of Scope
 
