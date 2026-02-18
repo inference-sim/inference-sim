@@ -56,7 +56,9 @@ func (rr *RoundRobin) Route(req *Request, state *RouterState) RoutingDecision {
 	}
 }
 
-// LeastLoaded routes requests to the instance with minimum (QueueDepth + BatchSize).
+// LeastLoaded routes requests to the instance with minimum (QueueDepth + BatchSize + PendingRequests).
+// PendingRequests prevents pile-on at high request rates where multiple routing decisions
+// occur at the same timestamp before instance events process (#175).
 // Ties are broken by first occurrence in snapshot order (lowest index).
 type LeastLoaded struct{}
 
@@ -67,11 +69,11 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 		panic("LeastLoaded.Route: empty snapshots")
 	}
 
-	minLoad := snapshots[0].QueueDepth + snapshots[0].BatchSize
+	minLoad := snapshots[0].QueueDepth + snapshots[0].BatchSize + snapshots[0].PendingRequests
 	target := snapshots[0]
 
 	for i := 1; i < len(snapshots); i++ {
-		load := snapshots[i].QueueDepth + snapshots[i].BatchSize
+		load := snapshots[i].QueueDepth + snapshots[i].BatchSize + snapshots[i].PendingRequests
 		if load < minLoad {
 			minLoad = load
 			target = snapshots[i]
@@ -201,7 +203,7 @@ func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecisio
 	}
 }
 
-// AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize).
+// AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + PendingRequests).
 // Pathological template for testing load imbalance detection.
 // Ties broken by first occurrence in snapshot order (lowest index).
 type AlwaysBusiest struct{}
@@ -213,11 +215,11 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 		panic("AlwaysBusiest.Route: empty snapshots")
 	}
 
-	maxLoad := snapshots[0].QueueDepth + snapshots[0].BatchSize
+	maxLoad := snapshots[0].QueueDepth + snapshots[0].BatchSize + snapshots[0].PendingRequests
 	target := snapshots[0]
 
 	for i := 1; i < len(snapshots); i++ {
-		load := snapshots[i].QueueDepth + snapshots[i].BatchSize
+		load := snapshots[i].QueueDepth + snapshots[i].BatchSize + snapshots[i].PendingRequests
 		if load > maxLoad {
 			maxLoad = load
 			target = snapshots[i]

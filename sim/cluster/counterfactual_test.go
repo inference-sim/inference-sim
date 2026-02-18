@@ -80,6 +80,37 @@ func TestComputeCounterfactual_NilScores_UsesLoadFallback(t *testing.T) {
 	}
 }
 
+func TestComputeCounterfactual_NilScores_IncludesPendingRequests(t *testing.T) {
+	// GIVEN nil scores and instances where PendingRequests breaks the tie (#175)
+	snapshots := []sim.RoutingSnapshot{
+		{ID: "i_0", QueueDepth: 5, BatchSize: 3, PendingRequests: 4}, // load=12, score=-12
+		{ID: "i_1", QueueDepth: 5, BatchSize: 3, PendingRequests: 0}, // load=8,  score=-8
+	}
+
+	// WHEN computing counterfactual with nil scores, chosen is i_0
+	candidates, regret := computeCounterfactual("i_0", nil, snapshots, 2)
+
+	// THEN i_1 ranks first (lower load including PendingRequests)
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(candidates))
+	}
+	if candidates[0].InstanceID != "i_1" {
+		t.Errorf("first candidate: got %s, want i_1 (lower total load)", candidates[0].InstanceID)
+	}
+	// THEN PendingRequests is captured in the CandidateScore record
+	if candidates[0].PendingRequests != 0 {
+		t.Errorf("candidate i_1 PendingRequests: got %d, want 0", candidates[0].PendingRequests)
+	}
+	if candidates[1].PendingRequests != 4 {
+		t.Errorf("candidate i_0 PendingRequests: got %d, want 4", candidates[1].PendingRequests)
+	}
+
+	// THEN regret = best(-8) - chosen(-12) = 4
+	if regret < 3.99 || regret > 4.01 {
+		t.Errorf("expected regret ~4, got %.6f", regret)
+	}
+}
+
 func TestComputeCounterfactual_KZero_ReturnsNilAndZero(t *testing.T) {
 	// GIVEN k=0
 	snapshots := []sim.RoutingSnapshot{{ID: "i_0"}}
