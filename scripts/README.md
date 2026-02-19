@@ -67,21 +67,27 @@ python scripts/orchestrate_benchmarks.py --gpu H100
 ```
 
 This will:
-- Check prerequisites (oc login, namespace access)
+- Check prerequisites (oc login, namespace access, pvc-debugger pod)
 - Submit GEMM job (Wave 0, background)
 - For each of 6 shapes:
   - Submit 4 jobs in parallel (prefill + decode TP=1/2/4)
+  - Jobs write results to PVC at `/mnt/bench_data/`
   - Wait for wave to complete
-  - **Collect results locally** via `oc rsync` from pod filesystems
-  - **Verify expected CSV files exist** (1 prefill + 3 decode TPs)
+  - **Collect results from PVC** via `oc cp` through pvc-debugger
+  - **Verify expected CSV files exist locally** (1 prefill + 3 decode TPs)
   - Exit if collection fails or files missing (safety checkpoint)
-  - Proceed to next wave only after successful verification
-- Wait for GEMM to finish
+  - **Delete successful wave jobs** (keeps failed jobs for debugging)
+  - Proceed to next wave
+- Wait for GEMM to finish, write to PVC
 - **Collect GEMM results locally** and verify `data.csv` exists
+- **Delete GEMM job** if successful
 - Auto-delete generated YAMLs (use `--keep-yamls` to preserve)
 - Report summary
 
-**Key benefit:** Results are safe on local disk before proceeding, preventing data loss if jobs are cleaned up.
+**Key benefits:**
+- Results safe on local disk before cleanup (prevents data loss)
+- Auto-cleanup of successful jobs after collection (frees cluster resources)
+- Failed jobs preserved for debugging
 
 ### Dry Run (Test Without Submitting)
 
@@ -216,8 +222,9 @@ When running `orchestrate_benchmarks.py --gpu H100`:
    - Wait for all 4 to complete (~2-5 minutes)
    - Collect results from PVC → local `bench_data/`
    - Verify 4 CSV files exist locally
+   - **Delete successful wave jobs** (keeps failed jobs for debugging)
    - Proceed to next wave
-4. **GEMM Collection** - Wait for GEMM to finish, write to PVC, collect locally
+4. **GEMM Collection** - Wait for GEMM to finish, collect from PVC, verify, delete job
 5. **Summary** - Report total jobs, ready for validation
 
 **Timeline:** ~15-30 minutes for all waves (depends on GPU availability and queue time)
@@ -316,17 +323,18 @@ This is **expected behavior** - benchmarks skip configs that don't fit and conti
 
 ### Delete Jobs
 
-**When using orchestration:** Jobs can be deleted after each wave completes since results are already copied locally and verified.
+**When using orchestration:** Successful jobs are **auto-deleted** after each wave completes and results are verified. Failed jobs are kept for debugging.
 
+**Manual cleanup (if needed):**
 ```bash
-# Delete all InferSim jobs
+# Delete all InferSim jobs (successful + failed)
 oc delete jobs -l app=infersim-benchmark -n diya
 
-# Delete only completed jobs (keeps failed jobs for debugging)
-oc delete jobs -n diya --field-selector status.successful=1 -l app=infersim-benchmark
+# Delete only failed jobs (after investigating logs)
+oc get jobs -n diya -l app=infersim-benchmark --field-selector status.successful=0 -o name | xargs oc delete -n diya
 
-# Delete specific wave's jobs after collection
-oc delete jobs -n diya -l app=infersim-benchmark | grep "32-8-128" | awk '{print $1}' | xargs oc delete job -n diya
+# Check remaining jobs
+oc get jobs -n diya -l app=infersim-benchmark
 ```
 
 ### Clean Up YAMLs
