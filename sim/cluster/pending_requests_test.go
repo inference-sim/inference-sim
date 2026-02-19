@@ -21,9 +21,8 @@ func TestClusterSimulator_PendingRequests_DrainsToZeroAfterProcessing(t *testing
 		MaxScheduledTokens: 2048,
 		BetaCoeffs:         []float64{1000, 10, 5},
 		AlphaCoeffs:        []float64{100, 50, 25},
-		RoutingPolicy:      "weighted",
-		RoutingCacheWeight: 0.6,
-		RoutingLoadWeight:  0.4,
+		RoutingPolicy:        "weighted",
+		RoutingScorerConfigs: sim.DefaultScorerConfigs(),
 	}
 	workload := &sim.GuideLLMConfig{
 		Rate: 2.0 / 1e6, NumRequests: 6,

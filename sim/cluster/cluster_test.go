@@ -766,8 +766,7 @@ func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
 		t.Run(policyName, func(t *testing.T) {
 			config := newTestDeploymentConfig(2)
 			config.RoutingPolicy = policyName
-			config.RoutingCacheWeight = 0.6
-			config.RoutingLoadWeight = 0.4
+			config.RoutingScorerConfigs = sim.DefaultScorerConfigs()
 			workload := newTestWorkload(5)
 
 			cs := NewClusterSimulator(config, workload, "")
