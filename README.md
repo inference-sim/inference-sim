@@ -1,9 +1,8 @@
 # Blackbox Inference Simulator (BLIS)
 
-A discrete-event simulator for LLM inference platforms (e.g., vLLM, SGLang).
-This tool models request arrival, KV-cache dynamics, scheduling, token generation, and latency using trained performance coefficients (α/β) and configurable workload distributions.
+A discrete-event simulator for LLM inference serving systems. BLIS models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by trained performance coefficients or analytical roofline estimates.
 
-The simulator is CPU-only, extremely fast, and designed for capacity planning, saturation analysis, and performance prediction across model/GPU/TP variations without requiring real GPUs.
+The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across model/GPU/TP configurations without requiring real GPUs.
 
 ---
 
@@ -280,6 +279,10 @@ Generate realistic workloads from a ServeGen-style YAML specification with multi
 ```
 
 See `examples/servegen-language.yaml` for the full specification format including client decomposition, arrival processes (Poisson, Gamma, Weibull), and length distributions (Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF).
+
+The workload generation module is informed by the ServeGen characterization framework:
+
+> Xiang et al., "ServeGen: Workload Characterization and Generation of Large Language Model Serving in Production," arXiv:2505.09999, 2025. [[paper](https://arxiv.org/abs/2505.09999)] [[code](https://github.com/alibaba/ServeGen)]
 
 ### Decision Tracing and Counterfactual Analysis
 
