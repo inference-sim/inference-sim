@@ -537,7 +537,7 @@ func TestInstanceSimulator_InjectAfterRun_Panics(t *testing.T) {
 	}()
 	inst.InjectRequest(&sim.Request{
 		ID: "req", ArrivalTime: 0, InputTokens: make([]int, 5),
-		OutputTokens: make([]int, 3), State: "queued",
+		OutputTokens: make([]int, 3), State: sim.StateQueued,
 	})
 }
 

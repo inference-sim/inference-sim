@@ -74,7 +74,7 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 			ArrivalTime:      arrivalTime,
 			InputTokens:      inputTokens,
 			OutputTokens:     outputTokens,
-			State:            "queued",
+			State:            StateQueued,
 			ScheduledStepIdx: 0,
 			FinishedStepIdx:  0,
 		}
@@ -156,7 +156,7 @@ func (sim *Simulator) generateWorkloadDistribution() {
 			ArrivalTime:      currentTime,
 			InputTokens:      input,
 			OutputTokens:     output,
-			State:            "queued",
+			State:            StateQueued,
 			ScheduledStepIdx: 0,
 			FinishedStepIdx:  0,
 		}

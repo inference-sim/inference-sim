@@ -357,7 +357,7 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 				Request: preemptedRequest,
 			})
 
-			preemptedRequest.State = "queued"
+			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
 			sim.KVCache.ReleaseKVBlocks(preemptedRequest)
 			sim.WaitQ.queue = append([]*Request{preemptedRequest}, sim.WaitQ.queue...)
@@ -483,7 +483,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		// decrement the token budget
 		tokenBudget = tokenBudget - numNewTokens
 		// change the state of the request from queued to running
-		next.State = "running"
+		next.State = StateRunning
 
 		// update prefill-related features in RunningBatchFeatures
 		sim.runningBatchFeatures.NumPrefillRequests += 1
@@ -582,7 +582,7 @@ func (sim *Simulator) Step(now int64) {
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
 		if req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1 {
-			req.State = "completed"
+			req.State = StateCompleted
 			req.ITL = append(req.ITL, currStepAdvance+sim.getOutputTokenProcessingTime())
 			if len(req.OutputTokens) > 0 {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})

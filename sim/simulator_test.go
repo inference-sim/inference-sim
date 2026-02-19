@@ -268,7 +268,7 @@ func TestInjectArrival_RequestCompletes(t *testing.T) {
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 10),
 		OutputTokens: make([]int, 5),
-		State:        "queued",
+		State:        StateQueued,
 	}
 
 	sim.InjectArrival(req)
@@ -296,7 +296,7 @@ func TestInjectArrival_HandledByEmpty_StandaloneMode(t *testing.T) {
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 10),
 		OutputTokens: make([]int, 5),
-		State:        "queued",
+		State:        StateQueued,
 	}
 	sim.InjectArrival(req)
 	sim.Run()
@@ -321,7 +321,7 @@ func TestInjectArrival_MultipleRequests(t *testing.T) {
 			ArrivalTime:  int64(i * 100000),
 			InputTokens:  make([]int, 10),
 			OutputTokens: make([]int, 5),
-			State:        "queued",
+			State:        StateQueued,
 		}
 		sim.InjectArrival(req)
 	}
@@ -334,8 +334,8 @@ func TestInjectArrival_MultipleRequests(t *testing.T) {
 }
 
 // failOnCompletionKVStore wraps a real KVStore but returns false from
-// AllocateKVBlocks when the request has State == "completed". This works
-// because simulator.go sets req.State = "completed" before calling
+// AllocateKVBlocks when the request has State == StateCompleted. This works
+// because simulator.go sets req.State = StateCompleted before calling
 // AllocateKVBlocks for the final token, so the trigger precisely targets
 // the completion-time allocation path described in issue #183.
 type failOnCompletionKVStore struct {
@@ -344,7 +344,7 @@ type failOnCompletionKVStore struct {
 }
 
 func (f *failOnCompletionKVStore) AllocateKVBlocks(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
-	if req.State == "completed" {
+	if req.State == StateCompleted {
 		f.failCount++
 		return false
 	}
@@ -368,7 +368,7 @@ func TestStep_KVAllocFailAtCompletion_RequestNotSilentlyDropped(t *testing.T) {
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 16), // 1 block worth of prefill
 		OutputTokens: make([]int, 3),  // 3 decode tokens
-		State:        "queued",
+		State:        StateQueued,
 	}
 	sim.InjectArrival(req)
 
@@ -499,7 +499,7 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 			ArrivalTime:  int64(i * 10000), // 0 to 90,000 ticks (well before 500k horizon)
 			InputTokens:  make([]int, 20),
 			OutputTokens: make([]int, 5),
-			State:        "queued",
+			State:        StateQueued,
 		})
 	}
 
@@ -510,7 +510,7 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 			ArrivalTime:  int64(300_000 + i*40_000), // 300,000 to 460,000 (all < 500k horizon)
 			InputTokens:  make([]int, 200),           // large prefill
 			OutputTokens: make([]int, 100),           // many decode tokens
-			State:        "queued",
+			State:        StateQueued,
 		})
 	}
 

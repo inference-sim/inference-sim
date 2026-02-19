@@ -15,13 +15,22 @@ import (
 // - progress index to track prefill/decode progress
 // - TTFT and TPOT timestamps
 
+// RequestState represents the lifecycle state of a request.
+type RequestState string
+
+const (
+	StateQueued    RequestState = "queued"
+	StateRunning   RequestState = "running"
+	StateCompleted RequestState = "completed"
+)
+
 type Request struct {
 	ID string // Unique identifier for the request
 
 	InputTokens  []int // Prompt tokens
 	OutputTokens []int // Pre-specified output tokens (already known for the simulation)
 
-	State         string // "queued", "running", "completed"
+	State         RequestState // queued, running, completed
 	ProgressIndex int64  // Total number of input tokens processed so far + number of output tokens generated so far
 
 	TTFTSet          bool    // Tracks whether TTFT has been set

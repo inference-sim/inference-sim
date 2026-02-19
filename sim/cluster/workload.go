@@ -55,7 +55,7 @@ func (c *ClusterSimulator) generateRequestsFromDistribution() []*sim.Request {
 			ArrivalTime:      currentTime,
 			InputTokens:      input,
 			OutputTokens:     output,
-			State:            "queued",
+			State:            sim.StateQueued,
 			ScheduledStepIdx: 0,
 			FinishedStepIdx:  0,
 		}
@@ -122,7 +122,7 @@ func (c *ClusterSimulator) generateRequestsFromCSV() []*sim.Request {
 			ArrivalTime:      arrivalTime,
 			InputTokens:      inputTokens,
 			OutputTokens:     outputTokens,
-			State:            "queued",
+			State:            sim.StateQueued,
 			ScheduledStepIdx: 0,
 			FinishedStepIdx:  0,
 		})

@@ -84,7 +84,7 @@ func TestClusterSimulator_PendingRequests_VisibleInRoutingState(t *testing.T) {
 			ArrivalTime:  0, // All arrive at t=0
 			InputTokens:  make([]int, 16),
 			OutputTokens: make([]int, 8),
-			State:        "queued",
+			State:        sim.StateQueued,
 		}
 	}
 
@@ -163,7 +163,7 @@ func TestClusterSimulator_PendingRequests_CausalDecrement(t *testing.T) {
 			ArrivalTime:  0,
 			InputTokens:  make([]int, 16),
 			OutputTokens: make([]int, 8),
-			State:        "queued",
+			State:        sim.StateQueued,
 		}
 	}
 
@@ -235,7 +235,7 @@ func TestClusterSimulator_PendingRequests_CounterfactualIncludesPending(t *testi
 			ArrivalTime:  0,
 			InputTokens:  make([]int, 16),
 			OutputTokens: make([]int, 8),
-			State:        "queued",
+			State:        sim.StateQueued,
 		}
 	}
 

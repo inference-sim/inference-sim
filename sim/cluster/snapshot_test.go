@@ -37,7 +37,7 @@ func TestInstanceSnapshot_Immutability(t *testing.T) {
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 50),
 		OutputTokens: make([]int, 10),
-		State:        "queued",
+		State:        sim.StateQueued,
 	}
 	inst.InjectRequest(req)
 
@@ -52,7 +52,7 @@ func TestInstanceSnapshot_Immutability(t *testing.T) {
 		ArrivalTime:  100,
 		InputTokens:  make([]int, 30),
 		OutputTokens: make([]int, 5),
-		State:        "queued",
+		State:        sim.StateQueued,
 	}
 	inst.InjectRequest(req2)
 
@@ -102,7 +102,7 @@ func TestCachedSnapshotProvider_RefreshBehavior(t *testing.T) {
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 50),
 		OutputTokens: make([]int, 10),
-		State:        "queued",
+		State:        sim.StateQueued,
 	}
 	inst.InjectRequest(req)
 

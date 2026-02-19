@@ -310,7 +310,7 @@ func TestInstanceSimulator_BatchSize_NilRunningBatch(t *testing.T) {
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 16),
 		OutputTokens: make([]int, 1),
-		State:        "queued",
+		State:        sim.StateQueued,
 	}
 	inst.InjectRequest(req)
 	inst.hasRun = true
@@ -338,7 +338,7 @@ func TestInstanceSimulator_ProcessNextEvent_ReturnsCorrectEventType(t *testing.T
 		ArrivalTime:  100,
 		InputTokens:  make([]int, 16),
 		OutputTokens: make([]int, 1),
-		State:        "queued",
+		State:        sim.StateQueued,
 	}
 	inst.InjectRequestOnline(req, 200)
 
@@ -380,7 +380,7 @@ func TestInstanceSimulator_InjectRequestOnline(t *testing.T) {
 		ArrivalTime:  100,
 		InputTokens:  make([]int, 16),
 		OutputTokens: make([]int, 1),
-		State:        "queued",
+		State:        sim.StateQueued,
 	}
 
 	inst.InjectRequestOnline(req, 200)

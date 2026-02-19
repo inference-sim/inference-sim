@@ -67,7 +67,7 @@ func GenerateReasoningRequests(
 			ArrivalTime: currentTime,
 			InputTokens: inputTokens,
 			OutputTokens: outputTokens,
-			State:        "queued",
+			State:        sim.StateQueued,
 			TenantID:     tenantID,
 			SLOClass:     sloClass,
 			SessionID:    sessionID,

@@ -103,14 +103,14 @@ func TestPriorityPolicy_Compute_NoSideEffects(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &Request{
 				ID: "r1", ArrivalTime: 100, InputTokens: make([]int, 50),
-				Priority: 0.0, State: "queued",
+				Priority: 0.0, State: StateQueued,
 			}
 			tc.policy.Compute(req, 1000)
 			if req.Priority != 0.0 {
 				t.Errorf("Compute modified req.Priority: got %f, want 0.0", req.Priority)
 			}
-			if req.State != "queued" {
-				t.Errorf("Compute modified req.State: got %q, want %q", req.State, "queued")
+			if req.State != StateQueued {
+				t.Errorf("Compute modified req.State: got %q, want %q", req.State, StateQueued)
 			}
 			if req.ID != "r1" {
 				t.Errorf("Compute modified req.ID: got %q, want %q", req.ID, "r1")
