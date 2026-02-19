@@ -165,7 +165,15 @@ func (t *TieredKVCache) CacheHitRate() float64 {
 	return float64(totalHits) / float64(total)
 }
 
+// PendingTransferLatency returns the accumulated transfer latency without clearing it.
+// This is a pure query — no side effects. Use ConsumePendingTransferLatency to read and clear.
 func (t *TieredKVCache) PendingTransferLatency() int64 {
+	return t.pendingLatency
+}
+
+// ConsumePendingTransferLatency returns the accumulated transfer latency and resets it to zero.
+// Called by Simulator.Step() to apply latency to the current step.
+func (t *TieredKVCache) ConsumePendingTransferLatency() int64 {
 	lat := t.pendingLatency
 	t.pendingLatency = 0
 	return lat

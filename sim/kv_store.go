@@ -12,7 +12,8 @@ type KVStore interface {
 	UsedBlocks() int64
 	TotalCapacity() int64
 	CacheHitRate() float64
-	PendingTransferLatency() int64
+	PendingTransferLatency() int64            // Pure query: returns accumulated transfer latency without clearing.
+	ConsumePendingTransferLatency() int64     // Read and clear: returns accumulated transfer latency and resets to zero.
 	KVThrashingRate() float64
 	SetClock(clock int64) // Synchronize clock for time-dependent operations. No-op for single-tier.
 }

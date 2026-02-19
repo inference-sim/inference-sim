@@ -536,7 +536,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
-	currStepAdvance += sim.KVCache.PendingTransferLatency()
+	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()

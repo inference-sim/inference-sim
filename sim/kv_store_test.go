@@ -65,3 +65,32 @@ func TestKVStore_SetClock_InterfaceSatisfied(t *testing.T) {
 	store = NewTieredKVCache(NewKVCacheState(100, 16), 50, 0.8, 1.0, 10)
 	store.SetClock(500)
 }
+
+func TestTieredKVCache_PendingTransferLatency_PureQuery(t *testing.T) {
+	// BC-3: PendingTransferLatency is a pure query (no side effects)
+	gpu := NewKVCacheState(100, 16)
+	tiered := NewTieredKVCache(gpu, 50, 0.5, 1.0, 10)
+	tiered.pendingLatency = 42
+
+	first := tiered.PendingTransferLatency()
+	second := tiered.PendingTransferLatency()
+	assert.Equal(t, int64(42), first)
+	assert.Equal(t, int64(42), second, "PendingTransferLatency must be idempotent (BC-3)")
+}
+
+func TestTieredKVCache_ConsumePendingTransferLatency_ClearsValue(t *testing.T) {
+	// BC-4: ConsumePendingTransferLatency returns value and clears
+	gpu := NewKVCacheState(100, 16)
+	tiered := NewTieredKVCache(gpu, 50, 0.5, 1.0, 10)
+	tiered.pendingLatency = 42
+
+	consumed := tiered.ConsumePendingTransferLatency()
+	assert.Equal(t, int64(42), consumed)
+	assert.Equal(t, int64(0), tiered.PendingTransferLatency(), "After consume, latency must be 0")
+}
+
+func TestKVCacheState_ConsumePendingTransferLatency_AlwaysZero(t *testing.T) {
+	kv := NewKVCacheState(100, 16)
+	assert.Equal(t, int64(0), kv.ConsumePendingTransferLatency())
+	assert.Equal(t, int64(0), kv.ConsumePendingTransferLatency()) // idempotent
+}
