@@ -5,6 +5,29 @@ import (
 	"testing"
 )
 
+// countFreeListBlocks walks the free list and returns the actual count.
+// Used by conservation invariant tests to independently verify UsedBlockCnt.
+func countFreeListBlocks(kvc *KVCacheState) int64 {
+	count := int64(0)
+	blk := kvc.FreeHead
+	for blk != nil {
+		count++
+		blk = blk.NextFree
+	}
+	return count
+}
+
+// assertBlockConservation verifies the KV block conservation invariant
+// by independently counting free list blocks (not derived from UsedBlockCnt).
+func assertBlockConservation(t *testing.T, kvc *KVCacheState) {
+	t.Helper()
+	actualFree := countFreeListBlocks(kvc)
+	if kvc.UsedBlockCnt+actualFree != kvc.TotalBlocks {
+		t.Errorf("block conservation violated: UsedBlockCnt=%d + actualFree=%d != TotalBlocks=%d",
+			kvc.UsedBlockCnt, actualFree, kvc.TotalBlocks)
+	}
+}
+
 func TestAllocateKVBlocks_PartialBlockFill_AdvancesByActualTokenCount(t *testing.T) {
 	// GIVEN a KV cache with BlockSize=4 and a request that already has a partial block (2 of 4 tokens)
 	kvc := NewKVCacheState(10, 4)
@@ -175,10 +198,8 @@ func TestAllocateKVBlocks_CachedBlockRollback_OnNewBlockFailure(t *testing.T) {
 		t.Error("RequestMap should not contain entry for failed allocation")
 	}
 
-	// BC-6: Conservation invariant
-	if kvc.UsedBlockCnt+(kvc.TotalBlocks-kvc.UsedBlockCnt) != kvc.TotalBlocks {
-		t.Errorf("conservation violated: used=%d, total=%d", kvc.UsedBlockCnt, kvc.TotalBlocks)
-	}
+	// BC-6: Conservation invariant (independent free-list walk, not derived from UsedBlockCnt)
+	assertBlockConservation(t, kvc)
 }
 
 func TestAllocateKVBlocks_BlockConservation_AfterAllocateReleaseCycles(t *testing.T) {
@@ -203,12 +224,8 @@ func TestAllocateKVBlocks_BlockConservation_AfterAllocateReleaseCycles(t *testin
 		kvc.ReleaseKVBlocks(req)
 	}
 
-	// Verify conservation
-	free := kvc.TotalBlocks - kvc.UsedBlockCnt
-	if kvc.UsedBlockCnt+free != kvc.TotalBlocks {
-		t.Errorf("conservation violated: used=%d + free=%d != total=%d",
-			kvc.UsedBlockCnt, free, kvc.TotalBlocks)
-	}
+	// Verify conservation (independent free-list walk, not derived from UsedBlockCnt)
+	assertBlockConservation(t, kvc)
 
 	// Expected: 2 requests still hold 1 block each = 2 used, 8 free
 	if kvc.UsedBlockCnt != 2 {
