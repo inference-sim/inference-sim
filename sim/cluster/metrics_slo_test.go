@@ -97,6 +97,36 @@ func TestSLOAttainment_SomeMiss_FractionalResult(t *testing.T) {
 	}
 }
 
+func TestComputePerSLODistributions_MissingRequests_StillComputesPresent(t *testing.T) {
+	// GIVEN metrics with 10 TTFT entries and 10 E2E entries,
+	// but only 7 have corresponding entries in the Requests map
+	m := sim.NewMetrics()
+	for i := 0; i < 10; i++ {
+		id := fmt.Sprintf("req_%d", i)
+		m.RequestTTFTs[id] = float64(100 + i)
+		m.RequestE2Es[id] = float64(500 + i)
+	}
+	// Only 7 out of 10 have Requests entries
+	for i := 0; i < 7; i++ {
+		id := fmt.Sprintf("req_%d", i)
+		m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: "batch"}
+	}
+
+	// WHEN computing per-SLO distributions
+	result := ComputePerSLODistributions(m)
+
+	// THEN distributions are computed for the 7 present requests
+	if result["batch"] == nil {
+		t.Fatal("expected batch class in result")
+	}
+	if result["batch"].TTFT.Count != 7 {
+		t.Errorf("TTFT count = %d, want 7 (only present requests)", result["batch"].TTFT.Count)
+	}
+	if result["batch"].E2E.Count != 7 {
+		t.Errorf("E2E count = %d, want 7 (only present requests)", result["batch"].E2E.Count)
+	}
+}
+
 func TestSLOAttainment_MissingRequests_CountedAsViolation(t *testing.T) {
 	// GIVEN 10 requests in RequestE2Es but only 7 in Requests map
 	m := sim.NewMetrics()

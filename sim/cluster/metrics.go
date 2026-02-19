@@ -247,9 +247,11 @@ func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics 
 	ttftByClass := make(map[string][]float64)
 	e2eByClass := make(map[string][]float64)
 
+	droppedTTFT := 0
 	for reqID, ttft := range aggregated.RequestTTFTs {
 		req, ok := aggregated.Requests[reqID]
 		if !ok {
+			droppedTTFT++
 			continue
 		}
 		sloClass := req.SLOClass
@@ -258,9 +260,14 @@ func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics 
 		}
 		ttftByClass[sloClass] = append(ttftByClass[sloClass], ttft)
 	}
+	if droppedTTFT > 0 {
+		logrus.Warnf("ComputePerSLODistributions: %d requests in RequestTTFTs missing from Requests map", droppedTTFT)
+	}
+	droppedE2E := 0
 	for reqID, e2e := range aggregated.RequestE2Es {
 		req, ok := aggregated.Requests[reqID]
 		if !ok {
+			droppedE2E++
 			continue
 		}
 		sloClass := req.SLOClass
@@ -268,6 +275,9 @@ func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics 
 			sloClass = "default"
 		}
 		e2eByClass[sloClass] = append(e2eByClass[sloClass], e2e)
+	}
+	if droppedE2E > 0 {
+		logrus.Warnf("ComputePerSLODistributions: %d requests in RequestE2Es missing from Requests map", droppedE2E)
 	}
 
 	result := make(map[string]*SLOMetrics)
