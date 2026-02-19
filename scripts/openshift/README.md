@@ -77,7 +77,11 @@ Run all benchmarks using automated orchestration:
 
 ```bash
 # Submit all 25 jobs with wave-based execution
+# (auto-deletes YAMLs after submission to prevent clutter)
 python scripts/orchestrate_benchmarks.py --gpu H100
+
+# Keep YAMLs for debugging (optional)
+python scripts/orchestrate_benchmarks.py --gpu H100 --keep-yamls
 
 # The script will:
 # - Check prerequisites (oc login, namespace access)
@@ -295,9 +299,13 @@ oc delete jobs -n diya --field-selector status.successful=1
 
 ### Delete Generated YAMLs
 
+Generated YAMLs are **auto-deleted after submission** by default.
+
 ```bash
-# Clean up generated job files (they're gitignored)
+# Manual cleanup (if you used --keep-yamls)
 rm scripts/openshift/job-h100-*.yaml
+
+# Note: YAMLs are gitignored and won't clutter your repo
 ```
 
 ## Adding New GPU Types

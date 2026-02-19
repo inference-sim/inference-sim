@@ -17,8 +17,11 @@ Automated orchestration system for running InferSim benchmarks on OpenShift H100
 ### Full Benchmark Suite
 
 ```bash
-# Generate and submit all 25 jobs
+# Generate and submit all 25 jobs (auto-cleans YAMLs after submission)
 python scripts/orchestrate_benchmarks.py --gpu H100
+
+# Keep YAMLs for debugging (optional)
+python scripts/orchestrate_benchmarks.py --gpu H100 --keep-yamls
 
 # Collect results after completion
 python scripts/collect_results.py
