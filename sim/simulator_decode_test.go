@@ -58,4 +58,10 @@ func TestMakeRunningBatch_DecodePhase_PreemptGetsPositiveTokenCount(t *testing.T
 	if !found {
 		t.Error("request should still be in running batch after decode scheduling")
 	}
+
+	// Additional: verify KV allocation succeeded (decode allocated 1 additional block)
+	// The prefill allocated 2 blocks (8 tokens / 4 per block), decode adds 1 more
+	if sim.KVCache.UsedBlocks() < 2 {
+		t.Errorf("UsedBlocks = %d, want >= 2 (prefill blocks should still be allocated)", sim.KVCache.UsedBlocks())
+	}
 }

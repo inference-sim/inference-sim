@@ -295,6 +295,9 @@ type newBlockMutation struct {
 // rollbackAllocation undoes all mutations from a failed AllocateKVBlocks call.
 // Restores UsedBlockCnt, CacheMisses, RefCount, InUse, free list, HashToBlock, and RequestMap.
 // Also restores prefix hashes that were destroyed by popFreeBlock during allocation.
+// Note: CacheHits is NOT rolled back here — it was incremented by the caller's
+// GetCachedBlocks() call before AllocateKVBlocks was invoked. This is a known
+// impurity (see CLAUDE.md, "Avoid calling GetCachedBlocks multiple times").
 func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cachedBlockMutation, newlyAllocated []newBlockMutation) {
 	// Undo new block allocations (reverse order for clean free list state)
 	for i := len(newlyAllocated) - 1; i >= 0; i-- {
