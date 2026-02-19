@@ -1,6 +1,8 @@
 package sim
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestAllocateKVBlocks_PartialBlockFill_AdvancesByActualTokenCount(t *testing.T) {
 	// GIVEN a KV cache with BlockSize=4 and a request that already has a partial block (2 of 4 tokens)
@@ -39,5 +41,50 @@ func TestAllocateKVBlocks_PartialBlockFill_AdvancesByActualTokenCount(t *testing
 	finalIDs := kvc.RequestMap["r1"]
 	if len(finalIDs) != 1 {
 		t.Errorf("expected 1 block total (partial filled), got %d", len(finalIDs))
+	}
+}
+
+func TestAllocateKVBlocks_ChunkedPrefill_PrefixHashUsesAbsoluteOffset(t *testing.T) {
+	// GIVEN a request with 8 tokens and BlockSize=4
+	kvc := NewKVCacheState(10, 4)
+	req := &Request{
+		ID:          "r1",
+		InputTokens: []int{10, 20, 30, 40, 50, 60, 70, 80},
+	}
+
+	// Allocate first chunk (tokens 0-3) — block 1 gets hash of InputTokens[:4]
+	ok := kvc.AllocateKVBlocks(req, 0, 4, []int64{})
+	if !ok {
+		t.Fatal("first chunk allocation should succeed")
+	}
+
+	// Verify first block has correct hash
+	expectedHash1 := hashTokens([]int{10, 20, 30, 40})
+	ids1 := kvc.RequestMap["r1"]
+	blk1 := kvc.Blocks[ids1[0]]
+	if blk1.Hash != expectedHash1 {
+		t.Errorf("first block hash mismatch:\n  got  %s\n  want %s", blk1.Hash, expectedHash1)
+	}
+
+	// WHEN we allocate second chunk (tokens 4-7, startIndex=4)
+	req.ProgressIndex = 4
+	ok = kvc.AllocateKVBlocks(req, 4, 8, []int64{})
+	if !ok {
+		t.Fatal("second chunk allocation should succeed")
+	}
+
+	// THEN second block has hash of InputTokens[:8] (absolute), not InputTokens[:4] (relative)
+	ids2 := kvc.RequestMap["r1"]
+	if len(ids2) < 2 {
+		t.Fatalf("expected at least 2 blocks, got %d", len(ids2))
+	}
+	blk2 := kvc.Blocks[ids2[1]]
+	expectedHash2 := hashTokens([]int{10, 20, 30, 40, 50, 60, 70, 80})
+	wrongHash := hashTokens([]int{10, 20, 30, 40}) // This is what the buggy code produces
+	if blk2.Hash == wrongHash {
+		t.Errorf("second block has WRONG hash (newTokens-relative instead of absolute)")
+	}
+	if blk2.Hash != expectedHash2 {
+		t.Errorf("second block hash mismatch:\n  got  %s\n  want %s", blk2.Hash, expectedHash2)
 	}
 }

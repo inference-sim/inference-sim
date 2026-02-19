@@ -291,7 +291,8 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 				kvc.CacheMisses++
 
 				if Len64(blk.Tokens) == kvc.BlockSizeTokens {
-					fullPrefix := req.InputTokens[:end]
+					absoluteEnd := startIndex + end
+					fullPrefix := req.InputTokens[:absoluteEnd]
 					h := hashTokens(fullPrefix)
 					blk.Hash = h
 					kvc.HashToBlock[h] = blk.ID
