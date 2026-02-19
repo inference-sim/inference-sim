@@ -1,7 +1,10 @@
 package cluster
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
+	"sort"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -994,4 +997,159 @@ func TestAggregateMetrics_SingleInstance_AverageEqualsSelf(t *testing.T) {
 	if math.Abs(agg.KVThrashingRate-perInst[0].KVThrashingRate) > 1e-9 {
 		t.Errorf("KVThrashingRate: got %f, want %f (single instance)", agg.KVThrashingRate, perInst[0].KVThrashingRate)
 	}
+}
+
+// =============================================================================
+// Cluster-Level Invariant Tests (Phase 4, issue #211)
+// =============================================================================
+
+// TestClusterSimulator_RequestConservation_SumAcrossInstances verifies BC-3:
+// GIVEN N=4 instances and 100 requests
+// WHEN the cluster simulation completes (infinite horizon)
+// THEN sum of per-instance CompletedRequests == 100 == aggregated CompletedRequests.
+func TestClusterSimulator_RequestConservation_SumAcrossInstances(t *testing.T) {
+	config := newTestDeploymentConfig(4)
+	workload := newTestWorkload(100)
+
+	cs := NewClusterSimulator(config, workload, "")
+	cs.Run()
+
+	sumCompleted := 0
+	for _, inst := range cs.Instances() {
+		sumCompleted += inst.Metrics().CompletedRequests
+	}
+
+	agg := cs.AggregatedMetrics()
+
+	// Conservation: sum of parts == whole
+	if sumCompleted != agg.CompletedRequests {
+		t.Errorf("conservation: sum of instance completions (%d) != aggregated (%d)",
+			sumCompleted, agg.CompletedRequests)
+	}
+
+	// Conservation: injected == completed
+	if agg.CompletedRequests != 100 {
+		t.Errorf("conservation: aggregated completions (%d) != injected (100)",
+			agg.CompletedRequests)
+	}
+}
+
+// TestClusterSimulator_Causality_PerInstance verifies BC-5:
+// GIVEN a cluster simulation with multiple instances
+// WHEN examining per-instance metrics
+// THEN for every completed request: TTFT >= 0, E2E >= TTFT, and all ITL >= 0.
+func TestClusterSimulator_Causality_PerInstance(t *testing.T) {
+	config := newTestDeploymentConfig(3)
+	workload := newTestWorkload(50)
+
+	cs := NewClusterSimulator(config, workload, "")
+	cs.Run()
+
+	totalChecked := 0
+	for idx, inst := range cs.Instances() {
+		m := inst.Metrics()
+		for id, ttft := range m.RequestTTFTs {
+			e2e, ok := m.RequestE2Es[id]
+			if !ok {
+				continue
+			}
+			// TTFT is a relative duration from arrival — must be non-negative
+			if ttft < 0 {
+				t.Errorf("causality violated: instance %d, request %s: TTFT (%.2f) < 0", idx, id, ttft)
+			}
+			// E2E must be >= TTFT
+			if e2e < ttft {
+				t.Errorf("causality violated: instance %d, request %s: E2E (%.2f) < TTFT (%.2f)",
+					idx, id, e2e, ttft)
+			}
+			totalChecked++
+		}
+
+		for i, itl := range m.AllITLs {
+			if itl < 0 {
+				t.Errorf("negative ITL: instance %d, index %d: %d", idx, i, itl)
+			}
+		}
+	}
+
+	if totalChecked == 0 {
+		t.Fatal("no completed requests checked — test setup invalid")
+	}
+}
+
+// TestClusterSimulator_ClockMonotonicity_ClusterDominatesInstances verifies BC-7:
+// GIVEN a cluster simulation with non-trivial workload
+// WHEN the simulation completes
+// THEN cluster.Clock() >= every instance's Clock().
+func TestClusterSimulator_ClockMonotonicity_ClusterDominatesInstances(t *testing.T) {
+	config := newTestDeploymentConfig(4)
+	workload := newTestWorkload(100)
+
+	cs := NewClusterSimulator(config, workload, "")
+	cs.Run()
+
+	for i, inst := range cs.Instances() {
+		if cs.Clock() < inst.Clock() {
+			t.Errorf("clock monotonicity violated: cluster clock (%d) < instance %d clock (%d)",
+				cs.Clock(), i, inst.Clock())
+		}
+	}
+}
+
+// TestClusterSimulator_Determinism_ByteIdenticalAggregation verifies BC-9:
+// GIVEN two cluster runs with identical config and seed
+// WHEN both aggregate metrics
+// THEN all integer metrics match exactly AND per-request metrics (sorted, JSON) are byte-identical.
+func TestClusterSimulator_Determinism_ByteIdenticalAggregation(t *testing.T) {
+	run := func() *sim.Metrics {
+		config := newTestDeploymentConfig(3)
+		workload := newTestWorkload(50)
+		cs := NewClusterSimulator(config, workload, "")
+		cs.Run()
+		return cs.AggregatedMetrics()
+	}
+
+	m1 := run()
+	m2 := run()
+
+	// Compare integer fields
+	if m1.CompletedRequests != m2.CompletedRequests {
+		t.Errorf("determinism: CompletedRequests %d vs %d", m1.CompletedRequests, m2.CompletedRequests)
+	}
+	if m1.TotalInputTokens != m2.TotalInputTokens {
+		t.Errorf("determinism: TotalInputTokens %d vs %d", m1.TotalInputTokens, m2.TotalInputTokens)
+	}
+	if m1.TotalOutputTokens != m2.TotalOutputTokens {
+		t.Errorf("determinism: TotalOutputTokens %d vs %d", m1.TotalOutputTokens, m2.TotalOutputTokens)
+	}
+	if m1.SimEndedTime != m2.SimEndedTime {
+		t.Errorf("determinism: SimEndedTime %d vs %d", m1.SimEndedTime, m2.SimEndedTime)
+	}
+	if m1.TTFTSum != m2.TTFTSum {
+		t.Errorf("determinism: TTFTSum %d vs %d", m1.TTFTSum, m2.TTFTSum)
+	}
+	if m1.ITLSum != m2.ITLSum {
+		t.Errorf("determinism: ITLSum %d vs %d", m1.ITLSum, m2.ITLSum)
+	}
+
+	// Compare per-request maps via JSON serialization (catches map ordering issues)
+	j1, _ := json.Marshal(sortedRequestMetrics(m1.Requests))
+	j2, _ := json.Marshal(sortedRequestMetrics(m2.Requests))
+	if !bytes.Equal(j1, j2) {
+		t.Error("determinism: per-request metrics JSON differs between runs")
+	}
+}
+
+// sortedRequestMetrics returns RequestMetrics in sorted order for deterministic comparison.
+func sortedRequestMetrics(m map[string]sim.RequestMetrics) []sim.RequestMetrics {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	result := make([]sim.RequestMetrics, len(keys))
+	for i, k := range keys {
+		result[i] = m[k]
+	}
+	return result
 }
