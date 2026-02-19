@@ -264,35 +264,40 @@ func TestAllocateKVBlocks_DecodeWithBlockSize1_NoPrefixHashPanic(t *testing.T) {
 	}
 }
 
-func TestGetCachedBlocks_IsPureQuery_NoCacheHitsSideEffect(t *testing.T) {
-	// GIVEN a KV cache with cached prefix blocks
+func TestGetCachedBlocks_IsPureQuery_DoesNotAffectCacheHitRate(t *testing.T) {
+	// GIVEN a KV cache with cached prefix blocks after one allocation cycle
 	kvc := NewKVCacheState(4, 2)
 	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	kvc.AllocateKVBlocks(req, 0, 4, []int64{})
 	kvc.ReleaseKVBlocks(req)
-	// Blocks have hashes now; reset CacheHits for clean measurement
-	kvc.CacheHits = 0
+	// After allocate+release: CacheHitRate is 0 (all misses, no hits)
 
-	// WHEN GetCachedBlocks is called multiple times
-	_ = kvc.GetCachedBlocks([]int{1, 2, 3, 4})
+	rateBefore := kvc.CacheHitRate()
+
+	// WHEN GetCachedBlocks is called multiple times (pure query — BC-3)
+	cached := kvc.GetCachedBlocks([]int{1, 2, 3, 4})
+	if len(cached) != 2 {
+		t.Fatalf("expected 2 cached blocks, got %d", len(cached))
+	}
 	_ = kvc.GetCachedBlocks([]int{1, 2, 3, 4})
 	_ = kvc.GetCachedBlocks([]int{1, 2, 3, 4})
 
-	// THEN CacheHits is unchanged (BC-3)
-	if kvc.CacheHits != 0 {
-		t.Errorf("CacheHits = %d after 3 GetCachedBlocks calls, want 0 (pure query)", kvc.CacheHits)
+	// THEN CacheHitRate is unchanged — lookups alone don't affect metrics
+	rateAfter := kvc.CacheHitRate()
+	if rateAfter != rateBefore {
+		t.Errorf("CacheHitRate changed from %f to %f after GetCachedBlocks calls (should be pure query)", rateBefore, rateAfter)
 	}
 }
 
-func TestAllocateKVBlocks_CacheHitsCountedAtCommit(t *testing.T) {
-	// GIVEN a KV cache with 2 cached prefix blocks
+func TestAllocateKVBlocks_CachedPrefixReuse_IncreasesHitRate(t *testing.T) {
+	// GIVEN a KV cache with 2 cached prefix blocks from a prior allocation
 	kvc := NewKVCacheState(8, 2)
 	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
 	kvc.ReleaseKVBlocks(req1)
-	kvc.CacheHits = 0
+	// After r1: 2 misses, 0 hits → CacheHitRate = 0
 
-	// WHEN allocating with 2 cached blocks
+	// WHEN allocating a new request that reuses the cached prefix (BC-4)
 	cached := kvc.GetCachedBlocks([]int{1, 2, 3, 4, 5, 6})
 	if len(cached) != 2 {
 		t.Fatalf("expected 2 cached blocks, got %d", len(cached))
@@ -303,35 +308,40 @@ func TestAllocateKVBlocks_CacheHitsCountedAtCommit(t *testing.T) {
 		t.Fatal("allocation should succeed")
 	}
 
-	// THEN CacheHits is exactly 2 (BC-4)
-	if kvc.CacheHits != 2 {
-		t.Errorf("CacheHits = %d, want 2 (one per cached block)", kvc.CacheHits)
+	// THEN CacheHitRate rises above 0 — cached blocks were counted as hits at commit
+	rate := kvc.CacheHitRate()
+	if rate <= 0 {
+		t.Errorf("CacheHitRate = %f after reusing cached prefix, want > 0", rate)
+	}
+	if rate >= 1 {
+		t.Errorf("CacheHitRate = %f, want < 1 (r1 had all misses)", rate)
 	}
 }
 
-func TestAllocateKVBlocks_CacheHitsRolledBackOnFailure(t *testing.T) {
+func TestAllocateKVBlocks_FailedAllocation_CacheHitRateUnchanged(t *testing.T) {
 	// GIVEN a KV cache with 2 cached prefix blocks and tight free-block budget
 	kvc := NewKVCacheState(4, 2)
 	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
 	kvc.ReleaseKVBlocks(req1)
 
-	// Consume 1 block to make allocation fail
+	// Consume 1 block to make the next allocation fail
 	filler := &Request{ID: "filler", InputTokens: []int{90, 91}}
 	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
 
-	hitsBefore := kvc.CacheHits
+	rateBefore := kvc.CacheHitRate()
 
-	// WHEN allocating with cached prefix + new tokens that exceed capacity
+	// WHEN allocating with cached prefix + new tokens that exceed capacity (BC-5)
 	req2 := &Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
 	cached := kvc.GetCachedBlocks(req2.InputTokens)
 	ok := kvc.AllocateKVBlocks(req2, 4, 8, cached)
 
-	// THEN allocation fails AND CacheHits is rolled back (BC-5)
+	// THEN allocation fails AND CacheHitRate is unchanged (rollback undoes all mutations)
 	if ok {
 		t.Fatal("allocation should fail")
 	}
-	if kvc.CacheHits != hitsBefore {
-		t.Errorf("CacheHits = %d, want %d (should be rolled back)", kvc.CacheHits, hitsBefore)
+	rateAfter := kvc.CacheHitRate()
+	if rateAfter != rateBefore {
+		t.Errorf("CacheHitRate changed from %f to %f after failed allocation (rollback should restore)", rateBefore, rateAfter)
 	}
 }
