@@ -129,7 +129,7 @@ def main():
     print("="*60)
     print(f"Results saved to: {args.output_dir}")
     print()
-    print("Next step: python scripts/validate_benchmarks.py")
+    print("Next step: python scripts/validate_benchmark_data.py --gpu H100")
 
 
 if __name__ == "__main__":

@@ -94,7 +94,7 @@ def run_prefill_benchmark(nh: int, nkv: int, dh: int, gpu_type: str, gpu_specs: 
 
         # Move output to final location
         shape_str = f"{nh}-{nkv}-{dh}"
-        output_dir = Path(f"InferSim/bench_data/{gpu_type.lower()}/mha/prefill")
+        output_dir = Path(f"InferSim/bench_data/mha/prefill/{gpu_type.lower()}")
         output_dir.mkdir(parents=True, exist_ok=True)
 
         src = Path("InferSim/attention_benchmark.csv")
@@ -143,7 +143,7 @@ def run_decode_benchmark(nh: int, nkv: int, dh: int, tp: int, gpu_type: str, gpu
 
         # Move output to final location
         shape_str = f"{nh}-{nkv}-{dh}"
-        output_dir = Path(f"InferSim/bench_data/{gpu_type.lower()}/mha/decode")
+        output_dir = Path(f"InferSim/bench_data/mha/decode/{gpu_type.lower()}")
         output_dir.mkdir(parents=True, exist_ok=True)
 
         src = Path("InferSim/attention_benchmark.csv")
@@ -180,7 +180,7 @@ def run_gemm_benchmark(gpu_type: str, gpu_specs: dict):
     n_values = gemm_sweep["n_values"]
     peak_tflops = gpu_specs["peak_tflops_fp16"]
 
-    output_dir = Path(f"InferSim/bench_data/{gpu_type.lower()}/gemm")
+    output_dir = Path(f"InferSim/bench_data/gemm/{gpu_type.lower()}")
     output_dir.mkdir(parents=True, exist_ok=True)
     gemm_output = output_dir / "data.csv"
 
