@@ -477,11 +477,11 @@ Available fitness metric keys:
 
 BLIS automatically detects and reports anomalies at the end of each simulation:
 
-- **Priority Inversions**: older requests receiving worse latencies than newer ones (indicates scheduling issues)
+- **Priority Inversions**: older requests receiving worse latencies than newer ones (indicates scheduling issues). Suppressed when `--priority-policy constant` (the default), since all requests share the same priority and E2E differences reflect workload variance, not unfairness.
 - **HOL Blocking**: instances with queue depth significantly exceeding cluster average (indicates routing imbalance)
 - **Rejected Requests**: admission control rejection count (indicates capacity pressure)
 
-Anomaly counters are always computed and printed when non-zero. Use pathological policies (`inverted-slo`, `always-busiest`, `reverse-priority`) to verify anomaly detection works.
+Anomaly counters are printed when non-zero. Priority inversion detection requires a non-constant priority policy to be meaningful. Use pathological policies (`inverted-slo`, `always-busiest`, `reverse-priority`) to verify anomaly detection works.
 
 ---
 

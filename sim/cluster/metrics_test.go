@@ -89,7 +89,7 @@ func TestCollectRawMetrics_BasicAggregation(t *testing.T) {
 	m.SimEndedTime = 1_000_000 // 1 second
 
 	// WHEN collecting RawMetrics
-	raw := CollectRawMetrics(m, nil, 0)
+	raw := CollectRawMetrics(m, nil, 0, "")
 
 	// THEN TTFT distribution should be populated
 	if raw.TTFT.Count != 3 {
@@ -113,7 +113,7 @@ func TestCollectRawMetrics_BasicAggregation(t *testing.T) {
 // TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions verifies edge case.
 func TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions(t *testing.T) {
 	m := sim.NewMetrics()
-	raw := CollectRawMetrics(m, nil, 0)
+	raw := CollectRawMetrics(m, nil, 0, "")
 	if raw.TTFT.Count != 0 {
 		t.Errorf("TTFT.Count: got %d, want 0", raw.TTFT.Count)
 	}
@@ -125,7 +125,7 @@ func TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions(t *testing.T)
 // TestCollectRawMetrics_RejectedRequests verifies rejected count is captured.
 func TestCollectRawMetrics_RejectedRequests(t *testing.T) {
 	m := sim.NewMetrics()
-	raw := CollectRawMetrics(m, nil, 42)
+	raw := CollectRawMetrics(m, nil, 42, "")
 	if raw.RejectedRequests != 42 {
 		t.Errorf("RejectedRequests: got %d, want 42", raw.RejectedRequests)
 	}
@@ -311,6 +311,53 @@ func TestParseFitnessWeights_ZeroWeight_Accepted(t *testing.T) {
 	}
 }
 
+// TestCollectRawMetrics_ConstantPriority_SuppressesInversions verifies that
+// priority inversion counter returns 0 when using constant priority policy,
+// since there are no meaningful priorities to invert.
+func TestCollectRawMetrics_ConstantPriority_SuppressesInversions(t *testing.T) {
+	// GIVEN per-instance metrics with requests that would normally trigger inversions
+	m := sim.NewMetrics()
+	m.Requests["early"] = sim.RequestMetrics{ID: "early", ArrivedAt: 100}
+	m.RequestE2Es["early"] = 50000.0 // 10× slower than "late"
+	m.Requests["late"] = sim.RequestMetrics{ID: "late", ArrivedAt: 200}
+	m.RequestE2Es["late"] = 5000.0
+
+	aggregated := sim.NewMetrics()
+	aggregated.CompletedRequests = 2
+	aggregated.SimEndedTime = 1_000_000
+
+	// WHEN collecting with constant priority policy
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "constant")
+
+	// THEN priority inversions should be suppressed
+	if raw.PriorityInversions != 0 {
+		t.Errorf("expected 0 priority inversions with constant policy, got %d", raw.PriorityInversions)
+	}
+}
+
+// TestCollectRawMetrics_SLOBasedPriority_DetectsInversions verifies that
+// priority inversion counter still works for non-constant priority policies.
+func TestCollectRawMetrics_SLOBasedPriority_DetectsInversions(t *testing.T) {
+	// GIVEN per-instance metrics with requests that would trigger inversions
+	m := sim.NewMetrics()
+	m.Requests["early"] = sim.RequestMetrics{ID: "early", ArrivedAt: 100}
+	m.RequestE2Es["early"] = 50000.0
+	m.Requests["late"] = sim.RequestMetrics{ID: "late", ArrivedAt: 200}
+	m.RequestE2Es["late"] = 5000.0
+
+	aggregated := sim.NewMetrics()
+	aggregated.CompletedRequests = 2
+	aggregated.SimEndedTime = 1_000_000
+
+	// WHEN collecting with slo-based priority policy
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "slo-based")
+
+	// THEN priority inversions should be detected
+	if raw.PriorityInversions == 0 {
+		t.Error("expected priority inversions > 0 with slo-based policy")
+	}
+}
+
 // TestDetectPriorityInversions_InvertedRequests verifies BC-8.
 func TestDetectPriorityInversions_InvertedRequests(t *testing.T) {
 	m := sim.NewMetrics()
@@ -319,7 +366,7 @@ func TestDetectPriorityInversions_InvertedRequests(t *testing.T) {
 	m.Requests["low"] = sim.RequestMetrics{ID: "low", ArrivedAt: 200}
 	m.RequestE2Es["low"] = 5000.0
 
-	inversions := detectPriorityInversions([]*sim.Metrics{m})
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
 
 	if inversions < 0 {
 		t.Errorf("inversions should be >= 0, got %d", inversions)
@@ -374,7 +421,7 @@ func TestPathological_RejectAll_AllRejected(t *testing.T) {
 	cs := NewClusterSimulator(config, newTestWorkload(20), "")
 	cs.Run()
 
-	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests())
+	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "")
 
 	// ALL requests should be rejected
 	if raw.RejectedRequests == 0 {
@@ -394,7 +441,7 @@ func TestPathological_AlwaysBusiest_CausesImbalance(t *testing.T) {
 	cs := NewClusterSimulator(config, newTestWorkload(20), "")
 	cs.Run()
 
-	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests())
+	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "")
 
 	// With always-busiest routing, all requests should pile onto one instance.
 	perInstance := cs.PerInstanceMetrics()

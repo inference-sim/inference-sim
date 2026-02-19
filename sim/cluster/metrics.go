@@ -110,7 +110,11 @@ type RawMetrics struct {
 
 // CollectRawMetrics builds RawMetrics from aggregated and per-instance metrics.
 // perInstance is optional (may be nil for anomaly-free collection).
-func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int) *RawMetrics {
+// priorityPolicy controls whether priority inversion detection runs:
+// when "constant" or "" (both map to ConstantPriority), inversions are
+// suppressed (always 0) since all requests share the same priority and
+// E2E differences reflect workload variance, not unfairness.
+func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, priorityPolicy string) *RawMetrics {
 	raw := &RawMetrics{
 		RejectedRequests: rejectedRequests,
 	}
@@ -131,7 +135,7 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 
 	// Anomaly detection
 	if perInstance != nil {
-		raw.PriorityInversions = detectPriorityInversions(perInstance)
+		raw.PriorityInversions = detectPriorityInversions(perInstance, priorityPolicy)
 		raw.HOLBlockingEvents = detectHOLBlocking(perInstance)
 
 		// KV cache metrics (PR12)
@@ -160,7 +164,13 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 // detectPriorityInversions counts priority inversion events from per-instance metrics.
 // PR9 heuristic: counts pairs where an earlier-arriving request has
 // worse E2E than a later-arriving request (with 2× threshold).
-func detectPriorityInversions(perInstance []*sim.Metrics) int {
+// When priorityPolicy is "constant" or "" (both map to ConstantPriority),
+// returns 0 — all requests share the same priority, so E2E differences
+// reflect workload variance, not scheduling unfairness.
+func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string) int {
+	if priorityPolicy == "constant" || priorityPolicy == "" {
+		return 0
+	}
 	count := 0
 	for _, m := range perInstance {
 		if len(m.Requests) < 2 {

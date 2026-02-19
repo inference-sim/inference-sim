@@ -106,7 +106,7 @@ Multi-replica extension using composition over the single-instance simulator:
 
 - **instance.go**: `InstanceSimulator` wraps `sim.Simulator` via `NewInstanceSimulator(id, SimConfig)` with run-once guard and cluster-level accessors
 - **cluster.go**: `ClusterSimulator` orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation
-- **metrics.go**: `RawMetrics`, `Distribution`, `FitnessResult`, `CollectRawMetrics`, `ComputeFitness` (returns `(FitnessResult, error)` — fails on unknown keys), anomaly detection
+- **metrics.go**: `RawMetrics`, `Distribution`, `FitnessResult`, `CollectRawMetrics` (accepts `priorityPolicy` to suppress false-positive inversion detection for constant priority), `ComputeFitness` (returns `(FitnessResult, error)` — fails on unknown keys), anomaly detection
 - **deployment.go**: `DeploymentConfig` struct with `ToSimConfig()` for per-instance construction
 - **workload.go**: Centralized request generation (distribution-based or CSV traces) for cluster dispatch
 - **counterfactual.go**: `computeCounterfactual()` for top-k candidate ranking and regret computation
