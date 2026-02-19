@@ -368,7 +368,8 @@ def main():
 
         status = get_job_status(gemm_job)
         if status == "Running":
-            statuses = wait_for_jobs([gemm_job], timeout_minutes=60)
+            # GEMM takes 30-45 minutes: 15min build + 15-30min benchmarking
+            statuses = wait_for_jobs([gemm_job], timeout_minutes=180)
             if statuses[gemm_job] == "Complete":
                 print("✓ GEMM complete")
             else:
