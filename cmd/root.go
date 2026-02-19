@@ -89,9 +89,10 @@ var (
 	workloadSpecPath string // Path to YAML workload specification file
 
 	// Tiered KV cache config (PR12)
-	kvCPUBlocks         int64
-	kvOffloadThreshold  float64
-	kvTransferBandwidth float64
+	kvCPUBlocks           int64
+	kvOffloadThreshold    float64
+	kvTransferBandwidth   float64
+	kvTransferBaseLatency int64
 
 	// results file path
 	resultsPath string // File to save BLIS results to
@@ -347,6 +348,9 @@ var runCmd = &cobra.Command{
 		if kvCPUBlocks > 0 && (kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0)) {
 			logrus.Fatalf("--kv-transfer-bandwidth must be a finite value > 0 when --kv-cpu-blocks > 0, got %f", kvTransferBandwidth)
 		}
+		if kvTransferBaseLatency < 0 {
+			logrus.Fatalf("--kv-transfer-base-latency must be >= 0, got %d", kvTransferBaseLatency)
+		}
 
 		// Log active policy configuration so users can verify which policies are in effect
 		logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
@@ -417,6 +421,7 @@ var runCmd = &cobra.Command{
 			KVCPUBlocks:             kvCPUBlocks,
 			KVOffloadThreshold:      kvOffloadThreshold,
 			KVTransferBandwidth:     kvTransferBandwidth,
+			KVTransferBaseLatency:   kvTransferBaseLatency,
 		}
 		cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
 		if len(preGeneratedRequests) > 0 {
@@ -585,6 +590,7 @@ func init() {
 	runCmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of --total-kv-blocks")
 	runCmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
 	runCmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
+	runCmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

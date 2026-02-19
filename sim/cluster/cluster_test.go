@@ -88,6 +88,7 @@ func TestDeploymentConfig_ToSimConfig_FieldMapping(t *testing.T) {
 		GPU:                       "H100",
 		TP:                        2,
 		Roofline:                  true,
+		KVTransferBaseLatency:     42,
 	}
 
 	sc := dc.ToSimConfig()
@@ -130,6 +131,9 @@ func TestDeploymentConfig_ToSimConfig_FieldMapping(t *testing.T) {
 	}
 	if !sc.Roofline {
 		t.Error("Roofline: got false, want true")
+	}
+	if sc.KVTransferBaseLatency != 42 {
+		t.Errorf("KVTransferBaseLatency: got %d, want 42", sc.KVTransferBaseLatency)
 	}
 	// Workload fields must be intentionally omitted
 	if sc.GuideLLMConfig != nil {
