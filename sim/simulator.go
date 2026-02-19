@@ -417,8 +417,11 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		}
 		// if it is in decode phase, then allocate blocks for the token generated in the previous Step
 		if req.ProgressIndex >= Len64(req.InputTokens) && len(req.OutputTokens) > 0 {
-			// this request will go through decode phase in this batch
-			if can_schedule := sim.preempt(req, now, numNewTokens); !can_schedule {
+			// Decode phase: exactly 1 new token per step. Compute explicitly
+			// instead of reusing numNewTokens (which is negative during decode:
+			// len(InputTokens) - ProgressIndex where ProgressIndex > len(InputTokens)).
+			decodeTokens := int64(1)
+			if can_schedule := sim.preempt(req, now, decodeTokens); !can_schedule {
 				break
 			}
 			// currently each request produces 1 token per decode.
@@ -568,7 +571,13 @@ func (sim *Simulator) Step(now int64) {
 	}
 	sim.Metrics.KVBlocksUsed += float64(sim.KVCache.UsedBlocks()) * float64(currStepAdvance)
 
-	// handle completed and remaining requests
+	// IMPORTANT: This completion loop MUST run as a separate pass after the
+	// prefill/decode execution loop above. For zero-output-token requests,
+	// both "prefill completed" and "request completed" conditions are true
+	// in the same step. The two-pass design ensures prefill metrics (TTFT)
+	// are recorded before completion metrics (E2E). If these loops were ever
+	// consolidated into a single pass, both branches would fire for the
+	// same request in the same step.
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors

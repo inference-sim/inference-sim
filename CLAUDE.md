@@ -94,7 +94,7 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 - **bundle.go**: `PolicyBundle` struct with YAML loading (`LoadPolicyBundle`), validation (`Validate`)
 - **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
 - **request.go**: Request lifecycle and state machine (queued → running → completed), `Priority` field for scheduler-aware ordering, `AssignedInstance` for cluster routing provenance (#181)
-- **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching, `CacheHits`/`CacheMisses` counters
+- **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching, `CacheHits`/`CacheMisses` counters, transactional `AllocateKVBlocks` with `rollbackAllocation` on mid-loop failure
 - **kv_store.go**: `KVStore` interface (9 methods), `NewKVStore` factory (returns single-tier or tiered based on config)
 - **kvcache_tiered.go**: `TieredKVCache` (GPU+CPU composition), `cpuTier`, `offloadedBlock`, offload/reload/transfer latency
 - **batch.go**: Batch formation respecting token budgets and batch size limits
@@ -276,6 +276,8 @@ To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
 4. **Add CLI flags** in `cmd/root.go` for new parameters (e.g., `--kv-nvme-blocks`)
 5. **Aggregate metrics** — combine hit/miss/thrashing counters from all tiers; see `TieredKVCache.CacheHitRate()` for the 2-tier pattern
 6. **Add behavioral tests** in `sim/kvcache_*_test.go`
+7. **Preserve rollback semantics** — `KVCacheState.AllocateKVBlocks` is transactional: on mid-loop failure, `rollbackAllocation()` undoes all mutations (UsedBlockCnt, CacheMisses, RefCount, InUse, free list, HashToBlock, RequestMap). If your tier adds mutations beyond what delegation to `gpu.AllocateKVBlocks()` handles, you must roll those back too. See `cachedBlockMutation` and `newBlockMutation` types in `sim/kvcache.go`.
+8. **Avoid calling `GetCachedBlocks` multiple times** — it increments `CacheHits` as a side effect (not a pure query). `TieredKVCache.AllocateKVBlocks` calls it twice on reload; this inflates CacheHits and is tracked as a known issue (design doc Phase 3, 3c).
 
 Examples:
 - See `TieredKVCache` in `sim/kvcache_tiered.go` for 2-tier GPU+CPU composition
@@ -347,7 +349,7 @@ inference-sim/
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
 │   ├── request.go             # Request state machine (queued → running → completed), Priority field, workload metadata (TenantID, SLOClass, etc.)
-│   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching
+│   ├── kvcache.go             # Block-based KV cache with LRU eviction, prefix caching, transactional rollback
 │   ├── kv_store.go            # KVStore interface, NewKVStore factory
 │   ├── kvcache_tiered.go      # TieredKVCache: GPU+CPU composition, offload/reload, transfer latency
 │   ├── batch.go               # Batch struct

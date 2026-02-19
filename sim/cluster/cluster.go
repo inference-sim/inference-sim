@@ -162,6 +162,10 @@ func (c *ClusterSimulator) Run() {
 			// Causal decrement: QueuedEvent is the definitive moment a request
 			// enters the WaitQ, meaning it was absorbed from pending (#178).
 			// This replaces the fragile QueueDepth before/after heuristic.
+			//
+			// Preemption safety (#192): preemption re-enqueues via direct
+			// WaitQ.queue manipulation in preempt() (sim/simulator.go), NOT via
+			// QueuedEvent. Therefore preemption cannot trigger a false decrement here.
 			if _, ok := ev.(*sim.QueuedEvent); ok {
 				if c.pendingRequests[instID] > 0 {
 					c.pendingRequests[instID]--

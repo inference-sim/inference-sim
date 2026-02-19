@@ -61,6 +61,22 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 					sim.Metrics.CompletedRequests, tc.MaxPrompts)
 			}
 
+			// === Invariant: KV block conservation (issue #200) ===
+			// After all requests complete, all blocks should be released.
+			if sim.KVCache.UsedBlocks() != 0 {
+				t.Errorf("KV block leak: %d blocks still allocated after all requests completed",
+					sim.KVCache.UsedBlocks())
+			}
+
+			// === Invariant: causality ===
+			// For every completed request: E2E >= TTFT (both are positive durations).
+			for id, ttft := range sim.Metrics.RequestTTFTs {
+				e2e, ok := sim.Metrics.RequestE2Es[id]
+				if ok && e2e < ttft {
+					t.Errorf("causality violated for %s: E2E (%.2f) < TTFT (%.2f)", id, e2e, ttft)
+				}
+			}
+
 			// === Exact match metrics (integers) ===
 			if sim.Metrics.CompletedRequests != tc.Metrics.CompletedRequests {
 				t.Errorf("completed_requests: got %d, want %d",
