@@ -157,6 +157,27 @@ func TestTieredKVCache_ThrashingDetected_WhenReloadWithinWindow(t *testing.T) {
 	}
 }
 
+func TestTieredKVCache_NoCacheHitsDoubleCount(t *testing.T) {
+	// GIVEN a tiered cache where GPU allocation will initially fail, triggering CPU reload
+	gpu := NewKVCacheState(4, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.5, 1.0, 100)
+
+	// Populate prefix cache
+	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(req1, 0, 4, []int64{})
+	tiered.ReleaseKVBlocks(req1)
+	gpu.CacheHits = 0
+
+	// WHEN calling GetCachedBlocks multiple times (simulating tiered retry path)
+	_ = tiered.GetCachedBlocks([]int{1, 2, 3, 4})
+	_ = tiered.GetCachedBlocks([]int{1, 2, 3, 4})
+
+	// THEN CacheHits is 0 — GetCachedBlocks is pure (BC-6)
+	if gpu.CacheHits != 0 {
+		t.Errorf("GPU CacheHits = %d after 2 GetCachedBlocks calls, want 0", gpu.CacheHits)
+	}
+}
+
 func TestTieredKVCache_NegativeBandwidth_Panics(t *testing.T) {
 	// BC-12 (partial): GIVEN negative bandwidth
 	defer func() {

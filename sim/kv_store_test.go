@@ -34,25 +34,34 @@ func TestKVStore_SingleTier_BackwardCompatible(t *testing.T) {
 	}
 }
 
-func TestKVStore_CacheHitRate_ReflectsLookups(t *testing.T) {
+func TestKVStore_CacheHitRate_ReflectsAllocations(t *testing.T) {
 	// BC-5: GIVEN a fresh KVStore
 	store := NewKVStore(SimConfig{TotalKVBlocks: 10, BlockSizeTokens: 2})
 
-	// Initial: no lookups → rate is 0
+	// Initial: no allocations → rate is 0
 	if rate := store.CacheHitRate(); rate != 0 {
 		t.Errorf("initial CacheHitRate() = %f, want 0", rate)
 	}
 
-	// WHEN we allocate blocks (all misses) then release and re-lookup (hits)
-	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
-	store.AllocateKVBlocks(req, 0, 4, []int64{})
-	store.ReleaseKVBlocks(req)
-	cached := store.GetCachedBlocks([]int{1, 2, 3, 4})
+	// WHEN we allocate blocks (all misses), release, then re-allocate with cached blocks (hits)
+	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	store.AllocateKVBlocks(req1, 0, 4, []int64{})
+	store.ReleaseKVBlocks(req1)
 
-	// THEN cache hits occurred and CacheHitRate is between 0 and 1
+	// GetCachedBlocks is now a pure query — CacheHits counted at allocation commit
+	cached := store.GetCachedBlocks([]int{1, 2, 3, 4, 5, 6})
 	if len(cached) == 0 {
-		t.Error("expected cache hits for previously allocated prefix")
+		t.Fatal("expected cache hits for previously allocated prefix")
 	}
+
+	// Allocate with cached blocks (this is where CacheHits are counted)
+	req2 := &Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	ok := store.AllocateKVBlocks(req2, int64(len(cached))*store.BlockSize(), 6, cached)
+	if !ok {
+		t.Fatal("allocation with cached blocks should succeed")
+	}
+
+	// THEN CacheHitRate is between 0 and 1 (mix of hits from r2 and misses from r1)
 	rate := store.CacheHitRate()
 	if rate <= 0 || rate >= 1 {
 		t.Errorf("CacheHitRate() = %f, want 0 < rate < 1 (mix of hits and misses)", rate)
