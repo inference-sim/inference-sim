@@ -68,3 +68,31 @@ func TestNewRequestMetrics_ZeroValueFields_AreEmptyStrings(t *testing.T) {
 		t.Errorf("HandledBy: got %q, want empty", rm.HandledBy)
 	}
 }
+
+// TestCalculatePercentile_EmptyInput_ReturnsZero verifies BC-6, BC-8.
+func TestCalculatePercentile_EmptyInput_ReturnsZero(t *testing.T) {
+	// GIVEN empty float64 slice
+	// WHEN CalculatePercentile is called
+	result := CalculatePercentile([]float64{}, 99)
+	// THEN it returns 0 (not panic)
+	if result != 0.0 {
+		t.Errorf("expected 0.0 for empty input, got %f", result)
+	}
+
+	// Also verify with int64 (generic constraint covers both)
+	resultInt := CalculatePercentile([]int64{}, 50)
+	if resultInt != 0.0 {
+		t.Errorf("expected 0.0 for empty int64 input, got %f", resultInt)
+	}
+}
+
+// TestCalculatePercentile_SingleElement_ReturnsScaled verifies BC-7.
+func TestCalculatePercentile_SingleElement_ReturnsScaled(t *testing.T) {
+	// GIVEN a single-element slice
+	// WHEN CalculatePercentile is called
+	result := CalculatePercentile([]float64{1000.0}, 99)
+	// THEN it returns the element divided by 1000 (ms conversion)
+	if result != 1.0 {
+		t.Errorf("expected 1.0 for single element 1000.0, got %f", result)
+	}
+}
