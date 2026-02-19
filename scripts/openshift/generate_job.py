@@ -55,7 +55,8 @@ def generate_job_yaml(
     output_file: Path,
     model: str = None,
     phase: str = None,
-    tp: int = None
+    tp: int = None,
+    shape: str = None
 ):
     """Generate job YAML from template"""
     # Extract config values
@@ -65,11 +66,14 @@ def generate_job_yaml(
     container_image = openshift_config["container_image"]
     default_node_selector = openshift_config["node_selector"]
 
-    # Generate job name with model/phase/tp info
+    # Generate job name with shape/model/phase/tp info
     gpu_type_lower = gpu_type.lower()
     name_parts = [job_prefix, gpu_type_lower]
 
-    if model:
+    if shape:
+        # Use shape directly for job name (e.g., 32-8-128)
+        name_parts.append(shape)
+    elif model:
         # Convert model name to job-friendly format (llama-2-7b)
         model_slug = model.replace("_", "-")
         name_parts.append(model_slug)
@@ -85,8 +89,13 @@ def generate_job_yaml(
 
     # Build benchmark script arguments
     bench_args = [f"--gpu {gpu_type}"]
-    if model:
+
+    if shape:
+        # Pass shape parameters to benchmark scripts
+        bench_args.append(f"--shape {shape}")
+    elif model:
         bench_args.append(f"--model-filter {model}")
+
     if phase:
         bench_args.append(f"--phase-filter {phase}")
     if tp is not None:
@@ -229,7 +238,9 @@ def main():
 
     # Build output filename based on filters
     output_parts = ["job", gpu_type_lower]
-    if args.model:
+    if args.shape:
+        output_parts.append(args.shape)
+    elif args.model:
         output_parts.append(args.model)
     if args.phase:
         output_parts.append(args.phase)
@@ -253,7 +264,8 @@ def main():
         output_file,
         model=args.model,
         phase=args.phase,
-        tp=args.tp
+        tp=args.tp,
+        shape=args.shape
     )
 
 
