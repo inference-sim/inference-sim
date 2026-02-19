@@ -164,6 +164,11 @@ func NewSimulator(cfg SimConfig) (*Simulator, error) {
 	if cfg.BlockSizeTokens <= 0 {
 		panic(fmt.Sprintf("SimConfig.BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
 	}
+	if cfg.Roofline {
+		if err := ValidateRooflineConfig(cfg.ModelConfig, cfg.HWConfig); err != nil {
+			return nil, fmt.Errorf("roofline validation: %w", err)
+		}
+	}
 
 	s := &Simulator{
 		Clock:                     0,

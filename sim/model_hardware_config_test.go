@@ -192,3 +192,51 @@ func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 		t.Errorf("expected nil error for valid config, got: %v", err)
 	}
 }
+
+func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
+	// GIVEN a SimConfig with Roofline=true and NumHeads=0
+	cfg := SimConfig{
+		Roofline:        true,
+		ModelConfig:     ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
+		HWConfig:        HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		TotalKVBlocks:   1000,
+		BlockSizeTokens: 16,
+		Horizon:         100000,
+	}
+
+	// WHEN NewSimulator is called
+	_, err := NewSimulator(cfg)
+
+	// THEN it returns a non-nil error mentioning NumHeads
+	if err == nil {
+		t.Fatal("expected error for roofline with zero NumHeads, got nil")
+	}
+	if !strings.Contains(err.Error(), "NumHeads") {
+		t.Errorf("error should mention NumHeads, got: %v", err)
+	}
+}
+
+func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
+	// GIVEN a SimConfig with Roofline=false and NumHeads=0 (irrelevant)
+	cfg := SimConfig{
+		Roofline:        false,
+		ModelConfig:     ModelConfig{NumHeads: 0},
+		HWConfig:        HardwareCalib{},
+		TotalKVBlocks:   1000,
+		BlockSizeTokens: 16,
+		Horizon:         100000,
+		BetaCoeffs:      []float64{1, 2, 3},
+		AlphaCoeffs:     []float64{1, 2, 3},
+	}
+
+	// WHEN NewSimulator is called
+	sim, err := NewSimulator(cfg)
+
+	// THEN it succeeds (roofline validation not applied)
+	if err != nil {
+		t.Fatalf("unexpected error for non-roofline mode: %v", err)
+	}
+	if sim == nil {
+		t.Error("expected non-nil simulator")
+	}
+}
