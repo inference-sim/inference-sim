@@ -23,7 +23,7 @@ func (c *ConstantPriority) Compute(_ *Request, _ int64) float64 {
 // Formula: BaseScore + AgeWeight * float64(clock - req.ArrivalTime)
 //
 // With default AgeWeight=1e-6, a request waiting 1 second (1e6 ticks) gets +1.0 priority.
-// Full SLO class integration (using TenantState) is deferred to a future PR.
+// SLO class integration uses the SLOClass field on Request (set by workload generator).
 type SLOBasedPriority struct {
 	BaseScore float64
 	AgeWeight float64
