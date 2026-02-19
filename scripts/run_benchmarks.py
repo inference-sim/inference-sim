@@ -45,11 +45,17 @@ def create_temp_model_config(nh: int, nkv: int, dh: int) -> tempfile.NamedTempor
     """
     hidden_size = nh * dh
 
+    # Note: ModelConfig requires num_hidden_layers and intermediate_size even though
+    # kernel benchmarks only test attention (not FFN). These are dummy values.
+    # intermediate_size uses standard 4x expansion from transformer architecture
+    # (GPT/Llama use hidden → 4*hidden → hidden in FFN layers)
     config = {
         "hidden_size": hidden_size,
+        "num_hidden_layers": 32,  # Dummy value, not used by kernel benchmarks
         "num_attention_heads": nh,
         "num_key_value_heads": nkv,
         "head_dim": dh,
+        "intermediate_size": hidden_size * 4,  # Standard 4x FFN expansion (not used by attention benchmarks)
         "torch_dtype": "bfloat16"
     }
 
@@ -126,7 +132,7 @@ def run_decode_benchmark(nh: int, nkv: int, dh: int, tp: int, gpu_type: str, gpu
             sys.executable,
             "kernel_benchmark/flashinfer_mha_decode.py",
             "--config-path", temp_config.name,
-            "--fp16-tflops", str(peak_tflops),
+            "--fp16-tflops", str(int(peak_tflops)),
             "--kv-cache-dtype", "bf16",
             "--tp-size", str(tp),
         ]
@@ -197,7 +203,7 @@ def run_gemm_benchmark(gpu_type: str, gpu_specs: dict):
                 "kernel_benchmark/deepgemm_gemm.py",
                 "-k", str(k),
                 "-n", str(n),
-                "--gpu-tflops", str(peak_tflops),
+                "--gpu-tflops", str(int(peak_tflops)),
             ]
 
             result = subprocess.run(cmd, cwd="InferSim", capture_output=True, text=True)
