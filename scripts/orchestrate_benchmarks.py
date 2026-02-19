@@ -165,6 +165,16 @@ def get_job_status(job_name: str, namespace: str = "diya") -> str:
     return "Running"
 
 
+def delete_jobs(job_names: List[str], namespace: str = "diya") -> None:
+    """Delete specified jobs from cluster"""
+    for job_name in job_names:
+        result = run_oc_command(["delete", "job", job_name, "-n", namespace], check=False)
+        if result.returncode == 0:
+            print(f"  ✓ Deleted: {job_name}")
+        else:
+            print(f"  ⚠ Failed to delete {job_name}: {result.stderr.strip()}")
+
+
 def wait_for_jobs(job_names: List[str], timeout_minutes: int = 30, namespace: str = "diya") -> dict:
     """
     Wait for all jobs to reach terminal state (Complete or Failed).
@@ -341,7 +351,14 @@ def main():
 
         print(f"✓ Results collected and verified for wave {wave_idx}")
         print(f"  Saved: {shape_str} (prefill + decode TP=1/2/4)")
-        print(f"  Safe to proceed to next wave or cleanup")
+
+        # Delete completed wave jobs (data is safe on local disk and PVC)
+        # Only delete successful jobs - keep failed jobs for debugging
+        print(f"\nCleaning up wave {wave_idx} jobs...")
+        successful_jobs = [job for job, status in statuses.items() if status == "Complete"]
+        if successful_jobs:
+            delete_jobs(successful_jobs)
+            print(f"✓ Deleted {len(successful_jobs)} successful jobs (kept {len(wave_jobs) - len(successful_jobs)} failed for debugging)")
 
     # Wait for GEMM if still running
     if gemm_job and not args.dry_run:
@@ -379,6 +396,15 @@ def main():
 
         print(f"✓ GEMM results collected and verified")
         print(f"  Saved: {gemm_file}")
+
+        # Delete GEMM job if successful (data is safe on local disk and PVC)
+        gemm_status = get_job_status(gemm_job)
+        if gemm_status == "Complete":
+            print("\nCleaning up GEMM job...")
+            delete_jobs([gemm_job])
+            print(f"✓ Deleted GEMM job (data preserved on local disk)")
+        else:
+            print(f"\n⚠ Keeping GEMM job for debugging (status: {gemm_status})")
 
     # Final summary
     print(f"\n{'='*60}")
