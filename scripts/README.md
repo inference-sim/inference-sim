@@ -15,7 +15,13 @@ Example: Mistral-7B and Mixtral-8x7B both use shape 32-8-128, so we benchmark on
 - Total: **25 jobs** (1 GEMM + 6 shapes × 4 phases)
 - Peak GPU usage: **5 GPUs** (1 GEMM + 4 per wave)
 
-**Git-Based Jobs:** Each job clones fresh code from GitHub `roofline_valid` branch to pod-local storage, ensuring reproducibility and no manual PVC sync needed.
+**Git-Based Jobs:** Each job clones fresh code from GitHub to pod-local storage:
+- inference-sim: `roofline_valid` branch (orchestration scripts)
+- InferSim: Fork with improvements (`roofline-benchmark-improvements` branch)
+  - OOM handling in decode benchmarks
+  - Removed sglang dependency (uses local `flashinfer_backend_utils.py`)
+
+This ensures reproducibility and no manual PVC sync needed.
 
 ## Quick Start
 
@@ -37,11 +43,14 @@ Results saved to `bench_data/` at repo root.
    oc project diya
    ```
 
-2. **GitHub Access:** Jobs clone from `github.com/inference-sim/inference-sim` branch `roofline_valid`
-   - Ensure branch is pushed to GitHub before running
-   - Jobs show git commit in logs for traceability
+2. **GitHub Access:**
+   - **inference-sim:** Branch `roofline_valid` must be pushed to GitHub
+   - **InferSim fork:** Uses `github.com/inference-sim/InferSim` branch `roofline-benchmark-improvements`
+   - Jobs show git commits in logs for traceability
 
 3. **H100 GPU nodes** available in cluster
+
+**Note:** Jobs clone both repositories at runtime, no manual PVC setup required.
 
 ## Commands
 
@@ -57,12 +66,16 @@ This will:
 - For each of 6 shapes:
   - Submit 4 jobs in parallel (prefill + decode TP=1/2/4)
   - Wait for wave to complete
-  - **Collect results locally** (frees GPU resources for next wave)
-  - **Verify files exist** before proceeding
+  - **Collect results locally** via `oc rsync` from pod filesystems
+  - **Verify expected CSV files exist** (1 prefill + 3 decode TPs)
+  - Exit if collection fails or files missing (safety checkpoint)
+  - Proceed to next wave only after successful verification
 - Wait for GEMM to finish
-- **Collect GEMM results locally**
+- **Collect GEMM results locally** and verify `data.csv` exists
 - Auto-delete generated YAMLs (use `--keep-yamls` to preserve)
 - Report summary
+
+**Key benefit:** Results are safe on local disk before proceeding, preventing data loss if jobs are cleaned up.
 
 ### Dry Run (Test Without Submitting)
 
@@ -104,8 +117,17 @@ oc apply -f scripts/openshift/job-h100-32-8-128-prefill-test.yaml -n diya
 oc logs -f job/infersim-h100-32-8-128-prefill-test -n diya
 ```
 
-### Collect Results
+### Collect Results (Manual)
 
+**Note:** Results are **auto-collected and verified** after each wave when using `orchestrate_benchmarks.py`. Manual collection is only needed for custom workflows.
+
+**Auto-collection behavior:**
+- After wave completes → `oc rsync` from pod filesystems → verify 4 CSV files exist
+- After GEMM finishes → `oc rsync` from GEMM pod → verify `data.csv` exists
+- If collection fails or files missing → orchestration exits with error
+- This ensures data is safe on local disk before proceeding to next wave
+
+**Manual collection:**
 ```bash
 # Collect to default location (bench_data/)
 python scripts/collect_results.py
@@ -114,12 +136,14 @@ python scripts/collect_results.py
 python scripts/collect_results.py --output-dir ./results_feb19
 ```
 
-Copies CSV files from completed pod filesystems to local machine.
+Copies CSV files from completed pod filesystems to local machine via `oc rsync`.
 
 ### Validate Data
 
+**Note:** Each job validates its own data before completion. Final validation checks all collected data together.
+
 ```bash
-# Validate default location (bench_data/)
+# Validate all collected data (bench_data/)
 python scripts/validate_benchmark_data.py --gpu H100
 
 # Validate custom location
@@ -128,6 +152,12 @@ python scripts/validate_benchmark_data.py --gpu H100 --data-dir ./results_feb19
 # Validate specific phase
 python scripts/validate_benchmark_data.py --gpu H100 --phase-filter prefill
 ```
+
+**Validation checks:**
+- CSV files exist with required columns
+- Row counts match expected ranges
+- MFU values within valid ranges for each operation type
+- All 25 expected files present (6 prefill + 18 decode + 1 GEMM)
 
 ## Output Structure
 
@@ -159,6 +189,25 @@ Each CSV file contains:
 - **Prefill**: ~5-10 rows (seq_len sweep: 512, 1024, 2048, 4096, 8192)
 - **Decode**: ~30-40 rows (batch_size × kv_len sweep, OOM configs skipped)
 - **GEMM**: ~168 rows (M×K×N sweep, large matrices OOM)
+
+## Execution Flow
+
+When running `orchestrate_benchmarks.py --gpu H100`:
+
+1. **Prerequisites Check** - Validates oc login, namespace access
+2. **Wave 0 (GEMM)** - Submits GEMM job, runs in background
+3. **Waves 1-6** - For each shape (28-4-128, 32-32-128, etc.):
+   - Submit 4 jobs in parallel
+   - Wait for all 4 to complete (~2-5 minutes)
+   - Collect results from 4 pods → `bench_data/`
+   - Verify 4 CSV files exist locally
+   - Proceed to next wave
+4. **GEMM Collection** - Wait for GEMM to finish, collect results
+5. **Summary** - Report total jobs, ready for validation
+
+**Timeline:** ~15-30 minutes for all waves (depends on GPU availability and queue time)
+
+**Data Safety:** Results are copied locally and verified after each wave. If collection fails, orchestration stops immediately.
 
 ## Monitoring
 
@@ -211,8 +260,14 @@ oc logs job/<job-name> -n diya
 # Common issues:
 # - sgl-kernel build failure → Check CUDA version (need 12.8+)
 # - Import ABI mismatch → PyTorch version mismatch
-# - Missing config fields → Check run_benchmarks.py temp config
+# - deep-gemm build failure → Check CUDA 12.8+ for FP4 support
+# - Validation errors → Ensure job template passes correct args to validator
 ```
+
+**Recent fixes:**
+- Fixed validation to use `--phase-filter`/`--tp-filter` (not `--phase`/`--tp`)
+- Fixed InferSim fork to use local `flashinfer_backend_utils.py` (no sglang dependency)
+- Added OOM handling in decode benchmarks (skips configs that don't fit)
 
 ### Re-run Failed Shape
 
@@ -244,24 +299,37 @@ This is **expected behavior** - benchmarks skip configs that don't fit and conti
 
 ## Clean Up
 
+### Delete Jobs
+
+**When using orchestration:** Jobs can be deleted after each wave completes since results are already copied locally and verified.
+
 ```bash
 # Delete all InferSim jobs
 oc delete jobs -l app=infersim-benchmark -n diya
 
-# Delete completed jobs (after collecting results)
-oc delete jobs -n diya --field-selector status.successful=1
+# Delete only completed jobs (keeps failed jobs for debugging)
+oc delete jobs -n diya --field-selector status.successful=1 -l app=infersim-benchmark
 
+# Delete specific wave's jobs after collection
+oc delete jobs -n diya -l app=infersim-benchmark | grep "32-8-128" | awk '{print $1}' | xargs oc delete job -n diya
+```
+
+### Clean Up YAMLs
+
+```bash
 # Clean up local test YAMLs (if using --keep-yamls or --dry-run)
 rm scripts/openshift/job-h100-*.yaml
 ```
 
+**Note:** Generated YAMLs are auto-deleted after submission by default.
+
 ## Scripts Reference
 
-- `openshift/generate_job.py` - Generate single job YAML from template
-- `orchestrate_benchmarks.py` - Wave-based orchestration (submits 25 jobs)
-- `run_benchmarks.py` - Called by jobs, routes to InferSim kernel scripts
-- `collect_results.py` - Copy CSV files from pod filesystems to local
-- `validate_benchmark_data.py` - Verify data structure, columns, MFU ranges
+- `openshift/generate_job.py` - Generate single job YAML from template with shape-specific config
+- `orchestrate_benchmarks.py` - Wave-based orchestration with auto-collection after each wave
+- `run_benchmarks.py` - Called by jobs, creates temp configs and routes to InferSim kernel scripts
+- `collect_results.py` - Copy CSV files from pod filesystems via oc rsync (called automatically by orchestration)
+- `validate_benchmark_data.py` - Verify data structure, columns, MFU ranges (per-job + final validation)
 
 See also:
 - `openshift/README.md` - Detailed OpenShift job documentation
