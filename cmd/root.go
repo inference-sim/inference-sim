@@ -261,6 +261,12 @@ var runCmd = &cobra.Command{
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
 		}
+		if totalKVBlocks <= 0 {
+			logrus.Fatalf("--total-kv-blocks must be > 0, got %d", totalKVBlocks)
+		}
+		if blockSizeTokens <= 0 {
+			logrus.Fatalf("--block-size-in-tokens must be > 0, got %d", blockSizeTokens)
+		}
 
 		if workloadType == "traces" && tracesWorkloadFilePath == "" {
 			logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")

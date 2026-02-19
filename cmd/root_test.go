@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -53,4 +54,25 @@ func TestSaveResults_MetricsPrintedToStdout(t *testing.T) {
 	// THEN the metrics JSON MUST appear on stdout (BC-1)
 	assert.Contains(t, output, "Simulation Metrics", "metrics header must be on stdout")
 	assert.Contains(t, output, "completed_requests", "metrics JSON must be on stdout")
+}
+
+func TestRunCmd_KVBlockFlags_DefaultsArePositive(t *testing.T) {
+	// GIVEN the run command with its registered flags
+	kvBlocksFlag := runCmd.Flags().Lookup("total-kv-blocks")
+	blockSizeFlag := runCmd.Flags().Lookup("block-size-in-tokens")
+
+	// WHEN we check the default values
+	// THEN they MUST be positive (BC-5: valid defaults pass validation)
+	assert.NotNil(t, kvBlocksFlag, "total-kv-blocks flag must be registered")
+	assert.NotNil(t, blockSizeFlag, "block-size-in-tokens flag must be registered")
+
+	kvDefault, err := strconv.ParseInt(kvBlocksFlag.DefValue, 10, 64)
+	assert.NoError(t, err, "total-kv-blocks default must be a valid int64")
+	assert.Greater(t, kvDefault, int64(0),
+		"default total-kv-blocks must be positive (passes <= 0 validation)")
+
+	bsDefault, err := strconv.ParseInt(blockSizeFlag.DefValue, 10, 64)
+	assert.NoError(t, err, "block-size-in-tokens default must be a valid int64")
+	assert.Greater(t, bsDefault, int64(0),
+		"default block-size-in-tokens must be positive (passes <= 0 validation)")
 }
