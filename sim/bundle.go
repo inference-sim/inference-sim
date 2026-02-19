@@ -103,14 +103,7 @@ func validNamesList(m map[string]bool) []string {
 
 // validNames returns a sorted comma-separated list of valid names (excluding empty string).
 func validNames(m map[string]bool) string {
-	names := make([]string, 0, len(m))
-	for k := range m {
-		if k != "" {
-			names = append(names, k)
-		}
-	}
-	sort.Strings(names)
-	return strings.Join(names, ", ")
+	return strings.Join(validNamesList(m), ", ")
 }
 
 // Validate checks that all policy names and parameter ranges in the bundle are valid.

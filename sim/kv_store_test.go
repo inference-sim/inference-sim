@@ -70,6 +70,9 @@ func TestTieredKVCache_PendingTransferLatency_PureQuery(t *testing.T) {
 	// BC-3: PendingTransferLatency is a pure query (no side effects)
 	gpu := NewKVCacheState(100, 16)
 	tiered := NewTieredKVCache(gpu, 50, 0.5, 1.0, 10)
+	// Direct field access: acceptable in same-package unit test because triggering
+	// natural latency accumulation (offload→reload) requires complex multi-step setup.
+	// The test's purpose is verifying query vs. consume semantics, not accumulation logic.
 	tiered.pendingLatency = 42
 
 	first := tiered.PendingTransferLatency()
@@ -82,7 +85,7 @@ func TestTieredKVCache_ConsumePendingTransferLatency_ClearsValue(t *testing.T) {
 	// BC-4: ConsumePendingTransferLatency returns value and clears
 	gpu := NewKVCacheState(100, 16)
 	tiered := NewTieredKVCache(gpu, 50, 0.5, 1.0, 10)
-	tiered.pendingLatency = 42
+	tiered.pendingLatency = 42 // same-package direct access (see comment in BC-3 test above)
 
 	consumed := tiered.ConsumePendingTransferLatency()
 	assert.Equal(t, int64(42), consumed)
