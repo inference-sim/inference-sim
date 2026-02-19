@@ -312,6 +312,18 @@ def main():
         else:
             print(f"✓ Wave {wave_idx}/6: All 4 jobs succeeded")
 
+        # Collect results from completed wave (free up GPU resources)
+        print(f"Collecting results from wave {wave_idx}...")
+        collect_result = subprocess.run(
+            [sys.executable, "scripts/collect_results.py"],
+            capture_output=True,
+            text=True
+        )
+        if collect_result.returncode == 0:
+            print(f"✓ Results collected for wave {wave_idx}")
+        else:
+            print(f"⚠ Failed to collect results: {collect_result.stderr}")
+
     # Wait for GEMM if still running
     if gemm_job and not args.dry_run:
         print(f"\n{'='*60}")
@@ -328,6 +340,18 @@ def main():
         else:
             print(f"✓ GEMM already finished: {status}")
 
+        # Collect GEMM results
+        print("Collecting GEMM results...")
+        collect_result = subprocess.run(
+            [sys.executable, "scripts/collect_results.py"],
+            capture_output=True,
+            text=True
+        )
+        if collect_result.returncode == 0:
+            print("✓ GEMM results collected")
+        else:
+            print(f"⚠ Failed to collect GEMM results: {collect_result.stderr}")
+
     # Final summary
     print(f"\n{'='*60}")
     print("Orchestration Complete")
@@ -339,9 +363,9 @@ def main():
         print("To submit: oc apply -f scripts/openshift/job-*.yaml -n diya")
     else:
         print(f"Total jobs submitted: {len(all_jobs) + (1 if gemm_job else 0)}")
-        print(f"\nNext steps:")
-        print("1. python scripts/collect_results.py")
-        print("2. python scripts/validate_benchmark_data.py --gpu H100")
+        print(f"\n✓ Results auto-collected after each wave")
+        print(f"\nNext step:")
+        print("  python scripts/validate_benchmark_data.py --gpu H100")
 
         # Auto-cleanup generated YAMLs unless --keep-yamls
         if not args.keep_yamls and all_yamls:

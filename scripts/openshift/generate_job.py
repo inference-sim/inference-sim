@@ -119,6 +119,8 @@ def generate_job_yaml(
     yaml_content = yaml_content.replace("${NODE_SELECTOR_VALUE}", node_selector_value)
     yaml_content = yaml_content.replace("${CONTAINER_IMAGE}", container_image)
     yaml_content = yaml_content.replace("${BENCH_ARGS}", bench_args_str)
+    yaml_content = yaml_content.replace("${PHASE}", phase or "")
+    yaml_content = yaml_content.replace("${TP}", str(tp) if tp is not None else "")
 
     # Handle optional S3_BUCKET for uploading results
     import os

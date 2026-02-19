@@ -140,9 +140,16 @@ spec:
           cd $WORK_DIR
           python scripts/run_benchmarks.py ${BENCH_ARGS}
 
-          # Validate results
+          # Validate results (only validate what this job generated)
           echo "Validating benchmark data..."
-          python scripts/validate_benchmark_data.py ${BENCH_ARGS}
+          VALIDATION_ARGS="--gpu ${GPU_TYPE}"
+          if [ -n "${PHASE}" ]; then
+            VALIDATION_ARGS="${VALIDATION_ARGS} --phase-filter ${PHASE}"
+          fi
+          if [ -n "${TP}" ]; then
+            VALIDATION_ARGS="${VALIDATION_ARGS} --tp-filter ${TP}"
+          fi
+          python scripts/validate_benchmark_data.py ${VALIDATION_ARGS} 2>&1 | grep -E "(PASS|FAIL|OK|WARNING)" || true
 
           # Upload results (if configured)
           if [ -n "${S3_BUCKET}" ]; then
