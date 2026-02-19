@@ -149,6 +149,21 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 
 ## Development Guidelines
 
+### Design Principles
+
+BLIS follows a layered design document hierarchy. Each tier has a specific abstraction level and audience:
+
+- **Design guidelines** (`docs/plans/2026-02-18-design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
+- **Design docs** (per-feature): Behavioral specifications written per the guidelines. Describe what modules do and why, never how they're implemented. Four species: decision record, specification, problem analysis, system overview.
+- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/plans/macroplanprompt.md`. May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
+- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/plans/prmicroplanprompt-v2.md`.
+
+**The abstraction rule:** Design docs describe *what a module does and what it guarantees*. Macro plans describe *what to build and in what order*. Micro plans describe *how to implement each piece*. Go struct definitions, method implementations, and file:line references belong only in micro plans.
+
+**Module architecture:** BLIS has a two-layer architecture — a domain-agnostic simulation kernel (event queue, clock, RNG, statistics) and domain-specific modules (router, scheduler, KV cache manager, latency model, autoscaler, batch formation). Each module is defined by a behavioral contract: what it observes, controls, owns, and what invariants it maintains. See design guidelines Section 4 for the full module map and contract template.
+
+**Extending BLIS:** Four extension types, each with a different recipe — policy template (new algorithm behind existing interface), subsystem module (new module with its own interface), backend swap (alternative implementation requiring interface extraction), tier composition (delegation wrapper). See design guidelines Section 5.
+
 ### BDD/TDD Development
 
 This project follows BDD/TDD practices. When implementing features:
@@ -161,6 +176,8 @@ This project follows BDD/TDD practices. When implementing features:
 ### PR Workflow
 
 Diligently follow the workflow in docs/plans/prworkflow.md. Before I approve any plan, validate it: 1) Check every task's dependencies — can each task actually start given what comes before it? 2) Verify all sections from the template are present and non-empty. 3) Read the executive summary as if you're a new team member — is it clear and human-readable? 4) Flag any tasks that seem under-specified for implementation. List all issues found.
+
+For new features that introduce module boundaries or modify the architecture, a design doc (per the design guidelines) should exist before micro-planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), a design doc is optional — proceed directly to micro-planning.
 
 ### Context Management
 
@@ -399,11 +416,23 @@ inference-sim/
 
 ## Design Documents
 
+### Guidelines and Templates (read these first)
+
+- `docs/plans/2026-02-18-design-guidelines.md`: **BLIS Design Guidelines** — DES foundations (model scoping, event design, V&V), design doc authoring rules (abstraction levels, staleness test, four species), module architecture (two-layer architecture, target module map, contract template, real-system correspondence), extension framework (four extension types with recipes), anti-patterns with evidence. **Start here when designing anything new.**
+- `docs/plans/macroplanprompt.md`: Template for macro-level planning (multi-PR feature expansions). Requires design guidelines as prerequisite. Enforces module contracts, model scoping, extension type classification, and abstraction level boundaries.
+- `docs/plans/prmicroplanprompt-v2.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts. This is where full code detail belongs.
+- `docs/plans/prworkflow.md`: End-to-end PR workflow (worktree → plan → review → implement → review → audit → commit)
+
+### Design Documents (per-feature)
+
 - `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
 - `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v3.4, 16 PRs across 6 phases, online routing architecture)
 - `docs/plans/2026-02-13-simplification-assessment.md`: Architectural simplification assessment (constructor collapse, unified CLI, field privatization, interface dedup)
 - `docs/plans/2026-02-16-workload-generator-design.md`: ServeGen-informed workload generator design (multi-client specs, arrival processes, calibration)
 - `docs/plans/2026-02-17-pr13-decision-traces.md`: PR13 decision trace design (RoutingRecord, counterfactual analysis, TraceSummary)
+- `docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md`: Hardening design — antipattern elimination, extension scenario analysis, modularity improvements
+- `docs/plans/pr12-architectural-predesign.md`: PR12 architectural pre-design — 6 binding design decisions for tiered KV cache (gold standard for decision records)
+
+### Micro-Level Implementation Plans
+
 - `docs/plans/pr10-workload-generator-plan.md`: PR10 micro-level implementation plan (workload generator)
-- `docs/plans/macroplanprompt.md`: Template for macro-level planning
-- `docs/plans/prmicroplanprompt-v2.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts
