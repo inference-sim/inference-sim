@@ -208,7 +208,8 @@ var runCmd = &cobra.Command{
 			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
 				simulationHorizon = spec.Horizon
 			}
-			reqs, err := workload.GenerateRequests(spec, simulationHorizon)
+			// Temporary: pass 0 (unlimited) — proper wiring in Task 4
+			reqs, err := workload.GenerateRequests(spec, simulationHorizon, 0)
 			if err != nil {
 				logrus.Fatalf("Failed to generate workload: %v", err)
 			}
