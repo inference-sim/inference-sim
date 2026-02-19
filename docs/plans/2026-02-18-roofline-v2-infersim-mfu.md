@@ -27,9 +27,246 @@
 
 ---
 
+## Executive Summaries
+
+### Phase 1: Python Benchmarking (Days 1-5)
+
+**What:** Run InferSim's existing benchmark scripts on H100 to generate MFU data
+
+**How:**
+1. Create `config/benchmark_config.json` with all constants
+2. Write minimal Python wrapper (~100 lines) that calls InferSim scripts
+3. Submit OpenShift Job to `diya` namespace
+4. Wait ~2-3 hours for benchmarks to complete
+5. Validate and commit 13 CSV files
+
+**Deliverables:**
+- `bench_data/h100/mha/prefill/*.csv` (6 configs)
+- `bench_data/h100/mha/decode/*.csv` (6 configs)
+- `bench_data/h100/gemm/data.csv` (160 GEMM configs)
+- Total: ~500KB of static CSV data
+
+**Dependencies:** H100 cluster access via OpenShift, `diya` namespace
+
+**Effort:** 2-3 hours dev work, 2-3 hours cluster time
+
+**Key Point:** NO custom benchmarking code - reuse InferSim's production scripts!
+
+---
+
+### Phase 1.5: Model Validation (Optional - After Phase 2)
+
+**What:** Verify simulator works with production models at different TP settings
+
+**How:**
+1. Run simulator predictions for Llama-2-7B, Llama-2-70B, Mixtral-8x7B
+2. Test TP=1, 2, 4 for each model
+3. Verify TP scaling behavior matches expectations
+
+**Deliverables:**
+- Validation report showing simulator runs successfully
+- TP scaling curves (compute vs memory bound)
+- Comparison against vLLM measurements (if available)
+
+**Dependencies:** Phase 2 complete (Go implementation working)
+
+**Effort:** 1-2 hours
+
+**Key Point:** Validates that same MFU data works across all TP values (formula handles scaling)
+
+---
+
+### Phase 2: Go Implementation (Days 6-9)
+
+**What:** Load MFU CSV files and implement lookup-based roofline model
+
+**How:**
+1. Implement `mfu_database.go` - CSV parser (~200 lines)
+2. Implement `mfu_lookup.go` - Nearest-neighbor search (~150 lines)
+3. Implement `roofline_infersim.go` - Use MFU in formula `time = max(flops/(peak*mfu), bytes/bw)` (~150 lines)
+4. Integrate with existing simulator
+5. Write unit tests
+
+**Deliverables:**
+- Go code for MFU-based roofline (~500 lines)
+- Unit tests (all passing)
+- Integration with existing simulator
+- Fallback to legacy roofline if MFU data missing
+
+**Dependencies:** Phase 1 complete (CSV files available)
+
+**Effort:** 4-5 days coding
+
+**Key Point:** NO GPU code in Go - pure CSV reading and table lookups. Works on any machine!
+
+---
+
+### What Ships at the End
+
+```
+inference-sim/                    # Go binary
+├── bench_data/h100/             # Ship these CSV files (~500KB)
+│   ├── mha/prefill/*.csv       # 6 model configs
+│   ├── mha/decode/*.csv        # 6 model configs
+│   └── gemm/data.csv           # 160 GEMM configs
+└── sim/
+    ├── mfu_database.go         # CSV loader
+    ├── mfu_lookup.go           # Nearest-neighbor search
+    └── roofline_infersim.go    # MFU-based roofline
+
+Usage:
+  ./inference-sim --model llama-2-7b --gpu H100 --tp 4 --roofline infersim
+```
+
+**Key Benefits:**
+- ✅ 4-10% error (vs 11% current)
+- ✅ Zero calibration needed
+- ✅ Works across all models
+- ✅ TP=1,2,4 supported (same data)
+- ✅ Simple: `time = max(flops/(peak*mfu), bytes/bw)`
+
+---
+
 ## Phase 1: Python Benchmarking on H100 (Days 1-5)
 
-### Task 1: Simple Runner Script for InferSim Benchmarks
+### Task 1: Benchmark Configuration File
+
+**Purpose:** Define all constants in a centralized config file (no hardcoded values)
+
+**Files:**
+- Create: `config/benchmark_config.json`
+
+**Step 1: Create benchmark configuration**
+
+Create file: `config/benchmark_config.json`
+
+```json
+{
+  "gpu_specs": {
+    "H100": {
+      "peak_tflops_fp16": 989.5,
+      "peak_memory_bw_tbs": 3.35,
+      "effective_memory_bw_factor": 0.8,
+      "nvlink_bw_gbs": 900,
+      "num_sms": 132,
+      "memory_gb": 80
+    }
+  },
+  "benchmark_configs": [
+    {
+      "name": "llama-2-7b",
+      "num_attention_heads": 32,
+      "num_key_value_heads": 32,
+      "head_dim": 128,
+      "num_hidden_layers": 32,
+      "intermediate_size": 11008,
+      "description": "Llama-2-7B (pure MHA)",
+      "validation_model": "meta-llama/Llama-2-7b-hf"
+    },
+    {
+      "name": "llama-2-70b",
+      "num_attention_heads": 64,
+      "num_key_value_heads": 8,
+      "head_dim": 128,
+      "num_hidden_layers": 80,
+      "intermediate_size": 28672,
+      "description": "Llama-2-70B (GQA)",
+      "validation_model": "meta-llama/Llama-2-70b-hf"
+    },
+    {
+      "name": "llama-3-8b",
+      "num_attention_heads": 32,
+      "num_key_value_heads": 8,
+      "head_dim": 128,
+      "num_hidden_layers": 32,
+      "intermediate_size": 14336,
+      "description": "Llama-3-8B, Mixtral-8x7B (GQA)",
+      "validation_model": "meta-llama/Meta-Llama-3-8B"
+    },
+    {
+      "name": "qwen2.5-7b",
+      "num_attention_heads": 28,
+      "num_key_value_heads": 4,
+      "head_dim": 128,
+      "num_hidden_layers": 28,
+      "intermediate_size": 18944,
+      "description": "Qwen2.5-7B (GQA)",
+      "validation_model": "Qwen/Qwen2.5-7B-Instruct"
+    },
+    {
+      "name": "llama-3.1-8b",
+      "num_attention_heads": 32,
+      "num_key_value_heads": 4,
+      "head_dim": 128,
+      "num_hidden_layers": 32,
+      "intermediate_size": 14336,
+      "description": "Llama-3.1-8B (GQA)",
+      "validation_model": "meta-llama/Meta-Llama-3.1-8B"
+    },
+    {
+      "name": "llama-3.3-70b",
+      "num_attention_heads": 40,
+      "num_key_value_heads": 8,
+      "head_dim": 128,
+      "num_hidden_layers": 80,
+      "intermediate_size": 18944,
+      "description": "Llama-3.3-70B (GQA)",
+      "validation_model": "meta-llama/Meta-Llama-3.3-70B-Instruct"
+    }
+  ],
+  "validation_configs": {
+    "primary_models": [
+      "meta-llama/Llama-2-7b-hf",
+      "meta-llama/Llama-2-70b-hf",
+      "mistralai/Mixtral-8x7B-v0.1"
+    ],
+    "tp_values": [1, 2, 4],
+    "prefill_test_sizes": [512, 2048],
+    "decode_batch_sizes": [1, 16, 32]
+  },
+  "mfu_validation": {
+    "decode": {
+      "min": 0.005,
+      "max": 0.30,
+      "description": "Memory-bound decode operations"
+    },
+    "prefill": {
+      "min": 0.30,
+      "max": 0.90,
+      "description": "Compute-bound prefill operations"
+    },
+    "gemm": {
+      "min": 0.05,
+      "max": 1.0,
+      "description": "GEMM operations vary with batch size"
+    }
+  },
+  "gemm_sweep": {
+    "m_values": [1, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096],
+    "k_values": [2048, 3584, 4096, 8192],
+    "n_values": [6144, 11008, 14336, 18944]
+  },
+  "openshift": {
+    "namespace": "diya",
+    "job_name_prefix": "infersim",
+    "container_image": "nvcr.io/nvidia/pytorch:24.01-py3",
+    "gpu_resource": "nvidia.com/gpu",
+    "node_selector": "nvidia-h100"
+  }
+}
+```
+
+**Step 2: Verify JSON is valid**
+
+```bash
+python -c "import json; json.load(open('config/benchmark_config.json')); print('✓ Valid JSON')"
+```
+
+Expected: "✓ Valid JSON"
+
+---
+
+### Task 2: Simple Runner Script for InferSim Benchmarks
 
 **Prerequisites:** InferSim directory exists with kernel_benchmark/ scripts
 
@@ -52,39 +289,33 @@ Create file: `scripts/run_h100_benchmarks.py`
 ```python
 """
 Simple runner for InferSim H100 benchmarks
-Modifies TFLOPs for H100 and runs existing InferSim scripts
+Loads config from benchmark_config.json and runs InferSim scripts
 """
 import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Dict
 
 
-# Benchmark configs covering validation models: (nh, nkv, dh, model_name)
-CONFIGS = [
-    # Core models for validation
-    (32, 32, 128, "llama-2-7b"),      # Llama-2-7B (pure MHA)
-    (64, 8, 128, "llama-2-70b"),      # Llama-2-70B (GQA)
-    (32, 8, 128, "llama-3-8b"),       # Llama-3-8B, Mixtral-8x7B (GQA)
-    (28, 4, 128, "qwen2.5-7b"),       # Qwen2.5-7B (GQA)
-    (32, 4, 128, "llama-3.1-8b"),     # Llama-3.1-8B (GQA)
-    # Additional coverage
-    (40, 8, 128, "llama-3.3-70b"),    # Llama-3.3-70B (GQA)
-]
+def load_config() -> Dict:
+    """Load benchmark configuration"""
+    config_path = Path("config/benchmark_config.json")
+    if not config_path.exists():
+        print(f"✗ Config not found: {config_path}")
+        sys.exit(1)
 
-# Note: TP scaling (1,2,4) uses same MFU data - formula divides work across GPUs
-
-H100_TFLOPS = 989.5
+    with open(config_path) as f:
+        return json.load(f)
 
 
-def modify_prefill_script():
-    """Modify fa3_mha_prefill.py to use H100 TFLOPs"""
+def modify_prefill_script(peak_tflops: float):
+    """Modify fa3_mha_prefill.py to use configured TFLOPs"""
     script_path = Path("InferSim/kernel_benchmark/fa3_mha_prefill.py")
     content = script_path.read_text()
 
     # Replace TFLOPs value
-    modified = content.replace("fp16_tflops = 148", f"fp16_tflops = {H100_TFLOPS}")
+    modified = content.replace("fp16_tflops = 148", f"fp16_tflops = {peak_tflops}")
 
     # Backup original
     backup_path = script_path.with_suffix(".py.bak")
@@ -92,22 +323,27 @@ def modify_prefill_script():
         script_path.with_suffix(".py.bak").write_text(script_path.read_text())
 
     script_path.write_text(modified)
-    print(f"✓ Modified fa3_mha_prefill.py for H100 ({H100_TFLOPS} TFLOPs)")
+    print(f"✓ Modified fa3_mha_prefill.py for H100 ({peak_tflops} TFLOPs)")
 
 
-def create_config(nh: int, nkv: int, dh: int) -> Path:
-    """Create temporary HuggingFace config"""
+def create_hf_config(model_config: Dict) -> Path:
+    """Create temporary HuggingFace config from benchmark config"""
+    nh = model_config["num_attention_heads"]
+    nkv = model_config["num_key_value_heads"]
+    dh = model_config["head_dim"]
+
     config = {
         "hidden_size": nh * dh,
         "num_attention_heads": nh,
         "num_key_value_heads": nkv,
         "head_dim": dh,
-        "num_hidden_layers": 32,
-        "intermediate_size": 14336,
+        "num_hidden_layers": model_config["num_hidden_layers"],
+        "intermediate_size": model_config["intermediate_size"],
         "torch_dtype": "bfloat16"
     }
 
-    path = Path(f"/tmp/h100_config_{nh}_{nkv}_{dh}.json")
+    config_key = f"{nh}-{nkv}-{dh}"
+    path = Path(f"/tmp/h100_config_{config_key}.json")
     path.write_text(json.dumps(config, indent=2))
     return path
 
@@ -130,8 +366,17 @@ def main():
     print("H100 Benchmark Runner (Using InferSim Scripts)")
     print("="*60)
 
+    # Load configuration
+    config = load_config()
+    gpu_spec = config["gpu_specs"]["H100"]
+    model_configs = config["benchmark_configs"]
+    gemm_sweep = config["gemm_sweep"]
+
+    print(f"GPU: H100 ({gpu_spec['peak_tflops_fp16']} TFLOPs)")
+    print(f"Models: {len(model_configs)}")
+
     # Modify prefill script once
-    modify_prefill_script()
+    modify_prefill_script(gpu_spec["peak_tflops_fp16"])
 
     # Create output directories
     output_base = Path("InferSim/bench_data/h100")
@@ -142,14 +387,19 @@ def main():
     infersim_dir = Path("InferSim")
 
     # Run MHA benchmarks
-    for nh, nkv, dh, model_name in CONFIGS:
+    for model_config in model_configs:
+        nh = model_config["num_attention_heads"]
+        nkv = model_config["num_key_value_heads"]
+        dh = model_config["head_dim"]
         config_key = f"{nh}-{nkv}-{dh}"
+
         print(f"\n{'='*60}")
-        print(f"Config: {model_name} ({config_key})")
+        print(f"Config: {model_config['name']} ({config_key})")
+        print(f"Description: {model_config['description']}")
         print(f"{'='*60}")
 
         # Create temp config
-        config_path = create_config(nh, nkv, dh)
+        config_path = create_hf_config(model_config)
 
         # Run prefill
         cmd = [
@@ -169,7 +419,7 @@ def main():
             sys.executable,
             "kernel_benchmark/flashinfer_mha_decode.py",
             "--config-path", str(config_path.absolute()),
-            "--fp16-tflops", str(H100_TFLOPS),
+            "--fp16-tflops", str(gpu_spec["peak_tflops_fp16"]),
             "--kv-cache-dtype", "bf16",
             "--tp-size", "1"
         ]
@@ -185,23 +435,19 @@ def main():
     print("GEMM Benchmarks")
     print(f"{'='*60}")
 
-    M_values = [1, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
-    K_values = [2048, 3584, 4096, 8192]
-    N_values = [6144, 11008, 14336, 18944]
-
     gemm_output = output_base / "gemm" / "data.csv"
     gemm_tmp = infersim_dir / "gemm.csv"
 
     # Run first to create header
     first = True
-    for k in K_values:
-        for n in N_values:
+    for k in gemm_sweep["k_values"]:
+        for n in gemm_sweep["n_values"]:
             cmd = [
                 sys.executable,
                 "kernel_benchmark/deepgemm_gemm.py",
                 "-k", str(k),
                 "-n", str(n),
-                "--gpu-tflops", str(H100_TFLOPS)
+                "--gpu-tflops", str(gpu_spec["peak_tflops_fp16"])
             ]
             print(f"  Running: GEMM K={k}, N={n}")
             if run_command(cmd, infersim_dir, f"GEMM K={k} N={n}"):
@@ -236,28 +482,45 @@ Create file: `scripts/validate_h100_data.py`
 
 ```python
 """Validate H100 benchmark data"""
+import json
 import pandas as pd
 from pathlib import Path
 import sys
+from typing import Dict, List
 
 
-def validate_mha_data(base_path: Path):
+def load_config() -> Dict:
+    """Load benchmark configuration"""
+    config_path = Path("config/benchmark_config.json")
+    with open(config_path) as f:
+        return json.load(f)
+
+
+def validate_mha_data(base_path: Path, config: Dict) -> List[str]:
     """Validate MHA benchmark data"""
-    configs = ["32-32-128", "64-8-128", "32-8-128", "28-4-128", "32-4-128", "40-8-128"]
+    # Build list of expected configs from benchmark_config.json
+    configs = []
+    for model_config in config["benchmark_configs"]:
+        nh = model_config["num_attention_heads"]
+        nkv = model_config["num_key_value_heads"]
+        dh = model_config["head_dim"]
+        configs.append(f"{nh}-{nkv}-{dh}")
+
     stages = ["decode", "prefill"]
     errors = []
+    mfu_ranges = config["mfu_validation"]
 
     print("="*60)
     print("MHA Validation")
     print("="*60)
 
     for stage in stages:
-        for config in configs:
-            path = base_path / "mha" / stage / f"{config}.csv"
+        for config_key in configs:
+            path = base_path / "mha" / stage / f"{config_key}.csv"
 
             if not path.exists():
                 errors.append(f"Missing: {path}")
-                print(f"✗ {stage:7s} {config:10s}: MISSING")
+                print(f"✗ {stage:7s} {config_key:10s}: MISSING")
                 continue
 
             try:
@@ -274,15 +537,15 @@ def validate_mha_data(base_path: Path):
                     errors.append(f"{path}: Missing columns {missing}")
                     continue
 
-                # Validate MFU range
-                if stage == "decode":
-                    if df['mfu'].min() < 0.005 or df['mfu'].max() > 0.30:
-                        errors.append(f"{path}: MFU range [{df['mfu'].min():.3f}, {df['mfu'].max():.3f}]")
-                else:
-                    if df['mfu'].min() < 0.30 or df['mfu'].max() > 0.90:
-                        errors.append(f"{path}: MFU range [{df['mfu'].min():.3f}, {df['mfu'].max():.3f}]")
+                # Validate MFU range using config
+                expected_range = mfu_ranges[stage]
+                if df['mfu'].min() < expected_range["min"] or df['mfu'].max() > expected_range["max"]:
+                    errors.append(
+                        f"{path}: MFU range [{df['mfu'].min():.3f}, {df['mfu'].max():.3f}] "
+                        f"outside expected [{expected_range['min']:.3f}, {expected_range['max']:.3f}]"
+                    )
 
-                print(f"✓ {stage:7s} {config:10s}: {len(df):3d} rows, MFU [{df['mfu'].min():.3f}, {df['mfu'].max():.3f}]")
+                print(f"✓ {stage:7s} {config_key:10s}: {len(df):3d} rows, MFU [{df['mfu'].min():.3f}, {df['mfu'].max():.3f}]")
 
             except Exception as e:
                 errors.append(f"{path}: {e}")
@@ -290,10 +553,11 @@ def validate_mha_data(base_path: Path):
     return errors
 
 
-def validate_gemm_data(base_path: Path):
+def validate_gemm_data(base_path: Path, config: Dict) -> List[str]:
     """Validate GEMM data"""
     path = base_path / "gemm" / "data.csv"
     errors = []
+    mfu_range = config["mfu_validation"]["gemm"]
 
     print("\n" + "="*60)
     print("GEMM Validation")
@@ -313,6 +577,13 @@ def validate_gemm_data(base_path: Path):
             errors.append(f"{path}: Missing columns {missing}")
             return errors
 
+        # Validate MFU range using config
+        if df['mfu'].min() < mfu_range["min"] or df['mfu'].max() > mfu_range["max"]:
+            errors.append(
+                f"{path}: MFU range [{df['mfu'].min():.3f}, {df['mfu'].max():.3f}] "
+                f"outside expected [{mfu_range['min']:.3f}, {mfu_range['max']:.3f}]"
+            )
+
         print(f"✓ GEMM: {len(df):3d} rows, MFU [{df['mfu'].min():.3f}, {df['mfu'].max():.3f}]")
 
     except Exception as e:
@@ -322,16 +593,19 @@ def validate_gemm_data(base_path: Path):
 
 
 def main():
+    # Load configuration
+    config = load_config()
     base_path = Path("InferSim/bench_data/h100")
 
     print("\n" + "="*60)
     print("H100 Data Validation")
     print("="*60)
-    print(f"Path: {base_path}\n")
+    print(f"Path: {base_path}")
+    print(f"Config: config/benchmark_config.json\n")
 
     errors = []
-    errors.extend(validate_mha_data(base_path))
-    errors.extend(validate_gemm_data(base_path))
+    errors.extend(validate_mha_data(base_path, config))
+    errors.extend(validate_gemm_data(base_path, config))
 
     print("\n" + "="*60)
     if errors:
@@ -353,25 +627,10 @@ if __name__ == "__main__":
 **Step 4: Test locally (without GPU)**
 
 ```bash
-python -c "from scripts.run_h100_benchmarks import create_config; print(create_config(28, 4, 128))"
+python -c "from scripts.run_h100_benchmarks import load_config; config = load_config(); print(f'Loaded {len(config[\"benchmark_configs\"])} model configs')"
 ```
 
-Expected: Path to temp config file
-
-**Step 5: Commit**
-
-```bash
-git add scripts/run_h100_benchmarks.py scripts/validate_h100_data.py
-git commit -m "feat(roofline-v2): add minimal runner for InferSim benchmarks
-
-- Reuse InferSim's existing fa3_mha_prefill.py, flashinfer_mha_decode.py
-- Reuse InferSim's deepgemm_gemm.py
-- Minimal wrapper just modifies TFLOPs and runs scripts
-- Validation script for data quality
-- No custom orchestration needed!
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-```
+Expected: "Loaded 6 model configs"
 
 ---
 
@@ -528,21 +787,6 @@ if __name__ == "__main__":
         sys.exit(0)
 ```
 
-**Step 3: Commit**
-
-```bash
-git add scripts/openshift/ scripts/submit_benchmark_job.py
-git commit -m "feat(roofline-v2): add OpenShift job for H100 benchmarks
-
-- Single job runs InferSim scripts via wrapper
-- Installs dependencies in container
-- Uses diya namespace
-- Python submission script with monitoring
-- Automatic job status checking
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-```
-
 ---
 
 ### Task 3: Execute Benchmarks (REQUIRES H100 + OpenShift)
@@ -607,27 +851,6 @@ find bench_data/h100 -name "*.csv" | wc -l
 
 Expected: 13 files (12 MHA for 6 configs + 1 GEMM)
 
-**Step 7: Commit benchmark data**
-
-```bash
-git add bench_data/h100/
-git commit -m "data(roofline-v2): add H100 benchmark MFU data
-
-- MHA prefill/decode for 6 configs:
-  - 32-32-128 (Llama-2-7B)
-  - 64-8-128 (Llama-2-70B)
-  - 32-8-128 (Llama-3-8B, Mixtral-8x7B)
-  - 28-4-128 (Qwen2.5-7B)
-  - 32-4-128 (Llama-3.1-8B)
-  - 40-8-128 (Llama-3.3-70B)
-- GEMM data for 160 configurations
-- Pre-computed MFU values from InferSim scripts
-- Benchmarked on OpenShift H100 cluster (diya namespace)
-- Same MFU data works for TP=1,2,4 (formula handles scaling)
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-```
-
 ---
 
 ## Phase 1.5: Validation Matrix (Optional - Can Run After Phase 2)
@@ -656,32 +879,18 @@ Create file: `scripts/validate_model_predictions.py`
 Validate simulator predictions against target models
 Tests with TP=1,2,4 to verify TP scaling works correctly
 """
+import json
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Dict
 
 
-VALIDATION_MODELS = [
-    {
-        "name": "llama-2-7b",
-        "hf_path": "meta-llama/Llama-2-7b-hf",
-        "config": "32-32-128",
-        "tp_values": [1, 2, 4],
-    },
-    {
-        "name": "llama-2-70b",
-        "hf_path": "meta-llama/Llama-2-70b-hf",
-        "config": "64-8-128",
-        "tp_values": [1, 2, 4],
-    },
-    {
-        "name": "mixtral-8x7b",
-        "hf_path": "mistralai/Mixtral-8x7B-v0.1",
-        "config": "32-8-128",
-        "tp_values": [1, 2, 4],
-    },
-]
+def load_config() -> Dict:
+    """Load benchmark configuration"""
+    config_path = Path("config/benchmark_config.json")
+    with open(config_path) as f:
+        return json.load(f)
 
 
 def run_simulator(model: str, tp: int, test_case: str) -> Dict:
@@ -824,22 +1033,6 @@ python scripts/validate_model_predictions.py
 ```
 
 Expected: All models run successfully, TP scaling works
-
-**Step 4: Commit**
-
-```bash
-git add scripts/validate_model_predictions.py docs/model_validation.md
-git commit -m "feat(roofline-v2): add model validation matrix
-
-- Test suite for Llama-2-7B, Llama-2-70B, Mixtral-8x7B
-- Validates TP=1,2,4 scaling behavior
-- Documents expected TP scaling patterns
-- Validates same MFU data works across TP settings
-
-Run after Phase 2 (Go implementation) complete.
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-```
 
 ---
 
