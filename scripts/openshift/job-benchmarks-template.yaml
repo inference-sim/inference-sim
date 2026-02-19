@@ -52,14 +52,15 @@ spec:
           echo "Starting InferSim ${GPU_TYPE} Benchmark Job"
           echo "=========================================="
 
-          # Clone fresh code from GitHub
+          # Clone fresh code from GitHub to pod-local storage (not PVC)
+          # This avoids race conditions when multiple pods run in parallel
           echo "Cloning inference-sim from GitHub (branch: roofline_valid)..."
-          cd /mnt
-          rm -rf inference-sim-job
+          WORK_DIR=/workspace/inference-sim
+          rm -rf $WORK_DIR
           git clone --branch roofline_valid --depth 1 \
             https://github.com/inference-sim/inference-sim.git \
-            inference-sim-job
-          cd inference-sim-job
+            $WORK_DIR
+          cd $WORK_DIR
 
           echo "Current commit:"
           git log -1 --oneline
@@ -88,7 +89,7 @@ spec:
               echo "This is required for prefill benchmarks"
               exit 1
             }
-            cd /mnt/inference-sim-job/InferSim
+            cd $WORK_DIR/InferSim
           }
 
           # Verify sgl-kernel import works
@@ -100,7 +101,7 @@ spec:
             git clone https://github.com/sgl-project/sglang.git --depth 1
             cd sglang/kernel
             MAX_JOBS=4 pip install --no-cache-dir -e . --verbose --force-reinstall
-            cd /mnt/inference-sim-job/InferSim
+            cd $WORK_DIR/InferSim
           }
 
           # Build deep-gemm from source (only if running GEMM benchmarks)
@@ -119,7 +120,7 @@ spec:
               echo "Ensure CUDA 12.6+ is available"
               exit 1
             }
-            cd /mnt/inference-sim-job/InferSim
+            cd $WORK_DIR/InferSim
           else
             echo "Skipping deep-gemm build (not running GEMM benchmarks)"
           fi
@@ -132,7 +133,7 @@ spec:
 
           # Run benchmarks
           echo "Running ${GPU_TYPE} benchmarks..."
-          cd /mnt/inference-sim-job
+          cd $WORK_DIR
           python scripts/run_benchmarks.py ${BENCH_ARGS}
 
           # Validate results
