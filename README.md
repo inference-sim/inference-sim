@@ -397,9 +397,21 @@ When using `--results-path`, the JSON output also includes a `requests` array wi
 
 ## Debugging and Observability
 
+### Output Model
+
+Simulation results (metrics JSON, fitness scores, anomaly counters, trace summaries) are always printed to **stdout** regardless of log level. Diagnostic messages go to **stderr** and are controlled by `--log`. This means you can pipe results cleanly:
+
+```bash
+# Capture only simulation results
+./simulation_worker run --model meta-llama/llama-3.1-8b-instruct > results.txt
+
+# Suppress diagnostics, show only results
+./simulation_worker run --model meta-llama/llama-3.1-8b-instruct 2>/dev/null
+```
+
 ### Log Levels
 
-Control verbosity with `--log` (default: `warn`):
+Control verbosity of diagnostic messages with `--log` (default: `warn`):
 
 ```bash
 # See policy configuration and workload generation details

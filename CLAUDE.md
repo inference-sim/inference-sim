@@ -228,6 +228,11 @@ When asked to update the macro implementation plan, directly edit the document. 
 - Every struct constructed in multiple places needs a canonical constructor (e.g., `NewRequestMetrics()`). Struct literals appear in exactly one place.
 - Before adding a field to a struct, grep for ALL construction sites (`StructName{`). Update every site or refactor to use the canonical constructor.
 
+**Output channel separation:**
+- Simulation results (metrics JSON, fitness scores, anomaly counters, trace summaries) use `fmt.Println`/`fmt.Printf` to write to **stdout**. These are the program's primary output and must be visible regardless of `--log` level.
+- Diagnostic messages (configuration echoes, progress markers, warnings, errors) use `logrus.*` to write to **stderr**, controlled by `--log`.
+- Rule of thumb: if a user piping output to a file would want to capture it, use `fmt`. If it is operational context for debugging, use `logrus`.
+
 **Error handling boundaries:**
 - `cmd/root.go`: `logrus.Fatalf` for user input errors (this is the CLI boundary)
 - `sim/`, `sim/cluster/`, `sim/workload/`: `panic()` for internal invariant violations that represent programming errors; `error` return for recoverable failures; `bool` return for expected conditions (e.g., KV allocation failure → preempt and retry)
