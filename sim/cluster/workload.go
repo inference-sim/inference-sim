@@ -29,6 +29,9 @@ func (c *ClusterSimulator) generateRequests() []*sim.Request {
 func (c *ClusterSimulator) generateRequestsFromDistribution() []*sim.Request {
 	rng := c.rng.ForSubsystem(sim.SubsystemWorkload)
 	cfg := c.workload
+	if cfg.Rate <= 0 {
+		panic("generateRequestsFromDistribution: Rate must be > 0 (validate at CLI level)")
+	}
 	horizon := c.config.Horizon
 
 	var requests []*sim.Request
