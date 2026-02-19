@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect benchmark results from completed OpenShift jobs"""
+"""Collect benchmark results from PVC (via pvc-debugger pod)"""
 import argparse
 import subprocess
 import sys
@@ -12,48 +12,47 @@ def run_oc_command(args, check=True):
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
 
-def find_benchmark_pods(namespace: str = "diya") -> list[str]:
-    """Find all infersim benchmark pods"""
+def check_pvc_debugger_exists(namespace: str = "diya") -> bool:
+    """Check if pvc-debugger pod exists and is running"""
     result = run_oc_command([
-        "get", "pods", "-n", namespace,
-        "-l", "app=infersim-benchmark",
-        "-o", "jsonpath={.items[*].metadata.name}"
-    ], check=False)
-
-    if result.returncode != 0:
-        print(f"✗ Failed to list pods: {result.stderr}")
-        return []
-
-    pods = result.stdout.strip().strip("'").split()
-    return [p for p in pods if p]  # Filter empty strings
-
-
-def get_pod_status(pod_name: str, namespace: str = "diya") -> str:
-    """Get pod phase (Succeeded, Failed, Running, etc.)"""
-    result = run_oc_command([
-        "get", "pod", pod_name, "-n", namespace,
+        "get", "pod", "pvc-debugger", "-n", namespace,
         "-o", "jsonpath={.status.phase}"
     ], check=False)
 
     if result.returncode != 0:
-        return "Unknown"
+        return False
 
-    return result.stdout.strip()
+    return result.stdout.strip() == "Running"
 
 
-def copy_results_from_pod(pod_name: str, local_dir: Path, namespace: str = "diya") -> bool:
-    """Copy benchmark data from pod to local directory"""
-    print(f"  Copying from {pod_name}...")
+def check_pvc_directory_exists(namespace: str = "diya") -> bool:
+    """Check if bench_data directory exists on PVC"""
+    result = run_oc_command([
+        "exec", "pvc-debugger", "-n", namespace, "--",
+        "test", "-d", "/mnt/bench_data"
+    ], check=False)
+    return result.returncode == 0
+
+
+def copy_results_from_pvc(local_dir: Path, namespace: str = "diya") -> bool:
+    """Copy benchmark data from PVC via pvc-debugger pod"""
+    print(f"  Copying from PVC via pvc-debugger...")
+
+    # Check if bench_data directory exists on PVC
+    if not check_pvc_directory_exists(namespace):
+        print(f"    ✗ /mnt/bench_data/ does not exist on PVC")
+        print(f"    Run jobs first to generate benchmark data")
+        return False
 
     # Create local directory
     local_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy data directory from pod-local storage (jobs clone to /workspace/inference-sim)
+    # Copy data directory from PVC (/mnt/bench_data/)
+    # Using oc cp since rsync may not be available in container
     result = subprocess.run([
-        "oc", "rsync",
-        f"{pod_name}:/workspace/inference-sim/InferSim/bench_data/",
+        "oc", "cp",
+        f"{namespace}/pvc-debugger:/mnt/bench_data/",
         str(local_dir) + "/",
-        "-n", namespace
     ], capture_output=True, text=True)
 
     if result.returncode != 0:
@@ -87,49 +86,33 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     print("="*60)
-    print("Collecting Benchmark Results")
+    print("Collecting Benchmark Results from PVC")
     print("="*60)
     print(f"Namespace: {args.namespace}")
     print(f"Output: {args.output_dir.absolute()}")
     print()
 
-    # Find pods
-    print("Finding benchmark pods...")
-    pods = find_benchmark_pods(args.namespace)
-
-    if not pods:
-        print("✗ No benchmark pods found")
+    # Check pvc-debugger pod exists
+    print("Checking pvc-debugger pod...")
+    if not check_pvc_debugger_exists(args.namespace):
+        print("✗ pvc-debugger pod not found or not running")
+        print("\nTo create the pvc-debugger pod, run:")
+        print("  oc apply -f debug-pod.yaml")
         sys.exit(1)
 
-    print(f"✓ Found {len(pods)} pods")
-
-    # Filter to completed pods
-    completed_pods = []
-    for pod in pods:
-        status = get_pod_status(pod, args.namespace)
-        if status == "Succeeded":
-            completed_pods.append(pod)
-        else:
-            print(f"  Skipping {pod}: {status}")
-
-    if not completed_pods:
-        print("\n✗ No completed pods to collect from")
-        sys.exit(1)
-
-    print(f"\n✓ {len(completed_pods)} completed pods")
+    print("✓ pvc-debugger pod is running")
     print()
 
-    # Collect from each pod
-    print("Copying results...")
-    success_count = 0
-    for pod in completed_pods:
-        if copy_results_from_pod(pod, args.output_dir, args.namespace):
-            success_count += 1
+    # Collect from PVC
+    print("Copying results from PVC...")
+    if not copy_results_from_pvc(args.output_dir, args.namespace):
+        print("\n✗ Failed to collect results from PVC")
+        sys.exit(1)
 
     # Summary
     print()
     print("="*60)
-    print(f"✓ Collected from {success_count}/{len(completed_pods)} pods")
+    print(f"✓ Results collected from PVC")
     print("="*60)
     print(f"Results saved to: {args.output_dir}")
     print()
