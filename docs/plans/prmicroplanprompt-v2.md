@@ -182,6 +182,24 @@ may have as few as 3. More than 15 means the PR may be too large.
 
 No vague wording. "Should" is banned — use "MUST" or "MUST NOT."
 
+THEN CLAUSE QUALITY GATE:
+Every THEN clause must describe OBSERVABLE BEHAVIOR, not internal
+structure. The THEN clause directly becomes the test assertion — a
+structural THEN produces a structural test.
+
+Check each THEN clause against this filter:
+- Does it contain a concrete type name? → Rewrite to describe behavior
+  BAD:  "THEN it returns a *ConstantPriority"
+  GOOD: "THEN it returns a policy that computes 0.0 for any request"
+- Does it reference an internal field? → Rewrite to describe output
+  BAD:  "THEN the router's scoreCache has 3 entries"
+  GOOD: "THEN the next routing decision uses cached affinity"
+- Does it reproduce a formula? → Rewrite to describe ordering/outcome
+  BAD:  "THEN score equals 0.6*cacheHit + 0.4*(1-load)"
+  GOOD: "THEN instances with higher cache hit rates rank higher"
+- Does it survive a refactor? → If renaming a struct or changing an
+  internal algorithm would invalidate this THEN, it is structural
+
 ======================================================================
 PHASE 2 — COMPONENT INTERACTION (Human-Reviewable)
 ======================================================================
@@ -352,6 +370,42 @@ IMPORTANT TASK DESIGN RULES:
 8. **Commit messages** - use conventional commits format with contract references
    (feat/fix/refactor/test/docs)
 
+9. **Behavioral assertions only** - every assertion in a test must
+   verify OBSERVABLE BEHAVIOR, not internal structure. Apply the
+   refactor survival test: "Would this test still pass if the
+   implementation were completely rewritten but the behavior preserved?"
+
+   PROHIBITED assertion patterns (structural — these break on refactor):
+   - Type assertions: `policy.(*ConcreteType)` — test behavior instead
+   - Internal field access: `obj.internalField` — test through public API
+   - Exact formula reproduction: `assert.Equal(score, 0.6*cache + 0.4*load)`
+     — test the ranking/ordering outcome instead
+   - Implementation count: `assert.Equal(len(obj.items), 3)` — test
+     what the items produce, not how many there are
+
+   REQUIRED assertion patterns (behavioral — these survive refactor):
+   - Observable output: `assert.Equal(policy.Compute(req, clock), 0.0)`
+   - Behavioral outcome: `assert.Equal(decision.TargetInstance, 1)`
+   - Invariant verification: `assert.Equal(completed+queued+running, injected)`
+   - Ordering/ranking: `assert.True(scoreA > scoreB)` when contract says
+     A should rank higher than B
+
+10. **THEN clauses must be behavioral** - if a behavioral contract's
+    THEN clause contains a concrete type name, internal field name, or
+    implementation detail, rewrite the THEN clause BEFORE writing the
+    test. The THEN clause drives the assertion; a structural THEN
+    produces a structural test.
+
+    BAD:  "THEN it returns a *ConstantPriority"
+    GOOD: "THEN it returns a policy that computes 0.0 for any request"
+
+    BAD:  "THEN the router's scoreCache has 3 entries"
+    GOOD: "THEN the next routing decision uses cached scores (latency < uncached)"
+
+    BAD:  "THEN the score equals 0.6*cacheHit + 0.4*(1-load)"
+    GOOD: "THEN instances with higher cache hit rates score higher than
+           instances with lower cache hit rates, all else being equal"
+
 ======================================================================
 PHASE 5 — REMOVED (Merged into Phase 4 Task Verification)
 ======================================================================
@@ -485,6 +539,23 @@ Before implementation, verify:
       or os.Exit — errors must be returned to callers.
 - [ ] Any loop that allocates resources (blocks, slots, counters) handles mid-loop
       failure by rolling back all mutations from previous iterations.
+- [ ] No exported mutable maps — validation lookup maps are unexported with
+      IsValid*() accessors.
+- [ ] YAML config structs use *float64 (pointer) for fields where zero is a valid
+      user-provided value.
+- [ ] YAML loading uses strict parsing (yaml.KnownFields(true) or equivalent) —
+      typos in field names cause errors, not silent acceptance.
+- [ ] Every division operation where the denominator derives from runtime state
+      has a zero-denominator guard or a documented invariant proving it non-zero.
+- [ ] New interfaces accommodate at least two implementations (even if only one
+      exists today) — no methods that only make sense for one backend.
+- [ ] No method spans multiple module responsibilities (scheduling + latency +
+      metrics in one function). Extract each concern into its module's interface.
+- [ ] Configuration parameters grouped by module — not added to a monolithic
+      config struct mixing unrelated concerns.
+- [ ] Grepped for references to this PR number (planned for PR, TODO.*PR) in the
+      codebase — resolved all stale references.
+- [ ] If this PR is part of a macro plan, the macro plan status is updated.
 
 ======================================================================
 APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS

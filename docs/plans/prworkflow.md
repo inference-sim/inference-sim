@@ -8,8 +8,10 @@ This document describes the complete workflow for implementing a PR from any sou
 
 **Update this section when templates change. All examples below reference these versions.**
 
+- **Design guidelines:** `docs/plans/2026-02-18-design-guidelines.md` — DES foundations, module architecture, extension framework. Read before writing any design doc or macro plan.
+- **Macro-planning template:** `docs/plans/macroplanprompt.md` (updated 2026-02-18 — aligned with design guidelines)
 - **Micro-planning template:** `docs/plans/prmicroplanprompt-v2.md` (updated 2026-02-18)
-- **Macro-planning template:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v3.4)
+- **Active macro plan:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v3.4)
 - **Deprecated micro-planning:** `docs/plans/prmicroplanprompt-v1-deprecated.md` (for reference only)
 
 ---
@@ -476,10 +478,10 @@ Find bugs, logic errors, silent failures, and convention violations.
 
 **Prompt:**
 ```
-/pr-review-toolkit:review-pr Also check: (1) any new error paths that use `continue` or early `return` — do they clean up partial state? (2) any map iteration that accumulates floats — are keys sorted? (3) any struct field added — are all construction sites updated? (4) does library code (sim/) call logrus.Fatalf anywhere in new code?
+/pr-review-toolkit:review-pr Also check: (1) any new error paths that use `continue` or early `return` — do they clean up partial state? (2) any map iteration that accumulates floats — are keys sorted? (3) any struct field added — are all construction sites updated? (4) does library code (sim/) call logrus.Fatalf anywhere in new code? (5) any exported mutable maps — should they be unexported with IsValid*() accessors? (6) any YAML config fields using float64 instead of *float64 where zero is valid? (7) any division where the denominator derives from runtime state without a zero guard? (8) any new interface with methods only meaningful for one implementation? (9) any method >50 lines spanning multiple concerns (scheduling + latency + metrics)?
 ```
 
-**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling os.Exit.
+**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling os.Exit, exported mutable maps, YAML zero-value ambiguity, division by zero in runtime computation, leaky interfaces, monolith methods.
 
 **Fix all critical/important issues before Pass 2.**
 
