@@ -96,3 +96,26 @@ func TestSLOAttainment_SomeMiss_FractionalResult(t *testing.T) {
 		t.Errorf("attainment = %f, want 0.7 (7/10 meet SLO)", attainment)
 	}
 }
+
+func TestSLOAttainment_MissingRequests_CountedAsViolation(t *testing.T) {
+	// GIVEN 10 requests in RequestE2Es but only 7 in Requests map
+	m := sim.NewMetrics()
+	for i := 0; i < 10; i++ {
+		id := fmt.Sprintf("req_%d", i)
+		m.RequestE2Es[id] = 100 // all would meet SLO
+	}
+	// Only register 7 in Requests map
+	for i := 0; i < 7; i++ {
+		id := fmt.Sprintf("req_%d", i)
+		m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: "batch"}
+	}
+	targets := map[string]float64{"batch": 200}
+
+	// WHEN computing SLO attainment
+	attainment := SLOAttainment(m, targets)
+
+	// THEN attainment should be 7/10 = 0.7 (dropped requests are violations)
+	if math.Abs(attainment-0.7) > 0.01 {
+		t.Errorf("attainment = %f, want 0.7 (3 missing requests should count as violations)", attainment)
+	}
+}

@@ -11,7 +11,7 @@ import (
 // to metrics, fitness scores, decision traces, and trace summaries.
 type EvaluationResult struct {
 	Metrics  *RawMetrics
-	Fitness  *FitnessResult         // nil if no fitness weights provided
+	Fitness  *FitnessResult         // nil if no fitness weights provided; ComputeFitness returns value, callers take address
 	Trace    *trace.SimulationTrace // nil if trace-level is "none"
 	Summary  *trace.TraceSummary    // nil if --summarize-trace not set
 

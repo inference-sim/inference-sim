@@ -151,3 +151,58 @@ func TestSaveResults_InstanceID_Default(t *testing.T) {
 		t.Errorf("InstanceID = %q, want %q", output.InstanceID, "default")
 	}
 }
+
+func TestSaveResults_IncludesIncompleteRequests(t *testing.T) {
+	// GIVEN metrics where 2 of 3 requests completed prefill
+	m := NewMetrics()
+	// All 3 registered
+	m.Requests["r1"] = RequestMetrics{ID: "r1", ArrivedAt: 1.0, NumPrefillTokens: 10, NumDecodeTokens: 5}
+	m.Requests["r2"] = RequestMetrics{ID: "r2", ArrivedAt: 2.0, NumPrefillTokens: 20, NumDecodeTokens: 10}
+	m.Requests["r3"] = RequestMetrics{ID: "r3", ArrivedAt: 3.0, NumPrefillTokens: 30, NumDecodeTokens: 0} // incomplete
+
+	// Only r1 and r2 completed prefill
+	m.RequestTTFTs["r1"] = 100.0
+	m.RequestTTFTs["r2"] = 200.0
+	m.RequestE2Es["r1"] = 500.0
+	m.RequestE2Es["r2"] = 1000.0
+	m.RequestITLs["r1"] = 50.0
+	m.RequestITLs["r2"] = 100.0
+	m.RequestSchedulingDelays["r1"] = 10
+	m.RequestSchedulingDelays["r2"] = 20
+
+	m.CompletedRequests = 2
+	m.TotalOutputTokens = 15
+	m.SimEndedTime = 1_000_000
+	m.AllITLs = []int64{50, 100} // required to avoid CalculatePercentile empty-input panic (Phase 5, 5c)
+
+	// WHEN SaveResults writes to a temp file
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "results.json")
+	m.SaveResults("test-instance", 10_000_000, 100, time.Now(), outPath)
+
+	// THEN the output file contains all 3 requests
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
+	var output MetricsOutput
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+
+	if len(output.Requests) != 3 {
+		t.Errorf("output.Requests count = %d, want 3 (all registered, including incomplete)", len(output.Requests))
+	}
+
+	// Verify incomplete request r3 has zero-valued metrics
+	for _, req := range output.Requests {
+		if req.ID == "r3" {
+			if req.TTFT != 0 || req.E2E != 0 || req.ITL != 0 {
+				t.Errorf("incomplete request r3 should have zero metrics, got TTFT=%f E2E=%f ITL=%f",
+					req.TTFT, req.E2E, req.ITL)
+			}
+			return
+		}
+	}
+	t.Error("incomplete request r3 not found in output")
+}

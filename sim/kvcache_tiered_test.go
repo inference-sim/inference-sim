@@ -157,6 +157,30 @@ func TestTieredKVCache_ThrashingDetected_WhenReloadWithinWindow(t *testing.T) {
 	}
 }
 
+func TestTieredKVCache_GetCachedBlocks_DoesNotAffectHitRate(t *testing.T) {
+	// GIVEN a tiered cache after one allocation cycle
+	gpu := NewKVCacheState(4, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.5, 1.0, 100)
+
+	// Populate prefix cache
+	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(req1, 0, 4, []int64{})
+	tiered.ReleaseKVBlocks(req1)
+
+	rateBefore := tiered.CacheHitRate()
+
+	// WHEN calling GetCachedBlocks multiple times via tiered interface (BC-6)
+	// This simulates the reload retry path where GetCachedBlocks is called twice
+	_ = tiered.GetCachedBlocks([]int{1, 2, 3, 4})
+	_ = tiered.GetCachedBlocks([]int{1, 2, 3, 4})
+
+	// THEN CacheHitRate is unchanged — GetCachedBlocks is a pure query
+	rateAfter := tiered.CacheHitRate()
+	if rateAfter != rateBefore {
+		t.Errorf("CacheHitRate changed from %f to %f after GetCachedBlocks calls (should be pure query)", rateBefore, rateAfter)
+	}
+}
+
 func TestTieredKVCache_NegativeBandwidth_Panics(t *testing.T) {
 	// BC-12 (partial): GIVEN negative bandwidth
 	defer func() {

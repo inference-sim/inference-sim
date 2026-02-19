@@ -281,18 +281,22 @@ func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics 
 // SLOAttainment computes the fraction of requests meeting their SLO target.
 // targets maps SLO class to max acceptable E2E latency (in ticks).
 // Returns a value in [0.0, 1.0].
+// Requests in RequestE2Es that are missing from Requests map are counted
+// as SLO violations (conservative: missing data = violation).
 func SLOAttainment(aggregated *sim.Metrics, targets map[string]float64) float64 {
 	if len(aggregated.RequestE2Es) == 0 {
 		return 0
 	}
 	met := 0
 	total := 0
+	droppedCount := 0
 	for reqID, e2e := range aggregated.RequestE2Es {
+		total++
 		req, ok := aggregated.Requests[reqID]
 		if !ok {
-			continue
+			droppedCount++
+			continue // counted in total but not in met (= violation)
 		}
-		total++
 		sloClass := req.SLOClass
 		if target, ok := targets[sloClass]; ok {
 			if e2e <= target {
@@ -302,6 +306,9 @@ func SLOAttainment(aggregated *sim.Metrics, targets map[string]float64) float64 
 			// No target for this class = always meets SLO
 			met++
 		}
+	}
+	if droppedCount > 0 {
+		logrus.Warnf("SLOAttainment: %d requests in RequestE2Es missing from Requests map (counted as violations)", droppedCount)
 	}
 	if total == 0 {
 		return 0
@@ -339,6 +346,16 @@ func mapValues(m map[string]float64) []float64 {
 	return vals
 }
 
+// validFitnessKeysList returns the metric keys accepted by ComputeFitness/extractMetric.
+// Returns a fresh slice each call to prevent mutation of shared state.
+func validFitnessKeysList() []string {
+	return []string{
+		"throughput", "tokens_per_sec",
+		"p99_ttft", "p50_ttft", "mean_ttft",
+		"p99_e2e", "p50_e2e", "mean_e2e",
+	}
+}
+
 // Reference scales for normalizing metrics to [0,1] range.
 // Without reference scales, throughput (raw value ~100) dominates latency (1/(1+5000) ≈ 0.0002)
 // by 500,000×, making multi-objective optimization impossible.
@@ -358,24 +375,28 @@ type FitnessResult struct {
 // All metrics are normalized to [0,1] range before weighting:
 // - Throughput: value / (value + referenceRPS) — higher is better, saturates at 1.0
 // - Latency: 1.0 / (1.0 + value/referenceTicks) — lower is better, 1ms → 0.5
-// Unknown weight keys are logged as warnings and ignored (EC-1).
-func ComputeFitness(metrics *RawMetrics, weights map[string]float64) *FitnessResult {
-	result := &FitnessResult{
+// Returns error for unknown weight keys (BC-7).
+func ComputeFitness(metrics *RawMetrics, weights map[string]float64) (FitnessResult, error) {
+	// Validate all keys before computing
+	for _, key := range sortedKeys(weights) {
+		if _, ok := extractMetric(metrics, key); !ok {
+			return FitnessResult{}, fmt.Errorf("unknown fitness metric key %q; valid keys: %s", key,
+				strings.Join(validFitnessKeysList(), ", "))
+		}
+	}
+
+	result := FitnessResult{
 		Components: make(map[string]float64, len(weights)),
 	}
 
 	for _, key := range sortedKeys(weights) {
 		weight := weights[key]
-		value, ok := extractMetric(metrics, key)
-		if !ok {
-			logrus.Warnf("ComputeFitness: unknown metric key %q, ignoring", key)
-			continue
-		}
+		value, _ := extractMetric(metrics, key) // already validated
 		result.Components[key] = value
 		result.Score += value * weight
 	}
 
-	return result
+	return result, nil
 }
 
 // extractMetric returns a normalized [0,1] metric value for the given key.

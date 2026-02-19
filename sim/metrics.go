@@ -129,11 +129,13 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 	// --- Write to JSON File ---
 	if outputFilePath != "" {
 		// request-level metrics for detailed output in file
-		for id, ttft := range m.RequestTTFTs {
+		// Iterate over all registered requests (not just completed prefill)
+		// so incomplete requests appear with zero-valued metrics.
+		for _, id := range sortedRequestIDs(m.Requests) {
 			detail := m.Requests[id]
-			detail.TTFT = ttft / 1e3
-			detail.E2E = m.RequestE2Es[id] / 1e3
-			detail.ITL = m.RequestITLs[id]
+			detail.TTFT = m.RequestTTFTs[id] / 1e3   // zero if not in map
+			detail.E2E = m.RequestE2Es[id] / 1e3      // zero if not in map
+			detail.ITL = m.RequestITLs[id]             // zero if not in map
 			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id])
 			output.Requests = append(output.Requests, detail)
 		}
@@ -156,4 +158,15 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		}
 		logrus.Infof("Metrics written to: %s", outputFilePath)
 	}
+}
+
+// sortedRequestIDs returns request IDs from the Requests map in sorted order.
+// Ensures deterministic output ordering for JSON serialization.
+func sortedRequestIDs(requests map[string]RequestMetrics) []string {
+	ids := make([]string, 0, len(requests))
+	for id := range requests {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
