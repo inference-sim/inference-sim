@@ -141,7 +141,10 @@ func TestComputeFitness_WeightedScore(t *testing.T) {
 		"throughput": 1.0,
 	}
 
-	result := ComputeFitness(raw, weights)
+	result, err := ComputeFitness(raw, weights)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// THEN Score should be in (0, 1] range (normalized)
 	// throughput=100, reference=100 → 100/(100+100) = 0.5
@@ -160,8 +163,14 @@ func TestComputeFitness_LatencyInversion(t *testing.T) {
 
 	weights := map[string]float64{"p99_ttft": 1.0}
 
-	lowResult := ComputeFitness(lowLatency, weights)
-	highResult := ComputeFitness(highLatency, weights)
+	lowResult, err := ComputeFitness(lowLatency, weights)
+	if err != nil {
+		t.Fatal(err)
+	}
+	highResult, err := ComputeFitness(highLatency, weights)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// THEN lower latency should produce higher fitness score
 	if lowResult.Score <= highResult.Score {
@@ -181,7 +190,10 @@ func TestComputeFitness_MultiObjective(t *testing.T) {
 		TTFT:           Distribution{P99: 1000.0},
 	}
 	weights := map[string]float64{"throughput": 0.5, "p99_ttft": 0.5}
-	result := ComputeFitness(raw, weights)
+	result, err := ComputeFitness(raw, weights)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// THEN both components should contribute roughly equally
 	throughputComponent := result.Components["throughput"]
@@ -199,14 +211,24 @@ func TestComputeFitness_MultiObjective(t *testing.T) {
 	}
 }
 
-// TestComputeFitness_UnknownKey_Ignored verifies EC-1.
-func TestComputeFitness_UnknownKey_Ignored(t *testing.T) {
+// TestComputeFitness_UnknownKey_ReturnsError verifies BC-7.
+func TestComputeFitness_UnknownKey_ReturnsError(t *testing.T) {
 	raw := &RawMetrics{RequestsPerSec: 100.0}
 	weights := map[string]float64{"nonexistent": 1.0}
 
-	result := ComputeFitness(raw, weights)
-	if result.Score != 0 {
-		t.Errorf("Score: got %f, expected 0 for unknown key", result.Score)
+	_, err := ComputeFitness(raw, weights)
+	if err == nil {
+		t.Error("expected error for unknown key, got nil")
+	}
+}
+
+func TestComputeFitness_MixedKnownUnknown_ReturnsError(t *testing.T) {
+	raw := &RawMetrics{RequestsPerSec: 100.0}
+	weights := map[string]float64{"throughput": 0.5, "invalid_key": 0.5}
+
+	_, err := ComputeFitness(raw, weights)
+	if err == nil {
+		t.Error("expected error when any key is unknown")
 	}
 }
 

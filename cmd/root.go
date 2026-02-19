@@ -419,7 +419,10 @@ var runCmd = &cobra.Command{
 			if err != nil {
 				logrus.Fatalf("Invalid fitness weights: %v", err)
 			}
-			fitness := cluster.ComputeFitness(rawMetrics, weights)
+			fitness, fitErr := cluster.ComputeFitness(rawMetrics, weights)
+			if fitErr != nil {
+				logrus.Fatalf("Fitness evaluation failed: %v", fitErr)
+			}
 			logrus.Infof("=== Fitness Evaluation ===")
 			logrus.Infof("Score: %.6f", fitness.Score)
 			// Sort keys for deterministic output order

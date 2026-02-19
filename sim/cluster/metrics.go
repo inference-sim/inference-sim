@@ -365,24 +365,27 @@ type FitnessResult struct {
 // All metrics are normalized to [0,1] range before weighting:
 // - Throughput: value / (value + referenceRPS) — higher is better, saturates at 1.0
 // - Latency: 1.0 / (1.0 + value/referenceTicks) — lower is better, 1ms → 0.5
-// Unknown weight keys are logged as warnings and ignored (EC-1).
-func ComputeFitness(metrics *RawMetrics, weights map[string]float64) *FitnessResult {
-	result := &FitnessResult{
+// Returns error for unknown weight keys (BC-7).
+func ComputeFitness(metrics *RawMetrics, weights map[string]float64) (FitnessResult, error) {
+	// Validate all keys before computing
+	for _, key := range sortedKeys(weights) {
+		if _, ok := extractMetric(metrics, key); !ok {
+			return FitnessResult{}, fmt.Errorf("unknown fitness metric key %q", key)
+		}
+	}
+
+	result := FitnessResult{
 		Components: make(map[string]float64, len(weights)),
 	}
 
 	for _, key := range sortedKeys(weights) {
 		weight := weights[key]
-		value, ok := extractMetric(metrics, key)
-		if !ok {
-			logrus.Warnf("ComputeFitness: unknown metric key %q, ignoring", key)
-			continue
-		}
+		value, _ := extractMetric(metrics, key) // already validated
 		result.Components[key] = value
 		result.Score += value * weight
 	}
 
-	return result
+	return result, nil
 }
 
 // extractMetric returns a normalized [0,1] metric value for the given key.
