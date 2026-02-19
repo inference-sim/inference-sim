@@ -215,3 +215,34 @@ func TestAllocateKVBlocks_BlockConservation_AfterAllocateReleaseCycles(t *testin
 		t.Errorf("UsedBlockCnt = %d, want 2 (2 requests with 1 block each)", kvc.UsedBlockCnt)
 	}
 }
+
+func TestAllocateKVBlocks_DecodeWithBlockSize1_NoPrefixHashPanic(t *testing.T) {
+	// GIVEN BlockSizeTokens=1 (edge case where a single decode token fills a full block)
+	kvc := NewKVCacheState(20, 1)
+	req := &Request{
+		ID:           "r1",
+		InputTokens:  []int{10, 20, 30, 40},
+		OutputTokens: []int{100, 200},
+	}
+
+	// Prefill: allocate 4 input tokens (4 blocks with BlockSize=1)
+	ok := kvc.AllocateKVBlocks(req, 0, 4, []int64{})
+	if !ok {
+		t.Fatal("prefill allocation should succeed")
+	}
+
+	// WHEN we allocate a decode token (ProgressIndex past all input tokens)
+	req.ProgressIndex = 4
+	ok = kvc.AllocateKVBlocks(req, 4, 5, []int64{})
+
+	// THEN no panic occurs and allocation succeeds
+	if !ok {
+		t.Error("decode allocation should succeed (enough free blocks)")
+	}
+
+	// Verify the decode block was allocated
+	ids := kvc.RequestMap["r1"]
+	if len(ids) != 5 {
+		t.Errorf("expected 5 blocks (4 prefill + 1 decode), got %d", len(ids))
+	}
+}

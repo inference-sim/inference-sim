@@ -121,7 +121,7 @@ func hashTokens(tokens []int) string {
 
 // GetCachedBlocks attempts to reuse previously cached full blocks.
 // It returns block IDs and the number of fully matched cached prefixes.
-// This is a pure method and does not modify kvcache state.
+// Note: increments CacheHits counter as a side effect (not a pure query).
 func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
 	n := Len64(tokens) / kvc.BlockSizeTokens
 	for i := int64(0); i < n; i++ {
@@ -164,7 +164,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 	}
 	// Rollback tracking: if allocation fails mid-way, undo all mutations
 	var cachedMutations []cachedBlockMutation
-	var newlyAllocated []*KVBlock
+	var newlyAllocated []newBlockMutation
 
 	newTokenProgressIndex := int64(0)
 	for newTokenProgressIndex < Len64(newTokens) { // non-inclusive endIndex
@@ -214,6 +214,12 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 			// latest block is full or request is coming in for the first time.
 			// allocate new block(s) for the request
 			for i := int64(0); i < numNewBlocks; i++ {
+				// Save the original prefix hash before popFreeBlock clears it.
+				// This allows rollback to restore cached prefix hashes.
+				var originalHash string
+				if kvc.FreeHead != nil {
+					originalHash = kvc.FreeHead.Hash
+				}
 				blk := kvc.popFreeBlock()
 				if blk == nil {
 					kvc.rollbackAllocation(reqID, cachedMutations, newlyAllocated)
@@ -233,14 +239,17 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 				kvc.UsedBlockCnt++
 				kvc.CacheMisses++
 
-				if Len64(blk.Tokens) == kvc.BlockSizeTokens {
+				if Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < Len64(req.InputTokens) {
+					// Only compute prefix hash during prefill (not decode).
+					// During decode, startIndex >= len(InputTokens) and absoluteEnd
+					// would be out of range for req.InputTokens.
 					absoluteEnd := startIndex + end
 					fullPrefix := req.InputTokens[:absoluteEnd]
 					h := hashTokens(fullPrefix)
 					blk.Hash = h
 					kvc.HashToBlock[h] = blk.ID
 				}
-				newlyAllocated = append(newlyAllocated, blk)
+				newlyAllocated = append(newlyAllocated, newBlockMutation{block: blk, originalHash: originalHash})
 				// allocated is the block IDs allocated for this request
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blk.ID)
 				newTokenProgressIndex = end
@@ -277,19 +286,32 @@ type cachedBlockMutation struct {
 	wasInUse bool
 }
 
+// newBlockMutation tracks a newly allocated block and its pre-pop hash for rollback.
+type newBlockMutation struct {
+	block        *KVBlock
+	originalHash string // hash before popFreeBlock cleared it (empty if block had no hash)
+}
+
 // rollbackAllocation undoes all mutations from a failed AllocateKVBlocks call.
 // Restores UsedBlockCnt, CacheMisses, RefCount, InUse, free list, HashToBlock, and RequestMap.
-func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cachedBlockMutation, newlyAllocated []*KVBlock) {
+// Also restores prefix hashes that were destroyed by popFreeBlock during allocation.
+func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cachedBlockMutation, newlyAllocated []newBlockMutation) {
 	// Undo new block allocations (reverse order for clean free list state)
 	for i := len(newlyAllocated) - 1; i >= 0; i-- {
-		blk := newlyAllocated[i]
+		m := newlyAllocated[i]
+		blk := m.block
+		// Remove any hash set during allocation
+		if blk.Hash != "" {
+			delete(kvc.HashToBlock, blk.Hash)
+		}
+		// Restore original hash that popFreeBlock destroyed
+		blk.Hash = m.originalHash
+		if blk.Hash != "" {
+			kvc.HashToBlock[blk.Hash] = blk.ID
+		}
 		blk.InUse = false
 		blk.RefCount = 0
 		blk.Tokens = nil
-		if blk.Hash != "" {
-			delete(kvc.HashToBlock, blk.Hash)
-			blk.Hash = ""
-		}
 		kvc.UsedBlockCnt--
 		kvc.CacheMisses--
 		kvc.appendToFreeList(blk)
