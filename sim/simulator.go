@@ -571,7 +571,13 @@ func (sim *Simulator) Step(now int64) {
 	}
 	sim.Metrics.KVBlocksUsed += float64(sim.KVCache.UsedBlocks()) * float64(currStepAdvance)
 
-	// handle completed and remaining requests
+	// IMPORTANT: This completion loop MUST run as a separate pass after the
+	// prefill/decode execution loop above. For zero-output-token requests,
+	// both "prefill completed" and "request completed" conditions are true
+	// in the same step. The two-pass design ensures prefill metrics (TTFT)
+	// are recorded before completion metrics (E2E). If these loops were ever
+	// consolidated into a single pass, both branches would fire for the
+	// same request in the same step.
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
