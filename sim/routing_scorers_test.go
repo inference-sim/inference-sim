@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -96,6 +97,50 @@ func TestParseScorerConfigs_SingleScorer(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, configs, 1)
 	assert.Equal(t, "load-balance", configs[0].Name)
+}
+
+// === Invariant Tests ===
+
+// TestLoadBalanceOnly_EquivalentToLeastLoaded verifies BC-17-5:
+// weighted with load-balance:1 must select the same instance as least-loaded
+// for every request, because argmax(1/(1+load)) = argmin(load).
+func TestLoadBalanceOnly_EquivalentToLeastLoaded(t *testing.T) {
+	loadBalanceOnly := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "load-balance", Weight: 1.0}})
+	leastLoaded := NewRoutingPolicy("least-loaded", nil)
+
+	testCases := [][]RoutingSnapshot{
+		{
+			{ID: "a", QueueDepth: 10, BatchSize: 2},
+			{ID: "b", QueueDepth: 3, BatchSize: 1},
+			{ID: "c", QueueDepth: 7, BatchSize: 0},
+		},
+		{
+			{ID: "a", QueueDepth: 5, BatchSize: 5, PendingRequests: 3},
+			{ID: "b", QueueDepth: 5, BatchSize: 5, PendingRequests: 0},
+		},
+		{
+			{ID: "a", QueueDepth: 0, BatchSize: 0},
+			{ID: "b", QueueDepth: 0, BatchSize: 0},
+			{ID: "c", QueueDepth: 0, BatchSize: 0},
+		},
+		{
+			{ID: "a", QueueDepth: 100, BatchSize: 50, PendingRequests: 25},
+			{ID: "b", QueueDepth: 1, BatchSize: 0, PendingRequests: 0},
+		},
+	}
+
+	for i, snapshots := range testCases {
+		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
+			req := &Request{ID: fmt.Sprintf("req_%d", i)}
+			state := &RouterState{Snapshots: snapshots, Clock: 1000}
+
+			wDecision := loadBalanceOnly.Route(req, state)
+			llDecision := leastLoaded.Route(req, state)
+
+			assert.Equal(t, llDecision.TargetInstance, wDecision.TargetInstance,
+				"load-balance-only weighted must select same instance as least-loaded")
+		})
+	}
 }
 
 // === Scorer Behavioral Tests (BC-17-1, BC-17-7, BC-17-9) ===
