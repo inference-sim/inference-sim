@@ -44,9 +44,9 @@ func newTestInstanceSimConfig() sim.SimConfig {
 }
 
 // smallWorkload returns a small GuideLLMConfig for tests.
-func smallWorkload(maxPrompts int) *sim.GuideLLMConfig {
+func smallWorkload(numRequests int) *sim.GuideLLMConfig {
 	return &sim.GuideLLMConfig{
-		Rate: 10.0 / 1e6, NumRequests: maxPrompts,
+		Rate: 10.0 / 1e6, NumRequests: numRequests,
 		PromptTokens: 100, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 200,
 		OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
 	}

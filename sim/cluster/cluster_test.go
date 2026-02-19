@@ -34,10 +34,10 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 }
 
 // newTestWorkload creates a GuideLLMConfig suitable for testing.
-func newTestWorkload(maxPrompts int) *sim.GuideLLMConfig {
+func newTestWorkload(numRequests int) *sim.GuideLLMConfig {
 	return &sim.GuideLLMConfig{
 		Rate:               10.0 / 1e6,
-		NumRequests:         maxPrompts,
+		NumRequests:         numRequests,
 		PrefixTokens:       0,
 		PromptTokens:       100,
 		PromptTokensStdDev: 20,

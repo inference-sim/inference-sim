@@ -21,7 +21,7 @@ go build -o simulation_worker main.go
 ./simulation_worker run \
   --model meta-llama/llama-3.1-8b-instruct \
   --workload distribution \
-  --rate 10 --max-prompts 100 \
+  --rate 10 --num-requests 100 \
   --prompt-tokens 512 --output-tokens 256
 
 # Run with trace replay (deterministic testing)
