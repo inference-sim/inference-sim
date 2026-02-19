@@ -217,6 +217,10 @@ var runCmd = &cobra.Command{
 			guideLLMConfig = &sim.GuideLLMConfig{Rate: spec.AggregateRate / 1e6}
 			logrus.Infof("Generated %d requests from workload spec", len(reqs))
 		} else if workloadType == "distribution" { // if workloadType distribution, use args.
+			// Validate rate (prevents infinite loop: int64(1/0) → MinInt64 → unbounded loop)
+			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
+			}
 			// error handling for prompt and output lengths
 			if promptTokensMean > promptTokensMax || promptTokensMean < promptTokensMin || promptTokensStdev > promptTokensMax || promptTokensStdev < promptTokensMin {
 				logrus.Fatalf("prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]")
@@ -230,6 +234,9 @@ var runCmd = &cobra.Command{
 				OutputTokens: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
 				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax}
 		} else if workloadType != "traces" { // use default workload types
+			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
+			}
 			guideLLMConfig = GetWorkloadConfig(defaultsFilePath, workloadType, rate/1e6, maxPrompts)
 			if guideLLMConfig == nil {
 				logrus.Fatalf("Undefined workload. Use one among (chatbot, summarization, contentgen, multidoc)")
