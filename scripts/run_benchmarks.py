@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -36,8 +37,12 @@ def load_config() -> dict:
         return json.load(f)
 
 
-def create_temp_model_config(nh: int, nkv: int, dh: int) -> Path:
-    """Create temporary HuggingFace-style config for InferSim scripts"""
+def create_temp_model_config(nh: int, nkv: int, dh: int) -> tempfile.NamedTemporaryFile:
+    """Create temporary HuggingFace-style config for InferSim scripts
+
+    Returns NamedTemporaryFile object that caller must manage.
+    File will be auto-deleted when object is closed/garbage collected.
+    """
     hidden_size = nh * dh
 
     config = {
@@ -48,12 +53,18 @@ def create_temp_model_config(nh: int, nkv: int, dh: int) -> Path:
         "torch_dtype": "bfloat16"
     }
 
-    shape_str = f"{nh}-{nkv}-{dh}"
-    config_path = Path(f"/tmp/model_config_{shape_str}.json")
-    config_path.write_text(json.dumps(config, indent=2))
+    # Create temp file with delete=False so we control cleanup
+    # suffix ensures it's recognizable
+    temp_file = tempfile.NamedTemporaryFile(
+        mode='w',
+        suffix=f'_model_config_{nh}-{nkv}-{dh}.json',
+        delete=False
+    )
+    temp_file.write(json.dumps(config, indent=2))
+    temp_file.flush()
 
-    print(f"Created temp config: {config_path}")
-    return config_path
+    print(f"Created temp config: {temp_file.name}")
+    return temp_file
 
 
 def run_prefill_benchmark(nh: int, nkv: int, dh: int, gpu_type: str, gpu_specs: dict):
@@ -62,38 +73,43 @@ def run_prefill_benchmark(nh: int, nkv: int, dh: int, gpu_type: str, gpu_specs: 
     print(f"Running Prefill Benchmark: {nh}-{nkv}-{dh}")
     print(f"{'='*60}")
 
-    config_path = create_temp_model_config(nh, nkv, dh)
+    temp_config = create_temp_model_config(nh, nkv, dh)
 
-    cmd = [
-        sys.executable,
-        "kernel_benchmark/fa3_mha_prefill.py",
-        "--config-path", str(config_path.absolute()),
-    ]
+    try:
+        cmd = [
+            sys.executable,
+            "kernel_benchmark/fa3_mha_prefill.py",
+            "--config-path", temp_config.name,
+        ]
 
-    print(f"Command: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd="InferSim", capture_output=True, text=True)
+        print(f"Command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, cwd="InferSim", capture_output=True, text=True)
 
-    if result.returncode != 0:
-        print(f"✗ Prefill benchmark failed:")
-        print(result.stderr)
-        sys.exit(1)
+        if result.returncode != 0:
+            print(f"✗ Prefill benchmark failed:")
+            print(result.stderr)
+            sys.exit(1)
 
-    print(result.stdout)
+        print(result.stdout)
 
-    # Move output to final location
-    shape_str = f"{nh}-{nkv}-{dh}"
-    output_dir = Path(f"InferSim/bench_data/{gpu_type.lower()}/mha/prefill")
-    output_dir.mkdir(parents=True, exist_ok=True)
+        # Move output to final location
+        shape_str = f"{nh}-{nkv}-{dh}"
+        output_dir = Path(f"InferSim/bench_data/{gpu_type.lower()}/mha/prefill")
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    src = Path("InferSim/attention_benchmark.csv")
-    dst = output_dir / f"{shape_str}.csv"
+        src = Path("InferSim/attention_benchmark.csv")
+        dst = output_dir / f"{shape_str}.csv"
 
-    if src.exists():
-        src.rename(dst)
-        print(f"✓ Saved: {dst}")
-    else:
-        print(f"✗ Output file not found: {src}")
-        sys.exit(1)
+        if src.exists():
+            src.rename(dst)
+            print(f"✓ Saved: {dst}")
+        else:
+            print(f"✗ Output file not found: {src}")
+            sys.exit(1)
+    finally:
+        # Clean up temp config file
+        temp_config.close()
+        Path(temp_config.name).unlink(missing_ok=True)
 
 
 def run_decode_benchmark(nh: int, nkv: int, dh: int, tp: int, gpu_type: str, gpu_specs: dict):
@@ -102,42 +118,47 @@ def run_decode_benchmark(nh: int, nkv: int, dh: int, tp: int, gpu_type: str, gpu
     print(f"Running Decode Benchmark: {nh}-{nkv}-{dh} TP={tp}")
     print(f"{'='*60}")
 
-    config_path = create_temp_model_config(nh, nkv, dh)
+    temp_config = create_temp_model_config(nh, nkv, dh)
     peak_tflops = gpu_specs["peak_tflops_fp16"]
 
-    cmd = [
-        sys.executable,
-        "kernel_benchmark/flashinfer_mha_decode.py",
-        "--config-path", str(config_path.absolute()),
-        "--fp16-tflops", str(peak_tflops),
-        "--kv-cache-dtype", "bf16",
-        "--tp-size", str(tp),
-    ]
+    try:
+        cmd = [
+            sys.executable,
+            "kernel_benchmark/flashinfer_mha_decode.py",
+            "--config-path", temp_config.name,
+            "--fp16-tflops", str(peak_tflops),
+            "--kv-cache-dtype", "bf16",
+            "--tp-size", str(tp),
+        ]
 
-    print(f"Command: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd="InferSim", capture_output=True, text=True)
+        print(f"Command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, cwd="InferSim", capture_output=True, text=True)
 
-    if result.returncode != 0:
-        print(f"✗ Decode benchmark failed:")
-        print(result.stderr)
-        sys.exit(1)
+        if result.returncode != 0:
+            print(f"✗ Decode benchmark failed:")
+            print(result.stderr)
+            sys.exit(1)
 
-    print(result.stdout)
+        print(result.stdout)
 
-    # Move output to final location
-    shape_str = f"{nh}-{nkv}-{dh}"
-    output_dir = Path(f"InferSim/bench_data/{gpu_type.lower()}/mha/decode")
-    output_dir.mkdir(parents=True, exist_ok=True)
+        # Move output to final location
+        shape_str = f"{nh}-{nkv}-{dh}"
+        output_dir = Path(f"InferSim/bench_data/{gpu_type.lower()}/mha/decode")
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    src = Path("InferSim/attention_benchmark.csv")
-    dst = output_dir / f"{shape_str}-tp{tp}.csv"
+        src = Path("InferSim/attention_benchmark.csv")
+        dst = output_dir / f"{shape_str}-tp{tp}.csv"
 
-    if src.exists():
-        src.rename(dst)
-        print(f"✓ Saved: {dst}")
-    else:
-        print(f"✗ Output file not found: {src}")
-        sys.exit(1)
+        if src.exists():
+            src.rename(dst)
+            print(f"✓ Saved: {dst}")
+        else:
+            print(f"✗ Output file not found: {src}")
+            sys.exit(1)
+    finally:
+        # Clean up temp config file
+        temp_config.close()
+        Path(temp_config.name).unlink(missing_ok=True)
 
 
 def run_gemm_benchmark(gpu_type: str, gpu_specs: dict):
@@ -147,7 +168,14 @@ def run_gemm_benchmark(gpu_type: str, gpu_specs: dict):
     print(f"{'='*60}")
 
     config = load_config()
-    gemm_sweep = config["gemm_sweep"]["H100"]
+
+    # Validate gpu_type exists in gemm_sweep config
+    if gpu_type not in config["gemm_sweep"]:
+        print(f"Error: GPU type '{gpu_type}' not found in gemm_sweep config")
+        print(f"Available GPU types: {list(config['gemm_sweep'].keys())}")
+        sys.exit(1)
+
+    gemm_sweep = config["gemm_sweep"][gpu_type]
     k_values = gemm_sweep["k_values"]
     n_values = gemm_sweep["n_values"]
     peak_tflops = gpu_specs["peak_tflops_fp16"]
@@ -158,7 +186,7 @@ def run_gemm_benchmark(gpu_type: str, gpu_specs: dict):
 
     # Run GEMM sweeps
     gemm_tmp = Path("InferSim/gemm.csv")
-    first = True
+    first_success = True  # Track first successful write, not first attempt
 
     for k in k_values:
         for n in n_values:
@@ -180,10 +208,10 @@ def run_gemm_benchmark(gpu_type: str, gpu_specs: dict):
 
             # Append to output file
             if gemm_tmp.exists():
-                if first:
-                    # Copy with header
+                if first_success:
+                    # Copy with header on first successful write
                     gemm_output.write_text(gemm_tmp.read_text())
-                    first = False
+                    first_success = False
                 else:
                     # Append without header
                     with open(gemm_tmp) as f:
@@ -209,6 +237,13 @@ def main():
     parser.add_argument("--tp-filter", type=int, choices=[1, 2, 4], help="TP value (decode only)")
 
     args = parser.parse_args()
+
+    # Validate InferSim directory exists
+    infersim_dir = Path("InferSim")
+    if not infersim_dir.exists() or not infersim_dir.is_dir():
+        print(f"Error: InferSim directory not found at {infersim_dir.absolute()}")
+        print("Please run this script from the inference-sim root directory")
+        sys.exit(1)
 
     # Load GPU specs
     config = load_config()
