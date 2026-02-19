@@ -70,7 +70,9 @@ spec:
           git log -1 --oneline
           echo ""
 
-          # Work from InferSim subdirectory
+          # Clone InferSim (separate repo with benchmark kernels)
+          echo "Cloning InferSim from GitHub..."
+          git clone --depth 1 https://github.com/alibaba/InferSim.git
           cd InferSim
 
           # Install remaining system dependencies
