@@ -1,9 +1,8 @@
 # Blackbox Inference Simulator (BLIS)
 
-A discrete-event simulator for LLM inference platforms (e.g., vLLM, SGLang).
-This tool models request arrival, KV-cache dynamics, scheduling, token generation, and latency using trained performance coefficients (α/β) and configurable workload distributions.
+A discrete-event simulator for LLM inference serving systems. BLIS models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by trained performance coefficients or analytical roofline estimates.
 
-The simulator is CPU-only, extremely fast, and designed for capacity planning, saturation analysis, and performance prediction across model/GPU/TP variations without requiring real GPUs.
+The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across model/GPU/TP configurations without requiring real GPUs.
 
 ---
 
@@ -104,7 +103,7 @@ Define custom workload distribution to sample input/output lengths from:
   --model meta-llama/llama-3.1-8b-instruct \
   --workload distribution \
   --rate 10 \
-  --max-prompts 300 \
+  --num-requests 300 \
   --prompt-tokens 800 \
   --prompt-tokens-stdev 300 \
   --output-tokens 400 \
@@ -177,7 +176,7 @@ Available routing policies:
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-cache-weight 0.9 --routing-load-weight 0.1 \
-  --max-prompts 500 --rate 1000 \
+  --num-requests 500 --rate 1000 \
   --trace-level decisions --summarize-trace
 
 # Load-dominant: spreads requests evenly across instances
@@ -185,7 +184,7 @@ Available routing policies:
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-cache-weight 0.1 --routing-load-weight 0.9 \
-  --max-prompts 500 --rate 1000 \
+  --num-requests 500 --rate 1000 \
   --trace-level decisions --summarize-trace
 ```
 
@@ -280,6 +279,10 @@ Generate realistic workloads from a ServeGen-style YAML specification with multi
 ```
 
 See `examples/servegen-language.yaml` for the full specification format including client decomposition, arrival processes (Poisson, Gamma, Weibull), and length distributions (Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF).
+
+The workload generation module is informed by the ServeGen characterization framework:
+
+> Xiang et al., "ServeGen: Workload Characterization and Generation of Large Language Model Serving in Production," arXiv:2505.09999, 2025. [[paper](https://arxiv.org/abs/2505.09999)] [[code](https://github.com/alibaba/ServeGen)]
 
 ### Decision Tracing and Counterfactual Analysis
 
@@ -613,7 +616,7 @@ inference-sim/
 | `--workload-spec` | (none) | YAML workload spec file (overrides `--workload`). See `examples/servegen-language.yaml` |
 | `--workload-traces-filepath` | (none) | CSV trace file (required when `--workload traces`) |
 | `--rate` | 1.0 | Requests per second (for distribution workloads) |
-| `--max-prompts` | 100 | Number of requests to generate |
+| `--num-requests` | 100 | Number of requests to generate |
 | `--prompt-tokens` | 512 | Mean input token count |
 | `--prompt-tokens-stdev` | 256 | Input token count standard deviation |
 | `--prefix-tokens` | 0 | Shared prefix token count |

@@ -39,7 +39,7 @@ func (c *ClusterSimulator) generateRequestsFromDistribution() []*sim.Request {
 
 	prefix := sim.GenerateRandomTokenIDs(rng, cfg.PrefixTokens)
 
-	for currentTime < horizon && reqIdx < cfg.MaxPrompts {
+	for currentTime < horizon && reqIdx < cfg.NumRequests {
 		promptLen := sim.GenerateLengthGauss(rng, cfg.PromptTokens,
 			cfg.PromptTokensStdDev, cfg.PromptTokensMin, cfg.PromptTokensMax)
 		prompt := sim.GenerateRandomTokenIDs(rng, promptLen)

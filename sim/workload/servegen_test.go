@@ -100,7 +100,7 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 		Version: "1", Seed: 42, Category: "language", AggregateRate: 10.0,
 		ServeGenData: &ServeGenDataSpec{Path: dir},
 	}
-	requests, err := GenerateRequests(spec, 1e6)
+	requests, err := GenerateRequests(spec, 1e6, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

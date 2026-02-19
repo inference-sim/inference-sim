@@ -23,7 +23,7 @@ type GoldenTestCase struct {
 	Workload                  string        `json:"workload"`
 	Approach                  string        `json:"approach"`
 	Rate                      float64       `json:"rate"`
-	MaxPrompts                int           `json:"max-prompts"`
+	NumRequests               int           `json:"num-requests"`
 	PrefixTokens              int           `json:"prefix_tokens"`
 	PromptTokens              int           `json:"prompt_tokens"`
 	PromptTokensStdev         int           `json:"prompt_tokens_stdev"`

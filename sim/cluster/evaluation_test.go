@@ -24,7 +24,7 @@ func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T)
 		CounterfactualK:    2,
 	}
 	workload := &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, MaxPrompts: 3,
+		Rate: 1.0 / 1e6, NumRequests: 3,
 		PromptTokens: 10, OutputTokens: 5,
 		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
 		PromptTokensMin: 10, PromptTokensMax: 10,

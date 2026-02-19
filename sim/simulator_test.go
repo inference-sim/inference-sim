@@ -51,7 +51,7 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 				TP:                        tc.TP,
 				GuideLLMConfig: &GuideLLMConfig{
 					Rate:               tc.Rate / 1e6,
-					MaxPrompts:         tc.MaxPrompts,
+					NumRequests:         tc.NumRequests,
 					PrefixTokens:       tc.PrefixTokens,
 					PromptTokens:       tc.PromptTokens,
 					PromptTokensStdDev: tc.PromptTokensStdev,
@@ -70,9 +70,9 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 			// === Invariant: request conservation (issue #183) ===
 			// With Horizon=MaxInt64, all injected requests must complete.
 			// This catches silent-drop bugs independently of golden values.
-			if sim.Metrics.CompletedRequests != tc.MaxPrompts {
+			if sim.Metrics.CompletedRequests != tc.NumRequests {
 				t.Errorf("request conservation violated: completed %d, injected %d",
-					sim.Metrics.CompletedRequests, tc.MaxPrompts)
+					sim.Metrics.CompletedRequests, tc.NumRequests)
 			}
 
 			// === Invariant: KV block conservation (issue #200) ===
@@ -173,7 +173,7 @@ func TestSimulator_WorkloadRNG_NotNil(t *testing.T) {
 		GPU:           "H100",
 		TP:            1,
 		GuideLLMConfig: &GuideLLMConfig{
-			Rate: 10.0 / 1e6, MaxPrompts: 10,
+			Rate: 10.0 / 1e6, NumRequests: 10,
 			PromptTokens: 100, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 200,
 			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
 		},
@@ -205,7 +205,7 @@ func TestSimulator_DeterministicWorkload(t *testing.T) {
 		GPU:                "H100",
 		TP:                 1,
 		GuideLLMConfig: &GuideLLMConfig{
-			Rate: 10.0 / 1e6, MaxPrompts: 50,
+			Rate: 10.0 / 1e6, NumRequests: 50,
 			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
 			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
 		},
@@ -435,7 +435,7 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 		GPU:                "H100",
 		TP:                 1,
 		GuideLLMConfig: &GuideLLMConfig{
-			Rate: 10.0 / 1e6, MaxPrompts: 50,
+			Rate: 10.0 / 1e6, NumRequests: 50,
 			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
 			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
 		},
@@ -569,7 +569,7 @@ func TestSimulator_Causality_FullChain_ArrivalToCompletion(t *testing.T) {
 		GPU:                "H100",
 		TP:                 1,
 		GuideLLMConfig: &GuideLLMConfig{
-			Rate: 5.0 / 1e6, MaxPrompts: 30,
+			Rate: 5.0 / 1e6, NumRequests: 30,
 			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
 			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
 		},
@@ -632,7 +632,7 @@ func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 		GPU:                "H100",
 		TP:                 1,
 		GuideLLMConfig: &GuideLLMConfig{
-			Rate: 10.0 / 1e6, MaxPrompts: 20,
+			Rate: 10.0 / 1e6, NumRequests: 20,
 			PromptTokens: 50, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 100,
 			OutputTokens: 20, OutputTokensStdDev: 5, OutputTokensMin: 5, OutputTokensMax: 40,
 		},
@@ -682,7 +682,7 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 		GPU:                "H100",
 		TP:                 1,
 		GuideLLMConfig: &GuideLLMConfig{
-			Rate: 5.0 / 1e6, MaxPrompts: 20,
+			Rate: 5.0 / 1e6, NumRequests: 20,
 			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
 			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
 		},
@@ -782,7 +782,7 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 				KVOffloadThreshold:  0.8,
 				KVTransferBandwidth: 100.0,
 				GuideLLMConfig: &GuideLLMConfig{
-					Rate: 5.0 / 1e6, MaxPrompts: 20,
+					Rate: 5.0 / 1e6, NumRequests: 20,
 					PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
 					OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
 				},

@@ -9,11 +9,15 @@ import (
 )
 
 // GenerateRequests creates a request sequence from a WorkloadSpec.
-// Deterministic given the same spec and seed.
+// Deterministic given the same spec, seed, and maxRequests.
+// maxRequests caps the total number of requests (0 = unlimited, use horizon only).
 // Returns requests sorted by ArrivalTime with sequential IDs.
-func GenerateRequests(spec *WorkloadSpec, horizon int64) ([]*sim.Request, error) {
+func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*sim.Request, error) {
 	if horizon <= 0 {
 		return nil, nil // EC-5: zero/negative horizon returns empty
+	}
+	if maxRequests < 0 {
+		return nil, fmt.Errorf("maxRequests must be non-negative, got %d", maxRequests)
 	}
 	// Load ServeGen data if specified (populates spec.Clients)
 	if spec.ServeGenData != nil && len(spec.Clients) == 0 {
@@ -77,6 +81,15 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64) ([]*sim.Request, error)
 			if err != nil {
 				return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
 			}
+			// Apply count cap to reasoning requests too
+			if maxRequests > 0 && int64(len(allRequests)+len(reasoningReqs)) > maxRequests {
+				remaining := maxRequests - int64(len(allRequests))
+				if remaining > 0 {
+					reasoningReqs = reasoningReqs[:remaining]
+				} else {
+					reasoningReqs = nil
+				}
+			}
 			allRequests = append(allRequests, reasoningReqs...)
 			continue
 		}
@@ -84,6 +97,11 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64) ([]*sim.Request, error)
 		// Generate requests for this client
 		currentTime := int64(0)
 		for currentTime < horizon {
+			// Count guard: stop if we've reached the global cap
+			if maxRequests > 0 && int64(len(allRequests)) >= maxRequests {
+				break
+			}
+
 			iat := arrivalSampler.SampleIAT(clientRNG)
 			currentTime += iat
 			if currentTime >= horizon {

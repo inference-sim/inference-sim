@@ -57,7 +57,7 @@ type StepConfig struct {
 // GuideLLMConfig supports GuideLLM style request generation
 type GuideLLMConfig struct {
 	Rate               float64 // Requests per second
-	MaxPrompts         int     // Number of requests
+	NumRequests        int     // Number of requests
 	PrefixTokens       int     // Prefix Token Count
 	PromptTokens       int     // Average Prompt Token Count
 	PromptTokensStdDev int     // Stddev Prompt Token Count

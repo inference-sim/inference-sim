@@ -44,9 +44,9 @@ func newTestInstanceSimConfig() sim.SimConfig {
 }
 
 // smallWorkload returns a small GuideLLMConfig for tests.
-func smallWorkload(maxPrompts int) *sim.GuideLLMConfig {
+func smallWorkload(numRequests int) *sim.GuideLLMConfig {
 	return &sim.GuideLLMConfig{
-		Rate: 10.0 / 1e6, MaxPrompts: maxPrompts,
+		Rate: 10.0 / 1e6, NumRequests: numRequests,
 		PromptTokens: 100, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 200,
 		OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
 	}
@@ -84,7 +84,7 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 					TP:                        tc.TP,
 					GuideLLMConfig: &sim.GuideLLMConfig{
 						Rate:               tc.Rate / 1e6,
-						MaxPrompts:         tc.MaxPrompts,
+						NumRequests:         tc.NumRequests,
 						PrefixTokens:       tc.PrefixTokens,
 						PromptTokens:       tc.PromptTokens,
 						PromptTokensStdDev: tc.PromptTokensStdev,
@@ -123,7 +123,7 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 // TestInstanceSimulator_Determinism verifies same seed produces identical results.
 func TestInstanceSimulator_Determinism(t *testing.T) {
 	cfg := newTestSimConfigWithWorkload(&sim.GuideLLMConfig{
-		Rate: 10.0 / 1e6, MaxPrompts: 50,
+		Rate: 10.0 / 1e6, NumRequests: 50,
 		PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
 		OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
 	})
@@ -221,7 +221,7 @@ func TestInstanceSimulator_ZeroRequests(t *testing.T) {
 	instance.Run()
 
 	if instance.Metrics().CompletedRequests != 0 {
-		t.Errorf("CompletedRequests = %d, want 0 for MaxPrompts=0", instance.Metrics().CompletedRequests)
+		t.Errorf("CompletedRequests = %d, want 0 for NumRequests=0", instance.Metrics().CompletedRequests)
 	}
 }
 

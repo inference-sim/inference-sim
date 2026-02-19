@@ -49,7 +49,7 @@ type Model struct {
 	TotalKVBlocks     int64     `yaml:"total_kv_blocks"`
 }
 
-func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float64, maxPrompts int) *sim.GuideLLMConfig {
+func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float64, numRequests int) *sim.GuideLLMConfig {
 	// Read YAML file
 	data, err := os.ReadFile(workloadFilePath)
 	if err != nil {
@@ -64,7 +64,7 @@ func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float6
 
 	if workload, workloadExists := cfg.Workloads[workloadType]; workloadExists {
 		logrus.Infof("Using preset workload %v\n", workloadType)
-		return &sim.GuideLLMConfig{Rate: rate, MaxPrompts: maxPrompts,
+		return &sim.GuideLLMConfig{Rate: rate, NumRequests: numRequests,
 			PrefixTokens: workload.PrefixTokens,
 			PromptTokens: workload.PromptTokensMean, PromptTokensStdDev: workload.PromptTokensStdev,
 			PromptTokensMin: workload.PromptTokensMin, PromptTokensMax: workload.PromptTokensMax,

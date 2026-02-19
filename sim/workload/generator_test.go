@@ -26,7 +26,7 @@ func TestGenerateRequests_SingleClient_ProducesRequests(t *testing.T) {
 	}
 	horizon := int64(1e6) // 1 second
 
-	requests, err := GenerateRequests(spec, horizon)
+	requests, err := GenerateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -78,8 +78,8 @@ func TestGenerateRequests_Deterministic_SameSeedSameOutput(t *testing.T) {
 	}
 	horizon := int64(1e6)
 
-	r1, _ := GenerateRequests(spec, horizon)
-	r2, _ := GenerateRequests(spec, horizon)
+	r1, _ := GenerateRequests(spec, horizon, 0)
+	r2, _ := GenerateRequests(spec, horizon, 0)
 
 	if len(r1) != len(r2) {
 		t.Fatalf("different counts: %d vs %d", len(r1), len(r2))
@@ -111,7 +111,7 @@ func TestGenerateRequests_TwoClients_RateProportional(t *testing.T) {
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
 		},
 	}
-	requests, err := GenerateRequests(spec, 10e6) // 10 seconds
+	requests, err := GenerateRequests(spec, 10e6, 0) // 10 seconds
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestGenerateRequests_RateFractionNormalization(t *testing.T) {
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
 		},
 	}
-	requests, err := GenerateRequests(spec, 10e6)
+	requests, err := GenerateRequests(spec, 10e6, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestGenerateRequests_ZeroHorizon_ReturnsEmpty(t *testing.T) {
 			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
 		}},
 	}
-	requests, err := GenerateRequests(spec, 0)
+	requests, err := GenerateRequests(spec, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestGenerateRequests_PrefixGroup_SharedPrefix(t *testing.T) {
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
 		},
 	}
-	requests, err := GenerateRequests(spec, 1e6)
+	requests, err := GenerateRequests(spec, 1e6, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,6 +216,54 @@ func TestGenerateRequests_PrefixGroup_SharedPrefix(t *testing.T) {
 			}
 		}
 		break // just check first pair
+	}
+}
+
+func TestGenerateRequests_MaxRequests_CapsOutput(t *testing.T) {
+	// BC-1, BC-6: maxRequests caps total output even with long horizon
+	spec := &WorkloadSpec{
+		Version: "1", Seed: 42, Category: "language", AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	horizon := int64(100e6) // 100 seconds — would produce ~10000 requests
+	maxReqs := int64(50)
+
+	requests, err := GenerateRequests(spec, horizon, maxReqs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if int64(len(requests)) > maxReqs {
+		t.Errorf("len(requests) = %d, want <= %d", len(requests), maxReqs)
+	}
+	if len(requests) == 0 {
+		t.Error("expected at least some requests")
+	}
+}
+
+func TestGenerateRequests_ZeroMaxRequests_UsesHorizonOnly(t *testing.T) {
+	// BC-2: maxRequests=0 means unlimited — horizon controls
+	spec := &WorkloadSpec{
+		Version: "1", Seed: 42, Category: "language", AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	horizon := int64(1e6) // 1 second
+
+	requests, err := GenerateRequests(spec, horizon, 0) // 0 = unlimited
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Error("expected requests with unlimited maxRequests and finite horizon")
 	}
 }
 
