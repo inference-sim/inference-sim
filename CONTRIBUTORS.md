@@ -21,13 +21,15 @@ All three must pass before submitting a PR.
 
 Follow `docs/plans/prworkflow.md` for the complete PR lifecycle. The workflow applies to all PRs regardless of source (macro plan, issues, design docs, feature requests):
 
+0. **Read design guidelines** — `docs/plans/2026-02-18-design-guidelines.md` covers module architecture, extension types, and DES foundations. Read this before your first contribution.
 1. **Create worktree** — isolate your work from the main branch
-2. **Write implementation plan** — behavioral contracts + TDD tasks using `docs/plans/prmicroplanprompt-v2.md`
-3. **Review plan** — 5 focused passes (external review, cross-doc, architecture, codebase, structural)
-4. **Implement** — test-first, one contract at a time
-5. **Review code** — 4 focused passes (quality, test quality, getting-started, automated reviewer)
-6. **Self-audit** — 9 dimensions of deliberate critical thinking (no automation)
-7. **Commit, push, PR**
+2. **Write design doc** (if needed) — for new modules or architecture changes, write a design doc per the guidelines before planning. Four species: decision record, specification, problem analysis, system overview. Not needed for bug fixes or new policy templates behind existing interfaces.
+3. **Write implementation plan** — behavioral contracts + TDD tasks using `docs/plans/prmicroplanprompt-v2.md`
+4. **Review plan** — 5 focused passes (external review, cross-doc, architecture, codebase, structural)
+5. **Implement** — test-first, one contract at a time
+6. **Review code** — 4 focused passes (quality, test quality, getting-started, automated reviewer)
+7. **Self-audit** — 9 dimensions of deliberate critical thinking (no automation)
+8. **Commit, push, PR**
 
 ## Engineering Principles
 
@@ -51,6 +53,16 @@ If your PR touches request lifecycle, KV cache, or metrics, add or extend invari
 3. Name tests `TestType_Scenario_Behavior`
 4. Test observable behavior, not internal structure — tests should survive a refactor
 5. Use table-driven tests for multiple scenarios
+6. Apply the **refactor survival test**: "Would this test still pass if the implementation were completely rewritten but the behavior preserved?"
+
+**Common Test Anti-Patterns:**
+
+| Structural (avoid) | Behavioral (prefer) | Why |
+|---|---|---|
+| `_, ok := policy.(*ConstantPriority)` | `assert.Equal(policy.Compute(req, clock), 0.0)` | Type assertion breaks if struct is renamed |
+| `assert.Equal(score, 0.6*cache + 0.4*load)` | `assert.True(highCacheScore > lowCacheScore)` | Formula reproduction breaks if weights change |
+| `assert.Equal(len(batch.requests), 3)` | `assert.Equal(completed+queued, injected)` | Count check is fragile; conservation law is durable |
+| `assert.Equal(obj.internalState, "ready")` | `assert.True(obj.CanProcess(nextRequest))` | Field access couples test to private implementation |
 
 ### Separation of Concerns
 
@@ -89,10 +101,26 @@ Before submitting a PR, verify:
 - [ ] Every loop that allocates resources handles mid-loop failure with rollback
 - [ ] Invariant tests added or extended if request lifecycle, KV cache, or metrics are touched
 - [ ] Golden dataset regenerated if output values changed (document regeneration command)
+- [ ] No exported mutable maps — use unexported maps with `IsValid*()` accessors
+- [ ] YAML config uses `*float64` for fields where zero is a valid value
+- [ ] YAML loading uses strict parsing (`yaml.KnownFields(true)`)
+- [ ] Every division with runtime-derived denominator has a zero guard
+- [ ] New interfaces work for at least two implementations (no single-backend methods)
+- [ ] No method spans multiple module responsibilities — extract concerns
+- [ ] Stale `planned for PR N` / `TODO PR N` references resolved
 
 ## Adding New Components
 
-### New Policy Template
+BLIS has four extension types. Identify which type your change is, then follow the corresponding recipe. See `docs/plans/2026-02-18-design-guidelines.md` Section 5 for full details.
+
+| Extension Type | What It Is | Design Doc Required? | Example |
+|---|---|---|---|
+| **Policy Template** | New algorithm behind an existing interface | No | New routing algorithm |
+| **Subsystem Module** | New module with its own interface and events | Yes | AutoScaler, P/D disaggregation |
+| **Backend Swap** | Alternative implementation of internal module | Yes (covers both phases) | SGLang latency model |
+| **Tier Composition** | Wrapper layering behavior on existing module | Recommended | NVMe KV tier |
+
+### Policy Template (lightest — ~3 files)
 
 1. Implement the interface in the corresponding file (`sim/admission.go`, `sim/routing.go`, `sim/priority.go`, `sim/scheduler.go`)
 2. Register in `sim/bundle.go` (valid names map + `IsValid*` function)
@@ -100,11 +128,30 @@ Before submitting a PR, verify:
 4. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)
 5. Update CLAUDE.md and README
 
-### New KV Cache Tier
+### Subsystem Module (heaviest — new interface + integration)
 
-1. Implement `KVStore` interface (9 methods; 10 after hardening PR adds `SetClock`)
+Requires a design doc defining the module contract (observes / controls / owns / invariants / events / extension friction). See design guidelines Section 5.3.
+
+1. Write design doc with module contract, event integration, state ownership, failure modes, default behavior
+2. Create implementation plan via `prmicroplanprompt-v2.md`
+3. Implement interface + default implementation + factory
+4. Integrate into cluster event pipeline
+5. Add CLI flags with full validation
+6. Add behavioral tests + invariant tests
+7. Update CLAUDE.md, README, and design guidelines module map if needed
+
+### Backend Swap (two phases — extract interface, then add alternative)
+
+**Phase A (refactoring):** Extract interface from hardcoded logic, verify existing tests pass unchanged.
+**Phase B (extension):** Implement new backend behind extracted interface, add configuration to select between backends.
+
+See design guidelines Section 5.4 for the full two-phase recipe.
+
+### Tier Composition (delegation pattern — ~4 files)
+
+1. Implement the same interface as the inner module (Liskov substitution)
 2. Compose existing tiers using delegation pattern
-3. Update `NewKVStore` factory with validation
+3. Update factory with validation
 4. Add CLI flags with validation (zero, negative, NaN/Inf guards)
 5. Aggregate metrics from all tiers
 6. Add conservation invariant tests
@@ -126,10 +173,12 @@ Before submitting a PR, verify:
 - BDD-style test naming: `TestType_Scenario_Behavior`
 - Conventional commits: `feat(scope)`, `fix(scope)`, `refactor(scope)`, `test(scope)`, `docs(scope)`
 
-## Detailed Reference
+## Key References
 
-See `CLAUDE.md` for comprehensive project documentation including:
-- Full code architecture and file organization
-- CLI flags and configuration loading
-- All key invariants
-- Design document references
+| Document | What It Covers | When to Read |
+|---|---|---|
+| `CLAUDE.md` | Full code architecture, file organization, CLI flags, invariants, engineering rules | Always — authoritative for current codebase state |
+| `docs/plans/2026-02-18-design-guidelines.md` | DES foundations, module architecture, extension framework, anti-patterns | Before designing a new feature or extending BLIS |
+| `docs/plans/macroplanprompt.md` | Template for multi-PR feature expansions | When planning a large feature with multiple PRs |
+| `docs/plans/prmicroplanprompt-v2.md` | Template for single-PR implementation plans | When creating any PR implementation plan |
+| `docs/plans/prworkflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |

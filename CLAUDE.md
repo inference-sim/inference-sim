@@ -149,6 +149,21 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 
 ## Development Guidelines
 
+### Design Principles
+
+BLIS follows a layered design document hierarchy. Each tier has a specific abstraction level and audience:
+
+- **Design guidelines** (`docs/plans/2026-02-18-design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
+- **Design docs** (per-feature): Behavioral specifications written per the guidelines. Describe what modules do and why, never how they're implemented. Four species: decision record, specification, problem analysis, system overview.
+- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/plans/macroplanprompt.md`. May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
+- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/plans/prmicroplanprompt-v2.md`.
+
+**The abstraction rule:** Design docs describe *what a module does and what it guarantees*. Macro plans describe *what to build and in what order*. Micro plans describe *how to implement each piece*. Go struct definitions, method implementations, and file:line references belong only in micro plans.
+
+**Module architecture:** BLIS has a two-layer architecture — a domain-agnostic simulation kernel (event queue, clock, RNG, statistics) and domain-specific modules (router, scheduler, KV cache manager, latency model, autoscaler, batch formation). Each module is defined by a behavioral contract with six aspects: what it observes, what it controls, what state it owns, what invariants it maintains, what events it produces/consumes, and its extension friction (how many files to add one more variant). See design guidelines Section 4 for the full module map and contract template.
+
+**Extending BLIS:** Four extension types, each with a different recipe — policy template (new algorithm behind existing interface), subsystem module (new module with its own interface), backend swap (alternative implementation requiring interface extraction), tier composition (delegation wrapper). See design guidelines Section 5.
+
 ### BDD/TDD Development
 
 This project follows BDD/TDD practices. When implementing features:
@@ -157,10 +172,14 @@ This project follows BDD/TDD practices. When implementing features:
 2. **Implement tests before code**: Tests verify contracts hold
 3. **Use table-driven tests**: Go's table-driven test pattern for comprehensive coverage
 4. **Test laws, not just values**: Golden tests answer "did the output change?" but not "is the output correct?" Every golden test should have a companion invariant test that verifies a law the system must satisfy (conservation, causality, monotonicity)
+5. **Refactor survival test**: Before accepting a test, ask: "Would this test still pass if the implementation were completely rewritten but the behavior preserved?" If no, the test is structural — rewrite it to assert observable behavior instead of internal structure. Common structural traps: type assertions on factory returns (`policy.(*ConcreteType)`), exact formula reproduction (`assert.Equal(score, 0.6*x + 0.4*y)`), internal field access. See `prmicroplanprompt-v2.md` rules 9-10 for the full prohibited/required assertion patterns.
+6. **THEN clauses drive test quality**: A structural THEN clause produces a structural test. If a contract's THEN clause contains a concrete type name or internal field name, rewrite the THEN clause to describe observable behavior before writing the test.
 
 ### PR Workflow
 
 Diligently follow the workflow in docs/plans/prworkflow.md. Before I approve any plan, validate it: 1) Check every task's dependencies — can each task actually start given what comes before it? 2) Verify all sections from the template are present and non-empty. 3) Read the executive summary as if you're a new team member — is it clear and human-readable? 4) Flag any tasks that seem under-specified for implementation. List all issues found.
+
+For new features that introduce module boundaries or modify the architecture, a design doc (per the design guidelines) should exist before micro-planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), a design doc is optional — proceed directly to micro-planning.
 
 ### Context Management
 
@@ -172,7 +191,7 @@ When using Task agents: 1) Do NOT poll TaskList repeatedly — check at reasonab
 
 ### Code Review Standards
 
-During PR reviews, check for: unexported mutable maps, missing pointer types for YAML ambiguity, lack of strict YAML parsing, NaN/Inf validation gaps, and preservation of structural tests. Always run `go test ./...` and lint after fixes.
+During PR reviews, check all Antipattern Prevention rules (1-11) below. Pay special attention to rules 8-10 (exported mutable maps, YAML pointer types, strict YAML parsing) which are easy to miss in new code. Always run `go test ./...` and lint after fixes.
 
 ### Macro Plan Updates
 
@@ -199,6 +218,11 @@ When asked to update the macro implementation plan, directly edit the document. 
 - Policy interfaces should be single-method when possible (see `AdmissionPolicy`, `RoutingPolicy`, `PriorityPolicy`, `InstanceScheduler`).
 - Query methods must be pure — no side effects, no state mutation, no destructive reads. If a method needs to both query and clear state, provide separate `Get()` and `Consume()` methods.
 - Factory functions must validate their inputs. Follow the pattern: `IsValid*()` check + switch/case + panic on unknown. Never silently accept invalid configuration.
+- Interfaces must be defined by behavioral contract (allocate, query, release), not by one implementation's data model. If an interface method only makes sense for one backend, the interface is too specific — it must accommodate at least two implementations.
+- Individual methods should operate within a single module's responsibility. If a method spans scheduling, latency estimation, and metric collection, extract each concern into its module's interface.
+
+**Configuration design:**
+- Group configuration by module. A single config struct combining hardware identity, model parameters, simulation parameters, and policy choices creates shotgun surgery when adding parameters. Each module's config should be independently specifiable and validatable.
 
 **Canonical constructors:**
 - Every struct constructed in multiple places needs a canonical constructor (e.g., `NewRequestMetrics()`). Struct literals appear in exactly one place.
@@ -226,6 +250,14 @@ Each rule traces to a real bug we found and fixed. Enforced by PR workflow (self
 6. **No logrus.Fatalf in library code**: The `sim/` package tree must never terminate the process — return errors so callers can handle them. This enables embedding, testing, and adapters.
 
 7. **Invariant tests alongside golden tests**: Golden tests (comparing against known-good output) are regression freezes, not correctness checks. If a bug exists when the golden values are captured, the golden test perpetuates the bug. Every subsystem that has golden tests must also have invariant tests that verify conservation laws, causality, and determinism.
+
+8. **No exported mutable maps**: Validation lookup maps (e.g., `validRoutingPolicies`) must be unexported. Expose through `IsValid*()` accessor functions. Exported maps allow callers to mutate global state, breaking encapsulation and enabling hard-to-trace bugs.
+
+9. **Pointer types for YAML zero-value ambiguity**: YAML config structs must use `*float64` (pointer) for fields where zero is a valid user-provided value, to distinguish "not set" (nil) from "set to zero" (0.0). Using bare `float64` causes silent misconfiguration when users intentionally set a value to zero.
+
+10. **Strict YAML parsing**: Use `yaml.KnownFields(true)` or equivalent strict parsing for all YAML config loading. Typos in field names must cause parse errors, not silent acceptance of malformed config. A silently ignored typo produces default behavior that the user didn't intend.
+
+11. **Guard division in runtime computation**: Any division where the denominator derives from runtime state (batch size, block count, request count, bandwidth) must guard against zero. CLI validation (rule 3) catches input zeros at the boundary; this rule catches intermediate zeros that arise during simulation (e.g., `utilization = usedBlocks / totalBlocks` when no blocks are configured, `avgLatency = sum / count` when count is zero). Use explicit guards or documented invariants proving the denominator is non-zero.
 
 ### Current Implementation Focus
 
@@ -399,11 +431,23 @@ inference-sim/
 
 ## Design Documents
 
+### Guidelines and Templates (read these first)
+
+- `docs/plans/2026-02-18-design-guidelines.md`: **BLIS Design Guidelines** — DES foundations (model scoping, event design, V&V), design doc authoring rules (abstraction levels, staleness test, four species), module architecture (two-layer architecture, target module map, contract template, real-system correspondence), extension framework (four extension types with recipes), anti-patterns with evidence. **Start here when designing anything new.**
+- `docs/plans/macroplanprompt.md`: Template for macro-level planning (multi-PR feature expansions). Requires design guidelines as prerequisite. Enforces module contracts, model scoping, extension type classification, and abstraction level boundaries.
+- `docs/plans/prmicroplanprompt-v2.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts. This is where full code detail belongs.
+- `docs/plans/prworkflow.md`: End-to-end PR workflow (worktree → plan → review → implement → review → audit → commit)
+
+### Design Documents (per-feature)
+
 - `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
 - `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v3.4, 16 PRs across 6 phases, online routing architecture)
 - `docs/plans/2026-02-13-simplification-assessment.md`: Architectural simplification assessment (constructor collapse, unified CLI, field privatization, interface dedup)
 - `docs/plans/2026-02-16-workload-generator-design.md`: ServeGen-informed workload generator design (multi-client specs, arrival processes, calibration)
 - `docs/plans/2026-02-17-pr13-decision-traces.md`: PR13 decision trace design (RoutingRecord, counterfactual analysis, TraceSummary)
+- `docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md`: Hardening design — antipattern elimination, extension scenario analysis, modularity improvements
+- `docs/plans/pr12-architectural-predesign.md`: PR12 architectural pre-design — 6 binding design decisions for tiered KV cache (gold standard for decision records)
+
+### Micro-Level Implementation Plans
+
 - `docs/plans/pr10-workload-generator-plan.md`: PR10 micro-level implementation plan (workload generator)
-- `docs/plans/macroplanprompt.md`: Template for macro-level planning
-- `docs/plans/prmicroplanprompt-v2.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts
