@@ -509,10 +509,8 @@ func (sim *Simulator) Step(now int64) {
 		TotalDecodeTokens:    0,
 		TotalCacheMissTokens: 0,
 	}
-	// Synchronize tiered KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
-	if tiered, ok := sim.KVCache.(*TieredKVCache); ok {
-		tiered.SetClock(now)
-	}
+	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
+	sim.KVCache.SetClock(now)
 
 	// Assign priorities to queued requests and order queue per scheduler policy
 	for _, req := range sim.WaitQ.queue {

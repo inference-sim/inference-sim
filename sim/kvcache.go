@@ -383,3 +383,6 @@ func (kvc *KVCacheState) PendingTransferLatency() int64 { return 0 }
 
 // KVThrashingRate returns 0 for single-tier cache (no offload/reload).
 func (kvc *KVCacheState) KVThrashingRate() float64 { return 0 }
+
+// SetClock is a no-op for single-tier KV cache (no time-dependent behavior).
+func (kvc *KVCacheState) SetClock(_ int64) {}

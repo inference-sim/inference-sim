@@ -48,3 +48,20 @@ func TestNewKVStore_ValidConfig_Tiered_Succeeds(t *testing.T) {
 	})
 	assert.Equal(t, int64(100), store.TotalCapacity())
 }
+
+func TestKVCacheState_SetClock_IsNoOp(t *testing.T) {
+	// BC-5: Single-tier SetClock is a no-op (no observable effect)
+	kv := NewKVCacheState(100, 16)
+	kv.SetClock(1000)
+	assert.Equal(t, int64(100), kv.TotalCapacity())
+}
+
+func TestKVStore_SetClock_InterfaceSatisfied(t *testing.T) {
+	// BC-5: Both implementations satisfy KVStore interface including SetClock
+	var store KVStore
+	store = NewKVCacheState(100, 16)
+	store.SetClock(0) // compiles and runs
+
+	store = NewTieredKVCache(NewKVCacheState(100, 16), 50, 0.8, 1.0, 10)
+	store.SetClock(500)
+}

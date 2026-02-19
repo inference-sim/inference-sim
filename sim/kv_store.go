@@ -14,6 +14,7 @@ type KVStore interface {
 	CacheHitRate() float64
 	PendingTransferLatency() int64
 	KVThrashingRate() float64
+	SetClock(clock int64) // Synchronize clock for time-dependent operations. No-op for single-tier.
 }
 
 // NewKVStore creates a KVStore from SimConfig.
