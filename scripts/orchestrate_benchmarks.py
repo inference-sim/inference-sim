@@ -96,7 +96,8 @@ def generate_job_yaml(
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"✗ Job generation failed: {result.stderr}")
+        context = f"shape={shape}, phase={phase}, tp={tp}" if shape else "GEMM"
+        print(f"✗ Job generation failed ({context}): {result.stderr}")
         sys.exit(1)
 
     # Parse output to find generated YAML path
@@ -106,6 +107,11 @@ def generate_job_yaml(
             break
     else:
         print("✗ Could not find output YAML path")
+        sys.exit(1)
+
+    # Validate YAML path exists
+    if not yaml_path.exists():
+        print(f"✗ Generated YAML file not found: {yaml_path}")
         sys.exit(1)
 
     # Extract job name from YAML
@@ -121,19 +127,9 @@ def generate_job_yaml(
     return yaml_path, job_name
 
 
-def submit_job(yaml_path: Path, namespace: str = "diya") -> str:
-    """Submit job to OpenShift. Returns job name."""
-    result = run_oc_command(["apply", "-f", str(yaml_path), "-n", namespace])
-
-    # Extract job name from YAML
-    yaml_content = yaml_path.read_text()
-    for line in yaml_content.split('\n'):
-        if line.strip().startswith("name:"):
-            job_name = line.split("name:")[1].strip()
-            return job_name
-
-    print(f"✗ Could not extract job name from {yaml_path}")
-    sys.exit(1)
+def submit_job(yaml_path: Path, job_name: str, namespace: str = "diya") -> None:
+    """Submit job to OpenShift."""
+    run_oc_command(["apply", "-f", str(yaml_path), "-n", namespace])
 
 
 def get_job_status(job_name: str, namespace: str = "diya") -> str:
@@ -238,9 +234,14 @@ def main():
         print(f"Job name: {job_name}")
 
         if not args.dry_run:
-            submit_job(yaml_path)
-            print(f"✓ GEMM job submitted: {job_name}")
-            gemm_job = job_name
+            try:
+                submit_job(yaml_path, job_name)
+                print(f"✓ GEMM job submitted: {job_name}")
+                gemm_job = job_name
+                all_jobs.append(job_name)
+            except subprocess.CalledProcessError as e:
+                print(f"✗ Failed to submit GEMM job: {e.stderr}")
+                sys.exit(1)
         else:
             print("(dry-run: not submitted)")
             gemm_job = None
@@ -279,9 +280,13 @@ def main():
             print(f"  [{phase_label:15s}] {yaml_path.name}")
 
             if not args.dry_run:
-                submit_job(yaml_path)
-                wave_jobs.append(job_name)
-                all_jobs.append(job_name)
+                try:
+                    submit_job(yaml_path, job_name)
+                    wave_jobs.append(job_name)
+                    all_jobs.append(job_name)
+                except subprocess.CalledProcessError as e:
+                    print(f"✗ Failed to submit {phase_label} job for shape {shape_str}: {e.stderr}")
+                    sys.exit(1)
 
         if args.dry_run:
             print("(dry-run: jobs not submitted)")
