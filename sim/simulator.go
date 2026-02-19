@@ -275,6 +275,23 @@ func (sim *Simulator) Run() {
 	sim.Finalize()
 }
 
+// QueueDepth returns the number of requests in the wait queue.
+func (sim *Simulator) QueueDepth() int { return sim.WaitQ.Len() }
+
+// BatchSize returns the number of requests in the running batch, or 0 if nil.
+func (sim *Simulator) BatchSize() int {
+	if sim.RunningBatch == nil {
+		return 0
+	}
+	return len(sim.RunningBatch.Requests)
+}
+
+// CurrentClock returns the current simulation clock (in ticks).
+func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
+
+// SimHorizon returns the simulation horizon (in ticks).
+func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
+
 // Adds a newly arrived request to the waiting queue
 func (sim *Simulator) EnqueueRequest(r *Request) {
 	sim.WaitQ.Enqueue(r)

@@ -56,7 +56,7 @@ func (i *InstanceSimulator) ID() InstanceID {
 
 // Clock returns the current simulation clock (in ticks).
 func (i *InstanceSimulator) Clock() int64 {
-	return i.sim.Clock
+	return i.sim.CurrentClock()
 }
 
 // Metrics returns the simulation metrics.
@@ -67,7 +67,7 @@ func (i *InstanceSimulator) Metrics() *sim.Metrics {
 
 // Horizon returns the simulation horizon (in ticks).
 func (i *InstanceSimulator) Horizon() int64 {
-	return i.sim.Horizon
+	return i.sim.SimHorizon()
 }
 
 
@@ -105,15 +105,12 @@ func (i *InstanceSimulator) Finalize() {
 
 // QueueDepth returns the number of requests in the wait queue.
 func (i *InstanceSimulator) QueueDepth() int {
-	return i.sim.WaitQ.Len()
+	return i.sim.QueueDepth()
 }
 
 // BatchSize returns the number of requests in the running batch, or 0 if nil.
 func (i *InstanceSimulator) BatchSize() int {
-	if i.sim.RunningBatch == nil {
-		return 0
-	}
-	return len(i.sim.RunningBatch.Requests)
+	return i.sim.BatchSize()
 }
 
 // KVUtilization returns the fraction of KV cache blocks in use.

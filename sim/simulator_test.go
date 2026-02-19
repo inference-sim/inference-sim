@@ -792,3 +792,35 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 		})
 	}
 }
+
+func TestSimulator_ObservationMethods_MatchDirectAccess(t *testing.T) {
+	// BC-1: Observation methods return same values as direct field access
+	cfg := newTestSimConfig()
+	s := NewSimulator(cfg)
+
+	// Before any events: queue empty, batch empty
+	if s.QueueDepth() != 0 {
+		t.Errorf("QueueDepth: got %d, want 0", s.QueueDepth())
+	}
+	if s.BatchSize() != 0 {
+		t.Errorf("BatchSize: got %d, want 0", s.BatchSize())
+	}
+	if s.CurrentClock() != 0 {
+		t.Errorf("CurrentClock: got %d, want 0", s.CurrentClock())
+	}
+	if s.SimHorizon() != cfg.Horizon {
+		t.Errorf("SimHorizon: got %d, want %d", s.SimHorizon(), cfg.Horizon)
+	}
+
+	// Inject a request and verify QueueDepth
+	req := &Request{
+		ID: "obs-test-1", ArrivalTime: 0,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		State: StateQueued,
+	}
+	s.InjectArrival(req)
+	s.ProcessNextEvent() // process arrival → queued
+	if s.QueueDepth() != s.WaitQ.Len() {
+		t.Errorf("QueueDepth mismatch: method=%d, direct=%d", s.QueueDepth(), s.WaitQ.Len())
+	}
+}
