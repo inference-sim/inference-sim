@@ -65,10 +65,9 @@ var (
 	tokenBucketCapacity   float64 // Token bucket capacity
 	tokenBucketRefillRate float64 // Token bucket refill rate (tokens/second)
 
-	// routing policy config (PR 6)
-	routingPolicy      string  // Routing policy name
-	routingCacheWeight float64 // Cache affinity weight for weighted scoring
-	routingLoadWeight  float64 // Load balance weight for weighted scoring
+	// routing policy config (PR 6, evolved in PR17)
+	routingPolicy  string // Routing policy name
+	routingScorers string // Comma-separated name:weight pairs for weighted routing
 
 	// Priority and scheduler config (PR7)
 	priorityPolicy string // Priority policy name
@@ -297,11 +296,14 @@ var runCmd = &cobra.Command{
 			if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
 				routingPolicy = bundle.Routing.Policy
 			}
-			if bundle.Routing.CacheWeight != nil && !cmd.Flags().Changed("routing-cache-weight") {
-				routingCacheWeight = *bundle.Routing.CacheWeight
-			}
-			if bundle.Routing.LoadWeight != nil && !cmd.Flags().Changed("routing-load-weight") {
-				routingLoadWeight = *bundle.Routing.LoadWeight
+			// Scorer configs from YAML bundle override CLI default (but CLI --routing-scorers wins)
+			if len(bundle.Routing.Scorers) > 0 && !cmd.Flags().Changed("routing-scorers") {
+				// Convert to CLI-equivalent string for consistency with downstream parsing
+				parts := make([]string, len(bundle.Routing.Scorers))
+				for i, sc := range bundle.Routing.Scorers {
+					parts[i] = fmt.Sprintf("%s:%g", sc.Name, sc.Weight)
+				}
+				routingScorers = strings.Join(parts, ",")
 			}
 			if bundle.Priority.Policy != "" && !cmd.Flags().Changed("priority-policy") {
 				priorityPolicy = bundle.Priority.Policy
@@ -355,27 +357,26 @@ var runCmd = &cobra.Command{
 		// Log active policy configuration so users can verify which policies are in effect
 		logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
 			admissionPolicy, routingPolicy, priorityPolicy, scheduler)
+		// Parse and validate scorer configuration for weighted routing
+		var parsedScorerConfigs []sim.ScorerConfig
 		if routingPolicy == "weighted" {
-			if math.IsNaN(routingCacheWeight) || math.IsInf(routingCacheWeight, 0) ||
-				math.IsNaN(routingLoadWeight) || math.IsInf(routingLoadWeight, 0) {
-				logrus.Fatalf("Routing weights must be finite numbers, got cache=%v, load=%v",
-					routingCacheWeight, routingLoadWeight)
+			if routingScorers != "" {
+				var err error
+				parsedScorerConfigs, err = sim.ParseScorerConfigs(routingScorers)
+				if err != nil {
+					logrus.Fatalf("Invalid --routing-scorers: %v", err)
+				}
 			}
-			if routingCacheWeight < 0 || routingLoadWeight < 0 {
-				logrus.Fatalf("Routing weights must be non-negative, got cache=%.2f, load=%.2f",
-					routingCacheWeight, routingLoadWeight)
+			// Log active scorer configuration
+			activeScorerConfigs := parsedScorerConfigs
+			if len(activeScorerConfigs) == 0 {
+				activeScorerConfigs = sim.DefaultScorerConfigs()
 			}
-			weightSum := routingCacheWeight + routingLoadWeight
-			if weightSum <= 0 {
-				logrus.Fatalf("Routing weights must have a positive sum, got cache=%.2f + load=%.2f = %.2f",
-					routingCacheWeight, routingLoadWeight, weightSum)
+			scorerStrs := make([]string, len(activeScorerConfigs))
+			for i, sc := range activeScorerConfigs {
+				scorerStrs[i] = fmt.Sprintf("%s:%.1f", sc.Name, sc.Weight)
 			}
-			if math.Abs(weightSum-1.0) > 0.01 {
-				logrus.Warnf("Routing weights sum to %.2f (expected 1.0); weights will be auto-normalized to cache=%.2f, load=%.2f",
-					weightSum, routingCacheWeight/weightSum, routingLoadWeight/weightSum)
-			}
-			logrus.Infof("Weighted routing: cache-weight=%.2f, load-weight=%.2f",
-				routingCacheWeight, routingLoadWeight)
+			logrus.Infof("Weighted routing scorers: %s", strings.Join(scorerStrs, ", "))
 		}
 		if admissionPolicy == "token-bucket" {
 			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
@@ -411,9 +412,8 @@ var runCmd = &cobra.Command{
 			RoutingLatency:            routingLatency,
 			TokenBucketCapacity:       tokenBucketCapacity,
 			TokenBucketRefillRate:     tokenBucketRefillRate,
-			RoutingPolicy:             routingPolicy,
-			RoutingCacheWeight:        routingCacheWeight,
-			RoutingLoadWeight:         routingLoadWeight,
+			RoutingPolicy:        routingPolicy,
+			RoutingScorerConfigs: parsedScorerConfigs,
 			PriorityPolicy:           priorityPolicy,
 			Scheduler:                scheduler,
 			TraceLevel:               traceLevel,
@@ -565,8 +565,7 @@ func init() {
 
 	// Routing policy config
 	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, prefix-affinity, always-busiest")
-	runCmd.Flags().Float64Var(&routingCacheWeight, "routing-cache-weight", 0.6, "Cache affinity weight for weighted routing")
-	runCmd.Flags().Float64Var(&routingLoadWeight, "routing-load-weight", 0.4, "Load balance weight for weighted routing")
+	runCmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: queue-depth:2,kv-utilization:2,load-balance:1")
 
 	// Priority and scheduler config (PR7)
 	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
