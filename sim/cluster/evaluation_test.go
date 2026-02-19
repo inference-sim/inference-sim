@@ -33,7 +33,7 @@ func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T)
 	cs := NewClusterSimulator(config, workload, "")
 	cs.Run()
 
-	rawMetrics := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests())
+	rawMetrics := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "")
 	traceSummary := trace.Summarize(cs.Trace())
 
 	// WHEN constructing EvaluationResult from real simulation output
