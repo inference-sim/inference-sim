@@ -71,7 +71,7 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 		})
 	}
 
-	return &ClusterSimulator{
+	cs := &ClusterSimulator{
 		config:           config,
 		instances:        instances,
 		rng:              sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed)),
@@ -86,6 +86,15 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 		trace:            simTrace,
 		pendingRequests:  make(map[string]int, config.NumInstances),
 	}
+
+	// Startup warning: horizon too small for pipeline (BC-1)
+	pipelineLatency := cs.admissionLatency + cs.routingLatency
+	if cs.config.Horizon > 0 && cs.config.Horizon < pipelineLatency {
+		logrus.Warnf("[cluster] horizon (%d) < pipeline latency (%d); no requests can complete — increase --horizon or reduce admission/routing latency",
+			cs.config.Horizon, pipelineLatency)
+	}
+
+	return cs
 }
 
 // Run executes the cluster simulation using online routing pipeline:
