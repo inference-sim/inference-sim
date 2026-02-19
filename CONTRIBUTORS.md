@@ -101,6 +101,13 @@ Before submitting a PR, verify:
 - [ ] Every loop that allocates resources handles mid-loop failure with rollback
 - [ ] Invariant tests added or extended if request lifecycle, KV cache, or metrics are touched
 - [ ] Golden dataset regenerated if output values changed (document regeneration command)
+- [ ] No exported mutable maps — use unexported maps with `IsValid*()` accessors
+- [ ] YAML config uses `*float64` for fields where zero is a valid value
+- [ ] YAML loading uses strict parsing (`yaml.KnownFields(true)`)
+- [ ] Every division with runtime-derived denominator has a zero guard
+- [ ] New interfaces work for at least two implementations (no single-backend methods)
+- [ ] No method spans multiple module responsibilities — extract concerns
+- [ ] Stale `planned for PR N` / `TODO PR N` references resolved
 
 ## Adding New Components
 

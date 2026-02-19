@@ -191,7 +191,7 @@ When using Task agents: 1) Do NOT poll TaskList repeatedly — check at reasonab
 
 ### Code Review Standards
 
-During PR reviews, check for: unexported mutable maps, missing pointer types for YAML ambiguity, lack of strict YAML parsing, NaN/Inf validation gaps, and preservation of structural tests. Always run `go test ./...` and lint after fixes.
+During PR reviews, check all Antipattern Prevention rules (1-11) below. Pay special attention to rules 8-10 (exported mutable maps, YAML pointer types, strict YAML parsing) which are easy to miss in new code. Always run `go test ./...` and lint after fixes.
 
 ### Macro Plan Updates
 
@@ -218,6 +218,11 @@ When asked to update the macro implementation plan, directly edit the document. 
 - Policy interfaces should be single-method when possible (see `AdmissionPolicy`, `RoutingPolicy`, `PriorityPolicy`, `InstanceScheduler`).
 - Query methods must be pure — no side effects, no state mutation, no destructive reads. If a method needs to both query and clear state, provide separate `Get()` and `Consume()` methods.
 - Factory functions must validate their inputs. Follow the pattern: `IsValid*()` check + switch/case + panic on unknown. Never silently accept invalid configuration.
+- Interfaces must be defined by behavioral contract (allocate, query, release), not by one implementation's data model. If an interface method only makes sense for one backend, the interface is too specific — it must accommodate at least two implementations.
+- Individual methods should operate within a single module's responsibility. If a method spans scheduling, latency estimation, and metric collection, extract each concern into its module's interface.
+
+**Configuration design:**
+- Group configuration by module. A single config struct combining hardware identity, model parameters, simulation parameters, and policy choices creates shotgun surgery when adding parameters. Each module's config should be independently specifiable and validatable.
 
 **Canonical constructors:**
 - Every struct constructed in multiple places needs a canonical constructor (e.g., `NewRequestMetrics()`). Struct literals appear in exactly one place.
@@ -245,6 +250,14 @@ Each rule traces to a real bug we found and fixed. Enforced by PR workflow (self
 6. **No logrus.Fatalf in library code**: The `sim/` package tree must never terminate the process — return errors so callers can handle them. This enables embedding, testing, and adapters.
 
 7. **Invariant tests alongside golden tests**: Golden tests (comparing against known-good output) are regression freezes, not correctness checks. If a bug exists when the golden values are captured, the golden test perpetuates the bug. Every subsystem that has golden tests must also have invariant tests that verify conservation laws, causality, and determinism.
+
+8. **No exported mutable maps**: Validation lookup maps (e.g., `validRoutingPolicies`) must be unexported. Expose through `IsValid*()` accessor functions. Exported maps allow callers to mutate global state, breaking encapsulation and enabling hard-to-trace bugs.
+
+9. **Pointer types for YAML zero-value ambiguity**: YAML config structs must use `*float64` (pointer) for fields where zero is a valid user-provided value, to distinguish "not set" (nil) from "set to zero" (0.0). Using bare `float64` causes silent misconfiguration when users intentionally set a value to zero.
+
+10. **Strict YAML parsing**: Use `yaml.KnownFields(true)` or equivalent strict parsing for all YAML config loading. Typos in field names must cause parse errors, not silent acceptance of malformed config. A silently ignored typo produces default behavior that the user didn't intend.
+
+11. **Guard division in runtime computation**: Any division where the denominator derives from runtime state (batch size, block count, request count, bandwidth) must guard against zero. CLI validation (rule 3) catches input zeros at the boundary; this rule catches intermediate zeros that arise during simulation (e.g., `utilization = usedBlocks / totalBlocks` when no blocks are configured, `avgLatency = sum / count` when count is zero). Use explicit guards or documented invariants proving the denominator is non-zero.
 
 ### Current Implementation Focus
 

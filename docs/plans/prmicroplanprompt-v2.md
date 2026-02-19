@@ -539,6 +539,23 @@ Before implementation, verify:
       or os.Exit — errors must be returned to callers.
 - [ ] Any loop that allocates resources (blocks, slots, counters) handles mid-loop
       failure by rolling back all mutations from previous iterations.
+- [ ] No exported mutable maps — validation lookup maps are unexported with
+      IsValid*() accessors.
+- [ ] YAML config structs use *float64 (pointer) for fields where zero is a valid
+      user-provided value.
+- [ ] YAML loading uses strict parsing (yaml.KnownFields(true) or equivalent) —
+      typos in field names cause errors, not silent acceptance.
+- [ ] Every division operation where the denominator derives from runtime state
+      has a zero-denominator guard or a documented invariant proving it non-zero.
+- [ ] New interfaces accommodate at least two implementations (even if only one
+      exists today) — no methods that only make sense for one backend.
+- [ ] No method spans multiple module responsibilities (scheduling + latency +
+      metrics in one function). Extract each concern into its module's interface.
+- [ ] Configuration parameters grouped by module — not added to a monolithic
+      config struct mixing unrelated concerns.
+- [ ] Grepped for references to this PR number (planned for PR, TODO.*PR) in the
+      codebase — resolved all stale references.
+- [ ] If this PR is part of a macro plan, the macro plan status is updated.
 
 ======================================================================
 APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS
