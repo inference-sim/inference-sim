@@ -16,6 +16,14 @@ spec:
       nodeSelector:
         ${NODE_SELECTOR_KEY}: "${NODE_SELECTOR_VALUE}"
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - pokprod-b93r44s3  # Exclude node with kubelet issues
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
