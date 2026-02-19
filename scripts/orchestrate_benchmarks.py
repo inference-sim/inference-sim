@@ -204,6 +204,7 @@ def main():
     parser.add_argument("--gpu", type=str, default="H100", help="GPU type (default: H100)")
     parser.add_argument("--dry-run", action="store_true", help="Generate YAMLs but don't submit")
     parser.add_argument("--skip-gemm", action="store_true", help="Skip GEMM benchmark")
+    parser.add_argument("--keep-yamls", action="store_true", help="Keep generated YAMLs after submission (default: auto-delete)")
 
     args = parser.parse_args()
 
@@ -222,6 +223,7 @@ def main():
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     all_jobs = []
+    all_yamls = []  # Track generated YAMLs for cleanup
 
     # Wave 0: GEMM (background)
     if not args.skip_gemm:
@@ -230,6 +232,7 @@ def main():
         print("="*60)
 
         yaml_path, job_name = generate_job_yaml(args.gpu, phase="gemm", timestamp=timestamp)
+        all_yamls.append(yaml_path)
         print(f"Generated: {yaml_path}")
         print(f"Job name: {job_name}")
 
@@ -275,6 +278,7 @@ def main():
                 tp=tp,
                 timestamp=timestamp
             )
+            all_yamls.append(yaml_path)
 
             phase_label = f"{phase}" + (f"-TP{tp}" if tp else "")
             print(f"  [{phase_label:15s}] {yaml_path.name}")
@@ -331,13 +335,23 @@ def main():
 
     if args.dry_run:
         print("(dry-run mode: no jobs submitted)")
-        print(f"\nGenerated YAML files in: scripts/openshift/")
+        print(f"\nGenerated {len(all_yamls)} YAML files in: scripts/openshift/")
         print("To submit: oc apply -f scripts/openshift/job-*.yaml -n diya")
     else:
         print(f"Total jobs submitted: {len(all_jobs) + (1 if gemm_job else 0)}")
         print(f"\nNext steps:")
         print("1. python scripts/collect_results.py")
         print("2. python scripts/validate_benchmark_data.py --gpu H100")
+
+        # Auto-cleanup generated YAMLs unless --keep-yamls
+        if not args.keep_yamls and all_yamls:
+            print(f"\nCleaning up {len(all_yamls)} generated YAMLs...")
+            for yaml_path in all_yamls:
+                try:
+                    yaml_path.unlink()
+                except FileNotFoundError:
+                    pass  # Already deleted, skip
+            print("✓ YAMLs cleaned up (use --keep-yamls to preserve)")
 
 
 if __name__ == "__main__":
