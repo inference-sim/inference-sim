@@ -93,29 +93,20 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 	}
 }
 
-// WeightedScoring routes requests using a weighted combination of cache availability and load balance.
+// WeightedScoring routes requests using a composable scorer pipeline.
 //
-// Two scoring dimensions:
-//   - Cache: FreeKVBlocks / maxFreeKVBlocks — measures memory availability
-//   - Load:  1 / (1 + effectiveLoad) — measures load balance without max-normalization
+// Each scorer evaluates all instances on a [0,1] scale. Scores are combined
+// with configurable weights: composite = Σ clamp(s_i) × w_i, then argmax.
 //
-// Where effectiveLoad = QueueDepth + BatchSize + PendingRequests.
-//
-// PendingRequests counts requests routed to an instance but not yet in its queue (#170).
-// This gives routing visibility into its own recent decisions, breaking the symmetric
-// equilibrium that otherwise makes weight changes unobservable (#169).
-// Load increases immediately (via PendingRequests) while FreeKVBlocks stays unchanged
-// (no KV blocks allocated yet for pending requests), creating signal disagreement
-// where weight changes produce different routing decisions.
-//
-// The load dimension uses 1/(1+load) instead of max-normalization to preserve
-// absolute differences between instances. Max-normalization collapses small
-// differences, making weights ineffective in balanced clusters.
+// Available scorers: queue-depth (min-max normalization of EffectiveLoad),
+// kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)).
+// See sim/routing_scorers.go for implementations.
 //
 // Higher scores are preferred. Ties broken by first occurrence in snapshot order.
 type WeightedScoring struct {
-	cacheWeight float64
-	loadWeight  float64
+	scorers []scorerFunc
+	weights []float64 // normalized to sum to 1.0
+	names   []string  // for debugging/logging
 }
 
 // Route implements RoutingPolicy for WeightedScoring.
@@ -125,36 +116,30 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		panic("WeightedScoring.Route: empty snapshots")
 	}
 
-	// Find max FreeKVBlocks for cache normalization
-	maxFreeKV := int64(0)
-	for _, snap := range snapshots {
-		if snap.FreeKVBlocks > maxFreeKV {
-			maxFreeKV = snap.FreeKVBlocks
+	// Compute composite scores from all scorers
+	scores := make(map[string]float64, len(snapshots))
+	for i, scorer := range ws.scorers {
+		dimScores := scorer(snapshots)
+		for _, snap := range snapshots {
+			s := dimScores[snap.ID]
+			// Clamp to [0,1] per INV-1
+			if s < 0 {
+				s = 0
+			}
+			if s > 1 {
+				s = 1
+			}
+			scores[snap.ID] += s * ws.weights[i]
 		}
 	}
 
-	// Compute scores using independent signals
-	scores := make(map[string]float64, len(snapshots))
+	// Argmax: select instance with highest composite score.
+	// Ties broken by first occurrence in snapshot order (strict >).
 	bestScore := -1.0
 	bestIdx := 0
-
 	for i, snap := range snapshots {
-		// Cache dimension: FreeKVBlocks normalized by cluster max
-		cacheScore := 0.0
-		if maxFreeKV > 0 {
-			cacheScore = float64(snap.FreeKVBlocks) / float64(maxFreeKV)
-		}
-
-		// Load dimension: inverse of effective load (no max-normalization)
-		effectiveLoad := snap.EffectiveLoad()
-		loadScore := 1.0 / (1.0 + float64(effectiveLoad))
-
-		score := cacheScore*ws.cacheWeight + loadScore*ws.loadWeight
-		scores[snap.ID] = score
-
-		// Select argmax; first occurrence wins on tie (strict >)
-		if score > bestScore {
-			bestScore = score
+		if scores[snap.ID] > bestScore {
+			bestScore = scores[snap.ID]
 			bestIdx = i
 		}
 	}
@@ -242,9 +227,11 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 // NewRoutingPolicy creates a routing policy by name.
 // Valid names are defined in validRoutingPolicies (bundle.go).
 // Empty string defaults to round-robin.
-// For weighted scoring, cacheWeight and loadWeight configure the composite score.
+// For weighted scoring, scorerConfigs configures the scorer pipeline.
+// If scorerConfigs is nil/empty for "weighted", DefaultScorerConfigs() is used.
+// Non-weighted policies ignore scorerConfigs.
 // Panics on unrecognized names.
-func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolicy {
+func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
@@ -254,16 +241,17 @@ func NewRoutingPolicy(name string, cacheWeight, loadWeight float64) RoutingPolic
 	case "least-loaded":
 		return &LeastLoaded{}
 	case "weighted":
-		// Normalize weights so they sum to 1.0 (preserves ratio).
-		// This ensures (0.6, 0.2) behaves identically to (0.75, 0.25).
-		// Panics on non-positive sum (CLI validates before reaching here).
-		sum := cacheWeight + loadWeight
-		if sum <= 0 {
-			panic(fmt.Sprintf("WeightedScoring requires positive weight sum, got cacheWeight=%f + loadWeight=%f = %f", cacheWeight, loadWeight, sum))
+		if len(scorerConfigs) == 0 {
+			scorerConfigs = DefaultScorerConfigs()
 		}
-		cacheWeight = cacheWeight / sum
-		loadWeight = loadWeight / sum
-		return &WeightedScoring{cacheWeight: cacheWeight, loadWeight: loadWeight}
+		scorers := make([]scorerFunc, len(scorerConfigs))
+		names := make([]string, len(scorerConfigs))
+		for i, cfg := range scorerConfigs {
+			scorers[i] = newScorer(cfg.Name)
+			names[i] = cfg.Name
+		}
+		weights := normalizeScorerWeights(scorerConfigs)
+		return &WeightedScoring{scorers: scorers, weights: weights, names: names}
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string)}
 	case "always-busiest":
