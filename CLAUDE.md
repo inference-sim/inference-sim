@@ -277,7 +277,7 @@ To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
 5. **Aggregate metrics** — combine hit/miss/thrashing counters from all tiers; see `TieredKVCache.CacheHitRate()` for the 2-tier pattern
 6. **Add behavioral tests** in `sim/kvcache_*_test.go`
 7. **Preserve rollback semantics** — `KVCacheState.AllocateKVBlocks` is transactional: on mid-loop failure, `rollbackAllocation()` undoes all mutations (UsedBlockCnt, CacheMisses, RefCount, InUse, free list, HashToBlock, RequestMap). If your tier adds mutations beyond what delegation to `gpu.AllocateKVBlocks()` handles, you must roll those back too. See `cachedBlockMutation` and `newBlockMutation` types in `sim/kvcache.go`.
-8. **Avoid calling `GetCachedBlocks` multiple times** — it increments `CacheHits` as a side effect (not a pure query). `TieredKVCache.AllocateKVBlocks` calls it twice on reload; this inflates CacheHits and is tracked as a known issue (design doc Phase 3, 3c).
+8. **`GetCachedBlocks` is a pure query** — it returns cached block IDs without side effects. `CacheHits` are counted by `AllocateKVBlocks` when cached blocks are committed to an allocation (and rolled back on failure). This was fixed in the Phase 3 hardening PR; the previous implementation incremented CacheHits in GetCachedBlocks, causing double-counting in tiered mode.
 
 Examples:
 - See `TieredKVCache` in `sim/kvcache_tiered.go` for 2-tier GPU+CPU composition
