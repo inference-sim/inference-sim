@@ -227,7 +227,10 @@ When running `orchestrate_benchmarks.py --gpu H100`:
 4. **GEMM Collection** - Wait for GEMM to finish, collect from PVC, verify, delete job
 5. **Summary** - Report total jobs, ready for validation
 
-**Timeline:** ~15-30 minutes for all waves (depends on GPU availability and queue time)
+**Timeline:**
+- Attention waves (1-6): ~15-30 minutes total (2-5 min per wave)
+- GEMM job: ~30-45 minutes (15 min build + 15-30 min benchmarking)
+- **Total:** ~45-75 minutes (depends on GPU availability and queue time)
 
 **Data Safety:** Results are copied locally and verified after each wave. If collection fails, orchestration stops immediately.
 
