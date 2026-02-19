@@ -197,6 +197,16 @@ func (c *ClusterSimulator) Run() {
 		inst.Finalize()
 	}
 	c.aggregatedMetrics = c.aggregateMetrics()
+
+	// Post-simulation diagnostic warnings (BC-2, BC-3)
+	if c.aggregatedMetrics.CompletedRequests == 0 {
+		if c.rejectedRequests > 0 {
+			logrus.Warnf("[cluster] all %d requests rejected by admission policy %q — no requests completed",
+				c.rejectedRequests, c.config.AdmissionPolicy)
+		} else {
+			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
+		}
+	}
 }
 
 // nextSeqID returns the next monotonically increasing sequence ID for event ordering.
