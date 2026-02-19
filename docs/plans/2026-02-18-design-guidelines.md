@@ -128,7 +128,7 @@ Not all design docs serve the same purpose. Choose the right species based on sc
 
 | Species | When to Use | Structure | Example |
 |---|---|---|---|
-| **Decision Record** | Single-PR architectural choices that need trade-off analysis | Numbered decisions, each with Problem / Decision / Rationale / Alternatives | PR12 pre-design (6 decisions) |
+| **Decision Record** | Single-PR architectural choices that need trade-off analysis | Numbered decisions, each with Problem / Decision / Rationale / Alternatives | PR12 pre-design (9 decisions) |
 | **Specification** | New subsystem with precise behavioral requirements | Behavioral contracts, math/formulas, input/output schemas, validation criteria | Workload generator design |
 | **Problem Analysis** | Refactoring motivated by identified friction or bugs | Extension scenario analysis, antipattern catalog with evidence, phased fix plan | Hardening design |
 | **System Overview** | Multi-PR feature spanning multiple modules | Concept model, module interactions, invariants, phased roadmap | Evolutionary policy optimization design |
@@ -372,7 +372,7 @@ This is the extension type that requires refactoring first. Examples: SGLang lat
 **Two-phase approach:**
 
 **Phase A — Extract interface (refactoring PR):**
-- Identify the hardcoded logic (e.g., `Step()` calling `getStepTimeBB()` directly)
+- Identify the hardcoded logic (e.g., `Step()` calling the blackbox latency estimator directly)
 - Define an interface that captures the behavioral contract of the existing implementation
 - Extract the existing implementation behind the new interface
 - Verify: all existing tests pass, no behavior change, the factory returns the existing implementation by default
@@ -432,8 +432,8 @@ Every anti-pattern in this section traces to a real bug, a real friction point, 
 |---|---|---|
 | **The Type Catalog** | The original design doc contained ~600 lines of Go struct definitions. Within 2 PRs, `RouterState` went from a 5-section struct to `Snapshots + Clock`. `InstanceScheduler` went from 3 methods to 1. The macro plan called these "aspirational signatures that diverged during implementation." | Describe module boundaries behaviorally, not as Go types. Types change; contracts persist. |
 | **Fidelity for Its Own Sake** | The original design doc specified `ShadowKVModel` with `PrefixHashes`, `EstimatedUtilization`, `EvictionQueue` — none of which were needed for the analysis questions BLIS answers today. | Apply Banks et al.'s six model scoping criteria. If you can't name the analysis question a component answers, defer it. |
-| **Silent Staleness** | The design doc's `RoutingDecision` struct had 8 fields. The implemented version has 3. No mechanism flagged the divergence. Meanwhile, micro-plan deviation logs caught discrepancies with the macro plan because there was an explicit comparison step. | Higher-level docs need an explicit freshness mechanism. Design docs should version their decisions and mark which are implemented. |
-| **Missing Trade-off Rationale** | Several design doc decisions had no alternatives listed. When implementation revealed a better approach, there was no record of why the original choice was made. | Every non-obvious decision must list alternatives considered and why they were rejected. This is what makes the PR12 pre-design valuable — each of its 6 decisions has explicit rationale. |
+| **Silent Staleness** | The design doc's `RoutingDecision` struct had 8 fields. The implemented version has 4. No mechanism flagged the divergence. Meanwhile, micro-plan deviation logs caught discrepancies with the macro plan because there was an explicit comparison step. | Higher-level docs need an explicit freshness mechanism. Design docs should version their decisions and mark which are implemented (e.g., a Decision Status column: Proposed / Implemented / Superseded). |
+| **Missing Trade-off Rationale** | Several design doc decisions had no alternatives listed. When implementation revealed a better approach, there was no record of why the original choice was made. | Every non-obvious decision must list alternatives considered and why they were rejected. This is what makes the PR12 pre-design valuable — each of its 9 decisions has explicit rationale. |
 
 ### 6.2 Module Architecture Anti-Patterns
 
@@ -468,5 +468,5 @@ If a design doc follows this principle, its content stays durable, its modules s
 1. Banks, J., Carson, J. S., Nelson, B. L., & Nicol, D. M. *Discrete-Event System Simulation* (5th ed.). Pearson. — Foundational text on DES methodology, model scoping, input modeling, output analysis, V&V.
 2. Misra, J. "Distributed Discrete-Event Simulation." *Computing Surveys*, Vol. 18, No. 1, March 1986. — Formal correctness proofs for DES, causal ordering, simulation as formal property.
 3. BLIS Issue #183 — Golden dataset encoded a silently-dropped request. Conservation invariant test would have caught it on day one.
-4. BLIS PR12 Pre-Design (`docs/plans/pr12-architectural-predesign.md`) — Gold standard for decision records: 6 decisions, each with trade-off analysis.
+4. BLIS PR12 Pre-Design (`docs/plans/pr12-architectural-predesign.md`) — Gold standard for decision records: 9 decisions, each with trade-off analysis.
 5. BLIS Hardening Design (`docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md`) — Extension scenario analysis identifying friction points for autoscaling, LMCache, heterogeneous HW, new engines.

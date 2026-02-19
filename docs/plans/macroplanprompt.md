@@ -136,11 +136,13 @@ Present as a table:
 
 | Component | Modeled | Simplified | Omitted | Justification |
 |-----------|---------|------------|---------|---------------|
+| (example) Scaling latency | -- | Fixed delay, not warmup curve | -- | Same steady-state throughput; warmup matters only for sub-minute scale-up |
+| (example) Network partitions | -- | -- | Yes | Not needed for routing policy comparison; add if modeling failure recovery |
 
 For each "Simplified" entry, state what real-system behavior is lost
-and under what conditions it would matter. This is the fidelity
-trade-off record — it prevents "fidelity for its own sake" and
-enables future refinement with clear upgrade paths.
+and under what conditions it would matter in the Justification column.
+This is the fidelity trade-off record — it prevents "fidelity for its
+own sake" and enables future refinement with clear upgrade paths.
 
 ======================================================================
 PHASE 2 — CONCEPT MODEL
@@ -258,7 +260,8 @@ ABSTRACTION LEVEL CHECK: This section describes the evolution
 BEHAVIORALLY. Do NOT include Go code here. Describe what each
 module will do and what contract it will satisfy, not how it will
 be implemented. Interface signatures appear only in the output
-sections (Section G) and only for already-frozen interfaces.
+sections (Section G, defined in the Output Format section below)
+and only for already-frozen interfaces.
 
 FIDELITY TRADE-OFFS: For each architectural simplification, state:
 - What real-system behavior is being approximated
@@ -323,8 +326,11 @@ For EACH PR, provide TWO TIERS:
 
 - Title
 - Building Block Change: Which concept model block is added/modified?
-- Extension Type: policy template | subsystem module | backend swap |
-  tier composition (from design guidelines Section 5.1)
+- Extension Type (from design guidelines Section 5.1):
+    - policy template: new algorithm behind existing interface
+    - subsystem module: new interface + new events
+    - backend swap: alternative implementation, requires interface extraction
+    - tier composition: decorator/wrapper over existing module
 - Motivation: Why does this PR exist? (1-2 sentences)
 - Scope: In / Out (bullet points)
 - Behavioral Guarantees: What MUST hold after this PR merges?
@@ -373,8 +379,9 @@ Provide:
 - Parallelizable workstreams.
 - Merge sequencing guidance.
 - Validation gate placement (from risk register).
-- Interface freeze points (from Phase 5.5) — mark which PRs unlock
-  parallel development of multiple implementations.
+- Interface freeze points (from Phase 5, item 5: Interface Freeze
+  Schedule) — mark which PRs unlock parallel development of multiple
+  implementations.
 - Integration risk notes.
 
 Maximize safe parallelism.
@@ -393,11 +400,23 @@ Include:
 Common architectural failure modes and how this plan prevents them:
 
   General:
-  - Scaffolding creep (dead code introduced "for later")
-  - Documentation drift (CLAUDE.md diverges from reality)
-  - Test infrastructure duplication (helpers copied across packages)
-  - Golden dataset staleness (regression baselines not updated)
-  - Interface over-specification (freezing APIs too early)
+  - Scaffolding creep (dead code introduced "for later").
+    Prevention: every struct field, method, and flag must be exercised
+    by the end of the PR that introduces it.
+  - Documentation drift (CLAUDE.md diverges from reality).
+    Prevention: the PR that causes the change updates CLAUDE.md in the
+    same commit. No deferred documentation.
+  - Test infrastructure duplication (helpers copied across packages).
+    Prevention: shared test packages created in an early PR, consumed
+    by all subsequent PRs (specified in Phase 5, item 1).
+  - Golden dataset staleness (regression baselines not updated).
+    Prevention: every PR that changes output format includes a golden
+    dataset regeneration step with a verification command.
+  - Interface over-specification (freezing APIs too early).
+    Prevention: interfaces are frozen only after at least one
+    non-default implementation is designed (even if not yet built).
+    The freeze PR must demonstrate the interface accommodates two
+    implementations.
 
   DES-specific (from design guidelines Section 6):
   - The Type Catalog trap: macro plan includes Go struct definitions
@@ -443,9 +462,11 @@ D) Concept Model (under 80 lines — building blocks with module
 E) Architectural Risk Register
 F) Architectural Evolution (current -> target, mapped to concept model,
    described BEHAVIORALLY — no Go code)
-G) Frozen Interface Reference (ONLY for already-frozen interfaces —
-   Go signatures with per-PR annotations. Omit if no interfaces are
-   frozen yet.)
+G) Frozen Interface Reference (ONLY for interfaces whose freeze PR
+   has already merged — Go signatures with per-PR annotations.
+   Include both interfaces frozen BY this plan's PRs and pre-existing
+   frozen interfaces that this plan depends on. Omit entirely if no
+   interfaces are frozen yet.)
 H) Cross-Cutting Infrastructure Plan
 I) PR Plan (PR0...PRN, Tier 1 + Tier 2 per PR)
 J) Dependency DAG
