@@ -313,16 +313,35 @@ def main():
             print(f"✓ Wave {wave_idx}/6: All 4 jobs succeeded")
 
         # Collect results from completed wave (free up GPU resources)
-        print(f"Collecting results from wave {wave_idx}...")
+        print(f"\nCollecting results from wave {wave_idx}...")
         collect_result = subprocess.run(
             [sys.executable, "scripts/collect_results.py"],
             capture_output=True,
             text=True
         )
-        if collect_result.returncode == 0:
-            print(f"✓ Results collected for wave {wave_idx}")
-        else:
-            print(f"⚠ Failed to collect results: {collect_result.stderr}")
+        if collect_result.returncode != 0:
+            print(f"✗ Collection failed: {collect_result.stderr}")
+            sys.exit(1)
+
+        # Verify expected files exist locally
+        gpu_lower = args.gpu.lower()
+        expected_files = [
+            Path(f"bench_data/mha/prefill/{gpu_lower}/{shape_str}.csv"),
+            Path(f"bench_data/mha/decode/{gpu_lower}/{shape_str}-tp1.csv"),
+            Path(f"bench_data/mha/decode/{gpu_lower}/{shape_str}-tp2.csv"),
+            Path(f"bench_data/mha/decode/{gpu_lower}/{shape_str}-tp4.csv"),
+        ]
+
+        missing = [f for f in expected_files if not f.exists()]
+        if missing:
+            print(f"✗ Missing expected files after collection:")
+            for f in missing:
+                print(f"    {f}")
+            sys.exit(1)
+
+        print(f"✓ Results collected and verified for wave {wave_idx}")
+        print(f"  Saved: {shape_str} (prefill + decode TP=1/2/4)")
+        print(f"  Safe to proceed to next wave or cleanup")
 
     # Wait for GEMM if still running
     if gemm_job and not args.dry_run:
@@ -341,16 +360,25 @@ def main():
             print(f"✓ GEMM already finished: {status}")
 
         # Collect GEMM results
-        print("Collecting GEMM results...")
+        print("\nCollecting GEMM results...")
         collect_result = subprocess.run(
             [sys.executable, "scripts/collect_results.py"],
             capture_output=True,
             text=True
         )
-        if collect_result.returncode == 0:
-            print("✓ GEMM results collected")
-        else:
-            print(f"⚠ Failed to collect GEMM results: {collect_result.stderr}")
+        if collect_result.returncode != 0:
+            print(f"✗ Collection failed: {collect_result.stderr}")
+            sys.exit(1)
+
+        # Verify GEMM data file exists locally
+        gpu_lower = args.gpu.lower()
+        gemm_file = Path(f"bench_data/gemm/{gpu_lower}/data.csv")
+        if not gemm_file.exists():
+            print(f"✗ Missing GEMM data file: {gemm_file}")
+            sys.exit(1)
+
+        print(f"✓ GEMM results collected and verified")
+        print(f"  Saved: {gemm_file}")
 
     # Final summary
     print(f"\n{'='*60}")

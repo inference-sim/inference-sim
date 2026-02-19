@@ -11,6 +11,7 @@ Example: Mistral-7B and Mixtral-8x7B both use shape 32-8-128, so we benchmark on
 **Wave-Based Execution:**
 - Wave 0: GEMM job (runs in background throughout)
 - Waves 1-6: Each attention shape runs 4 parallel jobs (prefill + decode TP=1/2/4)
+- **Auto-collection:** Results copied locally and verified after each wave completes
 - Total: **25 jobs** (1 GEMM + 6 shapes × 4 phases)
 - Peak GPU usage: **5 GPUs** (1 GEMM + 4 per wave)
 
@@ -19,13 +20,10 @@ Example: Mistral-7B and Mixtral-8x7B both use shape 32-8-128, so we benchmark on
 ## Quick Start
 
 ```bash
-# 1. Run all 25 benchmark jobs
+# 1. Run all 25 benchmark jobs (auto-collects results after each wave)
 python scripts/orchestrate_benchmarks.py --gpu H100
 
-# 2. Collect results after completion
-python scripts/collect_results.py
-
-# 3. Validate collected data
+# 2. Validate all collected data
 python scripts/validate_benchmark_data.py --gpu H100
 ```
 
@@ -59,7 +57,10 @@ This will:
 - For each of 6 shapes:
   - Submit 4 jobs in parallel (prefill + decode TP=1/2/4)
   - Wait for wave to complete
+  - **Collect results locally** (frees GPU resources for next wave)
+  - **Verify files exist** before proceeding
 - Wait for GEMM to finish
+- **Collect GEMM results locally**
 - Auto-delete generated YAMLs (use `--keep-yamls` to preserve)
 - Report summary
 
