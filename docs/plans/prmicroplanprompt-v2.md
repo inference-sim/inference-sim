@@ -44,6 +44,13 @@ Every plan MUST start with this exact header format:
   - Design doc: "docs/plans/2026-02-18-hardening-design.md"
   - Feature request: "GitHub issue #42"]
 
+**Closes:** [Issue numbers this PR will close on merge, using GitHub closing keywords.
+  Omit if the source is a macro plan section with no linked issues.
+  Examples:
+  - "Fixes #183, fixes #189, fixes #195"
+  - "Closes #42"
+  - "N/A — source is macro plan, no linked issues"]
+
 **Behavioral Contracts:** See Part 1, Section B below
 
 ---

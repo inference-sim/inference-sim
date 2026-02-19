@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v2.7 - updated 2026-02-18)
+**Status:** Active (v2.8 - updated 2026-02-18)
 
 This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request.
 
@@ -638,6 +638,7 @@ Wait for user approval before proceeding to Step 4.75.
 
 **PR description includes:**
 - Summary from source document
+- GitHub closing keywords from the plan's `Closes:` field (e.g., `Fixes #183, fixes #189`) — these auto-close issues on merge
 - Behavioral contracts (GIVEN/WHEN/THEN)
 - Testing verification
 - Checklist of completed items
@@ -936,6 +937,7 @@ golangci-lint run ./path/to/modified/package/...
 **v2.5 (2026-02-16):** Three additions from `/insights` analysis of 212 sessions: (1) Step 4.75 (pre-commit self-audit) — deliberate critical thinking step with no agent, checking logic/design/determinism/consistency/docs/edge-cases. In PR9, this step found 3 real bugs (wrong reference scale, non-deterministic output, inconsistent comments) that 4 automated passes missed. (2) Headless mode documentation for review passes — workaround for context overflow during multi-agent consolidation, the #1 recurring friction point across 212 sessions. (3) Checkpointing tip for long sessions — prevents progress loss when hitting context limits mid-PR.
 **v2.6 (2026-02-18):** Two additions: (1) "Filing Pre-Existing Issues" subsection to Step 4.5 — file a GitHub issue immediately for pre-existing bugs found during review, do not fix in-PR. Based on #38 experience where #183 was discovered. (2) Antipattern prevention from hardening audit of 20+ issues — Step 4.75 expanded to 9 self-audit dimensions (added test epistemology, construction site uniqueness, error path completeness); Step 4.5 Pass 1 prompt expanded with 4 antipattern checks; Step 2.5 Pass 2 prompt expanded with 3 modularity checks. Companion change: `prmicroplanprompt-v2.md` updated with construction site audit (Phase 0), extension friction assessment (Phase 2), invariant test requirement (Phase 6), and 6 new sanity checklist items (Phase 8).
 **v2.7 (2026-02-18):** Generalized workflow from "macro plan only" to any source document (macro plan sections, design docs, GitHub issues, feature requests). Updated template references, review prompts, examples, and invocation patterns. Added Example B showing issue/design-doc workflow alongside macro plan workflow. The same rigor (behavioral contracts, TDD tasks, 5+4 review passes, self-audit) applies regardless of work source.
+**v2.8 (2026-02-18):** Auto-close issues on PR merge. Added `**Closes:**` field to micro plan header template (`prmicroplanprompt-v2.md`) that captures GitHub closing keywords (e.g., `Fixes #183, fixes #189`). Updated Step 5 PR description spec to propagate closing keywords into the PR body. GitHub auto-closes referenced issues when the PR merges — no manual cleanup needed.
 
 **Key improvements in v2.0:**
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/macroplan.md`)
