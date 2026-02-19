@@ -44,6 +44,8 @@ spec:
           value: "compute,utility"
         - name: PYTORCH_ALLOC_CONF
           value: "expandable_segments:True"
+        - name: PYTHONUNBUFFERED
+          value: "1"
         command:
         - /bin/bash
         - -c

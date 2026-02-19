@@ -194,9 +194,15 @@ def run_gemm_benchmark(gpu_type: str, gpu_specs: dict):
     gemm_tmp = Path("InferSim/gemm.csv")
     first_success = True  # Track first successful write, not first attempt
 
+    # Calculate total combinations for progress tracking
+    total_combinations = len(k_values) * len(n_values)
+    current_combo = 0
+
     for k in k_values:
         for n in n_values:
-            print(f"  GEMM: K={k}, N={n}")
+            current_combo += 1
+            print(f"\n[{current_combo}/{total_combinations}] GEMM: K={k}, N={n}")
+            sys.stdout.flush()
 
             cmd = [
                 sys.executable,
@@ -206,11 +212,16 @@ def run_gemm_benchmark(gpu_type: str, gpu_specs: dict):
                 "--gpu-tflops", str(peak_tflops),
             ]
 
-            result = subprocess.run(cmd, cwd="InferSim", capture_output=True, text=True)
+            # Don't capture output so progress logs stream through
+            result = subprocess.run(cmd, cwd="InferSim")
 
             if result.returncode != 0:
-                print(f"  ✗ GEMM K={k} N={n} failed: {result.stderr}")
+                print(f"  ✗ GEMM K={k} N={n} failed")
+                sys.stdout.flush()
                 continue
+
+            print(f"  ✓ GEMM K={k} N={n} complete")
+            sys.stdout.flush()
 
             # Append to output file
             if gemm_tmp.exists():
