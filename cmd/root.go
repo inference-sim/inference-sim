@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -430,8 +431,8 @@ var runCmd = &cobra.Command{
 			if fitErr != nil {
 				logrus.Fatalf("Fitness evaluation failed: %v", fitErr)
 			}
-			logrus.Infof("=== Fitness Evaluation ===")
-			logrus.Infof("Score: %.6f", fitness.Score)
+			fmt.Println("=== Fitness Evaluation ===")
+			fmt.Printf("Score: %.6f\n", fitness.Score)
 			// Sort keys for deterministic output order
 			componentKeys := make([]string, 0, len(fitness.Components))
 			for k := range fitness.Components {
@@ -439,39 +440,39 @@ var runCmd = &cobra.Command{
 			}
 			sort.Strings(componentKeys)
 			for _, k := range componentKeys {
-				logrus.Infof("  %s: %.6f", k, fitness.Components[k])
+				fmt.Printf("  %s: %.6f\n", k, fitness.Components[k])
 			}
 		}
 
 		// Print anomaly counters if any detected
 		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 {
-			logrus.Infof("=== Anomaly Counters ===")
-			logrus.Infof("Priority Inversions: %d", rawMetrics.PriorityInversions)
-			logrus.Infof("HOL Blocking Events: %d", rawMetrics.HOLBlockingEvents)
-			logrus.Infof("Rejected Requests: %d", rawMetrics.RejectedRequests)
+			fmt.Println("=== Anomaly Counters ===")
+			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
+			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
+			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
 		}
 
 		// Build and print trace summary if requested (BC-9)
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())
-			logrus.Infof("=== Trace Summary ===")
-			logrus.Infof("Total Decisions: %d", traceSummary.TotalDecisions)
-			logrus.Infof("  Admitted: %d", traceSummary.AdmittedCount)
-			logrus.Infof("  Rejected: %d", traceSummary.RejectedCount)
-			logrus.Infof("Unique Targets: %d", traceSummary.UniqueTargets)
+			fmt.Println("=== Trace Summary ===")
+			fmt.Printf("Total Decisions: %d\n", traceSummary.TotalDecisions)
+			fmt.Printf("  Admitted: %d\n", traceSummary.AdmittedCount)
+			fmt.Printf("  Rejected: %d\n", traceSummary.RejectedCount)
+			fmt.Printf("Unique Targets: %d\n", traceSummary.UniqueTargets)
 			if len(traceSummary.TargetDistribution) > 0 {
-				logrus.Infof("Target Distribution:")
+				fmt.Println("Target Distribution:")
 				targetKeys := make([]string, 0, len(traceSummary.TargetDistribution))
 				for k := range traceSummary.TargetDistribution {
 					targetKeys = append(targetKeys, k)
 				}
 				sort.Strings(targetKeys)
 				for _, k := range targetKeys {
-					logrus.Infof("  %s: %d", k, traceSummary.TargetDistribution[k])
+					fmt.Printf("  %s: %d\n", k, traceSummary.TargetDistribution[k])
 				}
 			}
-			logrus.Infof("Mean Regret: %.6f", traceSummary.MeanRegret)
-			logrus.Infof("Max Regret: %.6f", traceSummary.MaxRegret)
+			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
+			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
 		}
 
 		logrus.Info("Simulation complete.")
@@ -490,7 +491,7 @@ func init() {
 
 	runCmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
 	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
-	runCmd.Flags().StringVar(&logLevel, "log", "warn", "Log level (trace, debug, info, warn, error, fatal, panic)")
+	runCmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
 	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
 	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
 	runCmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")

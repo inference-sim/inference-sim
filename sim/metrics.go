@@ -4,6 +4,7 @@ package sim
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"slices"
 	"sort"
@@ -116,14 +117,14 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
 		output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
 
-		// Print to Stdout
-		logrus.Info("=== Simulation Metrics ===")
+		// Print to stdout (results are primary output, not log messages)
+		fmt.Println("=== Simulation Metrics ===")
 		data, err := json.MarshalIndent(output, "", "  ")
 		if err != nil {
 			logrus.Errorf("Error marshalling metrics: %v", err)
 			return
 		}
-		logrus.Info(string(data))
+		fmt.Println(string(data))
 	}
 
 	// --- Write to JSON File ---
