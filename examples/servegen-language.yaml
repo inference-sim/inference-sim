@@ -2,6 +2,7 @@ version: "1"
 seed: 42
 category: language
 aggregate_rate: 100.0  # 100 requests/second total
+num_requests: 500      # Generate at most 500 requests
 
 clients:
   - id: "high-volume-batch"

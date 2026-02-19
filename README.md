@@ -104,7 +104,7 @@ Define custom workload distribution to sample input/output lengths from:
   --model meta-llama/llama-3.1-8b-instruct \
   --workload distribution \
   --rate 10 \
-  --max-prompts 300 \
+  --num-requests 300 \
   --prompt-tokens 800 \
   --prompt-tokens-stdev 300 \
   --output-tokens 400 \
@@ -177,7 +177,7 @@ Available routing policies:
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-cache-weight 0.9 --routing-load-weight 0.1 \
-  --max-prompts 500 --rate 1000 \
+  --num-requests 500 --rate 1000 \
   --trace-level decisions --summarize-trace
 
 # Load-dominant: spreads requests evenly across instances
@@ -185,7 +185,7 @@ Available routing policies:
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-cache-weight 0.1 --routing-load-weight 0.9 \
-  --max-prompts 500 --rate 1000 \
+  --num-requests 500 --rate 1000 \
   --trace-level decisions --summarize-trace
 ```
 
@@ -613,7 +613,7 @@ inference-sim/
 | `--workload-spec` | (none) | YAML workload spec file (overrides `--workload`). See `examples/servegen-language.yaml` |
 | `--workload-traces-filepath` | (none) | CSV trace file (required when `--workload traces`) |
 | `--rate` | 1.0 | Requests per second (for distribution workloads) |
-| `--max-prompts` | 100 | Number of requests to generate |
+| `--num-requests` | 100 | Number of requests to generate |
 | `--prompt-tokens` | 512 | Mean input token count |
 | `--prompt-tokens-stdev` | 256 | Input token count standard deviation |
 | `--prefix-tokens` | 0 | Shared prefix token count |
