@@ -208,8 +208,19 @@ var runCmd = &cobra.Command{
 			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
 				simulationHorizon = spec.Horizon
 			}
-			// Temporary: pass 0 (unlimited) — proper wiring in Task 4
-			reqs, err := workload.GenerateRequests(spec, simulationHorizon, 0)
+
+			// Resolve maxRequests: spec.NumRequests as default, CLI --num-requests overrides
+			maxRequests := spec.NumRequests
+			if cmd.Flags().Changed("num-requests") {
+				maxRequests = int64(numRequests)
+			}
+
+			// BC-7: Guard against unbounded generation
+			if maxRequests <= 0 && simulationHorizon == math.MaxInt64 {
+				logrus.Fatalf("--workload-spec requires either num_requests (in YAML or --num-requests) or --horizon to bound generation")
+			}
+
+			reqs, err := workload.GenerateRequests(spec, simulationHorizon, maxRequests)
 			if err != nil {
 				logrus.Fatalf("Failed to generate workload: %v", err)
 			}
