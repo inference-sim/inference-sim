@@ -1,16 +1,6 @@
 package cluster
 
-// InstanceSnapshot is an immutable value-type snapshot of an instance's state.
-// Taken at a point in time, subsequent instance state changes do not affect it.
-type InstanceSnapshot struct {
-	ID            InstanceID
-	Timestamp     int64
-	QueueDepth    int
-	BatchSize     int
-	KVUtilization float64
-	FreeKVBlocks  int64
-	CacheHitRate  float64
-}
+import "github.com/inference-sim/inference-sim/sim"
 
 // UpdateMode controls when a snapshot field is refreshed.
 type UpdateMode int
@@ -44,8 +34,9 @@ func DefaultObservabilityConfig() ObservabilityConfig {
 }
 
 // SnapshotProvider produces instance snapshots with configurable staleness.
+// Returns sim.RoutingSnapshot directly — no intermediate type translation needed.
 type SnapshotProvider interface {
-	Snapshot(id InstanceID, clock int64) InstanceSnapshot
+	Snapshot(id InstanceID, clock int64) sim.RoutingSnapshot
 	RefreshAll(clock int64)
 }
 
@@ -63,16 +54,16 @@ type fieldTimestamps struct {
 type CachedSnapshotProvider struct {
 	instances   map[InstanceID]*InstanceSimulator
 	config      ObservabilityConfig
-	cache       map[InstanceID]InstanceSnapshot
+	cache       map[InstanceID]sim.RoutingSnapshot
 	lastRefresh map[InstanceID]fieldTimestamps
 }
 
 // NewCachedSnapshotProvider creates a CachedSnapshotProvider from instances and config.
 func NewCachedSnapshotProvider(instances map[InstanceID]*InstanceSimulator, config ObservabilityConfig) *CachedSnapshotProvider {
-	cache := make(map[InstanceID]InstanceSnapshot, len(instances))
+	cache := make(map[InstanceID]sim.RoutingSnapshot, len(instances))
 	lastRefresh := make(map[InstanceID]fieldTimestamps, len(instances))
 	for id := range instances {
-		cache[id] = InstanceSnapshot{ID: id}
+		cache[id] = sim.RoutingSnapshot{ID: string(id)}
 		lastRefresh[id] = fieldTimestamps{}
 	}
 	return &CachedSnapshotProvider{
@@ -83,14 +74,15 @@ func NewCachedSnapshotProvider(instances map[InstanceID]*InstanceSimulator, conf
 	}
 }
 
-// Snapshot returns an InstanceSnapshot, refreshing fields based on their configured mode.
-func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) InstanceSnapshot {
+// Snapshot returns a RoutingSnapshot, refreshing fields based on their configured mode.
+// PendingRequests is NOT set here — it is injected by buildRouterState() which has
+// access to the cluster-level pending request tracking.
+func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.RoutingSnapshot {
 	inst := p.instances[id]
 	snap := p.cache[id]
 	lr := p.lastRefresh[id]
 
-	snap.ID = id
-	snap.Timestamp = clock
+	snap.ID = string(id)
 
 	if p.shouldRefresh(p.config.QueueDepth, lr.QueueDepth, clock) {
 		snap.QueueDepth = inst.QueueDepth()
@@ -115,9 +107,8 @@ func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) InstanceSn
 // RefreshAll refreshes all fields for all instances regardless of mode.
 func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 	for id, inst := range p.instances {
-		snap := InstanceSnapshot{
-			ID:            id,
-			Timestamp:     clock,
+		snap := sim.RoutingSnapshot{
+			ID:            string(id),
 			QueueDepth:    inst.QueueDepth(),
 			BatchSize:     inst.BatchSize(),
 			KVUtilization: inst.KVUtilization(),

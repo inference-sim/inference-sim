@@ -62,15 +62,8 @@ func buildRouterState(cs *ClusterSimulator) *sim.RouterState {
 	snapshots := make([]sim.RoutingSnapshot, len(cs.instances))
 	for i, inst := range cs.instances {
 		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
-		snapshots[i] = sim.RoutingSnapshot{
-			ID:              string(snap.ID),
-			QueueDepth:      snap.QueueDepth,
-			BatchSize:       snap.BatchSize,
-			KVUtilization:   snap.KVUtilization,
-			FreeKVBlocks:    snap.FreeKVBlocks,
-			CacheHitRate:    snap.CacheHitRate,
-			PendingRequests: cs.pendingRequests[string(snap.ID)],
-		}
+		snap.PendingRequests = cs.pendingRequests[string(inst.ID())]
+		snapshots[i] = snap
 	}
 	return &sim.RouterState{
 		Snapshots: snapshots,
