@@ -47,6 +47,7 @@ results/
 largesweep/
 *.zip
 *.yaml
+!*-template.yaml
 
 # uv files
 .python-version
