@@ -76,17 +76,20 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("InferSim/bench_data"),
-        help="Local output directory (default: InferSim/bench_data)"
+        default=Path("bench_data"),
+        help="Local output directory (default: bench_data)"
     )
 
     args = parser.parse_args()
+
+    # Create output directory if it doesn't exist
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
     print("="*60)
     print("Collecting Benchmark Results")
     print("="*60)
     print(f"Namespace: {args.namespace}")
-    print(f"Output: {args.output_dir}")
+    print(f"Output: {args.output_dir.absolute()}")
     print()
 
     # Find pods

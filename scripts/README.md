@@ -62,8 +62,10 @@ oc apply -f scripts/openshift/job-h100-32-8-128-decode-tp2-*.yaml -n diya
 
 ## Output Structure
 
+Results collected to `bench_data/` (at repo root):
+
 ```
-InferSim/bench_data/
+bench_data/
 ├── gemm/
 │   └── h100/
 │       └── data.csv             # GEMM MFU data

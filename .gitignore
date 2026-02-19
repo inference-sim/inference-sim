@@ -49,6 +49,7 @@ simulation_worker
 # results
 results/
 largesweep/
+bench_data/
 *.zip
 *.yaml
 !examples/*.yaml

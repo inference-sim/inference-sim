@@ -140,10 +140,12 @@ python scripts/orchestrate_benchmarks.py --gpu H100 --skip-gemm
 
 ## Output Structure
 
-Benchmarks write CSV files to the PVC:
+Jobs generate CSV files in pod-local storage (`/workspace/inference-sim/InferSim/bench_data/`).
+
+After running `collect_results.py`, files are copied to local `bench_data/`:
 
 ```
-/mnt/inference-sim/InferSim/bench_data/
+bench_data/
 ├── gemm/
 │   └── h100/
 │       └── data.csv                    # GEMM: ~168 rows (M×K×N sweep)
