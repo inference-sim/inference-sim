@@ -261,6 +261,15 @@ func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib) error {
 	if mc.NumHeads <= 0 {
 		problems = append(problems, fmt.Sprintf("ModelConfig.NumHeads must be > 0, got %d", mc.NumHeads))
 	}
+	if mc.NumLayers <= 0 {
+		problems = append(problems, fmt.Sprintf("ModelConfig.NumLayers must be > 0, got %d", mc.NumLayers))
+	}
+	if mc.HiddenDim <= 0 {
+		problems = append(problems, fmt.Sprintf("ModelConfig.HiddenDim must be > 0, got %d", mc.HiddenDim))
+	}
+	if invalidPositiveFloat(mc.BytesPerParam) {
+		problems = append(problems, fmt.Sprintf("ModelConfig.BytesPerParam must be a valid positive number, got %v", mc.BytesPerParam))
+	}
 	if invalidPositiveFloat(hc.TFlopsPeak) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.TFlopsPeak must be a valid positive number, got %v", hc.TFlopsPeak))
 	}

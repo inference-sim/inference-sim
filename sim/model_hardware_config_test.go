@@ -116,20 +116,33 @@ func TestGetModelConfig_ValidConfig(t *testing.T) {
 	}
 }
 
-func TestValidateRooflineConfig_ZeroNumHeads_ReturnsError(t *testing.T) {
-	// GIVEN a ModelConfig with NumHeads == 0
-	mc := ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096}
+func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
 	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
 
-	// WHEN ValidateRooflineConfig is called
-	err := ValidateRooflineConfig(mc, hc)
-
-	// THEN it returns an error mentioning NumHeads
-	if err == nil {
-		t.Fatal("expected error for zero NumHeads, got nil")
+	tests := []struct {
+		name  string
+		mc    ModelConfig
+		field string
+	}{
+		{"zero NumHeads", ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}, "NumHeads"},
+		{"zero NumLayers", ModelConfig{NumHeads: 32, NumLayers: 0, HiddenDim: 4096, BytesPerParam: 2}, "NumLayers"},
+		{"zero HiddenDim", ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 0, BytesPerParam: 2}, "HiddenDim"},
+		{"zero BytesPerParam", ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 0}, "BytesPerParam"},
 	}
-	if !strings.Contains(err.Error(), "NumHeads") {
-		t.Errorf("error should mention NumHeads, got: %v", err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// WHEN ValidateRooflineConfig is called
+			err := ValidateRooflineConfig(tt.mc, hc)
+
+			// THEN it returns an error mentioning the zero field
+			if err == nil {
+				t.Fatalf("expected error for %s, got nil", tt.field)
+			}
+			if !strings.Contains(err.Error(), tt.field) {
+				t.Errorf("error should mention %s, got: %v", tt.field, err)
+			}
+		})
 	}
 }
 
@@ -181,7 +194,7 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 
 func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	// GIVEN valid ModelConfig and HardwareCalib
-	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096}
+	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
 	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
 
 	// WHEN ValidateRooflineConfig is called

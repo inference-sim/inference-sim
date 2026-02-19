@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"sort"
 	"testing"
 )
 
@@ -31,5 +32,23 @@ func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
 	// Also verify the total is positive (sanity)
 	if firstTotal <= 0 {
 		t.Errorf("expected positive total, got %v", firstTotal)
+	}
+
+	// Verify component-sum conservation: total == sum of all non-"total" keys
+	// Sort keys for deterministic accumulation (antipattern #2)
+	result := calculateMemoryAccessBytes(config, 1024, 64, true)
+	keys := make([]string, 0, len(result))
+	for k := range result {
+		if k != "total" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	var componentSum float64
+	for _, k := range keys {
+		componentSum += result[k]
+	}
+	if result["total"] != componentSum {
+		t.Errorf("conservation violation: total=%v but sum of components=%v", result["total"], componentSum)
 	}
 }
