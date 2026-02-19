@@ -50,9 +50,10 @@ def copy_results_from_pod(pod_name: str, local_dir: Path, namespace: str = "diya
 
     # Copy data directory from pod-local storage (jobs clone to /workspace/inference-sim)
     result = subprocess.run([
-        "oc", "rsync", "-n", namespace,
+        "oc", "rsync",
         f"{pod_name}:/workspace/inference-sim/InferSim/bench_data/",
-        str(local_dir) + "/"
+        str(local_dir) + "/",
+        "-n", namespace
     ], capture_output=True, text=True)
 
     if result.returncode != 0:
