@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func float64Ptr(v float64) *float64 { return &v }
@@ -265,4 +267,35 @@ func writeTempYAML(t *testing.T, content string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestValidAdmissionPolicyNames_ReturnsAllNames(t *testing.T) {
+	// BC-7: Names derived from authoritative map
+	names := ValidAdmissionPolicyNames()
+	assert.Contains(t, names, "always-admit")
+	assert.Contains(t, names, "token-bucket")
+	assert.Contains(t, names, "reject-all")
+	assert.NotContains(t, names, "")
+}
+
+func TestValidRoutingPolicyNames_Sorted(t *testing.T) {
+	names := ValidRoutingPolicyNames()
+	for i := 1; i < len(names); i++ {
+		assert.True(t, names[i-1] < names[i], "names must be sorted: %q >= %q", names[i-1], names[i])
+	}
+}
+
+func TestValidPriorityPolicyNames_ReturnsAllNames(t *testing.T) {
+	names := ValidPriorityPolicyNames()
+	assert.Contains(t, names, "constant")
+	assert.Contains(t, names, "slo-based")
+	assert.Contains(t, names, "inverted-slo")
+}
+
+func TestValidSchedulerNames_ReturnsAllNames(t *testing.T) {
+	names := ValidSchedulerNames()
+	assert.Contains(t, names, "fcfs")
+	assert.Contains(t, names, "priority-fcfs")
+	assert.Contains(t, names, "sjf")
+	assert.Contains(t, names, "reverse-priority")
 }
