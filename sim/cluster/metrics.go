@@ -446,6 +446,9 @@ func ParseFitnessWeights(s string) (map[string]float64, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid fitness weight value for %q: %w", key, err)
 		}
+		if math.IsNaN(val) || math.IsInf(val, 0) || val < 0 {
+			return nil, fmt.Errorf("invalid weight for %q: must be a finite non-negative number, got %v", key, val)
+		}
 		weights[key] = val
 	}
 	return weights, nil

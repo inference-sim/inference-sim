@@ -83,6 +83,9 @@ type MetricsOutput struct {
 // return values are in milliseconds
 func CalculatePercentile[T IntOrFloat64](data []T, p float64) float64 {
 	n := len(data)
+	if n == 0 {
+		return 0
+	}
 
 	rank := p / 100.0 * float64(n-1)
 	lowerIdx := int(math.Floor(rank))

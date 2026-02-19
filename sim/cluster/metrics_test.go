@@ -273,6 +273,44 @@ func TestParseFitnessWeights_InvalidFormat(t *testing.T) {
 	}
 }
 
+// TestParseFitnessWeights_InvalidValues_ReturnsError verifies BC-1, BC-2, BC-3.
+func TestParseFitnessWeights_InvalidValues_ReturnsError(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"NaN value", "throughput:NaN"},
+		{"positive Inf", "throughput:Inf"},
+		{"negative Inf", "throughput:-Inf"},
+		{"explicit +Inf", "throughput:+Inf"},
+		{"negative weight", "throughput:-0.5"},
+		{"negative one", "p99_ttft:-1"},
+		{"NaN after valid", "throughput:0.5,p99_ttft:NaN"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseFitnessWeights(tt.input)
+			if err == nil {
+				t.Errorf("expected error for input %q, got nil", tt.input)
+			}
+		})
+	}
+}
+
+// TestParseFitnessWeights_ZeroWeight_Accepted verifies BC-4.
+func TestParseFitnessWeights_ZeroWeight_Accepted(t *testing.T) {
+	weights, err := ParseFitnessWeights("throughput:0,p99_ttft:0.3")
+	if err != nil {
+		t.Fatalf("zero weight should be accepted, got error: %v", err)
+	}
+	if weights["throughput"] != 0.0 {
+		t.Errorf("throughput: got %f, want 0.0", weights["throughput"])
+	}
+	if weights["p99_ttft"] != 0.3 {
+		t.Errorf("p99_ttft: got %f, want 0.3", weights["p99_ttft"])
+	}
+}
+
 // TestDetectPriorityInversions_InvertedRequests verifies BC-8.
 func TestDetectPriorityInversions_InvertedRequests(t *testing.T) {
 	m := sim.NewMetrics()
