@@ -202,6 +202,7 @@ func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 		TotalKVBlocks:   1000,
 		BlockSizeTokens: 16,
 		Horizon:         100000,
+		TP:              1,
 	}
 
 	// WHEN NewSimulator is called
@@ -213,6 +214,30 @@ func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "NumHeads") {
 		t.Errorf("error should mention NumHeads, got: %v", err)
+	}
+}
+
+func TestNewSimulator_RooflineZeroTP_ReturnsError(t *testing.T) {
+	// GIVEN a SimConfig with Roofline=true and TP=0
+	cfg := SimConfig{
+		Roofline:        true,
+		ModelConfig:     ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
+		HWConfig:        HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		TotalKVBlocks:   1000,
+		BlockSizeTokens: 16,
+		Horizon:         100000,
+		TP:              0,
+	}
+
+	// WHEN NewSimulator is called
+	_, err := NewSimulator(cfg)
+
+	// THEN it returns a non-nil error mentioning TP
+	if err == nil {
+		t.Fatal("expected error for roofline with zero TP, got nil")
+	}
+	if !strings.Contains(err.Error(), "TP") {
+		t.Errorf("error should mention TP, got: %v", err)
 	}
 }
 
