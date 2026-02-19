@@ -52,6 +52,10 @@ spec:
           echo "Starting InferSim ${GPU_TYPE} Benchmark Job"
           echo "=========================================="
 
+          # Install git first (needed for clone)
+          echo "Installing git..."
+          apt-get update -qq && apt-get install -y -qq git
+
           # Clone fresh code from GitHub to pod-local storage (not PVC)
           # This avoids race conditions when multiple pods run in parallel
           echo "Cloning inference-sim from GitHub (branch: roofline_valid)..."
@@ -69,9 +73,9 @@ spec:
           # Work from InferSim subdirectory
           cd InferSim
 
-          # Install system dependencies
+          # Install remaining system dependencies
           echo "Installing system dependencies..."
-          apt-get update -qq && apt-get install -y -qq libnuma1 git build-essential cmake
+          apt-get install -y -qq libnuma1 build-essential cmake
 
           # Install base dependencies
           echo "Installing base dependencies..."
