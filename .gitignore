@@ -54,6 +54,7 @@ largesweep/
 !examples/*.yaml
 !defaults.yaml
 !hypotheses/**/*.yaml
+!*-template.yaml
 
 # uv files
 .python-version
