@@ -1,5 +1,7 @@
 package sim
 
+import "fmt"
+
 // KVStore abstracts KV cache operations for the simulator.
 // KVCacheState (single-tier GPU) and TieredKVCache (GPU+CPU) both implement this.
 type KVStore interface {
@@ -18,6 +20,12 @@ type KVStore interface {
 // Returns *KVCacheState for single-tier (KVCPUBlocks <= 0, the default).
 // Returns *TieredKVCache for tiered mode (KVCPUBlocks > 0).
 func NewKVStore(cfg SimConfig) KVStore {
+	if cfg.TotalKVBlocks <= 0 {
+		panic(fmt.Sprintf("KVStore: TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
+	}
+	if cfg.BlockSizeTokens <= 0 {
+		panic(fmt.Sprintf("KVStore: BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
+	}
 	gpu := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	if cfg.KVCPUBlocks <= 0 {
 		return gpu
