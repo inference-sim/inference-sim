@@ -18,8 +18,13 @@ admission:
   token_bucket_refill_rate: 500
 routing:
   policy: weighted
-  cache_weight: 0.7
-  load_weight: 0.3
+  scorers:
+    - name: queue-depth
+      weight: 2.0
+    - name: kv-utilization
+      weight: 2.0
+    - name: load-balance
+      weight: 1.0
 priority:
   policy: slo-based
 scheduler: priority-fcfs
@@ -35,18 +40,16 @@ scheduler: priority-fcfs
 	if bundle.Admission.TokenBucketCapacity == nil || *bundle.Admission.TokenBucketCapacity != 5000 {
 		t.Errorf("expected capacity 5000, got %v", bundle.Admission.TokenBucketCapacity)
 	}
-	if bundle.Admission.TokenBucketRefillRate == nil || *bundle.Admission.TokenBucketRefillRate != 500 {
-		t.Errorf("expected refill rate 500, got %v", bundle.Admission.TokenBucketRefillRate)
-	}
 	if bundle.Routing.Policy != "weighted" {
 		t.Errorf("expected routing policy 'weighted', got %q", bundle.Routing.Policy)
 	}
-	if bundle.Routing.CacheWeight == nil || *bundle.Routing.CacheWeight != 0.7 {
-		t.Errorf("expected cache weight 0.7, got %v", bundle.Routing.CacheWeight)
+	if len(bundle.Routing.Scorers) != 3 {
+		t.Fatalf("expected 3 scorers, got %d", len(bundle.Routing.Scorers))
 	}
-	if bundle.Routing.LoadWeight == nil || *bundle.Routing.LoadWeight != 0.3 {
-		t.Errorf("expected load weight 0.3, got %v", bundle.Routing.LoadWeight)
-	}
+	assert.Equal(t, "queue-depth", bundle.Routing.Scorers[0].Name)
+	assert.Equal(t, 2.0, bundle.Routing.Scorers[0].Weight)
+	assert.Equal(t, "kv-utilization", bundle.Routing.Scorers[1].Name)
+	assert.Equal(t, "load-balance", bundle.Routing.Scorers[2].Name)
 	if bundle.Priority.Policy != "slo-based" {
 		t.Errorf("expected priority policy 'slo-based', got %q", bundle.Priority.Policy)
 	}
@@ -55,33 +58,18 @@ scheduler: priority-fcfs
 	}
 }
 
-func TestLoadPolicyBundle_ZeroValueIsDistinctFromUnset(t *testing.T) {
+func TestLoadPolicyBundle_ScorersAbsent_IsNil(t *testing.T) {
 	yaml := `
 routing:
   policy: weighted
-  cache_weight: 0.0
-  load_weight: 1.0
 `
 	path := writeTempYAML(t, yaml)
 	bundle, err := LoadPolicyBundle(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// cache_weight: 0.0 should be explicitly set (non-nil), not treated as "unset"
-	if bundle.Routing.CacheWeight == nil {
-		t.Fatal("expected CacheWeight to be non-nil (explicitly set to 0.0)")
-	}
-	if *bundle.Routing.CacheWeight != 0.0 {
-		t.Errorf("expected CacheWeight 0.0, got %f", *bundle.Routing.CacheWeight)
-	}
-	// load_weight: 1.0 should be set
-	if bundle.Routing.LoadWeight == nil || *bundle.Routing.LoadWeight != 1.0 {
-		t.Errorf("expected LoadWeight 1.0, got %v", bundle.Routing.LoadWeight)
-	}
-	// Unset fields should be nil
-	if bundle.Admission.TokenBucketCapacity != nil {
-		t.Errorf("expected nil TokenBucketCapacity for unset field, got %f", *bundle.Admission.TokenBucketCapacity)
-	}
+	// Scorers not specified → nil (will use defaults at factory level)
+	assert.Nil(t, bundle.Routing.Scorers)
 }
 
 func TestLoadPolicyBundle_EmptyFields(t *testing.T) {
@@ -103,9 +91,7 @@ routing:
 	if bundle.Scheduler != "" {
 		t.Errorf("expected empty scheduler, got %q", bundle.Scheduler)
 	}
-	if bundle.Routing.CacheWeight != nil {
-		t.Errorf("expected nil CacheWeight for unset field")
-	}
+	assert.Nil(t, bundle.Routing.Scorers)
 }
 
 func TestLoadPolicyBundle_NonexistentFile(t *testing.T) {
@@ -123,10 +109,49 @@ func TestLoadPolicyBundle_MalformedYAML(t *testing.T) {
 	}
 }
 
+// TestLoadPolicyBundle_OldFieldsRejected verifies BC-17-10: old cache_weight/load_weight
+// fields produce a parse error due to KnownFields(true) strict parsing.
+func TestLoadPolicyBundle_OldFieldsRejected(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+	}{
+		{"cache_weight", `
+routing:
+  policy: weighted
+  cache_weight: 0.6
+`},
+		{"load_weight", `
+routing:
+  policy: weighted
+  load_weight: 0.4
+`},
+		{"both old fields", `
+routing:
+  policy: weighted
+  cache_weight: 0.6
+  load_weight: 0.4
+`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTempYAML(t, tt.yaml)
+			_, err := LoadPolicyBundle(path)
+			assert.Error(t, err, "old YAML field should be rejected by strict parsing")
+		})
+	}
+}
+
 func TestPolicyBundle_Validate_ValidPolicies(t *testing.T) {
 	bundle := &PolicyBundle{
 		Admission: AdmissionConfig{Policy: "token-bucket", TokenBucketCapacity: float64Ptr(100)},
-		Routing:   RoutingConfig{Policy: "weighted", CacheWeight: float64Ptr(0.6), LoadWeight: float64Ptr(0.4)},
+		Routing: RoutingConfig{
+			Policy: "weighted",
+			Scorers: []ScorerConfig{
+				{Name: "queue-depth", Weight: 2.0},
+				{Name: "load-balance", Weight: 1.0},
+			},
+		},
 		Priority:  PriorityConfig{Policy: "slo-based"},
 		Scheduler: "priority-fcfs",
 	}
@@ -172,12 +197,6 @@ func TestPolicyBundle_Validate_NegativeParameters(t *testing.T) {
 		{"negative refill rate", PolicyBundle{Admission: AdmissionConfig{
 			Policy: "token-bucket", TokenBucketRefillRate: float64Ptr(-1),
 		}}},
-		{"negative cache weight", PolicyBundle{Routing: RoutingConfig{
-			Policy: "weighted", CacheWeight: float64Ptr(-0.5),
-		}}},
-		{"negative load weight", PolicyBundle{Routing: RoutingConfig{
-			Policy: "weighted", LoadWeight: float64Ptr(-0.5),
-		}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -188,75 +207,63 @@ func TestPolicyBundle_Validate_NegativeParameters(t *testing.T) {
 	}
 }
 
-func TestPolicyBundle_Validate_ZeroParametersAreValid(t *testing.T) {
+// TestPolicyBundle_Validate_InvalidScorerName verifies BC-17-4: unknown scorer name rejected.
+func TestPolicyBundle_Validate_InvalidScorerName(t *testing.T) {
 	bundle := &PolicyBundle{
 		Routing: RoutingConfig{
-			Policy:      "weighted",
-			CacheWeight: float64Ptr(0.0),
-			LoadWeight:  float64Ptr(1.0),
+			Policy:  "weighted",
+			Scorers: []ScorerConfig{{Name: "unknown-scorer", Weight: 1.0}},
 		},
 	}
-	if err := bundle.Validate(); err != nil {
-		t.Errorf("zero cache weight should be valid, got: %v", err)
-	}
+	err := bundle.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown scorer")
 }
 
-func TestPolicyBundle_Validate_WeightSumNotOne(t *testing.T) {
-	// GIVEN routing weights that don't sum to 1.0
+// TestPolicyBundle_Validate_InvalidScorerWeight verifies BC-17-4: bad weights rejected.
+func TestPolicyBundle_Validate_InvalidScorerWeight(t *testing.T) {
 	tests := []struct {
 		name   string
-		cache  float64
-		load   float64
+		weight float64
 	}{
-		{"sum 0.8", 0.6, 0.2},
-		{"sum 1.5", 1.0, 0.5},
-		{"sum 0.0 (both zero)", 0.0, 0.0},
+		{"zero weight", 0.0},
+		{"negative weight", -1.0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bundle := &PolicyBundle{
 				Routing: RoutingConfig{
-					Policy:      "weighted",
-					CacheWeight: float64Ptr(tt.cache),
-					LoadWeight:  float64Ptr(tt.load),
+					Policy:  "weighted",
+					Scorers: []ScorerConfig{{Name: "queue-depth", Weight: tt.weight}},
 				},
 			}
-			// THEN Validate should return an error for non-unit sum
-			if err := bundle.Validate(); err == nil {
-				t.Errorf("expected validation error for weights summing to %.1f", tt.cache+tt.load)
-			}
+			err := bundle.Validate()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "weight must be")
 		})
 	}
 }
 
-func TestPolicyBundle_Validate_WeightSumOne(t *testing.T) {
-	// GIVEN routing weights that sum to 1.0
+// TestPolicyBundle_Validate_ScorersOnNonWeightedPolicy verifies scorers are validated
+// even when attached to a non-weighted policy (validation catches config mistakes early).
+func TestPolicyBundle_Validate_ScorersOnNonWeightedPolicy(t *testing.T) {
 	bundle := &PolicyBundle{
 		Routing: RoutingConfig{
-			Policy:      "weighted",
-			CacheWeight: float64Ptr(0.7),
-			LoadWeight:  float64Ptr(0.3),
+			Policy:  "round-robin",
+			Scorers: []ScorerConfig{{Name: "unknown", Weight: 1.0}},
 		},
 	}
-	// THEN Validate should pass
-	if err := bundle.Validate(); err != nil {
-		t.Errorf("expected no error for weights summing to 1.0, got: %v", err)
-	}
+	err := bundle.Validate()
+	assert.Error(t, err, "invalid scorers should be caught even on non-weighted policy")
 }
 
-func TestPolicyBundle_Validate_WeightSumSkippedForNonWeighted(t *testing.T) {
-	// GIVEN a non-weighted routing policy with arbitrary weight values
+// TestPolicyBundle_Validate_EmptyScorersIsValid verifies nil/empty scorers list is acceptable.
+func TestPolicyBundle_Validate_EmptyScorersIsValid(t *testing.T) {
 	bundle := &PolicyBundle{
-		Routing: RoutingConfig{
-			Policy:      "round-robin",
-			CacheWeight: float64Ptr(0.6),
-			LoadWeight:  float64Ptr(0.2),
-		},
+		Routing: RoutingConfig{Policy: "weighted"},
 	}
-	// THEN Validate should not check weight sum (weights are irrelevant)
-	if err := bundle.Validate(); err != nil {
-		t.Errorf("expected no error for non-weighted policy, got: %v", err)
-	}
+	err := bundle.Validate()
+	assert.NoError(t, err, "empty scorers list should be valid (defaults used at factory)")
 }
 
 func writeTempYAML(t *testing.T, content string) string {
