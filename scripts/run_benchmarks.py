@@ -132,7 +132,7 @@ def run_decode_benchmark(nh: int, nkv: int, dh: int, tp: int, gpu_type: str, gpu
             sys.executable,
             "kernel_benchmark/flashinfer_mha_decode.py",
             "--config-path", temp_config.name,
-            "--fp16-tflops", str(int(peak_tflops)),
+            "--fp16-tflops", str(peak_tflops),
             "--kv-cache-dtype", "bf16",
             "--tp-size", str(tp),
         ]
@@ -203,7 +203,7 @@ def run_gemm_benchmark(gpu_type: str, gpu_specs: dict):
                 "kernel_benchmark/deepgemm_gemm.py",
                 "-k", str(k),
                 "-n", str(n),
-                "--gpu-tflops", str(int(peak_tflops)),
+                "--gpu-tflops", str(peak_tflops),
             ]
 
             result = subprocess.run(cmd, cwd="InferSim", capture_output=True, text=True)
