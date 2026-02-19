@@ -417,8 +417,11 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		}
 		// if it is in decode phase, then allocate blocks for the token generated in the previous Step
 		if req.ProgressIndex >= Len64(req.InputTokens) && len(req.OutputTokens) > 0 {
-			// this request will go through decode phase in this batch
-			if can_schedule := sim.preempt(req, now, numNewTokens); !can_schedule {
+			// Decode phase: exactly 1 new token per step. Compute explicitly
+			// instead of reusing numNewTokens (which is negative during decode:
+			// len(InputTokens) - ProgressIndex where ProgressIndex > len(InputTokens)).
+			decodeTokens := int64(1)
+			if can_schedule := sim.preempt(req, now, decodeTokens); !can_schedule {
 				break
 			}
 			// currently each request produces 1 token per decode.
