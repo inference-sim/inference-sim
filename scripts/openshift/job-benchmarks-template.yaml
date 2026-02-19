@@ -71,8 +71,10 @@ spec:
           echo ""
 
           # Clone InferSim (separate repo with benchmark kernels)
-          echo "Cloning InferSim from GitHub..."
-          git clone --depth 1 https://github.com/alibaba/InferSim.git
+          # Using fork with OOM handling and sglang dependency removed
+          echo "Cloning InferSim from GitHub (fork with improvements)..."
+          git clone --branch roofline-benchmark-improvements --depth 1 \
+            https://github.com/inference-sim/InferSim.git
           cd InferSim
 
           # Install remaining system dependencies
@@ -132,10 +134,6 @@ spec:
           fi
 
           echo "Dependency installation complete"
-
-          # Patch decode script to use local should_use_tensor_core instead of sglang
-          echo "Patching decode script to avoid sglang dependency..."
-          sed -i 's/from sglang.srt.layers.attention.flashinfer_backend import/from flashinfer_backend_utils import/' kernel_benchmark/flashinfer_mha_decode.py
 
           # Run benchmarks
           echo "Running ${GPU_TYPE} benchmarks..."
