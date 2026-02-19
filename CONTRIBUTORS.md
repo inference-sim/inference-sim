@@ -53,6 +53,16 @@ If your PR touches request lifecycle, KV cache, or metrics, add or extend invari
 3. Name tests `TestType_Scenario_Behavior`
 4. Test observable behavior, not internal structure — tests should survive a refactor
 5. Use table-driven tests for multiple scenarios
+6. Apply the **refactor survival test**: "Would this test still pass if the implementation were completely rewritten but the behavior preserved?"
+
+**Common Test Anti-Patterns:**
+
+| Structural (avoid) | Behavioral (prefer) | Why |
+|---|---|---|
+| `_, ok := policy.(*ConstantPriority)` | `assert.Equal(policy.Compute(req, clock), 0.0)` | Type assertion breaks if struct is renamed |
+| `assert.Equal(score, 0.6*cache + 0.4*load)` | `assert.True(highCacheScore > lowCacheScore)` | Formula reproduction breaks if weights change |
+| `assert.Equal(len(batch.requests), 3)` | `assert.Equal(completed+queued, injected)` | Count check is fragile; conservation law is durable |
+| `assert.Equal(obj.internalState, "ready")` | `assert.True(obj.CanProcess(nextRequest))` | Field access couples test to private implementation |
 
 ### Separation of Concerns
 

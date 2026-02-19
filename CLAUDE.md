@@ -172,6 +172,8 @@ This project follows BDD/TDD practices. When implementing features:
 2. **Implement tests before code**: Tests verify contracts hold
 3. **Use table-driven tests**: Go's table-driven test pattern for comprehensive coverage
 4. **Test laws, not just values**: Golden tests answer "did the output change?" but not "is the output correct?" Every golden test should have a companion invariant test that verifies a law the system must satisfy (conservation, causality, monotonicity)
+5. **Refactor survival test**: Before accepting a test, ask: "Would this test still pass if the implementation were completely rewritten but the behavior preserved?" If no, the test is structural — rewrite it to assert observable behavior instead of internal structure. Common structural traps: type assertions on factory returns (`policy.(*ConcreteType)`), exact formula reproduction (`assert.Equal(score, 0.6*x + 0.4*y)`), internal field access. See `prmicroplanprompt-v2.md` rules 9-10 for the full prohibited/required assertion patterns.
+6. **THEN clauses drive test quality**: A structural THEN clause produces a structural test. If a contract's THEN clause contains a concrete type name or internal field name, rewrite the THEN clause to describe observable behavior before writing the test.
 
 ### PR Workflow
 
