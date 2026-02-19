@@ -1,0 +1,166 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400  # Clean up after 24 hours
+  template:
+    metadata:
+      labels:
+        app: infersim-benchmark
+        gpu-type: ${GPU_TYPE}
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        ${NODE_SELECTOR_KEY}: "${NODE_SELECTOR_VALUE}"
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - infersim-benchmark
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: benchmark
+        image: ${CONTAINER_IMAGE}
+        securityContext:
+          runAsUser: 0
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+          requests:
+            nvidia.com/gpu: 1
+        env:
+        - name: GPU_TYPE
+          value: "${GPU_TYPE}"
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: "compute,utility"
+        - name: PYTORCH_ALLOC_CONF
+          value: "expandable_segments:True"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Starting InferSim ${GPU_TYPE} Benchmark Job"
+          echo "=========================================="
+
+          # Clone fresh code from GitHub
+          echo "Cloning inference-sim from GitHub (branch: roofline_valid)..."
+          cd /mnt
+          rm -rf inference-sim-job
+          git clone --branch roofline_valid --depth 1 \
+            https://github.com/inference-sim/inference-sim.git \
+            inference-sim-job
+          cd inference-sim-job
+
+          echo "Current commit:"
+          git log -1 --oneline
+          echo ""
+
+          # Work from InferSim subdirectory
+          cd InferSim
+
+          # Install system dependencies
+          echo "Installing system dependencies..."
+          apt-get update -qq && apt-get install -y -qq libnuma1 git build-essential cmake
+
+          # Install base dependencies
+          echo "Installing base dependencies..."
+          pip install --no-cache-dir pandas flashinfer-python
+
+          # Install sgl-kernel (try prebuilt wheel, fallback to building from source)
+          echo "Installing sgl-kernel..."
+          pip install --no-cache-dir sgl-kernel || {
+            echo "Prebuilt wheel failed, building sgl-kernel from source..."
+            cd /tmp
+            git clone https://github.com/sgl-project/sglang.git --depth 1
+            cd sglang/kernel
+            MAX_JOBS=4 pip install --no-cache-dir -e . --verbose || {
+              echo "ERROR: sgl-kernel build from source failed"
+              echo "This is required for prefill benchmarks"
+              exit 1
+            }
+            cd /mnt/inference-sim-job/InferSim
+          }
+
+          # Verify sgl-kernel import works
+          python3 -c "from sgl_kernel.flash_attn import flash_attn_varlen_func; print('✓ sgl-kernel verified')" || {
+            echo "ERROR: sgl-kernel installed but import failed (ABI mismatch)"
+            echo "Rebuilding from source..."
+            cd /tmp
+            rm -rf sglang
+            git clone https://github.com/sgl-project/sglang.git --depth 1
+            cd sglang/kernel
+            MAX_JOBS=4 pip install --no-cache-dir -e . --verbose --force-reinstall
+            cd /mnt/inference-sim-job/InferSim
+          }
+
+          # Build deep-gemm from source (only if running GEMM benchmarks)
+          # Check if GEMM benchmarks will be run based on BENCH_ARGS
+          if echo "${BENCH_ARGS}" | grep -qE "(--phase-filter gemm|gemm)" || ! echo "${BENCH_ARGS}" | grep -q "phase-filter"; then
+            echo "Building deep-gemm from source (required for GEMM benchmarks)..."
+            cd /tmp
+            git clone --recursive https://github.com/deepseek-ai/DeepGEMM.git 2>/dev/null || {
+              echo "ERROR: Failed to clone DeepGEMM repository"
+              exit 1
+            }
+            cd DeepGEMM
+            MAX_JOBS=4 pip install --no-cache-dir -e . --verbose || {
+              echo "ERROR: deep-gemm build failed"
+              echo "This is required for GEMM benchmarks"
+              echo "Ensure CUDA 12.6+ is available"
+              exit 1
+            }
+            cd /mnt/inference-sim-job/InferSim
+          else
+            echo "Skipping deep-gemm build (not running GEMM benchmarks)"
+          fi
+
+          echo "Dependency installation complete"
+
+          # Patch decode script to use local should_use_tensor_core instead of sglang
+          echo "Patching decode script to avoid sglang dependency..."
+          sed -i 's/from sglang.srt.layers.attention.flashinfer_backend import/from flashinfer_backend_utils import/' kernel_benchmark/flashinfer_mha_decode.py
+
+          # Run benchmarks
+          echo "Running ${GPU_TYPE} benchmarks..."
+          cd /mnt/inference-sim-job
+          python scripts/run_benchmarks.py ${BENCH_ARGS}
+
+          # Validate results
+          echo "Validating benchmark data..."
+          python scripts/validate_benchmark_data.py ${BENCH_ARGS}
+
+          # Upload results (if configured)
+          if [ -n "${S3_BUCKET}" ]; then
+            echo "Uploading results to S3..."
+            aws s3 cp InferSim/bench_data/mha/${GPU_TYPE_LOWER}/ \
+              s3://${S3_BUCKET}/benchmarks/mha/${GPU_TYPE_LOWER}/ \
+              --recursive
+            aws s3 cp InferSim/bench_data/gemm/${GPU_TYPE_LOWER}/ \
+              s3://${S3_BUCKET}/benchmarks/gemm/${GPU_TYPE_LOWER}/ \
+              --recursive
+          fi
+
+          echo "Benchmark job complete!"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /mnt
+        - name: shm
+          mountPath: /dev/shm
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: data-pvc
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 8Gi
