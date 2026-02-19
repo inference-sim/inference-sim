@@ -83,6 +83,27 @@ func TestParseServeGenPDF_EmptyDict_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestParseServeGenTrace_AllShortRows_ReturnsEmptySlice(t *testing.T) {
+	// GIVEN a CSV file where all rows have fewer than 4 fields
+	dir := t.TempDir()
+	csvContent := "short,row\nonly,two\n"
+	path := filepath.Join(dir, "trace.csv")
+	if err := os.WriteFile(path, []byte(csvContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// WHEN parsing the trace
+	rows, err := parseServeGenTrace(path)
+
+	// THEN no error is returned but the result is empty (all rows skipped)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("got %d rows, want 0 (all rows should be skipped)", len(rows))
+	}
+}
+
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv
