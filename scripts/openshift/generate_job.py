@@ -133,6 +133,8 @@ def generate_job_yaml(
     print("=" * 60)
     print(f"GPU Type:       {gpu_type}")
     print(f"Job Name:       {job_name}")
+    if shape:
+        print(f"Shape:          {shape}")
     if model:
         print(f"Model:          {model}")
     if phase:
