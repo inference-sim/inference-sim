@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -219,6 +220,10 @@ func TestComputeFitness_UnknownKey_ReturnsError(t *testing.T) {
 	_, err := ComputeFitness(raw, weights)
 	if err == nil {
 		t.Error("expected error for unknown key, got nil")
+	}
+	// Error message should list valid keys to help the user fix the typo
+	if err != nil && !strings.Contains(err.Error(), "throughput") {
+		t.Errorf("error message should list valid keys, got: %v", err)
 	}
 }
 

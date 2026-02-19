@@ -346,6 +346,14 @@ func mapValues(m map[string]float64) []float64 {
 	return vals
 }
 
+// validFitnessKeys lists the metric keys accepted by ComputeFitness/extractMetric.
+// Used in error messages to guide users to valid keys.
+var validFitnessKeys = []string{
+	"throughput", "tokens_per_sec",
+	"p99_ttft", "p50_ttft", "mean_ttft",
+	"p99_e2e", "p50_e2e", "mean_e2e",
+}
+
 // Reference scales for normalizing metrics to [0,1] range.
 // Without reference scales, throughput (raw value ~100) dominates latency (1/(1+5000) ≈ 0.0002)
 // by 500,000×, making multi-objective optimization impossible.
@@ -370,7 +378,8 @@ func ComputeFitness(metrics *RawMetrics, weights map[string]float64) (FitnessRes
 	// Validate all keys before computing
 	for _, key := range sortedKeys(weights) {
 		if _, ok := extractMetric(metrics, key); !ok {
-			return FitnessResult{}, fmt.Errorf("unknown fitness metric key %q", key)
+			return FitnessResult{}, fmt.Errorf("unknown fitness metric key %q; valid keys: %s", key,
+				strings.Join(validFitnessKeys, ", "))
 		}
 	}
 
