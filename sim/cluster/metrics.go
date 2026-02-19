@@ -281,18 +281,22 @@ func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics 
 // SLOAttainment computes the fraction of requests meeting their SLO target.
 // targets maps SLO class to max acceptable E2E latency (in ticks).
 // Returns a value in [0.0, 1.0].
+// Requests in RequestE2Es that are missing from Requests map are counted
+// as SLO violations (conservative: missing data = violation).
 func SLOAttainment(aggregated *sim.Metrics, targets map[string]float64) float64 {
 	if len(aggregated.RequestE2Es) == 0 {
 		return 0
 	}
 	met := 0
 	total := 0
+	droppedCount := 0
 	for reqID, e2e := range aggregated.RequestE2Es {
+		total++
 		req, ok := aggregated.Requests[reqID]
 		if !ok {
-			continue
+			droppedCount++
+			continue // counted in total but not in met (= violation)
 		}
-		total++
 		sloClass := req.SLOClass
 		if target, ok := targets[sloClass]; ok {
 			if e2e <= target {
@@ -302,6 +306,9 @@ func SLOAttainment(aggregated *sim.Metrics, targets map[string]float64) float64 
 			// No target for this class = always meets SLO
 			met++
 		}
+	}
+	if droppedCount > 0 {
+		logrus.Warnf("SLOAttainment: %d requests in RequestE2Es missing from Requests map (counted as violations)", droppedCount)
 	}
 	if total == 0 {
 		return 0
