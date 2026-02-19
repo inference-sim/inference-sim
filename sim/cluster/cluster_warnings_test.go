@@ -77,7 +77,9 @@ func TestClusterSimulator_AllRejected_WarnsAfterRun(t *testing.T) {
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {
-		cs.Run()
+		if err := cs.Run(); err != nil {
+			t.Fatalf("cs.Run: %v", err)
+		}
 	})
 
 	// THEN a warning about all requests being rejected MUST be logged
@@ -96,7 +98,9 @@ func TestClusterSimulator_ZeroCompletions_WarnsAfterRun(t *testing.T) {
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {
-		cs.Run()
+		if err := cs.Run(); err != nil {
+			t.Fatalf("cs.Run: %v", err)
+		}
 	})
 
 	// THEN a warning about no completed requests MUST be logged
@@ -115,7 +119,9 @@ func TestClusterSimulator_NormalOperation_NoPostSimWarning(t *testing.T) {
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {
-		cs.Run()
+		if err := cs.Run(); err != nil {
+			t.Fatalf("cs.Run: %v", err)
+		}
 	})
 
 	// THEN no rejection or zero-completion warnings MUST be logged

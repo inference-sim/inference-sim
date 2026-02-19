@@ -31,7 +31,7 @@ func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T)
 		OutputTokensMin: 5, OutputTokensMax: 5,
 	}
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	rawMetrics := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "")
 	traceSummary := trace.Summarize(cs.Trace())

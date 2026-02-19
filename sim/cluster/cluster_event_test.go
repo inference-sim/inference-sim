@@ -197,7 +197,7 @@ func TestRoutingDecisionEvent_PriorityHint_Applied(t *testing.T) {
 	cs.routingPolicy = &priorityHintPolicy{hint: 42.0}
 
 	// Run simulation — the stub policy will set Priority=42 on all requests
-	cs.Run()
+	mustRun(t, cs)
 
 	// Verify at least one request was completed (simulation ran)
 	if cs.AggregatedMetrics().CompletedRequests == 0 {
@@ -217,7 +217,7 @@ func TestRoutingDecisionEvent_PriorityHint_ZeroDoesNotOverride(t *testing.T) {
 	cs := NewClusterSimulator(config, newTestWorkload(3), "")
 
 	// Use default round-robin (returns Priority: 0)
-	cs.Run()
+	mustRun(t, cs)
 
 	// All requests completed with default priority behavior
 	if cs.AggregatedMetrics().CompletedRequests == 0 {

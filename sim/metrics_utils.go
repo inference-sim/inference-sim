@@ -2,12 +2,7 @@
 package sim
 
 import (
-	"bufio"
-	"fmt"
 	"math"
-	"os"
-
-	"github.com/sirupsen/logrus"
 )
 
 // Bin represents a single completion time integral bin with its integer key and count.
@@ -118,33 +113,3 @@ func CalculateMean[T IntOrFloat64](numbers []T) float64 {
 	return (sum / float64(len(numbers))) / 1000
 }
 
-func (m *Metrics) SavetoFile(data []int, fileName string) {
-	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0777)
-	if err != nil {
-		logrus.Fatalf("Error creating file %s: %v\n", fileName, err)
-		return
-	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			logrus.Fatalf("Error closing file %s: %v\n", fileName, closeErr)
-		}
-	}()
-
-	writer := bufio.NewWriter(file)
-
-	defer func() {
-		if flushErr := writer.Flush(); flushErr != nil {
-			logrus.Fatalf("Error flushing writer for file %s: %v\n", fileName, flushErr)
-		}
-	}()
-
-	for _, f := range data {
-		_, writeErr := fmt.Fprint(writer, f, ", ")
-		if writeErr != nil {
-			logrus.Fatalf("Error writing int %d to file: %v\n", f, writeErr)
-			return // Stop writing on first error
-		}
-	}
-
-	logrus.Debugf("Successfully wrote to '%s'\n", fileName)
-}

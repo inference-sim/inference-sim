@@ -34,7 +34,7 @@ func TestClusterSimulator_PendingRequests_DrainsToZeroAfterProcessing(t *testing
 	}
 	cs := NewClusterSimulator(config, workload, "")
 
-	cs.Run()
+	mustRun(t, cs)
 
 	for instID, pending := range cs.pendingRequests {
 		if pending != 0 {
@@ -97,7 +97,7 @@ func TestClusterSimulator_PendingRequests_VisibleInRoutingState(t *testing.T) {
 	}, "")
 	cs.SetPreGeneratedRequests(reqs)
 
-	cs.Run()
+	mustRun(t, cs)
 
 	tr := cs.Trace()
 	if tr == nil {
@@ -176,7 +176,7 @@ func TestClusterSimulator_PendingRequests_CausalDecrement(t *testing.T) {
 	}, "")
 	cs.SetPreGeneratedRequests(reqs)
 
-	cs.Run()
+	mustRun(t, cs)
 
 	// After simulation, all pending must be zero
 	for instID, pending := range cs.pendingRequests {
@@ -248,7 +248,7 @@ func TestClusterSimulator_PendingRequests_CounterfactualIncludesPending(t *testi
 	}, "")
 	cs.SetPreGeneratedRequests(reqs)
 
-	cs.Run()
+	mustRun(t, cs)
 
 	tr := cs.Trace()
 	if tr == nil {

@@ -419,7 +419,7 @@ func TestPathological_RejectAll_AllRejected(t *testing.T) {
 	config.AdmissionPolicy = "reject-all"
 
 	cs := NewClusterSimulator(config, newTestWorkload(20), "")
-	cs.Run()
+	mustRun(t, cs)
 
 	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "")
 
@@ -439,7 +439,7 @@ func TestPathological_AlwaysBusiest_CausesImbalance(t *testing.T) {
 	config.RoutingPolicy = "always-busiest"
 
 	cs := NewClusterSimulator(config, newTestWorkload(20), "")
-	cs.Run()
+	mustRun(t, cs)
 
 	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "")
 

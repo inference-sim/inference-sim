@@ -149,7 +149,7 @@ type Simulator struct {
 //   - TracesWorkloadFilePath != "" → load workload from CSV traces
 //   - GuideLLMConfig != nil → generate workload from distribution
 //   - Both zero-valued → no workload (caller injects via InjectArrival)
-func NewSimulator(cfg SimConfig) *Simulator {
+func NewSimulator(cfg SimConfig) (*Simulator, error) {
 	if !cfg.Roofline {
 		if len(cfg.BetaCoeffs) < 3 {
 			panic(fmt.Sprintf("SimConfig.BetaCoeffs requires at least 3 elements, got %d", len(cfg.BetaCoeffs)))
@@ -198,14 +198,16 @@ func NewSimulator(cfg SimConfig) *Simulator {
 
 	if cfg.TracesWorkloadFilePath != "" && cfg.GuideLLMConfig == nil {
 		s.Metrics.RequestRate = 0.0
-		s.generateWorkloadFromCSV()
+		if err := s.generateWorkloadFromCSV(); err != nil {
+			return nil, fmt.Errorf("loading CSV workload: %w", err)
+		}
 	} else if cfg.GuideLLMConfig != nil {
 		s.Metrics.RequestRate = cfg.GuideLLMConfig.Rate
 		s.generateWorkloadDistribution()
 	}
 	// else: no workload — caller injects via InjectArrival
 
-	return s
+	return s, nil
 }
 
 // WorkloadRNG returns the RNG for workload generation.

@@ -5,6 +5,8 @@
 package cluster
 
 import (
+	"fmt"
+
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -27,9 +29,13 @@ type InstanceSimulator struct {
 // Thread-safety: NOT thread-safe. Must be called from single goroutine.
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
+	s, err := sim.NewSimulator(cfg)
+	if err != nil {
+		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
+	}
 	return &InstanceSimulator{
 		id:  id,
-		sim: sim.NewSimulator(cfg),
+		sim: s,
 	}
 }
 

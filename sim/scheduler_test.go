@@ -230,7 +230,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		PriorityPolicy:     "slo-based",
 		Scheduler:          "priority-fcfs",
 	}
-	s := NewSimulator(cfg)
+	s := mustNewSimulator(t, cfg)
 
 	// reqNewer arrives later (lower age → lower priority from SLO-based policy)
 	// Inject it first so FCFS would schedule it first — but priority should override.
@@ -281,7 +281,7 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 		AlphaCoeffs:        []float64{100, 1, 100},
 		// PriorityPolicy and Scheduler left empty (defaults)
 	}
-	s := NewSimulator(cfg)
+	s := mustNewSimulator(t, cfg)
 
 	// Verify correct types were created
 	if _, ok := s.priorityPolicy.(*ConstantPriority); !ok {
@@ -330,7 +330,7 @@ func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 		AlphaCoeffs:        []float64{0, 0, 100}, // zero queueing delay so both queue at arrival time
 		Scheduler:          "sjf",
 	}
-	s := NewSimulator(cfg)
+	s := mustNewSimulator(t, cfg)
 
 	// Long request injected first — SJF should move it behind short
 	reqLong := &Request{
@@ -383,7 +383,7 @@ func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
 		PriorityPolicy:     "slo-based",
 		Scheduler:          "priority-fcfs",
 	}
-	s := NewSimulator(cfg)
+	s := mustNewSimulator(t, cfg)
 
 	// Newer request injected first (arrives at t=500000)
 	reqNew := &Request{

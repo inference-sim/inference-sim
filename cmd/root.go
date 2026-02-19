@@ -404,7 +404,9 @@ var runCmd = &cobra.Command{
 		if len(preGeneratedRequests) > 0 {
 			cs.SetPreGeneratedRequests(preGeneratedRequests)
 		}
-		cs.Run()
+		if err := cs.Run(); err != nil {
+			logrus.Fatalf("Simulation failed: %v", err)
+		}
 
 		if numInstances > 1 {
 			// Print per-instance metrics to stdout (multi-instance only)
