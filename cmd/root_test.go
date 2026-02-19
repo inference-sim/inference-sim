@@ -11,6 +11,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestRunCmd_DefaultLogLevel_RemainsWarn(t *testing.T) {
+	// GIVEN the run command with its registered flags
+	flag := runCmd.Flags().Lookup("log")
+
+	// WHEN we check the default value
+	// THEN it MUST still be "warn" — we did NOT change the default (BC-5)
+	// Simulation results go to stdout via fmt, not through logrus.
+	assert.NotNil(t, flag, "log flag must be registered")
+	assert.Equal(t, "warn", flag.DefValue,
+		"default log level must remain 'warn'; simulation results use fmt.Println to bypass logrus")
+}
+
 func TestSaveResults_MetricsPrintedToStdout(t *testing.T) {
 	// GIVEN a Metrics struct with completed requests
 	m := sim.NewMetrics()
