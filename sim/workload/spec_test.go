@@ -1,11 +1,14 @@
 package workload
 
 import (
+	"bytes"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadWorkloadSpec_ValidYAML_LoadsCorrectly(t *testing.T) {
@@ -247,6 +250,77 @@ func TestWorkloadSpec_Validate_NaNParam_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "NaN") && !strings.Contains(err.Error(), "finite") {
 		t.Errorf("error should mention NaN: %v", err)
+	}
+}
+
+func parseWorkloadSpecFromBytes(data []byte) (*WorkloadSpec, error) {
+	var spec WorkloadSpec
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&spec); err != nil {
+		return nil, err
+	}
+	return &spec, nil
+}
+
+func TestWorkloadSpec_NumRequests_ParsedFromYAML(t *testing.T) {
+	// BC-4: YAML num_requests field is parsed
+	yamlData := `
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 10.0
+num_requests: 200
+clients:
+  - id: "c1"
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 100
+    output_distribution:
+      type: exponential
+      params:
+        mean: 50
+`
+	spec, err := parseWorkloadSpecFromBytes([]byte(yamlData))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.NumRequests != 200 {
+		t.Errorf("NumRequests = %d, want 200", spec.NumRequests)
+	}
+}
+
+func TestWorkloadSpec_NumRequestsOmitted_DefaultsToZero(t *testing.T) {
+	// BC-9: omitted num_requests defaults to 0 (unlimited)
+	yamlData := `
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 10.0
+clients:
+  - id: "c1"
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 100
+    output_distribution:
+      type: exponential
+      params:
+        mean: 50
+`
+	spec, err := parseWorkloadSpecFromBytes([]byte(yamlData))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.NumRequests != 0 {
+		t.Errorf("NumRequests = %d, want 0 (default unlimited)", spec.NumRequests)
 	}
 }
 

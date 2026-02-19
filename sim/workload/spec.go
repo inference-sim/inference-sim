@@ -18,6 +18,7 @@ type WorkloadSpec struct {
 	Clients       []ClientSpec `yaml:"clients"`
 	AggregateRate float64      `yaml:"aggregate_rate"`
 	Horizon       int64        `yaml:"horizon,omitempty"`
+	NumRequests   int64        `yaml:"num_requests,omitempty"` // 0 = unlimited (use horizon only)
 	ServeGenData  *ServeGenDataSpec `yaml:"servegen_data,omitempty"`
 }
 
