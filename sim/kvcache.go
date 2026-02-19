@@ -225,6 +225,10 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 		// request is in decode
 		newTokens = append(newTokens, req.OutputTokens[startIndex-Len64(req.InputTokens)])
 	}
+	// Rollback tracking: if allocation fails mid-way, undo all mutations
+	var cachedMutations []cachedBlockMutation
+	var newlyAllocated []*KVBlock
+
 	newTokenProgressIndex := int64(0)
 	for newTokenProgressIndex < Len64(newTokens) { // non-inclusive endIndex
 		ids, ok := kvc.RequestMap[reqID]
@@ -240,13 +244,14 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 
 			for _, blockId := range cachedBlocks {
 				blk := kvc.Blocks[blockId]
+				wasInUse := blk.InUse
 				blk.RefCount++
 				if !blk.InUse {
 					blk.InUse = true
 					kvc.UsedBlockCnt++
 					kvc.removeFromFreeList(blk)
 				}
-				// allocated is the block IDs allocated for this request
+				cachedMutations = append(cachedMutations, cachedBlockMutation{block: blk, wasInUse: wasInUse})
 				logrus.Debugf("Hit KV Cache for req: %s of length: %d", req.ID, Len64(cachedBlocks)*kvc.BlockSizeTokens)
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
 			}
@@ -274,6 +279,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 			for i := int64(0); i < numNewBlocks; i++ {
 				blk := kvc.popFreeBlock()
 				if blk == nil {
+					kvc.rollbackAllocation(reqID, cachedMutations, newlyAllocated)
 					return false
 				}
 				// start and end are the range of tokens in blk
@@ -297,6 +303,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 					blk.Hash = h
 					kvc.HashToBlock[h] = blk.ID
 				}
+				newlyAllocated = append(newlyAllocated, blk)
 				// allocated is the block IDs allocated for this request
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blk.ID)
 				newTokenProgressIndex = end
@@ -376,6 +383,42 @@ func (kvc *KVCacheState) popFreeBlock() *KVBlock {
 // countFreeBlocks returns the number of blocks not currently in use.
 func (kvc *KVCacheState) countFreeBlocks() int64 {
 	return kvc.TotalBlocks - kvc.UsedBlockCnt
+}
+
+// cachedBlockMutation tracks a cached block's state before mutation for rollback.
+type cachedBlockMutation struct {
+	block    *KVBlock
+	wasInUse bool
+}
+
+// rollbackAllocation undoes all mutations from a failed AllocateKVBlocks call.
+// Restores UsedBlockCnt, CacheMisses, RefCount, InUse, free list, HashToBlock, and RequestMap.
+func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cachedBlockMutation, newlyAllocated []*KVBlock) {
+	// Undo new block allocations (reverse order for clean free list state)
+	for i := len(newlyAllocated) - 1; i >= 0; i-- {
+		blk := newlyAllocated[i]
+		blk.InUse = false
+		blk.RefCount = 0
+		blk.Tokens = nil
+		if blk.Hash != "" {
+			delete(kvc.HashToBlock, blk.Hash)
+			blk.Hash = ""
+		}
+		kvc.UsedBlockCnt--
+		kvc.CacheMisses--
+		kvc.appendToFreeList(blk)
+	}
+	// Undo cached block mutations
+	for _, cm := range cachedMutations {
+		cm.block.RefCount--
+		if !cm.wasInUse && cm.block.RefCount == 0 {
+			cm.block.InUse = false
+			kvc.UsedBlockCnt--
+			kvc.appendToFreeList(cm.block)
+		}
+	}
+	// Clean up RequestMap
+	delete(kvc.RequestMap, reqID)
 }
 
 // ReleaseKVBlocks deallocates blocks used by a completed request.
