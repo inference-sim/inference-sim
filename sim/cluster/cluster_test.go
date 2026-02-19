@@ -50,6 +50,14 @@ func newTestWorkload(maxPrompts int) *sim.GuideLLMConfig {
 	}
 }
 
+// mustRun is a test helper that calls Run and fails the test on error.
+func mustRun(t *testing.T, cs *ClusterSimulator) {
+	t.Helper()
+	if err := cs.Run(); err != nil {
+		t.Fatalf("ClusterSimulator.Run: %v", err)
+	}
+}
+
 // TestPerInstanceMetrics_BeforeRun_Panics verifies run-once guard.
 func TestPerInstanceMetrics_BeforeRun_Panics(t *testing.T) {
 	defer func() {
@@ -204,7 +212,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 			}
 
 			cs := NewClusterSimulator(config, workload, "")
-			cs.Run()
+			mustRun(t, cs)
 
 			m := cs.AggregatedMetrics()
 			if m.CompletedRequests != tc.Metrics.CompletedRequests {
@@ -236,10 +244,10 @@ func TestClusterSimulator_MultiInstance_Determinism(t *testing.T) {
 	workload := newTestWorkload(100)
 
 	cs1 := NewClusterSimulator(config, workload, "")
-	cs1.Run()
+	mustRun(t, cs1)
 
 	cs2 := NewClusterSimulator(config, workload, "")
-	cs2.Run()
+	mustRun(t, cs2)
 
 	// Check aggregated
 	if cs1.AggregatedMetrics().CompletedRequests != cs2.AggregatedMetrics().CompletedRequests {
@@ -292,7 +300,7 @@ func TestClusterSimulator_MultiInstance_AllComplete(t *testing.T) {
 	workload := newTestWorkload(100)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
 	if m.CompletedRequests != 100 {
@@ -315,7 +323,7 @@ func TestClusterSimulator_RoundRobin_EvenDistribution(t *testing.T) {
 	workload := newTestWorkload(9)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	for i, inst := range cs.Instances() {
 		if inst.Metrics().CompletedRequests != 3 {
@@ -334,7 +342,7 @@ func TestClusterSimulator_RoundRobin_UnevenDistribution(t *testing.T) {
 	workload := newTestWorkload(10)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	expected := []int{4, 3, 3}
 	for i, inst := range cs.Instances() {
@@ -354,7 +362,7 @@ func TestClusterSimulator_ZeroRequestInstances(t *testing.T) {
 	workload := newTestWorkload(2)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	expected := []int{1, 1, 0, 0}
 	for i, inst := range cs.Instances() {
@@ -379,7 +387,7 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 	workload := newTestWorkload(50)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	var sumCompleted, sumInput, sumOutput int
 	var maxSimEnded, maxPeakKV int64
@@ -463,7 +471,7 @@ func TestClusterSimulator_SharedClock_MonotonicGlobal(t *testing.T) {
 	workload := newTestWorkload(50)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	for i, inst := range cs.Instances() {
 		if cs.Clock() < inst.Clock() {
@@ -482,7 +490,7 @@ func TestClusterSimulator_RunOnce_Panics(t *testing.T) {
 	workload := newTestWorkload(10)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	defer func() {
 		r := recover()
@@ -494,7 +502,7 @@ func TestClusterSimulator_RunOnce_Panics(t *testing.T) {
 			t.Errorf("panic message = %q, want %q", r, expected)
 		}
 	}()
-	cs.Run()
+	mustRun(t, cs)
 }
 
 // TestNewClusterSimulator_ZeroInstances_Panics verifies C.4:
@@ -537,7 +545,7 @@ func TestInstanceSimulator_InjectAfterRun_Panics(t *testing.T) {
 	}()
 	inst.InjectRequest(&sim.Request{
 		ID: "req", ArrivalTime: 0, InputTokens: make([]int, 5),
-		OutputTokens: make([]int, 3), State: "queued",
+		OutputTokens: make([]int, 3), State: sim.StateQueued,
 	})
 }
 
@@ -551,7 +559,7 @@ func TestClusterSimulator_GloballyUniqueRequestIDs(t *testing.T) {
 	workload := newTestWorkload(20)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
 	if len(agg.Requests) != agg.CompletedRequests {
@@ -581,7 +589,7 @@ func TestClusterSimulator_HorizonEnforcement(t *testing.T) {
 	workload := newTestWorkload(100)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
 
@@ -644,7 +652,7 @@ func TestClusterSimulator_HandledBy_PopulatedInMetrics(t *testing.T) {
 	workload := newTestWorkload(15)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
 	if agg.CompletedRequests == 0 {
@@ -690,7 +698,7 @@ func TestClusterSimulator_HandledBy_SingleInstance(t *testing.T) {
 	config := newTestDeploymentConfig(1)
 	workload := newTestWorkload(5)
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
 	if agg.CompletedRequests == 0 {
@@ -712,7 +720,7 @@ func TestClusterSimulator_RoutingPolicy_RoundRobinDefault(t *testing.T) {
 	workload := newTestWorkload(10)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	// Requests distributed evenly: 4, 3, 3 (or variant)
 	counts := make(map[InstanceID]int)
@@ -739,7 +747,7 @@ func TestClusterSimulator_RoutingPolicy_LeastLoaded(t *testing.T) {
 	workload := newTestWorkload(5)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	if cs.AggregatedMetrics().CompletedRequests == 0 {
 		t.Errorf("Expected non-zero completed requests, got 0")
@@ -759,7 +767,7 @@ func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
 			workload := newTestWorkload(5)
 
 			cs := NewClusterSimulator(config, workload, "")
-			cs.Run()
+			mustRun(t, cs)
 
 			if cs.AggregatedMetrics().CompletedRequests == 0 {
 				t.Errorf("Policy %q: expected non-zero completed requests", policyName)
@@ -775,7 +783,9 @@ func BenchmarkClusterSimulator_1K_1Instance(b *testing.B) {
 	workload := newTestWorkload(1000)
 	for i := 0; i < b.N; i++ {
 		cs := NewClusterSimulator(config, workload, "")
-		cs.Run()
+		if err := cs.Run(); err != nil {
+			b.Fatalf("cs.Run: %v", err)
+		}
 	}
 }
 
@@ -784,7 +794,9 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 	workload := newTestWorkload(10000)
 	for i := 0; i < b.N; i++ {
 		cs := NewClusterSimulator(config, workload, "")
-		cs.Run()
+		if err := cs.Run(); err != nil {
+			b.Fatalf("cs.Run: %v", err)
+		}
 	}
 }
 
@@ -793,7 +805,9 @@ func BenchmarkClusterSimulator_1K_10Instances(b *testing.B) {
 	workload := newTestWorkload(1000)
 	for i := 0; i < b.N; i++ {
 		cs := NewClusterSimulator(config, workload, "")
-		cs.Run()
+		if err := cs.Run(); err != nil {
+			b.Fatalf("cs.Run: %v", err)
+		}
 	}
 }
 
@@ -826,7 +840,7 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 			}
 
 			// Reference: sim.NewSimulator generates workload internally
-			refSim := sim.NewSimulator(sim.SimConfig{
+			refSim, err := sim.NewSimulator(sim.SimConfig{
 				Horizon:                   math.MaxInt64,
 				Seed:                      tc.Seed,
 				TotalKVBlocks:             tc.TotalKVBlocks,
@@ -841,6 +855,9 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 				TP:                        tc.TP,
 				GuideLLMConfig:            guideLLMConfig,
 			})
+			if err != nil {
+				t.Fatalf("NewSimulator: %v", err)
+			}
 
 			// Cluster workload generation
 			config := DeploymentConfig{
@@ -934,7 +951,7 @@ func TestAggregateMetrics_IncludesKVCacheFields(t *testing.T) {
 	// GIVEN a cluster simulation with 2 instances
 	cfg := newTestDeploymentConfig(2)
 	cs := NewClusterSimulator(cfg, newTestWorkload(10), "")
-	cs.Run()
+	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
 	perInst := cs.PerInstanceMetrics()
@@ -982,7 +999,7 @@ func TestAggregateMetrics_SingleInstance_AverageEqualsSelf(t *testing.T) {
 	// GIVEN a cluster with exactly 1 instance (edge case: average = self)
 	cfg := newTestDeploymentConfig(1)
 	cs := NewClusterSimulator(cfg, newTestWorkload(5), "")
-	cs.Run()
+	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
 	perInst := cs.PerInstanceMetrics()
@@ -1012,7 +1029,7 @@ func TestClusterSimulator_RequestConservation_SumAcrossInstances(t *testing.T) {
 	workload := newTestWorkload(100)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	sumCompleted := 0
 	for _, inst := range cs.Instances() {
@@ -1043,7 +1060,7 @@ func TestClusterSimulator_Causality_PerInstance(t *testing.T) {
 	workload := newTestWorkload(50)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	totalChecked := 0
 	for idx, inst := range cs.Instances() {
@@ -1086,7 +1103,7 @@ func TestClusterSimulator_ClockMonotonicity_ClusterDominatesInstances(t *testing
 	workload := newTestWorkload(100)
 
 	cs := NewClusterSimulator(config, workload, "")
-	cs.Run()
+	mustRun(t, cs)
 
 	for i, inst := range cs.Instances() {
 		if cs.Clock() < inst.Clock() {
@@ -1105,7 +1122,7 @@ func TestClusterSimulator_Determinism_ByteIdenticalAggregation(t *testing.T) {
 		config := newTestDeploymentConfig(3)
 		workload := newTestWorkload(50)
 		cs := NewClusterSimulator(config, workload, "")
-		cs.Run()
+		mustRun(t, cs)
 		return cs.AggregatedMetrics()
 	}
 

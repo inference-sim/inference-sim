@@ -7,7 +7,7 @@ import (
 
 func TestMakeRunningBatch_DecodePhase_PreemptGetsPositiveTokenCount(t *testing.T) {
 	// GIVEN a simulator with a request that has completed prefill and is in decode
-	sim := NewSimulator(SimConfig{
+	sim := mustNewSimulator(t, SimConfig{
 		Horizon:            math.MaxInt64,
 		Seed:               42,
 		TotalKVBlocks:      100,
@@ -24,7 +24,7 @@ func TestMakeRunningBatch_DecodePhase_PreemptGetsPositiveTokenCount(t *testing.T
 		InputTokens:  []int{1, 2, 3, 4, 5, 6, 7, 8},
 		OutputTokens: []int{100, 200, 300},
 		ArrivalTime:  0,
-		State:        "running",
+		State:        StateRunning,
 	}
 
 	// Pre-allocate KV blocks for the prefill portion (ProgressIndex=0 during prefill)

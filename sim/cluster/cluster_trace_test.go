@@ -31,7 +31,7 @@ func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 	cs := NewClusterSimulator(config, workload, "")
 
 	// WHEN run
-	cs.Run()
+	mustRun(t, cs)
 
 	// THEN trace is nil (zero overhead)
 	if cs.Trace() != nil {
@@ -64,7 +64,7 @@ func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 	cs := NewClusterSimulator(config, workload, "")
 
 	// WHEN run
-	cs.Run()
+	mustRun(t, cs)
 
 	// THEN trace is non-nil with admission and routing records
 	tr := cs.Trace()
@@ -114,7 +114,7 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 	cs := NewClusterSimulator(config, workload, "")
 
 	// WHEN run
-	cs.Run()
+	mustRun(t, cs)
 
 	// THEN routing records have candidates
 	tr := cs.Trace()
@@ -158,7 +158,7 @@ func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
 	cs := NewClusterSimulator(config, workload, "")
 
 	// WHEN run
-	cs.Run()
+	mustRun(t, cs)
 
 	// THEN some admissions are rejected
 	tr := cs.Trace()

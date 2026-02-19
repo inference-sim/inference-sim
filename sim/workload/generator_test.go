@@ -220,7 +220,7 @@ func TestGenerateRequests_PrefixGroup_SharedPrefix(t *testing.T) {
 }
 
 func TestRequestNewFields_ZeroValueDefault(t *testing.T) {
-	req := &sim.Request{ID: "test", State: "queued"}
+	req := &sim.Request{ID: "test", State: sim.StateQueued}
 	if req.TenantID != "" || req.SLOClass != "" || req.SessionID != "" {
 		t.Error("new fields should have zero-value defaults")
 	}

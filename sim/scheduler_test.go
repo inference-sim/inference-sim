@@ -230,7 +230,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		PriorityPolicy:     "slo-based",
 		Scheduler:          "priority-fcfs",
 	}
-	s := NewSimulator(cfg)
+	s := mustNewSimulator(t, cfg)
 
 	// reqNewer arrives later (lower age → lower priority from SLO-based policy)
 	// Inject it first so FCFS would schedule it first — but priority should override.
@@ -239,7 +239,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		InputTokens:  make([]int, 20),
 		OutputTokens: make([]int, 5),
 		ArrivalTime:  500000,
-		State:        "queued",
+		State:        StateQueued,
 	}
 	// reqOlder arrives earlier (higher age → higher priority)
 	reqOlder := &Request{
@@ -247,7 +247,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		InputTokens:  make([]int, 20),
 		OutputTokens: make([]int, 5),
 		ArrivalTime:  0,
-		State:        "queued",
+		State:        StateQueued,
 	}
 
 	// Inject newer first, then older — priority-fcfs should reorder
@@ -281,7 +281,7 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 		AlphaCoeffs:        []float64{100, 1, 100},
 		// PriorityPolicy and Scheduler left empty (defaults)
 	}
-	s := NewSimulator(cfg)
+	s := mustNewSimulator(t, cfg)
 
 	// Verify correct types were created
 	if _, ok := s.priorityPolicy.(*ConstantPriority); !ok {
@@ -330,7 +330,7 @@ func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 		AlphaCoeffs:        []float64{0, 0, 100}, // zero queueing delay so both queue at arrival time
 		Scheduler:          "sjf",
 	}
-	s := NewSimulator(cfg)
+	s := mustNewSimulator(t, cfg)
 
 	// Long request injected first — SJF should move it behind short
 	reqLong := &Request{
@@ -338,7 +338,7 @@ func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 		InputTokens:  make([]int, 200),
 		OutputTokens: make([]int, 2),
 		ArrivalTime:  0,
-		State:        "queued",
+		State:        StateQueued,
 	}
 	// Short request injected second — SJF should move it to front
 	reqShort := &Request{
@@ -346,7 +346,7 @@ func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 		InputTokens:  make([]int, 20),
 		OutputTokens: make([]int, 2),
 		ArrivalTime:  0,
-		State:        "queued",
+		State:        StateQueued,
 	}
 
 	s.InjectArrival(reqLong)
@@ -383,7 +383,7 @@ func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
 		PriorityPolicy:     "slo-based",
 		Scheduler:          "priority-fcfs",
 	}
-	s := NewSimulator(cfg)
+	s := mustNewSimulator(t, cfg)
 
 	// Newer request injected first (arrives at t=500000)
 	reqNew := &Request{
@@ -391,7 +391,7 @@ func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
 		InputTokens:  make([]int, 20),
 		OutputTokens: make([]int, 2),
 		ArrivalTime:  500000,
-		State:        "queued",
+		State:        StateQueued,
 	}
 	// Older request injected second (arrives at t=0)
 	reqOld := &Request{
@@ -399,7 +399,7 @@ func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
 		InputTokens:  make([]int, 20),
 		OutputTokens: make([]int, 2),
 		ArrivalTime:  0,
-		State:        "queued",
+		State:        StateQueued,
 	}
 
 	s.InjectArrival(reqNew)

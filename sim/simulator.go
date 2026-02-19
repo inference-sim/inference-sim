@@ -149,7 +149,7 @@ type Simulator struct {
 //   - TracesWorkloadFilePath != "" → load workload from CSV traces
 //   - GuideLLMConfig != nil → generate workload from distribution
 //   - Both zero-valued → no workload (caller injects via InjectArrival)
-func NewSimulator(cfg SimConfig) *Simulator {
+func NewSimulator(cfg SimConfig) (*Simulator, error) {
 	if !cfg.Roofline {
 		if len(cfg.BetaCoeffs) < 3 {
 			panic(fmt.Sprintf("SimConfig.BetaCoeffs requires at least 3 elements, got %d", len(cfg.BetaCoeffs)))
@@ -198,14 +198,16 @@ func NewSimulator(cfg SimConfig) *Simulator {
 
 	if cfg.TracesWorkloadFilePath != "" && cfg.GuideLLMConfig == nil {
 		s.Metrics.RequestRate = 0.0
-		s.generateWorkloadFromCSV()
+		if err := s.generateWorkloadFromCSV(); err != nil {
+			return nil, fmt.Errorf("loading CSV workload: %w", err)
+		}
 	} else if cfg.GuideLLMConfig != nil {
 		s.Metrics.RequestRate = cfg.GuideLLMConfig.Rate
 		s.generateWorkloadDistribution()
 	}
 	// else: no workload — caller injects via InjectArrival
 
-	return s
+	return s, nil
 }
 
 // WorkloadRNG returns the RNG for workload generation.
@@ -274,6 +276,23 @@ func (sim *Simulator) Run() {
 	}
 	sim.Finalize()
 }
+
+// QueueDepth returns the number of requests in the wait queue.
+func (sim *Simulator) QueueDepth() int { return sim.WaitQ.Len() }
+
+// BatchSize returns the number of requests in the running batch, or 0 if nil.
+func (sim *Simulator) BatchSize() int {
+	if sim.RunningBatch == nil {
+		return 0
+	}
+	return len(sim.RunningBatch.Requests)
+}
+
+// CurrentClock returns the current simulation clock (in ticks).
+func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
+
+// SimHorizon returns the simulation horizon (in ticks).
+func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 
 // Adds a newly arrived request to the waiting queue
 func (sim *Simulator) EnqueueRequest(r *Request) {
@@ -357,7 +376,7 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 				Request: preemptedRequest,
 			})
 
-			preemptedRequest.State = "queued"
+			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
 			sim.KVCache.ReleaseKVBlocks(preemptedRequest)
 			sim.WaitQ.queue = append([]*Request{preemptedRequest}, sim.WaitQ.queue...)
@@ -483,7 +502,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		// decrement the token budget
 		tokenBudget = tokenBudget - numNewTokens
 		// change the state of the request from queued to running
-		next.State = "running"
+		next.State = StateRunning
 
 		// update prefill-related features in RunningBatchFeatures
 		sim.runningBatchFeatures.NumPrefillRequests += 1
@@ -509,10 +528,8 @@ func (sim *Simulator) Step(now int64) {
 		TotalDecodeTokens:    0,
 		TotalCacheMissTokens: 0,
 	}
-	// Synchronize tiered KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
-	if tiered, ok := sim.KVCache.(*TieredKVCache); ok {
-		tiered.SetClock(now)
-	}
+	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
+	sim.KVCache.SetClock(now)
 
 	// Assign priorities to queued requests and order queue per scheduler policy
 	for _, req := range sim.WaitQ.queue {
@@ -538,7 +555,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
-	currStepAdvance += sim.KVCache.PendingTransferLatency()
+	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
@@ -582,7 +599,7 @@ func (sim *Simulator) Step(now int64) {
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
 		if req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1 {
-			req.State = "completed"
+			req.State = StateCompleted
 			req.ITL = append(req.ITL, currStepAdvance+sim.getOutputTokenProcessingTime())
 			if len(req.OutputTokens) > 0 {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})

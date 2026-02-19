@@ -46,7 +46,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			ArrivalTime:      rec.ArrivalTimeUs,
 			InputTokens:      inputTokens,
 			OutputTokens:     outputTokens,
-			State:            "queued",
+			State:            sim.StateQueued,
 			ScheduledStepIdx: 0,
 			FinishedStepIdx:  0,
 			TenantID:         rec.TenantID,

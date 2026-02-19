@@ -294,16 +294,16 @@ var runCmd = &cobra.Command{
 
 		// Validate policy names (catches CLI typos before they become panics)
 		if !sim.IsValidAdmissionPolicy(admissionPolicy) {
-			logrus.Fatalf("Unknown admission policy %q. Valid: always-admit, token-bucket, reject-all", admissionPolicy)
+			logrus.Fatalf("Unknown admission policy %q. Valid: %s", admissionPolicy, strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
 		}
 		if !sim.IsValidRoutingPolicy(routingPolicy) {
-			logrus.Fatalf("Unknown routing policy %q. Valid: round-robin, least-loaded, weighted, prefix-affinity, always-busiest", routingPolicy)
+			logrus.Fatalf("Unknown routing policy %q. Valid: %s", routingPolicy, strings.Join(sim.ValidRoutingPolicyNames(), ", "))
 		}
 		if !sim.IsValidPriorityPolicy(priorityPolicy) {
-			logrus.Fatalf("Unknown priority policy %q. Valid: constant, slo-based, inverted-slo", priorityPolicy)
+			logrus.Fatalf("Unknown priority policy %q. Valid: %s", priorityPolicy, strings.Join(sim.ValidPriorityPolicyNames(), ", "))
 		}
 		if !sim.IsValidScheduler(scheduler) {
-			logrus.Fatalf("Unknown scheduler %q. Valid: fcfs, priority-fcfs, sjf, reverse-priority", scheduler)
+			logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
 		}
 		if !trace.IsValidTraceLevel(traceLevel) {
 			logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
@@ -404,7 +404,9 @@ var runCmd = &cobra.Command{
 		if len(preGeneratedRequests) > 0 {
 			cs.SetPreGeneratedRequests(preGeneratedRequests)
 		}
-		cs.Run()
+		if err := cs.Run(); err != nil {
+			logrus.Fatalf("Simulation failed: %v", err)
+		}
 
 		if numInstances > 1 {
 			// Print per-instance metrics to stdout (multi-instance only)

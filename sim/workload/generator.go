@@ -125,7 +125,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64) ([]*sim.Request, error)
 				ArrivalTime:      currentTime,
 				InputTokens:      inputTokens,
 				OutputTokens:     outputTokens,
-				State:            "queued",
+				State:            sim.StateQueued,
 				ScheduledStepIdx: 0,
 				FinishedStepIdx:  0,
 				TenantID:         client.TenantID,

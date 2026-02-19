@@ -101,14 +101,17 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 // generates requests centrally, schedules ClusterArrivalEvents, runs a shared-clock
 // event loop processing cluster events before instance events, then finalizes.
 // Panics if called more than once.
-func (c *ClusterSimulator) Run() {
+func (c *ClusterSimulator) Run() error {
 	if c.hasRun {
 		panic("ClusterSimulator.Run() called more than once")
 	}
 	c.hasRun = true
 
 	// 1. Generate requests centrally
-	requests := c.generateRequests()
+	requests, err := c.generateRequests()
+	if err != nil {
+		return fmt.Errorf("generating requests: %w", err)
+	}
 
 	// 2. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
@@ -207,6 +210,8 @@ func (c *ClusterSimulator) Run() {
 			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
 		}
 	}
+
+	return nil
 }
 
 // nextSeqID returns the next monotonically increasing sequence ID for event ordering.

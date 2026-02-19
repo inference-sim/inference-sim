@@ -14,6 +14,16 @@ import (
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
+// mustNewSimulator is a test helper that calls NewSimulator and fails the test on error.
+func mustNewSimulator(t *testing.T, cfg SimConfig) *Simulator {
+	t.Helper()
+	s, err := NewSimulator(cfg)
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
+	return s
+}
+
 // TestSimulator_GoldenDataset verifies backward compatibility by running
 // all test cases from the golden dataset and comparing results.
 // This is the critical backward compatibility test ensuring RNG changes do not alter simulation outcomes.
@@ -26,7 +36,7 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 
 	for _, tc := range dataset.Tests {
 		t.Run(tc.Model, func(t *testing.T) {
-			sim := NewSimulator(SimConfig{
+			sim := mustNewSimulator(t, SimConfig{
 				Horizon:                   math.MaxInt64,
 				Seed:                      tc.Seed,
 				TotalKVBlocks:             tc.TotalKVBlocks,
@@ -150,7 +160,7 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 
 // TestSimulator_WorkloadRNG_NotNil verifies the WorkloadRNG accessor never returns nil
 func TestSimulator_WorkloadRNG_NotNil(t *testing.T) {
-	sim := NewSimulator(SimConfig{
+	sim := mustNewSimulator(t, SimConfig{
 		Horizon:       1000000,
 		Seed:          42,
 		TotalKVBlocks: 1000,
@@ -201,8 +211,8 @@ func TestSimulator_DeterministicWorkload(t *testing.T) {
 		},
 	}
 
-	sim1 := NewSimulator(cfg)
-	sim2 := NewSimulator(cfg)
+	sim1 := mustNewSimulator(t, cfg)
+	sim2 := mustNewSimulator(t, cfg)
 
 	sim1.Run()
 	sim2.Run()
@@ -242,7 +252,7 @@ func newTestSimConfig() SimConfig {
 // (both GuideLLMConfig nil and TracesWorkloadFilePath empty) creates a simulator
 // with an empty EventQueue and runs to completion with zero results.
 func TestNewSimulator_NoWorkload_EmptyQueue(t *testing.T) {
-	sim := NewSimulator(newTestSimConfig())
+	sim := mustNewSimulator(t, newTestSimConfig())
 
 	if len(sim.eventQueue) != 0 {
 		t.Errorf("eventQueue length: got %d, want 0", len(sim.eventQueue))
@@ -261,14 +271,14 @@ func TestNewSimulator_NoWorkload_EmptyQueue(t *testing.T) {
 // TestInjectArrival_RequestCompletes verifies that a single injected request
 // is processed to completion by the simulator.
 func TestInjectArrival_RequestCompletes(t *testing.T) {
-	sim := NewSimulator(newTestSimConfig())
+	sim := mustNewSimulator(t, newTestSimConfig())
 
 	req := &Request{
 		ID:           "request_0",
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 10),
 		OutputTokens: make([]int, 5),
-		State:        "queued",
+		State:        StateQueued,
 	}
 
 	sim.InjectArrival(req)
@@ -290,13 +300,13 @@ func TestInjectArrival_RequestCompletes(t *testing.T) {
 // WHEN a request is injected and completes
 // THEN HandledBy in RequestMetrics is empty (no routing happened)
 func TestInjectArrival_HandledByEmpty_StandaloneMode(t *testing.T) {
-	sim := NewSimulator(newTestSimConfig())
+	sim := mustNewSimulator(t, newTestSimConfig())
 	req := &Request{
 		ID:           "request_0",
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 10),
 		OutputTokens: make([]int, 5),
-		State:        "queued",
+		State:        StateQueued,
 	}
 	sim.InjectArrival(req)
 	sim.Run()
@@ -313,7 +323,7 @@ func TestInjectArrival_HandledByEmpty_StandaloneMode(t *testing.T) {
 // TestInjectArrival_MultipleRequests verifies that multiple injected requests
 // at staggered arrival times all complete successfully.
 func TestInjectArrival_MultipleRequests(t *testing.T) {
-	sim := NewSimulator(newTestSimConfig())
+	sim := mustNewSimulator(t, newTestSimConfig())
 
 	for i := 0; i < 10; i++ {
 		req := &Request{
@@ -321,7 +331,7 @@ func TestInjectArrival_MultipleRequests(t *testing.T) {
 			ArrivalTime:  int64(i * 100000),
 			InputTokens:  make([]int, 10),
 			OutputTokens: make([]int, 5),
-			State:        "queued",
+			State:        StateQueued,
 		}
 		sim.InjectArrival(req)
 	}
@@ -334,8 +344,8 @@ func TestInjectArrival_MultipleRequests(t *testing.T) {
 }
 
 // failOnCompletionKVStore wraps a real KVStore but returns false from
-// AllocateKVBlocks when the request has State == "completed". This works
-// because simulator.go sets req.State = "completed" before calling
+// AllocateKVBlocks when the request has State == StateCompleted. This works
+// because simulator.go sets req.State = StateCompleted before calling
 // AllocateKVBlocks for the final token, so the trigger precisely targets
 // the completion-time allocation path described in issue #183.
 type failOnCompletionKVStore struct {
@@ -344,7 +354,7 @@ type failOnCompletionKVStore struct {
 }
 
 func (f *failOnCompletionKVStore) AllocateKVBlocks(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
-	if req.State == "completed" {
+	if req.State == StateCompleted {
 		f.failCount++
 		return false
 	}
@@ -358,7 +368,7 @@ func (f *failOnCompletionKVStore) AllocateKVBlocks(req *Request, startIndex, end
 func TestStep_KVAllocFailAtCompletion_RequestNotSilentlyDropped(t *testing.T) {
 	// GIVEN a simulator with a KVStore that fails allocation at completion time
 	cfg := newTestSimConfig()
-	sim := NewSimulator(cfg)
+	sim := mustNewSimulator(t, cfg)
 	fakeKV := &failOnCompletionKVStore{KVStore: sim.KVCache}
 	sim.KVCache = fakeKV
 
@@ -368,7 +378,7 @@ func TestStep_KVAllocFailAtCompletion_RequestNotSilentlyDropped(t *testing.T) {
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 16), // 1 block worth of prefill
 		OutputTokens: make([]int, 3),  // 3 decode tokens
-		State:        "queued",
+		State:        StateQueued,
 	}
 	sim.InjectArrival(req)
 
@@ -431,7 +441,7 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 		},
 	}
 
-	sim := NewSimulator(cfg)
+	sim := mustNewSimulator(t, cfg)
 	sim.Run()
 
 	// Three-term equation: injected == completed + queued + running
@@ -490,7 +500,7 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 		TP:                 1,
 	}
 
-	sim := NewSimulator(cfg)
+	sim := mustNewSimulator(t, cfg)
 
 	// Inject 10 early requests (small, will complete before horizon)
 	for i := 0; i < 10; i++ {
@@ -499,7 +509,7 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 			ArrivalTime:  int64(i * 10000), // 0 to 90,000 ticks (well before 500k horizon)
 			InputTokens:  make([]int, 20),
 			OutputTokens: make([]int, 5),
-			State:        "queued",
+			State:        StateQueued,
 		})
 	}
 
@@ -510,7 +520,7 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 			ArrivalTime:  int64(300_000 + i*40_000), // 300,000 to 460,000 (all < 500k horizon)
 			InputTokens:  make([]int, 200),           // large prefill
 			OutputTokens: make([]int, 100),           // many decode tokens
-			State:        "queued",
+			State:        StateQueued,
 		})
 	}
 
@@ -565,7 +575,7 @@ func TestSimulator_Causality_FullChain_ArrivalToCompletion(t *testing.T) {
 		},
 	}
 
-	sim := NewSimulator(cfg)
+	sim := mustNewSimulator(t, cfg)
 	sim.Run()
 
 	if sim.Metrics.CompletedRequests == 0 {
@@ -628,7 +638,7 @@ func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 		},
 	}
 
-	sim := NewSimulator(cfg)
+	sim := mustNewSimulator(t, cfg)
 
 	prevClock := int64(0)
 	eventCount := 0
@@ -681,13 +691,13 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 	fixedTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Run 1
-	sim1 := NewSimulator(cfg)
+	sim1 := mustNewSimulator(t, cfg)
 	sim1.Run()
 	f1 := t.TempDir() + "/run1.json"
 	sim1.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, fixedTime, f1)
 
 	// Run 2
-	sim2 := NewSimulator(cfg)
+	sim2 := mustNewSimulator(t, cfg)
 	sim2.Run()
 	f2 := t.TempDir() + "/run2.json"
 	sim2.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, fixedTime, f2)
@@ -778,7 +788,7 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 				},
 			}
 
-			sim := NewSimulator(cfg)
+			sim := mustNewSimulator(t, cfg)
 			sim.Run()
 
 			if sim.KVCache.UsedBlocks() != 0 {
@@ -790,5 +800,37 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 				t.Errorf("TotalCapacity changed: got %d, want %d", sim.KVCache.TotalCapacity(), cfg.TotalKVBlocks)
 			}
 		})
+	}
+}
+
+func TestSimulator_ObservationMethods_MatchDirectAccess(t *testing.T) {
+	// BC-1: Observation methods return same values as direct field access
+	cfg := newTestSimConfig()
+	s := mustNewSimulator(t, cfg)
+
+	// Before any events: queue empty, batch empty
+	if s.QueueDepth() != 0 {
+		t.Errorf("QueueDepth: got %d, want 0", s.QueueDepth())
+	}
+	if s.BatchSize() != 0 {
+		t.Errorf("BatchSize: got %d, want 0", s.BatchSize())
+	}
+	if s.CurrentClock() != 0 {
+		t.Errorf("CurrentClock: got %d, want 0", s.CurrentClock())
+	}
+	if s.SimHorizon() != cfg.Horizon {
+		t.Errorf("SimHorizon: got %d, want %d", s.SimHorizon(), cfg.Horizon)
+	}
+
+	// Inject a request and verify QueueDepth
+	req := &Request{
+		ID: "obs-test-1", ArrivalTime: 0,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		State: StateQueued,
+	}
+	s.InjectArrival(req)
+	s.ProcessNextEvent() // process arrival → queued
+	if s.QueueDepth() != s.WaitQ.Len() {
+		t.Errorf("QueueDepth mismatch: method=%d, direct=%d", s.QueueDepth(), s.WaitQ.Len())
 	}
 }

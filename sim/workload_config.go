@@ -9,26 +9,20 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
-
-	"github.com/sirupsen/logrus"
 )
 
-func (sim *Simulator) generateWorkloadFromCSV() {
+func (sim *Simulator) generateWorkloadFromCSV() error {
 	file, err := os.Open(sim.tracesWorkloadFilePath)
 	if err != nil {
-		logrus.Fatalf("failed to open csv file: %v", err)
+		return fmt.Errorf("failed to open csv file: %w", err)
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			logrus.Warnf("failed to close csv file %q: %v", sim.tracesWorkloadFilePath, err)
-		}
-	}()
+	defer file.Close() //nolint:errcheck // read-only file; close error is not actionable
 
 	reader := csv.NewReader(file)
 
 	// Skip header row
 	if _, err := reader.Read(); err != nil {
-		logrus.Fatalf("failed to read csv header: %v", err)
+		return fmt.Errorf("failed to read csv header: %w", err)
 	}
 
 	reqIdx := 0
@@ -38,16 +32,16 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 			break
 		}
 		if err != nil {
-			logrus.Fatalf("error reading csv at row %d: %v", reqIdx, err)
+			return fmt.Errorf("error reading csv at row %d: %w", reqIdx, err)
 		}
 		if len(record) < 5 {
-			logrus.Fatalf("csv row %d has %d columns, expected at least 5", reqIdx, len(record))
+			return fmt.Errorf("csv row %d has %d columns, expected at least 5", reqIdx, len(record))
 		}
 
 		// 1. Parse Arrival Time
 		arrivalFloat, err := strconv.ParseFloat(record[0], 64)
 		if err != nil {
-			logrus.Fatalf("invalid arrival time at row %d: %v", reqIdx, err)
+			return fmt.Errorf("invalid arrival time at row %d: %w", reqIdx, err)
 		}
 		arrivalTime := int64(arrivalFloat * 1e6)
 
@@ -61,10 +55,10 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 
 		// Unmarshal JSON-style list: "[1, 2, 3]" -> []int{1, 2, 3}
 		if err := json.Unmarshal([]byte(record[3]), &inputTokens); err != nil {
-			logrus.Fatalf("failed to parse prefill_tokens at row %d: %v", reqIdx, err)
+			return fmt.Errorf("failed to parse prefill_tokens at row %d: %w", reqIdx, err)
 		}
 		if err := json.Unmarshal([]byte(record[4]), &outputTokens); err != nil {
-			logrus.Fatalf("failed to parse decode_tokens at row %d: %v", reqIdx, err)
+			return fmt.Errorf("failed to parse decode_tokens at row %d: %w", reqIdx, err)
 		}
 
 		// 3. Create the request object
@@ -74,7 +68,7 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 			ArrivalTime:      arrivalTime,
 			InputTokens:      inputTokens,
 			OutputTokens:     outputTokens,
-			State:            "queued",
+			State:            StateQueued,
 			ScheduledStepIdx: 0,
 			FinishedStepIdx:  0,
 		}
@@ -84,6 +78,7 @@ func (sim *Simulator) generateWorkloadFromCSV() {
 
 		reqIdx++
 	}
+	return nil
 }
 
 // GenerateLengthGauss samples a length from a clamped Gaussian distribution.
@@ -156,7 +151,7 @@ func (sim *Simulator) generateWorkloadDistribution() {
 			ArrivalTime:      currentTime,
 			InputTokens:      input,
 			OutputTokens:     output,
-			State:            "queued",
+			State:            StateQueued,
 			ScheduledStepIdx: 0,
 			FinishedStepIdx:  0,
 		}

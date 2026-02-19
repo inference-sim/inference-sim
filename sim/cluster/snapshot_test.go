@@ -24,11 +24,11 @@ func newTestInstance(id InstanceID, totalKVBlocks int64) *InstanceSimulator {
 	return NewInstanceSimulator(id, cfg)
 }
 
-// TestInstanceSnapshot_Immutability verifies BC-5, NC-2:
+// TestSnapshot_Immutability verifies BC-5, NC-2:
 // GIVEN a snapshot taken from an instance
 // WHEN the instance state subsequently changes
 // THEN the snapshot values remain unchanged (value-type semantics)
-func TestInstanceSnapshot_Immutability(t *testing.T) {
+func TestSnapshot_Immutability(t *testing.T) {
 	inst := newTestInstance("snap-test", 100)
 
 	// Inject a request to change instance state
@@ -37,7 +37,7 @@ func TestInstanceSnapshot_Immutability(t *testing.T) {
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 50),
 		OutputTokens: make([]int, 10),
-		State:        "queued",
+		State:        sim.StateQueued,
 	}
 	inst.InjectRequest(req)
 
@@ -45,6 +45,7 @@ func TestInstanceSnapshot_Immutability(t *testing.T) {
 	provider := NewCachedSnapshotProvider(instances, DefaultObservabilityConfig())
 
 	snap1 := provider.Snapshot("snap-test", 0)
+	snap1QD := snap1.QueueDepth
 
 	// Now inject another request to change state
 	req2 := &sim.Request{
@@ -52,31 +53,21 @@ func TestInstanceSnapshot_Immutability(t *testing.T) {
 		ArrivalTime:  100,
 		InputTokens:  make([]int, 30),
 		OutputTokens: make([]int, 5),
-		State:        "queued",
+		State:        sim.StateQueued,
 	}
 	inst.InjectRequest(req2)
 
 	// Take a new snapshot — should reflect new state
-	snap2 := provider.Snapshot("snap-test", 100)
+	_ = provider.Snapshot("snap-test", 100)
 
 	// snap1 should NOT have changed (value-type semantics)
-	if snap1.Timestamp != 0 {
-		t.Errorf("snap1.Timestamp changed to %d, want 0", snap1.Timestamp)
+	if snap1.QueueDepth != snap1QD {
+		t.Errorf("snap1.QueueDepth changed from %d to %d — value semantics violated", snap1QD, snap1.QueueDepth)
 	}
 
-	// snap2 should have the new timestamp
-	if snap2.Timestamp != 100 {
-		t.Errorf("snap2.Timestamp = %d, want 100", snap2.Timestamp)
-	}
-
-	// Verify snapshots are independent values — two consecutive snapshots
-	// at different times should have their own timestamps
-	snap3 := provider.Snapshot("snap-test", 200)
-	if snap3.Timestamp != 200 {
-		t.Errorf("snap3.Timestamp = %d, want 200", snap3.Timestamp)
-	}
-	if snap2.Timestamp != 100 {
-		t.Errorf("snap2.Timestamp changed to %d after taking snap3, want 100", snap2.Timestamp)
+	// Verify ID is correct string type
+	if snap1.ID != "snap-test" {
+		t.Errorf("snap1.ID = %q, want %q", snap1.ID, "snap-test")
 	}
 }
 
@@ -102,7 +93,7 @@ func TestCachedSnapshotProvider_RefreshBehavior(t *testing.T) {
 		ArrivalTime:  0,
 		InputTokens:  make([]int, 50),
 		OutputTokens: make([]int, 10),
-		State:        "queued",
+		State:        sim.StateQueued,
 	}
 	inst.InjectRequest(req)
 

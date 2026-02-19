@@ -77,8 +77,20 @@ func IsValidPriorityPolicy(name string) bool { return validPriorityPolicies[name
 // IsValidScheduler returns true if name is a recognized scheduler.
 func IsValidScheduler(name string) bool { return validSchedulers[name] }
 
-// validNames returns a sorted comma-separated list of valid names (excluding empty string).
-func validNames(m map[string]bool) string {
+// ValidAdmissionPolicyNames returns sorted valid admission policy names (excluding empty).
+func ValidAdmissionPolicyNames() []string { return validNamesList(validAdmissionPolicies) }
+
+// ValidRoutingPolicyNames returns sorted valid routing policy names (excluding empty).
+func ValidRoutingPolicyNames() []string { return validNamesList(validRoutingPolicies) }
+
+// ValidPriorityPolicyNames returns sorted valid priority policy names (excluding empty).
+func ValidPriorityPolicyNames() []string { return validNamesList(validPriorityPolicies) }
+
+// ValidSchedulerNames returns sorted valid scheduler names (excluding empty).
+func ValidSchedulerNames() []string { return validNamesList(validSchedulers) }
+
+// validNamesList returns sorted non-empty keys from a validity map.
+func validNamesList(m map[string]bool) []string {
 	names := make([]string, 0, len(m))
 	for k := range m {
 		if k != "" {
@@ -86,7 +98,12 @@ func validNames(m map[string]bool) string {
 		}
 	}
 	sort.Strings(names)
-	return strings.Join(names, ", ")
+	return names
+}
+
+// validNames returns a sorted comma-separated list of valid names (excluding empty string).
+func validNames(m map[string]bool) string {
+	return strings.Join(validNamesList(m), ", ")
 }
 
 // Validate checks that all policy names and parameter ranges in the bundle are valid.
