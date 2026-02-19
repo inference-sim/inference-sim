@@ -1,68 +1,68 @@
-# BLIS Weighted Routing Configuration
+# BLIS Weighted Routing — Composable Scorer Pipeline
 #
-# Weighted scoring routes requests using a composite score of cache availability
-# and load balance:
+# The `weighted` routing policy aggregates multiple scoring dimensions,
+# each evaluating instances on a [0,1] scale. Scores are combined with
+# configurable weights: score = clamp(s_i) * w_i, then argmax.
 #
-#   cache_score = FreeKVBlocks / maxFreeKVBlocks   (memory availability)
-#   load_score  = 1 / (1 + effectiveLoad)          (load balance)
-#   score       = cache_score * cache_weight + load_score * load_weight
+# Available scorers:
+#   queue-depth     — min-max normalization of effective load (llm-d match)
+#   kv-utilization  — inverse utilization: 1 - KVUtilization (llm-d match)
+#   load-balance    — inverse transform: 1/(1 + effectiveLoad) (BLIS-native)
 #
-# Where effectiveLoad = QueueDepth + BatchSize + PendingRequests.
-# PendingRequests counts requests routed but not yet in queue, giving routing
-# visibility into its own recent decisions.
+# Default profile (when --routing-scorers is not specified):
+#   queue-depth:2, kv-utilization:2, load-balance:1
 #
-# Higher scores are preferred. The instance with the highest score receives
-# the request. Weights should sum to 1.0 (auto-normalized if they don't).
+# Weights are relative — only ratios matter. [3,2,2] behaves identically
+# to [0.43,0.29,0.29]. The framework normalizes weights to sum to 1.0.
 #
 # ============================================================================
-# TRY IT: See weights produce different routing distributions
+# TRY IT: Compare scorer configurations
 # ============================================================================
 #
-# Run these two commands and compare the Target Distribution in the trace summary:
-#
-#   # Cache-dominant: favors instances with most free KV blocks
+#   # Default profile (balanced)
 #   ./simulation_worker run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
-#     --routing-cache-weight 0.9 --routing-load-weight 0.1 \
 #     --num-requests 500 --rate 1000 \
 #     --trace-level decisions --summarize-trace
 #
-#   # Load-dominant: spreads requests evenly across instances
+#   # Load-balance only (equivalent to least-loaded)
 #   ./simulation_worker run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
-#     --routing-cache-weight 0.1 --routing-load-weight 0.9 \
+#     --routing-scorers "load-balance:1" \
 #     --num-requests 500 --rate 1000 \
 #     --trace-level decisions --summarize-trace
 #
-# Expected: cache-dominant shows skewed distribution (one instance gets many
-# more requests), load-dominant shows near-uniform distribution.
-# Use --rate 1000 or higher so requests arrive fast enough for PendingRequests
-# to accumulate and create the signal disagreement between cache and load.
+#   # KV-utilization dominant (prefer instances with free memory)
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-scorers "kv-utilization:5,queue-depth:1" \
+#     --num-requests 500 --rate 1000 \
+#     --trace-level decisions --summarize-trace
 #
 # ============================================================================
-# When weights matter
+# Adding new scorers
 # ============================================================================
 #
-# Weights affect routing when cache availability (FreeKVBlocks) and effective
-# load (QueueDepth + BatchSize + PendingRequests) rank instances differently.
-# This occurs when:
-#   - High request rates cause PendingRequests to accumulate unevenly
-#   - Instances have different KV cache capacities (heterogeneous clusters)
-#   - Prefix caching creates uneven memory usage across instances
-#
-# At low arrival rates (--rate 20), instances equalize between routing
-# decisions, so weight changes have minimal visible effect. Use --rate 1000+
-# to see weight sensitivity.
+# To add a new scorer (e.g., for prefix affinity — coming in PR 18):
+# 1. Implement the scorer function in sim/routing_scorers.go
+# 2. Register the name in validScorerNames + newScorer factory
+# Extension friction: 2 touch points in 1 file.
 
 admission:
   policy: always-admit
 
 routing:
   policy: weighted
-  cache_weight: 0.6    # weight for cache availability (prefer instances with free KV blocks)
-  load_weight: 0.4     # weight for load balance (prefer instances with lower effective load)
+  scorers:
+    - name: queue-depth
+      weight: 2.0
+    - name: kv-utilization
+      weight: 2.0
+    - name: load-balance
+      weight: 1.0
 
 priority:
   policy: constant
