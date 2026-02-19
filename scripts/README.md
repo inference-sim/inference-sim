@@ -43,14 +43,20 @@ Results saved to `bench_data/` at repo root.
    oc project diya
    ```
 
-2. **GitHub Access:**
+2. **PVC Debugger Pod:**
+   ```bash
+   oc apply -f debug-pod.yaml
+   oc get pod pvc-debugger -n diya  # Verify it's Running
+   ```
+
+   Jobs write results to `data-pvc` at `/mnt/bench_data/`. Collection reads from this PVC via the pvc-debugger pod.
+
+3. **GitHub Access:**
    - **inference-sim:** Branch `roofline_valid` must be pushed to GitHub
    - **InferSim fork:** Uses `github.com/inference-sim/InferSim` branch `roofline-benchmark-improvements`
    - Jobs show git commits in logs for traceability
 
-3. **H100 GPU nodes** available in cluster
-
-**Note:** Jobs clone both repositories at runtime, no manual PVC setup required.
+4. **H100 GPU nodes** available in cluster
 
 ## Commands
 
@@ -122,10 +128,13 @@ oc logs -f job/infersim-h100-32-8-128-prefill-test -n diya
 **Note:** Results are **auto-collected and verified** after each wave when using `orchestrate_benchmarks.py`. Manual collection is only needed for custom workflows.
 
 **Auto-collection behavior:**
-- After wave completes → `oc rsync` from pod filesystems → verify 4 CSV files exist
-- After GEMM finishes → `oc rsync` from GEMM pod → verify `data.csv` exists
+- Jobs write results to PVC (`data-pvc` at `/mnt/bench_data/`) before completion
+- After wave completes → `oc rsync` from PVC via pvc-debugger pod → verify 4 CSV files exist locally
+- After GEMM finishes → `oc rsync` from PVC → verify `data.csv` exists locally
 - If collection fails or files missing → orchestration exits with error
 - This ensures data is safe on local disk before proceeding to next wave
+
+**Why PVC?** Pod-local storage (`/workspace/`) is ephemeral - it's deleted when containers exit. PVC storage persists after job completion, allowing collection anytime.
 
 **Manual collection:**
 ```bash
@@ -136,7 +145,12 @@ python scripts/collect_results.py
 python scripts/collect_results.py --output-dir ./results_feb19
 ```
 
-Copies CSV files from completed pod filesystems to local machine via `oc rsync`.
+Copies CSV files from PVC to local machine via `oc rsync` through the pvc-debugger pod.
+
+**How it works:**
+1. Jobs write results to `/mnt/bench_data/` on the PVC during execution
+2. Collection script uses `oc rsync` from `pvc-debugger:/mnt/bench_data/` to local
+3. Works even after jobs complete (PVC persists, pod-local storage doesn't)
 
 ### Validate Data
 
@@ -198,11 +212,12 @@ When running `orchestrate_benchmarks.py --gpu H100`:
 2. **Wave 0 (GEMM)** - Submits GEMM job, runs in background
 3. **Waves 1-6** - For each shape (28-4-128, 32-32-128, etc.):
    - Submit 4 jobs in parallel
+   - Jobs write results to PVC at `/mnt/bench_data/`
    - Wait for all 4 to complete (~2-5 minutes)
-   - Collect results from 4 pods → `bench_data/`
+   - Collect results from PVC → local `bench_data/`
    - Verify 4 CSV files exist locally
    - Proceed to next wave
-4. **GEMM Collection** - Wait for GEMM to finish, collect results
+4. **GEMM Collection** - Wait for GEMM to finish, write to PVC, collect locally
 5. **Summary** - Report total jobs, ready for validation
 
 **Timeline:** ~15-30 minutes for all waves (depends on GPU availability and queue time)
@@ -328,7 +343,7 @@ rm scripts/openshift/job-h100-*.yaml
 - `openshift/generate_job.py` - Generate single job YAML from template with shape-specific config
 - `orchestrate_benchmarks.py` - Wave-based orchestration with auto-collection after each wave
 - `run_benchmarks.py` - Called by jobs, creates temp configs and routes to InferSim kernel scripts
-- `collect_results.py` - Copy CSV files from pod filesystems via oc rsync (called automatically by orchestration)
+- `collect_results.py` - Copy CSV files from PVC via pvc-debugger pod (called automatically by orchestration)
 - `validate_benchmark_data.py` - Verify data structure, columns, MFU ranges (per-job + final validation)
 
 See also:

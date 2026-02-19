@@ -151,6 +151,16 @@ spec:
           fi
           python scripts/validate_benchmark_data.py ${VALIDATION_ARGS} 2>&1 | grep -E "(PASS|FAIL|OK|WARNING)" || true
 
+          # Copy results to PVC for persistence (pod-local storage is ephemeral)
+          echo "Copying results to PVC..."
+          mkdir -p /mnt/bench_data/mha/prefill/${GPU_TYPE_LOWER}
+          mkdir -p /mnt/bench_data/mha/decode/${GPU_TYPE_LOWER}
+          mkdir -p /mnt/bench_data/gemm/${GPU_TYPE_LOWER}
+          cp -v InferSim/bench_data/mha/prefill/${GPU_TYPE_LOWER}/*.csv /mnt/bench_data/mha/prefill/${GPU_TYPE_LOWER}/ 2>/dev/null || true
+          cp -v InferSim/bench_data/mha/decode/${GPU_TYPE_LOWER}/*.csv /mnt/bench_data/mha/decode/${GPU_TYPE_LOWER}/ 2>/dev/null || true
+          cp -v InferSim/bench_data/gemm/${GPU_TYPE_LOWER}/*.csv /mnt/bench_data/gemm/${GPU_TYPE_LOWER}/ 2>/dev/null || true
+          echo "✓ Results copied to PVC at /mnt/bench_data/"
+
           # Upload results (if configured)
           if [ -n "${S3_BUCKET}" ]; then
             echo "Uploading results to S3..."
