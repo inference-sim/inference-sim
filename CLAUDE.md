@@ -266,7 +266,7 @@ Each rule traces to a real bug we found and fixed. Enforced by PR workflow (self
 
 ### Current Implementation Focus
 
-Active development: Evolutionary Policy Optimization extension (see `docs/plans/2026-02-11-macro-implementation-plan-v2.md`):
+Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`). Prior work: Evolutionary Policy Optimization (see `docs/plans/2026-02-11-macro-implementation-plan-v2--deprecated.md`, PRs 1-16 — 12 completed, 4 remaining):
 - 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
 - **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type), PR7 (PriorityPolicy with ConstantPriority + SLOBasedPriority templates, InstanceScheduler with FCFS + PriorityFCFS + SJF templates, Priority field on Request, CLI flags `--priority-policy` and `--scheduler`), PR8 (RouterState bridge type in `sim/router_state.go`, PolicyBundle YAML config in `sim/bundle.go`, `--policy-config` CLI flag, AdmissionPolicy and RoutingPolicy accept `*RouterState`, `RoutingDecision.Priority` hint field, **INTERFACE FREEZE**), PR9 (RawMetrics with Distribution + FitnessResult, anomaly detection with priority inversion + HOL blocking counters, pathological templates: reject-all, inverted-slo, always-busiest, reverse-priority, `--fitness-weights` CLI flag, **RESEARCH-READY CHECKPOINT**)
@@ -447,7 +447,9 @@ inference-sim/
 ### Design Documents (per-feature)
 
 - `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
-- `docs/plans/2026-02-11-macro-implementation-plan-v2.md`: Macro-level implementation plan (v3.4, 16 PRs across 6 phases, online routing architecture)
+- `docs/plans/2026-02-11-macro-implementation-plan-v2--deprecated.md`: **DEPRECATED** — Macro-level implementation plan (v3.4, 16 PRs across 6 phases, PRs 1-16). Historical reference for completed PRs.
+- `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`: **ACTIVE** — Composable scorer framework macro plan (2 PRs: PR 17-18)
+- `docs/plans/2026-02-19-weighted-scoring-evolution-design.md`: Design doc for composable scorer framework (specification species)
 - `docs/plans/2026-02-13-simplification-assessment.md`: Architectural simplification assessment (constructor collapse, unified CLI, field privatization, interface dedup)
 - `docs/plans/2026-02-16-workload-generator-design.md`: ServeGen-informed workload generator design (multi-client specs, arrival processes, calibration)
 - `docs/plans/2026-02-17-pr13-decision-traces.md`: PR13 decision trace design (RoutingRecord, counterfactual analysis, TraceSummary)
