@@ -48,10 +48,10 @@ def copy_results_from_pod(pod_name: str, local_dir: Path, namespace: str = "diya
     # Create local directory
     local_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy data directory
+    # Copy data directory (jobs clone to /mnt/inference-sim-job)
     result = subprocess.run([
         "oc", "rsync", "-n", namespace,
-        f"{pod_name}:/mnt/inference-sim/InferSim/bench_data/",
+        f"{pod_name}:/mnt/inference-sim-job/InferSim/bench_data/",
         str(local_dir) + "/"
     ], capture_output=True, text=True)
 
