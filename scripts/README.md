@@ -24,7 +24,7 @@ python scripts/orchestrate_benchmarks.py --gpu H100
 python scripts/collect_results.py
 
 # Validate data
-python scripts/validate_benchmarks.py
+python scripts/validate_benchmark_data.py --gpu H100
 ```
 
 ### Dry Run (No Submission)
@@ -60,16 +60,19 @@ oc apply -f scripts/openshift/job-h100-32-8-128-decode-tp2-*.yaml -n diya
 ## Output Structure
 
 ```
-InferSim/bench_data/h100/
+InferSim/bench_data/
 ├── gemm/
-│   └── data.csv                 # GEMM MFU data
+│   └── h100/
+│       └── data.csv             # GEMM MFU data
 └── mha/
     ├── prefill/
-    │   ├── 28-4-128.csv        # 6 shapes
-    │   └── ...
+    │   └── h100/
+    │       ├── 28-4-128.csv     # 6 shapes
+    │       └── ...
     └── decode/
-        ├── 28-4-128-tp1.csv    # 6 shapes × 3 TPs = 18 files
-        └── ...
+        └── h100/
+            ├── 28-4-128-tp1.csv # 6 shapes × 3 TPs = 18 files
+            └── ...
 ```
 
 ## Troubleshooting
@@ -98,4 +101,4 @@ python scripts/orchestrate_benchmarks.py --gpu H100 --dry-run | grep "32-8-128"
 - `orchestrate_benchmarks.py` - Wave-based job orchestration
 - `run_benchmarks.py` - Called by jobs, routes to InferSim scripts
 - `collect_results.py` - Copy CSV files from completed pods
-- `validate_benchmarks.py` - Verify data structure and ranges
+- `validate_benchmark_data.py` - Verify data structure and ranges

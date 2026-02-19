@@ -337,7 +337,7 @@ def main():
         print(f"Total jobs submitted: {len(all_jobs) + (1 if gemm_job else 0)}")
         print(f"\nNext steps:")
         print("1. python scripts/collect_results.py")
-        print("2. python scripts/validate_benchmarks.py")
+        print("2. python scripts/validate_benchmark_data.py --gpu H100")
 
 
 if __name__ == "__main__":
