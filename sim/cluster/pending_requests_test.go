@@ -26,7 +26,7 @@ func TestClusterSimulator_PendingRequests_DrainsToZeroAfterProcessing(t *testing
 		RoutingLoadWeight:  0.4,
 	}
 	workload := &sim.GuideLLMConfig{
-		Rate: 2.0 / 1e6, MaxPrompts: 6,
+		Rate: 2.0 / 1e6, NumRequests: 6,
 		PromptTokens: 16, OutputTokens: 8,
 		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
 		PromptTokensMin: 16, PromptTokensMax: 16,
@@ -89,7 +89,7 @@ func TestClusterSimulator_PendingRequests_VisibleInRoutingState(t *testing.T) {
 	}
 
 	cs := NewClusterSimulator(config, &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, MaxPrompts: 0,
+		Rate: 1.0 / 1e6, NumRequests: 0,
 		PromptTokens: 16, OutputTokens: 8,
 		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
 		PromptTokensMin: 16, PromptTokensMax: 16,
@@ -168,7 +168,7 @@ func TestClusterSimulator_PendingRequests_CausalDecrement(t *testing.T) {
 	}
 
 	cs := NewClusterSimulator(config, &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, MaxPrompts: 0,
+		Rate: 1.0 / 1e6, NumRequests: 0,
 		PromptTokens: 16, OutputTokens: 8,
 		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
 		PromptTokensMin: 16, PromptTokensMax: 16,
@@ -240,7 +240,7 @@ func TestClusterSimulator_PendingRequests_CounterfactualIncludesPending(t *testi
 	}
 
 	cs := NewClusterSimulator(config, &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, MaxPrompts: 0,
+		Rate: 1.0 / 1e6, NumRequests: 0,
 		PromptTokens: 16, OutputTokens: 8,
 		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
 		PromptTokensMin: 16, PromptTokensMax: 16,

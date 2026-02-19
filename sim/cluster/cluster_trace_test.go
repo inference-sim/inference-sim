@@ -22,7 +22,7 @@ func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 		TraceLevel:         "none",
 	}
 	workload := &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, MaxPrompts: 3,
+		Rate: 1.0 / 1e6, NumRequests: 3,
 		PromptTokens: 10, OutputTokens: 5,
 		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
 		PromptTokensMin: 10, PromptTokensMax: 10,
@@ -55,7 +55,7 @@ func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 		CounterfactualK:    0,
 	}
 	workload := &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, MaxPrompts: 5,
+		Rate: 1.0 / 1e6, NumRequests: 5,
 		PromptTokens: 10, OutputTokens: 5,
 		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
 		PromptTokensMin: 10, PromptTokensMax: 10,
@@ -105,7 +105,7 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 		CounterfactualK:    2,
 	}
 	workload := &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, MaxPrompts: 3,
+		Rate: 1.0 / 1e6, NumRequests: 3,
 		PromptTokens: 10, OutputTokens: 5,
 		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
 		PromptTokensMin: 10, PromptTokensMax: 10,
@@ -149,7 +149,7 @@ func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
 		TraceLevel:            "decisions",
 	}
 	workload := &sim.GuideLLMConfig{
-		Rate: 5.0 / 1e6, MaxPrompts: 10,
+		Rate: 5.0 / 1e6, NumRequests: 10,
 		PromptTokens: 10, OutputTokens: 5,
 		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
 		PromptTokensMin: 10, PromptTokensMax: 10,

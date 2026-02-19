@@ -37,7 +37,7 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 func newTestWorkload(maxPrompts int) *sim.GuideLLMConfig {
 	return &sim.GuideLLMConfig{
 		Rate:               10.0 / 1e6,
-		MaxPrompts:         maxPrompts,
+		NumRequests:         maxPrompts,
 		PrefixTokens:       0,
 		PromptTokens:       100,
 		PromptTokensStdDev: 20,
@@ -199,7 +199,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 
 			workload := &sim.GuideLLMConfig{
 				Rate:               tc.Rate / 1e6,
-				MaxPrompts:         tc.MaxPrompts,
+				NumRequests:         tc.NumRequests,
 				PrefixTokens:       tc.PrefixTokens,
 				PromptTokens:       tc.PromptTokens,
 				PromptTokensStdDev: tc.PromptTokensStdev,
@@ -827,7 +827,7 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 		t.Run(tc.Model, func(t *testing.T) {
 			guideLLMConfig := &sim.GuideLLMConfig{
 				Rate:               tc.Rate / 1e6,
-				MaxPrompts:         tc.MaxPrompts,
+				NumRequests:         tc.NumRequests,
 				PrefixTokens:       tc.PrefixTokens,
 				PromptTokens:       tc.PromptTokens,
 				PromptTokensStdDev: tc.PromptTokensStdev,

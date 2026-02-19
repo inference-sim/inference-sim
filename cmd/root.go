@@ -37,7 +37,7 @@ var (
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
-	maxPrompts                int       // Number of requests
+	numRequests               int       // Number of requests
 	prefixTokens              int       // Prefix Token Count
 	promptTokensMean          int       // Average Prompt Token Count
 	promptTokensStdev         int       // Stdev Prompt Token Count
@@ -229,7 +229,7 @@ var runCmd = &cobra.Command{
 			if outputTokensMean > outputTokensMax || outputTokensMean < outputTokensMin || outputTokensStdev > outputTokensMax || outputTokensStdev < outputTokensMin {
 				logrus.Fatalf("output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]")
 			}
-			guideLLMConfig = &sim.GuideLLMConfig{Rate: rate / 1e6, MaxPrompts: maxPrompts,
+			guideLLMConfig = &sim.GuideLLMConfig{Rate: rate / 1e6, NumRequests: numRequests,
 				PrefixTokens: prefixTokens, PromptTokens: promptTokensMean,
 				PromptTokensStdDev: promptTokensStdev, PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
 				OutputTokens: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
@@ -238,7 +238,7 @@ var runCmd = &cobra.Command{
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
 			}
-			guideLLMConfig = GetWorkloadConfig(defaultsFilePath, workloadType, rate/1e6, maxPrompts)
+			guideLLMConfig = GetWorkloadConfig(defaultsFilePath, workloadType, rate/1e6, numRequests)
 			if guideLLMConfig == nil {
 				logrus.Fatalf("Undefined workload. Use one among (chatbot, summarization, contentgen, multidoc)")
 			}
@@ -519,7 +519,7 @@ func init() {
 
 	// GuideLLM-style distribution-based workload generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
-	runCmd.Flags().IntVar(&maxPrompts, "max-prompts", 100, "Number of requests")
+	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
 	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")
 	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", 512, "Average Prompt Token Count")
 	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", 256, "Stddev Prompt Token Count")

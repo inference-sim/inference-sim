@@ -12,7 +12,7 @@ func TestGenerateRequestsFromDistribution_ZeroRate_Panics(t *testing.T) {
 	// THEN it panics instead of entering an infinite loop (#202)
 	cs := &ClusterSimulator{
 		rng:     sim.NewPartitionedRNG(42),
-		workload: &sim.GuideLLMConfig{Rate: 0, MaxPrompts: 10},
+		workload: &sim.GuideLLMConfig{Rate: 0, NumRequests: 10},
 		config:  DeploymentConfig{Horizon: 1000},
 	}
 

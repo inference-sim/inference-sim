@@ -125,7 +125,7 @@ func (sim *Simulator) generateWorkloadDistribution() {
 	prefix := sim.generateRandomTokenIDs(sim.guideLLMConfig.PrefixTokens)
 
 	// create request arrivals iteratively
-	for currentTime < sim.Horizon && reqIdx < sim.guideLLMConfig.MaxPrompts {
+	for currentTime < sim.Horizon && reqIdx < sim.guideLLMConfig.NumRequests {
 		// In a Poisson process, the arrival rate is inversely proportional
 		// to the mean interarrival time
 		// go through the workload requests one by one
