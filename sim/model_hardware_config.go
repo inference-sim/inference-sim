@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"sort"
+	"strings"
 )
 
 type ModelConfig struct {
@@ -243,4 +245,40 @@ func (c *HFConfig) Marshal() ([]byte, error) {
 		return nil, errors.New("nil HFConfig")
 	}
 	return json.MarshalIndent(c.Raw, "", "  ")
+}
+
+// invalidPositiveFloat returns true if v is not a valid positive float64
+// (i.e., v <= 0, NaN, or Inf). Used to validate roofline config denominators.
+func invalidPositiveFloat(v float64) bool {
+	return v <= 0 || math.IsNaN(v) || math.IsInf(v, 0)
+}
+
+// ValidateRooflineConfig checks that all fields required by the roofline latency
+// model are valid positive values. Returns an error listing all invalid fields, or nil if valid.
+func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib) error {
+	var problems []string
+
+	if mc.NumHeads <= 0 {
+		problems = append(problems, fmt.Sprintf("ModelConfig.NumHeads must be > 0, got %d", mc.NumHeads))
+	}
+	if invalidPositiveFloat(hc.TFlopsPeak) {
+		problems = append(problems, fmt.Sprintf("HardwareCalib.TFlopsPeak must be a valid positive number, got %v", hc.TFlopsPeak))
+	}
+	if invalidPositiveFloat(hc.BwPeakTBs) {
+		problems = append(problems, fmt.Sprintf("HardwareCalib.BwPeakTBs must be a valid positive number, got %v", hc.BwPeakTBs))
+	}
+	if invalidPositiveFloat(hc.BwEffConstant) {
+		problems = append(problems, fmt.Sprintf("HardwareCalib.BwEffConstant must be a valid positive number, got %v", hc.BwEffConstant))
+	}
+	if invalidPositiveFloat(hc.MfuPrefill) {
+		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuPrefill must be a valid positive number, got %v", hc.MfuPrefill))
+	}
+	if invalidPositiveFloat(hc.MfuDecode) {
+		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuDecode must be a valid positive number, got %v", hc.MfuDecode))
+	}
+
+	if len(problems) > 0 {
+		return fmt.Errorf("invalid roofline config: %s", strings.Join(problems, "; "))
+	}
+	return nil
 }
