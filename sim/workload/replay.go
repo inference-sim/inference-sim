@@ -41,17 +41,25 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 
 		outputTokens := sim.GenerateRandomTokenIDs(rng, rec.OutputTokens)
 
-		req := sim.NewRequest(fmt.Sprintf("request_%d", rec.RequestID), rec.ArrivalTimeUs, inputTokens, outputTokens)
-		req.TenantID = rec.TenantID
-		req.SLOClass = rec.SLOClass
-		req.Streaming = rec.Streaming
-		req.SessionID = rec.SessionID
-		req.RoundIndex = rec.RoundIndex
-		req.TextTokenCount = rec.TextTokens
-		req.ImageTokenCount = rec.ImageTokens
-		req.AudioTokenCount = rec.AudioTokens
-		req.VideoTokenCount = rec.VideoTokens
-		req.ReasonRatio = rec.ReasonRatio
+		req := &sim.Request{
+			ID:               fmt.Sprintf("request_%d", rec.RequestID),
+			ArrivalTime:      rec.ArrivalTimeUs,
+			InputTokens:      inputTokens,
+			OutputTokens:     outputTokens,
+			State:            sim.StateQueued,
+			ScheduledStepIdx: 0,
+			FinishedStepIdx:  0,
+			TenantID:         rec.TenantID,
+			SLOClass:         rec.SLOClass,
+			Streaming:        rec.Streaming,
+			SessionID:        rec.SessionID,
+			RoundIndex:       rec.RoundIndex,
+			TextTokenCount:   rec.TextTokens,
+			ImageTokenCount:  rec.ImageTokens,
+			AudioTokenCount:  rec.AudioTokens,
+			VideoTokenCount:  rec.VideoTokens,
+			ReasonRatio:      rec.ReasonRatio,
+		}
 		requests = append(requests, req)
 	}
 	return requests, nil

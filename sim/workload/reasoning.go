@@ -65,12 +65,18 @@ func GenerateReasoningRequests(
 			reasonRatio = math.Min(1.0, math.Max(0.0, float64(pct)/100.0))
 		}
 
-		req := sim.NewRequest("", currentTime, inputTokens, outputTokens)
-		req.TenantID = tenantID
-		req.SLOClass = sloClass
-		req.SessionID = sessionID
-		req.RoundIndex = round
-		req.ReasonRatio = reasonRatio
+		req := &sim.Request{
+			ID:          "", // assigned later
+			ArrivalTime: currentTime,
+			InputTokens: inputTokens,
+			OutputTokens: outputTokens,
+			State:        sim.StateQueued,
+			TenantID:     tenantID,
+			SLOClass:     sloClass,
+			SessionID:    sessionID,
+			RoundIndex:   round,
+			ReasonRatio:  reasonRatio,
+		}
 		requests = append(requests, req)
 
 		// Update accumulated context for next round: append this round's

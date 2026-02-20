@@ -49,7 +49,15 @@ func (c *ClusterSimulator) generateRequestsFromDistribution() []*sim.Request {
 			cfg.OutputTokensStdDev, cfg.OutputTokensMin, cfg.OutputTokensMax)
 		output := sim.GenerateRandomTokenIDs(rng, outputLen)
 
-		req := sim.NewRequest(fmt.Sprintf("request_%v", reqIdx), currentTime, input, output)
+		req := &sim.Request{
+			ID:               fmt.Sprintf("request_%v", reqIdx),
+			ArrivalTime:      currentTime,
+			InputTokens:      input,
+			OutputTokens:     output,
+			State:            sim.StateQueued,
+			ScheduledStepIdx: 0,
+			FinishedStepIdx:  0,
+		}
 		requests = append(requests, req)
 
 		currentTime += int64(1 / cfg.Rate)
@@ -104,7 +112,15 @@ func (c *ClusterSimulator) generateRequestsFromCSV() ([]*sim.Request, error) {
 			return nil, fmt.Errorf("failed to parse decode_tokens at row %d: %w", reqIdx, err)
 		}
 
-		requests = append(requests, sim.NewRequest(fmt.Sprintf("request_%d", reqIdx), arrivalTime, inputTokens, outputTokens))
+		requests = append(requests, &sim.Request{
+			ID:               fmt.Sprintf("request_%d", reqIdx),
+			ArrivalTime:      arrivalTime,
+			InputTokens:      inputTokens,
+			OutputTokens:     outputTokens,
+			State:            sim.StateQueued,
+			ScheduledStepIdx: 0,
+			FinishedStepIdx:  0,
+		})
 		reqIdx++
 	}
 	return requests, nil
