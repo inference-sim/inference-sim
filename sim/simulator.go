@@ -424,7 +424,7 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
 			sim.KVCache.ReleaseKVBlocks(preemptedRequest)
-			sim.WaitQ.queue = append([]*Request{preemptedRequest}, sim.WaitQ.queue...)
+			sim.WaitQ.PrependFront(preemptedRequest)
 
 			if preemptedRequest == req {
 				return false
