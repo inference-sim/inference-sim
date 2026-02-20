@@ -42,7 +42,7 @@ Key points for new contributors:
 
 ## Antipattern Checklist
 
-17 rules, each tracing to a real bug. See [`docs/standards/rules.md`](docs/standards/rules.md) for full details.
+20 rules, each tracing to a real bug. See [`docs/standards/rules.md`](docs/standards/rules.md) for full details.
 
 Before submitting a PR, verify:
 
@@ -63,6 +63,9 @@ Before submitting a PR, verify:
 - [ ] R15: Stale PR references resolved
 - [ ] R16: Config params grouped by module
 - [ ] R17: Routing scorer signals documented for freshness tier
+- [ ] R18: CLI flag values not silently overwritten by defaults.yaml
+- [ ] R19: Unbounded retry/requeue loops have circuit breakers
+- [ ] R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)
 
 ## Adding New Components
 
@@ -133,7 +136,7 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 | Document | What It Covers | When to Read |
 |---|---|---|
 | `CLAUDE.md` | Code architecture, file organization, CLI flags, compact rule/invariant tables | Always — authoritative for current codebase state |
-| `docs/standards/rules.md` | 17 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
+| `docs/standards/rules.md` | 20 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
 | `docs/standards/invariants.md` | 7 system invariants with verification strategies | When touching request lifecycle, KV cache, or metrics |
 | `docs/standards/experiments.md` | Experiment taxonomy, rigor requirements, findings classification | When running hypothesis experiments |
 | `docs/process/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |

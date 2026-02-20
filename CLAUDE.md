@@ -188,7 +188,7 @@ Full details: see [`docs/standards/principles.md`](docs/standards/principles.md)
 
 ### Antipattern Prevention
 
-17 rules, each tracing to a real bug. Full details (evidence, checks, enforcement): see [`docs/standards/rules.md`](docs/standards/rules.md).
+20 rules, each tracing to a real bug. Full details (evidence, checks, enforcement): see [`docs/standards/rules.md`](docs/standards/rules.md).
 
 | # | Rule | One-sentence summary |
 |---|------|---------------------|
@@ -209,6 +209,9 @@ Full details: see [`docs/standards/principles.md`](docs/standards/principles.md)
 | R15 | Stale PR references | Grep for `planned for PR N` after completing PR N |
 | R16 | Config by module | Group config parameters by module, not monolithic structs |
 | R17 | Signal freshness | Document which routing signals are synchronously fresh vs stale |
+| R18 | CLI flag precedence | defaults.yaml must not silently override user-provided CLI flags |
+| R19 | Livelock protection | Unbounded retry/requeue loops must have circuit breakers |
+| R20 | Degenerate detector inputs | Anomaly detectors must handle empty, skewed, or zero inputs explicitly |
 
 
 ### Current Implementation Focus
@@ -336,7 +339,7 @@ inference-sim/
 
 ### Standards (what rules apply)
 
-- `docs/standards/rules.md`: **17 antipattern rules** (R1-R17) — each with evidence, checks, enforcement locations
+- `docs/standards/rules.md`: **20 antipattern rules** (R1-R20) — each with evidence, checks, enforcement locations
 - `docs/standards/invariants.md`: **7 system invariants** (INV-1 through INV-7) — with verification strategies
 - `docs/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/standards/experiments.md`: **Experiment standards** — taxonomy, rigor requirements, findings classification
