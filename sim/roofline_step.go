@@ -128,7 +128,7 @@ func calculateMemoryAccessBytes(
 // rooflineStepTime computes step latency using the roofline model.
 // Precondition: ValidateRooflineConfig(modelConfig, hwConfig) must return nil
 // and tp must be > 0. Callers must validate before first call.
-func rooflineStepTime(gpu string, modelConfig ModelConfig, hwConfig HardwareCalib, stepConfig StepConfig, tp int) int64 {
+func rooflineStepTime(modelConfig ModelConfig, hwConfig HardwareCalib, stepConfig StepConfig, tp int) int64 {
 
 	tpFactor := float64(tp)
 	peakFlops := hwConfig.TFlopsPeak * 1e12

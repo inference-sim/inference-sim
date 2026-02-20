@@ -363,7 +363,7 @@ func (sim *Simulator) getStepTimeRoofline() int64 {
 			})
 		}
 	}
-	stepTime := rooflineStepTime(sim.gpu, sim.modelConfig, sim.hwConfig, stepConfig, sim.tp)
+	stepTime := rooflineStepTime(sim.modelConfig, sim.hwConfig, stepConfig, sim.tp)
 	return stepTime
 }
 
