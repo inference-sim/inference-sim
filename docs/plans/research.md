@@ -269,9 +269,11 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Experiment:** Use `prefix-affinity-demo.yaml` with varying `prefix_length` (64, 128, 256, 512 tokens). All requests share the same prefix group. Measure cluster TTFT mean for each configuration with `--routing-scorers "prefix-affinity:5,queue-depth:1"`.
 
-**Predicted outcome:** TTFT should decrease monotonically with prefix_length. The reduction should be approximately linear in the number of cached blocks (each cached block saves ~blockSize tokens of prefill).
+**Predicted outcome:** TTFT should decrease monotonically as prefix_length increases — longer shared prefixes mean more cached blocks reused, fewer tokens to prefill. The 512-token configuration should produce noticeably lower TTFT than the 64-token configuration. **Metric source:** Cluster-level `ttft_mean_ms` in the JSON output; `PreemptionCount` in metrics (should not increase as prefix grows).
 
-**If hypothesis fails:** May indicate (a) `GetCachedBlocks()` isn't finding cached blocks despite shared prefix tokens (check hash matching in `kvcache.go`), (b) block eviction is clearing cached blocks between requests (LRU capacity too small), or (c) the latency model (beta coefficients) doesn't weight prefill tokens enough for the savings to be measurable. This hypothesis is a direct test of the `simulator.go:466-467` cache-hit-reduces-prefill mechanism.
+**Precondition:** Ensure `total_kv_blocks × block_size_in_tokens > prefix_length × num_instances` so cached prefixes fit in memory. If prefix_length exceeds per-instance cache capacity, LRU eviction will destroy cached blocks between requests, inverting the expected monotonic decrease. (This is itself an interesting finding — document the inflection point if observed.)
+
+**If hypothesis fails:** May indicate (a) `GetCachedBlocks()` isn't finding cached blocks despite shared prefix tokens (check hash matching in `kvcache.go:126-141`), (b) block eviction is clearing cached blocks between requests (LRU capacity too small — see precondition), or (c) the latency model (beta coefficients) doesn't weight prefill tokens enough for the savings to be measurable. This hypothesis is a direct test of the `simulator.go:466-467` cache-hit-reduces-prefill mechanism.
 
 **Coverage:** Prefix caching effectiveness on latency, GetCachedBlocks correctness, cache eviction pressure
 
@@ -323,7 +325,7 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Intuition:** BLIS uses PartitionedRNG with a seed for deterministic simulation. Running the same configuration with the same seed twice should produce byte-identical output. This is critical for reproducible research.
 
-**Experiment:** Run 5 different configurations twice each (same seed). Compare TTFT mean, distribution, and per-request metrics. They must be identical.
+**Experiment:** Run 5 different configurations twice each (same seed). At least one configuration MUST use `--routing-policy weighted --routing-scorers "prefix-affinity:3,queue-depth:2"` with enough requests and prefix diversity to trigger LRU eviction in the PrefixCacheIndex (the most likely determinism violation source — `evictOldest` iterates a map). Compare TTFT mean, distribution, and per-request metrics. They must be identical.
 
 **Predicted outcome:** Byte-identical output for all runs with the same seed.
 
@@ -401,7 +403,7 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Predicted outcome:** SLO-based: Jain index > 0.9 (good fairness). Constant: Jain index < 0.5 (realtime drowns in bulk traffic).
 
-**If hypothesis fails:** May indicate (a) Jain fairness computation is wrong (check `JainFairnessIndex` in `sim/cluster/metrics.go`), (b) SLO-based priority doesn't create enough differentiation for 90/10 split, or (c) per-SLO-class metrics aren't computed correctly for this scenario.
+**If hypothesis fails:** First, verify what `JainFairnessIndex` in `sim/cluster/metrics.go` actually measures — is it throughput fairness (completion rates per class), latency fairness (TTFT per class), or SLO attainment? The threshold (0.9) assumes throughput fairness. Also check: (a) SLO-based priority doesn't create enough differentiation for 90/10 split, (b) per-SLO-class metrics aren't computed correctly for this scenario.
 
 **Coverage:** Fairness metrics, SLO differentiation, unfair workload patterns
 
@@ -415,7 +417,9 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Predicted outcome:** Same policy ranking in both modes (e.g., if weighted > least-loaded > round-robin in blackbox mode, same ordering in roofline mode). Absolute TTFT values will differ.
 
-**If hypothesis fails:** May indicate (a) roofline step time estimation has a fundamentally different sensitivity to batch features than blackbox, (b) roofline mode has a bug in prefill/decode step computation (check `roofline_step.go`), or (c) the policy advantage depends on specific latency model characteristics (e.g., prefix caching benefit disappears in roofline mode because it doesn't model cache hit latency reduction).
+**Precondition:** Verify whether roofline mode's step time computation accounts for `cachedBlocks` (i.e., do cache hits reduce roofline step time?). Check `roofline_step.go` for use of `numNewTokens` vs total tokens. If roofline doesn't model cache hit latency reduction, use non-prefix workloads for the cross-mode comparison to avoid confounding.
+
+**If hypothesis fails:** May indicate (a) roofline step time estimation has a fundamentally different sensitivity to batch features than blackbox, (b) roofline mode has a bug in prefill/decode step computation (check `roofline_step.go`), or (c) the policy advantage depends on specific latency model characteristics (e.g., prefix caching benefit disappears in roofline mode because it doesn't model cache hit latency reduction — this is a known limitation, not a bug).
 
 **Coverage:** Latency model comparison, model abstraction validity, roofline vs blackbox
 
@@ -432,6 +436,96 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 **If hypothesis fails:** May indicate (a) ParetoLogNormal sampler doesn't produce the expected heavy tail (check `sim/workload/distribution.go` implementation), (b) the KV cache is large enough to absorb even very long requests without pressure, or (c) HOL blocking detection has a threshold issue (blocks short requests but doesn't count as HOL).
 
 **Coverage:** Heavy-tailed distributions, resource exhaustion patterns, preemption under tail load
+
+---
+
+# Idea 4: Edge Cases and Robustness (Round 2 Feedback)
+
+*Addresses Round 2 reviewer feedback: missing edge cases for extreme weights, resource exhaustion, underload, and pathological interactions.*
+
+## H21: Extreme scorer weight (weight=100:1) should behave identically to single-scorer routing
+
+**Intuition:** If prefix-affinity weight is 100 and queue-depth weight is 1, the queue-depth contribution is negligible (1/101 ≈ 1%). The behavior should be indistinguishable from `prefix-affinity:1` alone. This tests that the scorer aggregation math handles extreme weight ratios correctly (no overflow, no precision loss).
+
+**Experiment:** Compare `--routing-scorers "prefix-affinity:100,queue-depth:1"` vs `--routing-scorers "prefix-affinity:1"` on `prefix-affinity-demo.yaml`. Measure TTFT and target distribution. They should be nearly identical.
+
+**Predicted outcome:** Distribution and TTFT should match within measurement noise. **Metric source:** Compare target distributions from trace summary; compare `ttft_mean_ms` cluster values.
+
+**If hypothesis fails:** May indicate (a) weight normalization has precision issues at extreme ratios (check `normalizeScorerWeights` in `routing_scorers.go`), (b) the queue-depth scorer produces NaN/Inf at some edge case that gets amplified by the small weight, or (c) the argmax tie-breaking behaves differently when scores have vastly different magnitudes.
+
+**Coverage:** Scorer weight normalization, numeric precision, edge case robustness
+
+---
+
+## H22: Running with zero KV blocks should panic at CLI validation, not deep inside the simulation
+
+**Intuition:** `--total-kv-blocks 0` is an invalid configuration. BLIS should catch it at the CLI boundary with a clear error message, not let it reach `kvcache.go` where it would cause a cryptic division-by-zero or empty-allocation panic. This tests the input validation chain.
+
+**Experiment:** Run `./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --total-kv-blocks 0` and capture stderr. It should produce a `logrus.Fatalf` message from `cmd/root.go`, not a panic stack trace from `sim/`.
+
+**Predicted outcome:** Clean error: `"--total-kv-blocks must be > 0, got 0"` from CLI boundary. **Metric source:** Exit code 1 + logrus error on stderr, no panic.
+
+**If hypothesis fails:** A panic from `sim/kvcache.go` or `sim/simulator.go` means the CLI validation is missing or incomplete. Check `cmd/root.go` for the `totalKVBlocks` validation. Also test `--block-size-in-tokens 0` — same principle.
+
+**Coverage:** Input validation chain, error handling boundaries (CLI vs library), antipattern rule 6
+
+---
+
+## H23: Under very low load (1 req/s, 4 instances), all routing policies should produce equivalent TTFT
+
+**Intuition:** When the system is barely utilized, queues never build up. All instances are always idle. Every routing policy effectively picks an idle instance, so TTFT should be determined purely by the latency model (prefill time), not by queue waiting. This is a baseline sanity check.
+
+**Experiment:** Rate=1, 50 requests, 4 instances. Run with round-robin, least-loaded, weighted (default), and prefix-affinity. Measure TTFT mean for each.
+
+**Predicted outcome:** All four produce TTFT within 5% of each other. The TTFT should be close to the bare prefill time (determined by alpha/beta coefficients × input tokens).
+
+**If hypothesis fails:** A policy showing significantly different TTFT at near-zero load indicates a bug in that policy's routing or snapshot logic — it's adding latency that shouldn't exist. Check whether PendingRequests is being incorrectly accumulated, or whether snapshot staleness creates phantom load differentials even when all instances are idle.
+
+**Coverage:** Baseline behavior, low-utilization correctness, policy overhead measurement
+
+---
+
+## H24: Combining always-busiest routing with reverse-priority scheduling should produce maximum measurable anomalies
+
+**Intuition:** `always-busiest` routes every request to the most loaded instance (maximizing HOL blocking). `reverse-priority` gives low-priority requests higher scheduling priority (maximizing priority inversions). Combining them should trigger both anomaly detectors simultaneously — the most pathological configuration possible.
+
+**Experiment:** Use `ScenarioMixedSLO` (33% realtime + 34% interactive + 33% batch), rate=2000, 4 instances. Compare: (A) normal (`least-loaded` + `priority-fcfs` + `slo-based`), (B) pathological (`always-busiest` + `reverse-priority` + `inverted-slo`). Measure HOL blocking count, priority inversion count, TTFT p99, and distribution std_dev.
+
+**Predicted outcome:** Pathological: HOL blocking count > 0, priority inversions > 0, distribution std_dev > 100 (severe imbalance), TTFT p99 dramatically worse. Normal: zero anomalies, std_dev < 5, good TTFT. **Metric source:** `RawMetrics.HOLBlockingEvents`, `RawMetrics.PriorityInversions` in `sim/cluster/metrics.go`.
+
+**If hypothesis fails:** (a) If HOL blocking is zero: the `always-busiest` policy isn't producing load imbalance — check `AlwaysBusiest.Route()`. (b) If priority inversions are zero: the anomaly detection logic doesn't trigger for `inverted-slo` priority — check `detectPriorityInversions` in `sim/cluster/metrics.go`. (c) If both anomalies are zero: the anomaly detection thresholds may be too lenient for this configuration.
+
+**Coverage:** Anomaly detection completeness, pathological template interaction, combined worst-case
+
+---
+
+## H25: Integration stress test — the full policy stack should maintain conservation invariants under combined load
+
+**Intuition:** Individual policies are tested in isolation, but real deployments combine multiple dimensions. The system should remain correct (no dropped requests, no KV leaks, deterministic output) when ALL features are active simultaneously.
+
+**Experiment:** Run with the most complex configuration possible: `--routing-policy weighted --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2" --admission-policy token-bucket --token-bucket-capacity 500 --token-bucket-refill-rate 300 --priority-policy slo-based --scheduler priority-fcfs --kv-cpu-blocks 200 --kv-offload-threshold 0.8 --kv-transfer-bandwidth 50 --trace-level decisions --counterfactual-k 3 --summarize-trace` with `multiturn-chat-demo.yaml` at high rate (2000 req/s). Verify: (a) conservation holds (completed + queued + running + rejected == injected), (b) output is deterministic (run twice with same seed), (c) no panics.
+
+**Predicted outcome:** Conservation holds, deterministic output, no crashes. Some requests rejected by token-bucket, some preemptions from tiered KV, some priority inversions suppressed by slo-based priority.
+
+**If hypothesis fails:** A conservation violation under combined load would indicate an interaction bug — e.g., token-bucket rejections not counted, preempted requests lost in the tiered KV handoff, or the trace recorder miscounting decisions. This is the highest-value integration test because it exercises ALL code paths simultaneously.
+
+**Coverage:** Full system integration, cross-cutting policy interactions, conservation under stress
+
+---
+
+## H26: Adding admission latency should delay E2E by exactly that amount under low load
+
+**Intuition:** The cluster event pipeline processes admission before routing. With `--admission-latency 10000` (10ms), every request should wait 10ms in the admission pipeline before routing. Under low load (no queuing), E2E latency should increase by exactly the admission latency.
+
+**Precondition:** Verify TTFT measurement point — is TTFT measured from request arrival or from queue entry? Check `sim/metrics.go` for `FirstTokenTime - ArrivalTime`. If TTFT includes the admission pipeline delay, measure TTFT. If TTFT is measured from queue entry, use E2E instead (which should always include the full pipeline).
+
+**Experiment:** Rate=10, 50 requests, 4 instances. Compare `--admission-latency 0` vs `--admission-latency 10000`. Measure both TTFT and E2E mean. At least one of them should show the 10ms delta.
+
+**Predicted outcome:** The 10ms admission latency configuration should have E2E mean approximately 10ms higher than the zero-latency baseline. If TTFT includes pipeline delay, TTFT should also show the delta. This directly validates the event pipeline's causal ordering: Arrival → Admission (+ latency) → Routing → Queue → Batch → Step.
+
+**If hypothesis fails:** (a) If neither TTFT nor E2E shows the delta: events are being processed out of order, or the admission latency is not correctly added to the event timestamp. Check `ClusterArrivalEvent.Execute` and `AdmissionDecisionEvent` timestamp computation in `cluster_event.go`. (b) If only E2E shows the delta but not TTFT: TTFT is measured from queue entry, not arrival — this is not a bug, just a measurement definition to document.
+
+**Coverage:** Event pipeline causal ordering, admission/routing latency modeling, DES event timing, metric measurement points
 
 ---
 
@@ -463,6 +557,8 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 | **Latency Model** | H19 | Roofline vs blackbox |
 | **Scaling** | H7 | Instance count throughput |
 | **Prefix Affinity** | H9, H15, H17 | Cache hits, routing, weight tuning |
+| **Edge Cases** | H21, H22, H23, H24 | Extreme weights, input validation, underload, pathological combos |
+| **Integration** | H25, H26 | Full policy stack, event pipeline causal ordering |
 
 ## Reviewer Consensus
 
@@ -472,6 +568,24 @@ All 3 reviewers (Claude, GPT-4o, Gemini) agreed on:
 3. **Invariant testing (H12, H13) should run first** as baseline sanity checks
 4. **Numeric predictions should be relational** ("A should be significantly lower than B") not absolute ("30-50% improvement")
 5. **Workload specs (YAMLs) needed** for experiments, not just CLI flags
+
+## Statistical Rigor (Round 4 Feedback)
+
+Each hypothesis experiment should follow these conventions:
+- **Seeds:** Run each comparison with at least 3 seeds (e.g., 42, 123, 456) to distinguish real effects from seed-dependent noise
+- **Effect size:** "Significantly better" means >20% improvement consistent across all seeds. <10% in any seed = inconclusive
+- **Equivalence tests** (H4, H23): "Equivalent" means within 5% across all seeds
+- **Pass/fail:** A hypothesis passes if the predicted directional outcome holds across all seeds. A hypothesis fails if any seed contradicts the direction
+
+## Tier 0: Measurement Audit (Run First)
+
+Before running any hypothesis, verify which metrics are available in CLI JSON output:
+1. Enumerate all metrics in the JSON output schema (run one experiment, inspect output)
+2. Map each hypothesis to its required metrics (e.g., H8 needs `PreemptionCount`, H12 needs per-request counts)
+3. Identify gaps where a hypothesis needs a metric not currently surfaced
+4. Implement missing metric surfacing before running the hypothesis
+
+This prevents the scenario where an experiment runs but the measurement doesn't exist.
 
 ## Recommendation
 
