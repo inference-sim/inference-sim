@@ -253,11 +253,13 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Intuition:** KV blocks are the memory currency — each running request holds blocks proportional to its token count. With fewer blocks, the cache fills up faster, forcing preemptions (evictions of running requests to make room). Preempted requests restart from scratch, increasing tail latency.
 
-**Experiment:** Fixed workload (rate=1000, 500 requests, 4 instances). Compare `--total-kv-blocks 2000` vs `--total-kv-blocks 200`. Measure preemption count, TTFT p99, and E2E p99.
+**Experiment:** Fixed workload (rate=500, 200 requests, 4 instances, `--block-size-in-tokens 16`). Compare 3 configurations: `--total-kv-blocks 2000` (abundant), `--total-kv-blocks 500` (constrained), `--total-kv-blocks 100` (severely constrained). Measure preemption count (`PreemptionCount` in JSON output), TTFT p99, and E2E p99.
 
-**Predicted outcome:** With 200 blocks: significantly more preemptions, worse tail latency (preempted requests re-enter the queue). With 2000 blocks: near-zero preemptions, lower tail latency.
+**Precondition:** Verify that `PreemptionCount` appears in the CLI JSON output. Also verify admission is `always-admit` (not token-bucket) to ensure rejections don't mask preemptions.
 
-**If hypothesis fails:** May indicate (a) preemptions aren't happening despite low blocks (check `makeRunningBatch` allocation failure path), (b) preempted requests aren't properly re-queued (check `preempt()` in `simulator.go`), or (c) preemption count isn't surfaced in metrics (check `PreemptionCount` in `sim/metrics.go`).
+**Predicted outcome:** With fewer blocks, preemption count should monotonically increase and TTFT p99 should worsen. The 100-block config may be degenerate (constant preemption); the 500-block config should show the interesting transition.
+
+**If hypothesis fails:** May indicate (a) preemptions aren't happening despite low blocks (check `makeRunningBatch` allocation failure path in `simulator.go`), (b) preempted requests aren't properly re-queued (check `preempt()` in `simulator.go`), (c) preemption count isn't surfaced in CLI output (check `PreemptionCount` in `sim/metrics.go` and `SaveResults`), or (d) all requests are completing before the next arrives (rate too low — increase to 1000+).
 
 **Coverage:** KV cache pressure, preemption mechanics, resource exhaustion
 
@@ -267,7 +269,7 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Intuition:** When two requests share a prefix, the second request can skip prefilling the cached tokens — its `numNewTokens` is reduced by `cachedBlocks × blockSize`. Longer shared prefixes = more tokens skipped = lower TTFT.
 
-**Experiment:** Use `prefix-affinity-demo.yaml` with varying `prefix_length` (64, 128, 256, 512 tokens). All requests share the same prefix group. Measure cluster TTFT mean for each configuration with `--routing-scorers "prefix-affinity:5,queue-depth:1"`.
+**Experiment:** Create 4 variants of `prefix-affinity-demo.yaml` with varying `prefix_length` (64, 128, 256, 512 tokens). **Hold total input length constant** at 768 tokens (so new tokens = 704, 640, 512, 256 respectively — this isolates the caching effect from the input-length effect). All requests share the same prefix group. Measure cluster TTFT mean with `--routing-scorers "prefix-affinity:5,queue-depth:1"`.
 
 **Predicted outcome:** TTFT should decrease monotonically as prefix_length increases — longer shared prefixes mean more cached blocks reused, fewer tokens to prefill. The 512-token configuration should produce noticeably lower TTFT than the 64-token configuration. **Metric source:** Cluster-level `ttft_mean_ms` in the JSON output; `PreemptionCount` in metrics (should not increase as prefix grows).
 
@@ -283,11 +285,15 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Intuition:** When GPU KV blocks are exhausted, the single-tier cache preempts requests. With a CPU tier, blocks can be offloaded to CPU instead of being evicted entirely. When the request resumes, blocks are reloaded from CPU (faster than recomputing from scratch). The tradeoff: reload incurs transfer latency, but avoids full recomputation.
 
-**Experiment:** Constrained GPU blocks (200), rate=1000, 500 requests. Compare single-tier (`--kv-cpu-blocks 0`) vs tiered (`--kv-cpu-blocks 500 --kv-offload-threshold 0.8 --kv-transfer-bandwidth 50`). Measure preemption count, TTFT p99, E2E p99.
+**Prerequisite:** Verify CLI flags exist: `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency`. Run `./simulation_worker run --help | grep kv-cpu` to confirm. Also verify that `kvcache_tiered.go` exists and is compiled.
 
-**Predicted outcome:** Tiered: fewer preemptions (blocks offloaded instead of evicted), comparable or slightly worse TTFT (transfer latency). Single-tier: more preemptions, worse E2E (recomputed from scratch).
+**Experiment:** Constrained GPU blocks (200, `--block-size-in-tokens 16`), rate=500, 200 requests, 4 instances. Compare single-tier (`--kv-cpu-blocks 0`) vs tiered (`--kv-cpu-blocks 500 --kv-offload-threshold 0.8 --kv-transfer-bandwidth 100 --kv-transfer-base-latency 10`). Transfer bandwidth is in blocks/tick (see `kvcache_tiered.go`). Measure preemption count, TTFT p99, E2E p99.
 
-**If hypothesis fails:** May indicate (a) offload isn't triggering (check threshold logic in `kvcache_tiered.go`), (b) transfer latency is excessive (check bandwidth/base-latency math), (c) reload doesn't actually restore blocks (check `TieredKVCache` reload path), or (d) `PendingTransferLatency` isn't consumed during step execution.
+**Smoke test:** Before the full comparison, run the tiered configuration once and verify that offload events are nonzero (check logrus debug output for "offload" messages).
+
+**Predicted outcome:** Tiered: fewer preemptions (blocks offloaded to CPU instead of evicted), comparable or slightly worse TTFT (transfer latency adds to step time). Single-tier: more preemptions, worse E2E (preempted requests recompute from scratch).
+
+**If hypothesis fails:** May indicate (a) offload isn't triggering — threshold 0.8 means offload starts at 80% GPU utilization; with 200 blocks, that's 160 used blocks (check if workload reaches this), (b) transfer latency math uses wrong units (check `math.Ceil` in `kvcache_tiered.go`), (c) reload doesn't restore blocks (check `TieredKVCache` reload path), or (d) `ConsumePendingTransferLatency` isn't called during step execution.
 
 **Coverage:** Tiered KV cache, offload/reload mechanics, transfer latency modeling
 
@@ -339,7 +345,9 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Intuition:** The pathological policies exist specifically to test anomaly detection. `always-busiest` should produce HOL blocking (routes to most loaded instance). `reverse-priority` should produce priority inversions. If anomaly counters don't detect these, the detection logic has a bug.
 
-**Experiment:** Mixed SLO workload with 4 instances. Compare normal configuration (`least-loaded` + `priority-fcfs`) vs pathological (`always-busiest` + `reverse-priority`). Measure HOL blocking events, priority inversions, TTFT p99, distribution std_dev.
+**Prerequisite:** Verify pathological policy names exist in CLI: `always-busiest`, `reverse-priority`, `inverted-slo`. Run `./simulation_worker run --help | grep -E "always-busiest|reverse-priority|inverted-slo"` or check `ValidRoutingPolicyNames()`, `ValidSchedulerNames()`, `ValidPriorityPolicyNames()`. **This hypothesis is a prerequisite for H24** — if individual pathological templates don't work, the combined test (H24) is meaningless.
+
+**Experiment:** Mixed SLO workload with 4 instances. Compare normal configuration (`least-loaded` + `priority-fcfs` + `slo-based`) vs pathological (`always-busiest` + `reverse-priority` + `inverted-slo`). Measure HOL blocking events, priority inversions, TTFT p99, distribution std_dev.
 
 **Predicted outcome:** Pathological: high HOL blocking count, nonzero priority inversions, extreme load imbalance, much worse TTFT p99. Normal: zero anomalies, balanced distribution, good TTFT.
 
