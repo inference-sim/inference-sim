@@ -264,6 +264,7 @@ Enable a two-tier KV cache where blocks are offloaded from GPU to CPU memory whe
 | `--kv-cpu-blocks` | 0 | CPU-tier KV cache blocks (0 = single-tier GPU only) |
 | `--kv-offload-threshold` | 0.9 | GPU utilization threshold that triggers offloading to CPU |
 | `--kv-transfer-bandwidth` | 100.0 | GPU↔CPU transfer bandwidth in blocks/tick |
+| `--kv-transfer-base-latency` | 0 | Fixed per-transfer latency in ticks (0 = no fixed cost) |
 
 When `--kv-cpu-blocks` is 0 (default), BLIS uses the single-tier GPU-only KV cache. Setting it to any positive value activates the tiered cache.
 
@@ -729,6 +730,7 @@ inference-sim/
 | `--kv-cpu-blocks` | 0 | CPU-tier KV cache blocks (0 = single-tier GPU only) |
 | `--kv-offload-threshold` | 0.9 | GPU utilization threshold to trigger offloading to CPU |
 | `--kv-transfer-bandwidth` | 100.0 | GPU↔CPU transfer bandwidth in blocks/tick |
+| `--kv-transfer-base-latency` | 0 | Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost) |
 
 ---
 
