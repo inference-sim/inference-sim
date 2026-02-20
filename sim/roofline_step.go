@@ -2,6 +2,7 @@ package sim
 
 import (
 	"math"
+	"sort"
 )
 
 // --- Bento FLOPS Logic ---
@@ -126,14 +127,24 @@ func calculateMemoryAccessBytes(
 	// LOGICAL FIX: Remove attention map bytes entirely.
 	// FlashAttention fuses this; it never hits HBM.
 
+	// Sort keys before accumulation for deterministic float summation
+	// (Go map iteration order is non-deterministic — antipattern #2)
+	keys := make([]string, 0, len(mem))
+	for k := range mem {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	var total float64
-	for _, v := range mem {
-		total += v
+	for _, k := range keys {
+		total += mem[k]
 	}
 	mem["total"] = total
 	return mem
 }
 
+// rooflineStepTime computes step latency using the roofline model.
+// Precondition: ValidateRooflineConfig(modelConfig, hwConfig) must return nil
+// and tp must be > 0. Callers must validate before first call.
 func rooflineStepTime(gpu string, modelConfig ModelConfig, hwConfig HardwareCalib, stepConfig StepConfig, tp int) int64 {
 
 	tpFactor := float64(tp)

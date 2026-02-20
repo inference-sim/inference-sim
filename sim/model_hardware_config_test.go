@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,5 +113,168 @@ func TestGetModelConfig_ValidConfig(t *testing.T) {
 	}
 	if cfg.BytesPerParam != 2 {
 		t.Errorf("expected BytesPerParam=2 for bfloat16, got %v", cfg.BytesPerParam)
+	}
+}
+
+func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
+	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	tests := []struct {
+		name  string
+		mc    ModelConfig
+		field string
+	}{
+		{"zero NumHeads", ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}, "NumHeads"},
+		{"zero NumLayers", ModelConfig{NumHeads: 32, NumLayers: 0, HiddenDim: 4096, BytesPerParam: 2}, "NumLayers"},
+		{"zero HiddenDim", ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 0, BytesPerParam: 2}, "HiddenDim"},
+		{"zero BytesPerParam", ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 0}, "BytesPerParam"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// WHEN ValidateRooflineConfig is called
+			err := ValidateRooflineConfig(tt.mc, hc)
+
+			// THEN it returns an error mentioning the zero field
+			if err == nil {
+				t.Fatalf("expected error for %s, got nil", tt.field)
+			}
+			if !strings.Contains(err.Error(), tt.field) {
+				t.Errorf("error should mention %s, got: %v", tt.field, err)
+			}
+		})
+	}
+}
+
+func TestValidateRooflineConfig_ZeroHardwareFields_ReturnsAllErrors(t *testing.T) {
+	// GIVEN a HardwareCalib with all critical fields zero (model config is valid)
+	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := HardwareCalib{} // all zero
+
+	// WHEN ValidateRooflineConfig is called
+	err := ValidateRooflineConfig(mc, hc)
+
+	// THEN it returns an error mentioning every zero field
+	if err == nil {
+		t.Fatal("expected error for zero hardware fields, got nil")
+	}
+	errMsg := err.Error()
+	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "BwEffConstant", "MfuPrefill", "MfuDecode"} {
+		if !strings.Contains(errMsg, field) {
+			t.Errorf("error should mention %s, got: %v", field, errMsg)
+		}
+	}
+}
+
+func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
+	// GIVEN a HardwareCalib with NaN and Inf fields (bypass <= 0 check)
+	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096}
+	hc := HardwareCalib{
+		TFlopsPeak:    math.NaN(),
+		BwPeakTBs:     math.Inf(1),
+		BwEffConstant: 0.7,
+		MfuPrefill:    0.5,
+		MfuDecode:     math.NaN(),
+	}
+
+	// WHEN ValidateRooflineConfig is called
+	err := ValidateRooflineConfig(mc, hc)
+
+	// THEN it returns an error mentioning the invalid fields
+	if err == nil {
+		t.Fatal("expected error for NaN/Inf hardware fields, got nil")
+	}
+	errMsg := err.Error()
+	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "MfuDecode"} {
+		if !strings.Contains(errMsg, field) {
+			t.Errorf("error should mention %s, got: %v", field, errMsg)
+		}
+	}
+}
+
+func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
+	// GIVEN valid ModelConfig and HardwareCalib
+	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	// WHEN ValidateRooflineConfig is called
+	err := ValidateRooflineConfig(mc, hc)
+
+	// THEN it returns nil
+	if err != nil {
+		t.Errorf("expected nil error for valid config, got: %v", err)
+	}
+}
+
+func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
+	// GIVEN a SimConfig with Roofline=true and NumHeads=0
+	cfg := SimConfig{
+		Roofline:        true,
+		ModelConfig:     ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
+		HWConfig:        HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		TotalKVBlocks:   1000,
+		BlockSizeTokens: 16,
+		Horizon:         100000,
+		TP:              1,
+	}
+
+	// WHEN NewSimulator is called
+	_, err := NewSimulator(cfg)
+
+	// THEN it returns a non-nil error mentioning NumHeads
+	if err == nil {
+		t.Fatal("expected error for roofline with zero NumHeads, got nil")
+	}
+	if !strings.Contains(err.Error(), "NumHeads") {
+		t.Errorf("error should mention NumHeads, got: %v", err)
+	}
+}
+
+func TestNewSimulator_RooflineZeroTP_ReturnsError(t *testing.T) {
+	// GIVEN a SimConfig with Roofline=true and TP=0
+	cfg := SimConfig{
+		Roofline:        true,
+		ModelConfig:     ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
+		HWConfig:        HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		TotalKVBlocks:   1000,
+		BlockSizeTokens: 16,
+		Horizon:         100000,
+		TP:              0,
+	}
+
+	// WHEN NewSimulator is called
+	_, err := NewSimulator(cfg)
+
+	// THEN it returns a non-nil error mentioning TP
+	if err == nil {
+		t.Fatal("expected error for roofline with zero TP, got nil")
+	}
+	if !strings.Contains(err.Error(), "TP") {
+		t.Errorf("error should mention TP, got: %v", err)
+	}
+}
+
+func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
+	// GIVEN a SimConfig with Roofline=false and NumHeads=0 (irrelevant)
+	cfg := SimConfig{
+		Roofline:        false,
+		ModelConfig:     ModelConfig{NumHeads: 0},
+		HWConfig:        HardwareCalib{},
+		TotalKVBlocks:   1000,
+		BlockSizeTokens: 16,
+		Horizon:         100000,
+		BetaCoeffs:      []float64{1, 2, 3},
+		AlphaCoeffs:     []float64{1, 2, 3},
+	}
+
+	// WHEN NewSimulator is called
+	sim, err := NewSimulator(cfg)
+
+	// THEN it succeeds (roofline validation not applied)
+	if err != nil {
+		t.Fatalf("unexpected error for non-roofline mode: %v", err)
+	}
+	if sim == nil {
+		t.Error("expected non-nil simulator")
 	}
 }

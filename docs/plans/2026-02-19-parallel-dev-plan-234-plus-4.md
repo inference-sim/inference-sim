@@ -41,7 +41,7 @@ Shared files: `CLAUDE.md` and `README.md` may get minor doc updates, but only PR
 
 ---
 
-### Worktree 1: PR17 — Composable Scorer Framework — PR #260 OPEN
+### Worktree 1: PR17 — Composable Scorer Framework — PR #260 MERGED
 
 **Issue:** #229 + #230 (closes both)
 **Branch:** `feat/pr17-scorer-framework`
@@ -114,29 +114,38 @@ Replace monolithic `WeightedScoring` (two hardcoded dimensions) with composable 
 ### Worktree 2: #236 — Roofline Validation
 
 **Branch:** `fix/236-roofline-validation`
-**Scope:** ~40 LOC non-test (small)
+**PR:** #258 — awaiting merge
+**Scope:** ~50 LOC non-test (small)
 
-#### Key Changes
-
-**`sim/roofline_step.go`:**
-- Lines 16, 95: Guard `dModel / nHeads` — validate `nHeads > 0`
-- Lines 167, 188: Guard `peakFlops * MfuPrefill` and `peakFlops * MfuDecode` denominators
-- Lines 168, 189: Guard `effBW` denominator (derived from `BwPeakTBs * BwEffConstant`)
-- Line 130: Sort map keys before float accumulation in `calculateMemoryAccessBytes()`
+#### What was done (5 files, 6 commits)
 
 **`sim/model_hardware_config.go`:**
-- Add validation function for `HardwareCalib`: `TFlopsPeak > 0`, `BwPeakTBs > 0`, `BwEffConstant > 0`, `MfuPrefill > 0`, `MfuDecode > 0`
-- Add validation for `ModelConfig`: `NumHeads > 0`
-- Call validation at roofline mode entry (or config load time)
+- Added `invalidPositiveFloat()` helper (rejects `<= 0`, NaN, Inf)
+- Added `ValidateRooflineConfig(ModelConfig, HardwareCalib) error` — validates 9 fields: `NumHeads`, `NumLayers`, `HiddenDim`, `BytesPerParam`, `TFlopsPeak`, `BwPeakTBs`, `BwEffConstant`, `MfuPrefill`, `MfuDecode`
+
+**`sim/simulator.go`:**
+- `NewSimulator`: validates `TP > 0` when `Roofline == true`, calls `ValidateRooflineConfig`
+
+**`sim/roofline_step.go`:**
+- Sorted map keys before float accumulation in `calculateMemoryAccessBytes()`
+- Added precondition doc comment on `rooflineStepTime`
+
+**`sim/roofline_step_test.go` (new):**
+- Determinism test (100 iterations) + component-sum conservation invariant
+
+**`sim/model_hardware_config_test.go`:**
+- 7 new tests: table-driven model field validation, hardware field validation, NaN/Inf, valid config, NewSimulator integration (roofline + non-roofline)
 
 #### Behavioral Contracts
-- Zero/missing `NumHeads` → clear error, not NaN/Inf
-- Zero `TFlopsPeak`/`MfuPrefill`/`MfuDecode`/`BwPeakTBs`/`BwEffConstant` → clear error
+- Zero/NaN/Inf model config fields → clear error, not silent corruption
+- Zero/NaN/Inf hardware config fields → clear error listing all invalid fields
+- TP=0 in roofline mode → clear error
+- Non-roofline mode unaffected
 - Sorted map iteration produces deterministic float accumulation
 
-#### Tests
-- Behavioral: zero config fields → error (not panic, not NaN)
-- Determinism: same inputs → identical roofline output across runs
+#### Discovered Issues
+- #254 — Dead code in `calculateTransformerFlops` (duplicate attention block)
+- #257 — Missing unit tests for roofline computation functions
 
 ---
 
