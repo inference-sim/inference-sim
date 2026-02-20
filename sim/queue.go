@@ -1,8 +1,6 @@
 // Implements the WaitQueue, which holds all requests waiting to be processed.
 // Requests are enqueued on arrival
 
-// TODO: Requests need to be re-queued on preemption.
-
 package sim
 
 import (
