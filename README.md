@@ -747,7 +747,7 @@ inference-sim/
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--total-kv-blocks` | 1000000 | Total KV cache blocks |
+| `--total-kv-blocks` | 1000000 | Total KV cache blocks. When a model match exists in defaults.yaml, the model-specific value is used unless this flag is explicitly set. |
 | `--max-num-running-reqs` | 256 | Max concurrent requests in running batch |
 | `--max-num-scheduled-tokens` | 2048 | Max new tokens per step across all running requests |
 | `--block-size-in-tokens` | 16 | Tokens per KV cache block |
