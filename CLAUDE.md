@@ -114,10 +114,10 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 
 BLIS follows a layered design document hierarchy. Each tier has a specific abstraction level and audience:
 
-- **Design guidelines** (`docs/plans/2026-02-18-design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
+- **Design guidelines** (`docs/templates/design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
 - **Design docs** (per-feature): Behavioral specifications written per the guidelines. Describe what modules do and why, never how they're implemented. Four species: decision record, specification, problem analysis, system overview.
-- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/plans/macroplanprompt.md`. May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
-- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/plans/prmicroplanprompt-v2.md`.
+- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/templates/macro-plan.md`. May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
+- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/templates/micro-plan.md`.
 
 **The abstraction rule:** Design docs describe *what a module does and what it guarantees*. Macro plans describe *what to build and in what order*. Micro plans describe *how to implement each piece*. Go struct definitions, method implementations, and file:line references belong only in micro plans.
 
@@ -133,12 +133,12 @@ This project follows BDD/TDD practices. When implementing features:
 2. **Implement tests before code**: Tests verify contracts hold
 3. **Use table-driven tests**: Go's table-driven test pattern for comprehensive coverage
 4. **Test laws, not just values**: Golden tests answer "did the output change?" but not "is the output correct?" Every golden test should have a companion invariant test that verifies a law the system must satisfy (conservation, causality, monotonicity)
-5. **Refactor survival test**: Before accepting a test, ask: "Would this test still pass if the implementation were completely rewritten but the behavior preserved?" If no, the test is structural — rewrite it to assert observable behavior instead of internal structure. Common structural traps: type assertions on factory returns (`policy.(*ConcreteType)`), exact formula reproduction (`assert.Equal(score, 0.6*x + 0.4*y)`), internal field access. See `prmicroplanprompt-v2.md` rules 9-10 for the full prohibited/required assertion patterns.
+5. **Refactor survival test**: Before accepting a test, ask: "Would this test still pass if the implementation were completely rewritten but the behavior preserved?" If no, the test is structural — rewrite it to assert observable behavior instead of internal structure. See `docs/standards/principles.md` BDD/TDD section for prohibited/required assertion patterns.
 6. **THEN clauses drive test quality**: A structural THEN clause produces a structural test. If a contract's THEN clause contains a concrete type name or internal field name, rewrite the THEN clause to describe observable behavior before writing the test.
 
 ### PR Workflow
 
-Diligently follow the workflow in docs/plans/prworkflow.md. Before I approve any plan, validate it: 1) Check every task's dependencies — can each task actually start given what comes before it? 2) Verify all sections from the template are present and non-empty. 3) Read the executive summary as if you're a new team member — is it clear and human-readable? 4) Flag any tasks that seem under-specified for implementation. List all issues found.
+Diligently follow the workflow in docs/process/pr-workflow.md. Before I approve any plan, validate it: 1) Check every task's dependencies — can each task actually start given what comes before it? 2) Verify all sections from the template are present and non-empty. 3) Read the executive summary as if you're a new team member — is it clear and human-readable? 4) Flag any tasks that seem under-specified for implementation. List all issues found.
 
 For new features that introduce module boundaries or modify the architecture, a design doc (per the design guidelines) should exist before micro-planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), a design doc is optional — proceed directly to micro-planning.
 
@@ -160,70 +160,55 @@ When asked to update the macro implementation plan, directly edit the document. 
 
 ### Key Invariants to Maintain
 
-- **Request conservation**: `injected_requests == completed_requests + still_queued + still_running` at simulation end (all levels). The `injected_requests` field counts requests admitted to instances. For the full pipeline: `num_requests == injected_requests + Rejected Requests` (from anomaly counters). Conservation fields (`still_queued`, `still_running`, `injected_requests`) are included in CLI JSON output.
-- **Request lifecycle**: Requests transition queued → running → completed; requests not completed before horizon remain in current state
-- **Clock monotonicity**: Simulation clock never decreases
-- **KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
-- **Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
-- **Determinism**: Same seed must produce byte-identical stdout across runs. Wall-clock timing is logged to stderr via logrus (not in stdout JSON).
+Full details (verification strategies, evidence): see [`docs/standards/invariants.md`](docs/standards/invariants.md).
+
+- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
+- **INV-2 Request lifecycle**: Requests transition queued → running → completed; not completed before horizon remain in current state
+- **INV-3 Clock monotonicity**: Simulation clock never decreases
+- **INV-4 KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
+- **INV-5 Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
+- **INV-6 Determinism**: Same seed must produce byte-identical stdout across runs. Wall-clock timing goes to stderr.
+- **INV-7 Signal freshness**: Routing snapshot signals have tiered freshness — PendingRequests (synchronous) vs KVUtilization (stale across batch steps). See `docs/standards/invariants.md` for the full hierarchy.
 
 ### Engineering Principles
 
-**Separation of concerns:**
-- `sim/` is a library — it must never call `os.Exit`, `logrus.Fatalf`, or terminate the process. Return errors to callers. Only `cmd/` may terminate.
-- Cluster-level policies (admission, routing) receive `*RouterState` with global view. Instance-level policies (priority, scheduler) receive only local data. Never leak cluster state to instance-level code.
-- Bridge types (`RouterState`, `RoutingSnapshot`) live in `sim/` to avoid import cycles. Conversion between package-specific types and bridge types happens at package boundaries.
-- Each package has a unidirectional dependency: `cmd/ → sim/cluster/ → sim/` and `sim/cluster/ → sim/trace/`. The `sim/` package must never import subpackages.
+Full details: see [`docs/standards/principles.md`](docs/standards/principles.md).
 
-**Interface design:**
-- Policy interfaces should be single-method when possible (see `AdmissionPolicy`, `RoutingPolicy`, `PriorityPolicy`, `InstanceScheduler`).
-- Query methods must be pure — no side effects, no state mutation, no destructive reads. If a method needs to both query and clear state, provide separate `Get()` and `Consume()` methods.
-- Factory functions must validate their inputs. Follow the pattern: `IsValid*()` check + switch/case + panic on unknown. Never silently accept invalid configuration.
-- Interfaces must be defined by behavioral contract (allocate, query, release), not by one implementation's data model. If an interface method only makes sense for one backend, the interface is too specific — it must accommodate at least two implementations.
-- Individual methods should operate within a single module's responsibility. If a method spans scheduling, latency estimation, and metric collection, extract each concern into its module's interface.
+**Separation of concerns:** `sim/` is a library (never terminates). Cluster-level policies see global state via `*RouterState`. Instance-level policies see only local data. Dependency direction: `cmd/ → sim/cluster/ → sim/`.
 
-**Configuration design:**
-- Group configuration by module. A single config struct combining hardware identity, model parameters, simulation parameters, and policy choices creates shotgun surgery when adding parameters. Each module's config should be independently specifiable and validatable.
+**Interface design:** Single-method interfaces. Pure query methods. Factory validation. Behavioral contracts, not implementation-specific (R13). Single-module methods (R14).
 
-**Canonical constructors:**
-- Every struct constructed in multiple places needs a canonical constructor (e.g., `NewRequestMetrics()`). Struct literals appear in exactly one place.
-- Before adding a field to a struct, grep for ALL construction sites (`StructName{`). Update every site or refactor to use the canonical constructor.
+**Configuration design:** Group by module (R16). Each module's config independently validatable.
 
-**Output channel separation:**
-- Simulation results (metrics JSON, fitness scores, anomaly counters, KV cache metrics, per-SLO metrics, trace summaries) use `fmt.Println`/`fmt.Printf` to write to **stdout**. These are the program's primary output and must be visible regardless of `--log` level. Stdout is deterministic (same seed = byte-identical output); wall-clock timing goes to stderr.
-- Diagnostic messages (configuration echoes, progress markers, warnings, errors) use `logrus.*` to write to **stderr**, controlled by `--log`.
-- Rule of thumb: if a user piping output to a file would want to capture it, use `fmt`. If it is operational context for debugging, use `logrus`.
+**Canonical constructors:** Struct literals in exactly one place (R4). Grep for ALL construction sites before adding fields.
 
-**Error handling boundaries:**
-- `cmd/root.go`: `logrus.Fatalf` for user input errors (this is the CLI boundary)
-- `sim/`, `sim/cluster/`, `sim/workload/`: `panic()` for internal invariant violations that represent programming errors; `error` return for recoverable failures; `bool` return for expected conditions (e.g., KV allocation failure → preempt and retry)
-- Never use `continue` in an error path without either propagating the error, counting the occurrence, or documenting why it's safe. Silent `continue` that drops data is the most common source of bugs in this codebase.
+**Output channel separation:** stdout (deterministic results), stderr (diagnostics via logrus).
+
+**Error handling boundaries:** CLI → `logrus.Fatalf`. Library → `error` or `panic`. Never silent `continue` (R1).
 
 ### Antipattern Prevention
 
-Each rule traces to a real bug we found and fixed. Enforced by PR workflow (self-audit dimensions 7-9) and micro-plan template (Phase 8 checklist).
+17 rules, each tracing to a real bug. Full details (evidence, checks, enforcement): see [`docs/standards/rules.md`](docs/standards/rules.md).
 
-1. **No silent data loss**: Every error path must either return an error, panic with context, or increment a counter. A `continue` or early `return` that silently drops a request, metric, or allocation is a correctness bug.
-
-2. **Sort map keys before float accumulation**: Go map iteration is non-deterministic. Any `for k, v := range someMap` that feeds a running sum (`total += v`) or determines output ordering must sort keys first. Unsorted iteration violates the determinism invariant.
-
-3. **Validate ALL numeric CLI flags**: Every numeric flag (`--rate`, `--fitness-weights`, `--kv-cpu-blocks`, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).
-
-4. **Construction site audit**: Before adding a field to a struct, find every place that struct is constructed as a literal. If there are multiple sites, either add a canonical constructor or update every site. Missing a site causes silent field-zero bugs.
-
-5. **Transactional state mutation**: Any loop that allocates resources (blocks, slots, counters) must handle mid-loop failure by rolling back all mutations from previous iterations. A partial allocation that returns `false` without cleanup violates conservation invariants.
-
-6. **No logrus.Fatalf in library code**: The `sim/` package tree must never terminate the process — return errors so callers can handle them. This enables embedding, testing, and adapters.
-
-7. **Invariant tests alongside golden tests**: Golden tests (comparing against known-good output) are regression freezes, not correctness checks. If a bug exists when the golden values are captured, the golden test perpetuates the bug. Every subsystem that has golden tests must also have invariant tests that verify conservation laws, causality, and determinism.
-
-8. **No exported mutable maps**: Validation lookup maps (e.g., `validRoutingPolicies`) must be unexported. Expose through `IsValid*()` accessor functions. Exported maps allow callers to mutate global state, breaking encapsulation and enabling hard-to-trace bugs.
-
-9. **Pointer types for YAML zero-value ambiguity**: YAML config structs must use `*float64` (pointer) for fields where zero is a valid user-provided value, to distinguish "not set" (nil) from "set to zero" (0.0). Using bare `float64` causes silent misconfiguration when users intentionally set a value to zero.
-
-10. **Strict YAML parsing**: Use `yaml.KnownFields(true)` or equivalent strict parsing for all YAML config loading. Typos in field names must cause parse errors, not silent acceptance of malformed config. A silently ignored typo produces default behavior that the user didn't intend.
-
-11. **Guard division in runtime computation**: Any division where the denominator derives from runtime state (batch size, block count, request count, bandwidth) must guard against zero. CLI validation (rule 3) catches input zeros at the boundary; this rule catches intermediate zeros that arise during simulation (e.g., `utilization = usedBlocks / totalBlocks` when no blocks are configured, `avgLatency = sum / count` when count is zero). Use explicit guards or documented invariants proving the denominator is non-zero.
+| # | Rule | One-sentence summary |
+|---|------|---------------------|
+| R1 | No silent data loss | Every error path must return error, panic, or increment counter — never silently drop data |
+| R2 | Sort map keys | Map iteration feeding float sums or output ordering must sort keys first (determinism) |
+| R3 | Validate CLI flags | Every numeric flag validated for zero, negative, NaN, Inf |
+| R4 | Construction site audit | Adding a struct field? Grep for ALL literal construction sites, update every one |
+| R5 | Transactional mutation | Resource-allocating loops must rollback on mid-loop failure |
+| R6 | No Fatalf in library | `sim/` never terminates the process — return errors to callers |
+| R7 | Invariant tests | Every golden test needs a companion invariant test verifying a system law |
+| R8 | No exported maps | Validation maps unexported; expose via `IsValid*()` accessors |
+| R9 | YAML pointer types | Use `*float64` when zero is a valid user value |
+| R10 | Strict YAML parsing | `yaml.KnownFields(true)` — typos must cause errors |
+| R11 | Guard division | Runtime-derived denominators must be checked for zero |
+| R12 | Golden regeneration | Regenerate and document golden dataset when output changes |
+| R13 | Multi-impl interfaces | New interfaces must work for >=2 backends |
+| R14 | Single-module methods | No method spans scheduling + latency + metrics — extract concerns |
+| R15 | Stale PR references | Grep for `planned for PR N` after completing PR N |
+| R16 | Config by module | Group config parameters by module, not monolithic structs |
+| R17 | Signal freshness | Document which routing signals are synchronously fresh vs stale |
 
 
 ### Current Implementation Focus
@@ -334,20 +319,42 @@ inference-sim/
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
 ├── hardware_config.json       # GPU specifications
-├── examples/                  # Example configuration files (policy-config.yaml, weighted-routing.yaml, servegen-language.yaml, prefix-affinity-demo.yaml, multiturn-chat-demo.yaml, routing-comparison.sh)
+├── examples/                  # Example configuration files
+├── hypotheses/                # Hypothesis experiment artifacts (run.sh, analyze.py, FINDINGS.md)
 ├── testdata/goldendataset.json # Golden dataset for regression tests
-└── docs/plans/                # Design documents
+├── docs/
+│   ├── standards/             # Canonical rules, invariants, principles, experiment standards
+│   ├── process/               # Activity workflows (PR, design, macro-plan, hypothesis)
+│   ├── templates/             # Artifact templates (micro-plan, macro-plan, design-guidelines, hypothesis)
+│   ├── plans/                 # Per-feature implementation plans
+│   ├── pr-history.md          # Completed PRs and design doc catalog
+│   └── extension-recipes.md   # Step-by-step extension guides
+└── CONTRIBUTING.md            # Contributor guide (references docs/standards/)
 ```
 
-## Design Documents
+## Project Governance Documents
 
-### Guidelines and Templates (read these first)
+### Standards (what rules apply)
 
-- `docs/plans/2026-02-18-design-guidelines.md`: **BLIS Design Guidelines** — DES foundations (model scoping, event design, V&V), design doc authoring rules (abstraction levels, staleness test, four species), module architecture (two-layer architecture, target module map, contract template, real-system correspondence), extension framework (four extension types with recipes), anti-patterns with evidence. **Start here when designing anything new.**
-- `docs/plans/macroplanprompt.md`: Template for macro-level planning (multi-PR feature expansions). Requires design guidelines as prerequisite. Enforces module contracts, model scoping, extension type classification, and abstraction level boundaries.
-- `docs/plans/prmicroplanprompt-v2.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts. This is where full code detail belongs.
-- `docs/plans/prworkflow.md`: End-to-end PR workflow (worktree → plan → review → implement → review → audit → commit)
+- `docs/standards/rules.md`: **17 antipattern rules** (R1-R17) — each with evidence, checks, enforcement locations
+- `docs/standards/invariants.md`: **7 system invariants** (INV-1 through INV-7) — with verification strategies
+- `docs/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
+- `docs/standards/experiments.md`: **Experiment standards** — taxonomy, rigor requirements, findings classification
 
-### Per-Feature Design Documents and PR History
+### Process (how to do each activity)
+
+- `docs/process/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
+- `docs/process/design.md`: Design document creation process
+- `docs/process/macro-plan.md`: Macro-level (multi-PR) planning process
+- `docs/process/hypothesis.md`: Hypothesis experiment process
+
+### Templates (what to produce)
+
+- `docs/templates/design-guidelines.md`: **BLIS Design Guidelines** — DES foundations, module architecture, extension framework. **Start here when designing anything new.**
+- `docs/templates/macro-plan.md`: Template for macro-level planning (multi-PR features)
+- `docs/templates/micro-plan.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts
+- `docs/templates/hypothesis.md`: Template for hypothesis experiment artifacts
+
+### Per-Feature Plans and PR History
 
 See `docs/pr-history.md` for the full catalog of design documents, micro-plans, and completed PR summaries.

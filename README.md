@@ -769,4 +769,4 @@ Contributions are welcome! Please see the design documents in `docs/plans/` for 
 
 ## License
 
-[Add license information here]
+This project is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for details.

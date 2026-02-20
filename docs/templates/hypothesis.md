@@ -1,0 +1,121 @@
+# Hypothesis Experiment Template
+
+> **For Claude:** Use this template when creating a new hypothesis experiment in `hypotheses/<name>/`.
+
+## FINDINGS.md Structure
+
+Every experiment's `FINDINGS.md` MUST contain these sections:
+
+```
+# <Hypothesis Name>
+
+**Status:** Confirmed | Refuted | Partially confirmed | Inconclusive
+**Tier:** <tier number from research.md>
+**Type:** Deterministic | Statistical (<subtype>)
+**Date:** YYYY-MM-DD
+
+## Hypothesis
+
+> <Quoted hypothesis statement — intuitive claim about system behavior>
+
+## Experiment Design
+
+**Classification:** <Deterministic | Statistical/Dominance | Statistical/Monotonicity | Statistical/Equivalence | Statistical/Pareto>
+
+**Configurations compared:**
+- A: <description + exact CLI flags>
+- B: <description + exact CLI flags>
+
+**Controlled variables:** <what is held constant>
+**Varied variable:** <what differs between A and B>
+**Seeds:** <list of seeds used>
+**Preconditions verified:** <what was checked before running>
+
+## Results
+
+<Comparison tables with per-seed values>
+
+## Root Cause Analysis
+
+<Why the results are what they are — trace through the code/architecture>
+
+## Findings Classification
+
+| Finding | Type | Action |
+|---------|------|--------|
+| <finding 1> | Confirmation / Bug / New rule / etc. | <issue number or "documented here"> |
+
+## Standards Audit
+
+Findings checked against docs/standards/:
+- [ ] Any violations of existing rules? <list or "none found">
+- [ ] Any new rules needed? <list or "none">
+- [ ] Any new invariants needed? <list or "none">
+- [ ] Any existing rules/invariants confirmed? <list or "none">
+
+## Implications for Users
+
+<Practical guidance derived from this experiment>
+
+## Reproducing
+
+cd hypotheses/<name>
+./run.sh
+```
+
+## run.sh Structure
+
+```bash
+#!/bin/bash
+# <Hypothesis name>
+# <One-line description>
+# Usage: ./run.sh [--rebuild]
+
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+BINARY="$REPO_ROOT/simulation_worker"
+
+# Build if needed
+if [[ "${1:-}" == "--rebuild" ]] || [[ ! -x "$BINARY" ]]; then
+    echo "Building simulation_worker..."
+    (cd "$REPO_ROOT" && go build -o simulation_worker main.go)
+fi
+
+MODEL="meta-llama/llama-3.1-8b-instruct"
+
+run_sim() {
+    # Wrapper around the binary with common flags
+    "$BINARY" run --model "$MODEL" --num-instances 4 \
+        --log error --summarize-trace --trace-level decisions \
+        "$@" 2>/dev/null
+}
+
+RESULTS_DIR=$(mktemp -d)
+trap "rm -rf $RESULTS_DIR" EXIT
+
+# -- Experiment sections -----------------------------------------------
+# Each experiment: run configurations, save to temp files, call analyze.py
+# ----------------------------------------------------------------------
+```
+
+## analyze.py Structure
+
+```python
+#!/usr/bin/env python3
+"""Analysis script for <hypothesis name>.
+
+Parses BLIS multi-block output and produces comparison tables.
+"""
+import json, math, re, sys
+from pathlib import Path
+
+def parse_output(filepath):
+    """Parse BLIS output -> cluster metrics + distribution + cache hit rate."""
+    content = Path(filepath).read_text()
+    # Extract cluster JSON block (instance_id == "cluster")
+    # Extract target distribution from trace summary
+    # Extract KV cache metrics (Cache Hit Rate)
+    # Return dict with ttft_mean, ttft_p99, throughput, dist, hit_rate, etc.
+    ...
+```
