@@ -164,9 +164,10 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 // detectPriorityInversions counts priority inversion events from per-instance metrics.
 // PR9 heuristic: counts pairs where an earlier-arriving request has
 // worse E2E than a later-arriving request (with 2× threshold).
+// Requests are grouped by SLO class before comparison — cross-class differences
+// reflect workload size heterogeneity, not scheduling unfairness. (#292, R20)
 // When priorityPolicy is "constant" or "" (both map to ConstantPriority),
-// returns 0 — all requests share the same priority, so E2E differences
-// reflect workload variance, not scheduling unfairness.
+// returns 0 — all requests share the same priority.
 func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string) int {
 	if priorityPolicy == "constant" || priorityPolicy == "" {
 		return 0
@@ -180,11 +181,18 @@ func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string)
 			arrived float64
 			e2e     float64
 		}
-		var reqs []reqInfo
+		// Group requests by SLO class to avoid cross-class false positives (#292, R20).
+		// Requests in different SLO classes have naturally different E2E due to
+		// workload size differences, not scheduling unfairness.
+		groups := make(map[string][]reqInfo)
 		skippedCount := 0
 		for id, rm := range m.Requests {
 			if e2e, ok := m.RequestE2Es[id]; ok {
-				reqs = append(reqs, reqInfo{arrived: rm.ArrivedAt, e2e: e2e})
+				sloClass := rm.SLOClass
+				if sloClass == "" {
+					sloClass = "default"
+				}
+				groups[sloClass] = append(groups[sloClass], reqInfo{arrived: rm.ArrivedAt, e2e: e2e})
 			} else {
 				skippedCount++
 			}
@@ -192,13 +200,19 @@ func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string)
 		if skippedCount > 0 {
 			logrus.Warnf("detectPriorityInversions: %d requests missing E2E data, skipped", skippedCount)
 		}
-		sort.Slice(reqs, func(i, j int) bool {
-			return reqs[i].arrived < reqs[j].arrived
-		})
-		for i := 0; i < len(reqs)-1; i++ {
-			for j := i + 1; j < len(reqs); j++ {
-				if reqs[i].e2e > reqs[j].e2e*2.0 {
-					count++
+		// Check inversions within each SLO class
+		for _, reqs := range groups {
+			if len(reqs) < 2 {
+				continue
+			}
+			sort.Slice(reqs, func(i, j int) bool {
+				return reqs[i].arrived < reqs[j].arrived
+			})
+			for i := 0; i < len(reqs)-1; i++ {
+				for j := i + 1; j < len(reqs); j++ {
+					if reqs[i].e2e > reqs[j].e2e*2.0 {
+						count++
+					}
 				}
 			}
 		}

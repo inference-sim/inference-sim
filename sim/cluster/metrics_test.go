@@ -410,6 +410,66 @@ func TestDetectPriorityInversions_MissingE2E_WarnsAndCountsMatched(t *testing.T)
 	assert.Contains(t, buf.String(), "missing E2E", "should warn about requests with missing E2E data")
 }
 
+// TestDetectPriorityInversions_MixedSLO_NoFalsePositives verifies BC-4 (#292):
+// Mixed-SLO workloads must not produce false positives from cross-class comparisons.
+func TestDetectPriorityInversions_MixedSLO_NoFalsePositives(t *testing.T) {
+	// GIVEN requests from two SLO classes with naturally different E2E
+	m := sim.NewMetrics()
+	// Realtime requests: fast (low E2E)
+	m.Requests["rt1"] = sim.RequestMetrics{ID: "rt1", ArrivedAt: 100, SLOClass: "realtime"}
+	m.RequestE2Es["rt1"] = 5000.0
+	m.Requests["rt2"] = sim.RequestMetrics{ID: "rt2", ArrivedAt: 300, SLOClass: "realtime"}
+	m.RequestE2Es["rt2"] = 4500.0
+	// Batch requests: slow (high E2E) — this is expected, not an inversion
+	m.Requests["b1"] = sim.RequestMetrics{ID: "b1", ArrivedAt: 200, SLOClass: "batch"}
+	m.RequestE2Es["b1"] = 50000.0
+	m.Requests["b2"] = sim.RequestMetrics{ID: "b2", ArrivedAt: 400, SLOClass: "batch"}
+	m.RequestE2Es["b2"] = 48000.0
+
+	// WHEN detecting with slo-based priority
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
+
+	// THEN no inversions (within each class, requests are ordered correctly)
+	if inversions != 0 {
+		t.Errorf("expected 0 inversions for correctly-ordered mixed-SLO workload, got %d", inversions)
+	}
+}
+
+// TestDetectPriorityInversions_WithinSLOClass_StillDetected verifies BC-7:
+// Inversions within a single SLO class must still be detected.
+func TestDetectPriorityInversions_WithinSLOClass_StillDetected(t *testing.T) {
+	m := sim.NewMetrics()
+	// Two realtime requests where earlier one has much worse E2E
+	m.Requests["rt1"] = sim.RequestMetrics{ID: "rt1", ArrivedAt: 100, SLOClass: "realtime"}
+	m.RequestE2Es["rt1"] = 50000.0 // 10× worse than rt2
+	m.Requests["rt2"] = sim.RequestMetrics{ID: "rt2", ArrivedAt: 200, SLOClass: "realtime"}
+	m.RequestE2Es["rt2"] = 5000.0
+
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
+
+	if inversions == 0 {
+		t.Error("expected at least 1 inversion within the same SLO class")
+	}
+}
+
+// TestDetectPriorityInversions_EmptySLOClass_UsesDefault verifies BC-7:
+// Legacy workloads with empty SLOClass are grouped as "default" and
+// existing detection behavior is preserved.
+func TestDetectPriorityInversions_EmptySLOClass_UsesDefault(t *testing.T) {
+	m := sim.NewMetrics()
+	// Legacy requests with no SLO class (empty string)
+	m.Requests["r1"] = sim.RequestMetrics{ID: "r1", ArrivedAt: 100}
+	m.RequestE2Es["r1"] = 50000.0
+	m.Requests["r2"] = sim.RequestMetrics{ID: "r2", ArrivedAt: 200}
+	m.RequestE2Es["r2"] = 5000.0
+
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
+
+	if inversions == 0 {
+		t.Error("expected inversion detected for legacy (empty SLO class) requests")
+	}
+}
+
 // TestDetectHOLBlocking_ImbalancedInstances verifies BC-9.
 func TestDetectHOLBlocking_ImbalancedInstances(t *testing.T) {
 	perInstance := []*sim.Metrics{
