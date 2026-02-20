@@ -64,12 +64,13 @@ func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float6
 
 	if workload, workloadExists := cfg.Workloads[workloadType]; workloadExists {
 		logrus.Infof("Using preset workload %v\n", workloadType)
-		return &sim.GuideLLMConfig{Rate: rate, NumRequests: numRequests,
-			PrefixTokens: workload.PrefixTokens,
-			PromptTokens: workload.PromptTokensMean, PromptTokensStdDev: workload.PromptTokensStdev,
-			PromptTokensMin: workload.PromptTokensMin, PromptTokensMax: workload.PromptTokensMax,
-			OutputTokens: workload.OutputTokensMean, OutputTokensStdDev: workload.OutputTokensStdev,
-			OutputTokensMin: workload.OutputTokensMin, OutputTokensMax: workload.OutputTokensMax}
+		return sim.NewGuideLLMConfig(
+			rate, numRequests,
+			workload.PrefixTokens, workload.PromptTokensMean,
+			workload.PromptTokensStdev, workload.PromptTokensMin, workload.PromptTokensMax,
+			workload.OutputTokensMean, workload.OutputTokensStdev,
+			workload.OutputTokensMin, workload.OutputTokensMax,
+		)
 	} else {
 		return nil
 	}

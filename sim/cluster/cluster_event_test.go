@@ -180,11 +180,9 @@ type priorityHintPolicy struct {
 }
 
 func (p *priorityHintPolicy) Route(req *sim.Request, state *sim.RouterState) sim.RoutingDecision {
-	return sim.RoutingDecision{
-		TargetInstance: state.Snapshots[0].ID,
-		Reason:         "priority-hint-test",
-		Priority:       p.hint,
-	}
+	d := sim.NewRoutingDecision(state.Snapshots[0].ID, "priority-hint-test")
+	d.Priority = p.hint
+	return d
 }
 
 // TestRoutingDecisionEvent_PriorityHint_Applied verifies BC-9 non-zero path:

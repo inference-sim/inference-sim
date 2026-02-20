@@ -24,6 +24,16 @@ func (s RoutingSnapshot) EffectiveLoad() int {
 	return s.QueueDepth + s.BatchSize + s.PendingRequests
 }
 
+// NewRoutingSnapshot creates a RoutingSnapshot with the given instance ID.
+// All numeric fields are zero-valued. Used for initial snapshot creation;
+// field-by-field refresh via CachedSnapshotProvider.Snapshot() is a separate concern.
+func NewRoutingSnapshot(id string) RoutingSnapshot {
+	if id == "" {
+		panic("NewRoutingSnapshot: id must not be empty")
+	}
+	return RoutingSnapshot{ID: id}
+}
+
 // RoutingDecision encapsulates the routing decision for a request.
 type RoutingDecision struct {
 	TargetInstance string             // Instance ID to route to (must match a snapshot ID)
@@ -36,6 +46,33 @@ type RoutingDecision struct {
 	// but does not persist. This is intentional: it allows priority to evolve over time
 	// (e.g., SLOBasedPriority ages requests) while giving routing a way to influence initial placement.
 	Priority float64
+}
+
+// NewRoutingDecision creates a RoutingDecision with the given target and reason.
+// Scores is nil and Priority is 0.0 (defer to instance-level PriorityPolicy).
+// This is the canonical constructor for policies that do not produce per-instance scores.
+func NewRoutingDecision(target string, reason string) RoutingDecision {
+	if target == "" {
+		panic("NewRoutingDecision: target must not be empty")
+	}
+	return RoutingDecision{
+		TargetInstance: target,
+		Reason:         reason,
+	}
+}
+
+// NewRoutingDecisionWithScores creates a RoutingDecision with target, reason, and per-instance scores.
+// Priority is 0.0 (defer to instance-level PriorityPolicy).
+// Used by scoring-based routing policies (e.g., WeightedScoring).
+func NewRoutingDecisionWithScores(target string, reason string, scores map[string]float64) RoutingDecision {
+	if target == "" {
+		panic("NewRoutingDecisionWithScores: target must not be empty")
+	}
+	return RoutingDecision{
+		TargetInstance: target,
+		Reason:         reason,
+		Scores:         scores,
+	}
 }
 
 // RoutingPolicy decides which instance should handle a request.
@@ -57,10 +94,7 @@ func (rr *RoundRobin) Route(req *Request, state *RouterState) RoutingDecision {
 	}
 	target := snapshots[rr.counter%len(snapshots)]
 	rr.counter++
-	return RoutingDecision{
-		TargetInstance: target.ID,
-		Reason:         fmt.Sprintf("round-robin[%d]", rr.counter-1),
-	}
+	return NewRoutingDecision(target.ID, fmt.Sprintf("round-robin[%d]", rr.counter-1))
 }
 
 // LeastLoaded routes requests to the instance with minimum (QueueDepth + BatchSize + PendingRequests).
@@ -87,10 +121,7 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 		}
 	}
 
-	return RoutingDecision{
-		TargetInstance: target.ID,
-		Reason:         fmt.Sprintf("least-loaded (load=%d)", minLoad),
-	}
+	return NewRoutingDecision(target.ID, fmt.Sprintf("least-loaded (load=%d)", minLoad))
 }
 
 // observerFunc is called after each routing decision to update stateful scorer state.
@@ -157,11 +188,11 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		obs(req, snapshots[bestIdx].ID)
 	}
 
-	return RoutingDecision{
-		TargetInstance: snapshots[bestIdx].ID,
-		Reason:         fmt.Sprintf("weighted-scoring (score=%.3f)", bestScore),
-		Scores:         scores,
-	}
+	return NewRoutingDecisionWithScores(
+		snapshots[bestIdx].ID,
+		fmt.Sprintf("weighted-scoring (score=%.3f)", bestScore),
+		scores,
+	)
 }
 
 // PrefixAffinity routes requests with matching prefixes to the same instance (cache-aware).
@@ -187,10 +218,7 @@ func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecisio
 		// Verify target still in snapshots (instance may have been removed)
 		for _, snap := range snapshots {
 			if snap.ID == targetID {
-				return RoutingDecision{
-					TargetInstance: targetID,
-					Reason:         "prefix-affinity (cache-hit)",
-				}
+				return NewRoutingDecision(targetID, "prefix-affinity (cache-hit)")
 			}
 		}
 	}
@@ -202,10 +230,7 @@ func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecisio
 	// Update cache with new mapping
 	pa.prefixMap[prefixHash] = decision.TargetInstance
 
-	return RoutingDecision{
-		TargetInstance: decision.TargetInstance,
-		Reason:         "prefix-affinity (cache-miss, fallback to least-loaded)",
-	}
+	return NewRoutingDecision(decision.TargetInstance, "prefix-affinity (cache-miss, fallback to least-loaded)")
 }
 
 // AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + PendingRequests).
@@ -231,10 +256,7 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 		}
 	}
 
-	return RoutingDecision{
-		TargetInstance: target.ID,
-		Reason:         fmt.Sprintf("always-busiest (load=%d)", maxLoad),
-	}
+	return NewRoutingDecision(target.ID, fmt.Sprintf("always-busiest (load=%d)", maxLoad))
 }
 
 // NewRoutingPolicy creates a routing policy by name.
