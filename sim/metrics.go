@@ -75,6 +75,7 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		TotalOutputTokens:    int(m.TotalOutputTokens),
 		VllmDurationSec:      vllmRuntime,
 		KVAllocationFailures: m.KVAllocationFailures,
+		PreemptionCount:      m.PreemptionCount,
 	}
 
 	if m.CompletedRequests > 0 {
