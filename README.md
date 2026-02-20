@@ -690,7 +690,7 @@ inference-sim/
 | `--hardware` | (auto-detected) | GPU type (`H100`, `A100-80`). Auto-detected from `defaults.yaml` if omitted |
 | `--tp` | (auto-detected) | Tensor parallelism degree. Auto-detected from `defaults.yaml` if omitted |
 | `--vllm-version` | (auto-detected) | vLLM version string. Auto-detected from `defaults.yaml` if omitted |
-| `--horizon` | max int64 | Simulation horizon in ticks (microseconds) |
+| `--horizon` | max int64 | Simulation horizon in ticks (microseconds). When using --workload-spec, the spec's horizon value is used unless this flag is explicitly set. |
 | `--seed` | 42 | RNG seed for deterministic simulation |
 | `--results-path` | (none) | Save JSON results to file |
 | `--log` | warn | Log level: trace, debug, info, warn, error, fatal, panic |
@@ -706,7 +706,7 @@ inference-sim/
 | `--workload-spec` | (none) | YAML workload spec file (overrides `--workload`). See `examples/servegen-language.yaml` |
 | `--workload-traces-filepath` | (none) | CSV trace file (required when `--workload traces`) |
 | `--rate` | 1.0 | Requests per second (for distribution workloads) |
-| `--num-requests` | 100 | Number of requests to generate |
+| `--num-requests` | 100 | Number of requests to generate. When using --workload-spec, the spec's num_requests value is used unless this flag is explicitly set. |
 | `--prompt-tokens` | 512 | Mean input token count |
 | `--prompt-tokens-stdev` | 256 | Input token count standard deviation |
 | `--prefix-tokens` | 0 | Shared prefix token count |
