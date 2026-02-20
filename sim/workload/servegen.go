@@ -210,9 +210,21 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 			skippedRows++
 			continue
 		}
-		startTime, _ := strconv.ParseFloat(strings.TrimSpace(record[0]), 64)
-		rate, _ := strconv.ParseFloat(strings.TrimSpace(record[1]), 64)
-		cv, _ := strconv.ParseFloat(strings.TrimSpace(record[2]), 64)
+		startTime, err := strconv.ParseFloat(strings.TrimSpace(record[0]), 64)
+		if err != nil {
+			skippedRows++
+			continue
+		}
+		rate, err := strconv.ParseFloat(strings.TrimSpace(record[1]), 64)
+		if err != nil {
+			skippedRows++
+			continue
+		}
+		cv, err := strconv.ParseFloat(strings.TrimSpace(record[2]), 64)
+		if err != nil {
+			skippedRows++
+			continue
+		}
 		pattern := strings.TrimSpace(record[3])
 
 		rows = append(rows, serveGenTraceRow{
@@ -223,7 +235,7 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 		})
 	}
 	if skippedRows > 0 {
-		logrus.Warnf("parseServeGenTrace: %d rows in %s had fewer than 4 fields and were skipped", skippedRows, path)
+		logrus.Warnf("parseServeGenTrace: %d rows in %s were skipped (short rows or parse errors)", skippedRows, path)
 	}
 	return rows, nil
 }
@@ -251,7 +263,11 @@ func loadServeGenDataset(path string, sgConfig *ServeGenDataSpec) (map[int]float
 
 	for _, k := range keys {
 		window := dataset[k]
-		startTime, _ := strconv.ParseFloat(k, 64)
+		startTime, parseErr := strconv.ParseFloat(k, 64)
+		if parseErr != nil {
+			logrus.Warnf("loadServeGenDataset: skipping non-numeric key %q: %v", k, parseErr)
+			continue
+		}
 		if sgConfig.SpanStart > 0 && startTime < float64(sgConfig.SpanStart) {
 			continue
 		}
