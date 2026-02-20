@@ -1,0 +1,77 @@
+# BLIS Multi-Turn Chat Demo — Prefix-Affinity Routing
+#
+# This workload simulates multi-turn chat sessions where each round
+# accumulates the full conversation history as prefix. Rounds within
+# the same session share an increasing number of prefix tokens, which
+# the prefix-affinity scorer detects and routes to the same instance.
+#
+# With context_growth: "accumulate", round N's input is:
+#   [round 0 input + round 0 output + round 1 input + ... + round N input]
+#
+# This creates long, growing shared prefixes within each session —
+# exactly the pattern where prefix-affinity routing excels.
+#
+# ============================================================================
+# TRY IT: Compare routing strategies for multi-turn chat
+# ============================================================================
+#
+#   # Prefix-affinity dominant (routes same-session requests together)
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-scorers "prefix-affinity:5,queue-depth:1" \
+#     --workload-spec examples/multiturn-chat-demo.yaml \
+#     --trace-level decisions --summarize-trace
+#
+#   # Load-only (ignores session affinity)
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-scorers "queue-depth:1" \
+#     --workload-spec examples/multiturn-chat-demo.yaml \
+#     --trace-level decisions --summarize-trace
+#
+# Expected: With prefix-affinity, multi-turn sessions cluster on the same
+# instance (exploiting KV cache from prior rounds). With load-only,
+# rounds scatter across instances (no cache reuse).
+
+version: "1"
+seed: 42
+category: reasoning
+aggregate_rate: 2000.0   # high rate to create load differentiation
+num_requests: 200
+
+clients:
+  - id: "multi-turn-chat"
+    tenant_id: "chat-users"
+    slo_class: "interactive"
+    rate_fraction: 1.0
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 30
+        min: 32
+        max: 512
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 64
+        std_dev: 20
+        min: 16
+        max: 256
+    reasoning:
+      reason_ratio_distribution:
+        type: gaussian
+        params:
+          mean: 0
+          std_dev: 0
+          min: 0
+          max: 0
+      multi_turn:
+        max_rounds: 5
+        think_time_us: 100       # 100µs between rounds (rapid multi-turn, tests cache locality)
+        context_growth: accumulate

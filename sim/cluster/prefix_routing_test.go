@@ -60,10 +60,10 @@ func baseDeploymentConfig(numInstances int, _ int) DeploymentConfig {
 		NumInstances:       numInstances,
 		Horizon:            50000000, // 50 seconds
 		Seed:               42,
-		TotalKVBlocks:      200,
+		TotalKVBlocks:      2000,
 		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 2048,
+		MaxRunningReqs:     64,
+		MaxScheduledTokens: 65536,
 		BetaCoeffs:         []float64{1000, 10, 5},
 		AlphaCoeffs:        []float64{100, 50, 25},
 		Model:              "test-model",
@@ -188,6 +188,144 @@ func TestPrefixAffinityRouting_ShortPrefix_NoAdvantage(t *testing.T) {
 
 	// With a weak prefix signal (0.10), the load scorer should dominate
 	// and the distributions should be similar. Not a hard assertion — just log.
+}
+
+// TestPrefixAffinityRouting_MultiTurn_SessionAffinity verifies that
+// prefix-affinity keeps same-session rounds on the same instance,
+// while load-only scatters them. This is the multi-turn cache locality test.
+func TestPrefixAffinityRouting_MultiTurn_SessionAffinity(t *testing.T) {
+	numInstances := 4
+	numSessions := 20
+	roundsPerSession := 5
+
+	// Build multi-turn requests: each session has 5 rounds with accumulating context
+	var requests []*sim.Request
+	sessionInstances := make(map[string]map[string]bool) // sessionID → set of instance IDs
+	reqID := 0
+	baseTime := int64(0)
+	for s := 0; s < numSessions; s++ {
+		sessionID := fmt.Sprintf("session_%d", s)
+		sessionInstances[sessionID] = make(map[string]bool)
+
+		// Generate the session's base prefix (unique per session)
+		prefix := make([]int, 128) // 128 tokens = 8 blocks
+		for i := range prefix {
+			prefix[i] = s*10000 + i
+		}
+
+		var contextPrefix []int
+		for r := 0; r < roundsPerSession; r++ {
+			// Build input: context prefix + new tokens for this round
+			newTokens := make([]int, 64) // 64 new tokens per round = 4 blocks
+			for i := range newTokens {
+				newTokens[i] = s*10000 + r*1000 + 5000 + i
+			}
+			var inputTokens []int
+			if r == 0 {
+				inputTokens = append([]int{}, prefix...)
+				inputTokens = append(inputTokens, newTokens...)
+			} else {
+				inputTokens = append(append([]int{}, contextPrefix...), newTokens...)
+			}
+
+			outputTokens := make([]int, 32)
+			for i := range outputTokens {
+				outputTokens[i] = i
+			}
+
+			requests = append(requests, &sim.Request{
+				ID:           fmt.Sprintf("request_%d", reqID),
+				InputTokens:  inputTokens,
+				OutputTokens: outputTokens,
+				State:        sim.StateQueued,
+				ArrivalTime:  baseTime,
+				SessionID:    sessionID,
+				RoundIndex:   r,
+			})
+			reqID++
+
+			// Accumulate context for next round
+			if r == 0 {
+				contextPrefix = append(append([]int{}, prefix...), newTokens...)
+			} else {
+				contextPrefix = append(contextPrefix, newTokens...)
+			}
+			contextPrefix = append(contextPrefix, outputTokens...)
+
+			baseTime += 200 // 200µs between rounds (fast multi-turn)
+		}
+		baseTime += 1000 // 1ms between sessions
+	}
+
+	config := baseDeploymentConfig(numInstances, len(requests))
+	config.Horizon = baseTime + 50000000
+
+	// Count per-session instance scattering
+	countSessionAffinity := func(cs *ClusterSimulator) float64 {
+		// Map request → instance from per-instance metrics
+		reqToInst := make(map[string]string)
+		for _, inst := range cs.Instances() {
+			m := inst.Metrics()
+			for reqID := range m.Requests {
+				reqToInst[reqID] = string(inst.ID())
+			}
+		}
+
+		// For each session, count how many unique instances were used
+		sessInsts := make(map[string]map[string]bool)
+		for _, req := range requests {
+			if inst, ok := reqToInst[req.ID]; ok {
+				if sessInsts[req.SessionID] == nil {
+					sessInsts[req.SessionID] = make(map[string]bool)
+				}
+				sessInsts[req.SessionID][inst] = true
+			}
+		}
+
+		// Average instances per session (1.0 = perfect affinity, higher = scattered)
+		total := 0.0
+		count := 0
+		for _, insts := range sessInsts {
+			total += float64(len(insts))
+			count++
+		}
+		if count == 0 {
+			return 0
+		}
+		return total / float64(count)
+	}
+
+	guideLLM := &sim.GuideLLMConfig{Rate: 0.005, NumRequests: len(requests)}
+
+	// Experiment A: prefix-affinity dominant
+	affinityConfig := config
+	affinityConfig.RoutingPolicy = "weighted"
+	affinityConfig.RoutingScorerConfigs = []sim.ScorerConfig{
+		{Name: "prefix-affinity", Weight: 5.0},
+		{Name: "queue-depth", Weight: 1.0},
+	}
+	affinityCS := NewClusterSimulator(affinityConfig, guideLLM, "")
+	affinityCS.SetPreGeneratedRequests(copyRequests(requests))
+	require.NoError(t, affinityCS.Run())
+	affinityAffinity := countSessionAffinity(affinityCS)
+
+	// Experiment B: load-only
+	loadConfig := config
+	loadConfig.RoutingPolicy = "weighted"
+	loadConfig.RoutingScorerConfigs = []sim.ScorerConfig{
+		{Name: "queue-depth", Weight: 1.0},
+	}
+	loadCS := NewClusterSimulator(loadConfig, guideLLM, "")
+	loadCS.SetPreGeneratedRequests(copyRequests(requests))
+	require.NoError(t, loadCS.Run())
+	loadAffinity := countSessionAffinity(loadCS)
+
+	t.Logf("Avg instances/session — prefix-affinity: %.2f, load-only: %.2f", affinityAffinity, loadAffinity)
+	t.Logf("(1.0 = perfect session affinity, %.1f = fully scattered)", float64(numInstances))
+
+	// Prefix-affinity should have LOWER scatter (closer to 1.0 = sessions stick to one instance)
+	assert.Less(t, affinityAffinity, loadAffinity,
+		"prefix-affinity should keep sessions together (lower scatter) vs load-only")
 }
 
 // --- helpers ---

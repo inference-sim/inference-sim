@@ -39,20 +39,23 @@ func GenerateReasoningRequests(
 	sessionID := fmt.Sprintf("sess_%d", rng.Int63())
 	var requests []*sim.Request
 	currentTime := startTime
-	accumulatedContext := 0
+	var contextPrefix []int // accumulated context from prior rounds (actual tokens)
 
 	for round := 0; round < mt.MaxRounds; round++ {
 		inputLen := inputSampler.Sample(rng)
 		outputLen := outputSampler.Sample(rng)
 
-		// Context accumulation
-		actualInputLen := inputLen
-		if mt.ContextGrowth == "accumulate" && round > 0 {
-			actualInputLen = inputLen + accumulatedContext
-		}
-
-		inputTokens := sim.GenerateRandomTokenIDs(rng, actualInputLen)
+		// Generate this round's new tokens
+		newInputTokens := sim.GenerateRandomTokenIDs(rng, inputLen)
 		outputTokens := sim.GenerateRandomTokenIDs(rng, outputLen)
+
+		// Build input: prepend accumulated context if accumulating
+		var inputTokens []int
+		if mt.ContextGrowth == "accumulate" && round > 0 {
+			inputTokens = append(append([]int{}, contextPrefix...), newInputTokens...)
+		} else {
+			inputTokens = newInputTokens
+		}
 
 		// Reason ratio
 		reasonRatio := 0.0
@@ -76,8 +79,12 @@ func GenerateReasoningRequests(
 		}
 		requests = append(requests, req)
 
-		// Update accumulated context for next round
-		accumulatedContext += actualInputLen + outputLen
+		// Update accumulated context for next round: append this round's
+		// new input + output tokens so the next round sees the full history.
+		if mt.ContextGrowth == "accumulate" {
+			contextPrefix = append(contextPrefix, newInputTokens...)
+			contextPrefix = append(contextPrefix, outputTokens...)
+		}
 
 		// Next round arrives after think time
 		currentTime += mt.ThinkTimeUs

@@ -32,6 +32,7 @@ type ClientSpec struct {
 	InputDist    DistSpec      `yaml:"input_distribution"`
 	OutputDist   DistSpec      `yaml:"output_distribution"`
 	PrefixGroup  string        `yaml:"prefix_group,omitempty"`
+	PrefixLength int           `yaml:"prefix_length,omitempty"` // shared prefix token count (default 50)
 	Streaming    bool          `yaml:"streaming"`
 	Network      *NetworkSpec  `yaml:"network,omitempty"`
 	Lifecycle    *LifecycleSpec `yaml:"lifecycle,omitempty"`
@@ -172,6 +173,9 @@ func validateClient(c *ClientSpec, idx int) error {
 		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
 			return err
 		}
+	}
+	if c.PrefixLength < 0 {
+		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
 	}
 	if err := validateDistSpec(prefix+".input_distribution", &c.InputDist); err != nil {
 		return err
