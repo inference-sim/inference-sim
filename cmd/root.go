@@ -431,14 +431,17 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Simulation failed: %v", err)
 		}
 
+		// Wall-clock timing on stderr (BC-6); stdout remains deterministic (BC-7)
+		logrus.Infof("Simulation wall-clock time: %.3fs", time.Since(startTime).Seconds())
+
 		if numInstances > 1 {
 			// Print per-instance metrics to stdout (multi-instance only)
 			for _, inst := range cs.Instances() {
-				inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, startTime, "")
+				inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "")
 			}
 		}
 		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
-		cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, startTime, resultsPath)
+		cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, resultsPath)
 
 		// Collect RawMetrics and compute fitness (PR9)
 		rawMetrics := cluster.CollectRawMetrics(

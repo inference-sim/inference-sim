@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSaveResults_InstanceID_InJSON verifies BC-8: JSON output includes instance_id field.
@@ -38,7 +40,7 @@ func TestSaveResults_InstanceID_InJSON(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with instanceID "test-instance"
-	m.SaveResults("test-instance", 1000000, 1000, time.Now(), outputPath)
+	m.SaveResults("test-instance", 1000000, 1000, outputPath)
 
 	// THEN the JSON file contains "instance_id": "test-instance"
 	data, err := os.ReadFile(outputPath)
@@ -86,7 +88,7 @@ func TestSaveResults_InstanceID_Empty(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with empty instanceID
-	m.SaveResults("", 1000000, 1000, time.Now(), outputPath)
+	m.SaveResults("", 1000000, 1000, outputPath)
 
 	// THEN the JSON file contains "instance_id": ""
 	data, err := os.ReadFile(outputPath)
@@ -134,7 +136,7 @@ func TestSaveResults_InstanceID_Default(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with instanceID "default"
-	m.SaveResults("default", 1000000, 1000, time.Now(), outputPath)
+	m.SaveResults("default", 1000000, 1000, outputPath)
 
 	// THEN the JSON file contains "instance_id": "default"
 	data, err := os.ReadFile(outputPath)
@@ -178,7 +180,7 @@ func TestSaveResults_IncludesIncompleteRequests(t *testing.T) {
 	// WHEN SaveResults writes to a temp file
 	tmpDir := t.TempDir()
 	outPath := filepath.Join(tmpDir, "results.json")
-	m.SaveResults("test-instance", 10_000_000, 100, time.Now(), outPath)
+	m.SaveResults("test-instance", 10_000_000, 100, outPath)
 
 	// THEN the output file contains all 3 requests
 	data, err := os.ReadFile(outPath)
@@ -205,4 +207,34 @@ func TestSaveResults_IncludesIncompleteRequests(t *testing.T) {
 		}
 	}
 	t.Error("incomplete request r3 not found in output")
+}
+
+func TestSaveResults_NoWallClockFields(t *testing.T) {
+	// GIVEN a Metrics struct with completed requests
+	m := NewMetrics()
+	m.CompletedRequests = 1
+	m.SimEndedTime = 1_000_000
+	m.TotalInputTokens = 100
+	m.TotalOutputTokens = 100
+	m.RequestTTFTs["req1"] = 10.0
+	m.RequestE2Es["req1"] = 100.0
+	m.AllITLs = []int64{10}
+	m.RequestSchedulingDelays["req1"] = 5
+
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "results.json")
+
+	// WHEN SaveResults writes output
+	m.SaveResults("test", 1_000_000, 1000, outPath)
+
+	// THEN the JSON must not contain wall-clock fields
+	data, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	jsonStr := string(data)
+	assert.NotContains(t, jsonStr, "simulation_duration_s")
+	assert.NotContains(t, jsonStr, "sim_start_timestamp")
+	assert.NotContains(t, jsonStr, "sim_end_timestamp")
+	// But it must still contain simulation-derived fields
+	assert.Contains(t, jsonStr, "vllm_estimated_duration_s")
+	assert.Contains(t, jsonStr, "completed_requests")
 }

@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"testing"
-	"time"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/stretchr/testify/assert"
@@ -42,7 +41,7 @@ func TestSaveResults_MetricsPrintedToStdout(t *testing.T) {
 	os.Stdout = w
 
 	// WHEN SaveResults is called
-	m.SaveResults("test", 1_000_000, 1000, time.Now(), "")
+	m.SaveResults("test", 1_000_000, 1000, "")
 
 	// Restore stdout and read captured output
 	_ = w.Close()
