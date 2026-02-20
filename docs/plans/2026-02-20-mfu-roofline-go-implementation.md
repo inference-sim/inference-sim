@@ -78,6 +78,13 @@ type MFUDatabase struct {
 Run: `go build ./sim`
 Expected: SUCCESS (no syntax errors)
 
+**Step 3: Commit**
+
+```bash
+git add sim/mfu_database.go
+git commit -m "feat(mfu): add MFU data structures for CSV loading"
+```
+
 ---
 
 ## Task 2: Implement Attention Config Computation
@@ -775,6 +782,8 @@ if len(stepConfig.DecodeRequests) > 0 {
 	dGemmTimeS := computeTransformerGEMMTimes(modelConfig, totalBatchSize, peakFlops, mfuDB, fallbackMFU, effectiveTpDecode)
 
 	// Compute attention core time with attention MFU
+	// Note: InferSim uses same peakFlops for both GEMM and attention core
+	// MFU differentiates efficiency (GEMM: 0.5-1.0, decode attn: ~0.003)
 	var attnCoreTimeS float64
 	if mfuDB != nil {
 		attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
@@ -788,7 +797,8 @@ if len(stepConfig.DecodeRequests) > 0 {
 	// Reduce effective bandwidth for decode (scattered KV cache access)
 	decodeEffBW := effBW * hwConfig.DecodeBwFactor
 
-	decodeComputeS = dGemmTimeS + (attnCoreTimeS / vectorPeak)
+	// Sum GEMM time and attention core time (no vectorPeak division)
+	decodeComputeS = dGemmTimeS + attnCoreTimeS
 	decodeMemoryS = (dWeightBytes + dDynamicBytes) / decodeEffBW
 }
 ```
@@ -805,8 +815,9 @@ git add sim/roofline_step.go
 git commit -m "feat(mfu): integrate per-GEMM MFU lookups for decode phase
 
 - GEMM projections use individual MFU lookups
-- Attention core uses attention-specific decode MFU
-- Aggregate batch_size and max kv_len for attention MFU"
+- Attention core uses attention-specific decode MFU with peakFlops
+- Aggregate batch_size and max kv_len for attention MFU
+- Match InferSim formula: time = flops / (peakFlops * mfu)"
 ```
 
 ---
@@ -893,17 +904,19 @@ if len(stepConfig.PrefillRequests) > 0 {
 		bucketGemmTimeS := computeTransformerGEMMTimes(modelConfig, bucketBatchSize*seqLen, peakFlops, mfuDB, fallbackMFU, effectiveTpPrefill)
 
 		// Compute attention core time with attention MFU for this seq_len
+		// Note: InferSim divides prefill attention by 1.8 (hardware-specific factor)
 		var attnCoreTimeS float64
 		if mfuDB != nil {
 			attnMFU := mfuDB.GetAttnPrefillMFU(seqLen)
 			adjustedAttnMFU := attnMFU * hwConfig.MfuPrefillMultiplier
-			attnCoreTimeS = bucketVectorFlops / (peakFlops * adjustedAttnMFU)
+			attnCoreTimeS = bucketVectorFlops / 1.8 / (peakFlops * adjustedAttnMFU)
 		} else {
 			adjustedPrefillMFU := hwConfig.MfuPrefill * hwConfig.MfuPrefillMultiplier
-			attnCoreTimeS = bucketVectorFlops / (peakFlops * adjustedPrefillMFU)
+			attnCoreTimeS = bucketVectorFlops / 1.8 / (peakFlops * adjustedPrefillMFU)
 		}
 
-		bucketComputeS := bucketGemmTimeS + (attnCoreTimeS / vectorPeak)
+		// Sum GEMM time and attention core time (no vectorPeak division)
+		bucketComputeS := bucketGemmTimeS + attnCoreTimeS
 		bucketMemoryS := (bucketWeightBytes + bucketDynamicBytes) / prefillEffBW
 
 		totalPrefillComputeS += bucketComputeS
@@ -928,7 +941,8 @@ git commit -m "feat(mfu): integrate per-GEMM MFU lookups for prefill phase
 
 - Bucket prefill requests by seq_len
 - GEMM projections use individual MFU lookups per bucket
-- Attention core uses attention-specific prefill MFU per bucket
+- Attention core uses attention-specific prefill MFU with /1.8 factor
+- Match InferSim formula: time = flops / 1.8 / (peakFlops * mfu)
 - Sum times across all buckets"
 ```
 
@@ -1106,7 +1120,8 @@ git commit -m "feat(mfu): complete MFU-based roofline integration
 
 - Load H100 benchmark data at startup
 - Per-GEMM MFU lookups for QKV, O, Gate, Up, Down projections
-- Attention core uses attention-specific MFU (prefill/decode)
+- Attention core uses peakFlops * mfu (matches InferSim)
+- Prefill attention includes /1.8 hardware factor
 - Aggregate decode requests by batch_size for attention MFU
 - Bucket prefill requests by seq_len for attention MFU
 - Nearest neighbor fallback for missing configs
