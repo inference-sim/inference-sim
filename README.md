@@ -27,7 +27,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Decision tracing and counterfactual analysis**: record routing decisions and evaluate alternative choices (`--trace-level`, `--counterfactual-k`)
 - **Fitness evaluation**: weighted multi-objective scoring with configurable metric weights (`--fitness-weights`)
 - **Real-mode HTTP client**: observe-predict-calibrate loop against live inference endpoints (library in `cmd/observe.go`; CLI subcommand planned)
-- **Per-SLO-class metrics**: breakdown by SLO class with Jain fairness index (computed internally; JSON output planned)
+- **Per-SLO-class metrics**: breakdown by SLO class with Jain fairness index (printed to stdout when multiple SLO classes present)
 - **Calibration framework**: MAPE and Pearson r for simulator-vs-real accuracy assessment (library in `sim/workload/calibrate.go`; CLI subcommand planned)
 
 ---
@@ -404,28 +404,29 @@ This requires the HuggingFace `config.json` for the model saved under the `model
 
 ```json
 {
-  "sim_start_timestamp": "2026-01-14 19:07:19",
-  "sim_end_timestamp": "2026-01-14 19:07:19",
-  "completed_requests": 40,
-  "total_input_tokens": 195567,
-  "total_output_tokens": 21450,
-  "vllm_estimated_duration_s": 25.882896,
-  "simulation_duration_s": 0.386482042,
-  "responses_per_sec": 1.545,
-  "tokens_per_sec": 828.73,
-  "e2e_mean_ms": 5384.43,
-  "e2e_p90_ms": 6933.96,
-  "e2e_p95_ms": 7338.86,
-  "e2e_p99_ms": 8418.09,
-  "ttft_mean_ms": 131.05,
-  "ttft_p90_ms": 144.60,
-  "ttft_p95_ms": 152.23,
-  "ttft_p99_ms": 153.44,
-  "itl_mean_ms": 9.78,
-  "itl_p90_ms": 8.74,
-  "itl_p95_ms": 8.74,
-  "itl_p99_ms": 44.80,
-  "scheduling_delay_p99_ms": 7.08
+  "instance_id": "cluster",
+  "completed_requests": 100,
+  "still_queued": 0,
+  "still_running": 0,
+  "injected_requests": 100,
+  "total_input_tokens": 53074,
+  "total_output_tokens": 51331,
+  "vllm_estimated_duration_s": 104.33,
+  "responses_per_sec": 0.96,
+  "tokens_per_sec": 492.02,
+  "e2e_mean_ms": 4541.01,
+  "e2e_p90_ms": 7280.50,
+  "e2e_p95_ms": 8102.28,
+  "e2e_p99_ms": 9760.46,
+  "ttft_mean_ms": 25.08,
+  "ttft_p90_ms": 31.74,
+  "ttft_p95_ms": 34.70,
+  "ttft_p99_ms": 37.65,
+  "itl_mean_ms": 8.78,
+  "itl_p90_ms": 8.73,
+  "itl_p95_ms": 8.73,
+  "itl_p99_ms": 8.73,
+  "scheduling_delay_p99_ms": 11.27
 }
 ```
 
@@ -436,6 +437,7 @@ This requires the HuggingFace `config.json` for the model saved under the `model
 - **Scheduling Delay**: Time spent waiting in queue before batch formation
 - **Tokens/sec**: Aggregate throughput across all completed requests
 - `_p90`, `_p95`, `_p99` suffixes indicate percentile values
+- **Conservation fields**: `still_queued`, `still_running`, and `injected_requests` verify request conservation (`injected == completed + still_queued + still_running`)
 
 When using `--results-path`, the JSON output also includes a `requests` array with per-request details:
 
@@ -542,6 +544,31 @@ BLIS automatically detects and reports anomalies at the end of each simulation:
 - **Rejected Requests**: admission control rejection count (indicates capacity pressure)
 
 Anomaly counters are printed when non-zero. Priority inversion detection requires a non-constant priority policy to be meaningful. Use pathological policies (`inverted-slo`, `always-busiest`, `reverse-priority`) to verify anomaly detection works.
+
+### Stdout Metrics Sections
+
+Beyond the primary JSON metrics, BLIS prints additional sections to stdout when relevant:
+
+**KV Cache Metrics** — printed when any KV cache metric is non-zero:
+```
+=== KV Cache Metrics ===
+Preemption Rate: 0.0000
+Cache Hit Rate: 0.0594
+KV Thrashing Rate: 0.0000
+```
+
+**Per-SLO Metrics** — printed when the workload contains 2+ SLO classes (via `--workload-spec`):
+```
+=== Per-SLO Metrics ===
+  batch:
+    TTFT: mean=45.20 p99=231.33 (n=350)
+    E2E:  mean=3200.50 p99=12351.62 (n=350)
+  realtime:
+    TTFT: mean=42.10 p99=138.01 (n=150)
+    E2E:  mean=3083.47 p99=12813.41 (n=150)
+```
+
+These sections are deterministic (same seed = same output) and appear after the JSON metrics block.
 
 ---
 
