@@ -8,7 +8,6 @@ import (
 	"os"
 	"slices"
 	"sort"
-	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -28,6 +27,8 @@ type Metrics struct {
 	KVAllocationFailures int64   // KV allocation failures for the final decode token at completion; non-zero indicates a cache accounting anomaly (#183)
 	CacheHitRate         float64 // Cumulative cache hit rate at finalization (PR12)
 	KVThrashingRate      float64 // KV thrashing rate at finalization (PR12)
+	StillQueued          int     // Requests still in wait queue at sim end
+	StillRunning         int     // Requests still in running batch at sim end
 
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	ITLSum  int64 // Total ITL sum across requests (in ticks)
@@ -60,20 +61,20 @@ func NewMetrics() *Metrics {
 	}
 }
 
-func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, startTime time.Time, outputFilePath string) {
+func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string) {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
 	// Create an instance of our output struct to populate
 	output := MetricsOutput{
-		InstanceID:            instanceID,
-		SimStartTimestamp:     startTime.Format("2006-01-02 15:04:05"),
-		SimEndTimestamp:       time.Now().Format("2006-01-02 15:04:05"),
-		CompletedRequests:     m.CompletedRequests,
-		TotalInputTokens:      int(m.TotalInputTokens),
-		TotalOutputTokens:     int(m.TotalOutputTokens),
-		VllmDurationSec:       vllmRuntime,
-		SimulationDurationSec: time.Since(startTime).Seconds(),
-		KVAllocationFailures:  m.KVAllocationFailures,
+		InstanceID:           instanceID,
+		CompletedRequests:    m.CompletedRequests,
+		StillQueued:          m.StillQueued,
+		StillRunning:         m.StillRunning,
+		InjectedRequests:     m.CompletedRequests + m.StillQueued + m.StillRunning,
+		TotalInputTokens:     int(m.TotalInputTokens),
+		TotalOutputTokens:    int(m.TotalOutputTokens),
+		VllmDurationSec:      vllmRuntime,
+		KVAllocationFailures: m.KVAllocationFailures,
 	}
 
 	if m.CompletedRequests > 0 {

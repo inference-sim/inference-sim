@@ -48,13 +48,13 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 // MetricsOutput defines the JSON structure for the saved metrics
 type MetricsOutput struct {
 	InstanceID            string           `json:"instance_id"`
-	SimStartTimestamp     string           `json:"sim_start_timestamp"`
-	SimEndTimestamp       string           `json:"sim_end_timestamp"`
 	CompletedRequests     int              `json:"completed_requests"`
+	StillQueued           int              `json:"still_queued"`
+	StillRunning          int              `json:"still_running"`
+	InjectedRequests      int              `json:"injected_requests"`
 	TotalInputTokens      int              `json:"total_input_tokens"`
 	TotalOutputTokens     int              `json:"total_output_tokens"`
 	VllmDurationSec       float64          `json:"vllm_estimated_duration_s"`
-	SimulationDurationSec float64          `json:"simulation_duration_s"`
 	ResponsesPerSec       float64          `json:"responses_per_sec"`
 	TokensPerSec          float64          `json:"tokens_per_sec"`
 	E2EMeanMs             float64          `json:"e2e_mean_ms"`

@@ -330,6 +330,8 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.KVAllocationFailures += m.KVAllocationFailures
 		merged.CacheHitRate += m.CacheHitRate
 		merged.KVThrashingRate += m.KVThrashingRate
+		merged.StillQueued += m.StillQueued
+		merged.StillRunning += m.StillRunning
 	}
 	if n := len(c.instances); n > 0 {
 		merged.CacheHitRate /= float64(n)

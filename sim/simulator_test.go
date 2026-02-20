@@ -2,14 +2,12 @@ package sim
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"slices"
 	"sort"
 	"testing"
-	"time"
 
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
@@ -688,19 +686,17 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 		},
 	}
 
-	fixedTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
 	// Run 1
 	sim1 := mustNewSimulator(t, cfg)
 	sim1.Run()
 	f1 := t.TempDir() + "/run1.json"
-	sim1.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, fixedTime, f1)
+	sim1.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f1)
 
 	// Run 2
 	sim2 := mustNewSimulator(t, cfg)
 	sim2.Run()
 	f2 := t.TempDir() + "/run2.json"
-	sim2.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, fixedTime, f2)
+	sim2.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f2)
 
 	data1, err1 := os.ReadFile(f1)
 	if err1 != nil {
@@ -711,26 +707,11 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 		t.Fatalf("failed to read run2 output: %v", err2)
 	}
 
-	// Zero out the sim_end_timestamp and simulation_duration_s which use time.Now()
-	var out1, out2 MetricsOutput
-	if err := json.Unmarshal(data1, &out1); err != nil {
-		t.Fatalf("failed to unmarshal run1: %v", err)
-	}
-	if err := json.Unmarshal(data2, &out2); err != nil {
-		t.Fatalf("failed to unmarshal run2: %v", err)
-	}
-	out1.SimEndTimestamp = ""
-	out2.SimEndTimestamp = ""
-	out1.SimulationDurationSec = 0
-	out2.SimulationDurationSec = 0
-
-	norm1, _ := json.MarshalIndent(out1, "", "  ")
-	norm2, _ := json.MarshalIndent(out2, "", "  ")
-
-	if !bytes.Equal(norm1, norm2) {
+	// All wall-clock fields removed from MetricsOutput — direct comparison is now valid
+	if !bytes.Equal(data1, data2) {
 		t.Error("determinism violation: normalized JSON differs between runs")
-		lines1 := bytes.Split(norm1, []byte("\n"))
-		lines2 := bytes.Split(norm2, []byte("\n"))
+		lines1 := bytes.Split(data1, []byte("\n"))
+		lines2 := bytes.Split(data2, []byte("\n"))
 		maxLines := len(lines1)
 		if len(lines2) > maxLines {
 			maxLines = len(lines2)

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -431,14 +432,17 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Simulation failed: %v", err)
 		}
 
+		// Wall-clock timing on stderr (BC-6); stdout remains deterministic (BC-7)
+		logrus.Infof("Simulation wall-clock time: %.3fs", time.Since(startTime).Seconds())
+
 		if numInstances > 1 {
 			// Print per-instance metrics to stdout (multi-instance only)
 			for _, inst := range cs.Instances() {
-				inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, startTime, "")
+				inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "")
 			}
 		}
 		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
-		cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, startTime, resultsPath)
+		cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, resultsPath)
 
 		// Collect RawMetrics and compute fitness (PR9)
 		rawMetrics := cluster.CollectRawMetrics(
@@ -478,6 +482,13 @@ var runCmd = &cobra.Command{
 			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
 		}
 
+		// Print KV cache metrics if any nonzero (BC-1, BC-2)
+		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
+
+		// Print per-SLO metrics if multiple SLO classes present (BC-3, BC-4, BC-10)
+		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
+		printPerSLOMetrics(os.Stdout, sloDistributions)
+
 		// Build and print trace summary if requested (BC-9)
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())
@@ -503,6 +514,40 @@ var runCmd = &cobra.Command{
 
 		logrus.Info("Simulation complete.")
 	},
+}
+
+// printKVCacheMetrics prints KV cache metrics to w when any value is nonzero.
+func printKVCacheMetrics(w io.Writer, preemptionRate, cacheHitRate, kvThrashingRate float64) {
+	if preemptionRate == 0 && cacheHitRate == 0 && kvThrashingRate == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== KV Cache Metrics ===")
+	_, _ = fmt.Fprintf(w, "Preemption Rate: %.4f\n", preemptionRate)
+	_, _ = fmt.Fprintf(w, "Cache Hit Rate: %.4f\n", cacheHitRate)
+	_, _ = fmt.Fprintf(w, "KV Thrashing Rate: %.4f\n", kvThrashingRate)
+}
+
+// printPerSLOMetrics prints per-SLO-class latency distributions when multiple classes exist.
+func printPerSLOMetrics(w io.Writer, sloMetrics map[string]*cluster.SLOMetrics) {
+	if len(sloMetrics) <= 1 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== Per-SLO Metrics ===")
+	// Sort keys for deterministic output (antipattern rule 2)
+	keys := make([]string, 0, len(sloMetrics))
+	for k := range sloMetrics {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, cls := range keys {
+		m := sloMetrics[cls]
+		if m == nil {
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "  %s:\n", cls)
+		_, _ = fmt.Fprintf(w, "    TTFT: mean=%.2f p99=%.2f (n=%d)\n", m.TTFT.Mean, m.TTFT.P99, m.TTFT.Count)
+		_, _ = fmt.Fprintf(w, "    E2E:  mean=%.2f p99=%.2f (n=%d)\n", m.E2E.Mean, m.E2E.P99, m.E2E.Count)
+	}
 }
 
 // Execute runs the CLI root command
