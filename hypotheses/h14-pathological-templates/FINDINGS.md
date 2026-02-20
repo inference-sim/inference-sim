@@ -135,8 +135,8 @@ All 3 seeds (42, 123, 456) produce byte-identical output. This confirms issue #2
 |---------|------|--------|
 | `always-busiest` produces 4.5× worse TTFT | Confirmation | Documented here |
 | `always-busiest` routes ALL traffic to 1 instance (stddev=216.5) | Confirmation | Documented here |
-| HOL blocking detector returns 0 for extreme single-instance concentration | Bug discovery | File issue |
-| Priority inversion detector false-positive rate: 7,463 for correct scheduling | Bug discovery | File issue |
+| HOL blocking detector returns 0 for extreme single-instance concentration | Bug discovery | #291 |
+| Priority inversion detector false-positive rate: 7,463 for correct scheduling | Bug discovery | #292 |
 | Scheduling pathological templates invisible at rate=2000/4 instances | Design limitation | Documented; increase rate or reduce instances in future experiments |
 | `--seed` has no effect on workload-spec runs | Confirmation of #284 | Already tracked in #284 |
 
