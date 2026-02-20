@@ -1,0 +1,58 @@
+# Mixed-SLO workload for H14: Pathological Templates experiment
+# Mirrors ScenarioMixedSLO from sim/workload/scenarios.go:59-81
+# 33% realtime, 34% interactive, 33% batch
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 2000
+num_requests: 500
+clients:
+  - id: realtime
+    tenant_id: tenant-rt
+    slo_class: realtime
+    rate_fraction: 0.33
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 64
+        std_dev: 20
+        min: 10
+        max: 256
+    output_distribution:
+      type: exponential
+      params:
+        mean: 32
+  - id: interactive
+    tenant_id: tenant-int
+    slo_class: interactive
+    rate_fraction: 0.34
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 256
+        std_dev: 100
+        min: 32
+        max: 2048
+    output_distribution:
+      type: exponential
+      params:
+        mean: 128
+  - id: batch
+    tenant_id: tenant-batch
+    slo_class: batch
+    rate_fraction: 0.33
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 1024
+    output_distribution:
+      type: exponential
+      params:
+        mean: 512
