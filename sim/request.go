@@ -62,20 +62,6 @@ type Request struct {
 	AssignedInstance string // Instance ID this request was routed to
 }
 
-// NewRequest creates a Request with the given required fields and sensible defaults.
-// State is initialized to StateQueued. All workload metadata fields (TenantID,
-// SLOClass, etc.) default to their Go zero values. Callers set optional fields
-// via direct assignment on the returned pointer.
-func NewRequest(id string, arrivalTime int64, inputTokens, outputTokens []int) *Request {
-	return &Request{
-		ID:           id,
-		ArrivalTime:  arrivalTime,
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
-		State:        StateQueued,
-	}
-}
-
 // This method returns a human-readable string representation of a Request.
 func (req Request) String() string {
 	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v, ArrivalTime: %d)", req.ID, req.State, req.ProgressIndex, req.ArrivalTime)
