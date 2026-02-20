@@ -11,27 +11,27 @@
 
 ## Antipattern Checklist
 
-<!-- Check each item. If N/A, check it and note why. -->
+<!-- Check each item. If N/A, check it and note why. Full details: docs/standards/rules.md -->
 
-- [ ] No silent `continue` or early `return` that drops data without error propagation
-- [ ] No map iteration feeding float accumulation without sorted keys
-- [ ] Every struct built in multiple places has a canonical constructor
-- [ ] No `logrus.Fatalf` or `os.Exit` in library code (`sim/`, `sim/cluster/`, `sim/workload/`)
-- [ ] Every new CLI flag validated for zero, negative, NaN, Inf
-- [ ] Every loop that allocates resources handles mid-loop failure with rollback
-- [ ] Invariant tests added or extended if request lifecycle, KV cache, or metrics are touched
-- [ ] Golden dataset regenerated if output values changed
+- [ ] No silent data loss (R1)
+- [ ] Map keys sorted before float accumulation (R2)
+- [ ] CLI flags validated for zero, negative, NaN, Inf (R3)
+- [ ] Struct construction sites audited for new fields (R4)
+- [ ] Resource allocation loops rollback on mid-loop failure (R5)
+- [ ] No `logrus.Fatalf` or `os.Exit` in `sim/` packages (R6)
+- [ ] Invariant tests alongside golden tests (R7)
+- [ ] Golden dataset regenerated if output changed (R12)
 
 ## Invariants
 
-<!-- Which invariants does this PR maintain or test? -->
+<!-- Which invariants does this PR maintain or test? Full details: docs/standards/invariants.md -->
 
-- [ ] Request conservation: injected == completed + queued + running
-- [ ] Request lifecycle: queued -> running -> completed (no invalid transitions)
-- [ ] KV block conservation: allocated + free == total
-- [ ] Causality: arrival <= schedule <= completion
-- [ ] Clock monotonicity
-- [ ] Determinism: same seed produces identical output
+- [ ] Request conservation: injected == completed + queued + running (INV-1)
+- [ ] Request lifecycle: queued -> running -> completed (INV-2)
+- [ ] KV block conservation: allocated + free == total (INV-4)
+- [ ] Causality: arrival <= schedule <= completion (INV-5)
+- [ ] Clock monotonicity (INV-3)
+- [ ] Determinism: same seed produces identical output (INV-6)
 - [ ] N/A — this PR does not touch invariant-sensitive code
 
 ## Test Plan
@@ -53,4 +53,4 @@ Fixes #
 
 - [ ] CLAUDE.md updated (if new files, packages, CLI flags, or invariants added)
 - [ ] README updated (if user-facing behavior changed)
-- [ ] CONTRIBUTORS.md reviewed (if extension patterns changed)
+- [ ] CONTRIBUTING.md reviewed (if extension patterns changed)
