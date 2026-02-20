@@ -16,6 +16,7 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 | H3 | queue-depth distributes more evenly than kv-utilization at high rates | **Confirmed** | 200x better distribution uniformity; inherent DES event ordering causes kv-util staleness |
 | H9 | TTFT decreases monotonically as prefix_length increases | **Confirmed** | 95.8% TTFT reduction at max prefix; cache hit rate precisely linear with prefix fraction; cache capacity has zero observable effect (model limitation) |
 | H12 | Request conservation holds across all policy configurations | **Confirmed** (with bug) | INV-1 holds for 10 policy combinations (67 checks); preemption path panics on empty RunningBatch (simulator.go:383) |
+| H14 | Pathological templates produce worse behavior; anomaly detectors fire | **Partially confirmed** | 4.5x worse TTFT confirmed; 3 bugs found (HOL blind spot, priority inversion false positives, double inversion cancellation) |
 
 ## Running Experiments
 
