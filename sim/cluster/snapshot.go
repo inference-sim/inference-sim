@@ -33,6 +33,20 @@ func DefaultObservabilityConfig() ObservabilityConfig {
 	}
 }
 
+// newObservabilityConfig creates an ObservabilityConfig based on the refresh interval.
+// If interval is 0, all fields use Immediate mode (default behavior).
+// If interval > 0, KVUtilization uses Periodic mode with the given interval.
+func newObservabilityConfig(refreshInterval int64) ObservabilityConfig {
+	if refreshInterval <= 0 {
+		return DefaultObservabilityConfig()
+	}
+	return ObservabilityConfig{
+		QueueDepth:    FieldConfig{Mode: Immediate},
+		BatchSize:     FieldConfig{Mode: Immediate},
+		KVUtilization: FieldConfig{Mode: Periodic, Interval: refreshInterval},
+	}
+}
+
 // SnapshotProvider produces instance snapshots with configurable staleness.
 // Returns sim.RoutingSnapshot directly — no intermediate type translation needed.
 type SnapshotProvider interface {

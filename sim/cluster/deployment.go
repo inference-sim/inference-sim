@@ -46,6 +46,9 @@ type DeploymentConfig struct {
 	KVOffloadThreshold  float64 // GPU utilization threshold for offload (default 0.9)
 	KVTransferBandwidth   float64 // blocks/tick transfer rate (default 100.0)
 	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
+
+	// Snapshot staleness configuration (H3 experiment)
+	SnapshotRefreshInterval int64 // microseconds, 0 = Immediate (default)
 }
 
 // ToSimConfig converts DeploymentConfig to SimConfig for per-instance construction.
