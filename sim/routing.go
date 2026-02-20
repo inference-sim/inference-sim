@@ -93,19 +93,28 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 	}
 }
 
+// observerFunc is called after each routing decision to update stateful scorer state.
+// Used by scorers like prefix-affinity that track routing history.
+type observerFunc func(req *Request, targetInstance string)
+
 // WeightedScoring routes requests using a composable scorer pipeline.
 //
 // Each scorer evaluates all instances on a [0,1] scale. Scores are combined
 // with configurable weights: composite = Σ clamp(s_i) × w_i, then argmax.
 //
-// Available scorers: queue-depth (min-max normalization of EffectiveLoad),
+// Available scorers: prefix-affinity (proportional prefix match ratio),
+// queue-depth (min-max normalization of EffectiveLoad),
 // kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)).
-// See sim/routing_scorers.go for implementations.
+// See sim/routing_scorers.go and sim/routing_prefix_scorer.go for implementations.
+//
+// Stateful scorers (prefix-affinity) register observers that update internal
+// state after each routing decision. Observers are called after argmax selection.
 //
 // Higher scores are preferred. Ties broken by first occurrence in snapshot order.
 type WeightedScoring struct {
-	scorers []scorerFunc
-	weights []float64 // normalized to sum to 1.0
+	scorers   []scorerFunc
+	weights   []float64 // normalized to sum to 1.0
+	observers []observerFunc
 }
 
 // Route implements RoutingPolicy for WeightedScoring.
@@ -118,7 +127,7 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	// Compute composite scores from all scorers
 	scores := make(map[string]float64, len(snapshots))
 	for i, scorer := range ws.scorers {
-		dimScores := scorer(snapshots)
+		dimScores := scorer(req, snapshots)
 		for _, snap := range snapshots {
 			s := dimScores[snap.ID]
 			// Clamp to [0,1] per INV-1
@@ -141,6 +150,11 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 			bestScore = scores[snap.ID]
 			bestIdx = i
 		}
+	}
+
+	// Notify observers of routing decision (stateful scorers update their state)
+	for _, obs := range ws.observers {
+		obs(req, snapshots[bestIdx].ID)
 	}
 
 	return RoutingDecision{
@@ -244,11 +258,16 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig) RoutingPolicy {
 			scorerConfigs = DefaultScorerConfigs()
 		}
 		scorers := make([]scorerFunc, len(scorerConfigs))
+		var observers []observerFunc
 		for i, cfg := range scorerConfigs {
-			scorers[i] = newScorer(cfg.Name)
+			scorer, obs := newScorerWithObserver(cfg.Name, defaultBlockSize)
+			scorers[i] = scorer
+			if obs != nil {
+				observers = append(observers, obs)
+			}
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
-		return &WeightedScoring{scorers: scorers, weights: weights}
+		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string)}
 	case "always-busiest":

@@ -58,7 +58,7 @@ func TestIsValidScorer_KnownNames(t *testing.T) {
 
 func TestValidScorerNames_Sorted(t *testing.T) {
 	names := ValidScorerNames()
-	assert.Len(t, names, 3)
+	assert.Len(t, names, 4)
 	for i := 1; i < len(names); i++ {
 		assert.True(t, names[i-1] < names[i], "names must be sorted")
 	}
@@ -157,7 +157,7 @@ func TestScoreQueueDepth_MinMaxNormalization(t *testing.T) {
 		{ID: "b", QueueDepth: 5, BatchSize: 0, PendingRequests: 0},  // middle load
 		{ID: "c", QueueDepth: 0, BatchSize: 0, PendingRequests: 0},  // lowest load
 	}
-	scores := scoreQueueDepth(snapshots)
+	scores := scoreQueueDepth(nil, snapshots)
 	// Monotonicity: lower load → higher score
 	assert.Greater(t, scores["c"], scores["b"], "lowest load should score highest")
 	assert.Greater(t, scores["b"], scores["a"], "middle load should score higher than highest load")
@@ -171,7 +171,7 @@ func TestScoreQueueDepth_UniformLoad_AllScoreOne(t *testing.T) {
 		{ID: "a", QueueDepth: 5, BatchSize: 3},
 		{ID: "b", QueueDepth: 5, BatchSize: 3},
 	}
-	scores := scoreQueueDepth(snapshots)
+	scores := scoreQueueDepth(nil, snapshots)
 	assert.Equal(t, 1.0, scores["a"])
 	assert.Equal(t, 1.0, scores["b"])
 }
@@ -182,7 +182,7 @@ func TestScoreQueueDepth_IncludesPendingRequests(t *testing.T) {
 		{ID: "b", QueueDepth: 5, PendingRequests: 0}, // load=5
 		{ID: "c", QueueDepth: 0, PendingRequests: 0}, // load=0 → best
 	}
-	scores := scoreQueueDepth(snapshots)
+	scores := scoreQueueDepth(nil, snapshots)
 	assert.Equal(t, scores["a"], scores["b"], "equal effective load → equal score")
 	assert.Greater(t, scores["c"], scores["a"], "lower load → higher score")
 }
@@ -193,7 +193,7 @@ func TestScoreKVUtilization_InverseUtilization(t *testing.T) {
 		{ID: "b", KVUtilization: 0.5}, // middle
 		{ID: "c", KVUtilization: 1.0}, // highest utilization
 	}
-	scores := scoreKVUtilization(snapshots)
+	scores := scoreKVUtilization(nil, snapshots)
 	// Monotonicity: lower utilization → higher score
 	assert.Greater(t, scores["a"], scores["b"], "lower utilization should score higher")
 	assert.Greater(t, scores["b"], scores["c"], "middle should score higher than highest utilization")
@@ -208,7 +208,7 @@ func TestScoreLoadBalance_InverseTransform(t *testing.T) {
 		{ID: "b", QueueDepth: 9},  // high load
 		{ID: "c", QueueDepth: 99}, // very high load
 	}
-	scores := scoreLoadBalance(snapshots)
+	scores := scoreLoadBalance(nil, snapshots)
 	// Monotonicity: lower load → higher score
 	assert.Greater(t, scores["a"], scores["b"], "lower load should score higher")
 	assert.Greater(t, scores["b"], scores["c"], "middle load should score higher than very high load")
@@ -234,7 +234,7 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 	}
 	for _, sf := range scorerFns {
 		t.Run(sf.name, func(t *testing.T) {
-			scores := sf.fn(snapshots)
+			scores := sf.fn(nil, snapshots)
 			// INV-2: score for every instance
 			assert.Len(t, scores, len(snapshots))
 			for _, snap := range snapshots {
