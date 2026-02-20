@@ -591,6 +591,9 @@ inference-sim/
 │   ├── simulator.go        # Discrete-event simulation loop
 │   ├── admission.go        # Admission policy interface and templates
 │   ├── routing.go          # Routing policy interface and templates
+│   ├── routing_scorers.go  # ScorerConfig, stateless scorers, ParseScorerConfigs
+│   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer
+│   ├── prefix_cache_index.go # PrefixCacheIndex: per-instance LRU of block hashes
 │   ├── priority.go         # Priority policy interface and templates
 │   ├── scheduler.go        # Instance scheduler interface and templates
 │   ├── router_state.go     # RouterState bridge type for cluster-level policies
@@ -638,7 +641,9 @@ inference-sim/
 │   ├── policy-config.yaml  # Policy bundle example
 │   ├── weighted-routing.yaml  # Weighted routing scorer pipeline config
 │   ├── routing-comparison.sh  # Automated routing policy comparison (run to reproduce performance table)
-│   └── servegen-language.yaml # ServeGen workload spec example
+│   ├── servegen-language.yaml # ServeGen workload spec example
+│   ├── prefix-affinity-demo.yaml # Prefix-affinity routing demo (long shared prefix)
+│   └── multiturn-chat-demo.yaml  # Multi-turn chat session demo
 ├── model_configs/          # HuggingFace config.json files
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
 ├── hardware_config.json    # GPU hardware specifications
