@@ -732,6 +732,7 @@ inference-sim/
 | `--admission-latency` | 0 | Admission processing latency in microseconds |
 | `--routing-latency` | 0 | Routing processing latency in microseconds |
 | `--policy-config` | (none) | YAML policy bundle file. See `examples/policy-config.yaml` |
+| `--snapshot-refresh-interval` | 0 | Snapshot refresh interval for KV utilization in microseconds (0 = immediate refresh every call). Controls staleness of KV-related routing signals. |
 
 ### Observability
 
