@@ -470,8 +470,7 @@ Add to `sim/mfu_database.go`:
 func (db *MFUDatabase) GetAttnPrefillMFU(seqLen int) float64 {
 	rows := db.prefillData[db.attentionConfig]
 	if len(rows) == 0 {
-		logrus.Warnf("No prefill MFU data for config %s", db.attentionConfig)
-		return 0.8 // Fallback
+		logrus.Fatalf("No prefill MFU data for config %s - database corrupted", db.attentionConfig)
 	}
 
 	// Find largest seq_len <= target
@@ -503,8 +502,7 @@ func (db *MFUDatabase) GetAttnDecodeMFU(batchSize, kvLen, tp int) float64 {
 		fallbackKey := fmt.Sprintf("%s-tp1", db.attentionConfig)
 		rows = db.decodeData[fallbackKey]
 		if len(rows) == 0 {
-			logrus.Warnf("No decode MFU data for config %s (TP=%d)", db.attentionConfig, tp)
-			return 0.01 // Fallback
+			logrus.Fatalf("No decode MFU data for config %s (TP=%d) - database missing", db.attentionConfig, tp)
 		}
 		logrus.Infof("Using TP=1 decode data as fallback for TP=%d", tp)
 	}
@@ -528,8 +526,8 @@ func (db *MFUDatabase) GetAttnDecodeMFU(batchSize, kvLen, tp int) float64 {
 		}
 	}
 
-	logrus.Warnf("No decode MFU match for bs=%d, kv=%d (using target bs=%d, kv=%d)", batchSize, kvLen, targetBS, targetKV)
-	return 0.01 // Fallback
+	logrus.Fatalf("No decode MFU match for bs=%d, kv=%d in config %s - database corrupted", batchSize, kvLen, db.attentionConfig)
+	return 0.0 // Never reached
 }
 ```
 
@@ -543,8 +541,7 @@ Add to `sim/mfu_database.go`:
 // Stage 2: Within that (k, n), find largest m <= target_m
 func (db *MFUDatabase) GetGEMMmfu(m, k, n int) float64 {
 	if len(db.gemmData) == 0 {
-		logrus.Warn("No GEMM MFU data available")
-		return 0.5 // Fallback
+		logrus.Fatalf("No GEMM MFU data available - database missing")
 	}
 
 	// Stage 1: Find smallest (k, n) >= target
@@ -573,11 +570,17 @@ func (db *MFUDatabase) GetGEMMmfu(m, k, n int) float64 {
 	}
 
 	// Stage 2: Within (targetK, targetN), find largest m <= target_m
-	mfu := 0.5 // Fallback
+	mfu := 0.0
+	found := false
 	for _, row := range db.gemmData {
 		if row.K == targetK && row.N == targetN && row.M <= m {
 			mfu = row.MFU
+			found = true
 		}
+	}
+
+	if !found {
+		logrus.Fatalf("No GEMM MFU found for m=%d, k=%d, n=%d - database corrupted", m, k, n)
 	}
 
 	return mfu
@@ -610,23 +613,16 @@ Add before `rooflineStepTime` function:
 
 ```go
 // computeGEMMTime computes time for a single GEMM operation with MFU lookup
-func computeGEMMTime(m, k, n int, peakFlops float64, mfuDB *MFUDatabase, fallbackMFU float64) float64 {
+func computeGEMMTime(m, k, n int, peakFlops float64, mfuDB *MFUDatabase) float64 {
 	// FLOPs for GEMM: 2*m*k*n
 	flops := 2.0 * float64(m) * float64(k) * float64(n)
-
-	var mfu float64
-	if mfuDB != nil {
-		mfu = mfuDB.GetGEMMmfu(m, k, n)
-	} else {
-		mfu = fallbackMFU
-	}
-
+	mfu := mfuDB.GetGEMMmfu(m, k, n)
 	return flops / (peakFlops * mfu)
 }
 
 // computeTransformerGEMMTimes computes time for all GEMM operations in a transformer layer
 // Returns total time in seconds for all GEMMs across all layers
-func computeTransformerGEMMTimes(modelConfig ModelConfig, batchSize int, peakFlops float64, mfuDB *MFUDatabase, fallbackMFU float64, tpScaling float64) float64 {
+func computeTransformerGEMMTimes(modelConfig ModelConfig, batchSize int, peakFlops float64, mfuDB *MFUDatabase, tpScaling float64) float64 {
 	m := batchSize
 	hiddenSize := modelConfig.HiddenDim
 	intermediateSize := modelConfig.IntermediateDim
@@ -643,15 +639,15 @@ func computeTransformerGEMMTimes(modelConfig ModelConfig, batchSize int, peakFlo
 
 	// QKV projection: m × hidden_size → (nh*dh + 2*nkv*dh)
 	qkvSize := nHeads*headDim + 2*nKVHeads*headDim
-	qkvTime := computeGEMMTime(m, hiddenSize, qkvSize, peakFlops, mfuDB, fallbackMFU)
+	qkvTime := computeGEMMTime(m, hiddenSize, qkvSize, peakFlops, mfuDB)
 
 	// O projection: m × (nh*dh) → hidden_size
-	oTime := computeGEMMTime(m, nHeads*headDim, hiddenSize, peakFlops, mfuDB, fallbackMFU)
+	oTime := computeGEMMTime(m, nHeads*headDim, hiddenSize, peakFlops, mfuDB)
 
 	// MLP: Gate, Up, Down (3 GEMMs for SwiGLU)
-	gateTime := computeGEMMTime(m, hiddenSize, intermediateSize, peakFlops, mfuDB, fallbackMFU)
-	upTime := computeGEMMTime(m, hiddenSize, intermediateSize, peakFlops, mfuDB, fallbackMFU)
-	downTime := computeGEMMTime(m, intermediateSize, hiddenSize, peakFlops, mfuDB, fallbackMFU)
+	gateTime := computeGEMMTime(m, hiddenSize, intermediateSize, peakFlops, mfuDB)
+	upTime := computeGEMMTime(m, hiddenSize, intermediateSize, peakFlops, mfuDB)
+	downTime := computeGEMMTime(m, intermediateSize, hiddenSize, peakFlops, mfuDB)
 
 	// Total per layer
 	perLayerTime := qkvTime + oTime + gateTime + upTime + downTime
@@ -736,21 +732,14 @@ if len(stepConfig.DecodeRequests) > 0 {
 	dWeightBytes := baseMem["model_weights"] / effectiveTpDecode
 
 	// Compute GEMM times with per-operation MFU lookups
-	fallbackMFU := hwConfig.MfuDecode
-	dGemmTimeS := computeTransformerGEMMTimes(modelConfig, totalBatchSize, peakFlops, mfuDB, fallbackMFU, effectiveTpDecode)
+	dGemmTimeS := computeTransformerGEMMTimes(modelConfig, totalBatchSize, peakFlops, mfuDB, effectiveTpDecode)
 
 	// Compute attention core time with attention MFU
 	// Note: InferSim uses same peakFlops for both GEMM and attention core
 	// MFU differentiates efficiency (GEMM: 0.5-1.0, decode attn: ~0.003)
-	var attnCoreTimeS float64
-	if mfuDB != nil {
-		attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
-		adjustedAttnMFU := attnMFU * hwConfig.MfuDecodeMultiplier
-		attnCoreTimeS = dVectorFlops / (peakFlops * adjustedAttnMFU)
-	} else {
-		adjustedDecodeMFU := hwConfig.MfuDecode * hwConfig.MfuDecodeMultiplier
-		attnCoreTimeS = dVectorFlops / (peakFlops * adjustedDecodeMFU)
-	}
+	attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
+	adjustedAttnMFU := attnMFU * hwConfig.MfuDecodeMultiplier
+	attnCoreTimeS := dVectorFlops / (peakFlops * adjustedAttnMFU)
 
 	// Reduce effective bandwidth for decode (scattered KV cache access)
 	decodeEffBW := effBW * hwConfig.DecodeBwFactor
@@ -827,7 +816,6 @@ if len(stepConfig.PrefillRequests) > 0 {
 	// Process each bucket separately
 	var totalPrefillComputeS, totalPrefillMemoryS float64
 	prefillEffBW := effBW * hwConfig.PrefillBwFactor
-	fallbackMFU := hwConfig.MfuPrefill
 
 	for seqLen, requests := range buckets {
 		var bucketVectorFlops, bucketDynamicBytes float64
@@ -847,19 +835,13 @@ if len(stepConfig.PrefillRequests) > 0 {
 		bucketWeightBytes := baseMem["model_weights"] / tpFactor
 
 		// Compute GEMM times with per-operation MFU lookups for this bucket
-		bucketGemmTimeS := computeTransformerGEMMTimes(modelConfig, bucketBatchSize*seqLen, peakFlops, mfuDB, fallbackMFU, effectiveTpPrefill)
+		bucketGemmTimeS := computeTransformerGEMMTimes(modelConfig, bucketBatchSize*seqLen, peakFlops, mfuDB, effectiveTpPrefill)
 
 		// Compute attention core time with attention MFU for this seq_len
 		// Note: InferSim divides prefill attention by 1.8 (hardware-specific factor)
-		var attnCoreTimeS float64
-		if mfuDB != nil {
-			attnMFU := mfuDB.GetAttnPrefillMFU(seqLen)
-			adjustedAttnMFU := attnMFU * hwConfig.MfuPrefillMultiplier
-			attnCoreTimeS = bucketVectorFlops / 1.8 / (peakFlops * adjustedAttnMFU)
-		} else {
-			adjustedPrefillMFU := hwConfig.MfuPrefill * hwConfig.MfuPrefillMultiplier
-			attnCoreTimeS = bucketVectorFlops / 1.8 / (peakFlops * adjustedPrefillMFU)
-		}
+		attnMFU := mfuDB.GetAttnPrefillMFU(seqLen)
+		adjustedAttnMFU := attnMFU * hwConfig.MfuPrefillMultiplier
+		attnCoreTimeS := bucketVectorFlops / 1.8 / (peakFlops * adjustedAttnMFU)
 
 		// Sum GEMM time and attention core time (no vectorPeak division)
 		bucketComputeS := bucketGemmTimeS + attnCoreTimeS
