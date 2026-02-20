@@ -93,14 +93,14 @@ Before comparing configurations, verify the experiment preconditions hold. Examp
 Document the precondition check in the experiment script (not just in prose).
 
 ### ED-4: Workload seed independence
-**Known issue (#284):** Workload-spec YAMLs have their own `seed:` field independent of the CLI `--seed` flag. When using `--workload-spec`:
-- Varying `--seed` alone changes the simulation RNG but NOT the workload (arrival times, token counts)
-- For true multi-seed experiments with workload-spec, you must also vary the YAML seed
-- For CLI-generated workloads (`--rate`, `--num-requests`), `--seed` controls everything
+**Resolved (#284):** CLI `--seed` now overrides the workload-spec YAML `seed:` field when explicitly passed. Behavior:
+- `--seed N --workload-spec w.yaml` → workload uses seed N (CLI override)
+- `--workload-spec w.yaml` (no `--seed`) → workload uses YAML `seed:` value (backward compatible)
+- CLI-generated workloads (`--rate`, `--num-requests`) → `--seed` controls everything (unchanged)
 
-**Until #284 is resolved:** when using workload-spec, document whether the experiment varies workload seeds, CLI seeds, or both. If only CLI seeds are varied, note that the workload is identical across runs.
+For multi-seed experiments: simply vary `--seed` on the command line. No need to generate per-seed YAML copies.
 
-**Recommendation:** When writing `run.sh` for workload-spec experiments, either: (a) generate per-seed YAML copies with different `seed:` values in the script, or (b) explicitly document in `FINDINGS.md` that the workload is fixed across runs and only simulation-level RNG varies.
+**Note:** The YAML `seed:` field still serves as the default seed for the workload when `--seed` is not explicitly specified. This enables the "shareable workload" pattern — distributing a YAML file that always produces the same workload by default.
 
 ### ED-5: Reproducibility
 Every experiment must be reproducible from its artifacts alone:
