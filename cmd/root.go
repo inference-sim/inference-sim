@@ -169,7 +169,10 @@ var runCmd = &cobra.Command{
 			}
 
 			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-			alphaCoeffs, betaCoeffs, totalKVBlocks = newAlpha, newBeta, kvBlocks
+			alphaCoeffs, betaCoeffs = newAlpha, newBeta
+			if !cmd.Flags().Changed("total-kv-blocks") {
+				totalKVBlocks = kvBlocks
+			}
 		}
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
 			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
@@ -348,6 +351,9 @@ var runCmd = &cobra.Command{
 		}
 		if kvTransferBaseLatency < 0 {
 			logrus.Fatalf("--kv-transfer-base-latency must be >= 0, got %d", kvTransferBaseLatency)
+		}
+		if snapshotRefreshInterval < 0 {
+			logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
 		}
 
 		// Log active policy configuration so users can verify which policies are in effect

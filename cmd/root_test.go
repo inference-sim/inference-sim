@@ -75,3 +75,17 @@ func TestRunCmd_KVBlockFlags_DefaultsArePositive(t *testing.T) {
 	assert.Greater(t, bsDefault, int64(0),
 		"default block-size-in-tokens must be positive (passes <= 0 validation)")
 }
+
+func TestRunCmd_SnapshotRefreshInterval_FlagRegistered(t *testing.T) {
+	// Verify --snapshot-refresh-interval flag exists with a valid (non-negative) default.
+	// Note: BC-5 (negative value rejection via logrus.Fatalf) is validated by code
+	// inspection — the validation follows the same pattern as --kv-transfer-base-latency.
+	// Testing logrus.Fatalf requires subprocess execution, which is out of scope here.
+	flag := runCmd.Flags().Lookup("snapshot-refresh-interval")
+	assert.NotNil(t, flag, "snapshot-refresh-interval flag must be registered")
+
+	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
+	assert.NoError(t, err, "default must be a valid int64")
+	assert.GreaterOrEqual(t, defVal, int64(0),
+		"default snapshot-refresh-interval must be >= 0")
+}
