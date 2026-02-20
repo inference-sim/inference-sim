@@ -77,7 +77,7 @@ func NewCachedSnapshotProvider(instances map[InstanceID]*InstanceSimulator, conf
 	cache := make(map[InstanceID]sim.RoutingSnapshot, len(instances))
 	lastRefresh := make(map[InstanceID]fieldTimestamps, len(instances))
 	for id := range instances {
-		cache[id] = sim.RoutingSnapshot{ID: string(id)}
+		cache[id] = sim.NewRoutingSnapshot(string(id))
 		lastRefresh[id] = fieldTimestamps{}
 	}
 	return &CachedSnapshotProvider{
@@ -121,14 +121,12 @@ func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.Routin
 // RefreshAll refreshes all fields for all instances regardless of mode.
 func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 	for id, inst := range p.instances {
-		snap := sim.RoutingSnapshot{
-			ID:            string(id),
-			QueueDepth:    inst.QueueDepth(),
-			BatchSize:     inst.BatchSize(),
-			KVUtilization: inst.KVUtilization(),
-			FreeKVBlocks:  inst.FreeKVBlocks(),
-			CacheHitRate:  inst.CacheHitRate(),
-		}
+		snap := sim.NewRoutingSnapshot(string(id))
+		snap.QueueDepth = inst.QueueDepth()
+		snap.BatchSize = inst.BatchSize()
+		snap.KVUtilization = inst.KVUtilization()
+		snap.FreeKVBlocks = inst.FreeKVBlocks()
+		snap.CacheHitRate = inst.CacheHitRate()
 		p.cache[id] = snap
 		p.lastRefresh[id] = fieldTimestamps{
 			QueueDepth:    clock,
