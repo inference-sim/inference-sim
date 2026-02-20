@@ -1,7 +1,5 @@
 # Hypothesis Experiment Process
 
-> **Status:** Draft — to be expanded from experience.
-
 This document describes the process for running a hypothesis-driven experiment. For experiment standards (rigor, classification, analysis), see [docs/standards/experiments.md](../standards/experiments.md). For the experiment template, see [docs/templates/hypothesis.md](../templates/hypothesis.md).
 
 ## When to Run Experiments
@@ -40,4 +38,10 @@ This document describes the process for running a hypothesis-driven experiment. 
 - Standards: [docs/standards/experiments.md](../standards/experiments.md)
 - Template: [docs/templates/hypothesis.md](../templates/hypothesis.md)
 - Hypothesis catalog: [docs/plans/research.md](../plans/research.md)
-- Example experiments: `hypotheses/h3-signal-freshness/`, `hypotheses/prefix-affinity/`
+- Validated experiments:
+  - `hypotheses/h3-signal-freshness/` — signal freshness (Tier 2, statistical dominance)
+  - `hypotheses/h8-kv-pressure/` — KV cache pressure (Tier 3, statistical monotonicity)
+  - `hypotheses/h9-prefix-caching/` — prefix caching effectiveness (Tier 2, statistical monotonicity)
+  - `hypotheses/h12-conservation/` — request conservation invariant (Tier 1, deterministic)
+  - `hypotheses/h14-pathological-templates/` — pathological policy templates (Tier 2, statistical dominance)
+  - `hypotheses/prefix-affinity/` — prefix-affinity routing (Tier 2, statistical dominance)
