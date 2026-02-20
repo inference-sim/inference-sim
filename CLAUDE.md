@@ -388,13 +388,14 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
 │   ├── simulator.go           # SimConfig struct, NewSimulator(SimConfig), event loop, batch formation, step execution
 │   ├── admission.go           # AdmissionPolicy interface, AlwaysAdmit, TokenBucket, NewAdmissionPolicy factory
 │   ├── routing.go             # RoutingPolicy interface, RoutingSnapshot, RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity
+│   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs
 │   ├── priority.go            # PriorityPolicy interface, ConstantPriority, SLOBasedPriority, NewPriorityPolicy factory
 │   ├── scheduler.go           # InstanceScheduler interface, FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, NewScheduler factory
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
@@ -410,7 +411,6 @@ inference-sim/
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
 │   ├── roofline_step.go       # Analytical FLOPs/bandwidth latency estimation
-│   ├── roofline_step_test.go  # Determinism and conservation tests for roofline
 │   ├── model_hardware_config.go # HFConfig, ModelConfig, HardwareCalib, ValidateRooflineConfig
 │   ├── workload_config.go     # CSV trace loading and distribution-based workload generation
 │   └── internal/testutil/     # Shared test infrastructure (golden dataset loading)
@@ -445,7 +445,7 @@ inference-sim/
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
 ├── hardware_config.json       # GPU specifications
-├── examples/                  # Example configuration files (policy-config.yaml, servegen-language.yaml)
+├── examples/                  # Example configuration files (policy-config.yaml, weighted-routing.yaml, servegen-language.yaml, routing-comparison.sh)
 ├── testdata/goldendataset.json # Golden dataset for regression tests
 └── docs/plans/                # Design documents
 ```

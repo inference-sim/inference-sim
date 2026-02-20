@@ -7,7 +7,7 @@
 **The problem today:** The roofline latency estimation path has 5 divisions where the denominator comes from user-provided config files (`config.json` from HuggingFace, `hardware_config.json`). If any required field is zero or missing — `num_attention_heads`, `TFlopsPeak`, `MfuPrefill`, `MfuDecode`, `BwPeakTBs`, or `BwEffConstant` — the result silently becomes NaN or Inf, corrupting all downstream step time calculations without any error message. Additionally, unsorted map iteration in `calculateMemoryAccessBytes` violates the determinism invariant.
 
 **What this PR adds:**
-1. Config validation — `ValidateRooflineConfig` checks all 6 critical fields at roofline mode entry, producing clear error messages instead of silent NaN/Inf
+1. Config validation — `ValidateRooflineConfig` checks all 9 critical fields at roofline mode entry (4 model + 5 hardware), producing clear error messages instead of silent NaN/Inf. Also validates TP > 0.
 2. Deterministic float accumulation — sorted map keys in `calculateMemoryAccessBytes` ensure byte-identical output across runs
 3. Clear error boundaries — validation errors returned from `sim/` library code, CLI boundary calls `logrus.Fatalf`
 

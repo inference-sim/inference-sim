@@ -147,8 +147,8 @@ func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
 }
 
 func TestValidateRooflineConfig_ZeroHardwareFields_ReturnsAllErrors(t *testing.T) {
-	// GIVEN a HardwareCalib with all critical fields zero
-	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096}
+	// GIVEN a HardwareCalib with all critical fields zero (model config is valid)
+	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
 	hc := HardwareCalib{} // all zero
 
 	// WHEN ValidateRooflineConfig is called

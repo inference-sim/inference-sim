@@ -41,7 +41,7 @@ Shared files: `CLAUDE.md` and `README.md` may get minor doc updates, but only PR
 
 ---
 
-### Worktree 1: PR17 — Composable Scorer Framework — PR #260 OPEN
+### Worktree 1: PR17 — Composable Scorer Framework — PR #260 MERGED
 
 **Issue:** #229 + #230 (closes both)
 **Branch:** `feat/pr17-scorer-framework`
