@@ -576,16 +576,18 @@ func (sim *Simulator) Step(now int64) {
 	sim.KVCache.SetClock(now)
 
 	// Assign priorities to queued requests and order queue per scheduler policy
-	for _, req := range sim.WaitQ.queue {
+	for _, req := range sim.WaitQ.Items() {
 		req.Priority = sim.priorityPolicy.Compute(req, now)
 	}
-	sim.scheduler.OrderQueue(sim.WaitQ.queue, now)
+	sim.WaitQ.Reorder(func(reqs []*Request) {
+		sim.scheduler.OrderQueue(reqs, now)
+	})
 
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch(now)
 
 	// save waitQ length for analysis
-	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, len(sim.WaitQ.queue))
+	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, sim.WaitQ.Len())
 
 	// save runningBatch length for analysis
 	sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, len(sim.RunningBatch.Requests))
