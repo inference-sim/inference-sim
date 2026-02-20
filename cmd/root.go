@@ -232,7 +232,7 @@ var runCmd = &cobra.Command{
 			preGeneratedRequests = reqs
 			// Set a placeholder GuideLLMConfig to satisfy constructor validation.
 			// The actual requests come from preGeneratedRequests.
-			guideLLMConfig = &sim.GuideLLMConfig{Rate: spec.AggregateRate / 1e6}
+			guideLLMConfig = sim.NewGuideLLMConfig(spec.AggregateRate/1e6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 			logrus.Infof("Generated %d requests from workload spec", len(reqs))
 		} else if workloadType == "distribution" { // if workloadType distribution, use args.
 			// Validate rate (prevents infinite loop: int64(1/0) → MinInt64 → unbounded loop)
@@ -246,11 +246,13 @@ var runCmd = &cobra.Command{
 			if outputTokensMean > outputTokensMax || outputTokensMean < outputTokensMin || outputTokensStdev > outputTokensMax || outputTokensStdev < outputTokensMin {
 				logrus.Fatalf("output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]")
 			}
-			guideLLMConfig = &sim.GuideLLMConfig{Rate: rate / 1e6, NumRequests: numRequests,
-				PrefixTokens: prefixTokens, PromptTokens: promptTokensMean,
-				PromptTokensStdDev: promptTokensStdev, PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
-				OutputTokens: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
-				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax}
+			guideLLMConfig = sim.NewGuideLLMConfig(
+				rate/1e6, numRequests,
+				prefixTokens, promptTokensMean,
+				promptTokensStdev, promptTokensMin, promptTokensMax,
+				outputTokensMean, outputTokensStdev,
+				outputTokensMin, outputTokensMax,
+			)
 		} else if workloadType != "traces" { // use default workload types
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
