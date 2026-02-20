@@ -111,10 +111,7 @@ type Simulator struct {
 	// In vLLM, running is a list (not queue) of requests, hence we don't call it RunningQ here.
 	// Requests are ordered by First-Come-First-Served in WaitQ, and the same order is maintained
 	// while adding requests to RunningBatch
-	// ToDo: Add vLLM logic for reordering requests in RunningBatch before model execution
 	RunningBatch *Batch
-	// ToDo: We have a data structure, but this is where we need to
-	// make metrics calculations accurate
 	Metrics *Metrics
 	// max number of requests RunningBatch can hold
 	maxRunningReqs int64
@@ -363,7 +360,7 @@ func (sim *Simulator) getStepTimeRoofline() int64 {
 			})
 		}
 	}
-	stepTime := rooflineStepTime(sim.gpu, sim.modelConfig, sim.hwConfig, stepConfig, sim.tp)
+	stepTime := rooflineStepTime(sim.modelConfig, sim.hwConfig, stepConfig, sim.tp)
 	return stepTime
 }
 
@@ -371,7 +368,6 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 
 	for {
 		if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int64{}); !ok {
-			// ToDo: add while true here, because we will keep preempting until we are good
 			// Could not allocate (e.g., no free blocks)
 			sim.preemptionHappened = true
 			sim.Metrics.PreemptionCount++
@@ -525,7 +521,6 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 // In vllm, the processing of requests proceeds iteratively in steps.
 // Step simulates a single vllm step(), which roughly corresponds to a single scheduler.schedule()
 // to construct a batch, model execution of the batch and scheduler.update().
-// ToDo: Understand and handle pre-emption logic, if need be.
 func (sim *Simulator) Step(now int64) {
 
 	// increment Step counter

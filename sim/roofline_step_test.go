@@ -204,8 +204,8 @@ func TestRooflineStepTime_TPScaling_TP2LessThanTP1(t *testing.T) {
 		},
 	}
 
-	tp1 := rooflineStepTime("H100", mc, hc, step, 1)
-	tp2 := rooflineStepTime("H100", mc, hc, step, 2)
+	tp1 := rooflineStepTime(mc, hc, step, 1)
+	tp2 := rooflineStepTime(mc, hc, step, 2)
 
 	if tp2 >= tp1 {
 		t.Errorf("TP=2 latency (%d µs) should be less than TP=1 (%d µs)", tp2, tp1)
@@ -256,7 +256,7 @@ func TestRooflineStepTime_Smoke_ValidInputsProducePositiveFiniteResult(t *testin
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := rooflineStepTime("H100", mc, hc, tt.step, 1)
+			result := rooflineStepTime(mc, hc, tt.step, 1)
 			if result <= 0 {
 				t.Errorf("expected positive latency, got %d µs", result)
 			}
@@ -270,7 +270,7 @@ func TestRooflineStepTime_EmptyStep_ReturnsOverheadOnly(t *testing.T) {
 	hc := testHardwareCalib()
 
 	step := StepConfig{} // empty
-	result := rooflineStepTime("H100", mc, hc, step, 1)
+	result := rooflineStepTime(mc, hc, step, 1)
 
 	// Should be approximately TOverheadMicros (50) + layer overhead
 	if result <= 0 {
