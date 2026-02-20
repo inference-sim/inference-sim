@@ -200,8 +200,15 @@ func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string)
 		if skippedCount > 0 {
 			logrus.Warnf("detectPriorityInversions: %d requests missing E2E data, skipped", skippedCount)
 		}
-		// Check inversions within each SLO class
-		for _, reqs := range groups {
+		// Check inversions within each SLO class.
+		// Sort group keys for deterministic iteration (R2).
+		sloClasses := make([]string, 0, len(groups))
+		for cls := range groups {
+			sloClasses = append(sloClasses, cls)
+		}
+		sort.Strings(sloClasses)
+		for _, cls := range sloClasses {
+			reqs := groups[cls]
 			if len(reqs) < 2 {
 				continue
 			}

@@ -37,6 +37,11 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 	if result {
 		t.Error("expected preempt to return false when batch is empty and allocation fails")
 	}
+
+	// AND KV cache conservation must hold (INV-4): no blocks leaked
+	if s.KVCache.UsedBlocks() != 0 {
+		t.Errorf("expected 0 used blocks after failed allocation on empty batch, got %d", s.KVCache.UsedBlocks())
+	}
 }
 
 // TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse verifies BC-2 (#297):
@@ -65,7 +70,9 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 	}
 	s.RunningBatch = &Batch{Requests: []*Request{existing}}
 	// Allocate some blocks for the existing request
-	s.KVCache.AllocateKVBlocks(existing, 0, 10, []int64{})
+	if ok := s.KVCache.AllocateKVBlocks(existing, 0, 10, []int64{}); !ok {
+		t.Fatal("setup: failed to allocate KV blocks for existing request")
+	}
 
 	// AND a new request that needs more blocks than total capacity
 	req := &Request{
