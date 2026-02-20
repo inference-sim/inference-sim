@@ -24,6 +24,13 @@ func (s RoutingSnapshot) EffectiveLoad() int {
 	return s.QueueDepth + s.BatchSize + s.PendingRequests
 }
 
+// NewRoutingSnapshot creates a RoutingSnapshot with the given instance ID.
+// All numeric fields are zero-valued. Used for initial snapshot creation;
+// field-by-field refresh via CachedSnapshotProvider.Snapshot() is a separate concern.
+func NewRoutingSnapshot(id string) RoutingSnapshot {
+	return RoutingSnapshot{ID: id}
+}
+
 // RoutingDecision encapsulates the routing decision for a request.
 type RoutingDecision struct {
 	TargetInstance string             // Instance ID to route to (must match a snapshot ID)
