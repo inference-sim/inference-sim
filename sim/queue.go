@@ -51,6 +51,9 @@ func (wq *WaitQueue) Peek() *Request {
 // Used for preemption: a request evicted from the running batch
 // is placed back at the head of the wait queue for immediate rescheduling.
 func (wq *WaitQueue) PrependFront(req *Request) {
+	if req == nil {
+		panic("PrependFront: req must not be nil")
+	}
 	wq.queue = append([]*Request{req}, wq.queue...)
 }
 
@@ -72,7 +75,14 @@ func (wq *WaitQueue) Items() []*Request {
 // fn receives the underlying slice and may sort it in-place.
 // fn MUST NOT change the slice length (no append/delete).
 func (wq *WaitQueue) Reorder(fn func([]*Request)) {
+	if fn == nil {
+		panic("Reorder: fn must not be nil")
+	}
+	n := len(wq.queue)
 	fn(wq.queue)
+	if len(wq.queue) != n {
+		panic(fmt.Sprintf("Reorder: fn changed queue length from %d to %d", n, len(wq.queue)))
+	}
 }
 
 // DequeueBatch removes a request from the front of the queue.
