@@ -135,7 +135,7 @@ Two modes controlled by `--model-config-folder` presence:
 
 ### Configuration Loading
 
-- **model_hardware_config.go**: `HFConfig` (raw HuggingFace config), `ModelConfig` (extracted params), `HardwareCalib` (GPU specs)
+- **model_hardware_config.go**: `HFConfig` (raw HuggingFace config), `ModelConfig` (extracted params), `HardwareCalib` (GPU specs), `ValidateRooflineConfig` (validates all roofline denominator fields)
 - **defaults.yaml**: Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 - **cmd/default_config.go**: Loading and lookup functions for defaults.yaml
 
@@ -410,7 +410,8 @@ inference-sim/
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
 │   ├── roofline_step.go       # Analytical FLOPs/bandwidth latency estimation
-│   ├── model_hardware_config.go # HFConfig, ModelConfig, HardwareCalib structs
+│   ├── roofline_step_test.go  # Determinism and conservation tests for roofline
+│   ├── model_hardware_config.go # HFConfig, ModelConfig, HardwareCalib, ValidateRooflineConfig
 │   ├── workload_config.go     # CSV trace loading and distribution-based workload generation
 │   └── internal/testutil/     # Shared test infrastructure (golden dataset loading)
 ├── sim/cluster/               # Multi-replica cluster simulation
