@@ -519,6 +519,7 @@ PHASE 8 — DESIGN SANITY CHECKLIST
 
 Before implementation, verify:
 
+**Plan-specific checks:**
 - [ ] No unnecessary abstractions.
 - [ ] No feature creep beyond PR scope.
 - [ ] No unexercised flags or interfaces.
@@ -537,32 +538,26 @@ Before implementation, verify:
 - [ ] Golden dataset regeneration documented (if needed).
 - [ ] Construction site audit completed (Phase 0, item 5) — all struct
       construction sites listed and covered by tasks.
-- [ ] Every new CLI flag validated for: zero, negative, NaN, Inf, empty string.
-- [ ] Every error path either returns error, panics with context, or increments
-      a counter — no silent `continue` that drops data.
-- [ ] No map iteration feeds float accumulation or determines output ordering
-      without sorted keys.
-- [ ] Library code (sim/, sim/cluster/, sim/workload/) never calls logrus.Fatalf
-      or os.Exit — errors must be returned to callers.
-- [ ] Any loop that allocates resources (blocks, slots, counters) handles mid-loop
-      failure by rolling back all mutations from previous iterations.
-- [ ] No exported mutable maps — validation lookup maps are unexported with
-      IsValid*() accessors.
-- [ ] YAML config structs use *float64 (pointer) for fields where zero is a valid
-      user-provided value.
-- [ ] YAML loading uses strict parsing (yaml.KnownFields(true) or equivalent) —
-      typos in field names cause errors, not silent acceptance.
-- [ ] Every division operation where the denominator derives from runtime state
-      has a zero-denominator guard or a documented invariant proving it non-zero.
-- [ ] New interfaces accommodate at least two implementations (even if only one
-      exists today) — no methods that only make sense for one backend.
-- [ ] No method spans multiple module responsibilities (scheduling + latency +
-      metrics in one function). Extract each concern into its module's interface.
-- [ ] Configuration parameters grouped by module — not added to a monolithic
-      config struct mixing unrelated concerns.
-- [ ] Grepped for references to this PR number (planned for PR, TODO.*PR) in the
-      codebase — resolved all stale references.
 - [ ] If this PR is part of a macro plan, the macro plan status is updated.
+
+**Antipattern rules (full details in docs/standards/rules.md):**
+- [ ] R1: No silent `continue`/`return` dropping data
+- [ ] R2: Map keys sorted before float accumulation or ordered output
+- [ ] R3: Every new CLI flag validated (zero, negative, NaN, Inf)
+- [ ] R4: All struct construction sites audited for new fields
+- [ ] R5: Resource allocation loops handle mid-loop failure with rollback
+- [ ] R6: No `logrus.Fatalf` or `os.Exit` in `sim/` packages
+- [ ] R7: Invariant tests alongside any golden tests
+- [ ] R8: No exported mutable maps
+- [ ] R9: `*float64` for YAML fields where zero is valid
+- [ ] R10: YAML strict parsing (`KnownFields(true)`)
+- [ ] R11: Division by runtime-derived denominators guarded
+- [ ] R12: Golden dataset regenerated if output changed
+- [ ] R13: New interfaces work for 2+ implementations
+- [ ] R14: No method spans multiple module responsibilities
+- [ ] R15: Stale PR references resolved
+- [ ] R16: Config params grouped by module
+- [ ] R17: Routing scorer signals documented for freshness tier
 
 ======================================================================
 APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS
