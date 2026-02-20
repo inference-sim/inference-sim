@@ -158,37 +158,90 @@ Run multiple instances with a routing policy:
 ./simulation_worker run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
-  --routing-cache-weight 0.6 --routing-load-weight 0.4
+  --routing-scorers "queue-depth:2,kv-utilization:2,load-balance:1"
 ```
 
-Available routing policies:
-- `round-robin` (default) — even distribution across instances
-- `least-loaded` — routes to instance with minimum queue + batch size + pending requests
-- `weighted` — composite score combining cache availability (FreeKVBlocks) and load balance (QueueDepth + BatchSize + PendingRequests). Weights should sum to 1.0 (auto-normalized if they don't).
-- `prefix-affinity` — routes matching prefixes to the same instance, falls back to least-loaded
-- `always-busiest` — pathological: routes to instance with maximum queue + batch size + pending requests (for anomaly detection testing)
+#### Routing Policies
 
-**Seeing weighted routing weights in action:** Run these two commands at `--rate 1000` and compare the Target Distribution in the trace summary:
+| Policy | Best For | How It Works |
+|--------|----------|-------------|
+| `round-robin` (default) | Even distribution, no tuning needed | Cycles through instances in order |
+| `least-loaded` | Low tail latency under variable load | Routes to instance with minimum effective load (queue + batch + pending) |
+| `weighted` | Tunable multi-objective routing | Composable scorer pipeline — combines multiple scoring dimensions with configurable weights (see below) |
+| `prefix-affinity` | Exact-duplicate request sequences | Routes requests with identical full token sequences to the same instance; falls back to least-loaded on miss. **Limitation:** hashes the entire input sequence, not just the prefix — requests sharing a prefix but with different suffixes produce different hashes and always miss. For real prefix-aware routing, use `weighted` with the prefix-affinity scorer (coming in PR 18). See [#259](https://github.com/inference-sim/inference-sim/issues/259). |
+| `always-busiest` | Testing only | Pathological: routes to busiest instance (for anomaly detection testing) |
+
+#### Weighted Routing: Composable Scorer Pipeline
+
+The `weighted` policy evaluates each instance using independent scoring dimensions, combines them with configurable weights, and routes to the highest-scoring instance:
+
+```
+score(instance) = Σ weight_i × scorer_i(instance)    →    route to argmax
+```
+
+**Available scorers:**
+
+| Scorer | Formula | What It Measures | llm-d Equivalent |
+|--------|---------|------------------|-------------------|
+| `queue-depth` | Min-max normalization of effective load | Queue pressure (immediate signal) | `queue-scorer` |
+| `kv-utilization` | `1 − KVUtilization` | Memory headroom (lagging signal) | `kv-cache-utilization-scorer` |
+| `load-balance` | `1 / (1 + effectiveLoad)` | Load balance preserving absolute differences | — |
+
+**Configuration:**
 
 ```bash
-# Cache-dominant: favors instances with most free KV blocks
+# Via CLI (comma-separated name:weight pairs)
+--routing-scorers "queue-depth:2,kv-utilization:2,load-balance:1"
+
+# Via YAML (--policy-config weighted-routing.yaml)
+routing:
+  policy: weighted
+  scorers:
+    - name: queue-depth
+      weight: 2.0
+    - name: kv-utilization
+      weight: 2.0
+```
+
+Weights are relative — only ratios matter. `[3,2,2]` behaves identically to `[6,4,4]`. If `--routing-scorers` is omitted, the default profile is `queue-depth:2,kv-utilization:2,load-balance:1`.
+
+#### Why Scorer Choice Matters: A Concrete Example
+
+Different scorers react to load at different speeds. At high request rates, this creates dramatic performance differences:
+
+```
+Model: llama-3.1-8b-instruct | 4 instances | 1000 requests | rate=5000 req/s
+
+Configuration               Distribution          TTFT p99 (ms)
+─────────────────────────── ───────────────────── ─────────────
+queue-depth:1               251 / 250 / 250 / 249       2,598
+kv-utilization:1            333 / 423 /  47 / 197       7,870  ← 3x worse
+default (qd:2,kv:2,lb:1)   252 / 250 / 249 / 249       2,634
+```
+
+**Why the 3x difference?** `queue-depth` uses `PendingRequests` which updates *instantly* when a request is routed — the next routing decision immediately sees the load increase. `kv-utilization` uses KV block allocation which only updates during batch formation (~9ms for 8B models). At 5000 req/s, ~45 routing decisions happen between KV updates, all seeing the same stale utilization → requests pile on fewer instances → 3x worse tail latency.
+
+**Reproduce this yourself:**
+
+```bash
+# Even distribution, good tail latency (immediate signal)
 ./simulation_worker run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
-  --routing-cache-weight 0.9 --routing-load-weight 0.1 \
-  --num-requests 500 --rate 1000 \
+  --routing-scorers "queue-depth:1" \
+  --num-requests 1000 --rate 5000 \
   --trace-level decisions --summarize-trace
 
-# Load-dominant: spreads requests evenly across instances
+# Skewed distribution, 3x worse tail latency (lagging signal)
 ./simulation_worker run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
-  --routing-cache-weight 0.1 --routing-load-weight 0.9 \
-  --num-requests 500 --rate 1000 \
+  --routing-scorers "kv-utilization:1" \
+  --num-requests 1000 --rate 5000 \
   --trace-level decisions --summarize-trace
 ```
 
-Cache-dominant produces a skewed distribution (one instance receives disproportionately more requests), while load-dominant produces a near-uniform distribution. Use `--rate 1000` or higher so requests arrive fast enough for PendingRequests to accumulate and create the signal disagreement between cache and load dimensions. See `examples/weighted-routing.yaml` for details.
+See `examples/routing-comparison.sh` for a full automated comparison, and `examples/weighted-routing.yaml` for YAML configuration details.
 
 ### Tiered KV Cache (GPU + CPU Offloading)
 
@@ -580,7 +633,8 @@ inference-sim/
 │   └── summary.go          # TraceSummary, Summarize()
 ├── examples/               # Example configuration files
 │   ├── policy-config.yaml  # Policy bundle example
-│   ├── weighted-routing.yaml  # Weighted routing example
+│   ├── weighted-routing.yaml  # Weighted routing scorer pipeline config
+│   ├── routing-comparison.sh  # Automated routing policy comparison (run to reproduce performance table)
 │   └── servegen-language.yaml # ServeGen workload spec example
 ├── model_configs/          # HuggingFace config.json files
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
@@ -633,8 +687,7 @@ inference-sim/
 |------|---------|-------------|
 | `--num-instances` | 1 | Number of instances in the cluster |
 | `--routing-policy` | round-robin | Routing: `round-robin`, `least-loaded`, `weighted`, `prefix-affinity`, `always-busiest` |
-| `--routing-cache-weight` | 0.6 | Cache affinity weight for weighted routing |
-| `--routing-load-weight` | 0.4 | Load balance weight for weighted routing |
+| `--routing-scorers` | (defaults) | Scorer weights for weighted routing. Valid scorers: `queue-depth`, `kv-utilization`, `load-balance`. Format: `name:weight,...` |
 | `--admission-policy` | always-admit | Admission: `always-admit`, `token-bucket`, `reject-all` |
 | `--token-bucket-capacity` | 10000 | Token bucket max tokens |
 | `--token-bucket-refill-rate` | 1000 | Token bucket refill rate (tokens/sec) |

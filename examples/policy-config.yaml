@@ -22,9 +22,14 @@ admission:
 
 routing:
   policy: round-robin
-  # cache_weight: 0.6                 # cache affinity weight (only for weighted)
-  # load_weight: 0.4                  # load balance weight (only for weighted)
-  # Weights should sum to 1.0 (auto-normalized if they don't).
+  # scorers:                              # scorer config (only for weighted)
+  #   - name: queue-depth
+  #     weight: 2.0
+  #   - name: kv-utilization
+  #     weight: 2.0
+  #   - name: load-balance
+  #     weight: 1.0
+  # See examples/weighted-routing.yaml for weighted routing details.
 
 priority:
   policy: constant

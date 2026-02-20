@@ -30,9 +30,8 @@ type AdmissionConfig struct {
 
 // RoutingConfig holds routing policy configuration.
 type RoutingConfig struct {
-	Policy      string   `yaml:"policy"`
-	CacheWeight *float64 `yaml:"cache_weight"`
-	LoadWeight  *float64 `yaml:"load_weight"`
+	Policy  string         `yaml:"policy"`
+	Scorers []ScorerConfig `yaml:"scorers"`
 }
 
 // PriorityConfig holds priority policy configuration.
@@ -127,17 +126,20 @@ func (b *PolicyBundle) Validate() error {
 	if err := validateFloat("token_bucket_refill_rate", b.Admission.TokenBucketRefillRate); err != nil {
 		return err
 	}
-	if err := validateFloat("cache_weight", b.Routing.CacheWeight); err != nil {
-		return err
-	}
-	if err := validateFloat("load_weight", b.Routing.LoadWeight); err != nil {
-		return err
-	}
-	// Validate routing weights sum to 1.0 when weighted policy is used and both are set
-	if b.Routing.Policy == "weighted" && b.Routing.CacheWeight != nil && b.Routing.LoadWeight != nil {
-		sum := *b.Routing.CacheWeight + *b.Routing.LoadWeight
-		if math.Abs(sum-1.0) > 0.01 {
-			return fmt.Errorf("routing weights must sum to 1.0 (got cache_weight=%.2f + load_weight=%.2f = %.2f)", *b.Routing.CacheWeight, *b.Routing.LoadWeight, sum)
+	// Validate scorer configs if present
+	scorerSeen := make(map[string]bool, len(b.Routing.Scorers))
+	for i, sc := range b.Routing.Scorers {
+		if !IsValidScorer(sc.Name) {
+			return fmt.Errorf("routing scorer[%d]: unknown scorer %q; valid: %s",
+				i, sc.Name, strings.Join(ValidScorerNames(), ", "))
+		}
+		if scorerSeen[sc.Name] {
+			return fmt.Errorf("routing scorer[%d]: duplicate scorer %q; each scorer may appear at most once", i, sc.Name)
+		}
+		scorerSeen[sc.Name] = true
+		if sc.Weight <= 0 || math.IsNaN(sc.Weight) || math.IsInf(sc.Weight, 0) {
+			return fmt.Errorf("routing scorer[%d] %q: weight must be a finite positive number, got %v",
+				i, sc.Name, sc.Weight)
 		}
 	}
 	return nil

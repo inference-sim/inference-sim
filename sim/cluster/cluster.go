@@ -82,7 +82,7 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 		routingLatency:   config.RoutingLatency,
 		admissionPolicy:  sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
 		snapshotProvider: NewCachedSnapshotProvider(instanceMap, DefaultObservabilityConfig()),
-		routingPolicy:    sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingCacheWeight, config.RoutingLoadWeight),
+		routingPolicy:    sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs),
 		trace:            simTrace,
 		pendingRequests:  make(map[string]int, config.NumInstances),
 	}
