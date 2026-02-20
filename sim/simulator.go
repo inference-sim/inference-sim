@@ -501,11 +501,11 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 	}
 
 	// Next, attempt to dequeue requests in waiting queue, if batch size is not exceeded and not any preemption happened
-	for len(sim.RunningBatch.Requests) < int(sim.maxRunningReqs) && len(sim.WaitQ.queue) > 0 && tokenBudget > 0 && !sim.preemptionHappened {
+	for len(sim.RunningBatch.Requests) < int(sim.maxRunningReqs) && sim.WaitQ.Len() > 0 && tokenBudget > 0 && !sim.preemptionHappened {
 		// we will attempt to dequeue `next` request
 		// if that attempt fails, we will break out of the loop
 
-		next := sim.WaitQ.queue[0]
+		next := sim.WaitQ.Peek()
 
 		// first find cache hits. This only happens once per prefill (regardless of chunked)
 		cachedBlocks := sim.KVCache.GetCachedBlocks(next.InputTokens)
@@ -531,7 +531,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		// at this point: the `next` request is deemed schedulable
 
 		// dequeue this request
-		sim.WaitQ.queue = sim.WaitQ.queue[1:]
+		sim.WaitQ.DequeueBatch()
 		// make it part of the running batch
 		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
 		next.ScheduledStepIdx = sim.stepCount
