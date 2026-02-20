@@ -55,7 +55,7 @@ func makeSharedPrefixRequests(numRequests int, sharedFraction float64,
 
 // baseDeploymentConfig returns a cluster config with realistic processing times.
 // BetaCoeffs/AlphaCoeffs match the existing cluster test conventions.
-func baseDeploymentConfig(numInstances int, _ int) DeploymentConfig {
+func baseDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		NumInstances:       numInstances,
 		Horizon:            50000000, // 50 seconds
@@ -93,7 +93,7 @@ func TestPrefixAffinityRouting_LongPrefix_ConcentratesVsLoadOnly(t *testing.T) {
 		500,   // 500µs interarrival = 2000 req/s
 	)
 
-	config := baseDeploymentConfig(numInstances, numRequests)
+	config := baseDeploymentConfig(numInstances)
 
 	// Experiment A: prefix-affinity dominant
 	affinityConfig := config
@@ -157,7 +157,7 @@ func TestPrefixAffinityRouting_ShortPrefix_NoAdvantage(t *testing.T) {
 		numRequests, 1.0, 32, 288, 16, 500,
 	)
 
-	config := baseDeploymentConfig(numInstances, numRequests)
+	config := baseDeploymentConfig(numInstances)
 
 	// Prefix-affinity dominant
 	affinityConfig := config
@@ -187,7 +187,10 @@ func TestPrefixAffinityRouting_ShortPrefix_NoAdvantage(t *testing.T) {
 	t.Logf("Short prefix — load-only:      %v (max=%d)", loadDist, maxValue(loadDist))
 
 	// With a weak prefix signal (0.10), the load scorer should dominate
-	// and the distributions should be similar. Not a hard assertion — just log.
+	// and the distributions should be similar. Soft assertion: prefix-affinity
+	// should NOT concentrate significantly more than load-only.
+	assert.LessOrEqual(t, maxValue(affinityDist), maxValue(loadDist)+5,
+		"short prefix should not concentrate significantly more than load-only")
 }
 
 // TestPrefixAffinityRouting_MultiTurn_SessionAffinity verifies that
@@ -200,12 +203,10 @@ func TestPrefixAffinityRouting_MultiTurn_SessionAffinity(t *testing.T) {
 
 	// Build multi-turn requests: each session has 5 rounds with accumulating context
 	var requests []*sim.Request
-	sessionInstances := make(map[string]map[string]bool) // sessionID → set of instance IDs
 	reqID := 0
 	baseTime := int64(0)
 	for s := 0; s < numSessions; s++ {
 		sessionID := fmt.Sprintf("session_%d", s)
-		sessionInstances[sessionID] = make(map[string]bool)
 
 		// Generate the session's base prefix (unique per session)
 		prefix := make([]int, 128) // 128 tokens = 8 blocks
@@ -257,7 +258,7 @@ func TestPrefixAffinityRouting_MultiTurn_SessionAffinity(t *testing.T) {
 		baseTime += 1000 // 1ms between sessions
 	}
 
-	config := baseDeploymentConfig(numInstances, len(requests))
+	config := baseDeploymentConfig(numInstances)
 	config.Horizon = baseTime + 50000000
 
 	// Count per-session instance scattering

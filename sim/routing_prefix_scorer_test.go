@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -267,6 +268,47 @@ func TestPrefixAffinityScorer_WeightSensitivity_ConcentratesRouting(t *testing.T
 	// (This is implicitly tested by BC-3, so just verify non-trivial concentration here.)
 	assert.Equal(t, 1, len(affinityCounts),
 		"all shared-prefix requests should route to same instance via affinity")
+}
+
+// TestPrefixAffinityScorer_INV1_INV2_Conformance verifies that prefix-affinity
+// scores satisfy INV-1 (scores in [0,1]) and INV-2 (score for every instance),
+// and produces no NaN or Inf values, across multiple routing decisions that
+// build up internal state.
+func TestPrefixAffinityScorer_INV1_INV2_Conformance(t *testing.T) {
+	policy := NewRoutingPolicy("weighted", []ScorerConfig{
+		{Name: "prefix-affinity", Weight: 3.0},
+		{Name: "queue-depth", Weight: 2.0},
+	})
+
+	snapshots := []RoutingSnapshot{
+		{ID: "inst_0", QueueDepth: 2},
+		{ID: "inst_1", QueueDepth: 5},
+		{ID: "inst_2", QueueDepth: 1},
+	}
+
+	// Route several requests to build up prefix-affinity state
+	for i := 0; i < 20; i++ {
+		tokens := makeTokens(64 + i*16) // varying lengths
+		req := &Request{ID: fmt.Sprintf("r%d", i), InputTokens: tokens}
+		d := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: int64(i * 1000)})
+
+		// INV-2: scores for every instance
+		assert.Len(t, d.Scores, len(snapshots),
+			"request %d: must have score for every instance", i)
+
+		for id, score := range d.Scores {
+			// INV-1: score in [0,1]
+			assert.GreaterOrEqual(t, score, 0.0,
+				"request %d: score for %s below 0", i, id)
+			assert.LessOrEqual(t, score, 1.0,
+				"request %d: score for %s above 1", i, id)
+			// No NaN/Inf
+			assert.False(t, math.IsNaN(score),
+				"request %d: NaN score for %s", i, id)
+			assert.False(t, math.IsInf(score, 0),
+				"request %d: Inf score for %s", i, id)
+		}
+	}
 }
 
 // TestPrefixAffinityScorer_NonWeightedPolicies_Unchanged verifies BC-8 (INV-5).

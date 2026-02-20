@@ -334,7 +334,7 @@ inference-sim/
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
 ├── hardware_config.json       # GPU specifications
-├── examples/                  # Example configuration files (policy-config.yaml, weighted-routing.yaml, servegen-language.yaml, routing-comparison.sh)
+├── examples/                  # Example configuration files (policy-config.yaml, weighted-routing.yaml, servegen-language.yaml, prefix-affinity-demo.yaml, multiturn-chat-demo.yaml, routing-comparison.sh)
 ├── testdata/goldendataset.json # Golden dataset for regression tests
 └── docs/plans/                # Design documents
 ```

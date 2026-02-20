@@ -3,6 +3,7 @@ package sim
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"math"
 	"strconv"
 )
@@ -31,6 +32,12 @@ type lruBlockCache struct {
 // NewPrefixCacheIndex creates a prefix cache index with the given block size
 // and per-instance LRU capacity (maximum blocks tracked per instance).
 func NewPrefixCacheIndex(blockSize int, lruCapacity int) *PrefixCacheIndex {
+	if blockSize <= 0 {
+		panic(fmt.Sprintf("NewPrefixCacheIndex: blockSize must be > 0, got %d", blockSize))
+	}
+	if lruCapacity <= 0 {
+		panic(fmt.Sprintf("NewPrefixCacheIndex: lruCapacity must be > 0, got %d", lruCapacity))
+	}
 	return &PrefixCacheIndex{
 		blockSize:   blockSize,
 		lruCapacity: lruCapacity,

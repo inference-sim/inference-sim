@@ -97,7 +97,7 @@ echo ""
 echo ""
 echo "================================================================"
 echo "  PART 2: Prefix-Affinity Experiment (prefix-heavy workload)"
-echo "  Uses servegen-language.yaml (70% shared prefix)"
+echo "  Uses prefix-affinity-demo.yaml (shared-prefix workload)"
 echo "================================================================"
 echo ""
 
@@ -106,7 +106,7 @@ run_prefix_experiment() {
     shift
     echo "--- $label ---"
     $BINARY run --model "$MODEL" --num-instances $INSTANCES \
-        --workload-spec examples/servegen-language.yaml \
+        --workload-spec examples/prefix-affinity-demo.yaml \
         --trace-level decisions --summarize-trace --log error "$@" 2>/dev/null \
         | grep -E "(\"ttft_p99|\"ttft_mean|\"responses_per_sec|Target Dist|  instance)" \
         | tail -8

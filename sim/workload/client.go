@@ -6,7 +6,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// DefaultPrefixLength is the number of shared prefix tokens for prefix groups.
+// defaultPrefixLength is the number of shared prefix tokens for prefix groups.
 
 const defaultPrefixLength = 50
 

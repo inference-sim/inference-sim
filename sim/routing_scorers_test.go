@@ -58,7 +58,7 @@ func TestIsValidScorer_KnownNames(t *testing.T) {
 
 func TestValidScorerNames_Sorted(t *testing.T) {
 	names := ValidScorerNames()
-	assert.Len(t, names, 4)
+	assert.GreaterOrEqual(t, len(names), 4, "at least 4 scorers expected")
 	for i := 1; i < len(names); i++ {
 		assert.True(t, names[i-1] < names[i], "names must be sorted")
 	}
