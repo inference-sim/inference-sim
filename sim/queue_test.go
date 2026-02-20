@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -177,15 +178,25 @@ func TestWaitQueue_Reorder_EmptyQueue_NoOp(t *testing.T) {
 }
 
 func TestWaitQueue_Encapsulation_NoDirectFieldAccess(t *testing.T) {
-	// BC-6: GIVEN simulator.go, WHEN searching for '.WaitQ.queue',
-	// THEN zero results MUST be found (full encapsulation)
-	content, err := os.ReadFile("simulator.go")
+	// BC-6: GIVEN all .go files in the sim/ package (except queue.go and queue_test.go),
+	// WHEN searching for '.WaitQ.queue', THEN zero results MUST be found (full encapsulation)
+	entries, err := os.ReadDir(".")
 	if err != nil {
-		t.Fatalf("reading simulator.go: %v", err)
+		t.Fatalf("reading directory: %v", err)
 	}
 
-	pattern := ".WaitQ.queue"
-	if bytes.Contains(content, []byte(pattern)) {
-		t.Errorf("simulator.go still contains direct .WaitQ.queue access -- encapsulation incomplete")
+	pattern := []byte(".WaitQ.queue")
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".go") || name == "queue.go" || name == "queue_test.go" {
+			continue
+		}
+		content, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		if bytes.Contains(content, pattern) {
+			t.Errorf("%s contains direct .WaitQ.queue access -- use WaitQueue methods instead", name)
+		}
 	}
 }
