@@ -8,14 +8,7 @@ import (
 
 func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
 	// GIVEN a ModelConfig with multiple non-zero fields
-	config := ModelConfig{
-		NumLayers:       32,
-		HiddenDim:       4096,
-		NumHeads:        32,
-		NumKVHeads:      8,
-		BytesPerParam:   2,
-		IntermediateDim: 14336,
-	}
+	config := testModelConfig()
 
 	// WHEN calculateMemoryAccessBytes is called 100 times
 	var firstTotal float64
