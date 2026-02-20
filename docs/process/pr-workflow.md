@@ -8,9 +8,9 @@ This document describes the complete workflow for implementing a PR from any sou
 
 **Update this section when templates change. All examples below reference these versions.**
 
-- **Design guidelines:** `docs/plans/2026-02-18-design-guidelines.md` — DES foundations, module architecture, extension framework. Read before writing any design doc or macro plan.
-- **Macro-planning template:** `docs/plans/macroplanprompt.md` (updated 2026-02-18 — aligned with design guidelines)
-- **Micro-planning template:** `docs/plans/prmicroplanprompt-v2.md` (updated 2026-02-18)
+- **Design guidelines:** `docs/templates/design-guidelines.md` — DES foundations, module architecture, extension framework. Read before writing any design doc or macro plan.
+- **Macro-planning template:** `docs/templates/macro-plan.md` (updated 2026-02-18 — aligned with design guidelines)
+- **Micro-planning template:** `docs/templates/micro-plan.md` (updated 2026-02-18)
 - **Active macro plan:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v3.4)
 - **Deprecated micro-planning:** `docs/plans/prmicroplanprompt-v1-deprecated.md` (for reference only)
 
@@ -120,7 +120,7 @@ If skills are unavailable, you can implement each step manually:
 | Step | Command |
 |------|---------|
 | **1. Create worktree** | `/superpowers:using-git-worktrees pr<N>-<name>` |
-| **2. Create plan** | `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/plans/prmicroplanprompt-v2.md and @<source-document>` |
+| **2. Create plan** | `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/templates/micro-plan.md and @<source-document>` |
 | **2.5. Review plan** | 5 passes: external review, cross-doc consistency, architecture boundary, codebase readiness, structural validation |
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
@@ -137,7 +137,7 @@ If skills are unavailable, you can implement each step manually:
 # (shell cwd already switched — continue directly)
 
 # Step 2: Create plan
-/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 # Step 2.5: Review plan
 /pr-review-toolkit:review-pr
@@ -229,7 +229,7 @@ If skills are unavailable, you can implement each step manually:
 
 **Invocation (simplified):**
 ```
-/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/plans/prmicroplanprompt-v2.md and @<source-document>
+/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/templates/micro-plan.md and @<source-document>
 ```
 
 The `<source-document>` can be any of:
@@ -240,13 +240,13 @@ The `<source-document>` can be any of:
 **Examples:**
 ```
 # From macro plan section:
-/superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 # From design document:
-/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
+/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
 
 # From GitHub issues:
-/superpowers:writing-plans for issues #183 #189 #195 in @docs/plans/kv-bugfix-plan.md using @docs/plans/prmicroplanprompt-v2.md
+/superpowers:writing-plans for issues #183 #189 #195 in @docs/plans/kv-bugfix-plan.md using @docs/templates/micro-plan.md
 ```
 
 **What Happens:**
@@ -592,13 +592,13 @@ Wait for user approval before proceeding to Step 4.75.
 
 1. **Logic bugs:** Trace through the core algorithm mentally. Are there edge cases where the math breaks? Division by zero? Off-by-one? Wrong comparisons?
 2. **Design bugs:** Does the design actually achieve what the contracts promise? Would a user get the expected behavior? Are there scale mismatches, unit confusions, or semantic errors?
-3. **Determinism:** Is all output deterministic? Any map iteration used for ordered output? Any floating-point accumulation order dependencies?
+3. **Determinism (R2, INV-6):** Is all output deterministic? Any map iteration used for ordered output? Any floating-point accumulation order dependencies?
 4. **Consistency:** Are naming patterns consistent across all changed files? Do comments match code? Do doc strings match implementations? Are there stale references?
 5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md, README, `--help`)?
 6. **Defensive edge cases:** What happens with zero input? Empty collections? Maximum values? What if the user passes unusual but valid flag combinations?
-7. **Test epistemology:** For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)
-8. **Construction site uniqueness:** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
-9. **Error path completeness:** For every error/failure path in new code, what happens to partially-mutated state? Does every `continue` or early `return` clean up what was started? Is there a counter or log so the failure is observable?
+7. **Test epistemology (R7, R12):** For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)
+8. **Construction site uniqueness (R4):** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
+9. **Error path completeness (R1, R5):** For every error/failure path in new code, what happens to partially-mutated state? Does every `continue` or early `return` clean up what was started? Is there a counter or log so the failure is observable?
 
 **Fix all issues found. Then wait for user approval before Step 5.**
 
@@ -712,7 +712,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # (continue directly — no new session needed)
 
 # Step 2: Create plan (source = macro plan section)
-/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 # Output: Plan created at docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
@@ -775,7 +775,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 /superpowers:using-git-worktrees hardening-antipatterns
 
 # Step 2: Create plan (source = design document, not macro plan)
-/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
+/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
 
 # Step 2.5: Focused plan review (5 passes)
 # Pass 0: External LLM review
@@ -859,14 +859,14 @@ claude -p "Read .review/*.md files. Produce a consolidated summary sorted by sev
 
 **Solution:** The simplified invocation with @ references handles this automatically:
 ```bash
-/superpowers:writing-plans for PR6 in @docs/plans/pr6-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR6 in @docs/plans/pr6-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 ```
 
 Claude reads the full macro plan and extracts PR6 context (architecture, dependencies, etc.) automatically.
 
 **If still too generic:** Add specific guidance in the invocation:
 ```bash
-/superpowers:writing-plans for PR6 in @docs/plans/pr6-plan.md using @docs/plans/prmicroplanprompt-v2.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR6 in @docs/plans/pr6-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 Pay special attention to:
 - Integration with existing SnapshotProvider (see sim/cluster/snapshot.go)
