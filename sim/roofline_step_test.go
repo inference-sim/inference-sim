@@ -182,3 +182,105 @@ func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *t
 			mem["total"], sum, mem["total"]-sum)
 	}
 }
+
+// testHardwareCalib returns an H100-like hardware config for roofline tests.
+func testHardwareCalib() HardwareCalib {
+	return HardwareCalib{
+		TFlopsPeak:       989.0,
+		BwPeakTBs:        3.35,
+		BwEffConstant:    0.7,
+		TOverheadMicros:  50.0,
+		PerLayerOverhead: 5.0,
+		MfuPrefill:       0.55,
+		MfuDecode:        0.30,
+		AllReduceLatency: 10.0,
+	}
+}
+
+func TestRooflineStepTime_TPScaling_TP2LessThanTP1(t *testing.T) {
+	// BC-3: TP=2 MUST produce strictly less latency than TP=1
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 128},
+		},
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 256, NumNewDecodeTokens: 1},
+		},
+	}
+
+	tp1 := rooflineStepTime("H100", mc, hc, step, 1)
+	tp2 := rooflineStepTime("H100", mc, hc, step, 2)
+
+	if tp2 >= tp1 {
+		t.Errorf("TP=2 latency (%d µs) should be less than TP=1 (%d µs)", tp2, tp1)
+	}
+	if tp2 <= 0 {
+		t.Errorf("TP=2 latency should be positive, got %d", tp2)
+	}
+}
+
+func TestRooflineStepTime_Smoke_ValidInputsProducePositiveFiniteResult(t *testing.T) {
+	// BC-4: valid inputs MUST produce > 0, finite result
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+
+	tests := []struct {
+		name string
+		step StepConfig
+	}{
+		{
+			"prefill only",
+			StepConfig{
+				PrefillRequests: []PrefillRequestConfig{
+					{ProgressIndex: 0, NumNewPrefillTokens: 256},
+				},
+			},
+		},
+		{
+			"decode only",
+			StepConfig{
+				DecodeRequests: []DecodeRequestConfig{
+					{ProgressIndex: 512, NumNewDecodeTokens: 1},
+				},
+			},
+		},
+		{
+			"mixed prefill+decode",
+			StepConfig{
+				PrefillRequests: []PrefillRequestConfig{
+					{ProgressIndex: 0, NumNewPrefillTokens: 64},
+				},
+				DecodeRequests: []DecodeRequestConfig{
+					{ProgressIndex: 128, NumNewDecodeTokens: 1},
+					{ProgressIndex: 256, NumNewDecodeTokens: 1},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := rooflineStepTime("H100", mc, hc, tt.step, 1)
+			if result <= 0 {
+				t.Errorf("expected positive latency, got %d µs", result)
+			}
+		})
+	}
+}
+
+func TestRooflineStepTime_EmptyStep_ReturnsOverheadOnly(t *testing.T) {
+	// Edge case: no requests should still return overhead (non-zero due to TOverheadMicros)
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+
+	step := StepConfig{} // empty
+	result := rooflineStepTime("H100", mc, hc, step, 1)
+
+	// Should be approximately TOverheadMicros (50) + layer overhead
+	if result <= 0 {
+		t.Errorf("empty step should still have overhead latency, got %d µs", result)
+	}
+}
