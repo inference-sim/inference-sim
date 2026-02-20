@@ -14,6 +14,7 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 |----|-----------|--------|-------------|
 | Prefix-Affinity | Prefix-aware routing outperforms load-only for prefix-heavy workloads | **Confirmed** | 2.45x better TTFT for multi-turn; queue-depth actively destroys cache locality (23% vs 56% hit rate) |
 | H3 | queue-depth distributes more evenly than kv-utilization at high rates | **Confirmed** | 200x better distribution uniformity; inherent DES event ordering causes kv-util staleness |
+| H9 | TTFT decreases monotonically as prefix_length increases | **Confirmed** | 95.8% TTFT reduction at max prefix; cache hit rate precisely linear with prefix fraction; cache capacity has zero observable effect (model limitation) |
 
 ## Running Experiments
 
