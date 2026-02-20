@@ -21,7 +21,7 @@ Every hypothesis must be classified before designing the experiment. The classif
 - No statistical analysis needed
 
 **Examples:**
-- H12: Request conservation holds across all policy configurations
+- H12: Request conservation (INV-1) holds across 10 policy configurations (67 checks)
 - H13: Same seed produces byte-identical output
 - H22: Zero KV blocks panics at CLI boundary, not deep in simulation
 
@@ -49,7 +49,7 @@ A is strictly better than B on metric M.
 
 - **Analysis:** Compare metric M for A vs B across all seeds. Compute ratio per seed.
 - **Pass:** A beats B on M for all seeds, with >20% effect size in every seed.
-- **Example:** H3 — queue-depth TTFT is 1.7-2.8x better than kv-utilization across 3 seeds.
+- **Examples:** H3 — queue-depth TTFT is 1.7-2.8x better than kv-utilization across 3 seeds. H14 — `always-busiest` routing produces 4.6x worse TTFT and routes all 500 requests to a single instance.
 
 #### Monotonicity
 Increasing X should monotonically increase/decrease Y.
@@ -99,6 +99,8 @@ Document the precondition check in the experiment script (not just in prose).
 - For CLI-generated workloads (`--rate`, `--num-requests`), `--seed` controls everything
 
 **Until #284 is resolved:** when using workload-spec, document whether the experiment varies workload seeds, CLI seeds, or both. If only CLI seeds are varied, note that the workload is identical across runs.
+
+**Recommendation:** When writing `run.sh` for workload-spec experiments, either: (a) generate per-seed YAML copies with different `seed:` values in the script, or (b) explicitly document in `FINDINGS.md` that the workload is fixed across runs and only simulation-level RNG varies.
 
 ### ED-5: Reproducibility
 Every experiment must be reproducible from its artifacts alone:
