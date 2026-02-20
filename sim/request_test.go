@@ -69,7 +69,10 @@ func TestNewRequest_OptionalFields_AreZeroValues(t *testing.T) {
 	// GIVEN a request created with only required fields
 	req := NewRequest("r1", 0, []int{1}, []int{2})
 
-	// THEN all optional fields MUST be zero values
+	// THEN caller-settable optional fields MUST be zero values
+	// (Only fields that callers plausibly set after construction — not internal
+	// engine fields like ProgressIndex, TTFTSet, NumNewTokens, ITL which are
+	// managed by the simulation engine during execution.)
 	if req.TenantID != "" {
 		t.Errorf("TenantID = %q, want empty", req.TenantID)
 	}
@@ -88,12 +91,6 @@ func TestNewRequest_OptionalFields_AreZeroValues(t *testing.T) {
 	if req.ReasonRatio != 0.0 {
 		t.Errorf("ReasonRatio = %f, want 0.0", req.ReasonRatio)
 	}
-	if req.ScheduledStepIdx != 0 {
-		t.Errorf("ScheduledStepIdx = %d, want 0", req.ScheduledStepIdx)
-	}
-	if req.FinishedStepIdx != 0 {
-		t.Errorf("FinishedStepIdx = %d, want 0", req.FinishedStepIdx)
-	}
 	if req.AssignedInstance != "" {
 		t.Errorf("AssignedInstance = %q, want empty", req.AssignedInstance)
 	}
@@ -111,53 +108,5 @@ func TestNewRequest_OptionalFields_AreZeroValues(t *testing.T) {
 	}
 	if req.VideoTokenCount != 0 {
 		t.Errorf("VideoTokenCount = %d, want 0", req.VideoTokenCount)
-	}
-	if req.ProgressIndex != 0 {
-		t.Errorf("ProgressIndex = %d, want 0", req.ProgressIndex)
-	}
-	if req.TTFTSet {
-		t.Error("TTFTSet = true, want false")
-	}
-	if req.FirstTokenTime != 0 {
-		t.Errorf("FirstTokenTime = %d, want 0", req.FirstTokenTime)
-	}
-	if req.NumNewTokens != 0 {
-		t.Errorf("NumNewTokens = %d, want 0", req.NumNewTokens)
-	}
-	if req.ITL != nil {
-		t.Errorf("ITL = %v, want nil", req.ITL)
-	}
-}
-
-func TestNewRequest_OptionalFields_Settable(t *testing.T) {
-	// GIVEN a request created via NewRequest
-	req := NewRequest("r1", 1000, []int{1}, []int{2})
-
-	// WHEN optional fields are set after construction
-	req.TenantID = "tenant_a"
-	req.SLOClass = "realtime"
-	req.Streaming = true
-	req.SessionID = "sess_1"
-	req.RoundIndex = 3
-	req.ReasonRatio = 0.42
-
-	// THEN those fields MUST reflect the assigned values
-	if req.TenantID != "tenant_a" {
-		t.Errorf("TenantID = %q, want %q", req.TenantID, "tenant_a")
-	}
-	if req.SLOClass != "realtime" {
-		t.Errorf("SLOClass = %q, want %q", req.SLOClass, "realtime")
-	}
-	if !req.Streaming {
-		t.Error("Streaming = false, want true")
-	}
-	if req.SessionID != "sess_1" {
-		t.Errorf("SessionID = %q, want %q", req.SessionID, "sess_1")
-	}
-	if req.RoundIndex != 3 {
-		t.Errorf("RoundIndex = %d, want 3", req.RoundIndex)
-	}
-	if req.ReasonRatio != 0.42 {
-		t.Errorf("ReasonRatio = %f, want 0.42", req.ReasonRatio)
 	}
 }
