@@ -303,7 +303,7 @@ To add a new policy template (e.g., a new routing algorithm):
 
 Examples:
 - See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
-- See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback
+- See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback. **Known limitation (#259):** hashes the full input sequence, not just the prefix — degrades to LeastLoaded for prefix-sharing workloads. PR18's prefix-affinity scorer with hierarchical block hashing addresses this.
 
 ### Adding New Scorers (Weighted Routing)
 

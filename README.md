@@ -168,7 +168,7 @@ Run multiple instances with a routing policy:
 | `round-robin` (default) | Even distribution, no tuning needed | Cycles through instances in order |
 | `least-loaded` | Low tail latency under variable load | Routes to instance with minimum effective load (queue + batch + pending) |
 | `weighted` | Tunable multi-objective routing | Composable scorer pipeline — combines multiple scoring dimensions with configurable weights (see below) |
-| `prefix-affinity` | Prefix-heavy workloads (shared system prompts) | Routes matching prefixes to the same instance for KV cache reuse; falls back to least-loaded on miss |
+| `prefix-affinity` | Exact-duplicate request sequences | Routes requests with identical full token sequences to the same instance; falls back to least-loaded on miss. **Limitation:** hashes the entire input sequence, not just the prefix — requests sharing a prefix but with different suffixes produce different hashes and always miss. For real prefix-aware routing, use `weighted` with the prefix-affinity scorer (coming in PR 18). See [#259](https://github.com/inference-sim/inference-sim/issues/259). |
 | `always-busiest` | Testing only | Pathological: routes to busiest instance (for anomaly detection testing) |
 
 #### Weighted Routing: Composable Scorer Pipeline
