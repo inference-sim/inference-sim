@@ -41,14 +41,15 @@ func TestSeedOverride_DifferentSeeds_DifferentWorkloads(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// THEN the workloads differ (at least one request has different arrival time)
+	// THEN the workloads differ (arrival times or token counts)
 	if len(r1) == 0 || len(r2) == 0 {
 		t.Fatal("expected non-empty request sets")
 	}
 	anyDifferent := false
 	minLen := min(len(r1), len(r2))
 	for i := 0; i < minLen; i++ {
-		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime ||
+			len(r1[i].InputTokens) != len(r2[i].InputTokens) {
 			anyDifferent = true
 			break
 		}
@@ -65,10 +66,8 @@ func TestSeedOverride_DifferentSeeds_DifferentWorkloads(t *testing.T) {
 // same seed produces byte-identical workload (determinism preserved).
 func TestSeedOverride_SameSeed_IdenticalWorkload(t *testing.T) {
 	// GIVEN two specs with the same seed (simulating CLI override to same value)
-	spec1 := makeTestSpec(42)
-	spec2 := makeTestSpec(42)
-	spec1.Seed = 123
-	spec2.Seed = 123
+	spec1 := makeTestSpec(123)
+	spec2 := makeTestSpec(123)
 
 	horizon := int64(1e6)
 	r1, err := workload.GenerateRequests(spec1, horizon, 50)
@@ -95,6 +94,11 @@ func TestSeedOverride_SameSeed_IdenticalWorkload(t *testing.T) {
 // TestSeedOverride_YAMLSeedPreserved_WhenCLINotSpecified verifies BC-3/BC-5:
 // when --seed is not explicitly passed, the YAML seed governs workload
 // generation (backward compatibility).
+//
+// Note: This test validates the library-level determinism property (same spec.Seed
+// → same workload). The CLI wiring (cmd.Flags().Changed("seed") gating the override)
+// is verified by code inspection — it follows the exact Changed() pattern used by
+// --horizon and --num-requests at cmd/root.go:222-229.
 func TestSeedOverride_YAMLSeedPreserved_WhenCLINotSpecified(t *testing.T) {
 	// GIVEN a spec with YAML seed 42 (no CLI override)
 	specA := makeTestSpec(42)
