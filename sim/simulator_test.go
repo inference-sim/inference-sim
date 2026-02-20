@@ -708,13 +708,10 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 	}
 
 	// All wall-clock fields removed from MetricsOutput — direct comparison is now valid
-	norm1 := data1
-	norm2 := data2
-
-	if !bytes.Equal(norm1, norm2) {
+	if !bytes.Equal(data1, data2) {
 		t.Error("determinism violation: normalized JSON differs between runs")
-		lines1 := bytes.Split(norm1, []byte("\n"))
-		lines2 := bytes.Split(norm2, []byte("\n"))
+		lines1 := bytes.Split(data1, []byte("\n"))
+		lines2 := bytes.Split(data2, []byte("\n"))
 		maxLines := len(lines1)
 		if len(lines2) > maxLines {
 			maxLines = len(lines2)

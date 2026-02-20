@@ -160,12 +160,12 @@ When asked to update the macro implementation plan, directly edit the document. 
 
 ### Key Invariants to Maintain
 
-- **Request conservation**: `injected == completed + queued + running` at simulation end
+- **Request conservation**: `injected_requests == completed_requests + still_queued + still_running` at simulation end (all levels). The `injected_requests` field counts requests admitted to instances. For the full pipeline: `num_requests == injected_requests + Rejected Requests` (from anomaly counters). Conservation fields (`still_queued`, `still_running`, `injected_requests`) are included in CLI JSON output.
 - **Request lifecycle**: Requests transition queued → running → completed; requests not completed before horizon remain in current state
 - **Clock monotonicity**: Simulation clock never decreases
 - **KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
 - **Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
-- **Determinism**: Same seed must produce byte-identical output across runs
+- **Determinism**: Same seed must produce byte-identical stdout across runs. Wall-clock timing is logged to stderr via logrus (not in stdout JSON).
 
 ### Engineering Principles
 
@@ -190,7 +190,7 @@ When asked to update the macro implementation plan, directly edit the document. 
 - Before adding a field to a struct, grep for ALL construction sites (`StructName{`). Update every site or refactor to use the canonical constructor.
 
 **Output channel separation:**
-- Simulation results (metrics JSON, fitness scores, anomaly counters, trace summaries) use `fmt.Println`/`fmt.Printf` to write to **stdout**. These are the program's primary output and must be visible regardless of `--log` level.
+- Simulation results (metrics JSON, fitness scores, anomaly counters, KV cache metrics, per-SLO metrics, trace summaries) use `fmt.Println`/`fmt.Printf` to write to **stdout**. These are the program's primary output and must be visible regardless of `--log` level. Stdout is deterministic (same seed = byte-identical output); wall-clock timing goes to stderr.
 - Diagnostic messages (configuration echoes, progress markers, warnings, errors) use `logrus.*` to write to **stderr**, controlled by `--log`.
 - Rule of thumb: if a user piping output to a file would want to capture it, use `fmt`. If it is operational context for debugging, use `logrus`.
 

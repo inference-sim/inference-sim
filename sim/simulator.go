@@ -251,9 +251,17 @@ func (sim *Simulator) ProcessNextEvent() Event {
 	return ev
 }
 
-// Finalize sets SimEndedTime to min(Clock, Horizon) and logs completion.
-// Call once after the event loop ends.
+// Finalize records end-of-run state and sets SimEndedTime.
+// Call once after the event loop ends. Called by both sim.Run() (single-instance)
+// and ClusterSimulator.Run() (cluster mode via inst.Finalize()).
 func (sim *Simulator) Finalize() {
+	// Record conservation fields (BC-8, BC-9) — must happen in Finalize
+	// because cluster mode drives events via ProcessNextEvent() directly
+	// and never calls sim.Run().
+	sim.Metrics.StillQueued = sim.WaitQ.Len()
+	if sim.RunningBatch != nil {
+		sim.Metrics.StillRunning = len(sim.RunningBatch.Requests)
+	}
 	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
 	logrus.Infof("[tick %07d] Simulation ended", sim.Clock)
 }
@@ -278,11 +286,6 @@ func (sim *Simulator) Run() {
 		if sim.Clock > sim.Horizon {
 			break
 		}
-	}
-	// Record end-of-run state for conservation verification (BC-8, BC-9)
-	sim.Metrics.StillQueued = sim.WaitQ.Len()
-	if sim.RunningBatch != nil {
-		sim.Metrics.StillRunning = len(sim.RunningBatch.Requests)
 	}
 	sim.Finalize()
 }

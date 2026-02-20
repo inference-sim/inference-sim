@@ -541,6 +541,9 @@ func printPerSLOMetrics(w io.Writer, sloMetrics map[string]*cluster.SLOMetrics) 
 	sort.Strings(keys)
 	for _, cls := range keys {
 		m := sloMetrics[cls]
+		if m == nil {
+			continue
+		}
 		_, _ = fmt.Fprintf(w, "  %s:\n", cls)
 		_, _ = fmt.Fprintf(w, "    TTFT: mean=%.2f p99=%.2f (n=%d)\n", m.TTFT.Mean, m.TTFT.P99, m.TTFT.Count)
 		_, _ = fmt.Fprintf(w, "    E2E:  mean=%.2f p99=%.2f (n=%d)\n", m.E2E.Mean, m.E2E.P99, m.E2E.Count)
