@@ -39,7 +39,7 @@ go build -o simulation_worker main.go
 ./simulation_worker run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
-  --routing-cache-weight 0.6 --routing-load-weight 0.4
+  --routing-scorers "queue-depth:2,kv-utilization:2,load-balance:1"
 
 # Run with fitness evaluation and anomaly detection
 ./simulation_worker run \
@@ -87,7 +87,8 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 
 - **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig) (*Simulator, error)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution, observation methods (`QueueDepth()`, `BatchSize()`, `CurrentClock()`, `SimHorizon()`)
 - **admission.go**: `AdmissionPolicy` interface (accepts `*RouterState`), `AlwaysAdmit`, `TokenBucket`, `RejectAll`, `NewAdmissionPolicy` factory
-- **routing.go**: `RoutingPolicy` interface (accepts `*RouterState`), `RoutingSnapshot` (with `EffectiveLoad()` for canonical load calculation), `RoutingDecision` (with `Priority` hint), `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity`, `AlwaysBusiest` templates, `NewRoutingPolicy` factory
+- **routing.go**: `RoutingPolicy` interface (accepts `*RouterState`), `RoutingSnapshot` (with `EffectiveLoad()` for canonical load calculation), `RoutingDecision` (with `Priority` hint), `RoundRobin`, `LeastLoaded`, `WeightedScoring` (composable scorer pipeline), `PrefixAffinity`, `AlwaysBusiest` templates, `NewRoutingPolicy` factory
+- **routing_scorers.go**: `ScorerConfig`, scorer implementations (queue-depth, kv-utilization, load-balance), `ParseScorerConfigs`, `IsValidScorer`, `DefaultScorerConfigs`
 - **priority.go**: `PriorityPolicy` interface with `ConstantPriority`, `SLOBasedPriority`, and `InvertedSLO` templates, `NewPriorityPolicy` factory
 - **scheduler.go**: `InstanceScheduler` interface with `FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler`, and `ReversePriority` templates, `NewScheduler` factory
 - **router_state.go**: `RouterState` bridge type (Snapshots + Clock) for cluster-level policy interfaces
@@ -266,7 +267,7 @@ Each rule traces to a real bug we found and fixed. Enforced by PR workflow (self
 
 ### Current Implementation Focus
 
-Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`). Prior work: Evolutionary Policy Optimization (see `docs/plans/2026-02-11-macro-implementation-plan-v2--deprecated.md`, PRs 1-16 — 12 completed, 4 remaining):
+Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`). PR17 (scorer framework + stateless scorers) completed. Next: PR18 (prefix-affinity scorer + router-side cache). Prior work: Evolutionary Policy Optimization (see `docs/plans/2026-02-11-macro-implementation-plan-v2--deprecated.md`, PRs 1-16 — 12 completed, 4 remaining):
 - 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
 - **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
 - **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type), PR7 (PriorityPolicy with ConstantPriority + SLOBasedPriority templates, InstanceScheduler with FCFS + PriorityFCFS + SJF templates, Priority field on Request, CLI flags `--priority-policy` and `--scheduler`), PR8 (RouterState bridge type in `sim/router_state.go`, PolicyBundle YAML config in `sim/bundle.go`, `--policy-config` CLI flag, AdmissionPolicy and RoutingPolicy accept `*RouterState`, `RoutingDecision.Priority` hint field, **INTERFACE FREEZE**), PR9 (RawMetrics with Distribution + FitnessResult, anomaly detection with priority inversion + HOL blocking counters, pathological templates: reject-all, inverted-slo, always-busiest, reverse-priority, `--fitness-weights` CLI flag, **RESEARCH-READY CHECKPOINT**)
@@ -302,7 +303,20 @@ To add a new policy template (e.g., a new routing algorithm):
 
 Examples:
 - See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
-- See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback
+- See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback. **Known limitation (#259):** hashes the full input sequence, not just the prefix — degrades to LeastLoaded for prefix-sharing workloads. PR18's prefix-affinity scorer with hierarchical block hashing addresses this.
+
+### Adding New Scorers (Weighted Routing)
+
+To add a new scoring dimension for the `weighted` routing policy (e.g., predicted-latency):
+
+1. **Implement the scorer function** in `sim/routing_scorers.go` — a `scorerFunc` that takes `[]RoutingSnapshot` and returns `map[string]float64` with scores in [0,1] per instance
+2. **Register the scorer** in the same file: add to `validScorerNames` map + `newScorer` factory switch
+3. **Add behavioral tests** in `sim/routing_scorers_test.go` — monotonicity, boundary values, INV-1/INV-2 conformance
+4. Extension friction: **2 touch points in 1 file**
+
+Examples:
+- See `scoreLoadBalance` in `sim/routing_scorers.go` for a simple stateless scorer
+- See `scoreQueueDepth` for a scorer with edge case handling (uniform load)
 
 ### Extending KV Cache Tiers
 

@@ -98,10 +98,9 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 		MaxScheduledTokens: 2048,
 		BetaCoeffs:         []float64{1000, 10, 5},
 		AlphaCoeffs:        []float64{100, 50, 25},
-		RoutingPolicy:      "weighted",
-		RoutingCacheWeight: 0.6,
-		RoutingLoadWeight:  0.4,
-		TraceLevel:         "decisions",
+		RoutingPolicy:        "weighted",
+		RoutingScorerConfigs: sim.DefaultScorerConfigs(),
+		TraceLevel:           "decisions",
 		CounterfactualK:    2,
 	}
 	workload := &sim.GuideLLMConfig{

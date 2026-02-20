@@ -29,10 +29,9 @@ type DeploymentConfig struct {
 	TokenBucketCapacity   float64 // max tokens, default 10000
 	TokenBucketRefillRate float64 // tokens/second, default 1000
 
-	// Routing policy configuration (PR6)
-	RoutingPolicy      string  // "round-robin" (default), "least-loaded", "weighted", "prefix-affinity"
-	RoutingCacheWeight float64 // for weighted scoring, default 0.6
-	RoutingLoadWeight  float64 // for weighted scoring, default 0.4
+	// Routing policy configuration (PR6, evolved in PR17)
+	RoutingPolicy        string             // "round-robin" (default), "least-loaded", "weighted", "prefix-affinity"
+	RoutingScorerConfigs []sim.ScorerConfig // for weighted routing scorer pipeline (nil = use defaults)
 
 	// Priority and scheduler configuration (PR7)
 	PriorityPolicy string // "constant" (default) or "slo-based"
