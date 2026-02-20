@@ -5,17 +5,19 @@ import "testing"
 // TestNewGuideLLMConfig_Fields verifies BC-4: constructor maps all parameters to fields.
 func TestNewGuideLLMConfig_Fields(t *testing.T) {
 	// GIVEN all field values
+	// All values MUST be distinct to catch any parameter transposition in the
+	// 11-parameter positional constructor (10 ints share the same type).
 	cfg := NewGuideLLMConfig(
 		0.001, // rate
 		100,   // numRequests
 		50,    // prefixTokens
 		200,   // promptTokens
 		20,    // promptTokensStdDev
-		100,   // promptTokensMin
+		110,   // promptTokensMin  (distinct from numRequests=100)
 		400,   // promptTokensMax
 		150,   // outputTokens
 		15,    // outputTokensStdDev
-		50,    // outputTokensMin
+		55,    // outputTokensMin  (distinct from prefixTokens=50)
 		300,   // outputTokensMax
 	)
 
@@ -35,8 +37,8 @@ func TestNewGuideLLMConfig_Fields(t *testing.T) {
 	if cfg.PromptTokensStdDev != 20 {
 		t.Errorf("PromptTokensStdDev = %d, want 20", cfg.PromptTokensStdDev)
 	}
-	if cfg.PromptTokensMin != 100 {
-		t.Errorf("PromptTokensMin = %d, want 100", cfg.PromptTokensMin)
+	if cfg.PromptTokensMin != 110 {
+		t.Errorf("PromptTokensMin = %d, want 110", cfg.PromptTokensMin)
 	}
 	if cfg.PromptTokensMax != 400 {
 		t.Errorf("PromptTokensMax = %d, want 400", cfg.PromptTokensMax)
@@ -47,8 +49,8 @@ func TestNewGuideLLMConfig_Fields(t *testing.T) {
 	if cfg.OutputTokensStdDev != 15 {
 		t.Errorf("OutputTokensStdDev = %d, want 15", cfg.OutputTokensStdDev)
 	}
-	if cfg.OutputTokensMin != 50 {
-		t.Errorf("OutputTokensMin = %d, want 50", cfg.OutputTokensMin)
+	if cfg.OutputTokensMin != 55 {
+		t.Errorf("OutputTokensMin = %d, want 55", cfg.OutputTokensMin)
 	}
 	if cfg.OutputTokensMax != 300 {
 		t.Errorf("OutputTokensMax = %d, want 300", cfg.OutputTokensMax)

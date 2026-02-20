@@ -28,6 +28,9 @@ func (s RoutingSnapshot) EffectiveLoad() int {
 // All numeric fields are zero-valued. Used for initial snapshot creation;
 // field-by-field refresh via CachedSnapshotProvider.Snapshot() is a separate concern.
 func NewRoutingSnapshot(id string) RoutingSnapshot {
+	if id == "" {
+		panic("NewRoutingSnapshot: id must not be empty")
+	}
 	return RoutingSnapshot{ID: id}
 }
 
@@ -49,6 +52,9 @@ type RoutingDecision struct {
 // Scores is nil and Priority is 0.0 (defer to instance-level PriorityPolicy).
 // This is the canonical constructor for policies that do not produce per-instance scores.
 func NewRoutingDecision(target string, reason string) RoutingDecision {
+	if target == "" {
+		panic("NewRoutingDecision: target must not be empty")
+	}
 	return RoutingDecision{
 		TargetInstance: target,
 		Reason:         reason,
@@ -59,6 +65,9 @@ func NewRoutingDecision(target string, reason string) RoutingDecision {
 // Priority is 0.0 (defer to instance-level PriorityPolicy).
 // Used by scoring-based routing policies (e.g., WeightedScoring).
 func NewRoutingDecisionWithScores(target string, reason string, scores map[string]float64) RoutingDecision {
+	if target == "" {
+		panic("NewRoutingDecisionWithScores: target must not be empty")
+	}
 	return RoutingDecision{
 		TargetInstance: target,
 		Reason:         reason,
