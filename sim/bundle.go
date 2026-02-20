@@ -127,11 +127,16 @@ func (b *PolicyBundle) Validate() error {
 		return err
 	}
 	// Validate scorer configs if present
+	scorerSeen := make(map[string]bool, len(b.Routing.Scorers))
 	for i, sc := range b.Routing.Scorers {
 		if !IsValidScorer(sc.Name) {
 			return fmt.Errorf("routing scorer[%d]: unknown scorer %q; valid: %s",
 				i, sc.Name, strings.Join(ValidScorerNames(), ", "))
 		}
+		if scorerSeen[sc.Name] {
+			return fmt.Errorf("routing scorer[%d]: duplicate scorer %q; each scorer may appear at most once", i, sc.Name)
+		}
+		scorerSeen[sc.Name] = true
 		if sc.Weight <= 0 || math.IsNaN(sc.Weight) || math.IsInf(sc.Weight, 0) {
 			return fmt.Errorf("routing scorer[%d] %q: weight must be a finite positive number, got %v",
 				i, sc.Name, sc.Weight)

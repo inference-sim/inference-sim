@@ -273,6 +273,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Load policy bundle if specified (BC-6: CLI flags override YAML values)
+		var bundleScorerConfigs []sim.ScorerConfig // captured for use in weighted routing setup
 		if policyConfigPath != "" {
 			bundle, err := sim.LoadPolicyBundle(policyConfigPath)
 			if err != nil {
@@ -296,15 +297,8 @@ var runCmd = &cobra.Command{
 			if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
 				routingPolicy = bundle.Routing.Policy
 			}
-			// Scorer configs from YAML bundle override CLI default (but CLI --routing-scorers wins)
-			if len(bundle.Routing.Scorers) > 0 && !cmd.Flags().Changed("routing-scorers") {
-				// Convert to CLI-equivalent string for consistency with downstream parsing
-				parts := make([]string, len(bundle.Routing.Scorers))
-				for i, sc := range bundle.Routing.Scorers {
-					parts[i] = fmt.Sprintf("%s:%g", sc.Name, sc.Weight)
-				}
-				routingScorers = strings.Join(parts, ",")
-			}
+			// Capture scorer configs from YAML bundle (already validated; CLI --routing-scorers overrides)
+			bundleScorerConfigs = bundle.Routing.Scorers
 			if bundle.Priority.Policy != "" && !cmd.Flags().Changed("priority-policy") {
 				priorityPolicy = bundle.Priority.Policy
 			}
@@ -366,6 +360,9 @@ var runCmd = &cobra.Command{
 				if err != nil {
 					logrus.Fatalf("Invalid --routing-scorers: %v", err)
 				}
+			} else if len(bundleScorerConfigs) > 0 {
+				// Use YAML bundle scorers directly (no string round-trip)
+				parsedScorerConfigs = bundleScorerConfigs
 			}
 			// Log active scorer configuration
 			activeScorerConfigs := parsedScorerConfigs

@@ -92,6 +92,12 @@ func TestParseScorerConfigs_WhitespaceHandling(t *testing.T) {
 	assert.Equal(t, 2.0, configs[0].Weight)
 }
 
+func TestParseScorerConfigs_DuplicateScorer_Rejected(t *testing.T) {
+	_, err := ParseScorerConfigs("queue-depth:2,queue-depth:3")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate scorer")
+}
+
 func TestParseScorerConfigs_SingleScorer(t *testing.T) {
 	configs, err := ParseScorerConfigs("load-balance:1")
 	require.NoError(t, err)

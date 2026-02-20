@@ -48,6 +48,7 @@ func ParseScorerConfigs(s string) ([]ScorerConfig, error) {
 	}
 	parts := strings.Split(s, ",")
 	configs := make([]ScorerConfig, 0, len(parts))
+	seen := make(map[string]bool, len(parts))
 	for _, part := range parts {
 		kv := strings.SplitN(strings.TrimSpace(part), ":", 2)
 		if len(kv) != 2 {
@@ -57,6 +58,10 @@ func ParseScorerConfigs(s string) ([]ScorerConfig, error) {
 		if !IsValidScorer(name) {
 			return nil, fmt.Errorf("unknown scorer %q; valid: %s", name, strings.Join(ValidScorerNames(), ", "))
 		}
+		if seen[name] {
+			return nil, fmt.Errorf("duplicate scorer %q; each scorer may appear at most once", name)
+		}
+		seen[name] = true
 		weight, err := strconv.ParseFloat(strings.TrimSpace(kv[1]), 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid weight for scorer %q: %w", name, err)
