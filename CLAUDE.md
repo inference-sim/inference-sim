@@ -46,7 +46,9 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 - **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig) (*Simulator, error)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution, observation methods (`QueueDepth()`, `BatchSize()`, `CurrentClock()`, `SimHorizon()`)
 - **admission.go**: `AdmissionPolicy` interface (accepts `*RouterState`), `AlwaysAdmit`, `TokenBucket`, `RejectAll`, `NewAdmissionPolicy` factory
 - **routing.go**: `RoutingPolicy` interface (accepts `*RouterState`), `RoutingSnapshot` (with `EffectiveLoad()` for canonical load calculation), `RoutingDecision` (with `Priority` hint), `RoundRobin`, `LeastLoaded`, `WeightedScoring` (composable scorer pipeline), `PrefixAffinity`, `AlwaysBusiest` templates, `NewRoutingPolicy` factory
-- **routing_scorers.go**: `ScorerConfig`, scorer implementations (queue-depth, kv-utilization, load-balance), `ParseScorerConfigs`, `IsValidScorer`, `DefaultScorerConfigs`
+- **routing_scorers.go**: `ScorerConfig`, scorer implementations (queue-depth, kv-utilization, load-balance), `ParseScorerConfigs`, `IsValidScorer`, `DefaultScorerConfigs`, `newScorerWithObserver` factory
+- **routing_prefix_scorer.go**: Prefix-affinity scorer with router-side cache — proportional prefix match scoring via `PrefixCacheIndex`, observer hook for post-routing state updates
+- **prefix_cache_index.go**: `PrefixCacheIndex` — per-instance LRU cache of hierarchical block hashes for router-side prefix matching
 - **priority.go**: `PriorityPolicy` interface with `ConstantPriority`, `SLOBasedPriority`, and `InvertedSLO` templates, `NewPriorityPolicy` factory
 - **scheduler.go**: `InstanceScheduler` interface with `FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler`, and `ReversePriority` templates, `NewScheduler` factory
 - **router_state.go**: `RouterState` bridge type (Snapshots + Clock) for cluster-level policy interfaces
@@ -224,9 +226,32 @@ Each rule traces to a real bug we found and fixed. Enforced by PR workflow (self
 11. **Guard division in runtime computation**: Any division where the denominator derives from runtime state (batch size, block count, request count, bandwidth) must guard against zero. CLI validation (rule 3) catches input zeros at the boundary; this rule catches intermediate zeros that arise during simulation (e.g., `utilization = usedBlocks / totalBlocks` when no blocks are configured, `avgLatency = sum / count` when count is zero). Use explicit guards or documented invariants proving the denominator is non-zero.
 
 
+### Current Implementation Focus
+
+Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`). PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache) completed. Default weighted routing profile: `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity).
+
 ### Extension Recipes
 
 Step-by-step guides for adding policies, scorers, KV tiers, trace records, and per-request metrics: see `docs/extension-recipes.md`.
+
+### Adding New Scorers (Weighted Routing)
+
+To add a new scoring dimension for the `weighted` routing policy (e.g., predicted-latency):
+
+1. **Implement the scorer function** in `sim/routing_scorers.go` (stateless) or a new file (stateful) — a `scorerFunc` that takes `(*Request, []RoutingSnapshot)` and returns `map[string]float64` with scores in [0,1] per instance. Stateful scorers also return an `observerFunc` called after each routing decision.
+2. **Register the scorer** in `sim/routing_scorers.go`: add to `validScorerNames` map + `newScorerWithObserver` factory switch
+3. **Add behavioral tests** — monotonicity, boundary values, INV-1/INV-2 conformance
+4. Extension friction: **2 touch points** (implementation + registration)
+
+**Stateful scorers and observers:**
+- Stateful scorers (like prefix-affinity) return an `observerFunc` alongside the `scorerFunc`. The `observerFunc` signature is `func(req *Request, targetInstance string)`.
+- The observer is called by `WeightedScoring.Route()` after argmax selects the target instance but before returning the `RoutingDecision`. This lets the scorer update internal state (e.g., recording which blocks were routed to which instance).
+- The scorer and observer share state via closure. See `newPrefixAffinityScorer` in `sim/routing_prefix_scorer.go`: both the scorer and observer close over the same `PrefixCacheIndex`, so the observer's `RecordBlocks` calls are visible to subsequent scorer invocations.
+
+Examples:
+- See `scoreLoadBalance` in `sim/routing_scorers.go` for a simple stateless scorer
+- See `scoreQueueDepth` for a scorer with edge case handling (uniform load)
+- See `newPrefixAffinityScorer` in `sim/routing_prefix_scorer.go` for a stateful scorer with observer and router-side cache
 
 ### Code Style
 
@@ -257,7 +282,9 @@ inference-sim/
 │   ├── simulator.go           # SimConfig struct, NewSimulator(SimConfig), event loop, batch formation, step execution
 │   ├── admission.go           # AdmissionPolicy interface, AlwaysAdmit, TokenBucket, NewAdmissionPolicy factory
 │   ├── routing.go             # RoutingPolicy interface, RoutingSnapshot, RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity
-│   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs
+│   ├── routing_scorers.go     # ScorerConfig, scorerFunc, stateless scorers, ParseScorerConfigs, newScorerWithObserver
+│   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer (proportional prefix matching)
+│   ├── prefix_cache_index.go  # PrefixCacheIndex: per-instance LRU of hierarchical block hashes
 │   ├── priority.go            # PriorityPolicy interface, ConstantPriority, SLOBasedPriority, NewPriorityPolicy factory
 │   ├── scheduler.go           # InstanceScheduler interface, FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, NewScheduler factory
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies

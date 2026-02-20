@@ -168,7 +168,7 @@ Run multiple instances with a routing policy:
 | `round-robin` (default) | Even distribution, no tuning needed | Cycles through instances in order |
 | `least-loaded` | Low tail latency under variable load | Routes to instance with minimum effective load (queue + batch + pending) |
 | `weighted` | Tunable multi-objective routing | Composable scorer pipeline — combines multiple scoring dimensions with configurable weights (see below) |
-| `prefix-affinity` | Exact-duplicate request sequences | Routes requests with identical full token sequences to the same instance; falls back to least-loaded on miss. **Limitation:** hashes the entire input sequence, not just the prefix — requests sharing a prefix but with different suffixes produce different hashes and always miss. For real prefix-aware routing, use `weighted` with the prefix-affinity scorer (coming in PR 18). See [#259](https://github.com/inference-sim/inference-sim/issues/259). |
+| `prefix-affinity` | Exact-duplicate request sequences | Routes requests with identical full token sequences to the same instance; falls back to least-loaded on miss. **Limitation:** hashes the entire input sequence, not just the prefix — for real prefix-aware routing, use `weighted` with the `prefix-affinity` scorer (see below). |
 | `always-busiest` | Testing only | Pathological: routes to busiest instance (for anomaly detection testing) |
 
 #### Weighted Routing: Composable Scorer Pipeline
@@ -183,6 +183,7 @@ score(instance) = Σ weight_i × scorer_i(instance)    →    route to argmax
 
 | Scorer | Formula | What It Measures | llm-d Equivalent |
 |--------|---------|------------------|-------------------|
+| `prefix-affinity` | Proportional block match via router-side cache | Prefix cache locality (stateful) | `prefix-cache-scorer` |
 | `queue-depth` | Min-max normalization of effective load | Queue pressure (immediate signal) | `queue-scorer` |
 | `kv-utilization` | `1 − KVUtilization` | Memory headroom (lagging signal) | `kv-cache-utilization-scorer` |
 | `load-balance` | `1 / (1 + effectiveLoad)` | Load balance preserving absolute differences | — |
@@ -191,19 +192,21 @@ score(instance) = Σ weight_i × scorer_i(instance)    →    route to argmax
 
 ```bash
 # Via CLI (comma-separated name:weight pairs)
---routing-scorers "queue-depth:2,kv-utilization:2,load-balance:1"
+--routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
 
 # Via YAML (--policy-config weighted-routing.yaml)
 routing:
   policy: weighted
   scorers:
+    - name: prefix-affinity
+      weight: 3.0
     - name: queue-depth
       weight: 2.0
     - name: kv-utilization
       weight: 2.0
 ```
 
-Weights are relative — only ratios matter. `[3,2,2]` behaves identically to `[6,4,4]`. If `--routing-scorers` is omitted, the default profile is `queue-depth:2,kv-utilization:2,load-balance:1`.
+Weights are relative — only ratios matter. `[3,2,2]` behaves identically to `[6,4,4]`. If `--routing-scorers` is omitted, the default profile is `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity).
 
 #### Why Scorer Choice Matters: A Concrete Example
 
@@ -687,7 +690,7 @@ inference-sim/
 |------|---------|-------------|
 | `--num-instances` | 1 | Number of instances in the cluster |
 | `--routing-policy` | round-robin | Routing: `round-robin`, `least-loaded`, `weighted`, `prefix-affinity`, `always-busiest` |
-| `--routing-scorers` | (defaults) | Scorer weights for weighted routing. Valid scorers: `queue-depth`, `kv-utilization`, `load-balance`. Format: `name:weight,...` |
+| `--routing-scorers` | (defaults) | Scorer weights for weighted routing. Valid scorers: `prefix-affinity`, `queue-depth`, `kv-utilization`, `load-balance`. Format: `name:weight,...` |
 | `--admission-policy` | always-admit | Admission: `always-admit`, `token-bucket`, `reject-all` |
 | `--token-bucket-capacity` | 10000 | Token bucket max tokens |
 | `--token-bucket-refill-rate` | 1000 | Token bucket refill rate (tokens/sec) |
