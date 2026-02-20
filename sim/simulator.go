@@ -69,6 +69,39 @@ type GuideLLMConfig struct {
 	OutputTokensMax    int     // Max Output Token Count
 }
 
+// NewGuideLLMConfig creates a GuideLLMConfig with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+// Parameter order matches struct field order: Rate, NumRequests, PrefixTokens,
+// PromptTokens, PromptTokensStdDev, PromptTokensMin, PromptTokensMax,
+// OutputTokens, OutputTokensStdDev, OutputTokensMin, OutputTokensMax.
+func NewGuideLLMConfig(
+	rate float64,
+	numRequests int,
+	prefixTokens int,
+	promptTokens int,
+	promptTokensStdDev int,
+	promptTokensMin int,
+	promptTokensMax int,
+	outputTokens int,
+	outputTokensStdDev int,
+	outputTokensMin int,
+	outputTokensMax int,
+) *GuideLLMConfig {
+	return &GuideLLMConfig{
+		Rate:               rate,
+		NumRequests:        numRequests,
+		PrefixTokens:       prefixTokens,
+		PromptTokens:       promptTokens,
+		PromptTokensStdDev: promptTokensStdDev,
+		PromptTokensMin:    promptTokensMin,
+		PromptTokensMax:    promptTokensMax,
+		OutputTokens:       outputTokens,
+		OutputTokensStdDev: outputTokensStdDev,
+		OutputTokensMin:    outputTokensMin,
+		OutputTokensMax:    outputTokensMax,
+	}
+}
+
 // SimConfig holds all configuration for creating a Simulator.
 type SimConfig struct {
 	Horizon                   int64
