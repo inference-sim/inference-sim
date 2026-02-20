@@ -38,6 +38,27 @@ type RoutingDecision struct {
 	Priority float64
 }
 
+// NewRoutingDecision creates a RoutingDecision with the given target and reason.
+// Scores is nil and Priority is 0.0 (defer to instance-level PriorityPolicy).
+// This is the canonical constructor for policies that do not produce per-instance scores.
+func NewRoutingDecision(target string, reason string) RoutingDecision {
+	return RoutingDecision{
+		TargetInstance: target,
+		Reason:         reason,
+	}
+}
+
+// NewRoutingDecisionWithScores creates a RoutingDecision with target, reason, and per-instance scores.
+// Priority is 0.0 (defer to instance-level PriorityPolicy).
+// Used by scoring-based routing policies (e.g., WeightedScoring).
+func NewRoutingDecisionWithScores(target string, reason string, scores map[string]float64) RoutingDecision {
+	return RoutingDecision{
+		TargetInstance: target,
+		Reason:         reason,
+		Scores:         scores,
+	}
+}
+
 // RoutingPolicy decides which instance should handle a request.
 // Implementations receive request and cluster-wide state via *RouterState.
 type RoutingPolicy interface {
