@@ -521,10 +521,10 @@ func printKVCacheMetrics(w io.Writer, preemptionRate, cacheHitRate, kvThrashingR
 	if preemptionRate == 0 && cacheHitRate == 0 && kvThrashingRate == 0 {
 		return
 	}
-	fmt.Fprintln(w, "=== KV Cache Metrics ===")
-	fmt.Fprintf(w, "Preemption Rate: %.4f\n", preemptionRate)
-	fmt.Fprintf(w, "Cache Hit Rate: %.4f\n", cacheHitRate)
-	fmt.Fprintf(w, "KV Thrashing Rate: %.4f\n", kvThrashingRate)
+	_, _ = fmt.Fprintln(w, "=== KV Cache Metrics ===")
+	_, _ = fmt.Fprintf(w, "Preemption Rate: %.4f\n", preemptionRate)
+	_, _ = fmt.Fprintf(w, "Cache Hit Rate: %.4f\n", cacheHitRate)
+	_, _ = fmt.Fprintf(w, "KV Thrashing Rate: %.4f\n", kvThrashingRate)
 }
 
 // printPerSLOMetrics prints per-SLO-class latency distributions when multiple classes exist.
@@ -532,7 +532,7 @@ func printPerSLOMetrics(w io.Writer, sloMetrics map[string]*cluster.SLOMetrics) 
 	if len(sloMetrics) <= 1 {
 		return
 	}
-	fmt.Fprintln(w, "=== Per-SLO Metrics ===")
+	_, _ = fmt.Fprintln(w, "=== Per-SLO Metrics ===")
 	// Sort keys for deterministic output (antipattern rule 2)
 	keys := make([]string, 0, len(sloMetrics))
 	for k := range sloMetrics {
@@ -541,9 +541,9 @@ func printPerSLOMetrics(w io.Writer, sloMetrics map[string]*cluster.SLOMetrics) 
 	sort.Strings(keys)
 	for _, cls := range keys {
 		m := sloMetrics[cls]
-		fmt.Fprintf(w, "  %s:\n", cls)
-		fmt.Fprintf(w, "    TTFT: mean=%.2f p99=%.2f (n=%d)\n", m.TTFT.Mean, m.TTFT.P99, m.TTFT.Count)
-		fmt.Fprintf(w, "    E2E:  mean=%.2f p99=%.2f (n=%d)\n", m.E2E.Mean, m.E2E.P99, m.E2E.Count)
+		_, _ = fmt.Fprintf(w, "  %s:\n", cls)
+		_, _ = fmt.Fprintf(w, "    TTFT: mean=%.2f p99=%.2f (n=%d)\n", m.TTFT.Mean, m.TTFT.P99, m.TTFT.Count)
+		_, _ = fmt.Fprintf(w, "    E2E:  mean=%.2f p99=%.2f (n=%d)\n", m.E2E.Mean, m.E2E.P99, m.E2E.Count)
 	}
 }
 

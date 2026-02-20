@@ -279,6 +279,11 @@ func (sim *Simulator) Run() {
 			break
 		}
 	}
+	// Record end-of-run state for conservation verification (BC-8, BC-9)
+	sim.Metrics.StillQueued = sim.WaitQ.Len()
+	if sim.RunningBatch != nil {
+		sim.Metrics.StillRunning = len(sim.RunningBatch.Requests)
+	}
 	sim.Finalize()
 }
 
