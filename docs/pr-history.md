@@ -15,6 +15,7 @@
 ## Micro-Level Implementation Plans
 
 - `docs/plans/pr10-workload-generator-plan.md`: PR10 micro-level implementation plan (workload generator)
+- `docs/plans/fix-silent-correctness-bugs-plan.md`: Fix silent correctness bugs (#285, #281, #278)
 
 ## Completed PRs
 
@@ -34,6 +35,7 @@
 - **PR13**: DecisionTrace, counterfactual analysis, TraceSummary, EvaluationResult, `--trace-level --counterfactual-k --summarize-trace`
 - **PR17**: Composable scorer framework for weighted routing with stateless scorers
 - **Hardening**: 6 phases (structural helpers, correctness fixes, metric fixes, invariant tests, input validation, modularity)
+- **Bug fix**: Silent correctness bugs — `--total-kv-blocks` CLI override (#285), `--snapshot-refresh-interval` validation (#281), multi-client workload starvation (#278)
 
 ### Remaining
 

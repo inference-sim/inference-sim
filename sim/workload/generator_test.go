@@ -96,6 +96,47 @@ func TestGenerateRequests_Deterministic_SameSeedSameOutput(t *testing.T) {
 	}
 }
 
+func TestGenerateRequests_Deterministic_WithMaxRequests(t *testing.T) {
+	// Determinism invariant: same seed + maxRequests > 0 = identical output.
+	// This exercises the generate-all-then-truncate path.
+	spec := &WorkloadSpec{
+		Version: "1", Seed: 42, Category: "language", AggregateRate: 100.0,
+		Clients: []ClientSpec{
+			{ID: "a", TenantID: "a", RateFraction: 0.7,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
+			{ID: "b", TenantID: "b", RateFraction: 0.3,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
+		},
+	}
+	maxReqs := int64(150)
+	r1, err := GenerateRequests(spec, 100e6, maxReqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := GenerateRequests(spec, 100e6, maxReqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(r1) != len(r2) {
+		t.Fatalf("different counts: %d vs %d", len(r1), len(r2))
+	}
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("request %d: arrival %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+			break
+		}
+		if r1[i].TenantID != r2[i].TenantID {
+			t.Errorf("request %d: tenant %q vs %q", i, r1[i].TenantID, r2[i].TenantID)
+			break
+		}
+	}
+}
+
 func TestGenerateRequests_TwoClients_RateProportional(t *testing.T) {
 	// BC-2: client rate fractions produce proportional request counts
 	spec := &WorkloadSpec{

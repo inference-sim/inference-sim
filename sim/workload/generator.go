@@ -2,6 +2,7 @@ package workload
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 
@@ -40,6 +41,16 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	// Generate shared prefix tokens per prefix group
 	prefixes := generatePrefixTokens(spec.Clients, workloadRNG)
 
+	// Per-client generation cap: prevent OOM when horizon >> maxRequests.
+	// Each client generates at most 2x maxRequests, then post-merge truncation finalizes.
+	perClientCap := int64(0)
+	if maxRequests > 0 {
+		perClientCap = 2 * maxRequests
+		if perClientCap < maxRequests { // int64 overflow guard
+			perClientCap = math.MaxInt64
+		}
+	}
+
 	// Per-client generation
 	var allRequests []*sim.Request
 	for i := range spec.Clients {
@@ -73,9 +84,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		// Handle reasoning/multi-turn clients: generate multiple sessions
 		// based on the arrival process, each session producing MaxRounds requests.
 		if client.Reasoning != nil && client.Reasoning.MultiTurn != nil {
+			var clientReqCount int64
 			currentTime := int64(0)
 			for currentTime < horizon {
-				if maxRequests > 0 && int64(len(allRequests)) >= maxRequests {
+				if perClientCap > 0 && clientReqCount >= perClientCap {
 					break
 				}
 				iat := arrivalSampler.SampleIAT(clientRNG)
@@ -92,16 +104,8 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				if err != nil {
 					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
 				}
-				// Apply count cap
-				if maxRequests > 0 && int64(len(allRequests)+len(reasoningReqs)) > maxRequests {
-					remaining := maxRequests - int64(len(allRequests))
-					if remaining > 0 {
-						reasoningReqs = reasoningReqs[:remaining]
-					} else {
-						reasoningReqs = nil
-					}
-				}
 				allRequests = append(allRequests, reasoningReqs...)
+				clientReqCount += int64(len(reasoningReqs))
 				// Note: we do NOT skip ahead by session duration. Sessions overlap
 				// in time — the arrival process controls inter-session spacing.
 				// This models concurrent chat users starting sessions independently.
@@ -110,10 +114,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		}
 
 		// Generate requests for this client
+		var clientReqCount int64
 		currentTime := int64(0)
 		for currentTime < horizon {
-			// Count guard: stop if we've reached the global cap
-			if maxRequests > 0 && int64(len(allRequests)) >= maxRequests {
+			if perClientCap > 0 && clientReqCount >= perClientCap {
 				break
 			}
 
@@ -170,6 +174,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				VideoTokenCount:  videoCount,
 			}
 			allRequests = append(allRequests, req)
+			clientReqCount++
 		}
 	}
 
@@ -177,6 +182,11 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	sort.SliceStable(allRequests, func(i, j int) bool {
 		return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
 	})
+
+	// Truncate to maxRequests after merge-sort (preserves client proportionality)
+	if maxRequests > 0 && int64(len(allRequests)) > maxRequests {
+		allRequests = allRequests[:maxRequests]
+	}
 
 	// Assign sequential IDs
 	for i, req := range allRequests {

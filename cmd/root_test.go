@@ -77,8 +77,10 @@ func TestRunCmd_KVBlockFlags_DefaultsArePositive(t *testing.T) {
 }
 
 func TestRunCmd_SnapshotRefreshInterval_FlagRegistered(t *testing.T) {
-	// BC-5: --snapshot-refresh-interval must reject negative values.
-	// This test verifies the flag exists and its default is valid (non-negative).
+	// Verify --snapshot-refresh-interval flag exists with a valid (non-negative) default.
+	// Note: BC-5 (negative value rejection via logrus.Fatalf) is validated by code
+	// inspection — the validation follows the same pattern as --kv-transfer-base-latency.
+	// Testing logrus.Fatalf requires subprocess execution, which is out of scope here.
 	flag := runCmd.Flags().Lookup("snapshot-refresh-interval")
 	assert.NotNil(t, flag, "snapshot-refresh-interval flag must be registered")
 
