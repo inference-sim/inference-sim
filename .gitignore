@@ -36,7 +36,6 @@ __pycache__/*
 
 # data files
 *.json
-!config/benchmark_config.json
 data/
 *.txt
 

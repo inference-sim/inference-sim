@@ -109,12 +109,13 @@ type Simulator struct {
 	TracesWorkloadFilePath string
 	ModelConfig            ModelConfig
 	HWConfig               HardwareCalib
+	MFUDatabase            *MFUDatabase
 	randomNumberGenerator  *rand.Rand // random number generator for request tokens
 }
 
 func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeTokens int64, maxRunningReqs int64, maxScheduledTokens int64, longPrefillTokenThreshold int64,
 	betaCoeffs []float64, alphaCoeffs []float64, guideLLMConfig *GuideLLMConfig, modelConfig ModelConfig, hwConfig HardwareCalib, model string, GPU string,
-	tp int, roofline bool, tracesWorkloadFilePath string) *Simulator {
+	tp int, roofline bool, tracesWorkloadFilePath string, mfuDB *MFUDatabase) *Simulator {
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   horizon,
@@ -136,6 +137,7 @@ func NewSimulator(horizon int64, seed int64, totalKVBlocks int64, blockSizeToken
 		GuideLLMConfig:            guideLLMConfig,
 		ModelConfig:               modelConfig,
 		HWConfig:                  hwConfig,
+		MFUDatabase:               mfuDB,
 		Model:                     model,
 		GPU:                       GPU,
 		TP:                        tp,
@@ -241,7 +243,14 @@ func (sim *Simulator) getStepTimeRoofline() int64 {
 			})
 		}
 	}
-	stepTime := rooflineStepTime(sim.GPU, sim.ModelConfig, sim.HWConfig, stepConfig, sim.TP)
+
+	// Use MFU-based roofline if database is available, otherwise use calibrated approach
+	var stepTime int64
+	if sim.MFUDatabase != nil {
+		stepTime = rooflineStepTimeV2(sim.GPU, sim.ModelConfig, sim.HWConfig, stepConfig, sim.TP, sim.MFUDatabase)
+	} else {
+		stepTime = rooflineStepTime(sim.GPU, sim.ModelConfig, sim.HWConfig, stepConfig, sim.TP)
+	}
 	return stepTime
 }
 
