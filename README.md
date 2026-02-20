@@ -690,7 +690,7 @@ inference-sim/
 | `--hardware` | (auto-detected) | GPU type (`H100`, `A100-80`). Auto-detected from `defaults.yaml` if omitted |
 | `--tp` | (auto-detected) | Tensor parallelism degree. Auto-detected from `defaults.yaml` if omitted |
 | `--vllm-version` | (auto-detected) | vLLM version string. Auto-detected from `defaults.yaml` if omitted |
-| `--horizon` | max int64 | Simulation horizon in ticks (microseconds) |
+| `--horizon` | max int64 | Simulation horizon in ticks (microseconds). When using --workload-spec, the spec's horizon value is used unless this flag is explicitly set. |
 | `--seed` | 42 | RNG seed for deterministic simulation |
 | `--results-path` | (none) | Save JSON results to file |
 | `--log` | warn | Log level: trace, debug, info, warn, error, fatal, panic |
@@ -706,7 +706,7 @@ inference-sim/
 | `--workload-spec` | (none) | YAML workload spec file (overrides `--workload`). See `examples/servegen-language.yaml` |
 | `--workload-traces-filepath` | (none) | CSV trace file (required when `--workload traces`) |
 | `--rate` | 1.0 | Requests per second (for distribution workloads) |
-| `--num-requests` | 100 | Number of requests to generate |
+| `--num-requests` | 100 | Number of requests to generate. When using --workload-spec, the spec's num_requests value is used unless this flag is explicitly set. |
 | `--prompt-tokens` | 512 | Mean input token count |
 | `--prompt-tokens-stdev` | 256 | Input token count standard deviation |
 | `--prefix-tokens` | 0 | Shared prefix token count |
@@ -732,6 +732,7 @@ inference-sim/
 | `--admission-latency` | 0 | Admission processing latency in microseconds |
 | `--routing-latency` | 0 | Routing processing latency in microseconds |
 | `--policy-config` | (none) | YAML policy bundle file. See `examples/policy-config.yaml` |
+| `--snapshot-refresh-interval` | 0 | Snapshot refresh interval for KV utilization in microseconds (0 = immediate refresh every call). Controls staleness of KV-related routing signals. |
 
 ### Observability
 
@@ -746,7 +747,7 @@ inference-sim/
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--total-kv-blocks` | 1000000 | Total KV cache blocks |
+| `--total-kv-blocks` | 1000000 | Total KV cache blocks. When a model match exists in defaults.yaml, the model-specific value is used unless this flag is explicitly set. |
 | `--max-num-running-reqs` | 256 | Max concurrent requests in running batch |
 | `--max-num-scheduled-tokens` | 2048 | Max new tokens per step across all running requests |
 | `--block-size-in-tokens` | 16 | Tokens per KV cache block |
