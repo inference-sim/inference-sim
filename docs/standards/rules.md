@@ -15,6 +15,8 @@ Every error path must either return an error, panic with context, or increment a
 
 **Evidence:** Issue #183 — a KV allocation failure silently dropped a request. The golden test perpetuated the bug for months because it captured "499 completions" as the expected value.
 
+**Additional evidence:** H14 hypothesis experiment — HOL blocking detector silently returns 0 instead of flagging the most extreme imbalance case when `always-busiest` routes all traffic to one instance (bug #291).
+
 **Check:** For every `continue` or early `return` in new code, verify the error is propagated, counted, or documented as safe.
 
 **Enforced:** PR template, micro-plan Phase 8, self-audit dimension 9.
@@ -62,6 +64,8 @@ Before adding a field to a struct, find every place that struct is constructed a
 Any loop that allocates resources (blocks, slots, counters) must handle mid-loop failure by rolling back all mutations from previous iterations. A partial allocation that returns `false` without cleanup violates conservation invariants.
 
 **Evidence:** KV block allocation (`AllocateKVBlocks`) had a mid-loop failure path that didn't roll back previously allocated blocks, violating KV conservation (INV-4).
+
+**Additional evidence:** H12 hypothesis experiment — preemption loop in `sim/simulator.go:383` accesses `RunningBatch.Requests[len-1]` without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).
 
 **Check:** For every loop that mutates state, verify the failure path rolls back all mutations.
 
