@@ -102,11 +102,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					}
 				}
 				allRequests = append(allRequests, reasoningReqs...)
-				// Skip ahead past the session duration to start next session
-				if client.Reasoning.MultiTurn != nil {
-					mt := client.Reasoning.MultiTurn
-					currentTime += int64(mt.MaxRounds) * mt.ThinkTimeUs
-				}
+				// Note: we do NOT skip ahead by session duration. Sessions overlap
+				// in time — the arrival process controls inter-session spacing.
+				// This models concurrent chat users starting sessions independently.
 			}
 			continue
 		}

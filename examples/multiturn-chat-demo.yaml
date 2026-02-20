@@ -1,29 +1,26 @@
 # BLIS Multi-Turn Chat Demo — Prefix-Affinity Routing
 #
-# This workload simulates multi-turn chat sessions where each round
-# accumulates the full conversation history as prefix. Rounds within
-# the same session share an increasing number of prefix tokens, which
-# the prefix-affinity scorer detects and routes to the same instance.
+# Simulates many concurrent multi-turn chat sessions. Each session has 5
+# rounds with context accumulation (each round prepends all prior context).
 #
-# With context_growth: "accumulate", round N's input is:
-#   [round 0 input + round 0 output + round 1 input + ... + round N input]
-#
-# This creates long, growing shared prefixes within each session —
-# exactly the pattern where prefix-affinity routing excels.
+# KEY INSIGHT: With prefix-affinity routing, sessions stick to one instance,
+# so the KV cache from prior rounds is reused — fewer prefill tokens → lower
+# TTFT for subsequent rounds. With load-only routing, rounds scatter across
+# instances, causing full prefill every round.
 #
 # ============================================================================
-# TRY IT: Compare routing strategies for multi-turn chat
+# TRY IT
 # ============================================================================
 #
-#   # Prefix-affinity dominant (routes same-session requests together)
+#   # Prefix-affinity dominant (sessions cluster on instances)
 #   ./simulation_worker run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
-#     --routing-scorers "prefix-affinity:5,queue-depth:1" \
+#     --routing-scorers "prefix-affinity:3,queue-depth:2" \
 #     --workload-spec examples/multiturn-chat-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
-#   # Load-only (ignores session affinity)
+#   # Load-only (rounds scatter across instances — no cache reuse)
 #   ./simulation_worker run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
@@ -31,15 +28,14 @@
 #     --workload-spec examples/multiturn-chat-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
-# Expected: With prefix-affinity, multi-turn sessions cluster on the same
-# instance (exploiting KV cache from prior rounds). With load-only,
-# rounds scatter across instances (no cache reuse).
+# Expected: prefix-affinity produces lower TTFT because later rounds in each
+# session reuse the prior rounds' KV cache (fewer prefill tokens needed).
 
 version: "1"
 seed: 42
 category: reasoning
-aggregate_rate: 2000.0   # high rate to create load differentiation
-num_requests: 200
+aggregate_rate: 500.0     # Sessions start at 500/sec (each produces 5 rounds)
+num_requests: 500         # ~100 sessions × 5 rounds
 
 clients:
   - id: "multi-turn-chat"
@@ -73,5 +69,5 @@ clients:
           max: 0
       multi_turn:
         max_rounds: 5
-        think_time_us: 100       # 100µs between rounds (rapid multi-turn, tests cache locality)
+        think_time_us: 500000    # 500ms between rounds (realistic user think time)
         context_growth: accumulate
