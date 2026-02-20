@@ -118,10 +118,10 @@ Every experiment produces findings. Each finding MUST be classified:
 | Finding Type | Definition | Action Required |
 |-------------|------------|-----------------|
 | **Confirmation** | The hypothesis holds; the system works as designed | Document in FINDINGS.md. No issues needed. |
-| **Bug discovery** | The hypothesis failed due to a code defect | File GitHub issue. Fix in separate PR. |
-| **New rule** | The experiment revealed a pattern that should be checked in all future PRs | Add to `docs/standards/rules.md` with evidence. |
+| **Bug discovery** | The hypothesis failed due to a code defect | File GitHub issue with `--label bug`. Fix in separate PR. |
+| **New rule** | The experiment revealed a pattern that should be checked in all future PRs | Add to `docs/standards/rules.md` with evidence. File issue with `--label enhancement` if code changes needed. |
 | **New invariant** | The experiment revealed a property that must always hold | Add to `docs/standards/invariants.md`. |
-| **Design limitation** | The system works as coded but has an undocumented behavioral limitation | Document in FINDINGS.md + file issue for design doc update. |
+| **Design limitation** | The system works as coded but has an undocumented behavioral limitation | Document in FINDINGS.md + file issue with `--label design` for design doc update. |
 | **Surprise** | An unexpected result that doesn't fit other categories | Document in FINDINGS.md. May spawn new hypotheses. |
 
 ### The Audit Step

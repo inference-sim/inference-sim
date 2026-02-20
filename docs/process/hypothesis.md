@@ -21,7 +21,7 @@ This document describes the process for running a hypothesis-driven experiment. 
 8. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, or surprise
 9. **Audit against standards** — check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`
 10. **Document** — write `FINDINGS.md` with results, root cause, classification, and audit
-11. **File issues** — for any bugs, design limitations, or new rules/invariants discovered
+11. **File issues** — for any bugs (`--label bug`), design limitations (`--label design`), or new rules/invariants discovered. Every issue must be labeled.
 12. **Commit and PR** — rebase on upstream/main, push, create PR
 
 ## Quality Gates
