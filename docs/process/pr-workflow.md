@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v2.8 - updated 2026-02-18)
+**Status:** Active (v2.9 - updated 2026-02-20)
 
 This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request.
 
@@ -553,6 +553,12 @@ gh issue create --title "Bug: <concise description>" --body "<location, impact, 
 
 ---
 
+#### After All 4 Passes: Convergence Re-Run
+
+**After all passes complete with fixes, re-run all 4 passes from scratch** to verify fixes didn't introduce cross-pass issues. If the re-run finds new CRITICAL or IMPORTANT issues, fix and re-run again. Repeat until convergence: a clean pass with 0 CRITICAL and 0 IMPORTANT findings. Additive-only fixes (e.g., adding a comment without restructuring logic) may skip the re-run.
+
+---
+
 #### After All 4 Passes: Enforced Verification Gate
 
 > **For Claude:** After fixing issues from all passes, invoke the verification skill to ensure
@@ -851,6 +857,8 @@ claude -p "Read .review/*.md files. Produce a consolidated summary sorted by sev
 
 **Re-run a pass if you made significant changes** during fixing. Don't assume the fix is correct.
 
+**After all passes complete with fixes, re-run all 5 passes from scratch** to verify fixes didn't introduce cross-pass issues (e.g., a Pass 0 fix breaking Pass 4 structural validation). If the re-run finds new CRITICAL or IMPORTANT issues, fix and re-run again. Repeat until convergence: a clean pass with 0 CRITICAL and 0 IMPORTANT findings. Additive-only fixes (e.g., adding a file to scope without restructuring tasks) may skip the re-run. Evidence: in the Wave 1 parallel PR session, Track B's re-run validated that 3 fixes (including 2 CRITICAL — overwrite-existing-file and incomplete zero-value test) introduced no regressions.
+
 ---
 
 ## Common Issues and Solutions
@@ -938,6 +946,7 @@ golangci-lint run ./path/to/modified/package/...
 **v2.6 (2026-02-18):** Two additions: (1) "Filing Pre-Existing Issues" subsection to Step 4.5 — file a GitHub issue immediately for pre-existing bugs found during review, do not fix in-PR. Based on #38 experience where #183 was discovered. (2) Antipattern prevention from hardening audit of 20+ issues — Step 4.75 expanded to 9 self-audit dimensions (added test epistemology, construction site uniqueness, error path completeness); Step 4.5 Pass 1 prompt expanded with 4 antipattern checks; Step 2.5 Pass 2 prompt expanded with 3 modularity checks. Companion change: `prmicroplanprompt-v2.md` updated with construction site audit (Phase 0), extension friction assessment (Phase 2), invariant test requirement (Phase 6), and 6 new sanity checklist items (Phase 8).
 **v2.7 (2026-02-18):** Generalized workflow from "macro plan only" to any source document (macro plan sections, design docs, GitHub issues, feature requests). Updated template references, review prompts, examples, and invocation patterns. Added Example B showing issue/design-doc workflow alongside macro plan workflow. The same rigor (behavioral contracts, TDD tasks, 5+4 review passes, self-audit) applies regardless of work source.
 **v2.8 (2026-02-18):** Auto-close issues on PR merge. Added `**Closes:**` field to micro plan header template (`prmicroplanprompt-v2.md`) that captures GitHub closing keywords (e.g., `Fixes #183, fixes #189`). Updated Step 5 PR description spec to propagate closing keywords into the PR body. GitHub auto-closes referenced issues when the PR merges — no manual cleanup needed.
+**v2.9 (2026-02-20):** Convergence re-run protocol for both Step 2.5 and Step 4.5. After all review passes complete with fixes, re-run all passes from scratch to verify fixes didn't introduce cross-pass issues. Repeat until convergence (0 CRITICAL, 0 IMPORTANT). Evidence: Wave 1 parallel PR session — Track B's full re-run validated that 3 fixes (including 2 CRITICAL: overwrite-existing-test-file and incomplete zero-value coverage) introduced no regressions across all 5 passes.
 
 **Key improvements in v2.0:**
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/macroplan.md`)
