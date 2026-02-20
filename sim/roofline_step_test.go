@@ -52,3 +52,77 @@ func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
 		t.Errorf("conservation violation: total=%v but sum of components=%v", result["total"], componentSum)
 	}
 }
+
+// testModelConfig returns a Llama-3.1-8B-like config for roofline tests.
+func testModelConfig() ModelConfig {
+	return ModelConfig{
+		NumLayers:       32,
+		HiddenDim:       4096,
+		NumHeads:        32,
+		NumKVHeads:      8,
+		VocabSize:       128256,
+		BytesPerParam:   2, // bfloat16
+		IntermediateDim: 14336,
+	}
+}
+
+func TestCalculateTransformerFlops_Conservation_TotalEqualsSumOfComponents(t *testing.T) {
+	// BC-8: total MUST equal gemm_ops + sram_ops
+	mc := testModelConfig()
+	tests := []struct {
+		name   string
+		seqLen int64
+		newT   int64
+		attn   bool
+		mlp    bool
+	}{
+		{"prefill attn+mlp", 0, 128, true, true},
+		{"decode attn+mlp", 512, 1, true, true},
+		{"attn only", 256, 64, true, false},
+		{"mlp only", 256, 64, false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flops := calculateTransformerFlops(mc, tt.seqLen, tt.newT, tt.attn, tt.mlp)
+			sum := flops["gemm_ops"] + flops["sram_ops"]
+			if flops["total"] != sum {
+				t.Errorf("total (%g) != gemm_ops (%g) + sram_ops (%g) = %g",
+					flops["total"], flops["gemm_ops"], flops["sram_ops"], sum)
+			}
+		})
+	}
+}
+
+func TestCalculateTransformerFlops_AttentionOnly_NoMLPContribution(t *testing.T) {
+	// BC-7: disabling MLP zeroes MLP FLOPs
+	mc := testModelConfig()
+
+	attnOnly := calculateTransformerFlops(mc, 256, 64, true, false)
+	both := calculateTransformerFlops(mc, 256, 64, true, true)
+
+	// With MLP disabled, gemm_ops should be less (no SwiGLU)
+	if attnOnly["gemm_ops"] >= both["gemm_ops"] {
+		t.Errorf("attention-only gemm_ops (%g) should be less than attn+mlp gemm_ops (%g)",
+			attnOnly["gemm_ops"], both["gemm_ops"])
+	}
+	// sram_ops should be the same (MLP doesn't contribute to sram_ops)
+	if attnOnly["sram_ops"] != both["sram_ops"] {
+		t.Errorf("sram_ops should be identical with/without MLP: got %g vs %g",
+			attnOnly["sram_ops"], both["sram_ops"])
+	}
+}
+
+func TestCalculateTransformerFlops_MLPOnly_NoAttentionContribution(t *testing.T) {
+	// BC-6: disabling attention zeroes attention FLOPs, sram_ops must be zero
+	mc := testModelConfig()
+
+	mlpOnly := calculateTransformerFlops(mc, 256, 64, false, true)
+
+	if mlpOnly["sram_ops"] != 0 {
+		t.Errorf("MLP-only sram_ops should be 0, got %g", mlpOnly["sram_ops"])
+	}
+	if mlpOnly["gemm_ops"] <= 0 {
+		t.Errorf("MLP-only gemm_ops should be > 0, got %g", mlpOnly["gemm_ops"])
+	}
+}
