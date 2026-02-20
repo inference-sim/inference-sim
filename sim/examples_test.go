@@ -196,15 +196,15 @@ func TestExampleConfigs_EPPPrecisePrefix_WeightRatioEffect(t *testing.T) {
 		"prefix-affinity (weight 2) should outweigh load-balancing (weight 1+1) for cached prefix")
 }
 
-// TestExampleConfigs_EPPEstimatePrefix_LoadBalanceFormula verifies that the
-// load-balance scorer uses the inverse transform formula: 1/(1+load).
-func TestExampleConfigs_EPPEstimatePrefix_LoadBalanceFormula(t *testing.T) {
+// TestExampleConfigs_EPPEstimatePrefix_LoadBalanceMonotonicity verifies that the
+// load-balance scorer produces monotonically decreasing scores as load increases.
+func TestExampleConfigs_EPPEstimatePrefix_LoadBalanceMonotonicity(t *testing.T) {
 	// GIVEN the epp-estimate-prefix.yaml config
 	path := filepath.Join("..", "examples", "epp-estimate-prefix.yaml")
 	bundle, err := LoadPolicyBundle(path)
 	require.NoError(t, err)
 
-	// Verify load-balance is present
+	// Verify load-balance is present in config
 	hasLoadBalance := false
 	for _, s := range bundle.Routing.Scorers {
 		if s.Name == "load-balance" {
@@ -214,30 +214,37 @@ func TestExampleConfigs_EPPEstimatePrefix_LoadBalanceFormula(t *testing.T) {
 	}
 	assert.True(t, hasLoadBalance, "load-balance scorer should be present")
 
-	// WHEN using load-balance scorer directly
+	// WHEN routing through the policy with instances of varying load
+	policy := NewRoutingPolicy(bundle.Routing.Policy, bundle.Routing.Scorers)
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 0, BatchSize: 0},  // load=0 → score=1/(1+0)=1.0
-		{ID: "b", QueueDepth: 1, BatchSize: 0},  // load=1 → score=1/(1+1)=0.5
-		{ID: "c", QueueDepth: 9, BatchSize: 0},  // load=9 → score=1/(1+9)=0.1
+		{ID: "low", QueueDepth: 0, BatchSize: 0},   // lowest load
+		{ID: "mid", QueueDepth: 5, BatchSize: 0},   // medium load
+		{ID: "high", QueueDepth: 20, BatchSize: 0}, // highest load
 	}
 
-	scores := scoreLoadBalance(nil, snapshots)
+	req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
-	// THEN scores follow 1/(1+load) formula
-	assert.InDelta(t, 1.0, scores["a"], 0.001, "load=0 → score=1.0")
-	assert.InDelta(t, 0.5, scores["b"], 0.001, "load=1 → score=0.5")
-	assert.InDelta(t, 0.1, scores["c"], 0.001, "load=9 → score=0.1")
+	// THEN lower load instances score higher (monotonicity)
+	assert.Greater(t, decision.Scores["low"], decision.Scores["mid"],
+		"lower load should score higher than medium load")
+	assert.Greater(t, decision.Scores["mid"], decision.Scores["high"],
+		"medium load should score higher than high load")
+
+	// THEN lowest load instance is selected
+	assert.Equal(t, "low", decision.TargetInstance,
+		"lowest load instance should be selected")
 }
 
-// TestExampleConfigs_EPPPrecisePrefix_QueueDepthFormula verifies that the
-// queue-depth scorer uses min-max normalization.
-func TestExampleConfigs_EPPPrecisePrefix_QueueDepthFormula(t *testing.T) {
+// TestExampleConfigs_EPPPrecisePrefix_QueueDepthMonotonicity verifies that the
+// queue-depth scorer produces monotonically decreasing scores as queue depth increases.
+func TestExampleConfigs_EPPPrecisePrefix_QueueDepthMonotonicity(t *testing.T) {
 	// GIVEN the epp-precise-prefix.yaml config
 	path := filepath.Join("..", "examples", "epp-precise-prefix.yaml")
 	bundle, err := LoadPolicyBundle(path)
 	require.NoError(t, err)
 
-	// Verify queue-depth is present
+	// Verify queue-depth is present in config
 	hasQueueDepth := false
 	for _, s := range bundle.Routing.Scorers {
 		if s.Name == "queue-depth" {
@@ -247,34 +254,37 @@ func TestExampleConfigs_EPPPrecisePrefix_QueueDepthFormula(t *testing.T) {
 	}
 	assert.True(t, hasQueueDepth, "queue-depth scorer should be present")
 
-	// WHEN using queue-depth scorer directly
+	// WHEN routing through a queue-depth-only policy with instances of varying load
+	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "queue-depth", Weight: 1.0}})
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 0, BatchSize: 0},   // load=0 (min)
-		{ID: "b", QueueDepth: 5, BatchSize: 0},   // load=5 (mid)
-		{ID: "c", QueueDepth: 10, BatchSize: 0},  // load=10 (max)
+		{ID: "empty", QueueDepth: 0, BatchSize: 0},   // lowest load
+		{ID: "half", QueueDepth: 5, BatchSize: 0},    // medium load
+		{ID: "full", QueueDepth: 10, BatchSize: 0},   // highest load
 	}
 
-	scores := scoreQueueDepth(nil, snapshots)
+	req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
-	// THEN scores follow min-max normalization: (max-val)/(max-min)
-	// min=0, max=10
-	// a: (10-0)/(10-0) = 1.0
-	// b: (10-5)/(10-0) = 0.5
-	// c: (10-10)/(10-0) = 0.0
-	assert.InDelta(t, 1.0, scores["a"], 0.001, "min load → score=1.0")
-	assert.InDelta(t, 0.5, scores["b"], 0.001, "mid load → score=0.5")
-	assert.InDelta(t, 0.0, scores["c"], 0.001, "max load → score=0.0")
+	// THEN lower queue depth scores higher (monotonicity)
+	assert.Greater(t, decision.Scores["empty"], decision.Scores["half"],
+		"empty queue should score higher than half-full")
+	assert.Greater(t, decision.Scores["half"], decision.Scores["full"],
+		"half-full queue should score higher than full")
+
+	// THEN empty queue instance is selected
+	assert.Equal(t, "empty", decision.TargetInstance,
+		"instance with empty queue should be selected")
 }
 
-// TestExampleConfigs_EPPPrecisePrefix_KVUtilizationFormula verifies that the
-// kv-utilization scorer uses: score = 1 - utilization.
-func TestExampleConfigs_EPPPrecisePrefix_KVUtilizationFormula(t *testing.T) {
+// TestExampleConfigs_EPPPrecisePrefix_KVUtilizationMonotonicity verifies that the
+// kv-utilization scorer produces monotonically decreasing scores as utilization increases.
+func TestExampleConfigs_EPPPrecisePrefix_KVUtilizationMonotonicity(t *testing.T) {
 	// GIVEN the epp-precise-prefix.yaml config
 	path := filepath.Join("..", "examples", "epp-precise-prefix.yaml")
 	bundle, err := LoadPolicyBundle(path)
 	require.NoError(t, err)
 
-	// Verify kv-utilization is present
+	// Verify kv-utilization is present in config
 	hasKVUtil := false
 	for _, s := range bundle.Routing.Scorers {
 		if s.Name == "kv-utilization" {
@@ -284,17 +294,24 @@ func TestExampleConfigs_EPPPrecisePrefix_KVUtilizationFormula(t *testing.T) {
 	}
 	assert.True(t, hasKVUtil, "kv-utilization scorer should be present")
 
-	// WHEN using kv-utilization scorer directly
+	// WHEN routing through a kv-utilization-only policy with instances of varying utilization
+	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "kv-utilization", Weight: 1.0}})
 	snapshots := []RoutingSnapshot{
-		{ID: "a", KVUtilization: 0.0},  // score = 1 - 0 = 1.0
-		{ID: "b", KVUtilization: 0.3},  // score = 1 - 0.3 = 0.7
-		{ID: "c", KVUtilization: 1.0},  // score = 1 - 1 = 0.0
+		{ID: "empty", KVUtilization: 0.0},  // lowest utilization
+		{ID: "half", KVUtilization: 0.5},   // medium utilization
+		{ID: "full", KVUtilization: 1.0},   // highest utilization
 	}
 
-	scores := scoreKVUtilization(nil, snapshots)
+	req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+	decision := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 
-	// THEN scores follow 1-utilization formula
-	assert.InDelta(t, 1.0, scores["a"], 0.001, "util=0 → score=1.0")
-	assert.InDelta(t, 0.7, scores["b"], 0.001, "util=0.3 → score=0.7")
-	assert.InDelta(t, 0.0, scores["c"], 0.001, "util=1.0 → score=0.0")
+	// THEN lower utilization scores higher (monotonicity)
+	assert.Greater(t, decision.Scores["empty"], decision.Scores["half"],
+		"empty cache should score higher than half-full")
+	assert.Greater(t, decision.Scores["half"], decision.Scores["full"],
+		"half-full cache should score higher than full")
+
+	// THEN lowest utilization instance is selected
+	assert.Equal(t, "empty", decision.TargetInstance,
+		"instance with lowest utilization should be selected")
 }

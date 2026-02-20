@@ -71,6 +71,8 @@ routing:
 
     # kv-cache-utilization-scorer → kv-utilization
     # Score = 1 - KVUtilization
+    # Note: KV utilization is a lagging signal at high rates (R17). The queue-depth
+    # scorer compensates — do not remove it from this configuration.
     - name: kv-utilization
       weight: 1.0
 
