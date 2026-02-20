@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"math"
 	"sort"
 	"testing"
 )
@@ -124,5 +125,60 @@ func TestCalculateTransformerFlops_MLPOnly_NoAttentionContribution(t *testing.T)
 	}
 	if mlpOnly["gemm_ops"] <= 0 {
 		t.Errorf("MLP-only gemm_ops should be > 0, got %g", mlpOnly["gemm_ops"])
+	}
+}
+
+func TestCalculateTransformerFlops_Monotonicity_MoreTokensMoreFlops(t *testing.T) {
+	// BC-1: more newTokens MUST produce higher total FLOPs
+	mc := testModelConfig()
+
+	small := calculateTransformerFlops(mc, 512, 100, true, true)
+	large := calculateTransformerFlops(mc, 512, 200, true, true)
+
+	if large["total"] <= small["total"] {
+		t.Errorf("200 tokens total FLOPs (%g) should exceed 100 tokens (%g)",
+			large["total"], small["total"])
+	}
+	// Check component-level monotonicity too
+	if large["gemm_ops"] <= small["gemm_ops"] {
+		t.Errorf("200 tokens gemm_ops (%g) should exceed 100 tokens (%g)",
+			large["gemm_ops"], small["gemm_ops"])
+	}
+}
+
+func TestCalculateMemoryAccessBytes_Monotonicity_MoreTokensMoreBytes(t *testing.T) {
+	// BC-2: more newTokens MUST produce higher total bytes
+	mc := testModelConfig()
+
+	small := calculateMemoryAccessBytes(mc, 512, 100, true)
+	large := calculateMemoryAccessBytes(mc, 512, 200, true)
+
+	if large["total"] <= small["total"] {
+		t.Errorf("200 tokens total bytes (%g) should exceed 100 tokens (%g)",
+			large["total"], small["total"])
+	}
+}
+
+func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *testing.T) {
+	// BC-9: total MUST equal sum of all non-"total" components
+	mc := testModelConfig()
+
+	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
+
+	// Sort keys before float accumulation (antipattern #2)
+	keys := make([]string, 0, len(mem))
+	for k := range mem {
+		if k != "total" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	var sum float64
+	for _, k := range keys {
+		sum += mem[k]
+	}
+	if math.Abs(mem["total"]-sum) > 1e-6 {
+		t.Errorf("total (%g) != sum of components (%g), delta=%g",
+			mem["total"], sum, mem["total"]-sum)
 	}
 }
