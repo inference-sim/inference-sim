@@ -78,10 +78,7 @@ func (rr *RoundRobin) Route(req *Request, state *RouterState) RoutingDecision {
 	}
 	target := snapshots[rr.counter%len(snapshots)]
 	rr.counter++
-	return RoutingDecision{
-		TargetInstance: target.ID,
-		Reason:         fmt.Sprintf("round-robin[%d]", rr.counter-1),
-	}
+	return NewRoutingDecision(target.ID, fmt.Sprintf("round-robin[%d]", rr.counter-1))
 }
 
 // LeastLoaded routes requests to the instance with minimum (QueueDepth + BatchSize + PendingRequests).
@@ -108,10 +105,7 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 		}
 	}
 
-	return RoutingDecision{
-		TargetInstance: target.ID,
-		Reason:         fmt.Sprintf("least-loaded (load=%d)", minLoad),
-	}
+	return NewRoutingDecision(target.ID, fmt.Sprintf("least-loaded (load=%d)", minLoad))
 }
 
 // observerFunc is called after each routing decision to update stateful scorer state.
@@ -178,11 +172,11 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		obs(req, snapshots[bestIdx].ID)
 	}
 
-	return RoutingDecision{
-		TargetInstance: snapshots[bestIdx].ID,
-		Reason:         fmt.Sprintf("weighted-scoring (score=%.3f)", bestScore),
-		Scores:         scores,
-	}
+	return NewRoutingDecisionWithScores(
+		snapshots[bestIdx].ID,
+		fmt.Sprintf("weighted-scoring (score=%.3f)", bestScore),
+		scores,
+	)
 }
 
 // PrefixAffinity routes requests with matching prefixes to the same instance (cache-aware).
@@ -208,10 +202,7 @@ func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecisio
 		// Verify target still in snapshots (instance may have been removed)
 		for _, snap := range snapshots {
 			if snap.ID == targetID {
-				return RoutingDecision{
-					TargetInstance: targetID,
-					Reason:         "prefix-affinity (cache-hit)",
-				}
+				return NewRoutingDecision(targetID, "prefix-affinity (cache-hit)")
 			}
 		}
 	}
@@ -223,10 +214,7 @@ func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecisio
 	// Update cache with new mapping
 	pa.prefixMap[prefixHash] = decision.TargetInstance
 
-	return RoutingDecision{
-		TargetInstance: decision.TargetInstance,
-		Reason:         "prefix-affinity (cache-miss, fallback to least-loaded)",
-	}
+	return NewRoutingDecision(decision.TargetInstance, "prefix-affinity (cache-miss, fallback to least-loaded)")
 }
 
 // AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + PendingRequests).
@@ -252,10 +240,7 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 		}
 	}
 
-	return RoutingDecision{
-		TargetInstance: target.ID,
-		Reason:         fmt.Sprintf("always-busiest (load=%d)", maxLoad),
-	}
+	return NewRoutingDecision(target.ID, fmt.Sprintf("always-busiest (load=%d)", maxLoad))
 }
 
 // NewRoutingPolicy creates a routing policy by name.
