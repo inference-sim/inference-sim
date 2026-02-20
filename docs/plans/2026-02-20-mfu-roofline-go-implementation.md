@@ -78,13 +78,6 @@ type MFUDatabase struct {
 Run: `go build ./sim`
 Expected: SUCCESS (no syntax errors)
 
-**Step 3: Commit**
-
-```bash
-git add sim/mfu_database.go
-git commit -m "feat(mfu): add MFU data structures for CSV loading"
-```
-
 ---
 
 ## Task 2: Implement Attention Config Computation
@@ -132,13 +125,6 @@ func euclideanDistance(a, b AttentionShape) float64 {
 
 Run: `go build ./sim`
 Expected: SUCCESS
-
-**Step 3: Commit**
-
-```bash
-git add sim/mfu_database.go
-git commit -m "feat(mfu): add attention config computation helpers"
-```
 
 ---
 
@@ -380,13 +366,6 @@ func loadGEMMCSV(basePath, gpu string) ([]GEMMRow, error) {
 Run: `go build ./sim`
 Expected: SUCCESS
 
-**Step 5: Commit**
-
-```bash
-git add sim/mfu_database.go
-git commit -m "feat(mfu): add CSV loading functions for MFU data"
-```
-
 ---
 
 ## Task 4: Implement Database Initialization
@@ -473,13 +452,6 @@ func NewMFUDatabase(modelConfig ModelConfig, benchDataPath string, gpu string) (
 
 Run: `go build ./sim`
 Expected: SUCCESS
-
-**Step 3: Commit**
-
-```bash
-git add sim/mfu_database.go
-git commit -m "feat(mfu): add MFU database initialization with nearest neighbor fallback"
-```
 
 ---
 
@@ -617,13 +589,6 @@ func (db *MFUDatabase) GetGEMMmfu(m, k, n int) float64 {
 Run: `go build ./sim`
 Expected: SUCCESS
 
-**Step 5: Commit**
-
-```bash
-git add sim/mfu_database.go
-git commit -m "feat(mfu): implement MFU lookup functions with floor logic"
-```
-
 ---
 
 ## Task 6: Add Helper Function for Individual GEMM Calculations
@@ -700,13 +665,6 @@ func computeTransformerGEMMTimes(modelConfig ModelConfig, batchSize int, peakFlo
 
 Run: `go build ./sim`
 Expected: SUCCESS
-
-**Step 4: Commit**
-
-```bash
-git add sim/roofline_step.go
-git commit -m "feat(mfu): add helper functions for per-GEMM MFU lookups"
-```
 
 ---
 
@@ -807,18 +765,6 @@ if len(stepConfig.DecodeRequests) > 0 {
 
 Run: `go build ./sim`
 Expected: SUCCESS
-
-**Step 3: Commit**
-
-```bash
-git add sim/roofline_step.go
-git commit -m "feat(mfu): integrate per-GEMM MFU lookups for decode phase
-
-- GEMM projections use individual MFU lookups
-- Attention core uses attention-specific decode MFU with peakFlops
-- Aggregate batch_size and max kv_len for attention MFU
-- Match InferSim formula: time = flops / (peakFlops * mfu)"
-```
 
 ---
 
@@ -933,19 +879,6 @@ if len(stepConfig.PrefillRequests) > 0 {
 Run: `go build ./sim`
 Expected: SUCCESS
 
-**Step 3: Commit**
-
-```bash
-git add sim/roofline_step.go
-git commit -m "feat(mfu): integrate per-GEMM MFU lookups for prefill phase
-
-- Bucket prefill requests by seq_len
-- GEMM projections use individual MFU lookups per bucket
-- Attention core uses attention-specific prefill MFU with /1.8 factor
-- Match InferSim formula: time = flops / 1.8 / (peakFlops * mfu)
-- Sum times across all buckets"
-```
-
 ---
 
 ## Task 9: Initialize MFU Database in Simulator
@@ -986,13 +919,6 @@ stepTime := rooflineStepTime(model, modelConfig, hwConfig, stepConfig, tp, mfuDB
 Run: `go build .`
 Expected: SUCCESS
 
-**Step 5: Commit**
-
-```bash
-git add sim/simulator.go
-git commit -m "feat(mfu): initialize MFU database in simulator startup"
-```
-
 ---
 
 ## Task 10: Test End-to-End Integration
@@ -1028,12 +954,6 @@ Run: `mv bench_data bench_data_backup && ./inference-sim ...`
 Expected: Fatal error with message about missing CSV files
 
 Restore: `mv bench_data_backup bench_data`
-
-**Step 4: Commit if tests pass**
-
-```bash
-git commit --allow-empty -m "test(mfu): verify end-to-end MFU database integration"
-```
 
 ---
 
@@ -1077,13 +997,6 @@ Run: `go doc ./sim | grep MFU`
 
 Expected: Shows MFUDatabase and related functions
 
-**Step 4: Commit**
-
-```bash
-git add sim/mfu_database.go
-git commit -m "docs(mfu): add package and function documentation"
-```
-
 ---
 
 ## Task 12: Final Verification and Cleanup
@@ -1111,22 +1024,6 @@ Check that startup logs show:
 - MFU database loaded successfully
 - Attention config (with nearest neighbor if applicable)
 - Row counts
-
-**Step 4: Final commit**
-
-```bash
-git add -A
-git commit -m "feat(mfu): complete MFU-based roofline integration
-
-- Load H100 benchmark data at startup
-- Per-GEMM MFU lookups for QKV, O, Gate, Up, Down projections
-- Attention core uses peakFlops * mfu (matches InferSim)
-- Prefill attention includes /1.8 hardware factor
-- Aggregate decode requests by batch_size for attention MFU
-- Bucket prefill requests by seq_len for attention MFU
-- Nearest neighbor fallback for missing configs
-- Error out on missing CSV files"
-```
 
 ---
 
