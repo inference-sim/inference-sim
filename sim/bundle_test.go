@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -228,6 +229,8 @@ func TestPolicyBundle_Validate_InvalidScorerWeight(t *testing.T) {
 	}{
 		{"zero weight", 0.0},
 		{"negative weight", -1.0},
+		{"NaN weight", math.NaN()},
+		{"Inf weight", math.Inf(1)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -242,6 +245,22 @@ func TestPolicyBundle_Validate_InvalidScorerWeight(t *testing.T) {
 			assert.Contains(t, err.Error(), "weight must be")
 		})
 	}
+}
+
+// TestPolicyBundle_Validate_DuplicateScorer verifies duplicate scorer names are rejected.
+func TestPolicyBundle_Validate_DuplicateScorer(t *testing.T) {
+	bundle := &PolicyBundle{
+		Routing: RoutingConfig{
+			Policy: "weighted",
+			Scorers: []ScorerConfig{
+				{Name: "queue-depth", Weight: 1.0},
+				{Name: "queue-depth", Weight: 2.0},
+			},
+		},
+	}
+	err := bundle.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate scorer")
 }
 
 // TestPolicyBundle_Validate_ScorersOnNonWeightedPolicy verifies scorers are validated

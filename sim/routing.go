@@ -106,7 +106,6 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 type WeightedScoring struct {
 	scorers []scorerFunc
 	weights []float64 // normalized to sum to 1.0
-	names   []string  // for debugging/logging
 }
 
 // Route implements RoutingPolicy for WeightedScoring.
@@ -245,13 +244,11 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig) RoutingPolicy {
 			scorerConfigs = DefaultScorerConfigs()
 		}
 		scorers := make([]scorerFunc, len(scorerConfigs))
-		names := make([]string, len(scorerConfigs))
 		for i, cfg := range scorerConfigs {
 			scorers[i] = newScorer(cfg.Name)
-			names[i] = cfg.Name
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
-		return &WeightedScoring{scorers: scorers, weights: weights, names: names}
+		return &WeightedScoring{scorers: scorers, weights: weights}
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string)}
 	case "always-busiest":
