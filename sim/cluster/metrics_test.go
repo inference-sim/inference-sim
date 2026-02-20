@@ -440,6 +440,47 @@ func TestDetectHOLBlocking_BalancedInstances_NoBlocking(t *testing.T) {
 	}
 }
 
+// TestDetectHOLBlocking_AllTrafficOneInstance_Detected verifies BC-3 (#291):
+// When all traffic goes to a single instance, HOL blocking MUST be detected.
+func TestDetectHOLBlocking_AllTrafficOneInstance_Detected(t *testing.T) {
+	// GIVEN 4 instances where only instance 0 has traffic
+	perInstance := []*sim.Metrics{
+		makeMetricsWithQueueDepth([]int{50, 50, 50, 50}), // instance 0: all traffic
+		makeMetricsWithQueueDepth([]int{}),                // instance 1: no traffic
+		makeMetricsWithQueueDepth([]int{}),                // instance 2: no traffic
+		makeMetricsWithQueueDepth([]int{}),                // instance 3: no traffic
+	}
+
+	// WHEN detecting HOL blocking
+	blocking := detectHOLBlocking(perInstance)
+
+	// THEN HOL blocking MUST be detected (this is the most extreme case)
+	if blocking == 0 {
+		t.Error("expected HOL blocking > 0 when all traffic goes to one instance, got 0")
+	}
+}
+
+// TestDetectHOLBlocking_PartialConcentration_Detected verifies the fix
+// handles partial concentration (2 active + 2 idle) correctly.
+func TestDetectHOLBlocking_PartialConcentration_Detected(t *testing.T) {
+	// GIVEN 4 instances with partial concentration
+	perInstance := []*sim.Metrics{
+		makeMetricsWithQueueDepth([]int{40, 40, 40}), // instance 0: heavy traffic
+		makeMetricsWithQueueDepth([]int{5, 5, 5}),    // instance 1: light traffic
+		makeMetricsWithQueueDepth([]int{}),            // instance 2: no traffic
+		makeMetricsWithQueueDepth([]int{}),            // instance 3: no traffic
+	}
+
+	// WHEN detecting HOL blocking
+	blocking := detectHOLBlocking(perInstance)
+
+	// THEN HOL blocking should be detected
+	// Mean is (40+5+0+0)/4 = 11.25; instance 0 avg=40 > 2*11.25=22.5
+	if blocking == 0 {
+		t.Error("expected HOL blocking > 0 for partial concentration, got 0")
+	}
+}
+
 func makeMetricsWithQueueDepth(depths []int) *sim.Metrics {
 	m := sim.NewMetrics()
 	m.NumWaitQRequests = depths

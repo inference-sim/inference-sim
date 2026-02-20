@@ -209,30 +209,31 @@ func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string)
 // detectHOLBlocking counts head-of-line blocking events from per-instance metrics.
 // HOL blocking is detected when any instance's average queue depth exceeds
 // 2× the mean average queue depth across all instances.
+// Instances with no traffic are included with avg=0.0 — an instance receiving
+// 0 requests while a sibling receives 500 IS HOL blocking. (#291, R20)
 func detectHOLBlocking(perInstance []*sim.Metrics) int {
 	if len(perInstance) < 2 {
 		return 0
 	}
 
-	// Only include instances with queue depth samples in the mean calculation
-	var avgDepths []float64
+	// Include ALL instances in the comparison. Instances with no traffic
+	// contribute avg=0.0, which correctly lowers the mean and makes
+	// concentrated instances stand out. (#291, R20)
+	avgDepths := make([]float64, 0, len(perInstance))
 	totalAvg := 0.0
 	for _, m := range perInstance {
-		if len(m.NumWaitQRequests) == 0 {
-			continue
+		avg := 0.0
+		if len(m.NumWaitQRequests) > 0 {
+			sum := 0
+			for _, d := range m.NumWaitQRequests {
+				sum += d
+			}
+			avg = float64(sum) / float64(len(m.NumWaitQRequests))
 		}
-		sum := 0
-		for _, d := range m.NumWaitQRequests {
-			sum += d
-		}
-		avg := float64(sum) / float64(len(m.NumWaitQRequests))
 		avgDepths = append(avgDepths, avg)
 		totalAvg += avg
 	}
 
-	if len(avgDepths) < 2 {
-		return 0 // need at least 2 instances with samples
-	}
 	meanAvg := totalAvg / float64(len(avgDepths))
 
 	count := 0
