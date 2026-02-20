@@ -1,0 +1,338 @@
+package sim
+
+import (
+	"math"
+)
+
+// --- Helper Functions for GEMM Time Computation ---
+
+// computeGEMMTime calculates time for a single GEMM operation using MFU lookup
+// Formula: time = flops / (peakFlops * mfu)
+func computeGEMMTime(m, k, n int, peakFlops float64, mfuDB *MFUDatabase) float64 {
+	// GEMM FLOPs: 2 * m * k * n (multiply-add)
+	flops := 2.0 * float64(m) * float64(k) * float64(n)
+
+	// Lookup MFU for this GEMM shape
+	mfu := mfuDB.GetGEMMmfu(m, k, n)
+
+	// Compute time in seconds
+	return flops / (peakFlops * mfu)
+}
+
+// computeTransformerGEMMTimes calculates total time for all GEMM projections in transformer
+// Includes: QKV projections, O projection, MLP Gate/Up/Down projections
+// tpScaling should be 1/tp to account for TP parallelization
+func computeTransformerGEMMTimes(
+	modelConfig ModelConfig,
+	batchSize int,
+	peakFlops float64,
+	mfuDB *MFUDatabase,
+	tpScaling float64,
+) float64 {
+	dModel := modelConfig.HiddenDim
+	nLayers := modelConfig.NumLayers
+	nHeads := modelConfig.NumHeads
+	nKVHeads := modelConfig.NumKVHeads
+	if nKVHeads == 0 {
+		nKVHeads = nHeads
+	}
+
+	headDim := dModel / nHeads
+	dKV := nKVHeads * headDim
+
+	// MLP dimensions (SwiGLU)
+	dFF := 4 * dModel
+	if modelConfig.IntermediateDim > 0 {
+		dFF = modelConfig.IntermediateDim
+	}
+
+	totalTime := 0.0
+
+	for layer := 0; layer < nLayers; layer++ {
+		// === Attention GEMMs ===
+
+		// Q projection: [batch_size, dModel] @ [dModel, dModel] = [batch_size, dModel]
+		qTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, mfuDB)
+		totalTime += qTime * tpScaling
+
+		// K projection: [batch_size, dModel] @ [dModel, dKV] = [batch_size, dKV]
+		kTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, mfuDB)
+		totalTime += kTime * tpScaling
+
+		// V projection: [batch_size, dModel] @ [dModel, dKV] = [batch_size, dKV]
+		vTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, mfuDB)
+		totalTime += vTime * tpScaling
+
+		// O projection: [batch_size, dModel] @ [dModel, dModel] = [batch_size, dModel]
+		oTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, mfuDB)
+		totalTime += oTime * tpScaling
+
+		// === MLP GEMMs (SwiGLU) ===
+
+		// Gate projection: [batch_size, dModel] @ [dModel, dFF] = [batch_size, dFF]
+		gateTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, mfuDB)
+		totalTime += gateTime * tpScaling
+
+		// Up projection: [batch_size, dModel] @ [dModel, dFF] = [batch_size, dFF]
+		upTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, mfuDB)
+		totalTime += upTime * tpScaling
+
+		// Down projection: [batch_size, dFF] @ [dFF, dModel] = [batch_size, dModel]
+		downTime := computeGEMMTime(batchSize, dFF, dModel, peakFlops, mfuDB)
+		totalTime += downTime * tpScaling
+	}
+
+	return totalTime
+}
+
+// --- Attention Core FLOPs Calculation ---
+
+// calculateAttentionCoreFLOPs computes FLOPs for attention core operations
+// Includes: QK^T matmul, softmax, attention-value matmul
+func calculateAttentionCoreFLOPs(
+	nHeads int,
+	nKVHeads int,
+	dModel int,
+	batchSize int,
+	seqLen int64,
+) float64 {
+	if nKVHeads == 0 {
+		nKVHeads = nHeads
+	}
+
+	headDim := dModel / nHeads
+	effectiveCtx := float64(seqLen)
+
+	// QK^T matmul: 2 * nHeads * batchSize * effectiveCtx * headDim
+	qkMatMul := 2.0 * float64(nHeads) * float64(batchSize) * effectiveCtx * float64(headDim)
+
+	// Softmax: 4 ops per element (exp, sum, div, etc.)
+	softmaxOps := 4.0 * float64(nHeads) * float64(batchSize) * effectiveCtx
+
+	// Attention-Value matmul: 2 * nHeads * batchSize * effectiveCtx * headDim
+	avMatMul := 2.0 * float64(nHeads) * float64(batchSize) * effectiveCtx * float64(headDim)
+
+	return qkMatMul + softmaxOps + avMatMul
+}
+
+// --- Main Roofline Function ---
+
+func rooflineStepTimeV2(
+	_ string,
+	modelConfig ModelConfig,
+	hwConfig HardwareCalib,
+	stepConfig StepConfig,
+	tp int,
+	mfuDB *MFUDatabase,
+) int64 {
+	tpFactor := float64(tp)
+	tpScaling := 1.0 / tpFactor
+
+	peakFlops := hwConfig.TFlopsPeak * 1e12
+	peakBW := hwConfig.BwPeakTBs * 1e12
+
+	var prefillComputeS, prefillMemoryS float64
+	var decodeComputeS, decodeMemoryS float64
+	var hasPrefill, hasDecode bool
+
+	// ========================================
+	// 1. DECODE PHASE (Aggregate All Requests)
+	// ========================================
+	if len(stepConfig.DecodeRequests) > 0 {
+		hasDecode = true
+
+		// Aggregate batch size and find max kv_len
+		totalBatchSize := len(stepConfig.DecodeRequests)
+		maxKVLen := int64(0)
+
+		for _, req := range stepConfig.DecodeRequests {
+			if req.ProgressIndex > maxKVLen {
+				maxKVLen = req.ProgressIndex
+			}
+		}
+
+		// === GEMM Projections ===
+		// Single aggregated lookup for all decode requests
+		gemmTimeS := computeTransformerGEMMTimes(
+			modelConfig,
+			totalBatchSize,
+			peakFlops,
+			mfuDB,
+			tpScaling,
+		)
+
+		// === Attention Core ===
+		// Calculate total attention core FLOPs across all layers
+		attnCoreFLOPs := calculateAttentionCoreFLOPs(
+			modelConfig.NumHeads,
+			modelConfig.NumKVHeads,
+			modelConfig.HiddenDim,
+			totalBatchSize,
+			maxKVLen,
+		) * float64(modelConfig.NumLayers)
+
+		// Lookup decode MFU
+		attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
+
+		// Formula: time = flops / (peakFlops * mfu)
+		attnCoreTimeS := attnCoreFLOPs / (peakFlops * attnMFU) * tpScaling
+
+		decodeComputeS = gemmTimeS + attnCoreTimeS
+
+		// === Memory Bandwidth ===
+		var dDynamicBytes float64
+		for _, req := range stepConfig.DecodeRequests {
+			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
+			dDynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
+		}
+
+		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+		dWeightBytes := baseMem["model_weights"] * tpScaling
+
+		decodeMemoryS = (dWeightBytes + dDynamicBytes) / peakBW
+	}
+
+	// ========================================
+	// 2. PREFILL PHASE (Bucket by seq_len)
+	// ========================================
+	if len(stepConfig.PrefillRequests) > 0 {
+		hasPrefill = true
+
+		// Group prefill requests by seq_len bucket
+		// Use power-of-2 buckets: 512, 1024, 2048, 4096, 8192, etc.
+		bucketMap := make(map[int][]PrefillRequestConfig)
+
+		for _, req := range stepConfig.PrefillRequests {
+			seqLen := int(req.ProgressIndex + int64(req.NumNewPrefillTokens))
+
+			// Find next power-of-2 bucket
+			bucket := 512
+			for bucket < seqLen && bucket < 65536 {
+				bucket *= 2
+			}
+			if bucket > 65536 {
+				bucket = 65536 // Cap at max bucket
+			}
+
+			bucketMap[bucket] = append(bucketMap[bucket], req)
+		}
+
+		// Process each bucket independently
+		for bucketSeqLen, requests := range bucketMap {
+			batchSize := len(requests)
+
+			// === GEMM Projections ===
+			// Use bucket batch size for GEMM lookups
+			gemmTimeS := computeTransformerGEMMTimes(
+				modelConfig,
+				batchSize,
+				peakFlops,
+				mfuDB,
+				tpScaling,
+			)
+
+			// === Attention Core ===
+			// Calculate attention core FLOPs for this bucket
+			attnCoreFLOPs := calculateAttentionCoreFLOPs(
+				modelConfig.NumHeads,
+				modelConfig.NumKVHeads,
+				modelConfig.HiddenDim,
+				batchSize,
+				int64(bucketSeqLen),
+			) * float64(modelConfig.NumLayers)
+
+			// Lookup prefill MFU
+			attnMFU := mfuDB.GetAttnPrefillMFU(bucketSeqLen)
+
+			// Formula: time = flops / 1.8 / (peakFlops * mfu)
+			// Note: /1.8 factor from InferSim (hardware-specific adjustment)
+			attnCoreTimeS := attnCoreFLOPs / 1.8 / (peakFlops * attnMFU) * tpScaling
+
+			prefillComputeS += gemmTimeS + attnCoreTimeS
+		}
+
+		// === Memory Bandwidth ===
+		var pDynamicBytes float64
+		for _, req := range stepConfig.PrefillRequests {
+			numTokens := int64(req.NumNewPrefillTokens)
+			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
+			pDynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
+		}
+
+		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+		pWeightBytes := baseMem["model_weights"] * tpScaling
+
+		prefillMemoryS = (pWeightBytes + pDynamicBytes) / peakBW
+	}
+
+	// ========================================
+	// 3. COMBINE PHASES
+	// ========================================
+	var stepHardwareS float64
+
+	if hasPrefill && hasDecode {
+		// Mixed batch: use weighted average based on token count
+		prefillTimeS := math.Max(prefillComputeS, prefillMemoryS)
+		decodeTimeS := math.Max(decodeComputeS, decodeMemoryS)
+
+		prefillTokens := 0.0
+		for _, req := range stepConfig.PrefillRequests {
+			prefillTokens += float64(req.NumNewPrefillTokens)
+		}
+		decodeTokens := float64(len(stepConfig.DecodeRequests))
+		totalTokens := prefillTokens + decodeTokens
+
+		// Adaptive weighting based on token distribution
+		if prefillTokens > decodeTokens*4 && prefillTokens > 100 {
+			// Prefill-dominated: apply blending
+			stepHardwareS = 0.75*prefillTimeS + 0.25*decodeTimeS
+		} else if decodeTokens > prefillTokens*2 && decodeTokens > 50 {
+			// Decode-dominated: weight towards decode
+			stepHardwareS = 0.35*prefillTimeS + 0.65*decodeTimeS
+		} else {
+			// Balanced mix: weighted average
+			prefillWeight := prefillTokens / totalTokens
+			decodeWeight := decodeTokens / totalTokens
+			stepHardwareS = prefillWeight*prefillTimeS + decodeWeight*decodeTimeS
+		}
+	} else if hasPrefill {
+		stepHardwareS = math.Max(prefillComputeS, prefillMemoryS)
+	} else if hasDecode {
+		stepHardwareS = math.Max(decodeComputeS, decodeMemoryS)
+	}
+
+	// ========================================
+	// 4. OVERHEADS
+	// ========================================
+
+	// Communication overhead - all-reduce per layer
+	commOverheadS := 0.0
+	if tp > 1 {
+		commOverheadS = (float64(modelConfig.NumLayers) * 2 * hwConfig.AllReduceLatency) / 1e6
+	}
+
+	// Batch-size-aware overhead
+	numDecode := float64(len(stepConfig.DecodeRequests))
+	numPrefill := float64(len(stepConfig.PrefillRequests))
+	totalRequests := numDecode + numPrefill
+	scaledOverheadMicros := hwConfig.TOverheadMicros
+	if totalRequests > 2 {
+		baseScale := 0.15 * math.Log2(totalRequests/2.0)
+		decodeRatio := numDecode / totalRequests
+		scaledOverheadMicros *= 1.0 + baseScale*(0.3+2.0*decodeRatio)
+	}
+
+	// Prefill overhead
+	var prefillOverheadMicros float64
+	if numPrefill > 0 && numDecode == 0 {
+		prefillOverheadMicros = numPrefill * hwConfig.PrefillOverheadMicros
+	} else if numPrefill > 0 {
+		prefillOverheadMicros = numPrefill * hwConfig.MixedPrefillOverheadMicros
+	}
+
+	// Total time
+	totalS := stepHardwareS + commOverheadS + (scaledOverheadMicros / 1e6) + (prefillOverheadMicros / 1e6)
+	totalMicros := totalS * 1e6
+
+	return int64(math.Round(totalMicros))
+}

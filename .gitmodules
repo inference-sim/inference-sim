@@ -1,0 +1,4 @@
+[submodule "InferSim"]
+	path = InferSim
+	url = git@github.com:inference-sim/InferSim.git
+	branch = roofline-benchmark-improvements

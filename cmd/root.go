@@ -33,6 +33,7 @@ var (
 	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
 	modelConfigFolder         string    // Path to folder containing config.json and model.json
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
+	benchDataPath             string    // Path to benchmark data directory for MFU lookups
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
 	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
@@ -174,25 +175,37 @@ var runCmd = &cobra.Command{
 				totalKVBlocks = kvBlocks
 			}
 		}
-		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
-			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
-			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
-				roofline = true
-				hfPath := filepath.Join(modelConfigFolder, "config.json")
-				mc, err := sim.GetModelConfig(hfPath)
-				if err != nil {
-					logrus.Fatalf("Failed to load model config: %v", err)
-				}
-				modelConfig = *mc
-				hc, err := sim.GetHWConfig(hwConfigPath, gpu)
-				if err != nil {
-					logrus.Fatalf("Failed to load hardware config: %v", err)
-				}
-				hwConfig = hc
-			} else if len(modelConfigFolder) == 0 {
-				logrus.Fatalf("Please provide model config folder containing config.json for model=%v\n", model)
+		// Enable roofline mode if all required paths are provided
+		if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(benchDataPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
+			logrus.Infof("Enabling roofline mode: model-config-folder=%s, hardware-config=%s, bench-data-path=%s, gpu=%s, tp=%d",
+				modelConfigFolder, hwConfigPath, benchDataPath, gpu, tensorParallelism)
+			roofline = true
+			hfPath := filepath.Join(modelConfigFolder, "config.json")
+			modelConfig = *sim.GetModelConfig(hfPath)
+			hwConfig = sim.GetHWConfig(hwConfigPath, gpu)
+		} else if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+			// Fall back to checking if coefficients are zero and warn about missing paths
+			logrus.Warnf("No valid coefficients found for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
+			if len(modelConfigFolder) == 0 {
+				logrus.Fatalf("Please provide model config folder containing config.json via --model-config-folder")
 			} else if len(hwConfigPath) == 0 {
-				logrus.Fatalf("Please provide hardware config path (e.g. hardware_config.json)\n")
+				logrus.Fatalf("Please provide hardware config path via --hardware-config")
+			} else if len(benchDataPath) == 0 {
+				logrus.Fatalf("Please provide benchmark data path via --bench-data-path")
+			} else if len(gpu) == 0 {
+				logrus.Fatalf("Please provide GPU type via --gpu")
+			} else if tensorParallelism == 0 {
+				logrus.Fatalf("Please provide tensor parallelism via --tp")
+			}
+		}
+
+		// Load MFU database if roofline mode is enabled
+		var mfuDB *sim.MFUDatabase
+		if roofline {
+			var err error
+			mfuDB, err = sim.NewMFUDatabase(modelConfig, benchDataPath, gpu)
+			if err != nil {
+				logrus.Fatalf("Failed to load MFU database: %v", err)
 			}
 		}
 
@@ -594,6 +607,7 @@ func init() {
 	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
 	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
 	runCmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
+	runCmd.Flags().StringVar(&benchDataPath, "bench-data-path", "bench_data", "Path to benchmark data directory for MFU lookups")
 	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)")
 	runCmd.Flags().StringVar(&tracesWorkloadFilePath, "workload-traces-filepath", "", "Workload filepath for traces workload type.")
 

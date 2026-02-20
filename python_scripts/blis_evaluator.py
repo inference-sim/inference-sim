@@ -72,6 +72,7 @@ class BLISEvaluator:
             "--vllm-version", "vllm/vllm-openai:v0.8.4",
             "--model-config-folder", model_config_folder,
             "--hardware-config", "hardware_config.json",
+            "--bench-data-path", "bench_data",
             "--total-kv-blocks", str(experiment["total_kv_blocks"]),
             "--max-num-running-reqs", str(vllm_config["max_num_seqs"]),
             "--max-num-scheduled-tokens", str(vllm_config["max_num_batched_tokens"]),
@@ -315,20 +316,19 @@ class BLISEvaluator:
             "e2e_p90_ms": 0.0
         }
 
-        # Aggregate by workload type
-        by_workload = {"train": [], "prefill": []}
+        # Aggregate by workload type (dynamically from data)
+        by_workload = {}
 
         for exp_result in all_experiment_results:
             # Add to overall mean accumulator
             for metric in mean_percentage_errors.keys():
                 mean_percentage_errors[metric] += exp_result["mean_percentage_errors"][metric]
 
-            # Categorize by workload type
+            # Categorize by workload type (use app_type directly)
             app_type = exp_result["app_type"]
-            if "train" in app_type:
-                by_workload["train"].append(exp_result)
-            else:
-                by_workload["prefill"].append(exp_result)
+            if app_type not in by_workload:
+                by_workload[app_type] = []
+            by_workload[app_type].append(exp_result)
 
         # Compute overall mean
         if num_experiments > 0:
@@ -337,14 +337,19 @@ class BLISEvaluator:
                 for metric, total in mean_percentage_errors.items()
             }
 
-        # Aggregate by model
-        by_model = {"codellama": [], "llama-2": []}
+        # Aggregate by model (dynamically extract model family from name)
+        by_model = {}
         for exp_result in all_experiment_results:
-            model_name = exp_result["model"].lower()
-            if "codellama" in model_name:
-                by_model["codellama"].append(exp_result)
-            elif "llama" in model_name:
-                by_model["llama-2"].append(exp_result)
+            model_name = exp_result["model"]
+            # Extract model family: use the part after "/" or the whole name
+            if "/" in model_name:
+                model_key = model_name.split("/")[1].split("-")[0].lower()
+            else:
+                model_key = model_name.split("-")[0].lower()
+
+            if model_key not in by_model:
+                by_model[model_key] = []
+            by_model[model_key].append(exp_result)
 
         # Compute aggregations for workload types (mean of means)
         by_workload_agg = {}
@@ -354,6 +359,7 @@ class BLISEvaluator:
                 agg_pct = {metric: sum(e["mean_percentage_errors"][metric] for e in experiments) / num_exp
                           for metric in mean_percentage_errors.keys()}
                 by_workload_agg[workload_type] = {
+                    "num_experiments": num_exp,
                     "mean_percentage_errors": agg_pct
                 }
 
@@ -365,6 +371,7 @@ class BLISEvaluator:
                 agg_pct = {metric: sum(e["mean_percentage_errors"][metric] for e in experiments) / num_exp
                           for metric in mean_percentage_errors.keys()}
                 by_model_agg[model_type] = {
+                    "num_experiments": num_exp,
                     "mean_percentage_errors": agg_pct
                 }
 
