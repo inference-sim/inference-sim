@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"sort"
 	"testing"
 )
 
@@ -86,5 +87,89 @@ func TestWaitQueue_PrependFront_OnEmpty(t *testing.T) {
 	}
 	if wq.Len() != 1 {
 		t.Errorf("PrependFront on empty: Len() got %d, want 1", wq.Len())
+	}
+}
+
+func TestWaitQueue_Items_ReturnsContents(t *testing.T) {
+	// GIVEN a queue with requests [A, B, C]
+	wq := &WaitQueue{}
+	reqA := &Request{ID: "A"}
+	reqB := &Request{ID: "B"}
+	reqC := &Request{ID: "C"}
+	wq.Enqueue(reqA)
+	wq.Enqueue(reqB)
+	wq.Enqueue(reqC)
+
+	// WHEN Items() is called
+	items := wq.Items()
+
+	// THEN it returns [A, B, C] in order
+	if len(items) != 3 {
+		t.Fatalf("Items: got %d elements, want 3", len(items))
+	}
+	wantIDs := []string{"A", "B", "C"}
+	for i, req := range items {
+		if req.ID != wantIDs[i] {
+			t.Errorf("Items[%d]: got %s, want %s", i, req.ID, wantIDs[i])
+		}
+	}
+}
+
+func TestWaitQueue_Items_EmptyQueue(t *testing.T) {
+	// GIVEN an empty queue
+	wq := &WaitQueue{}
+
+	// WHEN Items() is called
+	items := wq.Items()
+
+	// THEN it returns an empty (or nil) slice
+	if len(items) != 0 {
+		t.Errorf("Items on empty queue: got %d elements, want 0", len(items))
+	}
+}
+
+func TestWaitQueue_Reorder_AppliesFunction(t *testing.T) {
+	// GIVEN a queue with requests [C, A, B] (arrival order)
+	wq := &WaitQueue{}
+	wq.Enqueue(&Request{ID: "C", ArrivalTime: 300})
+	wq.Enqueue(&Request{ID: "A", ArrivalTime: 100})
+	wq.Enqueue(&Request{ID: "B", ArrivalTime: 200})
+
+	// WHEN Reorder is called with a function that sorts by arrival time
+	wq.Reorder(func(reqs []*Request) {
+		sort.SliceStable(reqs, func(i, j int) bool {
+			return reqs[i].ArrivalTime < reqs[j].ArrivalTime
+		})
+	})
+
+	// THEN the queue order is [A, B, C] and length is preserved
+	if wq.Len() != 3 {
+		t.Fatalf("Reorder changed length: got %d, want 3", wq.Len())
+	}
+	items := wq.Items()
+	wantIDs := []string{"A", "B", "C"}
+	for i, req := range items {
+		if req.ID != wantIDs[i] {
+			t.Errorf("Reorder result[%d]: got %s, want %s", i, req.ID, wantIDs[i])
+		}
+	}
+}
+
+func TestWaitQueue_Reorder_EmptyQueue_NoOp(t *testing.T) {
+	// GIVEN an empty queue
+	wq := &WaitQueue{}
+	called := false
+
+	// WHEN Reorder is called
+	wq.Reorder(func(reqs []*Request) {
+		called = true
+	})
+
+	// THEN the function is still called (with empty slice) and queue remains empty
+	if !called {
+		t.Error("Reorder did not call the function on empty queue")
+	}
+	if wq.Len() != 0 {
+		t.Errorf("Reorder on empty queue changed length: got %d, want 0", wq.Len())
 	}
 }

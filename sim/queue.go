@@ -54,6 +54,27 @@ func (wq *WaitQueue) PrependFront(req *Request) {
 	wq.queue = append([]*Request{req}, wq.queue...)
 }
 
+// Items returns the queue contents for iteration.
+// The returned slice is the queue's internal storage -- callers within the
+// sim package may iterate over it but MUST NOT append to or reslice it.
+// For reordering, use Reorder() instead.
+func (wq *WaitQueue) Items() []*Request {
+	return wq.queue
+}
+
+// Reorder applies fn to the queue contents, allowing in-place reordering.
+// The InstanceScheduler.OrderQueue method is the primary consumer:
+//
+//	wq.Reorder(func(reqs []*Request) {
+//	    scheduler.OrderQueue(reqs, now)
+//	})
+//
+// fn receives the underlying slice and may sort it in-place.
+// fn MUST NOT change the slice length (no append/delete).
+func (wq *WaitQueue) Reorder(fn func([]*Request)) {
+	fn(wq.queue)
+}
+
 // DequeueBatch removes a request from the front of the queue.
 // This is used by the scheduler to construct a batch for processing.
 func (wq *WaitQueue) DequeueBatch() *Request {
