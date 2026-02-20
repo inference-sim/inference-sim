@@ -145,7 +145,7 @@ Any division where the denominator derives from runtime state (batch size, block
 
 When a PR changes output format, metrics, or default behavior, the golden dataset must be regenerated and the regeneration command documented. Golden tests that pass with stale expected values provide false confidence.
 
-**Evidence:** Present in CONTRIBUTORS.md and PR template but not in CLAUDE.md's numbered rules — an inconsistency this consolidation resolves.
+**Evidence:** Present in CONTRIBUTING.md and PR template but not in CLAUDE.md's numbered rules — an inconsistency this consolidation resolves.
 
 **Check:** If `go test ./sim/... -run Golden` fails after your changes, regenerate and document the command.
 
