@@ -1,6 +1,8 @@
 package sim
 
 import (
+	"bytes"
+	"os"
 	"sort"
 	"testing"
 )
@@ -171,5 +173,19 @@ func TestWaitQueue_Reorder_EmptyQueue_NoOp(t *testing.T) {
 	}
 	if wq.Len() != 0 {
 		t.Errorf("Reorder on empty queue changed length: got %d, want 0", wq.Len())
+	}
+}
+
+func TestWaitQueue_Encapsulation_NoDirectFieldAccess(t *testing.T) {
+	// BC-6: GIVEN simulator.go, WHEN searching for '.WaitQ.queue',
+	// THEN zero results MUST be found (full encapsulation)
+	content, err := os.ReadFile("simulator.go")
+	if err != nil {
+		t.Fatalf("reading simulator.go: %v", err)
+	}
+
+	pattern := ".WaitQ.queue"
+	if bytes.Contains(content, []byte(pattern)) {
+		t.Errorf("simulator.go still contains direct .WaitQ.queue access -- encapsulation incomplete")
 	}
 }
