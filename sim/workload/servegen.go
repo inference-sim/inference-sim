@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
 // parseServeGenPDF parses a Python dict string like "{100: 0.5, 200: 0.3}"
@@ -195,6 +197,7 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 
 	reader := csv.NewReader(file)
 	var rows []serveGenTraceRow
+	skippedRows := 0
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -204,6 +207,7 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 			return nil, fmt.Errorf("reading trace CSV: %w", err)
 		}
 		if len(record) < 4 {
+			skippedRows++
 			continue
 		}
 		startTime, _ := strconv.ParseFloat(strings.TrimSpace(record[0]), 64)
@@ -217,6 +221,9 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 			cv:           cv,
 			pattern:      pattern,
 		})
+	}
+	if skippedRows > 0 {
+		logrus.Warnf("parseServeGenTrace: %d rows in %s had fewer than 4 fields and were skipped", skippedRows, path)
 	}
 	return rows, nil
 }
