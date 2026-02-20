@@ -38,6 +38,22 @@ func (wq *WaitQueue) Len() int {
 	return len(wq.queue)
 }
 
+// Peek returns the request at the front of the queue without removing it.
+// Returns nil if the queue is empty.
+func (wq *WaitQueue) Peek() *Request {
+	if len(wq.queue) == 0 {
+		return nil
+	}
+	return wq.queue[0]
+}
+
+// PrependFront inserts a request at the front of the queue.
+// Used for preemption: a request evicted from the running batch
+// is placed back at the head of the wait queue for immediate rescheduling.
+func (wq *WaitQueue) PrependFront(req *Request) {
+	wq.queue = append([]*Request{req}, wq.queue...)
+}
+
 // DequeueBatch removes a request from the front of the queue.
 // This is used by the scheduler to construct a batch for processing.
 func (wq *WaitQueue) DequeueBatch() *Request {
