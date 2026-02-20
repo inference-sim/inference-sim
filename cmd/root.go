@@ -209,6 +209,15 @@ var runCmd = &cobra.Command{
 			if err := spec.Validate(); err != nil {
 				logrus.Fatalf("Invalid workload spec: %v", err)
 			}
+			// Apply CLI --seed override: when explicitly passed, CLI seed controls
+			// workload generation (R18: CLI flag precedence, INV-6a: seed supremacy).
+			// When --seed is not passed, the YAML seed is used (backward compatible).
+			if cmd.Flags().Changed("seed") {
+				logrus.Infof("CLI --seed %d overrides workload-spec seed %d", seed, spec.Seed)
+				spec.Seed = seed
+			} else {
+				logrus.Infof("Using workload-spec seed %d (CLI --seed not specified)", spec.Seed)
+			}
 			// Apply spec horizon as default; CLI --horizon flag overrides via Changed().
 			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
 				simulationHorizon = spec.Horizon
