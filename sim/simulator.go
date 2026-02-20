@@ -424,7 +424,7 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
 			sim.KVCache.ReleaseKVBlocks(preemptedRequest)
-			sim.WaitQ.queue = append([]*Request{preemptedRequest}, sim.WaitQ.queue...)
+			sim.WaitQ.PrependFront(preemptedRequest)
 
 			if preemptedRequest == req {
 				return false
@@ -501,11 +501,11 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 	}
 
 	// Next, attempt to dequeue requests in waiting queue, if batch size is not exceeded and not any preemption happened
-	for len(sim.RunningBatch.Requests) < int(sim.maxRunningReqs) && len(sim.WaitQ.queue) > 0 && tokenBudget > 0 && !sim.preemptionHappened {
+	for len(sim.RunningBatch.Requests) < int(sim.maxRunningReqs) && sim.WaitQ.Len() > 0 && tokenBudget > 0 && !sim.preemptionHappened {
 		// we will attempt to dequeue `next` request
 		// if that attempt fails, we will break out of the loop
 
-		next := sim.WaitQ.queue[0]
+		next := sim.WaitQ.Peek()
 
 		// first find cache hits. This only happens once per prefill (regardless of chunked)
 		cachedBlocks := sim.KVCache.GetCachedBlocks(next.InputTokens)
@@ -531,7 +531,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		// at this point: the `next` request is deemed schedulable
 
 		// dequeue this request
-		sim.WaitQ.queue = sim.WaitQ.queue[1:]
+		sim.WaitQ.DequeueBatch()
 		// make it part of the running batch
 		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
 		next.ScheduledStepIdx = sim.stepCount
@@ -576,16 +576,18 @@ func (sim *Simulator) Step(now int64) {
 	sim.KVCache.SetClock(now)
 
 	// Assign priorities to queued requests and order queue per scheduler policy
-	for _, req := range sim.WaitQ.queue {
+	for _, req := range sim.WaitQ.Items() {
 		req.Priority = sim.priorityPolicy.Compute(req, now)
 	}
-	sim.scheduler.OrderQueue(sim.WaitQ.queue, now)
+	sim.WaitQ.Reorder(func(reqs []*Request) {
+		sim.scheduler.OrderQueue(reqs, now)
+	})
 
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch(now)
 
 	// save waitQ length for analysis
-	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, len(sim.WaitQ.queue))
+	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, sim.WaitQ.Len())
 
 	// save runningBatch length for analysis
 	sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, len(sim.RunningBatch.Requests))
