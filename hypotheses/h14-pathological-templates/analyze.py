@@ -163,9 +163,51 @@ def analyze_decomposed(files):
         )
 
 
+def analyze_scheduling(files):
+    """Experiment 3: Scheduling effect at 1 instance (ED-2 rate awareness)."""
+    results = {}
+    for f in files:
+        name = Path(f).stem
+        results[name] = parse_output(f)
+
+    configs = [
+        ("sched_1inst_normal", "Normal (slo-based + priority-fcfs)"),
+        ("sched_1inst_double", "Double inversion (inverted + reverse)"),
+        ("sched_1inst_inv_prio", "Inverted priority only (inverted + pfcfs)"),
+        ("sched_1inst_rev_sched", "Reverse scheduler only (slo + reverse)"),
+    ]
+
+    print(
+        f"  {'Configuration':<35} | {'TTFT Mean':>10} {'TTFT P99':>10}"
+        f" | {'E2E Mean':>10} {'E2E P99':>10} | {'Inv':>5}"
+    )
+    print(
+        f"  {'-' * 35}-+-{'-' * 21}-+-{'-' * 21}-+-{'-' * 5}"
+    )
+
+    for key, label in configs:
+        r = results.get(key)
+        if not r:
+            continue
+        print(
+            f"  {label:<35} |"
+            f" {r['ttft_mean']:>10.1f} {r['ttft_p99']:>10.1f}"
+            f" | {r['e2e_mean']:>10.1f} {r['e2e_p99']:>10.1f}"
+            f" | {r['inversions']:>5}"
+        )
+
+    n = results.get("sched_1inst_normal")
+    for key, label in configs[1:]:
+        p = results.get(key)
+        if n and p and n["e2e_p99"] > 0:
+            e2e_ratio = p["e2e_p99"] / n["e2e_p99"]
+            print(f"  vs normal: {label} is {e2e_ratio:.2f}x on E2E P99")
+
+
 ANALYZERS = {
     "core": analyze_core,
     "decomposed": analyze_decomposed,
+    "scheduling": analyze_scheduling,
 }
 
 if __name__ == "__main__":

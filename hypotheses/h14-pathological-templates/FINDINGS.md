@@ -108,20 +108,32 @@ The 2× threshold is far too lenient for mixed-SLO workloads with 16× variation
 - Use a per-class-normalized threshold
 - Compare priority-weighted E2E instead of raw E2E
 
-### FINDING 3: Scheduling Pathological Templates Are Invisible (design limitation)
+### BUG 3: Double Inversion Cancellation — `inverted-slo` + `reverse-priority` ≡ Normal (severity: medium)
 
-`reverse-priority` + `inverted-slo` produce output **byte-identical** to `priority-fcfs` + `slo-based` at this workload configuration. Root cause:
+`reverse-priority` + `inverted-slo` produce output **byte-identical** to `priority-fcfs` + `slo-based` at ALL configurations tested — including 1 instance where queues are deep. The root cause is NOT queue depth. It's a mathematical cancellation:
 
-1. **Queue depth is small.** With 4 instances at rate=2000, each instance gets ~125 requests spread over the simulation. The queue rarely has >1 waiting request at a time.
-2. **When queue has ≤1 request, reordering is a no-op.** `FCFSScheduler`, `PriorityFCFSScheduler`, and `ReversePriority` all produce the same output when there's 0 or 1 request in the queue.
-3. **Batch formation absorbs scheduling effects.** `makeRunningBatch` pulls requests greedily up to the token budget. With small queues, the entire queue fits in one batch regardless of order.
+**Normal scheduling order:**
+- `SLOBasedPriority`: priority = `0 + 1e-6 × age` → older requests get HIGHER priority
+- `PriorityFCFS`: sorts HIGH priority first → **older requests dequeued first** (= FCFS)
 
-To observe scheduling effects, the workload must create persistent queue buildups (queue depth >> 1). This requires either:
-- Much higher rate (10,000+ req/s)
-- Fewer instances (1-2)
-- Larger requests (more time in the running batch, longer queues)
+**"Pathological" scheduling order:**
+- `InvertedSLO`: priority = `0 - 1e-6 × age` → older requests get LOWER priority
+- `ReversePriority`: sorts LOW priority first → **older requests dequeued first** (= FCFS)
 
-This confirms research.md H1's precondition: "Verify queue depth > max_batch_size during the experiment. If queues never exceed one batch, SJF reordering is invisible."
+The two inversions cancel: `(-age, ascending)` produces the same ordering as `(+age, descending)`. The "pathological" combination is mathematically equivalent to normal scheduling.
+
+**Experiment 3 confirms this:** At 1 instance (deep queues), double inversion produces 1.00× on all metrics vs normal. But **single** inversions produce a measurable effect:
+
+| Configuration | TTFT P99 | E2E P99 | Inversions |
+|:---|:---:|:---:|:---:|
+| Normal (slo-based + priority-fcfs) | 4,848ms | 18,573ms | 16,138 |
+| Double inversion (inverted + reverse) | 4,848ms | 18,573ms | 16,138 |
+| Inverted priority only (inverted + priority-fcfs) | 5,166ms | 18,212ms | 37,497 |
+| Reverse scheduler only (slo-based + reverse) | 5,166ms | 18,212ms | 37,498 |
+
+Single inversions show +7% TTFT p99 and 2.3× more inversions. Both single inversions produce near-identical results (both are a single flip of the ordering).
+
+**Fix:** The research.md H14 spec and H24 spec should use single inversions, not double. For example, `inverted-slo` + `priority-fcfs` (inverted priority with correct scheduler) is actually pathological, whereas the intended `inverted-slo` + `reverse-priority` is accidentally equivalent to normal.
 
 ### FINDING 4: CLI `--seed` Doesn't Affect Workload-Spec Runs
 
@@ -137,7 +149,7 @@ All 3 seeds (42, 123, 456) produce byte-identical output. This confirms issue #2
 | `always-busiest` routes ALL traffic to 1 instance (stddev=216.5) | Confirmation | Documented here |
 | HOL blocking detector returns 0 for extreme single-instance concentration | Bug discovery | #291 |
 | Priority inversion detector false-positive rate: 7,463 for correct scheduling | Bug discovery | #292 |
-| Scheduling pathological templates invisible at rate=2000/4 instances | Design limitation | Documented; increase rate or reduce instances in future experiments |
+| `inverted-slo` + `reverse-priority` double inversion cancels out to FCFS-equivalent | Bug discovery | #295 |
 | `--seed` has no effect on workload-spec runs | Confirmation of #284 | Already tracked in #284 |
 
 ## Standards Audit

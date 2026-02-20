@@ -25,10 +25,10 @@ MODEL="meta-llama/llama-3.1-8b-instruct"
 WORKLOAD="$SCRIPT_DIR/mixed-slo.yaml"
 
 run_sim() {
-    local routing="$1" scheduler="$2" priority="$3" seed="$4"
+    local routing="$1" scheduler="$2" priority="$3" seed="$4" instances="${5:-4}"
     "$BINARY" run \
         --model "$MODEL" \
-        --num-instances 4 \
+        --num-instances "$instances" \
         --workload-spec "$WORKLOAD" \
         --num-requests 500 \
         --routing-policy "$routing" \
@@ -89,6 +89,31 @@ run_sim "least-loaded" "reverse-priority" "inverted-slo" 42 \
 
 analyze decomposed "$RESULTS_DIR/normal.txt" "$RESULTS_DIR/routing_only.txt" \
     "$RESULTS_DIR/sched_only.txt" "$RESULTS_DIR/patho.txt"
+
+# ── Experiment 3: ED-2 Rate Awareness — scheduling at 1 instance ────────────
+# ED-2: "Also run at a rate where the effect should vanish (to confirm the
+# mechanism, not just the outcome)." Scheduling effects vanish at 4 instances
+# (Exp 2) but should appear at 1 instance where all 500 requests queue up.
+
+echo ""
+echo "Experiment 3: ED-2 — scheduling effect at 1 instance (seed 42)"
+echo "  Tests whether reverse-priority becomes visible with deeper queues"
+echo ""
+
+run_sim "round-robin" "priority-fcfs" "slo-based" 42 1 \
+    > "$RESULTS_DIR/sched_1inst_normal.txt"
+run_sim "round-robin" "reverse-priority" "inverted-slo" 42 1 \
+    > "$RESULTS_DIR/sched_1inst_double.txt"
+# Single inversions: only one component pathological
+run_sim "round-robin" "priority-fcfs" "inverted-slo" 42 1 \
+    > "$RESULTS_DIR/sched_1inst_inv_prio.txt"
+run_sim "round-robin" "reverse-priority" "slo-based" 42 1 \
+    > "$RESULTS_DIR/sched_1inst_rev_sched.txt"
+
+analyze scheduling "$RESULTS_DIR/sched_1inst_normal.txt" \
+    "$RESULTS_DIR/sched_1inst_double.txt" \
+    "$RESULTS_DIR/sched_1inst_inv_prio.txt" \
+    "$RESULTS_DIR/sched_1inst_rev_sched.txt"
 
 echo ""
 echo "============================================================================"
