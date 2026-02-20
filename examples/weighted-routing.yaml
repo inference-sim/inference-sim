@@ -5,12 +5,13 @@
 # configurable weights: score = clamp(s_i) * w_i, then argmax.
 #
 # Available scorers:
+#   prefix-affinity — proportional prefix match ratio via router-side cache
 #   queue-depth     — min-max normalization of effective load (llm-d match)
 #   kv-utilization  — inverse utilization: 1 - KVUtilization (llm-d match)
 #   load-balance    — inverse transform: 1/(1 + effectiveLoad) (BLIS-native)
 #
 # Default profile (when --routing-scorers is not specified):
-#   queue-depth:2, kv-utilization:2, load-balance:1
+#   prefix-affinity:3, queue-depth:2, kv-utilization:2 (llm-d parity)
 #
 # Weights are relative — only ratios matter. [3,2,2] behaves identically
 # to [0.43,0.29,0.29]. The framework normalizes weights to sum to 1.0.
@@ -19,37 +20,38 @@
 # TRY IT: Compare scorer configurations
 # ============================================================================
 #
-#   # Default profile (balanced)
+#   # Default profile (llm-d parity: prefix-affinity dominant)
 #   ./simulation_worker run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
-#     --num-requests 500 --rate 1000 \
+#     --workload-spec examples/servegen-language.yaml \
 #     --trace-level decisions --summarize-trace
 #
-#   # Load-balance only (equivalent to least-loaded)
+#   # Prefix-affinity dominant (maximize cache reuse)
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-scorers "prefix-affinity:5,queue-depth:1" \
+#     --workload-spec examples/servegen-language.yaml \
+#     --trace-level decisions --summarize-trace
+#
+#   # Load-balance only (no prefix awareness, equivalent to least-loaded)
 #   ./simulation_worker run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "load-balance:1" \
-#     --num-requests 500 --rate 1000 \
-#     --trace-level decisions --summarize-trace
-#
-#   # KV-utilization dominant (prefer instances with free memory)
-#   ./simulation_worker run \
-#     --model meta-llama/llama-3.1-8b-instruct \
-#     --num-instances 4 --routing-policy weighted \
-#     --routing-scorers "kv-utilization:5,queue-depth:1" \
-#     --num-requests 500 --rate 1000 \
+#     --workload-spec examples/servegen-language.yaml \
 #     --trace-level decisions --summarize-trace
 #
 # ============================================================================
 # Adding new scorers
 # ============================================================================
 #
-# To add a new scorer (e.g., for prefix affinity — coming in PR 18):
-# 1. Implement the scorer function in sim/routing_scorers.go
-# 2. Register the name in validScorerNames + newScorer factory
-# Extension friction: 2 touch points in 1 file.
+# To add a new scorer:
+# 1. Implement the scorer function in sim/routing_scorers.go (or a new file
+#    like sim/routing_prefix_scorer.go for stateful scorers)
+# 2. Register the name in validScorerNames + newScorerWithObserver factory
+# Extension friction: 2 touch points.
 
 admission:
   policy: always-admit
@@ -57,12 +59,12 @@ admission:
 routing:
   policy: weighted
   scorers:
+    - name: prefix-affinity
+      weight: 3.0
     - name: queue-depth
       weight: 2.0
     - name: kv-utilization
       weight: 2.0
-    - name: load-balance
-      weight: 1.0
 
 priority:
   policy: constant

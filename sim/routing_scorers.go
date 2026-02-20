@@ -14,13 +14,21 @@ type ScorerConfig struct {
 }
 
 // scorerFunc computes per-instance scores in [0,1] for a scoring dimension.
-type scorerFunc func(snapshots []RoutingSnapshot) map[string]float64
+// The req parameter provides request metadata (e.g., InputTokens for prefix matching).
+// Stateless scorers may ignore it.
+type scorerFunc func(req *Request, snapshots []RoutingSnapshot) map[string]float64
+
+// defaultBlockSize is the default block size for the prefix cache index.
+// Matches the most common KV cache block size. Used when constructing
+// the prefix-affinity scorer without explicit configuration.
+const defaultBlockSize = 16
 
 // validScorerNames maps scorer names to validity. Unexported to prevent mutation (antipattern rule 8).
 var validScorerNames = map[string]bool{
-	"queue-depth":    true,
-	"kv-utilization": true,
-	"load-balance":   true,
+	"prefix-affinity": true,
+	"queue-depth":     true,
+	"kv-utilization":  true,
+	"load-balance":    true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.
@@ -30,12 +38,12 @@ func IsValidScorer(name string) bool { return validScorerNames[name] }
 func ValidScorerNames() []string { return validNamesList(validScorerNames) }
 
 // DefaultScorerConfigs returns the default scorer configuration for weighted routing.
-// Default profile: queue-depth:2, kv-utilization:2, load-balance:1.
+// Default profile: prefix-affinity:3, queue-depth:2, kv-utilization:2 (llm-d parity).
 func DefaultScorerConfigs() []ScorerConfig {
 	return []ScorerConfig{
+		{Name: "prefix-affinity", Weight: 3.0},
 		{Name: "queue-depth", Weight: 2.0},
 		{Name: "kv-utilization", Weight: 2.0},
-		{Name: "load-balance", Weight: 1.0},
 	}
 }
 
@@ -91,16 +99,20 @@ func normalizeScorerWeights(configs []ScorerConfig) []float64 {
 	return weights
 }
 
-// newScorer creates a scorer function by name. Panics on unknown name
-// (validation should catch this before reaching here).
-func newScorer(name string) scorerFunc {
+// newScorerWithObserver creates a scorer function and optional observer for a named scorer.
+// Returns (scorer, observer) where observer is nil for stateless scorers.
+// blockSize is used by stateful scorers (prefix-affinity) for block hash computation.
+// Panics on unknown name (validation should catch this before reaching here).
+func newScorerWithObserver(name string, blockSize int) (scorerFunc, observerFunc) {
 	switch name {
+	case "prefix-affinity":
+		return newPrefixAffinityScorer(blockSize)
 	case "queue-depth":
-		return scoreQueueDepth
+		return scoreQueueDepth, nil
 	case "kv-utilization":
-		return scoreKVUtilization
+		return scoreKVUtilization, nil
 	case "load-balance":
-		return scoreLoadBalance
+		return scoreLoadBalance, nil
 	default:
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}
@@ -109,7 +121,7 @@ func newScorer(name string) scorerFunc {
 // scoreQueueDepth computes per-instance queue depth scores using min-max normalization.
 // Lower effective load → higher score. All-equal loads → all score 1.0.
 // Matches llm-d's queue-scorer semantics.
-func scoreQueueDepth(snapshots []RoutingSnapshot) map[string]float64 {
+func scoreQueueDepth(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
 	minLoad, maxLoad := math.MaxInt, 0
 	for _, snap := range snapshots {
@@ -135,7 +147,7 @@ func scoreQueueDepth(snapshots []RoutingSnapshot) map[string]float64 {
 // scoreKVUtilization computes per-instance KV utilization scores.
 // Lower utilization → higher score: score = 1 - KVUtilization.
 // Matches llm-d's kv-cache-utilization-scorer semantics.
-func scoreKVUtilization(snapshots []RoutingSnapshot) map[string]float64 {
+func scoreKVUtilization(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
 	for _, snap := range snapshots {
 		scores[snap.ID] = 1.0 - snap.KVUtilization
@@ -146,7 +158,7 @@ func scoreKVUtilization(snapshots []RoutingSnapshot) map[string]float64 {
 // scoreLoadBalance computes per-instance load balance scores using inverse transform.
 // Lower effective load → higher score: score = 1/(1 + effectiveLoad).
 // BLIS-native formula preserving absolute load differences (alternative to min-max).
-func scoreLoadBalance(snapshots []RoutingSnapshot) map[string]float64 {
+func scoreLoadBalance(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
 	for _, snap := range snapshots {
 		scores[snap.ID] = 1.0 / (1.0 + float64(snap.EffectiveLoad()))

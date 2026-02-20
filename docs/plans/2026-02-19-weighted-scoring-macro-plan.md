@@ -1,8 +1,8 @@
 # BLIS Composable Scorer Framework: Macro-Level Implementation Plan
 
 **Date:** 2026-02-19
-**Revision:** v1.0
-**Status:** Draft
+**Revision:** v1.1
+**Status:** Complete (PR17 merged, PR18 in review)
 **Target:** Composable multi-scorer routing within `weighted` policy
 **Based on:** [Design Document](2026-02-19-weighted-scoring-evolution-design.md)
 **Closes:** #229, #230

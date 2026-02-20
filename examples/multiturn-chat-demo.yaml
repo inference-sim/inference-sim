@@ -1,0 +1,73 @@
+# BLIS Multi-Turn Chat Demo — Prefix-Affinity Routing
+#
+# Simulates many concurrent multi-turn chat sessions. Each session has 5
+# rounds with context accumulation (each round prepends all prior context).
+#
+# KEY INSIGHT: With prefix-affinity routing, sessions stick to one instance,
+# so the KV cache from prior rounds is reused — fewer prefill tokens → lower
+# TTFT for subsequent rounds. With load-only routing, rounds scatter across
+# instances, causing full prefill every round.
+#
+# ============================================================================
+# TRY IT
+# ============================================================================
+#
+#   # Prefix-affinity dominant (sessions cluster on instances)
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-scorers "prefix-affinity:3,queue-depth:2" \
+#     --workload-spec examples/multiturn-chat-demo.yaml \
+#     --trace-level decisions --summarize-trace
+#
+#   # Load-only (rounds scatter across instances — no cache reuse)
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-scorers "queue-depth:1" \
+#     --workload-spec examples/multiturn-chat-demo.yaml \
+#     --trace-level decisions --summarize-trace
+#
+# Expected: prefix-affinity produces lower TTFT because later rounds in each
+# session reuse the prior rounds' KV cache (fewer prefill tokens needed).
+
+version: "1"
+seed: 42
+category: reasoning
+aggregate_rate: 500.0     # Sessions start at 500/sec (each produces 5 rounds)
+num_requests: 500         # ~100 sessions × 5 rounds
+
+clients:
+  - id: "multi-turn-chat"
+    tenant_id: "chat-users"
+    slo_class: "interactive"
+    rate_fraction: 1.0
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 30
+        min: 32
+        max: 512
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 64
+        std_dev: 20
+        min: 16
+        max: 256
+    reasoning:
+      reason_ratio_distribution:
+        type: gaussian
+        params:
+          mean: 0
+          std_dev: 0
+          min: 0
+          max: 0
+      multi_turn:
+        max_rounds: 5
+        think_time_us: 500000    # 500ms between rounds (realistic user think time)
+        context_growth: accumulate

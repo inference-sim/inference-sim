@@ -70,27 +70,42 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 			prefix = prefixes[client.PrefixGroup]
 		}
 
-		// Handle reasoning/multi-turn clients separately
+		// Handle reasoning/multi-turn clients: generate multiple sessions
+		// based on the arrival process, each session producing MaxRounds requests.
 		if client.Reasoning != nil && client.Reasoning.MultiTurn != nil {
-			reasoningReqs, err := GenerateReasoningRequests(
-				clientRNG, client.Reasoning,
-				inputSampler, outputSampler,
-				0, // startTime
-				client.ID, client.TenantID, client.SLOClass,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
-			}
-			// Apply count cap to reasoning requests too
-			if maxRequests > 0 && int64(len(allRequests)+len(reasoningReqs)) > maxRequests {
-				remaining := maxRequests - int64(len(allRequests))
-				if remaining > 0 {
-					reasoningReqs = reasoningReqs[:remaining]
-				} else {
-					reasoningReqs = nil
+			currentTime := int64(0)
+			for currentTime < horizon {
+				if maxRequests > 0 && int64(len(allRequests)) >= maxRequests {
+					break
 				}
+				iat := arrivalSampler.SampleIAT(clientRNG)
+				currentTime += iat
+				if currentTime >= horizon {
+					break
+				}
+				reasoningReqs, err := GenerateReasoningRequests(
+					clientRNG, client.Reasoning,
+					inputSampler, outputSampler,
+					currentTime,
+					client.ID, client.TenantID, client.SLOClass,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+				}
+				// Apply count cap
+				if maxRequests > 0 && int64(len(allRequests)+len(reasoningReqs)) > maxRequests {
+					remaining := maxRequests - int64(len(allRequests))
+					if remaining > 0 {
+						reasoningReqs = reasoningReqs[:remaining]
+					} else {
+						reasoningReqs = nil
+					}
+				}
+				allRequests = append(allRequests, reasoningReqs...)
+				// Note: we do NOT skip ahead by session duration. Sessions overlap
+				// in time — the arrival process controls inter-session spacing.
+				// This models concurrent chat users starting sessions independently.
 			}
-			allRequests = append(allRequests, reasoningReqs...)
 			continue
 		}
 

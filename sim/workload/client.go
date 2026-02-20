@@ -6,7 +6,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// DefaultPrefixLength is the number of shared prefix tokens for prefix groups.
+// defaultPrefixLength is the number of shared prefix tokens for prefix groups.
 
 const defaultPrefixLength = 50
 
@@ -29,7 +29,9 @@ func normalizeRateFractions(clients []ClientSpec, aggregateRate float64) []float
 }
 
 // generatePrefixTokens creates shared prefix token sequences per prefix group.
-// Clients in the same group get the same prefix tokens.
+// Clients in the same group get the same prefix tokens. The length is determined
+// by the first client in the group that specifies prefix_length; others in the
+// same group inherit it. If no client specifies prefix_length, defaultPrefixLength is used.
 func generatePrefixTokens(clients []ClientSpec, rng *rand.Rand) map[string][]int {
 	prefixes := make(map[string][]int)
 	for i := range clients {
@@ -38,7 +40,11 @@ func generatePrefixTokens(clients []ClientSpec, rng *rand.Rand) map[string][]int
 			continue
 		}
 		if _, exists := prefixes[group]; !exists {
-			prefixes[group] = sim.GenerateRandomTokenIDs(rng, defaultPrefixLength)
+			length := defaultPrefixLength
+			if clients[i].PrefixLength > 0 {
+				length = clients[i].PrefixLength
+			}
+			prefixes[group] = sim.GenerateRandomTokenIDs(rng, length)
 		}
 	}
 	return prefixes

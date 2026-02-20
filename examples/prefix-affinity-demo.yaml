@@ -1,0 +1,85 @@
+# BLIS Prefix-Affinity Demo Workload
+#
+# This workload demonstrates the prefix-affinity scorer's effect on routing.
+# 80% of requests share a long system prompt (256 tokens = 16 blocks at
+# block_size=16), simulating multi-turn chat with a shared context window.
+#
+# With prefix_length: 256, the prefix match ratio is ~80% (16 blocks out of
+# ~20 total), giving the prefix-affinity scorer a strong signal.
+#
+# ============================================================================
+# TRY IT: Compare prefix-affinity vs load-only routing
+# ============================================================================
+#
+#   # Prefix-affinity dominant (requests cluster onto cached instances)
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-scorers "prefix-affinity:5,queue-depth:1" \
+#     --workload-spec examples/prefix-affinity-demo.yaml \
+#     --trace-level decisions --summarize-trace
+#
+#   # Load-only (no prefix awareness — requests spread uniformly)
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --routing-scorers "queue-depth:1" \
+#     --workload-spec examples/prefix-affinity-demo.yaml \
+#     --trace-level decisions --summarize-trace
+#
+#   # Default profile (balanced llm-d parity)
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 --routing-policy weighted \
+#     --workload-spec examples/prefix-affinity-demo.yaml \
+#     --trace-level decisions --summarize-trace
+#
+# Expected: prefix-affinity dominant concentrates shared-prefix requests
+# onto fewer instances (visible in Target Distribution). Load-only spreads
+# them uniformly. The default profile balances both signals.
+
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 500.0  # 500 requests/second
+num_requests: 200
+
+clients:
+  # 80% of traffic: shared long system prompt (multi-turn chat pattern)
+  - id: "chat-with-system-prompt"
+    tenant_id: "tenant-A"
+    slo_class: "interactive"
+    rate_fraction: 0.8
+    streaming: true
+    prefix_group: "long-system-prompt"
+    prefix_length: 256           # 256 shared prefix tokens = 16 blocks
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 64                 # short user messages on top of prefix
+        std_dev: 20
+        min: 16
+        max: 256
+    output_distribution:
+      type: exponential
+      params:
+        mean: 128
+
+  # 20% of traffic: unique requests (no prefix sharing)
+  - id: "unique-requests"
+    tenant_id: "tenant-B"
+    slo_class: "batch"
+    rate_fraction: 0.2
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 512
+    output_distribution:
+      type: exponential
+      params:
+        mean: 256
