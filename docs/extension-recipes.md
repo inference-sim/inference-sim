@@ -35,14 +35,15 @@ Examples:
 
 To add a new scoring dimension for the `weighted` routing policy (e.g., predicted-latency):
 
-1. **Implement the scorer function** in `sim/routing_scorers.go` — a `scorerFunc` that takes `[]RoutingSnapshot` and returns `map[string]float64` with scores in [0,1] per instance
-2. **Register the scorer** in the same file: add to `validScorerNames` map + `newScorer` factory switch
-3. **Add behavioral tests** in `sim/routing_scorers_test.go` — monotonicity, boundary values, INV-1/INV-2 conformance
-4. Extension friction: **2 touch points in 1 file**
+1. **Implement the scorer function** in `sim/routing_scorers.go` (stateless) or a new file (stateful) — a `scorerFunc` that takes `(*Request, []RoutingSnapshot)` and returns `map[string]float64` with scores in [0,1] per instance. Stateful scorers also return an `observerFunc` called after each routing decision.
+2. **Register the scorer** in `sim/routing_scorers.go`: add to `validScorerNames` map + `newScorerWithObserver` factory switch
+3. **Add behavioral tests** — monotonicity, boundary values, INV-1/INV-2 conformance
+4. Extension friction: **2 touch points** (implementation + registration)
 
 Examples:
 - See `scoreLoadBalance` in `sim/routing_scorers.go` for a simple stateless scorer
 - See `scoreQueueDepth` for a scorer with edge case handling (uniform load)
+- See `newPrefixAffinityScorer` in `sim/routing_prefix_scorer.go` for a stateful scorer with observer and router-side cache
 
 ## Extending KV Cache Tiers
 
