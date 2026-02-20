@@ -375,6 +375,9 @@ var runCmd = &cobra.Command{
 			}
 			logrus.Infof("Weighted routing scorers: %s", strings.Join(scorerStrs, ", "))
 		}
+		if routingPolicy != "weighted" && routingScorers != "" {
+			logrus.Warnf("--routing-scorers has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
+		}
 		if admissionPolicy == "token-bucket" {
 			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
 				tokenBucketCapacity, tokenBucketRefillRate)

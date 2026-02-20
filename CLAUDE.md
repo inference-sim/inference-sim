@@ -305,6 +305,19 @@ Examples:
 - See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
 - See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback
 
+### Adding New Scorers (Weighted Routing)
+
+To add a new scoring dimension for the `weighted` routing policy (e.g., predicted-latency):
+
+1. **Implement the scorer function** in `sim/routing_scorers.go` — a `scorerFunc` that takes `[]RoutingSnapshot` and returns `map[string]float64` with scores in [0,1] per instance
+2. **Register the scorer** in the same file: add to `validScorerNames` map + `newScorer` factory switch
+3. **Add behavioral tests** in `sim/routing_scorers_test.go` — monotonicity, boundary values, INV-1/INV-2 conformance
+4. Extension friction: **2 touch points in 1 file**
+
+Examples:
+- See `scoreLoadBalance` in `sim/routing_scorers.go` for a simple stateless scorer
+- See `scoreQueueDepth` for a scorer with edge case handling (uniform load)
+
 ### Extending KV Cache Tiers
 
 To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):

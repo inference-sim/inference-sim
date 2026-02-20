@@ -611,7 +611,7 @@ inference-sim/
 |------|---------|-------------|
 | `--num-instances` | 1 | Number of instances in the cluster |
 | `--routing-policy` | round-robin | Routing: `round-robin`, `least-loaded`, `weighted`, `prefix-affinity`, `always-busiest` |
-| `--routing-scorers` | (defaults) | Scorer weights for weighted routing (e.g., `queue-depth:2,kv-utilization:2,load-balance:1`) |
+| `--routing-scorers` | (defaults) | Scorer weights for weighted routing. Valid scorers: `queue-depth`, `kv-utilization`, `load-balance`. Format: `name:weight,...` |
 | `--admission-policy` | always-admit | Admission: `always-admit`, `token-bucket`, `reject-all` |
 | `--token-bucket-capacity` | 10000 | Token bucket max tokens |
 | `--token-bucket-refill-rate` | 1000 | Token bucket refill rate (tokens/sec) |
