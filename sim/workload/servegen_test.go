@@ -1,10 +1,15 @@
 package workload
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseServeGenPDF_PythonDictString_ConvertsCorrectly(t *testing.T) {
@@ -102,6 +107,34 @@ func TestParseServeGenTrace_AllShortRows_ReturnsEmptySlice(t *testing.T) {
 	if len(rows) != 0 {
 		t.Errorf("got %d rows, want 0 (all rows should be skipped)", len(rows))
 	}
+}
+
+// TestParseServeGenTrace_NonNumericFields_SkippedAndWarned verifies BC-2.
+// Rows with non-numeric startTime, rate, or cv are counted in skippedRows.
+func TestParseServeGenTrace_NonNumericFields_SkippedAndWarned(t *testing.T) {
+	// GIVEN a CSV with 3 rows: 1 valid, 1 with non-numeric rate, 1 with non-numeric startTime
+	dir := t.TempDir()
+	csvContent := "0,1.5,2.0,Gamma\nBAD_TIME,1.0,2.0,Poisson\n100,NOT_A_NUMBER,2.0,Weibull\n"
+	path := filepath.Join(dir, "trace.csv")
+	require.NoError(t, os.WriteFile(path, []byte(csvContent), 0644))
+
+	// Capture log output
+	var buf bytes.Buffer
+	logrus.SetOutput(&buf)
+	defer logrus.SetOutput(os.Stderr)
+
+	// WHEN parsing the trace
+	rows, err := parseServeGenTrace(path)
+
+	// THEN no error is returned
+	require.NoError(t, err)
+
+	// AND only the valid row is included
+	assert.Len(t, rows, 1, "only the valid row should be parsed")
+	assert.InDelta(t, 1.5, rows[0].rate, 0.001)
+
+	// AND a warning was logged about 2 skipped rows
+	assert.Contains(t, buf.String(), "2 rows", "should warn about 2 skipped rows")
 }
 
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
