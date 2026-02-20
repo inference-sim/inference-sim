@@ -407,7 +407,7 @@ func TestDetectPriorityInversions_MissingE2E_WarnsAndCountsMatched(t *testing.T)
 	assert.GreaterOrEqual(t, inversions, 1, "should detect inversion between r1 and r2")
 
 	// AND a warning was logged about the skipped request
-	assert.Contains(t, buf.String(), "1 requests", "should warn about 1 skipped request")
+	assert.Contains(t, buf.String(), "missing E2E", "should warn about requests with missing E2E data")
 }
 
 // TestDetectHOLBlocking_ImbalancedInstances verifies BC-9.

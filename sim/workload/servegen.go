@@ -263,7 +263,11 @@ func loadServeGenDataset(path string, sgConfig *ServeGenDataSpec) (map[int]float
 
 	for _, k := range keys {
 		window := dataset[k]
-		startTime, _ := strconv.ParseFloat(k, 64)
+		startTime, parseErr := strconv.ParseFloat(k, 64)
+		if parseErr != nil {
+			logrus.Warnf("loadServeGenDataset: skipping non-numeric key %q: %v", k, parseErr)
+			continue
+		}
 		if sgConfig.SpanStart > 0 && startTime < float64(sgConfig.SpanStart) {
 			continue
 		}
