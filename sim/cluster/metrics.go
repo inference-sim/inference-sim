@@ -181,10 +181,16 @@ func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string)
 			e2e     float64
 		}
 		var reqs []reqInfo
+		skippedCount := 0
 		for id, rm := range m.Requests {
 			if e2e, ok := m.RequestE2Es[id]; ok {
 				reqs = append(reqs, reqInfo{arrived: rm.ArrivedAt, e2e: e2e})
+			} else {
+				skippedCount++
 			}
+		}
+		if skippedCount > 0 {
+			logrus.Warnf("detectPriorityInversions: %d requests missing E2E data, skipped", skippedCount)
 		}
 		sort.Slice(reqs, func(i, j int) bool {
 			return reqs[i].arrived < reqs[j].arrived

@@ -1,11 +1,15 @@
 package cluster
 
 import (
+	"bytes"
 	"math"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestDistribution_FromValues_ComputesCorrectStats verifies BC-2.
@@ -375,6 +379,35 @@ func TestDetectPriorityInversions_InvertedRequests(t *testing.T) {
 	if inversions == 0 {
 		t.Error("expected at least 1 inversion for 10× E2E difference")
 	}
+}
+
+// TestDetectPriorityInversions_MissingE2E_WarnsAndCountsMatched verifies BC-1.
+// Requests with no E2E entry are skipped with a warning, but matched requests
+// are still evaluated for inversions.
+func TestDetectPriorityInversions_MissingE2E_WarnsAndCountsMatched(t *testing.T) {
+	// GIVEN an instance with 3 requests but only 2 have E2E data
+	m := sim.NewMetrics()
+	m.Requests["r1"] = sim.RequestMetrics{ID: "r1", ArrivedAt: 100}
+	m.Requests["r2"] = sim.RequestMetrics{ID: "r2", ArrivedAt: 200}
+	m.Requests["r3"] = sim.RequestMetrics{ID: "r3", ArrivedAt: 300}
+	// r1 has 10× worse E2E than r2 → inversion
+	m.RequestE2Es["r1"] = 50000.0
+	m.RequestE2Es["r2"] = 5000.0
+	// r3 has NO E2E entry → should be skipped with warning
+
+	// Capture log output
+	var buf bytes.Buffer
+	logrus.SetOutput(&buf)
+	defer logrus.SetOutput(os.Stderr)
+
+	// WHEN detecting priority inversions
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
+
+	// THEN inversions are counted from matched requests (r1 vs r2)
+	assert.GreaterOrEqual(t, inversions, 1, "should detect inversion between r1 and r2")
+
+	// AND a warning was logged about the skipped request
+	assert.Contains(t, buf.String(), "1 requests", "should warn about 1 skipped request")
 }
 
 // TestDetectHOLBlocking_ImbalancedInstances verifies BC-9.
