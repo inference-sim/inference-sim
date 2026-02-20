@@ -16,48 +16,6 @@ go build -o simulation_worker main.go
 
 # Run with default model
 ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct
-
-# Run with custom workload distribution
-./simulation_worker run \
-  --model meta-llama/llama-3.1-8b-instruct \
-  --workload distribution \
-  --rate 10 --num-requests 100 \
-  --prompt-tokens 512 --output-tokens 256
-
-# Run with trace replay (deterministic testing)
-./simulation_worker run \
-  --model meta-llama/llama-3.1-8b-instruct \
-  --workload traces --workload-traces-filepath traces.csv
-
-# Run with roofline mode (no trained coefficients required)
-./simulation_worker run \
-  --model meta-llama/llama-3.1-8b-instruct \
-  --model-config-folder model_configs/llama-3.1-8b-instruct \
-  --hardware-config hardware_config.json --hardware H100 --tp 1
-
-# Run multi-instance with routing policy
-./simulation_worker run \
-  --model meta-llama/llama-3.1-8b-instruct \
-  --num-instances 4 --routing-policy weighted \
-  --routing-scorers "queue-depth:2,kv-utilization:2,load-balance:1"
-
-# Run with fitness evaluation and anomaly detection
-./simulation_worker run \
-  --model meta-llama/llama-3.1-8b-instruct \
-  --num-instances 4 \
-  --fitness-weights "throughput:0.5,p99_ttft:0.3,mean_e2e:0.2"
-
-# Run with decision tracing and counterfactual analysis
-./simulation_worker run \
-  --model meta-llama/llama-3.1-8b-instruct \
-  --num-instances 4 --routing-policy weighted \
-  --trace-level decisions --counterfactual-k 5 --summarize-trace
-
-# Run with ServeGen-informed workload specification
-./simulation_worker run \
-  --model meta-llama/llama-3.1-8b-instruct \
-  --num-instances 4 \
-  --workload-spec examples/servegen-language.yaml
 ```
 
 ## Testing
@@ -265,106 +223,10 @@ Each rule traces to a real bug we found and fixed. Enforced by PR workflow (self
 
 11. **Guard division in runtime computation**: Any division where the denominator derives from runtime state (batch size, block count, request count, bandwidth) must guard against zero. CLI validation (rule 3) catches input zeros at the boundary; this rule catches intermediate zeros that arise during simulation (e.g., `utilization = usedBlocks / totalBlocks` when no blocks are configured, `avgLatency = sum / count` when count is zero). Use explicit guards or documented invariants proving the denominator is non-zero.
 
-### Current Implementation Focus
 
-Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`). PR17 (scorer framework + stateless scorers) completed. Next: PR18 (prefix-affinity scorer + router-side cache). Prior work: Evolutionary Policy Optimization (see `docs/plans/2026-02-11-macro-implementation-plan-v2--deprecated.md`, PRs 1-16 — 12 completed, 4 remaining):
-- 16 PRs across 6 phases to extend BLIS to multi-replica cluster simulation
-- **Research-ready checkpoint at ~5 weeks** (after Phase 2) enables early policy experiments
-- **Completed:** PR1 (PartitionedRNG), PR2 (InstanceSimulator), PR3 (ClusterSimulator with shared-clock event loop, round-robin dispatch, metrics aggregation, golden dataset equivalence tests), PR4 (cluster control plane with online routing pipeline, SnapshotProvider, AdmissionPolicy with AlwaysAdmit + TokenBucket templates, cluster event queue), PR5 (architectural simplification: SimConfig struct, unified CLI path through ClusterSimulator, field privatization, AdmissionPolicy consolidated to `sim/admission.go`), PR6 (RoutingPolicy interface in `sim/routing.go` with RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity templates; RoutingSnapshot bridge type), PR7 (PriorityPolicy with ConstantPriority + SLOBasedPriority templates, InstanceScheduler with FCFS + PriorityFCFS + SJF templates, Priority field on Request, CLI flags `--priority-policy` and `--scheduler`), PR8 (RouterState bridge type in `sim/router_state.go`, PolicyBundle YAML config in `sim/bundle.go`, `--policy-config` CLI flag, AdmissionPolicy and RoutingPolicy accept `*RouterState`, `RoutingDecision.Priority` hint field, **INTERFACE FREEZE**), PR9 (RawMetrics with Distribution + FitnessResult, anomaly detection with priority inversion + HOL blocking counters, pathological templates: reject-all, inverted-slo, always-busiest, reverse-priority, `--fitness-weights` CLI flag, **RESEARCH-READY CHECKPOINT**)
-- **Completed (cont'd):** PR13 (DecisionTrace with RoutingRecord, counterfactual analysis with top-k candidates and regret, TraceSummary, EvaluationResult wrapper, `--trace-level decisions --counterfactual-k --summarize-trace` CLI flags), PR10 (ServeGen-informed Workload Generator in `sim/workload/` with multi-client specs, Poisson/Gamma/Weibull arrivals, Gaussian/Exponential/ParetoLogNormal/EmpiricalPDF distributions, native ServeGen loading, trace v2 replay, CalibrationReport with MAPE/Pearson r, real-mode HTTP client in `cmd/observe.go`, per-SLO-class metrics with Jain fairness index, `--workload-spec` CLI flag), PR12 (TieredKVCache with GPU+CPU offload/reload, `KVStore` interface, `NewKVStore` factory, `--kv-cpu-blocks --kv-offload-threshold --kv-transfer-bandwidth` CLI flags)
-- **Completed (hardening):** Phase 1 (structural helpers), Phase 2 (correctness fixes), Phase 3 (metric fixes), Phase 4 (invariant tests), Phase 5 (input validation), Phase 6 (modularity: observation methods, snapshot unification, SetClock on interface, PendingTransferLatency pure query, error returns, ValidPolicyNames, RequestState constants, NewKVStore validation)
-- **Next:** PR11 (autoscaling), PR14 (P/D disaggregation, depends on PR12), PR15 (framework adapters), PR16 (integration tests)
-- Each PR is CLI-exercisable immediately after merge (no scaffolding)
+### Extension Recipes
 
-### Adding New Policy Templates
-
-To add a new policy template (e.g., a new routing algorithm):
-
-1. **Implement the interface** in the corresponding file:
-   - `AdmissionPolicy` → `sim/admission.go` (cluster-level: receives `*RouterState` with snapshots + clock)
-   - `RoutingPolicy` → `sim/routing.go` (cluster-level: receives `*RouterState` with snapshots + clock)
-   - `PriorityPolicy` → `sim/priority.go` (instance-level: receives `req` + `clock` only)
-   - `InstanceScheduler` → `sim/scheduler.go` (instance-level: receives `requests` + `clock` only)
-   - Note: `RouterState` is a bridge type in `sim/` to avoid import cycles — see `sim/router_state.go`
-
-2. **Register in two places** (both required):
-   - Add policy name to valid names map in `sim/bundle.go` (e.g., `validRoutingPolicies`) and corresponding `IsValid*` function
-   - Add `case` to factory function in the same policy file (e.g., `NewRoutingPolicy` in `sim/routing.go`)
-   - CLI error messages auto-derive from `ValidAdmissionPolicyNames()` etc. — no manual update needed
-
-3. **Add tests** following BDD naming: `TestMyPolicy_Scenario_Behavior`
-   - Test observable behavior, not internal structure
-   - Include empty-snapshots panic test for routing policies (defensive programming convention)
-   - Use `&RouterState{Snapshots: snapshots, Clock: clock}` in test setup
-
-4. **Update documentation**: CLAUDE.md file organization, README policy lists
-
-**Important:** For load-based routing, use `snap.EffectiveLoad()` — never compute `QueueDepth + BatchSize + PendingRequests` inline. This ensures all routing policies use the same formula.
-
-Examples:
-- See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
-- See `PrefixAffinity` in `sim/routing.go` for a stateful routing policy with LeastLoaded fallback. **Known limitation (#259):** hashes the full input sequence, not just the prefix — degrades to LeastLoaded for prefix-sharing workloads. PR18's prefix-affinity scorer with hierarchical block hashing addresses this.
-
-### Adding New Scorers (Weighted Routing)
-
-To add a new scoring dimension for the `weighted` routing policy (e.g., predicted-latency):
-
-1. **Implement the scorer function** in `sim/routing_scorers.go` — a `scorerFunc` that takes `[]RoutingSnapshot` and returns `map[string]float64` with scores in [0,1] per instance
-2. **Register the scorer** in the same file: add to `validScorerNames` map + `newScorer` factory switch
-3. **Add behavioral tests** in `sim/routing_scorers_test.go` — monotonicity, boundary values, INV-1/INV-2 conformance
-4. Extension friction: **2 touch points in 1 file**
-
-Examples:
-- See `scoreLoadBalance` in `sim/routing_scorers.go` for a simple stateless scorer
-- See `scoreQueueDepth` for a scorer with edge case handling (uniform load)
-
-### Extending KV Cache Tiers
-
-To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
-
-1. **Implement the `KVStore` interface** in `sim/kvcache_*.go` (11 methods: allocate, get cached, release, capacity queries, metrics, `SetClock`, `ConsumePendingTransferLatency`)
-2. **Compose existing tiers** — e.g., wrap `TieredKVCache` (GPU+CPU) with NVMe logic, following the same delegation pattern
-3. **Update `NewKVStore` factory** in `sim/kv_store.go` to instantiate your tier based on `SimConfig` fields
-4. **Add CLI flags** in `cmd/root.go` for new parameters (e.g., `--kv-nvme-blocks`)
-5. **Aggregate metrics** — combine hit/miss/thrashing counters from all tiers; see `TieredKVCache.CacheHitRate()` for the 2-tier pattern
-6. **Add behavioral tests** in `sim/kvcache_*_test.go`
-7. **Preserve rollback semantics** — `KVCacheState.AllocateKVBlocks` is transactional: on mid-loop failure, `rollbackAllocation()` undoes all mutations (UsedBlockCnt, CacheMisses, CacheHits, RefCount, InUse, free list, HashToBlock, RequestMap). If your tier adds mutations beyond what delegation to `gpu.AllocateKVBlocks()` handles, you must roll those back too. See `cachedBlockMutation` and `newBlockMutation` types in `sim/kvcache.go`.
-8. **`GetCachedBlocks` is a pure query** — it returns cached block IDs without side effects. `CacheHits` are counted by `AllocateKVBlocks` when cached blocks are committed to an allocation (and rolled back on failure). This was fixed in the Phase 3 hardening PR; the previous implementation incremented CacheHits in GetCachedBlocks, causing double-counting in tiered mode.
-
-Examples:
-- See `TieredKVCache` in `sim/kvcache_tiered.go` for 2-tier GPU+CPU composition
-- See `KVCacheState` in `sim/kvcache.go` for single-tier baseline (also implements `KVStore`)
-- See `docs/plans/pr12-architectural-predesign.md` for the design decisions behind the tiered architecture
-
-### Adding New Trace Record Types
-
-To add a new trace record type (e.g., `ScaleRecord` for autoscaling events):
-
-1. **Define the record struct** in `sim/trace/record.go` (pure data, no `sim/` dependency)
-2. **Add a slice field** to `SimulationTrace` in `sim/trace/trace.go` (e.g., `Scales []ScaleRecord`)
-3. **Add a recording method** to `SimulationTrace` (e.g., `RecordScale(ScaleRecord)`)
-4. **Hook recording** into the cluster event pipeline in `sim/cluster/cluster_event.go` (guard with `if cs.trace != nil` for zero-overhead default)
-5. **Update `Summarize()`** in `sim/trace/summary.go` to aggregate the new record type
-6. **Add behavioral tests** in `sim/trace/*_test.go`
-
-Examples:
-- See `AdmissionRecord` in `sim/trace/record.go` for a simple record
-- See `RoutingRecord` with `CandidateScore` for a record with nested counterfactual data
-- See `computeCounterfactual()` in `sim/cluster/counterfactual.go` for derived computation that lives in `sim/cluster/` (not `sim/trace/`) because it needs `sim.RoutingSnapshot`
-
-### Adding New Per-Request Metric Fields
-
-To add a new field to per-request JSON output (appears in `--results-path` output):
-
-1. **Add field to `Request`** in `sim/request.go` (runtime state, zero-value safe). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
-2. **Add field to `RequestMetrics`** in `sim/metrics_utils.go` (JSON output struct, use `omitempty` for backward compatibility)
-3. **Update `NewRequestMetrics()` constructor** in `sim/metrics_utils.go` to propagate the new field from `Request` to `RequestMetrics`
-4. **Set the field** at the appropriate event (e.g., `RoutingDecisionEvent` for cluster-level, or completion for computed metrics)
-5. **Add behavioral tests** covering multi-instance, single-instance, and standalone boundaries
-
-Examples:
-- See `HandledBy` (#181) — set by `RoutingDecisionEvent`, zero-value when used outside cluster pipeline (suppressed from JSON via `omitempty`)
-- See `SLOClass`/`TenantID` (PR10) — set during workload generation, propagated at injection
+Step-by-step guides for adding policies, scorers, KV tiers, trace records, and per-request metrics: see `docs/extension-recipes.md`.
 
 ### Code Style
 
@@ -459,18 +321,6 @@ inference-sim/
 - `docs/plans/prmicroplanprompt-v2.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts. This is where full code detail belongs.
 - `docs/plans/prworkflow.md`: End-to-end PR workflow (worktree → plan → review → implement → review → audit → commit)
 
-### Design Documents (per-feature)
+### Per-Feature Design Documents and PR History
 
-- `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
-- `docs/plans/2026-02-11-macro-implementation-plan-v2--deprecated.md`: **DEPRECATED** — Macro-level implementation plan (v3.4, 16 PRs across 6 phases, PRs 1-16). Historical reference for completed PRs.
-- `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`: **ACTIVE** — Composable scorer framework macro plan (2 PRs: PR 17-18)
-- `docs/plans/2026-02-19-weighted-scoring-evolution-design.md`: Design doc for composable scorer framework (specification species)
-- `docs/plans/2026-02-13-simplification-assessment.md`: Architectural simplification assessment (constructor collapse, unified CLI, field privatization, interface dedup)
-- `docs/plans/2026-02-16-workload-generator-design.md`: ServeGen-informed workload generator design (multi-client specs, arrival processes, calibration)
-- `docs/plans/2026-02-17-pr13-decision-traces.md`: PR13 decision trace design (RoutingRecord, counterfactual analysis, TraceSummary)
-- `docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md`: Hardening design — antipattern elimination, extension scenario analysis, modularity improvements
-- `docs/plans/pr12-architectural-predesign.md`: PR12 architectural pre-design — 6 binding design decisions for tiered KV cache (gold standard for decision records)
-
-### Micro-Level Implementation Plans
-
-- `docs/plans/pr10-workload-generator-plan.md`: PR10 micro-level implementation plan (workload generator)
+See `docs/pr-history.md` for the full catalog of design documents, micro-plans, and completed PR summaries.
