@@ -539,8 +539,10 @@ Review passes naturally surface pre-existing bugs in surrounding code. These are
 **Rule:** File a GitHub issue immediately. Do not fix in the current PR.
 
 ```bash
-gh issue create --title "Bug: <concise description>" --body "<location, impact, discovery context>"
+gh issue create --title "Bug: <concise description>" --body "<location, impact, discovery context>" --label bug
 ```
+
+**Label guide:** Use `bug` for code defects, `design` for design limitations, `enhancement` for feature gaps, `hardening` for correctness/invariant issues. Every issue must have at least one label — unlabeled issues are invisible in filtered views.
 
 **Why not fix in-PR?**
 - **Scope creep** — muddies the diff, makes review harder, risks introducing regressions in unrelated code

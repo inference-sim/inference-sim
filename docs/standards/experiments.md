@@ -21,7 +21,7 @@ Every hypothesis must be classified before designing the experiment. The classif
 - No statistical analysis needed
 
 **Examples:**
-- H12: Request conservation holds across all policy configurations
+- H12: Request conservation (INV-1) holds across 10 policy configurations (67 checks)
 - H13: Same seed produces byte-identical output
 - H22: Zero KV blocks panics at CLI boundary, not deep in simulation
 
@@ -49,7 +49,7 @@ A is strictly better than B on metric M.
 
 - **Analysis:** Compare metric M for A vs B across all seeds. Compute ratio per seed.
 - **Pass:** A beats B on M for all seeds, with >20% effect size in every seed.
-- **Example:** H3 — queue-depth TTFT is 1.7-2.8x better than kv-utilization across 3 seeds.
+- **Examples:** H3 — queue-depth TTFT is 1.7-2.8x better than kv-utilization across 3 seeds. H14 — `always-busiest` routing produces 4.6x worse TTFT and routes all 500 requests to a single instance.
 
 #### Monotonicity
 Increasing X should monotonically increase/decrease Y.
@@ -100,6 +100,8 @@ Document the precondition check in the experiment script (not just in prose).
 
 **Until #284 is resolved:** when using workload-spec, document whether the experiment varies workload seeds, CLI seeds, or both. If only CLI seeds are varied, note that the workload is identical across runs.
 
+**Recommendation:** When writing `run.sh` for workload-spec experiments, either: (a) generate per-seed YAML copies with different `seed:` values in the script, or (b) explicitly document in `FINDINGS.md` that the workload is fixed across runs and only simulation-level RNG varies.
+
 ### ED-5: Reproducibility
 Every experiment must be reproducible from its artifacts alone:
 - `run.sh` must build the binary and run all variants
@@ -116,10 +118,10 @@ Every experiment produces findings. Each finding MUST be classified:
 | Finding Type | Definition | Action Required |
 |-------------|------------|-----------------|
 | **Confirmation** | The hypothesis holds; the system works as designed | Document in FINDINGS.md. No issues needed. |
-| **Bug discovery** | The hypothesis failed due to a code defect | File GitHub issue. Fix in separate PR. |
-| **New rule** | The experiment revealed a pattern that should be checked in all future PRs | Add to `docs/standards/rules.md` with evidence. |
+| **Bug discovery** | The hypothesis failed due to a code defect | File GitHub issue with `--label bug`. Fix in separate PR. |
+| **New rule** | The experiment revealed a pattern that should be checked in all future PRs | Add to `docs/standards/rules.md` with evidence. File issue with `--label enhancement` if code changes needed. |
 | **New invariant** | The experiment revealed a property that must always hold | Add to `docs/standards/invariants.md`. |
-| **Design limitation** | The system works as coded but has an undocumented behavioral limitation | Document in FINDINGS.md + file issue for design doc update. |
+| **Design limitation** | The system works as coded but has an undocumented behavioral limitation | Document in FINDINGS.md + file issue with `--label design` for design doc update. |
 | **Surprise** | An unexpected result that doesn't fit other categories | Document in FINDINGS.md. May spawn new hypotheses. |
 
 ### The Audit Step

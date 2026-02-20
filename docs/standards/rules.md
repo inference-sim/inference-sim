@@ -15,6 +15,8 @@ Every error path must either return an error, panic with context, or increment a
 
 **Evidence:** Issue #183 — a KV allocation failure silently dropped a request. The golden test perpetuated the bug for months because it captured "499 completions" as the expected value.
 
+**Additional evidence:** H14 hypothesis experiment — HOL blocking detector silently returns 0 instead of flagging the most extreme imbalance case when `always-busiest` routes all traffic to one instance (bug #291).
+
 **Check:** For every `continue` or early `return` in new code, verify the error is propagated, counted, or documented as safe.
 
 **Enforced:** PR template, micro-plan Phase 8, self-audit dimension 9.
@@ -62,6 +64,8 @@ Before adding a field to a struct, find every place that struct is constructed a
 Any loop that allocates resources (blocks, slots, counters) must handle mid-loop failure by rolling back all mutations from previous iterations. A partial allocation that returns `false` without cleanup violates conservation invariants.
 
 **Evidence:** KV block allocation (`AllocateKVBlocks`) had a mid-loop failure path that didn't roll back previously allocated blocks, violating KV conservation (INV-4).
+
+**Additional evidence:** H12 hypothesis experiment — preemption loop in `sim/simulator.go:383` accesses `RunningBatch.Requests[len-1]` without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).
 
 **Check:** For every loop that mutates state, verify the failure path rolls back all mutations.
 
@@ -224,6 +228,42 @@ Routing snapshot signals have different freshness guarantees due to DES event or
 
 ---
 
+### R18: CLI flag precedence over defaults
+
+When the CLI binary loads default values from `defaults.yaml`, it must not silently overwrite user-provided flag values. Always check `cmd.Flags().Changed("<flag>")` before applying a default. A user who explicitly passes `--total-kv-blocks 50` must get 50, not the model's default of 132,139.
+
+**Evidence:** H9 hypothesis experiment — `GetCoefficients()` unconditionally overwrote `totalKVBlocks` with the model default, silently destroying the CLI flag value. The entire H9 Experiment 3 (cache capacity independence) produced invalid results. Bug #285, fix cbb0de7.
+
+**Check:** For every assignment from `defaults.yaml` to a CLI-parsed variable, verify `cmd.Flags().Changed()` is checked first. Grep for `GetCoefficients` and `defaults.yaml` assignment patterns.
+
+**Enforced:** PR template, micro-plan Phase 8, self-audit dimension 6.
+
+---
+
+### R19: Livelock protection for unbounded retry loops
+
+Loops where the exit condition depends on resource availability that may never be satisfied (e.g., preempt → requeue → schedule → preempt) must have a circuit breaker: maximum iteration count, progress assertion, or bounded retry with error escalation. An infinite loop in a deterministic simulator is indistinguishable from a hang.
+
+**Evidence:** H8 hypothesis experiment — with total KV blocks below ~1000 (insufficient for any single request), the preempt-requeue cycle ran indefinitely with no termination condition, no max-retry limit, and no progress check.
+
+**Check:** For every loop that retries an operation after a resource failure, verify there is an explicit bound or progress check. Pay special attention to preemption, eviction, and reallocation loops.
+
+**Enforced:** PR template, micro-plan Phase 8, self-audit dimension 4.
+
+---
+
+### R20: Degenerate input handling in detectors and analyzers
+
+Anomaly detectors and metric analyzers must explicitly handle degenerate inputs: empty sample sets, single-instance concentration, all-zero distributions, and cross-class comparisons. The degenerate case is often the most important one to detect — a detector that returns "no anomaly" when all traffic hits one instance is worse than useless.
+
+**Evidence:** H14 hypothesis experiment — two detector failures: (1) HOL blocking detector requires ≥2 instances with samples, but `always-busiest` routes ALL traffic to one instance, leaving 3 empty — detector returns 0 for the most extreme HOL case (bug #291). (2) Priority inversion detector uses a 2x threshold that conflates workload heterogeneity with scheduling unfairness — 7,463 false positives with normal configs (bug #292).
+
+**Check:** For every detector or analyzer, identify what happens when one or more inputs are empty, zero, or maximally skewed. Write tests for these degenerate cases.
+
+**Enforced:** PR template, micro-plan Phase 8, self-audit dimension 9.
+
+---
+
 ## Quick Reference Checklist
 
 For PR authors — check each rule before submitting:
@@ -245,3 +285,6 @@ For PR authors — check each rule before submitting:
 - [ ] **R15:** Stale PR references resolved
 - [ ] **R16:** Config params grouped by module
 - [ ] **R17:** Routing scorer signals documented for freshness tier
+- [ ] **R18:** CLI flag values not silently overwritten by defaults.yaml
+- [ ] **R19:** Unbounded retry/requeue loops have circuit breakers
+- [ ] **R20:** Detectors and analyzers handle degenerate inputs (empty, skewed, zero)

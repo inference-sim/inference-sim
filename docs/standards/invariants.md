@@ -12,6 +12,8 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Evidence:** Issue #183 — a silently-dropped request violated conservation for months.
 
+**Experimental validation:** H12 confirmed conservation across 10 policy configurations (67 invariant checks) — including round-robin, least-loaded, weighted (multiple scorer configs), SJF, priority-FCFS, token-bucket admission, and always-busiest. H8 confirmed conservation under extreme KV pressure (15 configurations). Full preemption-path validation is blocked by the panic bug (#293).
+
 ---
 
 ## INV-2: Request Lifecycle
@@ -35,6 +37,8 @@ Invariants are properties that must hold at all times during and after simulatio
 **Statement:** `allocated_blocks + free_blocks = total_blocks` at all times.
 
 **Verification:** Checked after every allocation/deallocation. Transactional allocation with rollback on mid-loop failure (R5).
+
+**Operational note (H8):** KV cache pressure exhibits a sharp cliff, not gradual degradation. In H8's workload, performance was identical above ~2200 blocks and collapsed below it (4.7x TTFT P99 increase with just 4.5% fewer blocks). Below ~1000 blocks, the preempt-requeue cycle can livelock (see R19). Capacity planning formula: `threshold ≈ rate / num_instances × (input_tokens + output_tokens) / block_size`.
 
 ---
 
