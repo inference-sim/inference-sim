@@ -39,8 +39,13 @@ def parse_output(filepath):
             parts = line.strip().split(": ")
             dist[parts[0]] = int(parts[1])
 
-    # Distribution standard deviation
-    counts = [dist[k] for k in sorted(dist.keys())] if dist else [0]
+    # Distribution standard deviation (pad to 4 instances — instances with
+    # 0 requests don't appear in trace summary but must count for stddev)
+    num_instances = 4
+    counts = [0] * num_instances
+    for i, k in enumerate(sorted(dist.keys())):
+        if i < num_instances:
+            counts[i] = dist[k]
     mean_d = sum(counts) / len(counts)
     stddev = math.sqrt(sum((x - mean_d) ** 2 for x in counts) / len(counts))
 
