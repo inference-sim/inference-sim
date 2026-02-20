@@ -75,3 +75,15 @@ func TestRunCmd_KVBlockFlags_DefaultsArePositive(t *testing.T) {
 	assert.Greater(t, bsDefault, int64(0),
 		"default block-size-in-tokens must be positive (passes <= 0 validation)")
 }
+
+func TestRunCmd_SnapshotRefreshInterval_FlagRegistered(t *testing.T) {
+	// BC-5: --snapshot-refresh-interval must reject negative values.
+	// This test verifies the flag exists and its default is valid (non-negative).
+	flag := runCmd.Flags().Lookup("snapshot-refresh-interval")
+	assert.NotNil(t, flag, "snapshot-refresh-interval flag must be registered")
+
+	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
+	assert.NoError(t, err, "default must be a valid int64")
+	assert.GreaterOrEqual(t, defVal, int64(0),
+		"default snapshot-refresh-interval must be >= 0")
+}

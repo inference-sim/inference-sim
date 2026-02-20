@@ -352,6 +352,9 @@ var runCmd = &cobra.Command{
 		if kvTransferBaseLatency < 0 {
 			logrus.Fatalf("--kv-transfer-base-latency must be >= 0, got %d", kvTransferBaseLatency)
 		}
+		if snapshotRefreshInterval < 0 {
+			logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
+		}
 
 		// Log active policy configuration so users can verify which policies are in effect
 		logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
