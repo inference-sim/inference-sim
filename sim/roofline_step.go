@@ -28,23 +28,6 @@ func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newToke
 
 	if includeAttention {
 		dKV := nKVHeads * dHead
-		// Matrix Multiplications (GEMMs)
-		qkvFlops := 2 * newT * (dModel*dModel + 2*dModel*dKV)
-		projFlops := 2 * newT * dModel * dModel
-		flops["gemm_ops"] = (qkvFlops + projFlops) * nLayers
-
-		// SRAM-local ops (FlashAttention)
-		effectiveCtx := seqLen
-		if newT > 1 {
-			effectiveCtx = seqLen + (newT-1)/2.0
-		}
-		// QK^T (2*ops) + Softmax (5*ops) + AV (2*ops)
-		attnMath := (2 * nHeads * newT * effectiveCtx * dHead) + (5 * nHeads * newT * effectiveCtx) + (2 * nHeads * newT * effectiveCtx * dHead)
-		flops["sram_ops"] = attnMath * nLayers
-	}
-
-	if includeAttention {
-		dKV := nKVHeads * dHead
 
 		// 1. Standard GEMMs (Weights)
 		qkvFlops := 2 * newT * (dModel*dModel + 2*dModel*dKV)
