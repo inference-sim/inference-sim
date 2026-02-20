@@ -78,13 +78,6 @@ type MFUDatabase struct {
 Run: `go build ./sim`
 Expected: SUCCESS (no syntax errors)
 
-**Step 3: Commit**
-
-```bash
-git add sim/mfu_database.go
-git commit -m "feat(mfu): add MFU database data structures"
-```
-
 ---
 
 ## Task 2: Implement Attention Config Computation
@@ -626,7 +619,7 @@ git commit -m "feat(mfu): implement MFU lookup functions with floor logic"
 
 ---
 
-## Task 6: Integrate MFU Database into Roofline (Decode Phase)
+## Task 6: Add Helper Function for Individual GEMM Calculations
 
 **Files:**
 - Modify: `sim/roofline_step.go`
@@ -639,7 +632,83 @@ Modify function signature in `sim/roofline_step.go`:
 func rooflineStepTime(_ string, modelConfig ModelConfig, hwConfig HardwareCalib, stepConfig StepConfig, tp int, mfuDB *MFUDatabase) int64 {
 ```
 
-**Step 2: Replace decode MFU with database lookup**
+**Step 2: Add helper function to compute individual GEMM times**
+
+Add before `rooflineStepTime` function:
+
+```go
+// computeGEMMTime computes time for a single GEMM operation with MFU lookup
+func computeGEMMTime(m, k, n int, peakFlops float64, mfuDB *MFUDatabase, fallbackMFU float64) float64 {
+	// FLOPs for GEMM: 2*m*k*n
+	flops := 2.0 * float64(m) * float64(k) * float64(n)
+
+	var mfu float64
+	if mfuDB != nil {
+		mfu = mfuDB.GetGEMMmfu(m, k, n)
+	} else {
+		mfu = fallbackMFU
+	}
+
+	return flops / (peakFlops * mfu)
+}
+
+// computeTransformerGEMMTimes computes time for all GEMM operations in a transformer layer
+// Returns total time in seconds for all GEMMs across all layers
+func computeTransformerGEMMTimes(modelConfig ModelConfig, batchSize int, peakFlops float64, mfuDB *MFUDatabase, fallbackMFU float64, tpScaling float64) float64 {
+	m := batchSize
+	hiddenSize := modelConfig.HiddenDim
+	intermediateSize := modelConfig.IntermediateDim
+	if intermediateSize == 0 {
+		intermediateSize = 4 * hiddenSize
+	}
+
+	nHeads := modelConfig.NumHeads
+	nKVHeads := modelConfig.NumKVHeads
+	if nKVHeads == 0 {
+		nKVHeads = nHeads
+	}
+	headDim := hiddenSize / nHeads
+
+	// QKV projection: m × hidden_size → (nh*dh + 2*nkv*dh)
+	qkvSize := nHeads*headDim + 2*nKVHeads*headDim
+	qkvTime := computeGEMMTime(m, hiddenSize, qkvSize, peakFlops, mfuDB, fallbackMFU)
+
+	// O projection: m × (nh*dh) → hidden_size
+	oTime := computeGEMMTime(m, nHeads*headDim, hiddenSize, peakFlops, mfuDB, fallbackMFU)
+
+	// MLP: Gate, Up, Down (3 GEMMs for SwiGLU)
+	gateTime := computeGEMMTime(m, hiddenSize, intermediateSize, peakFlops, mfuDB, fallbackMFU)
+	upTime := computeGEMMTime(m, hiddenSize, intermediateSize, peakFlops, mfuDB, fallbackMFU)
+	downTime := computeGEMMTime(m, intermediateSize, hiddenSize, peakFlops, mfuDB, fallbackMFU)
+
+	// Total per layer
+	perLayerTime := qkvTime + oTime + gateTime + upTime + downTime
+
+	// Scale by number of layers and TP scaling
+	return (perLayerTime * float64(modelConfig.NumLayers)) / tpScaling
+}
+```
+
+**Step 3: Verify file compiles**
+
+Run: `go build ./sim`
+Expected: SUCCESS
+
+**Step 4: Commit**
+
+```bash
+git add sim/roofline_step.go
+git commit -m "feat(mfu): add helper functions for per-GEMM MFU lookups"
+```
+
+---
+
+## Task 7: Integrate MFU Database into Roofline (Decode Phase)
+
+**Files:**
+- Modify: `sim/roofline_step.go`
+
+**Step 1: Replace decode phase with per-GEMM lookups**
 
 Find this section (around line 197-221):
 
@@ -679,7 +748,7 @@ Replace with:
 // 2. DECODE PHASE
 if len(stepConfig.DecodeRequests) > 0 {
 	hasDecode = true
-	var dGemmFlops, dVectorFlops, dDynamicBytes float64
+	var dVectorFlops, dDynamicBytes float64
 
 	// Aggregate batch_size and find max kv_len
 	totalBatchSize := len(stepConfig.DecodeRequests)
@@ -687,8 +756,7 @@ if len(stepConfig.DecodeRequests) > 0 {
 
 	for _, req := range stepConfig.DecodeRequests {
 		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
-		// Decode TP scaling - applies to both compute and memory
-		dGemmFlops += f["gemm_ops"] / effectiveTpDecode
+		// Decode TP scaling - applies to attention core
 		dVectorFlops += f["sram_ops"] / effectiveTpDecode
 
 		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
@@ -702,44 +770,53 @@ if len(stepConfig.DecodeRequests) > 0 {
 	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
 	dWeightBytes := baseMem["model_weights"] / effectiveTpDecode
 
-	// Use MFU database for decode (aggregate batch, max kv_len)
-	var adjustedDecodeMFU float64
+	// Compute GEMM times with per-operation MFU lookups
+	fallbackMFU := hwConfig.MfuDecode
+	dGemmTimeS := computeTransformerGEMMTimes(modelConfig, totalBatchSize, peakFlops, mfuDB, fallbackMFU, effectiveTpDecode)
+
+	// Compute attention core time with attention MFU
+	var attnCoreTimeS float64
 	if mfuDB != nil {
-		decodeMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
-		adjustedDecodeMFU = decodeMFU * hwConfig.MfuDecodeMultiplier
+		attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
+		adjustedAttnMFU := attnMFU * hwConfig.MfuDecodeMultiplier
+		attnCoreTimeS = dVectorFlops / (peakFlops * adjustedAttnMFU)
 	} else {
-		// Fallback to calibrated constant
-		adjustedDecodeMFU = hwConfig.MfuDecode * hwConfig.MfuDecodeMultiplier
+		adjustedDecodeMFU := hwConfig.MfuDecode * hwConfig.MfuDecodeMultiplier
+		attnCoreTimeS = dVectorFlops / (peakFlops * adjustedDecodeMFU)
 	}
 
 	// Reduce effective bandwidth for decode (scattered KV cache access)
 	decodeEffBW := effBW * hwConfig.DecodeBwFactor
 
-	decodeComputeS = (dGemmFlops / (peakFlops * adjustedDecodeMFU)) + (dVectorFlops / vectorPeak)
+	decodeComputeS = dGemmTimeS + (attnCoreTimeS / vectorPeak)
 	decodeMemoryS = (dWeightBytes + dDynamicBytes) / decodeEffBW
 }
 ```
 
-**Step 3: Verify file compiles**
+**Step 2: Verify file compiles**
 
 Run: `go build ./sim`
 Expected: SUCCESS
 
-**Step 4: Commit**
+**Step 3: Commit**
 
 ```bash
 git add sim/roofline_step.go
-git commit -m "feat(mfu): integrate MFU database for decode phase with batch aggregation"
+git commit -m "feat(mfu): integrate per-GEMM MFU lookups for decode phase
+
+- GEMM projections use individual MFU lookups
+- Attention core uses attention-specific decode MFU
+- Aggregate batch_size and max kv_len for attention MFU"
 ```
 
 ---
 
-## Task 7: Integrate MFU Database into Roofline (Prefill Phase)
+## Task 8: Integrate MFU Database into Roofline (Prefill Phase)
 
 **Files:**
 - Modify: `sim/roofline_step.go`
 
-**Step 1: Replace prefill MFU with bucketing logic**
+**Step 1: Replace prefill phase with per-GEMM lookups and bucketing**
 
 Find this section (around line 166-194):
 
@@ -793,15 +870,16 @@ if len(stepConfig.PrefillRequests) > 0 {
 	// Process each bucket separately
 	var totalPrefillComputeS, totalPrefillMemoryS float64
 	prefillEffBW := effBW * hwConfig.PrefillBwFactor
+	fallbackMFU := hwConfig.MfuPrefill
 
 	for seqLen, requests := range buckets {
-		var bucketGemmFlops, bucketVectorFlops, bucketDynamicBytes float64
+		var bucketVectorFlops, bucketDynamicBytes float64
+		bucketBatchSize := len(requests)
 
 		for _, req := range requests {
 			numTokens := int64(req.NumNewPrefillTokens)
 
 			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
-			bucketGemmFlops += f["gemm_ops"] / effectiveTpPrefill
 			bucketVectorFlops += f["sram_ops"] / effectiveTpPrefill
 
 			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
@@ -811,17 +889,21 @@ if len(stepConfig.PrefillRequests) > 0 {
 		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
 		bucketWeightBytes := baseMem["model_weights"] / tpFactor
 
-		// Use MFU database for this seq_len bucket
-		var adjustedPrefillMFU float64
+		// Compute GEMM times with per-operation MFU lookups for this bucket
+		bucketGemmTimeS := computeTransformerGEMMTimes(modelConfig, bucketBatchSize*seqLen, peakFlops, mfuDB, fallbackMFU, effectiveTpPrefill)
+
+		// Compute attention core time with attention MFU for this seq_len
+		var attnCoreTimeS float64
 		if mfuDB != nil {
-			prefillMFU := mfuDB.GetAttnPrefillMFU(seqLen)
-			adjustedPrefillMFU = prefillMFU * hwConfig.MfuPrefillMultiplier
+			attnMFU := mfuDB.GetAttnPrefillMFU(seqLen)
+			adjustedAttnMFU := attnMFU * hwConfig.MfuPrefillMultiplier
+			attnCoreTimeS = bucketVectorFlops / (peakFlops * adjustedAttnMFU)
 		} else {
-			// Fallback to calibrated constant
-			adjustedPrefillMFU = hwConfig.MfuPrefill * hwConfig.MfuPrefillMultiplier
+			adjustedPrefillMFU := hwConfig.MfuPrefill * hwConfig.MfuPrefillMultiplier
+			attnCoreTimeS = bucketVectorFlops / (peakFlops * adjustedPrefillMFU)
 		}
 
-		bucketComputeS := (bucketGemmFlops / (peakFlops * adjustedPrefillMFU)) + (bucketVectorFlops / vectorPeak)
+		bucketComputeS := bucketGemmTimeS + (attnCoreTimeS / vectorPeak)
 		bucketMemoryS := (bucketWeightBytes + bucketDynamicBytes) / prefillEffBW
 
 		totalPrefillComputeS += bucketComputeS
@@ -842,12 +924,17 @@ Expected: SUCCESS
 
 ```bash
 git add sim/roofline_step.go
-git commit -m "feat(mfu): integrate MFU database for prefill phase with seq_len bucketing"
+git commit -m "feat(mfu): integrate per-GEMM MFU lookups for prefill phase
+
+- Bucket prefill requests by seq_len
+- GEMM projections use individual MFU lookups per bucket
+- Attention core uses attention-specific prefill MFU per bucket
+- Sum times across all buckets"
 ```
 
 ---
 
-## Task 8: Initialize MFU Database in Simulator
+## Task 9: Initialize MFU Database in Simulator
 
 **Files:**
 - Modify: `sim/simulator.go`
@@ -894,7 +981,7 @@ git commit -m "feat(mfu): initialize MFU database in simulator startup"
 
 ---
 
-## Task 9: Test End-to-End Integration
+## Task 10: Test End-to-End Integration
 
 **Files:**
 - Test manually with simulator
@@ -936,7 +1023,7 @@ git commit --allow-empty -m "test(mfu): verify end-to-end MFU database integrati
 
 ---
 
-## Task 10: Add Documentation
+## Task 11: Add Documentation
 
 **Files:**
 - Modify: `sim/mfu_database.go`
@@ -985,7 +1072,7 @@ git commit -m "docs(mfu): add package and function documentation"
 
 ---
 
-## Task 11: Final Verification and Cleanup
+## Task 12: Final Verification and Cleanup
 
 **Files:**
 - All modified files
@@ -1018,9 +1105,10 @@ git add -A
 git commit -m "feat(mfu): complete MFU-based roofline integration
 
 - Load H100 benchmark data at startup
-- Replace calibrated MFU constants with dynamic lookups
-- Aggregate decode requests by batch_size
-- Bucket prefill requests by seq_len
+- Per-GEMM MFU lookups for QKV, O, Gate, Up, Down projections
+- Attention core uses attention-specific MFU (prefill/decode)
+- Aggregate decode requests by batch_size for attention MFU
+- Bucket prefill requests by seq_len for attention MFU
 - Nearest neighbor fallback for missing configs
 - Error out on missing CSV files"
 ```
