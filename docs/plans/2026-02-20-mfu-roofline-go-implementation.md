@@ -669,7 +669,28 @@ Expected: SUCCESS
 **Files:**
 - Modify: `sim/roofline_step.go`
 
-**Step 1: Replace decode phase with per-GEMM lookups**
+**Step 1: Update function setup to use simplified hwConfig**
+
+At the beginning of `rooflineStepTime`, update variable definitions:
+
+```go
+func rooflineStepTime(_ string, modelConfig ModelConfig, hwConfig HardwareCalib, stepConfig StepConfig, tp int, mfuDB *MFUDatabase) int64 {
+	tpFactor := float64(tp)
+	peakFlops := hwConfig.TFlopsPeak * 1e12
+	peakBW := hwConfig.BwPeakTBs * 1e12
+
+	// With MFU database, we use simple linear TP scaling
+	// MFU data already captures efficiency - no need for calibration factors
+
+	var prefillComputeS, prefillMemoryS float64
+	var decodeComputeS, decodeMemoryS float64
+	var hasPrefill, hasDecode bool
+
+	// ... rest of function
+}
+```
+
+**Step 2: Replace decode phase with per-GEMM lookups**
 
 Find this section (around line 197-221):
 
@@ -681,12 +702,11 @@ if len(stepConfig.DecodeRequests) > 0 {
 
 	for _, req := range stepConfig.DecodeRequests {
 		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
-		// Decode TP scaling - applies to both compute and memory
-		dGemmFlops += f["gemm_ops"] / effectiveTpDecode
-		dVectorFlops += f["sram_ops"] / effectiveTpDecode
+		// TP scaling - simple linear division
+		dVectorFlops += f["sram_ops"] / tpFactor
 
 		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
-		dDynamicBytes += (m["total"] - m["model_weights"]) / effectiveTpDecode
+		dDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
 	}
 
 	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
@@ -729,20 +749,19 @@ if len(stepConfig.DecodeRequests) > 0 {
 	}
 
 	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-	dWeightBytes := baseMem["model_weights"] / effectiveTpDecode
+	dWeightBytes := baseMem["model_weights"] / tpFactor
 
 	// Compute GEMM times with per-operation MFU lookups
-	dGemmTimeS := computeTransformerGEMMTimes(modelConfig, totalBatchSize, peakFlops, mfuDB, effectiveTpDecode)
+	dGemmTimeS := computeTransformerGEMMTimes(modelConfig, totalBatchSize, peakFlops, mfuDB, tpFactor)
 
 	// Compute attention core time with attention MFU
 	// Note: InferSim uses same peakFlops for both GEMM and attention core
 	// MFU differentiates efficiency (GEMM: 0.5-1.0, decode attn: ~0.003)
 	attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
-	adjustedAttnMFU := attnMFU * hwConfig.MfuDecodeMultiplier
-	attnCoreTimeS := dVectorFlops / (peakFlops * adjustedAttnMFU)
+	attnCoreTimeS := dVectorFlops / (peakFlops * attnMFU)
 
-	// Reduce effective bandwidth for decode (scattered KV cache access)
-	decodeEffBW := effBW * hwConfig.DecodeBwFactor
+	// Bandwidth for memory access
+	decodeEffBW := peakBW
 
 	// Sum GEMM time and attention core time (no vectorPeak division)
 	decodeComputeS = dGemmTimeS + attnCoreTimeS
@@ -750,7 +769,7 @@ if len(stepConfig.DecodeRequests) > 0 {
 }
 ```
 
-**Step 2: Verify file compiles**
+**Step 3: Verify file compiles**
 
 Run: `go build ./sim`
 Expected: SUCCESS
@@ -815,7 +834,7 @@ if len(stepConfig.PrefillRequests) > 0 {
 
 	// Process each bucket separately
 	var totalPrefillComputeS, totalPrefillMemoryS float64
-	prefillEffBW := effBW * hwConfig.PrefillBwFactor
+	prefillEffBW := peakBW
 
 	for seqLen, requests := range buckets {
 		var bucketVectorFlops, bucketDynamicBytes float64
@@ -825,7 +844,7 @@ if len(stepConfig.PrefillRequests) > 0 {
 			numTokens := int64(req.NumNewPrefillTokens)
 
 			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
-			bucketVectorFlops += f["sram_ops"] / effectiveTpPrefill
+			bucketVectorFlops += f["sram_ops"] / tpFactor
 
 			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
 			bucketDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
@@ -835,13 +854,12 @@ if len(stepConfig.PrefillRequests) > 0 {
 		bucketWeightBytes := baseMem["model_weights"] / tpFactor
 
 		// Compute GEMM times with per-operation MFU lookups for this bucket
-		bucketGemmTimeS := computeTransformerGEMMTimes(modelConfig, bucketBatchSize*seqLen, peakFlops, mfuDB, effectiveTpPrefill)
+		bucketGemmTimeS := computeTransformerGEMMTimes(modelConfig, bucketBatchSize*seqLen, peakFlops, mfuDB, tpFactor)
 
 		// Compute attention core time with attention MFU for this seq_len
 		// Note: InferSim divides prefill attention by 1.8 (hardware-specific factor)
 		attnMFU := mfuDB.GetAttnPrefillMFU(seqLen)
-		adjustedAttnMFU := attnMFU * hwConfig.MfuPrefillMultiplier
-		attnCoreTimeS := bucketVectorFlops / 1.8 / (peakFlops * adjustedAttnMFU)
+		attnCoreTimeS := bucketVectorFlops / 1.8 / (peakFlops * attnMFU)
 
 		// Sum GEMM time and attention core time (no vectorPeak division)
 		bucketComputeS := bucketGemmTimeS + attnCoreTimeS
