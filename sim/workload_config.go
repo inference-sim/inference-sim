@@ -63,15 +63,7 @@ func (sim *Simulator) generateWorkloadFromCSV() error {
 
 		// 3. Create the request object
 		reqID := fmt.Sprintf("request_%d", reqIdx)
-		req := &Request{
-			ID:               reqID,
-			ArrivalTime:      arrivalTime,
-			InputTokens:      inputTokens,
-			OutputTokens:     outputTokens,
-			State:            StateQueued,
-			ScheduledStepIdx: 0,
-			FinishedStepIdx:  0,
-		}
+		req := NewRequest(reqID, arrivalTime, inputTokens, outputTokens)
 
 		// 4. Inject via canonical path (handles both event scheduling and metrics registration)
 		sim.InjectArrival(req)
@@ -146,15 +138,7 @@ func (sim *Simulator) generateWorkloadDistribution() {
 		// form the request; it will be in the "queued" state when it arrives
 		reqID := fmt.Sprintf("request_%v", reqIdx)
 
-		req := &Request{
-			ID:               reqID,
-			ArrivalTime:      currentTime,
-			InputTokens:      input,
-			OutputTokens:     output,
-			State:            StateQueued,
-			ScheduledStepIdx: 0,
-			FinishedStepIdx:  0,
-		}
+		req := NewRequest(reqID, currentTime, input, output)
 
 		sim.InjectArrival(req)
 

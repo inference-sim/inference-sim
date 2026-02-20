@@ -157,22 +157,14 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				inputTokens = append(append([]int{}, prefix...), inputTokens...)
 			}
 
-			req := &sim.Request{
-				ID:               "", // assigned after merge+sort
-				ArrivalTime:      currentTime,
-				InputTokens:      inputTokens,
-				OutputTokens:     outputTokens,
-				State:            sim.StateQueued,
-				ScheduledStepIdx: 0,
-				FinishedStepIdx:  0,
-				TenantID:         client.TenantID,
-				SLOClass:         client.SLOClass,
-				Streaming:        client.Streaming,
-				TextTokenCount:   textCount,
-				ImageTokenCount:  imageCount,
-				AudioTokenCount:  audioCount,
-				VideoTokenCount:  videoCount,
-			}
+			req := sim.NewRequest("", currentTime, inputTokens, outputTokens)
+			req.TenantID = client.TenantID
+			req.SLOClass = client.SLOClass
+			req.Streaming = client.Streaming
+			req.TextTokenCount = textCount
+			req.ImageTokenCount = imageCount
+			req.AudioTokenCount = audioCount
+			req.VideoTokenCount = videoCount
 			allRequests = append(allRequests, req)
 			clientReqCount++
 		}
