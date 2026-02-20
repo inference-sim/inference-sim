@@ -1,0 +1,87 @@
+# BLIS Policy Config: llm-d EPP Precise Prefix Cache
+#
+# Maps llm-d's epp-precise-prefix-cache-config.yaml to BLIS policy config.
+# This is the recommended production configuration for cache-aware routing.
+#
+# ============================================================================
+# llm-d Source: deploy/config/epp-precise-prefix-cache-config.yaml
+# ============================================================================
+#
+#   schedulingProfiles:
+#     - name: default
+#       plugins:
+#         - pluginRef: precise-prefix-cache-scorer
+#           weight: 2.0
+#         - pluginRef: kv-cache-utilization-scorer
+#           weight: 1.0
+#         - pluginRef: queue-scorer
+#           weight: 1.0
+#
+# ============================================================================
+# Scorer Mapping:
+# ============================================================================
+#
+#   | llm-d Scorer                  | BLIS Scorer      | Formula                              |
+#   |-------------------------------|------------------|--------------------------------------|
+#   | precise-prefix-cache-scorer   | prefix-affinity  | matchedBlocks / totalBlocks          |
+#   | kv-cache-utilization-scorer   | kv-utilization   | 1 - KVCacheUsagePercent              |
+#   | queue-scorer                  | queue-depth      | (max - val) / (max - min)            |
+#
+# Note: llm-d's precise-prefix-cache-scorer tracks real-time KV cache state via
+# kvevents from vLLM instances. BLIS's prefix-affinity uses router-side estimation
+# based on routing history. Both compute: matchedBlocks / totalBlocks.
+#
+# ============================================================================
+# Weight Ratios:
+# ============================================================================
+#
+#   llm-d:  prefix:2.0, kv-util:1.0, queue:1.0  (sum=4.0)
+#   BLIS:   prefix:2.0, kv-util:1.0, queue:1.0  (normalized internally)
+#
+# The 2:1:1 ratio prioritizes prefix cache locality over load distribution,
+# matching llm-d's production recommendation.
+#
+# ============================================================================
+# Usage:
+# ============================================================================
+#
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 \
+#     --policy-config examples/epp-precise-prefix.yaml \
+#     --workload-spec examples/prefix-affinity-demo.yaml \
+#     --trace-level decisions --summarize-trace
+#
+# Or via CLI:
+#
+#   --routing-policy weighted \
+#   --routing-scorers "prefix-affinity:2,kv-utilization:1,queue-depth:1"
+#
+
+admission:
+  policy: always-admit
+
+routing:
+  policy: weighted
+  scorers:
+    # precise-prefix-cache-scorer → prefix-affinity
+    # Score = matchedBlocks / totalBlocks
+    - name: prefix-affinity
+      weight: 2.0
+
+    # kv-cache-utilization-scorer → kv-utilization
+    # Score = 1 - KVUtilization
+    # Note: KV utilization is a lagging signal at high rates (R17). The queue-depth
+    # scorer compensates — do not remove it from this configuration.
+    - name: kv-utilization
+      weight: 1.0
+
+    # queue-scorer → queue-depth
+    # Score = (maxQueue - queue) / (maxQueue - minQueue)
+    - name: queue-depth
+      weight: 1.0
+
+priority:
+  policy: constant
+
+scheduler: fcfs

@@ -1,0 +1,66 @@
+# BLIS Policy Config: llm-d EPP Estimate Prefix Cache
+#
+# Maps llm-d's epp-estimate-prefix-cache-config.yaml to BLIS policy config.
+# This configuration uses router-side prefix estimation (not real-time KV cache tracking).
+#
+# ============================================================================
+# llm-d Source: deploy/config/epp-estimate-prefix-cache-config.yaml
+# ============================================================================
+#
+#   schedulingProfiles:
+#     - name: default
+#       plugins:
+#         - pluginRef: prefix-cache-scorer
+#           weight: 1.0
+#         - pluginRef: load-aware-scorer
+#           weight: 1.0
+#
+# ============================================================================
+# Scorer Mapping:
+# ============================================================================
+#
+#   | llm-d Scorer          | BLIS Scorer      | Notes                                |
+#   |-----------------------|------------------|--------------------------------------|
+#   | prefix-cache-scorer   | prefix-affinity  | Router-side prefix estimation        |
+#   | load-aware-scorer     | load-balance     | See formula differences below        |
+#
+# Formula Differences:
+#   - llm-d load-aware-scorer: 0.5 * (1 - waitingRequests/threshold), range [0, 0.5]
+#   - BLIS load-balance:       1 / (1 + effectiveLoad), range (0, 1]
+#
+# Both formulas give higher scores to less-loaded instances, but with different
+# scaling. For simulation purposes, the relative ordering is preserved.
+#
+# ============================================================================
+# Usage:
+# ============================================================================
+#
+#   ./simulation_worker run \
+#     --model meta-llama/llama-3.1-8b-instruct \
+#     --num-instances 4 \
+#     --policy-config examples/epp-estimate-prefix.yaml \
+#     --workload-spec examples/prefix-affinity-demo.yaml \
+#     --trace-level decisions --summarize-trace
+#
+
+admission:
+  policy: always-admit
+
+routing:
+  policy: weighted
+  scorers:
+    # prefix-cache-scorer → prefix-affinity
+    # Both use router-side estimation of prefix cache state
+    - name: prefix-affinity
+      weight: 1.0
+
+    # load-aware-scorer → load-balance
+    # llm-d: 0.5 * (1 - waiting/threshold)
+    # BLIS: 1 / (1 + effectiveLoad)
+    - name: load-balance
+      weight: 1.0
+
+priority:
+  policy: constant
+
+scheduler: fcfs
