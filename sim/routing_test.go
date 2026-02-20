@@ -244,20 +244,20 @@ func TestWeightedScoring_WeightsNormalized(t *testing.T) {
 		{ID: "instance_1", QueueDepth: 2, KVUtilization: 0.8},
 	}
 
-	// WHEN using unnormalized weights [3,2,2] and equivalent normalized weights
+	// WHEN using unnormalized weights [3,2,2] and scaled equivalent [6,4,4] (exact same ratios)
 	unnormalized := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "queue-depth", Weight: 3.0},
 		{Name: "kv-utilization", Weight: 2.0},
 		{Name: "load-balance", Weight: 2.0},
 	})
-	normalized := NewRoutingPolicy("weighted", []ScorerConfig{
-		{Name: "queue-depth", Weight: 0.43},
-		{Name: "kv-utilization", Weight: 0.29},
-		{Name: "load-balance", Weight: 0.29},
+	scaled := NewRoutingPolicy("weighted", []ScorerConfig{
+		{Name: "queue-depth", Weight: 6.0},
+		{Name: "kv-utilization", Weight: 4.0},
+		{Name: "load-balance", Weight: 4.0},
 	})
 
 	d1 := unnormalized.Route(&Request{ID: "r1"}, &RouterState{Snapshots: snapshots, Clock: 1000})
-	d2 := normalized.Route(&Request{ID: "r2"}, &RouterState{Snapshots: snapshots, Clock: 1000})
+	d2 := scaled.Route(&Request{ID: "r2"}, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// THEN both produce same target (same weight ratios)
 	if d1.TargetInstance != d2.TargetInstance {
@@ -388,9 +388,8 @@ func TestWeightedScoring_PendingRequests_AffectsScorers(t *testing.T) {
 	}
 }
 
-// TestWeightedScoring_ZeroWeightSum_Panics verifies that empty scorer configs with weighted panics.
-func TestWeightedScoring_ZeroWeightSum_Panics(t *testing.T) {
-	// Empty configs should use defaults (not panic). This test verifies that.
+// TestWeightedScoring_EmptyConfigs_UsesDefaults verifies that empty scorer slice falls back to defaults.
+func TestWeightedScoring_EmptyConfigs_UsesDefaults(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", []ScorerConfig{})
 	snapshots := []RoutingSnapshot{{ID: "a", QueueDepth: 1}}
 	decision := policy.Route(&Request{ID: "r1"}, &RouterState{Snapshots: snapshots, Clock: 1000})

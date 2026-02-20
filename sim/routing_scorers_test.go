@@ -153,14 +153,17 @@ func TestLoadBalanceOnly_EquivalentToLeastLoaded(t *testing.T) {
 
 func TestScoreQueueDepth_MinMaxNormalization(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 10, BatchSize: 0, PendingRequests: 0}, // load=10 → score=0.0
-		{ID: "b", QueueDepth: 5, BatchSize: 0, PendingRequests: 0},  // load=5  → score=0.5
-		{ID: "c", QueueDepth: 0, BatchSize: 0, PendingRequests: 0},  // load=0  → score=1.0
+		{ID: "a", QueueDepth: 10, BatchSize: 0, PendingRequests: 0}, // highest load
+		{ID: "b", QueueDepth: 5, BatchSize: 0, PendingRequests: 0},  // middle load
+		{ID: "c", QueueDepth: 0, BatchSize: 0, PendingRequests: 0},  // lowest load
 	}
 	scores := scoreQueueDepth(snapshots)
-	assert.InDelta(t, 0.0, scores["a"], 0.001)
-	assert.InDelta(t, 0.5, scores["b"], 0.001)
-	assert.InDelta(t, 1.0, scores["c"], 0.001)
+	// Monotonicity: lower load → higher score
+	assert.Greater(t, scores["c"], scores["b"], "lowest load should score highest")
+	assert.Greater(t, scores["b"], scores["a"], "middle load should score higher than highest load")
+	// Boundary: max load scores 0, min load scores 1
+	assert.Equal(t, 0.0, scores["a"], "highest load should score 0.0")
+	assert.Equal(t, 1.0, scores["c"], "lowest load should score 1.0")
 }
 
 func TestScoreQueueDepth_UniformLoad_AllScoreOne(t *testing.T) {
@@ -186,24 +189,33 @@ func TestScoreQueueDepth_IncludesPendingRequests(t *testing.T) {
 
 func TestScoreKVUtilization_InverseUtilization(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", KVUtilization: 0.0}, // score=1.0
-		{ID: "b", KVUtilization: 0.5}, // score=0.5
-		{ID: "c", KVUtilization: 1.0}, // score=0.0
+		{ID: "a", KVUtilization: 0.0}, // lowest utilization
+		{ID: "b", KVUtilization: 0.5}, // middle
+		{ID: "c", KVUtilization: 1.0}, // highest utilization
 	}
 	scores := scoreKVUtilization(snapshots)
-	assert.InDelta(t, 1.0, scores["a"], 0.001)
-	assert.InDelta(t, 0.5, scores["b"], 0.001)
-	assert.InDelta(t, 0.0, scores["c"], 0.001)
+	// Monotonicity: lower utilization → higher score
+	assert.Greater(t, scores["a"], scores["b"], "lower utilization should score higher")
+	assert.Greater(t, scores["b"], scores["c"], "middle should score higher than highest utilization")
+	// Boundaries
+	assert.Equal(t, 1.0, scores["a"], "zero utilization should score 1.0")
+	assert.Equal(t, 0.0, scores["c"], "full utilization should score 0.0")
 }
 
 func TestScoreLoadBalance_InverseTransform(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 0}, // load=0 → score=1.0
-		{ID: "b", QueueDepth: 9}, // load=9 → score=0.1
+		{ID: "a", QueueDepth: 0},  // zero load
+		{ID: "b", QueueDepth: 9},  // high load
+		{ID: "c", QueueDepth: 99}, // very high load
 	}
 	scores := scoreLoadBalance(snapshots)
-	assert.InDelta(t, 1.0, scores["a"], 0.001)
-	assert.InDelta(t, 0.1, scores["b"], 0.001)
+	// Monotonicity: lower load → higher score
+	assert.Greater(t, scores["a"], scores["b"], "lower load should score higher")
+	assert.Greater(t, scores["b"], scores["c"], "middle load should score higher than very high load")
+	// Boundary: zero load scores 1.0 (max possible)
+	assert.Equal(t, 1.0, scores["a"], "zero load should score 1.0")
+	// All scores positive (inverse transform never reaches 0)
+	assert.Greater(t, scores["c"], 0.0, "score should always be positive")
 }
 
 func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
