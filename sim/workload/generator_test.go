@@ -267,6 +267,99 @@ func TestGenerateRequests_ZeroMaxRequests_UsesHorizonOnly(t *testing.T) {
 	}
 }
 
+func TestGenerateRequests_MaxRequests_PreservesClientProportions(t *testing.T) {
+	// BC-3: With maxRequests cap, both clients must appear in proportional amounts.
+	// Bug #278: Sequential generation starves later clients.
+	spec := &WorkloadSpec{
+		Version: "1", Seed: 42, Category: "language", AggregateRate: 100.0,
+		Clients: []ClientSpec{
+			{ID: "batch", TenantID: "tenant-A", SLOClass: "batch", RateFraction: 0.7,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
+			{ID: "realtime", TenantID: "tenant-B", SLOClass: "realtime", RateFraction: 0.3,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
+		},
+	}
+	maxReqs := int64(200)
+	requests, err := GenerateRequests(spec, 100e6, maxReqs) // long horizon, capped by maxReqs
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// BC-4: total output must be capped
+	if int64(len(requests)) != maxReqs {
+		t.Errorf("len(requests) = %d, want %d", len(requests), maxReqs)
+	}
+
+	// BC-3: both SLO classes must appear
+	countBatch := 0
+	countRealtime := 0
+	for _, r := range requests {
+		switch r.SLOClass {
+		case "batch":
+			countBatch++
+		case "realtime":
+			countRealtime++
+		}
+	}
+
+	if countRealtime == 0 {
+		t.Fatal("realtime client produced 0 requests — starvation bug (#278)")
+	}
+
+	// Check proportions are approximately 70/30 (within ±10%)
+	fracBatch := float64(countBatch) / float64(len(requests))
+	if fracBatch < 0.6 || fracBatch > 0.8 {
+		t.Errorf("batch fraction = %.3f, want ≈ 0.7 (±10%%)", fracBatch)
+	}
+}
+
+func TestGenerateRequests_MaxRequests_ReasoningClientNotStarved(t *testing.T) {
+	// BC-7: Reasoning (multi-turn) clients must not be starved by maxRequests cap.
+	reasoningSpec := &ReasoningSpec{
+		ReasonRatioDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 0.3, "std_dev": 0.1, "min": 0.1, "max": 0.9}},
+		MultiTurn:       &MultiTurnSpec{MaxRounds: 2, ContextGrowth: "accumulate"},
+	}
+	spec := &WorkloadSpec{
+		Version: "1", Seed: 42, Category: "language", AggregateRate: 100.0,
+		Clients: []ClientSpec{
+			{ID: "standard", TenantID: "std", SLOClass: "batch", RateFraction: 0.7,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
+			{ID: "reasoning", TenantID: "rsn", SLOClass: "realtime", RateFraction: 0.3,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+				Reasoning:  reasoningSpec},
+		},
+	}
+	maxReqs := int64(100)
+	requests, err := GenerateRequests(spec, 100e6, maxReqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Total capped
+	if int64(len(requests)) > maxReqs {
+		t.Errorf("len(requests) = %d, want <= %d", len(requests), maxReqs)
+	}
+
+	// Reasoning client must appear
+	countReasoning := 0
+	for _, r := range requests {
+		if r.TenantID == "rsn" {
+			countReasoning++
+		}
+	}
+	if countReasoning == 0 {
+		t.Fatal("reasoning client produced 0 requests — starvation bug")
+	}
+}
+
 func TestRequestNewFields_ZeroValueDefault(t *testing.T) {
 	req := &sim.Request{ID: "test", State: sim.StateQueued}
 	if req.TenantID != "" || req.SLOClass != "" || req.SessionID != "" {
