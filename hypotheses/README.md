@@ -19,7 +19,7 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 | H14 | Pathological templates produce worse behavior; anomaly detectors fire | **Partially confirmed** | 4.5x worse TTFT confirmed; 3 bugs found (HOL blind spot, priority inversion false positives, double inversion cancellation) |
 | H8 | Reducing KV blocks increases preemption frequency and worsens tail latency | **Confirmed** | Sharp cliff at ~2200 blocks: 4.7x TTFT p99 with 4.5% fewer blocks; cascade effect amplifies preemptions; conservation (INV-1) holds under pressure |
 | H5 | Token-bucket admission smooths bursts under Gamma CV=3.5 | **Refuted** | Burst smoothing doesn't work: calibrated bucket (cap=100K) shows <5% improvement. Original 69x result was load shedding (96% rejection), not burst smoothing. No practical sweet spot. |
-| H10 | Tiered KV cache reduces preemptions vs single-tier | **Inconclusive** (hypothesis untested) | Zero preemptions in ALL configs — hypothesis never tested. Surprise: `maybeOffload` improves TTFT 28% (confirmed via control). Directional explanation open. |
+| H10 | Tiered KV cache reduces preemptions vs single-tier | **Confirmed** | Preemptions halved (17.5%→8.5%), TTFT 28% better, cache hits 9x higher. `maybeOffload` preserves prefix hashes on CPU; control (offload=1.0) = byte-identical to single-tier. Required 4 rounds to resolve analyzer bug. |
 | H13 | Same seed produces byte-identical output | **Confirmed** | INV-6 holds for 5 policy configurations including stateful prefix-affinity scorer with LRU eviction |
 
 ## Running Experiments
