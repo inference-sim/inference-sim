@@ -107,7 +107,7 @@ var (
 		"poisson": true, "gamma": true, "weibull": true,
 	}
 	validDistTypes = map[string]bool{
-		"gaussian": true, "exponential": true, "pareto_lognormal": true, "empirical": true,
+		"gaussian": true, "exponential": true, "pareto_lognormal": true, "empirical": true, "constant": true,
 	}
 	validCategories = map[string]bool{
 		"": true, "language": true, "multimodal": true, "reasoning": true,
@@ -188,7 +188,7 @@ func validateClient(c *ClientSpec, idx int) error {
 
 func validateDistSpec(prefix string, d *DistSpec) error {
 	if !validDistTypes[d.Type] {
-		return fmt.Errorf("%s: unknown distribution type %q; valid: gaussian, exponential, pareto_lognormal, empirical", prefix, d.Type)
+		return fmt.Errorf("%s: unknown distribution type %q; valid: gaussian, exponential, pareto_lognormal, empirical, constant", prefix, d.Type)
 	}
 	for name, val := range d.Params {
 		if math.IsNaN(val) || math.IsInf(val, 0) {
