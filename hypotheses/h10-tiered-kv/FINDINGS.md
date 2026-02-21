@@ -70,7 +70,7 @@
 |       500 |    299.4 |  1,616.8 |  2,801.6 |   5,532.9 |
 |     1,000 |    299.4 |  1,616.8 |  2,801.6 |   5,532.9 |
 
-**Transfer bandwidth has effectively zero impact.** Only bw=10 shows a marginal 0.3ms difference in E2E P99. This confirms the offload/reload path is not being exercised — the benefit comes from capacity increase, not from the tiered storage mechanics.
+**Transfer bandwidth has effectively zero impact.** Only bw=10 shows a marginal 0.3ms difference in E2E P99. This is expected because `tryReloadFromCPU` (`kvcache_tiered.go:70-83`) never fires — GPU allocation always succeeds, so no CPU-to-GPU block transfers occur. Transfer bandwidth only affects reload speed (`pendingLatency` at line 129), which is never exercised in this regime.
 
 ## Root Cause Analysis
 
@@ -85,15 +85,28 @@ H8 used the default `round-robin` routing; this experiment used `least-loaded`. 
 
 With least-loaded routing at 2100 blocks, no single instance exceeds its KV capacity, so preemptions never trigger. H8's preemption cliff at 2100 blocks is **specific to round-robin routing** — least-loaded shifts the cliff to a lower block count.
 
-### Why the 18-28% TTFT improvement? Prefix hash stripping via `maybeOffload`
+### Why the 18-28% TTFT improvement? Partially identified — open question
 
-Code-level investigation revealed the actual mechanism. `NewKVStore` at `sim/kv_store.go:31-36` does NOT change GPU block count — both configurations have exactly 2100 GPU blocks. The improvement comes from a subtler path:
+Code-level investigation identified the code path that diverges but **the full causal chain is incomplete** (this section was revised after external review per RCV-3).
+
+**What we know (verified):**
+
+`NewKVStore` at `sim/kv_store.go:31-36` does NOT change GPU block count — both configurations have exactly 2100 GPU blocks. The only behavioral difference is:
 
 1. `TieredKVCache.ReleaseKVBlocks` (`kvcache_tiered.go:149-151`) calls `maybeOffload()` after every request completion.
 2. `maybeOffload` (`kvcache_tiered.go:199-230`) checks if GPU utilization exceeds the offload threshold (0.8). When it does, it finds free blocks with cached prefix hashes and **strips the hash from GPU** (`delete(t.gpu.HashToBlock, blk.Hash)` at line 224), copying the content to CPU.
-3. These blocks remain on the GPU free list (re-added as empty blocks), but their **prefix cache entries are removed from GPU's hash table**.
+3. These blocks remain on the GPU free list (re-added as empty blocks at line 228), but their **prefix cache entries are removed from GPU's hash table**.
 4. Subsequent `GetCachedBlocks` calls find fewer cached blocks on GPU, changing `startIndex` and `numNewTokens` in `makeRunningBatch` (`simulator.go:522-530`).
-5. This different cache hit pattern cascades through batch formation and step timing. Since the simulation is deterministic, even a small early divergence in cache behavior compounds over 200 requests into a 18-28% TTFT improvement.
+
+**What we don't know (logical gap):**
+
+Step 4 produces **fewer cache hits**, which naively should increase `numNewTokens` and make TTFT **worse**, not better. The 18-28% improvement requires an explanation for why fewer cache hits helps. Candidate hypotheses (unverified):
+
+- **Cache pollution avoidance**: Stale prefix hashes may produce false cache hits — the hash matches but the underlying block content is from a different eviction cycle. Stripping hashes forces fresh allocation, which may be faster than attempting to reuse partially-valid cached prefixes.
+- **Free list ordering effects**: Blocks stripped of hashes are re-appended to the free list tail (`kvcache_tiered.go:228`), changing the allocation order for subsequent requests. This could improve locality patterns.
+- **Second-order DES timing effects**: At 200 requests, small per-step latency differences cascade through the event queue, shifting when later requests arrive relative to batch boundaries.
+
+**To resolve**: A control experiment with `--kv-offload-threshold 1.0` (threshold=100%, so `maybeOffload` never fires) would isolate the `maybeOffload` mechanism. If TTFT difference vanishes, the mechanism is confirmed. If it persists, another explanation is needed.
 
 ### Why the threshold effect (100 CPU blocks = full benefit)?
 
@@ -107,7 +120,7 @@ No blocks are actually reloaded from CPU to GPU (the `tryReloadFromCPU` path at 
 
 | Finding | Type | Action |
 |---------|------|--------|
-| Tiered KV improves TTFT by 18-28% via prefix hash stripping in `maybeOffload` | Surprise | Documented here — the mechanism is cache behavior change, not capacity increase |
+| Tiered KV improves TTFT by 18-28% — divergence point identified (`maybeOffload` hash stripping) but full causal chain incomplete | Surprise (open) | Code path verified; directional explanation has a logical gap (fewer cache hits should worsen TTFT). Control experiment proposed. |
 | Improvement is a threshold effect (100 CPU blocks = full benefit) | Surprise | Documented here — any CPU tier activates `maybeOffload`, exact size irrelevant |
 | Transfer bandwidth has zero impact when no reload occurs | Confirmation | Validates that the effect is hash-stripping, not block transfer |
 | Zero preemptions due to routing policy difference with H8 | Design limitation | H10 used least-loaded; H8 used round-robin. Preemption cliff is routing-dependent. |
