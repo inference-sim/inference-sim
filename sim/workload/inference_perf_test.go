@@ -437,5 +437,95 @@ func TestExpandInferencePerfSpec_ThreeStages_CumulativeWindows(t *testing.T) {
 	}
 }
 
+// --- Multi-turn mapping tests (Task 5) ---
+
+func TestExpandInferencePerfSpec_MultiTurn_MapsToReasoning(t *testing.T) {
+	// BC-7: multi-turn flag maps to reasoning spec
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 3,
+			SystemPromptLen:         100,
+			QuestionLen:             50,
+			OutputLen:               25,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, c := range ws.Clients {
+		if c.Reasoning == nil {
+			t.Fatalf("client %q: Reasoning should be set when multi-turn enabled", c.ID)
+		}
+		mt := c.Reasoning.MultiTurn
+		if mt == nil {
+			t.Fatalf("client %q: MultiTurn should be set", c.ID)
+		}
+		if mt.MaxRounds != 5 {
+			t.Errorf("client %q: MaxRounds = %d, want 5", c.ID, mt.MaxRounds)
+		}
+		if mt.ContextGrowth != "accumulate" {
+			t.Errorf("client %q: ContextGrowth = %q, want accumulate", c.ID, mt.ContextGrowth)
+		}
+		if mt.ThinkTimeUs != 500000 {
+			t.Errorf("client %q: ThinkTimeUs = %d, want 500000", c.ID, mt.ThinkTimeUs)
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_NoMultiTurn_NoReasoning(t *testing.T) {
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     false,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, c := range ws.Clients {
+		if c.Reasoning != nil {
+			t.Errorf("client %q: Reasoning should be nil when multi-turn disabled", c.ID)
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_MultiTurn_CategoryIsReasoning(t *testing.T) {
+	// When multi-turn is enabled, category should be "reasoning"
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ws.Category != "reasoning" {
+		t.Errorf("category = %q, want reasoning when multi-turn enabled", ws.Category)
+	}
+}
+
 // suppress unused import for sim (used in later tests)
 var _ = sim.StateQueued
