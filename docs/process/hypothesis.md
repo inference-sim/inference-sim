@@ -138,8 +138,9 @@ The distinction: **"open and requires different tooling"** is a stopping point. 
 
 12. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, surprise, or open question
 13. **Audit against standards** — check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`
-14. **Commit and PR** — rebase on upstream/main, push, create PR
-15. **File issues** — AFTER PR creation, file structured issues per the [Issue Taxonomy](#issue-taxonomy-after-convergence) below. Reference the PR in each issue.
+14. **Assess promotion to test suite** — see [Promotion of Confirmed Hypotheses](#promotion-of-confirmed-hypotheses) below
+15. **Commit and PR** — rebase on upstream/main, push, create PR
+16. **File issues** — AFTER PR creation, file structured issues per the [Issue Taxonomy](#issue-taxonomy-after-convergence) below. Reference the PR in each issue. Include promotion issues for any hypotheses identified in step 14.
 
 **Why issues come last:** Findings can change across rounds (H10 went from "untested" to "confirmed" between Rounds 3-4). Filing issues before convergence risks creating wrong issues that need to be closed and re-filed. File once, file right.
 
@@ -191,6 +192,54 @@ Discovered in hypothesis experiment <name> (PR #NNN).
 - Issues for findings that are "documented here" with no action needed
 - Duplicate issues for findings already covered by existing open issues
 - Issues for scope limitations that are acknowledged in FINDINGS.md (these are future work, not bugs)
+
+## Promotion of Confirmed Hypotheses
+
+After convergence, assess whether any confirmed findings should be promoted from bash-script experiments to the Go test suite and/or formal invariants. Hypothesis experiments run as bash scripts are NOT in CI — a regression would not be caught by `go test ./...`.
+
+### When to promote
+
+| Condition | Promote to | Why |
+|-----------|-----------|-----|
+| Confirmed deterministic hypothesis | **Go test** (regression protection in CI) | Deterministic properties are exact — they can be encoded as pass/fail tests. Bash experiments catch them today; Go tests catch them on every commit. |
+| Deterministic invariant aspect of a statistical hypothesis | **Go test** for the invariant aspect | Statistical hypotheses often contain deterministic sub-claims (e.g., conservation holds across all configs tested). The invariant aspect is promotable even if the full comparison isn't. |
+| New invariant discovered | **`docs/standards/invariants.md`** entry | Codify as a formal system property with verification strategy. |
+| New rule discovered | **`docs/standards/rules.md`** entry | Codify as an antipattern check for PR reviews. |
+
+### Promotion assessment for PR #310 hypotheses
+
+| Hypothesis | Promotable aspect | Current Go test coverage | Promotion needed? |
+|---|---|---|---|
+| H12 (Conservation) | INV-1 across 10 cluster-level policy combinations | Per-instance conservation tested; **cluster-level multi-config NOT in Go tests** | **Yes** — file `--label enhancement` issue |
+| H13 (Determinism) | INV-6: run twice with same seed → byte-identical stdout | Golden dataset comparison exists; **"run twice, diff" NOT in Go tests** | **Yes** — file `--label enhancement` issue |
+| H10 (Tiered KV) | INV-1 holds across all tiered configurations | Not tested in Go with tiered cache enabled | **Yes** — file `--label enhancement` issue |
+| H8 (KV pressure) | INV-1 holds under preemption pressure | Not tested in Go under KV-constrained configs | **Yes** — file `--label enhancement` issue |
+| H5 (Token-bucket) | completed + rejected == total for admission configs | Not tested in Go with token-bucket | **Yes** — file `--label enhancement` issue |
+
+### What a promoted test looks like
+
+A promoted hypothesis test is a Go test that encodes the deterministic invariant verified by the experiment:
+
+```go
+// TestClusterConservation_AcrossPolicyCombinations tests INV-1 at cluster level.
+// Promoted from hypothesis H12 (hypotheses/h12-conservation/).
+func TestClusterConservation_AcrossPolicyCombinations(t *testing.T) {
+    configs := []struct{ routing, scheduler, admission string }{
+        {"round-robin", "fcfs", "always-admit"},
+        {"least-loaded", "fcfs", "always-admit"},
+        {"weighted", "priority-fcfs", "token-bucket"},
+        // ... all 10 H12 configurations
+    }
+    for _, cfg := range configs {
+        t.Run(cfg.routing+"/"+cfg.scheduler+"/"+cfg.admission, func(t *testing.T) {
+            // Run cluster simulation
+            // Assert: injected == completed + still_queued + still_running
+        })
+    }
+}
+```
+
+The bash experiment remains as the full reproducible artifact with analysis. The Go test is the CI-integrated regression guard.
 
 ## Code Review Before Execution
 
