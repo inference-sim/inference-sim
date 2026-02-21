@@ -39,17 +39,31 @@ def parse_output(filepath):
     if not cluster:
         return None
 
-    # Extract preemption count
+    # Extract preemption rate from KV cache summary section.
+    # Format: "Preemption Rate: 0.1750" (float, printed by cmd/root.go:544).
+    # Bug history: Round 3 used r"Preemptions?: (\d+)" which matched nothing
+    # (wrong field name + integer pattern for a float), causing 0 preemptions
+    # to be reported everywhere. This masked real preemptions (17.5%) for two rounds.
     preemptions = 0
-    preempt_match = re.search(r"Preemptions?: (\d+)", content)
+    preempt_match = re.search(r"Preemption Rate: ([0-9.]+)", content)
     if preempt_match:
-        preemptions = int(preempt_match.group(1))
+        preemption_rate = float(preempt_match.group(1))
+        # Convert rate to count: rate * completed_requests
+        completed = cluster.get("completed_requests", 0)
+        preemptions = int(round(preemption_rate * completed))
 
     # Extract rejected count
     rejected = 0
     rejected_match = re.search(r"Rejected Requests: (\d+)", content)
     if rejected_match:
         rejected = int(rejected_match.group(1))
+
+    # Extract cache hit rate from KV cache summary section.
+    # Format: "Cache Hit Rate: 0.0452" (printed by cmd/root.go:545).
+    cache_hit_rate = 0.0
+    cache_match = re.search(r"Cache Hit Rate: ([0-9.]+)", content)
+    if cache_match:
+        cache_hit_rate = float(cache_match.group(1))
 
     # Conservation check
     injected = cluster.get("injected_requests", 0)
@@ -69,6 +83,7 @@ def parse_output(filepath):
         "preemptions": preemptions,
         "rejected": rejected,
         "conserved": conserved,
+        "cache_hit_rate": cache_hit_rate,
     }
 
 

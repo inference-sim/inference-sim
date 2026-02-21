@@ -157,6 +157,24 @@ Findings checked against docs/standards/:
 
 5. **The confound matrix is a reusable methodology.** The routing × tier × offload-threshold matrix, with the offload=1.0 control, cleanly isolates the `maybeOffload` mechanism. Apply this pattern to future multi-variable experiments.
 
+## Scope and Limitations
+
+- Demonstrated at GPU=2100 blocks, block_size=16, round-robin routing, seed=42
+- The 28% TTFT improvement depends on: (a) operating near the preemption threshold, (b) sufficient prefix reuse in the workload, (c) `maybeOffload` threshold < 1.0
+- Effect magnitude will vary with GPU block count and workload prefix diversity
+- Cache hit rate discrepancy between single-tier (0.51%) and offload=1.0 control (0.50%) is within floating-point accounting tolerance in the `CacheHitRate()` computation (`kvcache.go:373-378`)
+- Generalization to other operating points requires additional experimentation
+
+## Evidence Quality
+
+| Metric | Value | Confidence |
+|---|---|---|
+| TTFT improvement | 28% (417→299ms) | High — control (offload=1.0) confirms sole mechanism |
+| Preemption reduction | 51% (17.5%→8.5%) | High — consistent with cache hit increase |
+| Cache hit rate increase | 9x (0.51%→4.52%) | High — explains TTFT direction |
+| Sample size | 1 seed, 1 operating point, 200 requests | Medium — deterministic but narrow |
+| Mechanism | `maybeOffload` prefix hash preservation | High — byte-identical control confirms |
+
 ## Reproducing
 
 ```bash

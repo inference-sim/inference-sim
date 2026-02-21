@@ -120,7 +120,7 @@ Despite the extreme demand/supply mismatch:
 | 69x TTFT improvement is load shedding, not burst smoothing | Design limitation | Token-bucket at cap=500 rejects 96% of traffic. The improvement is trivially explained by near-empty queues for the 4% that get through. |
 | Token-bucket cost is per-input-token (`admission.go:45`), not per-request | Design limitation | `--token-bucket-capacity` and `--token-bucket-refill-rate` parameter names suggest per-request cost. Users must size relative to input token counts. File issue to clarify CLI help text. |
 | Gamma arrival sampler (Marsaglia-Tsang) produces expected burstiness | Confirmation | Validated by rate-scaling monotonicity |
-| No practical sweet spot exists under Gamma CV=3.5 | Design limitation | Either massive load shedding (96% reject → 69x better) or negligible effect (<5% reject → <5% better). The middle ground does not exist for this workload. |
+| No practical sweet spot found under Gamma CV=3.5 with mean input ~512 | Design limitation | At tested parameters: either massive load shedding (96% reject → 69x better) or negligible effect (<5% reject → <5% better). The mechanism may produce measurable effects under lower-variance or shorter-request workloads, but this was not tested. |
 
 ## Standards Audit
 
