@@ -20,6 +20,21 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	if maxRequests < 0 {
 		return nil, fmt.Errorf("maxRequests must be non-negative, got %d", maxRequests)
 	}
+	// Expand inference-perf spec if specified (populates spec.Clients)
+	if spec.InferencePerf != nil && len(spec.Clients) == 0 {
+		expanded, err := ExpandInferencePerfSpec(spec.InferencePerf, spec.Seed)
+		if err != nil {
+			return nil, fmt.Errorf("expanding inference-perf spec: %w", err)
+		}
+		spec.Clients = expanded.Clients
+		if spec.Category == "" {
+			spec.Category = expanded.Category
+		}
+		if spec.AggregateRate <= 0 {
+			spec.AggregateRate = expanded.AggregateRate
+		}
+	}
+
 	// Load ServeGen data if specified (populates spec.Clients)
 	if spec.ServeGenData != nil && len(spec.Clients) == 0 {
 		if err := loadServeGenData(spec); err != nil {

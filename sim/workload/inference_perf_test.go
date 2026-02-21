@@ -1,6 +1,8 @@
 package workload
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -527,5 +529,113 @@ func TestExpandInferencePerfSpec_MultiTurn_CategoryIsReasoning(t *testing.T) {
 	}
 }
 
-// suppress unused import for sim (used in later tests)
+// --- Integration tests (Task 6) ---
+
+func TestGenerateRequests_InferencePerfSpec_ProducesRequests(t *testing.T) {
+	// BC-8: end-to-end generation from inference-perf spec
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 10}, // 10 seconds
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         50,
+			QuestionLen:             100,
+			OutputLen:               50,
+		},
+	}
+	spec := &WorkloadSpec{
+		Version:       "1",
+		Seed:          42,
+		AggregateRate: 10.0,
+		InferencePerf: ipSpec,
+	}
+	horizon := int64(10_000_000) // 10 seconds
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected requests from inference-perf spec")
+	}
+}
+
+func TestGenerateRequests_InferencePerfSpec_Deterministic(t *testing.T) {
+	// BC-9: determinism preserved
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 10},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         50,
+			QuestionLen:             100,
+			OutputLen:               50,
+		},
+	}
+	horizon := int64(10_000_000)
+
+	spec1 := &WorkloadSpec{
+		Version:       "1",
+		Seed:          42,
+		AggregateRate: 10.0,
+		InferencePerf: ipSpec,
+	}
+	r1, err1 := GenerateRequests(spec1, horizon, 0)
+
+	// Second run with fresh spec (expansion mutates spec.Clients)
+	spec2 := &WorkloadSpec{
+		Version:       "1",
+		Seed:          42,
+		AggregateRate: 10.0,
+		InferencePerf: ipSpec,
+	}
+	r2, err2 := GenerateRequests(spec2, horizon, 0)
+	if err1 != nil || err2 != nil {
+		t.Fatalf("errors: %v, %v", err1, err2)
+	}
+	if len(r1) != len(r2) {
+		t.Fatalf("different counts: %d vs %d", len(r1), len(r2))
+	}
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("request %d: arrival %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+			break
+		}
+	}
+}
+
+func TestLoadWorkloadSpec_InferencePerfSpec_StrictParsing(t *testing.T) {
+	// BC-13: strict YAML parsing for new types
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad-ip.yaml")
+	yamlData := `
+version: "1"
+seed: 42
+aggregate_rate: 10.0
+inference_perf:
+  stages:
+    - rate: 10.0
+      duraton: 600
+  shared_prefix:
+    num_unique_system_prompts: 1
+    num_users_per_system_prompt: 1
+    system_prompt_len: 10
+    question_len: 10
+    output_len: 10
+`
+	if err := os.WriteFile(path, []byte(yamlData), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadWorkloadSpec(path)
+	if err == nil {
+		t.Fatal("expected error for typo 'duraton' in YAML")
+	}
+}
+
+// suppress unused imports
 var _ = sim.StateQueued
+var _ = filepath.Join
+var _ = os.WriteFile

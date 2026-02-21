@@ -19,7 +19,8 @@ type WorkloadSpec struct {
 	AggregateRate float64      `yaml:"aggregate_rate"`
 	Horizon       int64        `yaml:"horizon,omitempty"`
 	NumRequests   int64        `yaml:"num_requests,omitempty"` // 0 = unlimited (use horizon only)
-	ServeGenData  *ServeGenDataSpec `yaml:"servegen_data,omitempty"`
+	ServeGenData  *ServeGenDataSpec  `yaml:"servegen_data,omitempty"`
+	InferencePerf *InferencePerfSpec `yaml:"inference_perf,omitempty"`
 }
 
 // ClientSpec defines a single client's workload behavior.
