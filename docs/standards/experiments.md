@@ -74,6 +74,26 @@ No single configuration dominates all metrics simultaneously.
 
 ---
 
+## Hypothesis Formation
+
+Hypotheses must be **conceptual and behavioral**, not code-grounded. This is the experimental analogue of behavioral vs structural testing.
+
+### Conceptual hypotheses test system behavior
+
+A good hypothesis is an intuitive claim about system behavior: "burst smoothing should reduce tail latency," "tiered storage should reduce preemptions," "same seed should produce identical output." These claims are based on systems thinking, not on reading the implementation.
+
+### Do NOT read the code before forming hypotheses
+
+Reading the code before hypothesizing is like writing structural tests — you end up testing the implementation, not the behavior. The value of hypothesis-driven experimentation is that *conceptual claims failing against the implementation* surfaces design limitations that code-aware experiments would avoid.
+
+Evidence: If H5 had read `admission.go:45` before hypothesizing, the experimenter would have designed a "correct" experiment with cap=100K, confirmed a tiny effect, and **missed the discovery** that the per-input-token cost model makes burst smoothing structurally impossible at practical parameters. The conceptual hypothesis exposed a design limitation that a code-grounded hypothesis would have sidestepped.
+
+### "Mechanism not plausible" is a valid resolution
+
+When a conceptual hypothesis fails because the implementation doesn't support the assumed mechanism, this is the resolution "Refuted — mechanism not plausible." This is a **design limitation finding**, not an experimenter error. The hypothesis did its job — it revealed a gap between how users think the system works and how it actually works.
+
+---
+
 ## Experiment Design Rules
 
 ### ED-1: Controlled comparison
@@ -145,6 +165,38 @@ When a mechanism is proposed (e.g., "`maybeOffload` causes the TTFT improvement"
 
 Evidence: H10 proposed `maybeOffload` as the mechanism. The control experiment (threshold=1.0) produced output byte-identical to single-tier, confirming `maybeOffload` as the sole cause. Without this control, the directional question ("why do fewer cache hits help?") would have remained unresolved.
 
+### RCV-5: Confirmation bias guard (Devil's Advocate)
+
+Before sending FINDINGS.md to external review, the experimenter must write a **Devil's Advocate** section: 2-3 sentences arguing the **opposite** of the conclusion. This is a pre-review self-check that forces consideration of alternative interpretations.
+
+```markdown
+## Devil's Advocate
+
+**If this is "Confirmed," argue why it might be Refuted:**
+The 69x TTFT improvement could be entirely from load shedding (96% rejection)
+rather than burst smoothing. A firewall that blocks all traffic also has great
+latency for the requests that pass.
+
+**If this is "Refuted," argue why it might be Confirmed:**
+The calibrated bucket (cap=100K) showed a 4% improvement — small but consistent
+across 2 of 3 seeds. This might be a real but tiny burst-smoothing effect masked
+by workload noise.
+```
+
+The reviewers see both the conclusion AND the counter-argument. This prevents the failure mode where the experimenter writes "Confirmed" and the reviewers are anchored by that label.
+
+Evidence: H5 was labeled "Confirmed" for three rounds. Nobody argued the alternative until Round 3's honest reassessment. A Devil's Advocate section in Round 1 would have surfaced "could this be load shedding?" immediately.
+
+### RCV-6: Mandatory Scope and Limitations
+
+Every FINDINGS.md must include a **Scope and Limitations** section documenting:
+- Exact operating point tested (blocks, rate, seeds, instances, routing)
+- Parameters the findings depend on
+- What was NOT tested that could change the conclusion
+- Whether the finding generalizes or is specific to the tested configuration
+
+Evidence: H10's "28% TTFT improvement" is specific to GPU=2100 blocks near the preemption cliff. Without the scope section, this number would be cited as a general property of tiered KV caching.
+
 ---
 
 ## Iterative Review Protocol
@@ -184,6 +236,7 @@ Every hypothesis resolves to a **status** (did the prediction hold?) and a **res
 | **Confirmation with wrong mechanism** | Prediction holds directionally but the underlying cause differs | Correct the explanation. May change user guidance entirely. | H5: improvement is load shedding, not burst smoothing |
 | **Confirmation with bug discovery** | Prediction holds but experiment surfaces code defects | File issues (`--label bug`). Fix in separate PRs. | H12: conservation holds but preemption panics. H14: routing works but 3 detector bugs |
 | **Partial confirmation with surprise** | Some predictions fail; unexpected useful insights emerge | Document surprise. May spawn new hypotheses. | H10: no preemptions but discovered `maybeOffload` TTFT mechanism |
+| **Refuted — mechanism not plausible** | The hypothesis assumed a mechanism that the implementation doesn't support | File design issue if the mechanism *should* exist but doesn't. Document the actual mechanism. | H5: hypothesis assumed burst smoothing, but per-input-token cost model (`admission.go:45`) makes burst smoothing structurally impossible at practical parameters |
 | **Refuted — system design flaw** | Prediction fails because system doesn't work as designed | File design issue (`--label design`). May require architectural change. | *(not yet observed)* |
 | **Refuted — wrong mental model** | Prediction fails because experimenter's assumptions were wrong | Correct understanding. Document what the system actually does. | *(not yet observed)* |
 | **Inconclusive — parameter-dependent** | Effect exists at some parameters but not others | Document the parameter boundary. May need recalibration. | H5 exp4: <5% effect with calibrated bucket |

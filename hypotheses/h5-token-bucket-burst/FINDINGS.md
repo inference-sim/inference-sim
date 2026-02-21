@@ -1,7 +1,7 @@
 # H5: Token-Bucket Admission Control Under Burst
 
 **Status:** Refuted
-**Resolution:** Refuted — wrong mental model. The hypothesis predicted burst smoothing (reject some during bursts, improve latency for the rest). Actual results: at practical bucket parameters (cap >> mean input), rejection is 0.8-5% and TTFT improvement is <5% (negligible). At the original parameters (cap < mean input), 96% rejection produces 69x improvement — but that is load shedding, not burst smoothing. There is no sweet spot under Gamma CV=3.5 where moderate rejection gives meaningful improvement.
+**Resolution:** Refuted — mechanism not plausible. The hypothesis assumed burst smoothing: reject some requests during bursts, improve latency for the rest. The token-bucket's per-input-token cost model (`admission.go:45`, cost = `len(req.InputTokens)` ≈ 512 >> capacity 500) makes burst smoothing structurally impossible at practical parameters. At calibrated parameters (cap=100K >> mean input), rejection is 0.8-5% and TTFT improvement is <5%. The conceptual hypothesis exposed a design limitation: the cost model is underdocumented and users would not expect per-token admission costs.
 **Tier:** 3 (system understanding)
 **Type:** Statistical / Dominance
 **Date:** 2026-02-20

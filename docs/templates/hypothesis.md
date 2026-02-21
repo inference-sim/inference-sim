@@ -10,7 +10,7 @@ Every experiment's `FINDINGS.md` MUST contain these sections:
 # <Hypothesis Name>
 
 **Status:** Confirmed | Confirmed with nuance | Partially confirmed | Refuted | Inconclusive
-**Resolution:** <one of: Clean confirmation | Confirmation with wrong mechanism | Confirmation with bug discovery | Partial confirmation with surprise | Refuted — system design flaw | Refuted — wrong mental model | Inconclusive — parameter-dependent | Converged to open question>
+**Resolution:** <one of: Clean confirmation | Confirmation with wrong mechanism | Confirmation with bug discovery | Partial confirmation with surprise | Refuted — mechanism not plausible | Refuted — system design flaw | Refuted — wrong mental model | Inconclusive — parameter-dependent | Converged to open question>
 **Tier:** <tier number from research.md>
 **Type:** Deterministic | Statistical (<subtype>)
 **Date:** YYYY-MM-DD
@@ -45,6 +45,16 @@ Every "surprise" MUST include a first-principles calculation (RCV-2).
 Must explain the mechanism AND its direction (RCV-3).
 If a mechanism is proposed, describe the control experiment that would confirm it (RCV-4).>
 
+## Devil's Advocate (RCV-5)
+
+<Before sending to review, argue the OPPOSITE of your conclusion.>
+
+**If this is "Confirmed," argue why it might be Refuted:**
+<2-3 sentences>
+
+**If this is "Refuted," argue why it might be Confirmed:**
+<2-3 sentences>
+
 ## Findings Classification
 
 | Finding | Type | Action |
@@ -58,6 +68,21 @@ Findings checked against docs/standards/:
 - [ ] Any new rules needed? <list or "none">
 - [ ] Any new invariants needed? <list or "none">
 - [ ] Any existing rules/invariants confirmed? <list or "none">
+
+## Scope and Limitations (RCV-6)
+
+- **Operating point tested:** <blocks, rate, seeds, instances, routing, etc.>
+- **Parameters findings depend on:** <what must be true for these results to hold>
+- **What was NOT tested:** <parameter ranges, workloads, configs not covered>
+- **Generalizability:** <does this finding generalize, or is it specific to this config?>
+
+## Evidence Quality
+
+| Metric | Value | Confidence |
+|--------|-------|------------|
+| <primary metric> | <value> | High / Medium / Low — <why> |
+| Sample size | <seeds × configs × requests> | <assessment> |
+| Mechanism | <proposed mechanism> | <confidence + whether control confirms> |
 
 ## Implications for Users
 
