@@ -35,3 +35,8 @@ priority:
   policy: constant
 
 scheduler: fcfs
+# WARNING: Do not combine inverted-slo priority with reverse-priority scheduler.
+# The two inversions cancel out, producing scheduling identical to normal.
+# For pathological scheduling, use one inversion only:
+#   inverted-slo + priority-fcfs (inverted priority, correct scheduler)
+#   slo-based + reverse-priority (correct priority, inverted scheduler)
