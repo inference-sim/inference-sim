@@ -14,21 +14,26 @@ This document describes the process for running a hypothesis-driven experiment. 
 1. **Select or pose hypothesis** — from `docs/plans/research.md` or from a new observation
 2. **Classify** — deterministic or statistical? If statistical, which subtype? (See [experiments.md](../standards/experiments.md))
 3. **Create worktree** — `git worktree add .worktrees/hypothesis-<name> -b hypothesis/<name>`
-4. **Design experiment** — controlled comparison (ED-1), rate awareness (ED-2), precondition verification (ED-3), seed strategy (ED-4)
+4. **Design experiment** — controlled comparison (ED-1), rate awareness (ED-2), precondition verification (ED-3), seed strategy (ED-4), config diff (ED-6)
 5. **Implement** — create `hypotheses/<name>/run.sh`, `analyze.py`
 6. **Run** — execute across required seeds; verify reproducibility (ED-5)
 7. **Analyze** — produce comparison tables, compute effect sizes
-8. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, or surprise
-9. **Audit against standards** — check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`
-10. **Document** — write `FINDINGS.md` with results, root cause, classification, and audit
-11. **File issues** — for any bugs (`--label bug`), design limitations (`--label design`), or new rules/invariants discovered. Every issue must be labeled.
-12. **Commit and PR** — rebase on upstream/main, push, create PR
+8. **Verify root cause** — trace every causal claim through code (`file:line` citations). Compute expected values for any "surprise." See RCV-1, RCV-2, RCV-3 in [experiments.md](../standards/experiments.md).
+9. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, or surprise
+10. **Audit against standards** — check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`
+11. **Document** — write `FINDINGS.md` with results, root cause, classification, and audit
+12. **File issues** — for any bugs (`--label bug`), design limitations (`--label design`), or new rules/invariants discovered. Every issue must be labeled.
+13. **Commit and PR** — rebase on upstream/main, push, create PR
 
 ## Quality Gates
 
 - [ ] Hypothesis classified (deterministic or statistical + subtype)
-- [ ] Experiment design follows ED-1 through ED-5
+- [ ] Experiment design follows ED-1 through ED-6
+- [ ] If reusing prior calibration data, config diff documented (ED-6)
 - [ ] Results reproducible via `./run.sh`
+- [ ] Every causal claim in Root Cause Analysis cites `file:line` (RCV-1)
+- [ ] Every "surprise" has a first-principles calculation (RCV-2)
+- [ ] Root cause explains the mechanism, not just the direction (RCV-3)
 - [ ] Findings classified per the findings table
 - [ ] Standards audit completed
 - [ ] Issues filed for all actionable findings

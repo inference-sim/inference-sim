@@ -109,6 +109,36 @@ Every experiment must be reproducible from its artifacts alone:
 - Exact commit hash recorded (or the experiment is tied to a specific branch/PR)
 - No manual steps between script invocation and results
 
+### ED-6: Config diff against reference experiments
+When an experiment reuses calibration data from a prior experiment (e.g., "H8 found the preemption cliff at 2100 blocks, so we use 2100"), **diff every CLI flag and YAML field** between the two experiments. Document any differences. Even a single changed flag (e.g., routing policy) can invalidate the calibration.
+
+Evidence: H10 used `--routing-policy least-loaded` while H8 used the default `round-robin`. This shifted the preemption cliff, producing zero preemptions where H8 found 11%. The mismatch was not caught until post-publication code review.
+
+---
+
+## Root Cause Verification
+
+After analyzing results (step 7) and before classifying findings (step 8), every experiment MUST verify its causal explanations. This step exists because plausible narratives can pass review without being correct.
+
+### RCV-1: Every causal claim must cite `file:line`
+
+A root cause analysis that says "the tiered cache increases total capacity" without citing the code that does this is a *hypothesis about the root cause*, not a verified root cause. Trace the claim through the code:
+- Which function implements the claimed behavior?
+- What are the exact conditions under which it fires?
+- Does the claimed mechanism actually change the measured metric?
+
+Evidence: H10 claimed "CPU tier increases total effective capacity" — but `NewKVStore` (`kv_store.go:31-36`) does not change GPU block count. The actual mechanism was `maybeOffload` stripping prefix hashes (`kvcache_tiered.go:224`).
+
+### RCV-2: Every "surprise" must have a first-principles calculation
+
+Before labeling a result as "surprising," compute the expected value from the system's parameters. If the result matches the calculation, it is not a surprise — it is the expected outcome of a mechanism you didn't initially consider.
+
+Evidence: H5 labeled 96% rejection as a "surprise." But `admission.go:45` charges `len(req.InputTokens)` per request (mean=512). Token demand (1,024,000 tokens/s) exceeds supply (400 tokens/s) by 2,560x. The 96% rejection is the mathematically inevitable steady state.
+
+### RCV-3: Check the mechanism, not just the direction
+
+Confirming that "A is better than B" is necessary but not sufficient. The root cause analysis must explain *why* through a specific code path. A correct directional result with an incorrect explanation is a ticking time bomb — the explanation will mislead future experiments.
+
 ---
 
 ## Findings Classification
