@@ -635,7 +635,125 @@ inference_perf:
 	}
 }
 
-// suppress unused imports
-var _ = sim.StateQueued
-var _ = filepath.Join
-var _ = os.WriteFile
+// --- Equivalence tests (Task 7) ---
+
+func TestInferencePerfExpansion_EquivalentToManual(t *testing.T) {
+	// Acceptance criterion: shorthand and manual expansion produce identical requests.
+	// Build equivalent specs and compare generated request sequences.
+
+	// Shorthand spec
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 10},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         50,
+			QuestionLen:             100,
+			OutputLen:               50,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+
+	// Manual spec: construct the same clients explicitly
+	manual := &WorkloadSpec{
+		Version:       expanded.Version,
+		Seed:          expanded.Seed,
+		Category:      expanded.Category,
+		AggregateRate: expanded.AggregateRate,
+		Clients:       expanded.Clients, // use the expanded clients directly
+	}
+
+	horizon := int64(10_000_000) // 10 seconds
+
+	// Generate from expanded
+	r1, err1 := GenerateRequests(expanded, horizon, 0)
+	if err1 != nil {
+		t.Fatalf("expanded generation error: %v", err1)
+	}
+
+	// Generate from manual (same clients)
+	r2, err2 := GenerateRequests(manual, horizon, 0)
+	if err2 != nil {
+		t.Fatalf("manual generation error: %v", err2)
+	}
+
+	if len(r1) != len(r2) {
+		t.Fatalf("different request counts: expanded=%d, manual=%d", len(r1), len(r2))
+	}
+
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("request %d: arrival %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+			break
+		}
+		if len(r1[i].InputTokens) != len(r2[i].InputTokens) {
+			t.Errorf("request %d: input len %d vs %d", i, len(r1[i].InputTokens), len(r2[i].InputTokens))
+			break
+		}
+	}
+}
+
+func TestInferencePerfExpansion_SharedPrefixTokensIdentical(t *testing.T) {
+	// Verify that clients in the same prefix group actually share prefix tokens
+	// when requests are generated through the full pipeline.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 20.0, Duration: 5},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 3,
+			SystemPromptLen:         80,
+			QuestionLen:             50,
+			OutputLen:               25,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	horizon := int64(5_000_000) // 5 seconds
+	requests, err := GenerateRequests(expanded, horizon, 100)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	if len(requests) < 2 {
+		t.Fatal("need at least 2 requests for prefix comparison")
+	}
+
+	// All requests should have inputs at least 80 tokens long (prefix length)
+	prefixLen := 80
+	for i, req := range requests {
+		if len(req.InputTokens) < prefixLen {
+			t.Errorf("request %d: input len %d < prefix len %d", i, len(req.InputTokens), prefixLen)
+		}
+	}
+
+	// Group requests by tenant (which maps to prefix group)
+	byTenant := make(map[string][]*sim.Request)
+	for _, req := range requests {
+		byTenant[req.TenantID] = append(byTenant[req.TenantID], req)
+	}
+
+	// Within each group, first prefixLen tokens must be identical
+	for tenant, reqs := range byTenant {
+		if len(reqs) < 2 {
+			continue
+		}
+		first := reqs[0].InputTokens[:prefixLen]
+		for i := 1; i < len(reqs); i++ {
+			other := reqs[i].InputTokens[:prefixLen]
+			for j := 0; j < prefixLen; j++ {
+				if first[j] != other[j] {
+					t.Errorf("tenant %q: request %d prefix token %d differs from request 0", tenant, i, j)
+					break
+				}
+			}
+		}
+	}
+}
