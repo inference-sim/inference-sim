@@ -757,3 +757,54 @@ func TestInferencePerfExpansion_SharedPrefixTokensIdentical(t *testing.T) {
 		}
 	}
 }
+
+// --- YAML pipeline test (Task 8) ---
+
+func TestLoadWorkloadSpec_InferencePerfSpec_FullPipeline(t *testing.T) {
+	// Full YAML -> parse -> expand -> generate pipeline
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ip-spec.yaml")
+	yamlData := `
+version: "1"
+seed: 42
+aggregate_rate: 10.0
+inference_perf:
+  stages:
+    - rate: 8.0
+      duration: 5
+    - rate: 20.0
+      duration: 5
+  shared_prefix:
+    num_unique_system_prompts: 3
+    num_users_per_system_prompt: 2
+    system_prompt_len: 50
+    question_len: 100
+    output_len: 50
+`
+	if err := os.WriteFile(path, []byte(yamlData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := LoadWorkloadSpec(path)
+	if err != nil {
+		t.Fatalf("load error: %v", err)
+	}
+	if spec.InferencePerf == nil {
+		t.Fatal("InferencePerf should be parsed from YAML")
+	}
+	if len(spec.InferencePerf.Stages) != 2 {
+		t.Errorf("stage count = %d, want 2", len(spec.InferencePerf.Stages))
+	}
+
+	horizon := int64(10_000_000) // 10 seconds
+	requests, err := GenerateRequests(spec, horizon, 50)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected requests from YAML pipeline")
+	}
+	if len(requests) > 50 {
+		t.Errorf("request count %d exceeds maxRequests 50", len(requests))
+	}
+}
