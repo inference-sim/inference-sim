@@ -1,0 +1,20 @@
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 2000
+clients:
+  - id: bursty-client
+    tenant_id: tenant-A
+    slo_class: batch
+    rate_fraction: 1.0
+    arrival:
+      process: gamma
+      cv: 3.5
+    input_distribution:
+      type: exponential
+      params:
+        mean: 512
+    output_distribution:
+      type: exponential
+      params:
+        mean: 256

@@ -45,3 +45,6 @@ This document describes the process for running a hypothesis-driven experiment. 
   - `hypotheses/h12-conservation/` — request conservation invariant (Tier 1, deterministic)
   - `hypotheses/h14-pathological-templates/` — pathological policy templates (Tier 2, statistical dominance)
   - `hypotheses/prefix-affinity/` — prefix-affinity routing (Tier 2, statistical dominance)
+  - `hypotheses/h5-token-bucket-burst/` — token-bucket admission under burst (Tier 3, statistical dominance)
+  - `hypotheses/h10-tiered-kv/` — tiered KV cache GPU+CPU offload (Tier 3, statistical dominance)
+  - `hypotheses/h13-determinism/` — determinism invariant INV-6 (Tier 1, deterministic)
