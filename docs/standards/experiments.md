@@ -165,9 +165,51 @@ Evidence: PR #310 required 4 rounds across H5/H10 to reach correct conclusions. 
 
 ---
 
+## Hypothesis Resolution
+
+Every hypothesis resolves to a **status** (did the prediction hold?) and a **resolution** (what do we do about it?). These are distinct — a "confirmed" hypothesis can still have a wrong-mechanism resolution that changes user guidance entirely.
+
+### Status (the prediction)
+
+| Status | Definition | Example |
+|--------|-----------|---------|
+| **Confirmed** | The predicted directional outcome holds across all seeds | H13: same seed → byte-identical output |
+| **Confirmed with nuance** | The prediction holds but the mechanism or practical implications differ from expected | H5: token-bucket reduces TTFT 69x but via 96% load shedding, not burst smoothing; no practical sweet spot |
+| **Partially confirmed** | Some predictions hold, others don't, or the experiment tested something different than intended | H10: preemption reduction untestable (zero preemptions), but `maybeOffload` improves TTFT 28%; H14: routing pathological confirmed, scheduling showed double-inversion cancellation |
+| **Refuted** | The predicted outcome does not hold across seeds | *(not yet observed — the refutation IS the value)* |
+| **Inconclusive** | Effect is within noise (<10% in any seed) or parameter-dependent | H5 exp4: calibrated bucket shows <5% TTFT improvement |
+
+### Resolution (what we learned and what to do)
+
+| Resolution | Definition | Action | Example |
+|-----------|-----------|--------|---------|
+| **Clean confirmation** | Hypothesis holds, mechanism matches prediction | Document. No further action. | H13, H3, H8 |
+| **Confirmation with wrong mechanism** | Prediction holds directionally but the underlying cause differs | Correct the explanation. May change user guidance entirely. | H5: improvement is load shedding, not burst smoothing |
+| **Confirmation with bug discovery** | Prediction holds but experiment surfaces code defects | File issues (`--label bug`). Fix in separate PRs. | H12: conservation holds but preemption panics. H14: routing works but 3 detector bugs |
+| **Partial confirmation with surprise** | Some predictions fail; unexpected useful insights emerge | Document surprise. May spawn new hypotheses. | H10: no preemptions but discovered `maybeOffload` TTFT mechanism |
+| **Refuted — system design flaw** | Prediction fails because system doesn't work as designed | File design issue (`--label design`). May require architectural change. | *(not yet observed)* |
+| **Refuted — wrong mental model** | Prediction fails because experimenter's assumptions were wrong | Correct understanding. Document what the system actually does. | *(not yet observed)* |
+| **Inconclusive — parameter-dependent** | Effect exists at some parameters but not others | Document the parameter boundary. May need recalibration. | H5 exp4: <5% effect with calibrated bucket |
+| **Converged to open question** | Mechanism identified but directional explanation requires different tooling | Mark as open. Propose specific tooling needed. | H10: why fewer cache hits helps — needs per-request logging |
+
+### Choosing status vs resolution
+
+The status answers "did the number go the way we predicted?" The resolution answers "do we understand why and what to do about it?" Always report both:
+
+```
+**Status:** Confirmed with nuance
+**Resolution:** Confirmation with wrong mechanism — token-bucket reduces TTFT
+via load shedding (96% rejection), not burst smoothing. No practical sweet spot
+under Gamma CV=3.5.
+```
+
+A common mistake is declaring "Confirmed" and stopping. The resolution is where the real value lives.
+
+---
+
 ## Findings Classification
 
-Every experiment produces findings. Each finding MUST be classified:
+Every experiment produces individual findings. Each finding MUST be classified independently of the hypothesis status:
 
 | Finding Type | Definition | Action Required |
 |-------------|------------|-----------------|
@@ -177,6 +219,7 @@ Every experiment produces findings. Each finding MUST be classified:
 | **New invariant** | The experiment revealed a property that must always hold | Add to `docs/standards/invariants.md`. |
 | **Design limitation** | The system works as coded but has an undocumented behavioral limitation | Document in FINDINGS.md + file issue with `--label design` for design doc update. |
 | **Surprise** | An unexpected result that doesn't fit other categories | Document in FINDINGS.md. May spawn new hypotheses. |
+| **Open question** | Mechanism identified but explanation incomplete; requires different tooling to resolve | Mark explicitly in FINDINGS.md with proposed tooling/experiment. |
 
 ### The Audit Step
 

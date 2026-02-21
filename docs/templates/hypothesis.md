@@ -9,10 +9,12 @@ Every experiment's `FINDINGS.md` MUST contain these sections:
 ```
 # <Hypothesis Name>
 
-**Status:** Confirmed | Refuted | Partially confirmed | Inconclusive
+**Status:** Confirmed | Confirmed with nuance | Partially confirmed | Refuted | Inconclusive
+**Resolution:** <one of: Clean confirmation | Confirmation with wrong mechanism | Confirmation with bug discovery | Partial confirmation with surprise | Refuted — system design flaw | Refuted — wrong mental model | Inconclusive — parameter-dependent | Converged to open question>
 **Tier:** <tier number from research.md>
 **Type:** Deterministic | Statistical (<subtype>)
 **Date:** YYYY-MM-DD
+**Rounds:** <number of experiment-review rounds to convergence>
 
 ## Hypothesis
 
@@ -37,13 +39,17 @@ Every experiment's `FINDINGS.md` MUST contain these sections:
 
 ## Root Cause Analysis
 
-<Why the results are what they are — trace through the code/architecture>
+<Why the results are what they are — trace through the code/architecture.
+Every causal claim MUST cite file:line (RCV-1).
+Every "surprise" MUST include a first-principles calculation (RCV-2).
+Must explain the mechanism AND its direction (RCV-3).
+If a mechanism is proposed, describe the control experiment that would confirm it (RCV-4).>
 
 ## Findings Classification
 
 | Finding | Type | Action |
 |---------|------|--------|
-| <finding 1> | Confirmation / Bug / New rule / etc. | <issue number or "documented here"> |
+| <finding 1> | Confirmation / Bug / New rule / New invariant / Design limitation / Surprise / Open question | <issue number or "documented here"> |
 
 ## Standards Audit
 
