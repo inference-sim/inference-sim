@@ -20,24 +20,49 @@ Most current experiments are **Verification** (invariant checking) or informal *
 2. **Validation** — confirm that model outputs match expected behavior within acceptable accuracy intervals
 3. **Discovery** — surface bugs, design gaps, and undocumented limitations
 
+### How to choose your VV&UQ category
+
+```
+Is your hypothesis about whether the CODE is correct?
+  → Yes: Verification (e.g., "conservation holds," "deterministic output")
+  → No: ↓
+Is your hypothesis comparing the MODEL's output to expected behavior?
+  → Yes: Validation (e.g., "policy A beats B," "TTFT ∝ input tokens")
+  → No: ↓
+Is your hypothesis about the BOUNDARIES or CONFIDENCE of a finding?
+  → Yes: UQ (e.g., "preemption cliff at 2100±100 blocks," "P(stable) > 0.95")
+```
+
+The VV&UQ category determines what counts as evidence:
+- **Verification:** Exact invariant checks. One failure = bug. Single seed sufficient.
+- **Validation:** Statistical comparison within pre-specified accuracy interval. 3+ seeds. Formal tests (KS, Mann-Whitney U).
+- **UQ:** Confidence intervals on thresholds. Parameter sweeps. Sensitivity analysis.
+
 ### Formal statistical rigor
 
 Experiments involving statistical claims must use proper hypothesis tests, not ad-hoc thresholds:
 
-- **Distribution validation** (workload/arrival family): Kolmogorov-Smirnov test against theoretical CDF. Reject if p < 0.05.
-- **Metric comparison** (cross-policy family): Mann-Whitney U test or paired comparison across seeds. Report effect size AND confidence interval, not just "X% better."
+- **Distribution validation** (workload/arrival family): [Kolmogorov-Smirnov test](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kstest.html) — compares a sample against a theoretical CDF. Reject if p < 0.05. In Python: `from scipy.stats import kstest; stat, p = kstest(samples, 'expon', args=(0, 1/rate))`.
+- **Metric comparison** (cross-policy family): [Mann-Whitney U test](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.mannwhitneyu.html) — non-parametric comparison of two independent samples. Report effect size AND confidence interval, not just "X% better." In Python: `from scipy.stats import mannwhitneyu; stat, p = mannwhitneyu(a_values, b_values)`.
 - **Threshold estimation** (performance-regime family): Report thresholds with confidence intervals. "Preemption cliff at 2100 blocks" → "Preemption cliff at 2100 ± 100 blocks (95% CI across seeds 42, 123, 456)."
 - **Invariant probability** (scheduler invariants family): For stochastic invariants, estimate P(invariant holds) with a confidence interval, not just "holds for 3 seeds."
 
-Legacy experiments using the 20%/>10%/5% thresholds remain valid but new experiments should use formal tests where feasible.
+**Note on scipy:** The tests above use `scipy.stats`. Install with `pip install scipy` if needed. For experiments that only use standard-library Python, the legacy thresholds (below) remain acceptable.
+
+Legacy thresholds (still valid for experiments without scipy):
+- **>20% improvement** consistent across all seeds = significant
+- **<10% in any seed** = inconclusive
+- **Within 5%** across all seeds = equivalent (for equivalence tests)
+
+These thresholds were chosen pragmatically — 20% ensures the effect is visible above seed-to-seed variance in typical BLIS experiments; 5% accounts for floating-point and timing noise. They are not derived from formal power analysis. New experiments should prefer formal tests where scipy is available.
 
 ### Cross-validation against analytical models
 
 Where applicable, validate DES outputs against analytically-tractable models under matching assumptions. This grounds the simulator in theory.
 
-- **M/M/k baseline**: Under Poisson arrivals with exponential service times and k servers, compare DES queue length distribution against the M/M/k analytical solution. **Caveat:** BLIS uses batching and deterministic service times (alpha/beta coefficients), so exact M/M/k matching is not possible. The comparison requires configuring BLIS with batch_size=1 and interpreting the service time distribution as approximately exponential. Divergence may indicate modeling errors OR fundamental architectural differences from M/M/k assumptions.
-- **Little's Law**: For any stable configuration, verify L = λW (average queue length = arrival rate × average wait time). This is a universal law that must hold.
-- **Phase structure**: Verify that prefill time ∝ prompt tokens and decode time ∝ output tokens by fitting linear models and checking R² > 0.95.
+- **M/M/k baseline**: [M/M/k](https://en.wikipedia.org/wiki/M/M/c_queue) is the standard queueing model with Markovian (Poisson) arrivals, Markovian (exponential) service times, and k servers. Under matching assumptions, compare DES queue length distribution against the M/M/k analytical solution. **Caveat:** BLIS uses batching and deterministic service times (alpha/beta coefficients), so exact M/M/k matching is not possible. The comparison requires configuring BLIS with `--max-batch-size 1` and interpreting the service time distribution as approximately exponential. Divergence may indicate modeling errors OR fundamental architectural differences from M/M/k assumptions.
+- **Little's Law**: For any stable configuration, verify L = λW (average queue length = arrival rate × average wait time). This is a universal law that must hold. **In BLIS terms:** L = mean `still_queued` from per-instance metrics; λ = `injected_requests / (sim_duration_us / 1e6)`; W = mean scheduling delay from `scheduling_delay_p99_ms` (approximate). Extract from JSON output.
+- **Phase structure**: Verify that prefill time ∝ prompt tokens and decode time ∝ output tokens by fitting linear models and checking R² > 0.95. **In BLIS terms:** prefill time ≈ TTFT (time to first token); decode time ≈ E2E - TTFT. Vary `input_distribution` mean while holding `output_distribution` constant, and vice versa.
 
 ## Experiment Classification
 

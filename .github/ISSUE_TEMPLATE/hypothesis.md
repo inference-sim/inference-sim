@@ -8,7 +8,13 @@ assignees: ''
 
 ## Hypothesis
 
-> State the hypothesis as an intuitive, behavioral claim. Use the sentence pattern for the chosen family (see `docs/standards/experiments.md`).
+> State the hypothesis as an intuitive, behavioral claim. Use the family sentence pattern:
+> - **Workload/arrival:** "Generator G with params P should produce distribution D within tolerance T"
+> - **Scheduler invariants:** "For ALL configurations C, invariant I holds"
+> - **Performance-regime:** "Metric M should be monotonic in parameter P across [a, b]"
+> - **Structural model:** "Component C should behave according to assumption A"
+> - **Robustness:** "Under stress S, the system should exhibit behavior B and NOT X"
+> - **Cross-policy:** "Under workload W, policy A should produce better metric M than B"
 
 ## Classification
 

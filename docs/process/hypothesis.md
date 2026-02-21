@@ -54,10 +54,10 @@ A good hypothesis is **behavioral** (about observable system behavior), **testab
 2. **Choose a family**: Which domain does your claim target? (See [experiments.md](../standards/experiments.md) for the 6 families.)
 3. **Write the sentence**: Use the family-specific pattern from experiments.md.
 4. **Add the diagnostic clause**: "If this fails, it would indicate..."
-5. **Check for redundancy**: Search existing hypotheses in `docs/plans/research.md` and filed issues with `--label hypothesis`.
-6. **File as a GitHub issue**: Use `--label hypothesis` with the [issue body template](#issue-taxonomy-after-convergence).
+5. **Check for redundancy**: Search existing hypotheses in `docs/plans/research.md` and on GitHub: [issues labeled `hypothesis`](https://github.com/inference-sim/inference-sim/labels/hypothesis).
+6. **File as a GitHub issue**: Use the [Hypothesis Proposal issue template](../../.github/ISSUE_TEMPLATE/hypothesis.md) on GitHub (click "New Issue" → "Hypothesis Proposal"). This template has fields for family, VV&UQ category, diagnostic value, and experiment design.
 
-External contributors should file a GitHub issue with the `hypothesis` label. The issue body should include: the hypothesis sentence, the proposed family, the diagnostic clause, and a rough experiment design (which configurations to compare, which metric to measure).
+External contributors should file a GitHub issue using the Hypothesis Proposal template. Maintainers will triage, prioritize, and run the review protocol.
 
 ## The Iterative Review Protocol
 

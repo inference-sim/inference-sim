@@ -103,11 +103,11 @@ With least-loaded routing at 2100 blocks, no single instance exceeds its KV capa
 
 **The complete mechanism (RCV-1 compliant, all file:line cited):**
 
-1. **Preemptions occur in single-tier** (17.5%): At 2100 GPU blocks with rate=2000 and gaussian input mean=512, the GPU cache fills up. When `makeRunningBatch` (`simulator.go:449-570`) calls `AllocateKVBlocks` and GPU is full, `preempt()` (`simulator.go:375-408`) evicts running requests via LRU. Evicted blocks lose their prefix hashes permanently.
+1. **Preemptions occur in single-tier** (17.5%): At 2100 GPU blocks with rate=2000 and gaussian input mean=512, the GPU cache fills up. When `makeRunningBatch` (`simulator.go:449-570`) calls `AllocateKVBlocks` and GPU is full, `preempt()` (`simulator.go:408-446`) evicts running requests via LRU. Evicted blocks lose their prefix hashes permanently.
 
-2. **`maybeOffload` preserves prefix hashes on CPU**: When `ReleaseKVBlocks` is called (`kvcache_tiered.go:149-151`), `maybeOffload()` (lines 199-230) checks if GPU utilization > 0.8. If so, it copies prefix hash entries from GPU free blocks to CPU (`kvcache_tiered.go:224`), preserving them for future reuse.
+2. **`maybeOffload` preserves prefix hashes on CPU**: When `ReleaseKVBlocks` is called (`kvcache_tiered.go:149-151`), `maybeOffload()` (lines 199-230) checks if GPU utilization > 0.8. If so, it copies prefix hash entries from GPU free blocks to the CPU tier (`kvcache_tiered.go:214-219` creates the `offloadedBlock`) and removes the hash from GPU's `HashToBlock` map (line 224).
 
-3. **`tryReloadFromCPU` restores hashes when GPU allocation fails**: When `AllocateKVBlocks` fails on GPU, the tiered cache calls `tryReloadFromCPU` (`kvcache_tiered.go:70-83`) which brings prefix hashes back from CPU to GPU. This makes the blocks available as cached prefix blocks instead of requiring full recomputation.
+3. **`tryReloadFromCPU` restores hashes when GPU allocation fails**: When `AllocateKVBlocks` fails on GPU, the tiered cache calls `tryReloadFromCPU` (`kvcache_tiered.go:95-143`, called at line 70) which brings prefix hashes back from CPU to GPU. This makes the blocks available as cached prefix blocks instead of requiring full recomputation.
 
 4. **Cache hit rate increases 9x** (0.51% → 4.52%): Because prefix hashes are preserved on CPU rather than lost during LRU eviction, subsequent requests with the same prefix find more cached blocks via `GetCachedBlocks` (`simulator.go:521`). More cached blocks → lower `numNewTokens` → shorter prefill time → lower TTFT.
 
@@ -119,7 +119,7 @@ With least-loaded routing at 2100 blocks, no single instance exceeds its KV capa
 
 ### Why the threshold effect (100 CPU blocks = full benefit)?
 
-Once ANY CPU tier exists, `maybeOffload` activates and begins preserving prefix hashes on CPU. The number of CPU blocks only matters if the CPU tier fills up (the `t.cpu.used >= t.cpu.capacity` guard at line 208). With even 100 CPU blocks, the offloaded prefix hashes fit easily, so 100 and 1,000 CPU blocks produce identical behavior.
+Once ANY CPU tier exists, `maybeOffload` activates and begins preserving prefix hashes on CPU. The number of CPU blocks only matters if the CPU tier fills up (the `t.cpu.used >= t.cpu.capacity` guard at line 205). With even 100 CPU blocks, the offloaded prefix hashes fit easily, so 100 and 1,000 CPU blocks produce identical behavior.
 
 ### Bandwidth sensitivity (experiments 1-3 vs corrected data)
 
