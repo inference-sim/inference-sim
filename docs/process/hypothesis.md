@@ -84,10 +84,60 @@ The distinction: **"open and requires different tooling"** is a stopping point. 
 
 ### Finalization (after convergence)
 
-12. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, or surprise
+12. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, surprise, or open question
 13. **Audit against standards** — check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`
-14. **File issues** — for any bugs (`--label bug`), design limitations (`--label design`), or new rules/invariants discovered
-15. **Commit and PR** — rebase on upstream/main, push, create PR
+14. **Commit and PR** — rebase on upstream/main, push, create PR
+15. **File issues** — AFTER PR creation, file structured issues per the [Issue Taxonomy](#issue-taxonomy-after-convergence) below. Reference the PR in each issue.
+
+**Why issues come last:** Findings can change across rounds (H10 went from "untested" to "confirmed" between Rounds 3-4). Filing issues before convergence risks creating wrong issues that need to be closed and re-filed. File once, file right.
+
+### Issue Taxonomy (after convergence)
+
+After convergence and PR creation, walk the findings classification table in FINDINGS.md and file one GitHub issue per actionable finding. Not every hypothesis produces issues — a clean confirmation (like H13) may produce none.
+
+**Issue types and labels:**
+
+| Issue Type | Label | When to file | Title format | Example |
+|------------|-------|-------------|--------------|---------|
+| **Bug** | `--label bug` | Code defect discovered during experiment | `bug: <component> — <defect>` | `bug: sim/simulator.go — preempt() panics on empty RunningBatch` (H12) |
+| **Enhancement** | `--label enhancement` | New feature, rule, or documentation improvement needed | `enhancement: <area> — <improvement>` | `enhancement: CLI — document token-bucket per-input-token cost model` (H5) |
+| **New hypothesis** | `--label hypothesis` | Follow-up experiment spawned by current findings | `hypothesis: <claim to test>` | `hypothesis: test tiered KV at GPU=1500 blocks to trigger preemption-path offload` (H10) |
+| **Design limitation** | `--label design` | System works as coded but has undocumented behavioral limitation | `design: <limitation>` | `design: no burst-smoothing sweet spot under Gamma CV>3` (H5) |
+| **Standards update** | `--label standards` | New rule or invariant discovered that should be added | `standards: <rule/invariant>` | `standards: R17 signal freshness — routing signals have tiered staleness` (H3) |
+
+**Mapping from resolution type to expected issues:**
+
+| Resolution | Expected issues |
+|------------|----------------|
+| Clean confirmation | Usually none. Optionally: standards update confirming existing rules. |
+| Confirmation with wrong mechanism | Enhancement: update documentation with correct mechanism. |
+| Confirmation with bug discovery | Bug: one per code defect. Enhancement: if detector/tooling needs improvement. |
+| Partial confirmation with surprise | New hypothesis: follow-up experiments to investigate surprise. |
+| Refuted — system design flaw | Design: architectural limitation. Enhancement: proposed fix. |
+| Refuted — wrong mental model | Usually none. Optionally: enhancement if CLI help text is misleading. |
+| Inconclusive — parameter-dependent | New hypothesis: test at different parameters. |
+| Converged to open question | New hypothesis: specific experiment or tooling to resolve. |
+
+**Issue body template:**
+
+```markdown
+## Context
+Discovered in hypothesis experiment <name> (PR #NNN).
+
+## Finding
+<One-paragraph description from FINDINGS.md>
+
+## Evidence
+<Key data point or code reference>
+
+## Proposed action
+<What should be done — fix, new experiment, documentation update>
+```
+
+**What NOT to file:**
+- Issues for findings that are "documented here" with no action needed
+- Duplicate issues for findings already covered by existing open issues
+- Issues for scope limitations that are acknowledged in FINDINGS.md (these are future work, not bugs)
 
 ## Code Review Before Execution
 
@@ -145,7 +195,12 @@ Three of the four major bugs in this PR would have been caught by code review be
 - [ ] All review feedback addressed or explicitly acknowledged as open
 - [ ] Findings classified per the findings table (including resolution type)
 - [ ] Standards audit completed
-- [ ] Issues filed for all actionable findings
+
+### Post-PR Gates (check after PR creation)
+- [ ] Issues filed per [Issue Taxonomy](#issue-taxonomy-after-convergence) — one per actionable finding
+- [ ] Each issue has correct label (`bug`, `enhancement`, `hypothesis`, `design`, or `standards`)
+- [ ] Each issue references the PR number
+- [ ] No issues filed for "documented here" findings with no action needed
 
 ## Why Three Parallel Reviewers?
 
