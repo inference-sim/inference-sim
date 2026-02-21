@@ -139,6 +139,30 @@ Evidence: H5 labeled 96% rejection as a "surprise." But `admission.go:45` charge
 
 Confirming that "A is better than B" is necessary but not sufficient. The root cause analysis must explain *why* through a specific code path. A correct directional result with an incorrect explanation is a ticking time bomb — the explanation will mislead future experiments.
 
+### RCV-4: Validate causal claims with control experiments
+
+When a mechanism is proposed (e.g., "`maybeOffload` causes the TTFT improvement"), design a control experiment that disables **only that mechanism** (e.g., `--kv-offload-threshold 1.0`). If the effect vanishes, the mechanism is confirmed. If it persists, the explanation is wrong.
+
+Evidence: H10 proposed `maybeOffload` as the mechanism. The control experiment (threshold=1.0) produced output byte-identical to single-tier, confirming `maybeOffload` as the sole cause. Without this control, the directional question ("why do fewer cache hits help?") would have remained unresolved.
+
+---
+
+## Iterative Review Protocol
+
+Every hypothesis experiment must go through **three rounds** of experimentation interleaved with external LLM review (see `docs/process/hypothesis.md` for the full protocol). This is enforced because:
+
+1. **Round 1** produces confident but often wrong root cause analyses
+2. **Round 2** (post-review) identifies confounds, missing controls, and logical gaps
+3. **Round 3** (post-review) produces definitive evidence via targeted experiments
+
+The external review uses frontier LLMs (default: Claude Opus 4.6 via `/review-plan aws/claude-opus-4-6`) as independent technical reviewers. Their value is in catching:
+- Confounding variables invisible to the experimenter (ED-1 violations)
+- Logical gaps in causal chains (RCV-3 violations)
+- Missing first-principles calculations (RCV-2 violations)
+- Configuration assumptions that need verification (ED-6 violations)
+
+Evidence: PR #310 required 4 rounds across H5/H10 to reach correct conclusions. The confound matrix (Round 3) was designed entirely from Opus 4.6 review feedback and produced the definitive result.
+
 ---
 
 ## Findings Classification

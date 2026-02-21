@@ -9,34 +9,113 @@ This document describes the process for running a hypothesis-driven experiment. 
 - Investigating unexpected behavior observed during development
 - Exploring design tradeoffs between configurations
 
-## Steps
+## The Three-Round Protocol
+
+Every hypothesis experiment goes through **three rounds** of experimentation interleaved with external LLM review. This is non-negotiable — it exists because single-pass experiments produce plausible-sounding but incorrect analyses (evidence: H5 and H10 in PR #310 required 4 rounds to reach correct conclusions).
+
+```
+Round 1: Design → Run → Analyze → Document draft FINDINGS.md
+                ↓
+         External Review (Opus 4.6 via /review-plan)
+                ↓
+Round 2: Address review gaps → Run additional experiments → Update FINDINGS.md
+                ↓
+         External Review (Opus 4.6 via /review-plan)
+                ↓
+Round 3: Resolve remaining questions → Final experiments if needed → Finalize FINDINGS.md
+                ↓
+         Final Review (Opus 4.6 — confirmation pass)
+                ↓
+         Commit and PR
+```
+
+### Round 1: Initial Experiment
 
 1. **Select or pose hypothesis** — from `docs/plans/research.md` or from a new observation
 2. **Classify** — deterministic or statistical? If statistical, which subtype? (See [experiments.md](../standards/experiments.md))
-3. **Create worktree** — `git worktree add .worktrees/hypothesis-<name> -b hypothesis/<name>`
-4. **Design experiment** — controlled comparison (ED-1), rate awareness (ED-2), precondition verification (ED-3), seed strategy (ED-4), config diff (ED-6)
-5. **Implement** — create `hypotheses/<name>/run.sh`, `analyze.py`
-6. **Run** — execute across required seeds; verify reproducibility (ED-5)
-7. **Analyze** — produce comparison tables, compute effect sizes
-8. **Verify root cause** — trace every causal claim through code (`file:line` citations). Compute expected values for any "surprise." See RCV-1, RCV-2, RCV-3 in [experiments.md](../standards/experiments.md).
-9. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, or surprise
-10. **Audit against standards** — check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`
-11. **Document** — write `FINDINGS.md` with results, root cause, classification, and audit
-12. **File issues** — for any bugs (`--label bug`), design limitations (`--label design`), or new rules/invariants discovered. Every issue must be labeled.
-13. **Commit and PR** — rebase on upstream/main, push, create PR
+3. **Design experiment** — ED-1 through ED-6
+4. **Implement** — create `hypotheses/<name>/run.sh`, `analyze.py`
+5. **Run** — execute across required seeds; verify reproducibility (ED-5)
+6. **Analyze** — produce comparison tables, compute effect sizes
+7. **Verify root cause** — trace every causal claim through code (RCV-1, RCV-2, RCV-3)
+8. **Document draft FINDINGS.md** — results, root cause, classification, standards audit
+
+### Round 1 Review
+
+Run external review: `/review-plan <path-to-findings> aws/claude-opus-4-6`
+
+Focus areas for the reviewer:
+- Are causal claims verified against code? (RCV-1)
+- Are "surprises" computed from first principles? (RCV-2)
+- Does the mechanism explain the direction, not just the correlation? (RCV-3)
+- Are there confounding variables? (ED-1, ED-6)
+- Are there missing control experiments?
+
+### Round 2: Address Review Gaps
+
+9. **Design additional experiments** to address review feedback:
+   - Confound matrices (isolate variables the reviewer flagged)
+   - Control experiments (disable proposed mechanism to verify causality)
+   - Calibrated parameters (test with corrected/proper values)
+10. **Run additional experiments**
+11. **Update FINDINGS.md** — incorporate new results, correct or qualify earlier claims
+
+### Round 2 Review
+
+Run external review again on the updated FINDINGS.md.
+
+Focus areas:
+- Did the new experiments resolve the Round 1 gaps?
+- Are there remaining directional questions (mechanism identified but effect direction unexplained)?
+- Are findings appropriately qualified (confirmed vs partially confirmed vs open)?
+
+### Round 3: Resolve or Acknowledge
+
+12. **Final experiments** if Round 2 review identified remaining gaps
+13. **Finalize FINDINGS.md** — every open question must be either resolved or explicitly marked as "open, requires future work" with a specific proposed experiment
+14. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, or surprise
+15. **Audit against standards** — check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`
+16. **File issues** — for any bugs (`--label bug`), design limitations (`--label design`), or new rules/invariants discovered
+
+### Round 3 Review (Confirmation Pass)
+
+Final external review — this is a confirmation pass, not a discovery pass. The reviewer should confirm:
+- All previously flagged issues are addressed or explicitly acknowledged
+- No new concerns
+- FINDINGS.md is ready for merge
+
+17. **Commit and PR** — rebase on upstream/main, push, create PR
 
 ## Quality Gates
 
+### Per-Round Gates (check after each round)
+- [ ] Every causal claim cites `file:line` (RCV-1)
+- [ ] Every "surprise" has a first-principles calculation (RCV-2)
+- [ ] Root cause explains mechanism AND direction (RCV-3)
+- [ ] External review completed and feedback addressed
+
+### Final Gates (check before PR)
 - [ ] Hypothesis classified (deterministic or statistical + subtype)
 - [ ] Experiment design follows ED-1 through ED-6
 - [ ] If reusing prior calibration data, config diff documented (ED-6)
 - [ ] Results reproducible via `./run.sh`
-- [ ] Every causal claim in Root Cause Analysis cites `file:line` (RCV-1)
-- [ ] Every "surprise" has a first-principles calculation (RCV-2)
-- [ ] Root cause explains the mechanism, not just the direction (RCV-3)
+- [ ] Three rounds completed with external reviews
+- [ ] All review feedback addressed or explicitly acknowledged as open
 - [ ] Findings classified per the findings table
 - [ ] Standards audit completed
 - [ ] Issues filed for all actionable findings
+
+## Why Three Rounds?
+
+Evidence from PR #310 (H5, H10, H13):
+
+| Round | What happened | What was caught |
+|-------|---------------|-----------------|
+| **1** | Initial experiments + FINDINGS.md | Plausible but wrong root causes published |
+| **2** | Code review + external review | H10: "capacity increase" was wrong (NewKVStore doesn't change GPU blocks). H5: "96% surprise" was mathematically inevitable. |
+| **3** | Confound matrix + calibrated bucket | H10: `maybeOffload` confirmed as sole mechanism via byte-identical control. H5: calibrated bucket shows <5% effect — original was load shedding. |
+
+Round 1 produced confident but wrong answers. Round 2 identified the errors. Round 3 produced definitive evidence. Skipping any round would have left incorrect analysis in the codebase.
 
 ## References
 
