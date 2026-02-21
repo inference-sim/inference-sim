@@ -57,11 +57,15 @@ def parse_output(filepath):
         else 0
     )
 
-    # Preemption count
+    # Extract preemption rate from KV cache summary section.
+    # Format: "Preemption Rate: 0.1750" (float, printed by cmd/root.go:544).
+    # Convert rate to approximate count for downstream display/comparison.
     preemptions = 0
-    preempt_match = re.search(r"Preemptions?: (\d+)", content)
+    preempt_match = re.search(r"Preemption Rate: ([0-9.]+)", content)
     if preempt_match:
-        preemptions = int(preempt_match.group(1))
+        preemption_rate = float(preempt_match.group(1))
+        completed = cluster["completed_requests"] if cluster else 0
+        preemptions = int(round(preemption_rate * completed))
 
     return {
         "ttft_mean": cluster["ttft_mean_ms"] if cluster else 0,
