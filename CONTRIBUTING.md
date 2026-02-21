@@ -123,6 +123,36 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 5. Update `Summarize()` aggregation
 6. Add behavioral tests
 
+## Running or Contributing Hypothesis Experiments
+
+BLIS uses hypothesis-driven experimentation to validate system behavior, surface bugs, and document design tradeoffs. Experiments are organized into 6 families (workload/arrival, scheduler invariants, performance-regime, structural model, robustness, cross-policy comparative).
+
+**To run existing experiments:**
+```bash
+cd hypotheses/h13-determinism
+./run.sh
+```
+See `hypotheses/README.md` for the full list and coverage gaps.
+
+**To propose a new hypothesis:**
+File a GitHub issue using the "Hypothesis Proposal" template. Include: the hypothesis sentence, family, diagnostic value, and rough experiment design.
+
+**To implement and run a new experiment:**
+Follow `docs/process/hypothesis.md` for the full process. Key steps:
+1. Classify by family and type
+2. Implement `run.sh` and `analyze.py`
+3. Code review experiment code against simulator output format BEFORE running
+4. Run and document in `FINDINGS.md` using `docs/templates/hypothesis.md`
+
+**Review protocol:** Experiments are reviewed via three parallel external reviews (AI-assisted) per round, iterating until convergence. External contributors without AI review infrastructure should submit their `FINDINGS.md` via PR — maintainers will run the review protocol. Only standard-library Python packages are needed (json, math, re, sys, pathlib).
+
+| Document | Purpose |
+|---|---|
+| `hypotheses/README.md` | Existing experiments, coverage gaps |
+| `docs/process/hypothesis.md` | Full process (generation, execution, review, issue filing) |
+| `docs/standards/experiments.md` | Rigor requirements (families, types, VV&UQ, RCV rules) |
+| `docs/templates/hypothesis.md` | FINDINGS.md template |
+
 ## Code Style
 
 - Composition over inheritance

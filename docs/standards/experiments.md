@@ -1,10 +1,68 @@
 # BLIS Experiment Standards
 
-Hypothesis-driven experimentation is a first-class activity in BLIS — equal in rigor to implementation and design. Experiments serve three purposes:
+Hypothesis-driven experimentation is a first-class activity in BLIS — equal in rigor to implementation and design. The experiment framework is grounded in Verification, Validation, and Uncertainty Quantification (VV&UQ) from simulation science.
 
-1. **Validation** — confirm that implemented features work as designed (e.g., prefix-affinity produces 2.4x TTFT improvement for multi-turn chat)
-2. **Discovery** — surface bugs, design gaps, and undocumented limitations (e.g., H3 revealed KV utilization signal staleness -> 3 new issues, 1 new rule, 1 new invariant)
-3. **Documentation** — each experiment becomes a reproducible artifact that helps users understand when to use which configuration
+### VV&UQ Framing
+
+Every hypothesis falls into one of three VV&UQ categories. This determines what kind of evidence is needed.
+
+| Category | Question | Evidence required | Examples |
+|----------|----------|-------------------|---------|
+| **Verification** | Does the code implement the intended math/logic? | Exact invariant checks. Failure = bug. | H12 (conservation), H13 (determinism), H22 (input validation) |
+| **Validation** | Does the model match expected system behavior? | Statistical comparison against analytical baselines or real data within a pre-specified accuracy interval. | Cross-validation against M/M/k; H19 (roofline vs blackbox) |
+| **Uncertainty Quantification** | How confident are we in the region where a finding holds? | Confidence intervals on thresholds; probability statements on properties. | H8 (preemption cliff at 2100±? blocks); H10 (28% improvement at this operating point — what about others?) |
+
+Most current experiments are **Verification** (invariant checking) or informal **Validation** (metric comparison). Future experiments should increasingly incorporate **UQ** — every threshold finding should include a confidence interval, every "confirmed" result should quantify the probability of holding under parameter variation.
+
+### Three purposes
+
+1. **Verification** — confirm that code implements intended math correctly (scheduler invariants, conservation laws)
+2. **Validation** — confirm that model outputs match expected behavior within acceptable accuracy intervals
+3. **Discovery** — surface bugs, design gaps, and undocumented limitations
+
+### How to choose your VV&UQ category
+
+```
+Is your hypothesis about whether the CODE is correct?
+  → Yes: Verification (e.g., "conservation holds," "deterministic output")
+  → No: ↓
+Is your hypothesis comparing the MODEL's output to expected behavior?
+  → Yes: Validation (e.g., "policy A beats B," "TTFT ∝ input tokens")
+  → No: ↓
+Is your hypothesis about the BOUNDARIES or CONFIDENCE of a finding?
+  → Yes: UQ (e.g., "preemption cliff at 2100±100 blocks," "P(stable) > 0.95")
+```
+
+The VV&UQ category determines what counts as evidence:
+- **Verification:** Exact invariant checks. One failure = bug. Single seed sufficient.
+- **Validation:** Statistical comparison within pre-specified accuracy interval. 3+ seeds. Formal tests (KS, Mann-Whitney U).
+- **UQ:** Confidence intervals on thresholds. Parameter sweeps. Sensitivity analysis.
+
+### Formal statistical rigor
+
+Experiments involving statistical claims must use proper hypothesis tests, not ad-hoc thresholds:
+
+- **Distribution validation** (workload/arrival family): [Kolmogorov-Smirnov test](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kstest.html) — compares a sample against a theoretical CDF. Reject if p < 0.05. In Python: `from scipy.stats import kstest; stat, p = kstest(samples, 'expon', args=(0, 1/rate))`.
+- **Metric comparison** (cross-policy family): [Mann-Whitney U test](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.mannwhitneyu.html) — non-parametric comparison of two independent samples. Report effect size AND confidence interval, not just "X% better." In Python: `from scipy.stats import mannwhitneyu; stat, p = mannwhitneyu(a_values, b_values)`.
+- **Threshold estimation** (performance-regime family): Report thresholds with confidence intervals. "Preemption cliff at 2100 blocks" → "Preemption cliff at 2100 ± 100 blocks (95% CI across seeds 42, 123, 456)."
+- **Invariant probability** (scheduler invariants family): For stochastic invariants, estimate P(invariant holds) with a confidence interval, not just "holds for 3 seeds."
+
+**Note on scipy:** The tests above use `scipy.stats`. Install with `pip install scipy` if needed. For experiments that only use standard-library Python, the legacy thresholds (below) remain acceptable.
+
+Legacy thresholds (still valid for experiments without scipy):
+- **>20% improvement** consistent across all seeds = significant
+- **<10% in any seed** = inconclusive
+- **Within 5%** across all seeds = equivalent (for equivalence tests)
+
+These thresholds were chosen pragmatically — 20% ensures the effect is visible above seed-to-seed variance in typical BLIS experiments; 5% accounts for floating-point and timing noise. They are not derived from formal power analysis. New experiments should prefer formal tests where scipy is available.
+
+### Cross-validation against analytical models
+
+Where applicable, validate DES outputs against analytically-tractable models under matching assumptions. This grounds the simulator in theory.
+
+- **M/M/k baseline**: [M/M/k](https://en.wikipedia.org/wiki/M/M/c_queue) is the standard queueing model with Markovian (Poisson) arrivals, Markovian (exponential) service times, and k servers. Under matching assumptions, compare DES queue length distribution against the M/M/k analytical solution. **Caveat:** BLIS uses batching and deterministic service times (alpha/beta coefficients), so exact M/M/k matching is not possible. The comparison requires configuring BLIS with `--max-batch-size 1` and interpreting the service time distribution as approximately exponential. Divergence may indicate modeling errors OR fundamental architectural differences from M/M/k assumptions.
+- **Little's Law**: For any stable configuration, verify L = λW (average queue length = arrival rate × average wait time). This is a universal law that must hold. **In BLIS terms:** L = mean `still_queued` from per-instance metrics; λ = `injected_requests / (sim_duration_us / 1e6)`; W = mean scheduling delay from `scheduling_delay_p99_ms` (approximate). Extract from JSON output.
+- **Phase structure**: Verify that prefill time ∝ prompt tokens and decode time ∝ output tokens by fitting linear models and checking R² > 0.95. **In BLIS terms:** prefill time ≈ TTFT (time to first token); decode time ≈ E2E - TTFT. Vary `input_distribution` mean while holding `output_distribution` constant, and vice versa.
 
 ## Experiment Classification
 
@@ -74,6 +132,85 @@ No single configuration dominates all metrics simultaneously.
 
 ---
 
+## Hypothesis Formation
+
+Hypotheses must be **conceptual and behavioral**, not code-grounded. This is the experimental analogue of behavioral vs structural testing.
+
+### Conceptual hypotheses test system behavior
+
+A good hypothesis is an intuitive claim about system behavior: "burst smoothing should reduce tail latency," "tiered storage should reduce preemptions," "same seed should produce identical output." These claims are based on systems thinking, not on reading the implementation.
+
+### Do NOT read the code before forming hypotheses
+
+Reading the code before hypothesizing is like writing structural tests — you end up testing the implementation, not the behavior. The value of hypothesis-driven experimentation is that *conceptual claims failing against the implementation* surfaces design limitations that code-aware experiments would avoid.
+
+Evidence: If H5 had read `admission.go:45` before hypothesizing, the experimenter would have designed a "correct" experiment with cap=100K, confirmed a tiny effect, and **missed the discovery** that the per-input-token cost model makes burst smoothing structurally impossible at practical parameters. The conceptual hypothesis exposed a design limitation that a code-grounded hypothesis would have sidestepped.
+
+### "Mechanism not plausible" is a valid resolution
+
+When a conceptual hypothesis fails because the implementation doesn't support the assumed mechanism, this is the resolution "Refuted — mechanism not plausible." This is a **design limitation finding**, not an experimenter error. The hypothesis did its job — it revealed a gap between how users think the system works and how it actually works.
+
+---
+
+## Hypothesis Families
+
+Every hypothesis belongs to a **family** (what domain is being tested) AND a **type** (how rigor is assessed). These are orthogonal — a scheduler invariant can be deterministic or statistical; a cross-policy comparison is always statistical.
+
+### The six families
+
+| Family | Tests | Hypothesis shape | Typical type | Examples |
+|--------|-------|-----------------|-------------|---------|
+| **Workload/arrival** | Input generation: distributions, rates, burstiness, mix proportions | "Generator X produces arrivals matching distribution D within tolerance T" | Statistical | H16, H20 |
+| **Scheduler invariants (safety/liveness)** | Conservation, determinism, lifecycle, livelock protection | "For ALL configurations, property P holds" (universally quantified) | Deterministic | H12 (conservation), H13 (determinism), H25 |
+| **Performance-regime (scaling laws)** | Saturation curves, throughput-latency tradeoffs, horizontal scaling | "Metric M is monotonic/convex in parameter P" | Statistical/Monotonicity | H7 (scaling), H8 (KV pressure), H11 (batch formation) |
+| **Structural model** | DES model assumptions: phase structure, KV mechanics, signal freshness, prefix caching | "Component C behaves according to model assumption A" | Mixed | H3 (signal freshness), H9 (prefix caching), H10 (tiered KV), H26 |
+| **Robustness/failure-mode** | Overload, misconfiguration, degenerate inputs, pathological policies | "Under stress condition S, the system exhibits defined behavior B (not undefined state)" | Deterministic or Statistical | H5 (token-bucket), H14 (pathological), H21, H22, H24 |
+| **Cross-policy comparative** | Policy ordering, Pareto frontiers, robustness to workload shifts | "There EXISTS a workload where policy A beats B on metric M" (existentially quantified) | Statistical/Dominance or Pareto | H1, H2, H4, H6, H15, H17, H18, H19, H23 |
+
+### Family-specific hypothesis sentence patterns
+
+Use these templates when generating new hypotheses. Each family has a characteristic sentence shape that ensures testability. See also `docs/process/hypothesis.md` for the full generation guide.
+
+| Family | Sentence pattern | Example |
+|--------|-----------------|---------|
+| **Workload/arrival** | "Generator G with parameters P should produce distribution D with property X within tolerance T" | "Gamma sampler with CV=3.5 should produce inter-arrival times with CV within 10% of 3.5 over 10K samples" |
+| **Scheduler invariants** | "For ALL configurations C, invariant I holds at simulation end" | "For all routing × scheduling × admission combinations, injected == completed + queued + running" |
+| **Performance-regime** | "Metric M should be monotonically non-decreasing/non-increasing in parameter P across range [a, b]" | "TTFT P99 should be monotonically non-decreasing in offered load from 500 to 5000 req/s" |
+| **Structural model** | "Component C should behave according to assumption A, verified by observable O" | "Prefill time should be proportional to input token count (R² > 0.95 for linear fit)" |
+| **Robustness** | "Under stress condition S, the system should exhibit behavior B and NOT exhibit behavior X" | "Under 10x overload, the system should reject excess requests and NOT deadlock or panic" |
+| **Cross-policy** | "Under workload W, policy A should produce better metric M than policy B because of mechanism Z" | "Under mixed-SLO workload, priority-FCFS should produce lower realtime TTFT than FCFS because realtime requests get scheduled first" |
+
+### Family × Type matrix
+
+| | Deterministic | Statistical/Dominance | Statistical/Monotonicity | Statistical/Equivalence | Statistical/Pareto |
+|---|---|---|---|---|---|
+| Workload/arrival | Seed reproducibility | Distribution match | Rate scaling | — | — |
+| Scheduler invariants | **Primary** (INV-1 through INV-6) | — | — | — | — |
+| Performance-regime | — | — | **Primary** (scaling curves) | Baseline sanity | Knee behavior |
+| Structural model | Phase structure | Signal freshness | Cache effectiveness | — | — |
+| Robustness | Input validation | Overload behavior | — | — | — |
+| Cross-policy | — | **Primary** (A vs B) | — | Low-load equivalence | Multi-scorer tradeoffs |
+
+### Family determines rigor requirements
+
+- **Scheduler invariants**: Single seed sufficient. Pass/fail is exact. One failure = bug.
+- **Cross-policy comparative**: 3+ seeds minimum. Must control confounding variables (ED-1, ED-6).
+- **Performance-regime**: Sweep points (≥3 values of the independent variable), not just pairwise comparison.
+- **Workload/arrival**: Statistical tests on generated distributions. Long runs for accurate rate estimation.
+- **Structural model**: Code-level verification (RCV-1, RCV-4) is essential — these test implementation assumptions.
+- **Robustness**: Must test BOTH the defined behavior AND verify no undefined states (deadlock, panic, data loss).
+
+### Relationship to existing invariants and rules
+
+| Family | Related invariants | Related rules |
+|--------|-------------------|---------------|
+| Scheduler invariants | INV-1 (conservation), INV-2 (lifecycle), INV-3 (clock monotonicity), INV-5 (causality), INV-6 (determinism) | R1 (no silent data loss), R5 (transactional mutation) |
+| Structural model | INV-4 (KV conservation), INV-7 (signal freshness) | R2 (sort map keys), R11 (guard division), R17 (signal freshness) |
+| Robustness | — | R3 (validate CLI flags), R19 (livelock protection), R20 (degenerate inputs) |
+| Cross-policy | — | R18 (CLI flag precedence) |
+
+---
+
 ## Experiment Design Rules
 
 ### ED-1: Controlled comparison
@@ -109,11 +246,140 @@ Every experiment must be reproducible from its artifacts alone:
 - Exact commit hash recorded (or the experiment is tied to a specific branch/PR)
 - No manual steps between script invocation and results
 
+### ED-6: Config diff against reference experiments
+When an experiment reuses calibration data from a prior experiment (e.g., "H8 found the preemption cliff at 2100 blocks, so we use 2100"), **diff every CLI flag and YAML field** between the two experiments. Document any differences. Even a single changed flag (e.g., routing policy) can invalidate the calibration.
+
+Evidence: H10 used `--routing-policy least-loaded` while H8 used the default `round-robin`. This shifted the preemption cliff, producing zero preemptions where H8 found 11%. The mismatch was not caught until post-publication code review.
+
+---
+
+## Root Cause Verification
+
+After analyzing results (step 7) and before classifying findings (step 8), every experiment MUST verify its causal explanations. This step exists because plausible narratives can pass review without being correct.
+
+### RCV-1: Every causal claim must cite `file:line`
+
+A root cause analysis that says "the tiered cache increases total capacity" without citing the code that does this is a *hypothesis about the root cause*, not a verified root cause. Trace the claim through the code:
+- Which function implements the claimed behavior?
+- What are the exact conditions under which it fires?
+- Does the claimed mechanism actually change the measured metric?
+- **Tracing depth**: The citation must trace to the code that *directly modifies the measured metric*, not just to the constructor or factory that creates the relevant object. Citing `NewKVStore` and claiming "this creates a tiered cache with more capacity" is insufficient — you must verify that the GPU block count actually changes in the created object.
+
+Evidence: H10 claimed "CPU tier increases total effective capacity" — but `NewKVStore` (`kv_store.go:31-36`) does not change GPU block count. The actual mechanism was `maybeOffload` preserving prefix hashes (`kvcache_tiered.go:214-224`).
+
+### RCV-2: Every "surprise" must have a first-principles calculation
+
+Before labeling a result as "surprising," compute the expected value from the system's parameters. If the result matches the calculation, it is not a surprise — it is the expected outcome of a mechanism you didn't initially consider.
+
+Evidence: H5 labeled 96% rejection as a "surprise." But `admission.go:45` charges `len(req.InputTokens)` per request (mean=512). Token demand (1,024,000 tokens/s) exceeds supply (400 tokens/s) by 2,560x. The 96% rejection is the mathematically inevitable steady state.
+
+### RCV-3: Check the mechanism, not just the direction
+
+Confirming that "A is better than B" is necessary but not sufficient. The root cause analysis must explain *why* through a specific code path. A correct directional result with an incorrect explanation is a ticking time bomb — the explanation will mislead future experiments.
+
+**Paradox flag**: If the proposed mechanism predicts the *opposite* direction of what would be intuitive (e.g., "fewer cache hits improving performance"), treat this as a red flag. Before accepting a paradoxical explanation, independently verify the underlying data. In H10, the claim "fewer cache hits → better TTFT" survived two rounds because the data (from a buggy analyzer) appeared to support it. The corrected data showed cache hits *increased*, resolving the paradox. When mechanism and intuition disagree, verify the data first.
+
+### RCV-4: Validate causal claims with control experiments
+
+When a mechanism is proposed (e.g., "`maybeOffload` causes the TTFT improvement"), design a control experiment that disables **only that mechanism** (e.g., `--kv-offload-threshold 1.0`). If the effect vanishes, the mechanism is confirmed. If it persists, the explanation is wrong.
+
+Evidence: H10 proposed `maybeOffload` as the mechanism. The control experiment (threshold=1.0) produced output byte-identical to single-tier, confirming `maybeOffload` as the sole cause. Without this control, the mechanism question ("does maybeOffload cause the TTFT improvement?") would have remained unverified.
+
+### RCV-5: Confirmation bias guard (Devil's Advocate)
+
+Before sending FINDINGS.md to external review, the experimenter must write a **Devil's Advocate** section: 2-3 sentences arguing the **opposite** of the conclusion. This is a pre-review self-check that forces consideration of alternative interpretations.
+
+```markdown
+## Devil's Advocate
+
+**If this is "Confirmed," argue why it might be Refuted:**
+The 69x TTFT improvement could be entirely from load shedding (96% rejection)
+rather than burst smoothing. A firewall that blocks all traffic also has great
+latency for the requests that pass.
+
+**If this is "Refuted," argue why it might be Confirmed:**
+The calibrated bucket (cap=100K) showed a 4% improvement — small but consistent
+across 2 of 3 seeds. This might be a real but tiny burst-smoothing effect masked
+by workload noise.
+```
+
+The reviewers see both the conclusion AND the counter-argument. This prevents the failure mode where the experimenter writes "Confirmed" and the reviewers are anchored by that label.
+
+Evidence: H5 was labeled "Confirmed" for three rounds. Nobody argued the alternative until Round 3's honest reassessment. A Devil's Advocate section in Round 1 would have surfaced "could this be load shedding?" immediately.
+
+### RCV-6: Mandatory Scope and Limitations
+
+Every FINDINGS.md must include a **Scope and Limitations** section documenting:
+- Exact operating point tested (blocks, rate, seeds, instances, routing)
+- Parameters the findings depend on
+- What was NOT tested that could change the conclusion
+- Whether the finding generalizes or is specific to the tested configuration
+
+Evidence: H10's "28% TTFT improvement" is specific to GPU=2100 blocks near the preemption cliff. Without the scope section, this number would be cited as a general property of tiered KV caching.
+
+---
+
+## Iterative Review Protocol
+
+Every hypothesis experiment iterates **until convergence** (max 10 rounds), with **three parallel Opus 4.6 reviews per round**. No minimum round count — convergence in Round 1 is valid if all three reviewers agree.
+
+Each round runs three parallel reviews with different focus areas (see `docs/process/hypothesis.md` for the full protocol):
+- **Reviewer A (Mechanism):** Code-level verification of causal claims (RCV-1, RCV-3, RCV-4)
+- **Reviewer B (Design):** Confounds, missing controls, parameter calibration (ED-1 through ED-6)
+- **Reviewer C (Rigor):** First-principles calculations, sample size, scope of claims (RCV-2)
+
+**Convergence:** All three reviewers have no remaining items that require a new experiment. Max 10 rounds as a safety valve.
+
+**Why three parallel reviewers instead of sequential rounds:** PR #310's multi-model reviews showed no single reviewer caught all issues. Gemini 3 Pro caught the queue-time split, Opus 4.6 caught the confound matrix need, GPT-4o caught scope limitations. Three parallel reviewers maximize coverage per round.
+
+---
+
+## Hypothesis Resolution
+
+Every hypothesis resolves to a **status** (did the prediction hold?) and a **resolution** (what do we do about it?). These are distinct — a "confirmed" hypothesis can still have a wrong-mechanism resolution that changes user guidance entirely.
+
+### Status (the prediction)
+
+| Status | Definition | Example |
+|--------|-----------|---------|
+| **Confirmed** | The predicted directional outcome holds across all seeds | H13: same seed → byte-identical output |
+| **Confirmed with nuance** | The prediction holds but the mechanism or practical implications differ from expected | H5: token-bucket reduces TTFT 69x but via 96% load shedding, not burst smoothing; no practical sweet spot |
+| **Partially confirmed** | Some predictions hold, others don't, or the experiment tested something different than intended | H14: routing pathological confirmed, scheduling showed double-inversion cancellation |
+| **Refuted** | The predicted outcome does not hold across seeds | *(not yet observed — the refutation IS the value)* |
+| **Inconclusive** | Effect is within noise (<10% in any seed) or parameter-dependent | H5 exp4: calibrated bucket shows <5% TTFT improvement |
+
+### Resolution (what we learned and what to do)
+
+| Resolution | Definition | Action | Example |
+|-----------|-----------|--------|---------|
+| **Clean confirmation** | Hypothesis holds, mechanism matches prediction | Document. No further action. | H13, H3, H8 |
+| **Confirmation with wrong mechanism** | Prediction holds directionally but the underlying cause differs | Correct the explanation. May change user guidance entirely. | H5: improvement is load shedding, not burst smoothing |
+| **Confirmation with bug discovery** | Prediction holds but experiment surfaces code defects | File issues (`--label bug`). Fix in separate PRs. | H12: conservation holds but preemption panics. H14: routing works but 3 detector bugs. H10: tiered KV confirmed but analyzer bug masked preemptions for 2 rounds. |
+| **Partial confirmation with surprise** | Some predictions fail; unexpected useful insights emerge | Document surprise. May spawn new hypotheses. | *(use when the experiment finds something valuable but different from what was hypothesized)* |
+| **Refuted — mechanism not plausible** | The hypothesis assumed a mechanism that the implementation doesn't support | File design issue if the mechanism *should* exist but doesn't. Document the actual mechanism. | H5: hypothesis assumed burst smoothing, but per-input-token cost model (`admission.go:45`) makes burst smoothing structurally impossible at practical parameters |
+| **Refuted — system design flaw** | Prediction fails because system doesn't work as designed | File design issue (`--label design`). May require architectural change. | *(not yet observed)* |
+| **Refuted — wrong mental model** | Prediction fails because experimenter's assumptions were wrong | Correct understanding. Document what the system actually does. | *(not yet observed)* |
+| **Inconclusive — parameter-dependent** | Effect exists at some parameters but not others | Document the parameter boundary. May need recalibration. | H5 exp4: <5% effect with calibrated bucket |
+| **Converged to open question** | Mechanism identified but directional explanation requires different tooling | Mark as open. Propose specific tooling needed. | *(use when remaining questions require code instrumentation, not more experiment sweeps)* |
+
+### Choosing status vs resolution
+
+The status answers "did the number go the way we predicted?" The resolution answers "do we understand why and what to do about it?" Always report both:
+
+```
+**Status:** Confirmed with nuance
+**Resolution:** Confirmation with wrong mechanism — token-bucket reduces TTFT
+via load shedding (96% rejection), not burst smoothing. No practical sweet spot
+under Gamma CV=3.5.
+```
+
+A common mistake is declaring "Confirmed" and stopping. The resolution is where the real value lives.
+
 ---
 
 ## Findings Classification
 
-Every experiment produces findings. Each finding MUST be classified:
+Every experiment produces individual findings. Each finding MUST be classified independently of the hypothesis status:
 
 | Finding Type | Definition | Action Required |
 |-------------|------------|-----------------|
@@ -123,6 +389,7 @@ Every experiment produces findings. Each finding MUST be classified:
 | **New invariant** | The experiment revealed a property that must always hold | Add to `docs/standards/invariants.md`. |
 | **Design limitation** | The system works as coded but has an undocumented behavioral limitation | Document in FINDINGS.md + file issue with `--label design` for design doc update. |
 | **Surprise** | An unexpected result that doesn't fit other categories | Document in FINDINGS.md. May spawn new hypotheses. |
+| **Open question** | Mechanism identified but explanation incomplete; requires different tooling to resolve | Mark explicitly in FINDINGS.md with proposed tooling/experiment. |
 
 ### The Audit Step
 

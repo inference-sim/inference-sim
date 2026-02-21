@@ -547,7 +547,20 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Idea 3 (H15-H20):** Multi-scorer interactions, fitness evaluation, and workload patterns. H17 (Pareto frontier) tests whether the composable scorer framework adds real value. H19 (roofline vs blackbox) validates latency model abstraction.
 
-## Coverage Map
+## Coverage Map (by Hypothesis Family)
+
+Hypotheses are organized by **family** (what domain is tested) and **tier** (priority). See `docs/standards/experiments.md` for family definitions.
+
+| Family | Hypotheses | Status | Gaps |
+|--------|-----------|--------|------|
+| **Scheduler invariants** | H12 ✅, H13 ✅, H25 | 2/3 done | Lifecycle (INV-2), causality (INV-5) never directly tested |
+| **Structural model** | H3 ✅, H9 ✅, H10 ✅, H26 | 3/4 done | Event pipeline causal ordering (H26) |
+| **Performance-regime** | H7, H8 ✅, H11 | 1/3 done | Horizontal scaling (H7), batch formation tradeoff (H11) |
+| **Robustness/failure-mode** | H5 ✅, H14 ✅, H21, H22, H24 | 2/5 done | Extreme weights, input validation, pathological combos |
+| **Workload/arrival** | H16, H20 | **0/2 done** | Generator distributions never validated; Gamma/Weibull/ParetoLogNormal untested |
+| **Cross-policy comparative** | Prefix-Affinity ✅, H1, H2, H4, H6, H15, H17, H18, H19, H23 | **1/10 done** | Largest gap — SJF, priority, fitness, Pareto, roofline, fairness all pending |
+
+### Legacy Coverage Map (by area)
 
 | Area | Hypotheses | Components Tested |
 |------|-----------|-------------------|
@@ -584,6 +597,27 @@ Each hypothesis experiment should follow these conventions:
 - **Effect size:** "Significantly better" means >20% improvement consistent across all seeds. <10% in any seed = inconclusive
 - **Equivalence tests** (H4, H23): "Equivalent" means within 5% across all seeds
 - **Pass/fail:** A hypothesis passes if the predicted directional outcome holds across all seeds. A hypothesis fails if any seed contradicts the direction
+
+### Family-specific rigor
+
+- **Scheduler invariants (family 2):** Single seed sufficient — determinism is the point. Pass/fail is exact.
+- **Cross-policy comparative (family 6):** 3+ seeds mandatory. Must control confounding variables (ED-1, ED-6).
+- **Performance-regime (family 3):** Sweep ≥3 values of the independent variable, not just pairwise comparison.
+- **Workload/arrival (family 1):** Statistical tests on generated distributions. Long runs for accurate rate estimation.
+- **Structural model (family 4):** Code-level verification (RCV-1, RCV-4) essential — these test implementation assumptions.
+- **Robustness (family 5):** Must test BOTH defined behavior AND verify no undefined states (deadlock, panic, data loss).
+
+## Cross-Validation Opportunities
+
+The following analytical models can validate the DES under matching assumptions (see VV&UQ framework in `docs/standards/experiments.md`):
+
+| Analytical model | DES configuration to match | What it validates |
+|---|---|---|
+| **M/M/k** (k servers, Poisson arrivals, exponential service) | Poisson rate, exponential input/output, k instances, FCFS | Queue length distribution, mean wait time, utilization |
+| **Little's Law** (L = λW) | Any stable configuration | Fundamental consistency: avg queue length = arrival rate × avg wait time |
+| **Phase structure** (prefill ∝ input, decode ∝ output) | Constant distributions, single instance | Linear relationship between token counts and latency components |
+
+These cross-validations should be run as **Validation** category experiments per the VV&UQ framework. Divergence from analytical predictions indicates either a modeling error in the DES or a violated assumption.
 
 ## Tier 0: Measurement Audit (Run First)
 
