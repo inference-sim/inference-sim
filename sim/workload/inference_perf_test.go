@@ -808,3 +808,131 @@ inference_perf:
 		t.Errorf("request count %d exceeds maxRequests 50", len(requests))
 	}
 }
+
+// --- Invariant tests (Task 9) ---
+
+func TestInferencePerf_Determinism_SameSeedIdenticalOutput(t *testing.T) {
+	// INV-6: same seed -> identical output
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 10},
+			{Rate: 20.0, Duration: 10},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  3,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         50,
+			QuestionLen:             100,
+			OutputLen:               50,
+		},
+	}
+
+	generate := func() []*sim.Request {
+		expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+		if err != nil {
+			t.Fatalf("expansion error: %v", err)
+		}
+		reqs, err := GenerateRequests(expanded, 20_000_000, 100)
+		if err != nil {
+			t.Fatalf("generation error: %v", err)
+		}
+		return reqs
+	}
+
+	r1 := generate()
+	r2 := generate()
+
+	if len(r1) != len(r2) {
+		t.Fatalf("different counts: %d vs %d", len(r1), len(r2))
+	}
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("request %d: arrival %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+			break
+		}
+		if r1[i].ID != r2[i].ID {
+			t.Errorf("request %d: ID %q vs %q", i, r1[i].ID, r2[i].ID)
+			break
+		}
+		if len(r1[i].InputTokens) != len(r2[i].InputTokens) {
+			t.Errorf("request %d: input len %d vs %d", i, len(r1[i].InputTokens), len(r2[i].InputTokens))
+			break
+		}
+		// Verify token-level identity
+		for j := range r1[i].InputTokens {
+			if r1[i].InputTokens[j] != r2[i].InputTokens[j] {
+				t.Errorf("request %d token %d: %d vs %d", i, j, r1[i].InputTokens[j], r2[i].InputTokens[j])
+				break
+			}
+		}
+	}
+}
+
+func TestInferencePerf_Causality_ArrivalTimesMonotonic(t *testing.T) {
+	// INV-3/INV-5: arrival times never decrease
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 50.0, Duration: 5},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  3,
+			NumUsersPerSystemPrompt: 3,
+			SystemPromptLen:         20,
+			QuestionLen:             50,
+			OutputLen:               25,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	requests, err := GenerateRequests(expanded, 5_000_000, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	for i := 1; i < len(requests); i++ {
+		if requests[i].ArrivalTime < requests[i-1].ArrivalTime {
+			t.Errorf("arrival time not monotonic: request %d (%d) < request %d (%d)",
+				i, requests[i].ArrivalTime, i-1, requests[i-1].ArrivalTime)
+			break
+		}
+	}
+}
+
+func TestInferencePerf_AllRequestsHaveValidTokens(t *testing.T) {
+	// Every request must have non-empty input and output tokens
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 20.0, Duration: 5},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         30,
+			QuestionLen:             50,
+			OutputLen:               25,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	requests, err := GenerateRequests(expanded, 5_000_000, 50)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	for i, req := range requests {
+		if len(req.InputTokens) == 0 {
+			t.Errorf("request %d has empty input tokens", i)
+		}
+		if len(req.OutputTokens) == 0 {
+			t.Errorf("request %d has empty output tokens", i)
+		}
+		// Input tokens should be at least prefix_length (30) + question_len (50)
+		expectedMinLen := 30 + 50
+		if len(req.InputTokens) < expectedMinLen {
+			t.Errorf("request %d: input len %d < expected min %d (prefix+question)",
+				i, len(req.InputTokens), expectedMinLen)
+		}
+	}
+}
