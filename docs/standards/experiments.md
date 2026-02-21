@@ -142,6 +142,19 @@ Every hypothesis belongs to a **family** (what domain is being tested) AND a **t
 | **Robustness/failure-mode** | Overload, misconfiguration, degenerate inputs, pathological policies | "Under stress condition S, the system exhibits defined behavior B (not undefined state)" | Deterministic or Statistical | H14 (pathological), H21, H22, H24 |
 | **Cross-policy comparative** | Policy ordering, Pareto frontiers, robustness to workload shifts | "There EXISTS a workload where policy A beats B on metric M" (existentially quantified) | Statistical/Dominance or Pareto | H1, H2, H4, H6, H15, H17, H18, H19, H23 |
 
+### Family-specific hypothesis sentence patterns
+
+Use these templates when generating new hypotheses. Each family has a characteristic sentence shape that ensures testability. See also `docs/process/hypothesis.md` for the full generation guide.
+
+| Family | Sentence pattern | Example |
+|--------|-----------------|---------|
+| **Workload/arrival** | "Generator G with parameters P should produce distribution D with property X within tolerance T" | "Gamma sampler with CV=3.5 should produce inter-arrival times with CV within 10% of 3.5 over 10K samples" |
+| **Scheduler invariants** | "For ALL configurations C, invariant I holds at simulation end" | "For all routing × scheduling × admission combinations, injected == completed + queued + running" |
+| **Performance-regime** | "Metric M should be monotonically non-decreasing/non-increasing in parameter P across range [a, b]" | "TTFT P99 should be monotonically non-decreasing in offered load from 500 to 5000 req/s" |
+| **Structural model** | "Component C should behave according to assumption A, verified by observable O" | "Prefill time should be proportional to input token count (R² > 0.95 for linear fit)" |
+| **Robustness** | "Under stress condition S, the system should exhibit behavior B and NOT exhibit behavior X" | "Under 10x overload, the system should reject excess requests and NOT deadlock or panic" |
+| **Cross-policy** | "Under workload W, policy A should produce better metric M than policy B because of mechanism Z" | "Under mixed-SLO workload, priority-FCFS should produce lower realtime TTFT than FCFS because realtime requests get scheduled first" |
+
 ### Family × Type matrix
 
 | | Deterministic | Statistical/Dominance | Statistical/Monotonicity | Statistical/Equivalence | Statistical/Pareto |

@@ -8,6 +8,56 @@ This document describes the process for running a hypothesis-driven experiment. 
 - Testing intuitive claims about system behavior (from `docs/plans/research.md`)
 - Investigating unexpected behavior observed during development
 - Exploring design tradeoffs between configurations
+- Filling coverage gaps identified in the [family coverage table](../../hypotheses/README.md)
+
+## Generating Hypotheses
+
+Hypotheses can come from **internal** sources (your own experiments and development) or **external** sources (user questions, literature, analytical models). This section provides structured guidance for generating good hypotheses. See also [experiments.md](../standards/experiments.md) for family-specific sentence patterns.
+
+### Sources of hypotheses
+
+| Source | How it works | Example |
+|--------|-------------|---------|
+| **User intuition** | "I think X should be better than Y because of Z" | "SJF should reduce TTFT for mixed workloads because short jobs finish first" |
+| **Coverage gaps** | Check the [family coverage table](../../hypotheses/README.md) for untested families | Workload/arrival family has 0 experiments → "Gamma sampler should match theoretical CV" |
+| **Experiment findings** | Surprises and open questions from completed experiments spawn follow-up hypotheses | H10's maybeOffload finding → "test at GPU=1500 for preemption-path offload" |
+| **Bug reports** | "This behavior seems wrong" → formalize as a testable claim | H12: preemption panic → "conservation should hold even under preemption pressure" |
+| **Analytical models** | Divergence between theory and simulation → "does the DES match M/M/k under matching assumptions?" | "Under Poisson arrivals, queue length should match M/M/k within 5%" |
+| **Literature / external** | Published results about inference serving systems | "Prefix caching should reduce TTFT proportional to prefix length (as in vLLM literature)" |
+| **Design docs** | Claims made in design documents that have never been validated | "The composable scorer framework should produce Pareto-optimal configurations" |
+
+### What makes a good hypothesis
+
+A good hypothesis is **behavioral** (about observable system behavior), **testable** (with a clear experiment), and **diagnostic** (failure points to something worth investigating).
+
+| Criterion | Good | Bad |
+|-----------|------|-----|
+| **Behavioral** | "Burst smoothing should reduce tail latency" | "The token bucket decrements currentTokens correctly" |
+| **Testable** | "TTFT should decrease monotonically as prefix_length increases" | "The system should be fast" |
+| **Diagnostic** | "If this fails, it indicates the cache eviction path has a bug" | "If this fails, something is wrong" |
+| **Conceptual** | "Tiered storage should reduce preemptions" | "kvcache_tiered.go:224 should delete the hash" |
+| **Intuitive** | "More instances should roughly halve latency under saturation" | "The event queue should process 2x events" |
+
+### Anti-patterns in hypothesis generation
+
+| Anti-pattern | Problem | Fix |
+|-------------|---------|-----|
+| **Code-grounded hypothesis** | Tests implementation, not behavior. Prevents discovery of design gaps. | Pose the hypothesis WITHOUT reading the code first. |
+| **Unfalsifiable hypothesis** | "The system should work correctly" — no way to fail | Specify a concrete metric and direction: "TTFT P99 should be lower for A than B" |
+| **Hypothesis that tests the obvious** | "More resources should improve performance" — trivially true | Add a diagnostic clause: "...and the improvement should be proportional to the resource increase (not sub-linear due to contention)" |
+| **Hypothesis with no failure action** | Confirmation and refutation both lead to "ok, noted" | Every hypothesis should specify: "If this fails, investigate X" |
+| **Over-scoped hypothesis** | "The entire system should be correct under all configurations" | Decompose by family: scheduler invariant + structural model + robustness are separate experiments |
+
+### How to propose a new hypothesis
+
+1. **Check coverage**: Read the [family coverage table](../../hypotheses/README.md). Prioritize families with low coverage.
+2. **Choose a family**: Which domain does your claim target? (See [experiments.md](../standards/experiments.md) for the 6 families.)
+3. **Write the sentence**: Use the family-specific pattern from experiments.md.
+4. **Add the diagnostic clause**: "If this fails, it would indicate..."
+5. **Check for redundancy**: Search existing hypotheses in `docs/plans/research.md` and filed issues with `--label hypothesis`.
+6. **File as a GitHub issue**: Use `--label hypothesis` with the [issue body template](docs/process/hypothesis.md#issue-taxonomy-after-convergence).
+
+External contributors should file a GitHub issue with the `hypothesis` label. The issue body should include: the hypothesis sentence, the proposed family, the diagnostic clause, and a rough experiment design (which configurations to compare, which metric to measure).
 
 ## The Three-Round Protocol
 
