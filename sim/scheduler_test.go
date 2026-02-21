@@ -180,26 +180,44 @@ func TestScheduler_AnyPolicy_PreservesAllRequests(t *testing.T) {
 	}
 }
 
-func TestNewScheduler_ValidNames_ReturnsCorrectType(t *testing.T) {
-	// EH-3: empty string returns FCFSScheduler
+func TestNewScheduler_ValidNames_ReturnsBehaviorallyCorrectScheduler(t *testing.T) {
+	// BC-3: empty string and "fcfs" return a scheduler that preserves input order (FCFS)
+	reqs := func() []*Request {
+		return []*Request{
+			{ID: "c", ArrivalTime: 300, Priority: 1.0, InputTokens: make([]int, 50)},
+			{ID: "a", ArrivalTime: 100, Priority: 3.0, InputTokens: make([]int, 10)},
+			{ID: "b", ArrivalTime: 200, Priority: 2.0, InputTokens: make([]int, 30)},
+		}
+	}
+
 	s1 := NewScheduler("")
-	if _, ok := s1.(*FCFSScheduler); !ok {
-		t.Errorf("NewScheduler(\"\"): expected *FCFSScheduler, got %T", s1)
+	r1 := reqs()
+	s1.OrderQueue(r1, 0)
+	if got := requestIDs(r1); !sliceEqual(got, []string{"c", "a", "b"}) {
+		t.Errorf("NewScheduler(\"\"): order changed to %v, want [c a b] (FCFS preserves order)", got)
 	}
 
 	s2 := NewScheduler("fcfs")
-	if _, ok := s2.(*FCFSScheduler); !ok {
-		t.Errorf("NewScheduler(\"fcfs\"): expected *FCFSScheduler, got %T", s2)
+	r2 := reqs()
+	s2.OrderQueue(r2, 0)
+	if got := requestIDs(r2); !sliceEqual(got, []string{"c", "a", "b"}) {
+		t.Errorf("NewScheduler(\"fcfs\"): order changed to %v, want [c a b] (FCFS preserves order)", got)
 	}
 
+	// BC-4: "priority-fcfs" sorts by priority descending
 	s3 := NewScheduler("priority-fcfs")
-	if _, ok := s3.(*PriorityFCFSScheduler); !ok {
-		t.Errorf("NewScheduler(\"priority-fcfs\"): expected *PriorityFCFSScheduler, got %T", s3)
+	r3 := reqs()
+	s3.OrderQueue(r3, 0)
+	if got := requestIDs(r3); !sliceEqual(got, []string{"a", "b", "c"}) {
+		t.Errorf("NewScheduler(\"priority-fcfs\"): got %v, want [a b c] (highest priority first)", got)
 	}
 
+	// BC-4: "sjf" sorts by input tokens ascending
 	s4 := NewScheduler("sjf")
-	if _, ok := s4.(*SJFScheduler); !ok {
-		t.Errorf("NewScheduler(\"sjf\"): expected *SJFScheduler, got %T", s4)
+	r4 := reqs()
+	s4.OrderQueue(r4, 0)
+	if got := requestIDs(r4); !sliceEqual(got, []string{"a", "b", "c"}) {
+		t.Errorf("NewScheduler(\"sjf\"): got %v, want [a b c] (shortest job first)", got)
 	}
 }
 
@@ -269,13 +287,14 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 }
 
 func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
-	// BC-1: default config (empty strings) uses ConstantPriority + FCFSScheduler
+	// BC-5: default config uses constant priority (all requests get same score)
+	// and FCFS scheduling (injection order preserved)
 	cfg := SimConfig{
-		Horizon:            1000000,
+		Horizon:            10000000,
 		Seed:               42,
 		TotalKVBlocks:      1000,
 		BlockSizeTokens:    16,
-		MaxRunningReqs:     256,
+		MaxRunningReqs:     1, // force sequential: only 1 at a time
 		MaxScheduledTokens: 2048,
 		BetaCoeffs:         []float64{1000, 10, 5},
 		AlphaCoeffs:        []float64{100, 1, 100},
@@ -283,12 +302,35 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 	}
 	s := mustNewSimulator(t, cfg)
 
-	// Verify correct types were created
-	if _, ok := s.priorityPolicy.(*ConstantPriority); !ok {
-		t.Errorf("default priorityPolicy: got %T, want *ConstantPriority", s.priorityPolicy)
+	// Inject two requests with same arrival time; FCFS should schedule first-injected first
+	reqFirst := &Request{
+		ID:           "req_first",
+		InputTokens:  make([]int, 20),
+		OutputTokens: make([]int, 2),
+		ArrivalTime:  0,
+		State:        StateQueued,
 	}
-	if _, ok := s.scheduler.(*FCFSScheduler); !ok {
-		t.Errorf("default scheduler: got %T, want *FCFSScheduler", s.scheduler)
+	reqSecond := &Request{
+		ID:           "req_second",
+		InputTokens:  make([]int, 20),
+		OutputTokens: make([]int, 2),
+		ArrivalTime:  0,
+		State:        StateQueued,
+	}
+
+	s.InjectArrival(reqFirst)
+	s.InjectArrival(reqSecond)
+	s.Run()
+
+	// THEN both complete
+	if s.Metrics.CompletedRequests != 2 {
+		t.Fatalf("completed: got %d, want 2", s.Metrics.CompletedRequests)
+	}
+
+	// THEN FCFS behavior: first-injected request scheduled first
+	if reqFirst.ScheduledStepIdx > reqSecond.ScheduledStepIdx {
+		t.Errorf("FCFS violation: first-injected scheduled at step %d, second at step %d",
+			reqFirst.ScheduledStepIdx, reqSecond.ScheduledStepIdx)
 	}
 }
 
