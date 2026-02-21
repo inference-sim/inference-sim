@@ -29,6 +29,8 @@
 
 ## Results
 
+> **Note:** The data in Experiments 1-2 below reflects the original configuration using `reverse-priority` + `inverted-slo` (double inversion). With the corrected `run.sh` (issue #295), Experiments 1-2 now use `priority-fcfs` + `inverted-slo` (single inversion) and will produce different numbers when re-run. Experiment 3 data remains accurate as-is.
+
 ### Experiment 1: Normal vs Pathological (3 seeds)
 
 All seeds produce byte-identical output (ED-4: YAML seed fixed, CLI `--seed` has no effect on workload-spec generation).
@@ -135,6 +137,8 @@ Single inversions show +7% TTFT p99 and 2.3× more inversions. Both single inver
 
 **Fix:** The research.md H14 spec and H24 spec should use single inversions, not double. For example, `inverted-slo` + `priority-fcfs` (inverted priority with correct scheduler) is actually pathological, whereas the intended `inverted-slo` + `reverse-priority` is accidentally equivalent to normal.
 
+**Resolution (issue #295):** The experiment scripts (`run.sh`) and research documentation (`research.md` H14, H24) have been updated to use single inversions (`inverted-slo` + `priority-fcfs`) as the pathological scheduling configuration. The double-inversion combination is preserved in Experiment 3 as a control group demonstrating the cancellation.
+
 ### FINDING 4: CLI `--seed` Doesn't Affect Workload-Spec Runs
 
 All 3 seeds (42, 123, 456) produce byte-identical output. This confirms issue #284: the workload-spec YAML has its own `seed:` field that controls request generation, and `--seed` only controls simulation-level RNG. For workload-spec experiments, the simulation RNG is effectively unused because all randomness is in the pre-generated request stream.
@@ -149,7 +153,7 @@ All 3 seeds (42, 123, 456) produce byte-identical output. This confirms issue #2
 | `always-busiest` routes ALL traffic to 1 instance (stddev=216.5) | Confirmation | Documented here |
 | HOL blocking detector returns 0 for extreme single-instance concentration | Bug discovery | #291 |
 | Priority inversion detector false-positive rate: 7,463 for correct scheduling | Bug discovery | #292 |
-| `inverted-slo` + `reverse-priority` double inversion cancels out to FCFS-equivalent | Bug discovery | #295 |
+| `inverted-slo` + `reverse-priority` double inversion cancels out to FCFS-equivalent | Bug discovery | #295 (resolved) |
 | `--seed` has no effect on workload-spec runs | Confirmation of #284 | Already tracked in #284 |
 
 ## Standards Audit
@@ -169,7 +173,7 @@ Findings checked against docs/standards/:
 
 3. **Do not rely on priority inversion counter for mixed-SLO workloads** — the current heuristic produces thousands of false positives when request sizes vary significantly. A high inversion count may reflect workload heterogeneity, not scheduling unfairness.
 
-4. **Scheduling pathological templates require high queue depth** — `reverse-priority` and `inverted-slo` have no observable effect when queues are short. Use rate >> 5000 with 1-2 instances to observe scheduling effects.
+4. **Do not combine `inverted-slo` with `reverse-priority`** — the two inversions cancel out, producing scheduling identical to normal FCFS. Use a single inversion instead: `inverted-slo` + `priority-fcfs` (inverted priority with correct scheduler). Even single inversions require high queue depth to produce observable effects — use rate >> 5000 with 1-2 instances.
 
 5. **Multi-seed experiments with `--workload-spec` require varying the YAML seed** (issue #284) — CLI `--seed` alone produces identical results.
 

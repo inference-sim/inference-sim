@@ -290,6 +290,8 @@ Available schedulers:
 - `sjf` — shortest job first by input token count
 - `reverse-priority` — pathological: schedules lowest priority first (causes inversions)
 
+> **Warning:** Do not combine `inverted-slo` with `reverse-priority` — the two inversions cancel out, producing scheduling mathematically identical to normal `slo-based` + `priority-fcfs`. For actual pathological scheduling, use a single inversion: either `inverted-slo` with `priority-fcfs`, or `slo-based` with `reverse-priority`. See issue [#295](https://github.com/inference-sim/inference-sim/issues/295) for details.
+
 ### Fitness Evaluation and Anomaly Detection
 
 Evaluate policy fitness using a weighted combination of metrics:
@@ -543,7 +545,7 @@ BLIS automatically detects and reports anomalies at the end of each simulation:
 - **HOL Blocking**: instances with queue depth significantly exceeding cluster average (indicates routing imbalance)
 - **Rejected Requests**: admission control rejection count (indicates capacity pressure)
 
-Anomaly counters are printed when non-zero. Priority inversion detection requires a non-constant priority policy to be meaningful. Use pathological policies (`inverted-slo`, `always-busiest`, `reverse-priority`) to verify anomaly detection works.
+Anomaly counters are printed when non-zero. Priority inversion detection requires a non-constant priority policy to be meaningful. Use pathological policies (`inverted-slo`, `always-busiest`, `reverse-priority`) to verify anomaly detection works. Note: `inverted-slo` and `reverse-priority` must NOT be used together — their inversions cancel out. Use `inverted-slo` with `priority-fcfs` instead.
 
 ### Stdout Metrics Sections
 

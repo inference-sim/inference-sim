@@ -347,11 +347,11 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Prerequisite:** Verify pathological policy names exist in CLI: `always-busiest`, `reverse-priority`, `inverted-slo`. Run `./simulation_worker run --help | grep -E "always-busiest|reverse-priority|inverted-slo"` or check `ValidRoutingPolicyNames()`, `ValidSchedulerNames()`, `ValidPriorityPolicyNames()`. **This hypothesis is a prerequisite for H24** — if individual pathological templates don't work, the combined test (H24) is meaningless.
 
-**Experiment:** Mixed SLO workload with 4 instances. Compare normal configuration (`least-loaded` + `priority-fcfs` + `slo-based`) vs pathological (`always-busiest` + `reverse-priority` + `inverted-slo`). Measure HOL blocking events, priority inversions, TTFT p99, distribution std_dev.
+**Experiment:** Mixed SLO workload with 4 instances. Compare normal configuration (`least-loaded` + `priority-fcfs` + `slo-based`) vs pathological (`always-busiest` + `priority-fcfs` + `inverted-slo`). Measure HOL blocking events, priority inversions, TTFT p99, distribution std_dev.
 
 **Predicted outcome:** Pathological: high HOL blocking count, nonzero priority inversions, extreme load imbalance, much worse TTFT p99. Normal: zero anomalies, balanced distribution, good TTFT.
 
-**If hypothesis fails:** May indicate (a) anomaly detection logic doesn't correctly identify HOL blocking or priority inversions (check `sim/cluster/metrics.go` detection code), (b) pathological templates don't actually produce the expected behavior (check `AlwaysBusiest.Route()` and `ReversePriority.OrderQueue()`), or (c) the `always-busiest` + `reverse-priority` combination creates unexpected interactions.
+**If hypothesis fails:** May indicate (a) anomaly detection logic doesn't correctly identify HOL blocking or priority inversions (check `sim/cluster/metrics.go` detection code), (b) pathological templates don't actually produce the expected behavior (check `AlwaysBusiest.Route()` and `ReversePriority.OrderQueue()`), or (c) the `always-busiest` + `inverted-slo` combination creates unexpected interactions. Note: do NOT combine `inverted-slo` with `reverse-priority` -- the two inversions cancel out (see H14 FINDINGS.md BUG 3).
 
 **Coverage:** Anomaly detection, pathological templates, HOL blocking, priority inversions
 
@@ -493,15 +493,15 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 ---
 
-## H24: Combining always-busiest routing with reverse-priority scheduling should produce maximum measurable anomalies
+## H24: Combining always-busiest routing with inverted-slo scheduling should produce maximum measurable anomalies
 
-**Intuition:** `always-busiest` routes every request to the most loaded instance (maximizing HOL blocking). `reverse-priority` gives low-priority requests higher scheduling priority (maximizing priority inversions). Combining them should trigger both anomaly detectors simultaneously — the most pathological configuration possible.
+**Intuition:** `always-busiest` routes every request to the most loaded instance (maximizing HOL blocking). `inverted-slo` gives newer requests higher priority when used with `priority-fcfs`, starving older ones (maximizing priority inversions). Combining them should trigger both anomaly detectors simultaneously — the most pathological configuration possible. Warning: do NOT pair `inverted-slo` with `reverse-priority` -- the double inversion cancels out (see issue #295).
 
-**Experiment:** Use `ScenarioMixedSLO` (33% realtime + 34% interactive + 33% batch), rate=2000, 4 instances. Compare: (A) normal (`least-loaded` + `priority-fcfs` + `slo-based`), (B) pathological (`always-busiest` + `reverse-priority` + `inverted-slo`). Measure HOL blocking count, priority inversion count, TTFT p99, and distribution std_dev.
+**Experiment:** Use `ScenarioMixedSLO` (33% realtime + 34% interactive + 33% batch), rate=2000, 4 instances. Compare: (A) normal (`least-loaded` + `priority-fcfs` + `slo-based`), (B) pathological (`always-busiest` + `priority-fcfs` + `inverted-slo`). Measure HOL blocking count, priority inversion count, TTFT p99, and distribution std_dev.
 
 **Predicted outcome:** Pathological: HOL blocking count > 0, priority inversions > 0, distribution std_dev > 100 (severe imbalance), TTFT p99 dramatically worse. Normal: zero anomalies, std_dev < 5, good TTFT. **Metric source:** `RawMetrics.HOLBlockingEvents`, `RawMetrics.PriorityInversions` in `sim/cluster/metrics.go`.
 
-**If hypothesis fails:** (a) If HOL blocking is zero: the `always-busiest` policy isn't producing load imbalance — check `AlwaysBusiest.Route()`. (b) If priority inversions are zero: the anomaly detection logic doesn't trigger for `inverted-slo` priority — check `detectPriorityInversions` in `sim/cluster/metrics.go`. (c) If both anomalies are zero: the anomaly detection thresholds may be too lenient for this configuration.
+**If hypothesis fails:** (a) If HOL blocking is zero: the `always-busiest` policy isn't producing load imbalance — check `AlwaysBusiest.Route()`. (b) If priority inversions are zero: verify `inverted-slo` is paired with `priority-fcfs` (not `reverse-priority`, which cancels the inversion — see #295) and check `detectPriorityInversions` in `sim/cluster/metrics.go`. (c) If both anomalies are zero: the anomaly detection thresholds may be too lenient for this configuration.
 
 **Coverage:** Anomaly detection completeness, pathological template interaction, combined worst-case
 
