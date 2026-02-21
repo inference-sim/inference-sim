@@ -283,7 +283,7 @@ Confirming that "A is better than B" is necessary but not sufficient. The root c
 
 When a mechanism is proposed (e.g., "`maybeOffload` causes the TTFT improvement"), design a control experiment that disables **only that mechanism** (e.g., `--kv-offload-threshold 1.0`). If the effect vanishes, the mechanism is confirmed. If it persists, the explanation is wrong.
 
-Evidence: H10 proposed `maybeOffload` as the mechanism. The control experiment (threshold=1.0) produced output byte-identical to single-tier, confirming `maybeOffload` as the sole cause. Without this control, the directional question ("why do fewer cache hits help?") would have remained unresolved.
+Evidence: H10 proposed `maybeOffload` as the mechanism. The control experiment (threshold=1.0) produced output byte-identical to single-tier, confirming `maybeOffload` as the sole cause. Without this control, the mechanism question ("does maybeOffload cause the TTFT improvement?") would have remained unverified.
 
 ### RCV-5: Confirmation bias guard (Devil's Advocate)
 

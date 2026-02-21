@@ -326,7 +326,7 @@ Evidence from PR #310 (H5, H10, H13):
 |-------|---------------|-----------------|
 | **1** | Initial experiments | Wrong root causes for H5 and H10 |
 | **2** | Code + external review | Corrected math (H5), identified mechanism (H10), designed confound matrix |
-| **3** | Confound matrix + calibrated bucket | H5 refuted, H10 analyzer bug masked preemptions |
+| **3** | Confound matrix + calibrated bucket | H5 burst-smoothing mechanism refuted (directional prediction holds), H10 analyzer bug masked preemptions |
 | **4** | Corrected analyzer | H10 confirmed — preemptions DO occur, cache hits INCREASE |
 
 H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H10 required Round 4 due to an analyzer bug. Fixed round counts would have either stopped too early (missing the H10 bug) or forced unnecessary work (H13 didn't need Round 2).
