@@ -18,6 +18,15 @@ import sys
 from pathlib import Path
 
 
+def _warn_if_section_present(content, section_header, metric_name, filepath):
+    """Warn on stderr if a section header exists but a metric regex didn't match."""
+    if section_header in content:
+        print(f"WARNING: '{metric_name}' not found in '{filepath}' "
+              f"despite '{section_header}' section being present. "
+              f"Check regex against cmd/root.go format strings.",
+              file=sys.stderr)
+
+
 def parse_output(filepath):
     """Parse multi-block BLIS output into cluster metrics + distribution."""
     content = Path(filepath).read_text()
@@ -51,6 +60,9 @@ def parse_output(filepath):
     hol_match = re.search(r"HOL Blocking Events: (\d+)", content)
     if hol_match:
         hol = int(hol_match.group(1))
+    else:
+        _warn_if_section_present(content, "=== Anomaly Counters ===",
+                                 "HOL Blocking Events", filepath)
 
     return {
         "ttft_mean": cluster["ttft_mean_ms"] if cluster else 0,

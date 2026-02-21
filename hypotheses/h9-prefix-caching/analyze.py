@@ -16,6 +16,15 @@ import sys
 from pathlib import Path
 
 
+def _warn_if_section_present(content, section_header, metric_name, filepath):
+    """Warn on stderr if a section header exists but a metric regex didn't match."""
+    if section_header in content:
+        print(f"WARNING: '{metric_name}' not found in '{filepath}' "
+              f"despite '{section_header}' section being present. "
+              f"Check regex against cmd/root.go format strings.",
+              file=sys.stderr)
+
+
 def parse_output(filepath):
     """Parse multi-block BLIS output into cluster metrics + cache stats."""
     content = Path(filepath).read_text()
@@ -34,12 +43,18 @@ def parse_output(filepath):
     hit_match = re.search(r"Cache Hit Rate:\s+([\d.]+)", content)
     if hit_match:
         cache_hit_rate = float(hit_match.group(1))
+    else:
+        _warn_if_section_present(content, "=== KV Cache Metrics ===",
+                                 "Cache Hit Rate", filepath)
 
     # Extract preemption rate
     preempt_rate = 0.0
     preempt_match = re.search(r"Preemption Rate:\s+([\d.]+)", content)
     if preempt_match:
         preempt_rate = float(preempt_match.group(1))
+    else:
+        _warn_if_section_present(content, "=== KV Cache Metrics ===",
+                                 "Preemption Rate", filepath)
 
     # Extract target distribution from trace summary
     dist = {}

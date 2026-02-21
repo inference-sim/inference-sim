@@ -19,6 +19,15 @@ import sys
 from pathlib import Path
 
 
+def _warn_if_section_present(content, section_header, metric_name, filepath):
+    """Warn on stderr if a section header exists but a metric regex didn't match."""
+    if section_header in content:
+        print(f"WARNING: '{metric_name}' not found in '{filepath}' "
+              f"despite '{section_header}' section being present. "
+              f"Check regex against cmd/root.go format strings.",
+              file=sys.stderr)
+
+
 def parse_output(filepath):
     """Parse multi-block BLIS output into cluster metrics."""
     content = Path(filepath).read_text()
@@ -37,6 +46,9 @@ def parse_output(filepath):
     rejected_match = re.search(r"Rejected Requests: (\d+)", content)
     if rejected_match:
         rejected = int(rejected_match.group(1))
+    else:
+        _warn_if_section_present(content, "=== Anomaly Counters ===",
+                                 "Rejected Requests", filepath)
 
     # Extract target distribution
     dist = {}
@@ -66,6 +78,9 @@ def parse_output(filepath):
         preemption_rate = float(preempt_match.group(1))
         completed = cluster["completed_requests"] if cluster else 0
         preemptions = int(round(preemption_rate * completed))
+    else:
+        _warn_if_section_present(content, "=== KV Cache Metrics ===",
+                                 "Preemption Rate", filepath)
 
     return {
         "ttft_mean": cluster["ttft_mean_ms"] if cluster else 0,

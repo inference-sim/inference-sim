@@ -31,6 +31,15 @@ LABELS = {
 }
 
 
+def _warn_if_section_present(content, section_header, metric_name, filepath):
+    """Warn on stderr if a section header exists but a metric regex didn't match."""
+    if section_header in content:
+        print(f"WARNING: '{metric_name}' not found in '{filepath}' "
+              f"despite '{section_header}' section being present. "
+              f"Check regex against cmd/root.go format strings.",
+              file=sys.stderr)
+
+
 def parse_output(filepath):
     """Parse multi-block BLIS output into cluster metrics + distribution."""
     content = Path(filepath).read_text()
@@ -60,6 +69,9 @@ def parse_output(filepath):
     hr_match = re.search(r"Cache Hit Rate:\s*([\d.]+)", content)
     if hr_match:
         hit_rate = float(hr_match.group(1))
+    else:
+        _warn_if_section_present(content, "=== KV Cache Metrics ===",
+                                 "Cache Hit Rate", filepath)
 
     return {
         "ttft_mean": cluster["ttft_mean_ms"] if cluster else 0,
