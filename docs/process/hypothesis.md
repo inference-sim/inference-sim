@@ -85,6 +85,8 @@ Each round runs **three Opus 4.6 reviews in parallel**, each with a different (b
 
 Run all three in parallel: `/review-plan <findings> aws/claude-opus-4-6`
 
+**For external contributors without AI review infrastructure:** Submit your FINDINGS.md via PR. Maintainers will run the three-reviewer protocol on your behalf. You can also conduct the three reviews manually by having three different people review the FINDINGS.md, each focusing on one of the three areas below.
+
 **Reviewer A — Mechanism Verification:**
 - Are causal claims traced through code with `file:line` citations? (RCV-1)
 - Does the mechanism explain the direction, not just the correlation? (RCV-3)

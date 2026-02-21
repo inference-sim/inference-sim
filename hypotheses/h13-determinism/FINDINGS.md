@@ -71,6 +71,27 @@ Findings checked against docs/standards/:
 - [x] Any new invariants needed? **None** — INV-6 is confirmed
 - [x] Any existing rules/invariants confirmed? **INV-6 (determinism) confirmed across 5 policy configurations.** R2 compliance verified implicitly — map iteration determinism holds.
 
+## Devil's Advocate (RCV-5)
+
+**If this is "Confirmed," argue why it might be Refuted:**
+Determinism was tested with 200 requests on a single machine with one seed. Non-determinism that only appears at scale (10K+ requests), under memory pressure (causing different allocation paths), or across binary rebuilds (different compiler optimizations) would not be caught. The LRU eviction in PrefixCacheIndex may only exhibit non-deterministic map iteration with larger cache sizes.
+
+## Scope and Limitations (RCV-6)
+
+- **Operating point tested:** 200 requests, rate=1000, 4 instances, seed=42, single machine (macOS, Go 1.24)
+- **Parameters findings depend on:** PartitionedRNG correctness, R2 compliance in all map iterations, single-threaded event loop
+- **What was NOT tested:** Different hardware, longer runs (10K+), concurrent multi-tenant scenarios, binary rebuilds, high-contention cache eviction
+- **Generalizability:** INV-6 holds for tested configurations. Untested at scale boundaries where thread pools, memory allocation, or cache pressure might vary.
+- **Uncertainty quantification:** Deterministic test — no UQ applicable. Pass/fail is exact.
+
+## Evidence Quality
+
+| Metric | Value | Confidence |
+|--------|-------|------------|
+| Determinism | Byte-identical across 5 config pairs | High — exact match, no tolerance |
+| Scope | 5 configs × 2 runs × 200 requests | Medium — narrow but appropriate for Tier 1 |
+| Stateful scorer coverage | Prefix-affinity with LRU eviction tested | High — highest-risk code path included |
+
 ## Implications for Users
 
 - Users can rely on `--seed` for fully reproducible experiments: same seed = identical output, regardless of routing policy, scheduler, or priority configuration.

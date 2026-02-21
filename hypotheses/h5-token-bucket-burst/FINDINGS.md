@@ -124,6 +124,31 @@ Despite the extreme demand/supply mismatch:
 | Gamma arrival sampler (Marsaglia-Tsang) produces expected burstiness | Confirmation | Validated by rate-scaling monotonicity |
 | No practical sweet spot found under Gamma CV=3.5 with mean input ~512 | Design limitation | At tested parameters: either massive load shedding (96% reject → 69x better) or negligible effect (<5% reject → <5% better). The mechanism may produce measurable effects under lower-variance or shorter-request workloads, but this was not tested. |
 
+## Devil's Advocate (RCV-5)
+
+**If this is "Refuted," argue why it might be Confirmed:**
+The calibrated bucket (cap=100K) showed a consistent 4% TTFT improvement in 2 of 3 seeds. This could be a real but tiny burst-smoothing effect masked by workload noise. Also, the experiment only tested Gamma CV=3.5 with exponential input mean=512 — lower CV (1.5-2.0) or shorter requests (mean=64) might produce a workable sweet spot.
+
+**If this is "Confirmed," argue why it might be Refuted (the original direction):**
+The 69x improvement is trivially explained by near-empty queues when 96% of traffic is rejected. A firewall that blocks all traffic also has great latency. The calibrated experiment shows that at practical parameters, the effect is within noise.
+
+## Scope and Limitations (RCV-6)
+
+- **Operating point tested:** Gamma CV=3.5, rate=2000, 500 requests, 4 instances, exponential input mean=512
+- **Parameters findings depend on:** Per-input-token cost model (`admission.go:45`); mean input > bucket capacity for original params
+- **What was NOT tested:** Lower CV (1.5-2.0), shorter requests (mean=64-128), Weibull arrivals, queue-depth-based admission, intermediate bucket sizes between 500 and 100K
+- **Generalizability:** Refutation is specific to Gamma CV=3.5 with mean_input ≈ 512. May not apply at lower CV or shorter requests.
+- **Uncertainty quantification:** Calibrated experiment: 0-5% improvement across 3 seeds. No formal CI computed.
+
+## Evidence Quality
+
+| Metric | Value | Confidence |
+|--------|-------|------------|
+| TTFT improvement (original) | 56-69x across 3 seeds | High — but from 96% load shedding |
+| TTFT improvement (calibrated) | 0-5% across 3 seeds | Medium — within noise, no formal test |
+| Rejection rate (original) | 96% (480-483/500) | High — mathematically inevitable |
+| Mechanism | Per-input-token cost prevents burst smoothing | High — verified at `admission.go:45` |
+
 ## Standards Audit
 
 Findings checked against docs/standards/:
