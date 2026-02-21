@@ -11,7 +11,7 @@ This document describes the process for running a hypothesis-driven experiment. 
 
 ## The Three-Round Protocol
 
-Every hypothesis experiment goes through **three rounds** of experimentation interleaved with external LLM review. This is non-negotiable — it exists because single-pass experiments produce plausible-sounding but incorrect analyses (evidence: H5 and H10 in PR #310 required 4 rounds to reach correct conclusions).
+Every hypothesis experiment goes through **at least three rounds** of experimentation interleaved with external LLM review, continuing **until convergence**. This is non-negotiable — it exists because single-pass experiments produce plausible-sounding but incorrect analyses (evidence: H5 and H10 in PR #310 required 4 rounds to reach correct conclusions).
 
 ```
 Round 1: Design → Run → Analyze → Document draft FINDINGS.md
@@ -24,10 +24,22 @@ Round 2: Address review gaps → Run additional experiments → Update FINDINGS.
                 ↓
 Round 3: Resolve remaining questions → Final experiments if needed → Finalize FINDINGS.md
                 ↓
-         Final Review (Opus 4.6 — confirmation pass)
+         External Review (Opus 4.6 — convergence check)
                 ↓
-         Commit and PR
+         Converged? → Commit and PR
+         Not converged? → Round 4+ (repeat until converged)
 ```
+
+### Convergence Criterion
+
+An experiment **converges** when the reviewer's only remaining items are **"acknowledged as open"** — not **"needs a new experiment."** Specifically:
+
+- **Converged**: "The directional question (why fewer cache hits helps) remains open and would require per-request logging to resolve." → This is acknowledged. No further rounds needed.
+- **Not converged**: "There is a confounding variable — you need a control with routing=round-robin." → This is an actionable experiment. Another round required.
+
+The distinction: **"open and requires different tooling"** is a stopping point. **"Open and answerable by running another experiment"** is not.
+
+Three rounds is the **minimum**, not the target. Most experiments will converge in 3 rounds. Some may need 4-5. The process stops when the review produces no new actionable experiments, regardless of round count.
 
 ### Round 1: Initial Experiment
 
@@ -99,13 +111,14 @@ Final external review — this is a confirmation pass, not a discovery pass. The
 - [ ] Experiment design follows ED-1 through ED-6
 - [ ] If reusing prior calibration data, config diff documented (ED-6)
 - [ ] Results reproducible via `./run.sh`
-- [ ] Three rounds completed with external reviews
+- [ ] At least three rounds completed with external reviews
+- [ ] **Convergence reached**: reviewer's only remaining items are "acknowledged as open" (requires different tooling), not "needs a new experiment"
 - [ ] All review feedback addressed or explicitly acknowledged as open
 - [ ] Findings classified per the findings table
 - [ ] Standards audit completed
 - [ ] Issues filed for all actionable findings
 
-## Why Three Rounds?
+## Why At Least Three Rounds?
 
 Evidence from PR #310 (H5, H10, H13):
 
@@ -114,8 +127,11 @@ Evidence from PR #310 (H5, H10, H13):
 | **1** | Initial experiments + FINDINGS.md | Plausible but wrong root causes published |
 | **2** | Code review + external review | H10: "capacity increase" was wrong (NewKVStore doesn't change GPU blocks). H5: "96% surprise" was mathematically inevitable. |
 | **3** | Confound matrix + calibrated bucket | H10: `maybeOffload` confirmed as sole mechanism via byte-identical control. H5: calibrated bucket shows <5% effect — original was load shedding. |
+| **After 3** | H10 directional question remains | "Why do fewer cache hits improve TTFT?" — requires code instrumentation, not experiments. **Converged**: acknowledged as open. |
 
-Round 1 produced confident but wrong answers. Round 2 identified the errors. Round 3 produced definitive evidence. Skipping any round would have left incorrect analysis in the codebase.
+Round 1 produced confident but wrong answers. Round 2 identified the errors. Round 3 produced definitive evidence. H10 converged after Round 3 despite having an open question, because the remaining question requires different tooling (per-request logging), not another experiment sweep.
+
+**Three rounds is the minimum, not the maximum.** The stopping criterion is convergence: the reviewer raises no new actionable experiments.
 
 ## References
 
