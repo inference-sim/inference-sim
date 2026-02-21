@@ -1,10 +1,43 @@
 # BLIS Experiment Standards
 
-Hypothesis-driven experimentation is a first-class activity in BLIS — equal in rigor to implementation and design. Experiments serve three purposes:
+Hypothesis-driven experimentation is a first-class activity in BLIS — equal in rigor to implementation and design. The experiment framework is grounded in Verification, Validation, and Uncertainty Quantification (VV&UQ) from simulation science.
 
-1. **Validation** — confirm that implemented features work as designed (e.g., prefix-affinity produces 2.4x TTFT improvement for multi-turn chat)
-2. **Discovery** — surface bugs, design gaps, and undocumented limitations (e.g., H3 revealed KV utilization signal staleness -> 3 new issues, 1 new rule, 1 new invariant)
-3. **Documentation** — each experiment becomes a reproducible artifact that helps users understand when to use which configuration
+### VV&UQ Framing
+
+Every hypothesis falls into one of three VV&UQ categories. This determines what kind of evidence is needed.
+
+| Category | Question | Evidence required | Examples |
+|----------|----------|-------------------|---------|
+| **Verification** | Does the code implement the intended math/logic? | Exact invariant checks. Failure = bug. | H12 (conservation), H13 (determinism), H22 (input validation) |
+| **Validation** | Does the model match expected system behavior? | Statistical comparison against analytical baselines or real data within a pre-specified accuracy interval. | Cross-validation against M/M/k; H19 (roofline vs blackbox) |
+| **Uncertainty Quantification** | How confident are we in the region where a finding holds? | Confidence intervals on thresholds; probability statements on properties. | H8 (preemption cliff at 2100±? blocks); H10 (28% improvement at this operating point — what about others?) |
+
+Most current experiments are **Verification** (invariant checking) or informal **Validation** (metric comparison). Future experiments should increasingly incorporate **UQ** — every threshold finding should include a confidence interval, every "confirmed" result should quantify the probability of holding under parameter variation.
+
+### Three purposes
+
+1. **Verification** — confirm that code implements intended math correctly (scheduler invariants, conservation laws)
+2. **Validation** — confirm that model outputs match expected behavior within acceptable accuracy intervals
+3. **Discovery** — surface bugs, design gaps, and undocumented limitations
+
+### Formal statistical rigor
+
+Experiments involving statistical claims must use proper hypothesis tests, not ad-hoc thresholds:
+
+- **Distribution validation** (workload/arrival family): Kolmogorov-Smirnov test against theoretical CDF. Reject if p < 0.05.
+- **Metric comparison** (cross-policy family): Mann-Whitney U test or paired comparison across seeds. Report effect size AND confidence interval, not just "X% better."
+- **Threshold estimation** (performance-regime family): Report thresholds with confidence intervals. "Preemption cliff at 2100 blocks" → "Preemption cliff at 2100 ± 100 blocks (95% CI across seeds 42, 123, 456)."
+- **Invariant probability** (scheduler invariants family): For stochastic invariants, estimate P(invariant holds) with a confidence interval, not just "holds for 3 seeds."
+
+Legacy experiments using the 20%/>10%/5% thresholds remain valid but new experiments should use formal tests where feasible.
+
+### Cross-validation against analytical models
+
+Where applicable, validate DES outputs against analytically-tractable models under matching assumptions. This grounds the simulator in theory.
+
+- **M/M/k baseline**: Under Poisson arrivals with exponential service times, compare DES queue length distribution against the M/M/k analytical solution. Divergence indicates a modeling error.
+- **Little's Law**: For any stable configuration, verify L = λW (average queue length = arrival rate × average wait time). This is a universal law that must hold.
+- **Phase structure**: Verify that prefill time ∝ prompt tokens and decode time ∝ output tokens by fitting linear models and checking R² > 0.95.
 
 ## Experiment Classification
 

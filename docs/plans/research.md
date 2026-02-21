@@ -607,6 +607,18 @@ Each hypothesis experiment should follow these conventions:
 - **Structural model (family 4):** Code-level verification (RCV-1, RCV-4) essential — these test implementation assumptions.
 - **Robustness (family 5):** Must test BOTH defined behavior AND verify no undefined states (deadlock, panic, data loss).
 
+## Cross-Validation Opportunities
+
+The following analytical models can validate the DES under matching assumptions (see VV&UQ framework in `docs/standards/experiments.md`):
+
+| Analytical model | DES configuration to match | What it validates |
+|---|---|---|
+| **M/M/k** (k servers, Poisson arrivals, exponential service) | Poisson rate, exponential input/output, k instances, FCFS | Queue length distribution, mean wait time, utilization |
+| **Little's Law** (L = λW) | Any stable configuration | Fundamental consistency: avg queue length = arrival rate × avg wait time |
+| **Phase structure** (prefill ∝ input, decode ∝ output) | Constant distributions, single instance | Linear relationship between token counts and latency components |
+
+These cross-validations should be run as **Validation** category experiments per the VV&UQ framework. Divergence from analytical predictions indicates either a modeling error in the DES or a violated assumption.
+
 ## Tier 0: Measurement Audit (Run First)
 
 Before running any hypothesis, verify which metrics are available in CLI JSON output:

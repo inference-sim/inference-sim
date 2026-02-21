@@ -71,7 +71,7 @@ The distinction: **"open and requires different tooling"** is a stopping point. 
 **Steps 1-4 apply to Round 1 only. Subsequent rounds start at step 5.**
 
 1. **Select or pose hypothesis** — from `docs/plans/research.md` or from a new observation
-2. **Classify** — (a) which hypothesis family? (b) deterministic or statistical? If statistical, which subtype? The family determines which design rules and verification steps are most important. (See [experiments.md](../standards/experiments.md))
+2. **Classify** — (a) which hypothesis family? (b) Verification, Validation, or UQ? (c) deterministic or statistical? If statistical, which subtype? The family determines design rules; the VV&UQ category determines evidence requirements. (See [experiments.md](../standards/experiments.md))
 3. **Design experiment** — ED-1 through ED-6, with family-specific considerations
 4. **Implement** — create `hypotheses/<name>/run.sh`, `analyze.py`
 5. **Code review experiment code** — BEFORE running. See [Code Review Before Execution](#code-review-before-execution) below.
