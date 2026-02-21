@@ -187,6 +187,55 @@ func TestNewLengthSampler_EmptyEmpiricalPDF_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestConstantSampler_AlwaysReturnsExactValue(t *testing.T) {
+	// BC-6: constant distribution always returns exact value
+	sampler, err := NewLengthSampler(DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 447},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 1000; i++ {
+		got := sampler.Sample(rng)
+		if got != 447 {
+			t.Fatalf("iteration %d: got %d, want 447", i, got)
+		}
+	}
+}
+
+func TestConstantSampler_ValueOne_ReturnsOne(t *testing.T) {
+	// Edge: minimum valid constant
+	sampler, err := NewLengthSampler(DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 1},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(99))
+	if got := sampler.Sample(rng); got != 1 {
+		t.Errorf("got %d, want 1", got)
+	}
+}
+
+func TestConstantSampler_ZeroValue_ReturnsOne(t *testing.T) {
+	// Edge: zero value clamped to minimum of 1
+	sampler, err := NewLengthSampler(DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 0},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(99))
+	if got := sampler.Sample(rng); got != 1 {
+		t.Errorf("got %d, want 1 (clamped)", got)
+	}
+}
+
 func TestNewLengthSampler_InvalidType_ReturnsError(t *testing.T) {
 	_, err := NewLengthSampler(DistSpec{Type: "unknown"})
 	if err == nil {

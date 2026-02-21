@@ -132,6 +132,19 @@ func (s *EmpiricalPDFSampler) Sample(rng *rand.Rand) int {
 	return s.values[idx]
 }
 
+// ConstantSampler always returns the same fixed value.
+// Used for inference-perf fixed-length token specifications (zero variance).
+type ConstantSampler struct {
+	value int
+}
+
+func (s *ConstantSampler) Sample(_ *rand.Rand) int {
+	if s.value < 1 {
+		return 1
+	}
+	return s.value
+}
+
 // NewLengthSampler creates a LengthSampler from a DistSpec.
 func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 	switch spec.Type {
@@ -156,6 +169,10 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 			sigma:     spec.Params["sigma"],
 			mixWeight: spec.Params["mix_weight"],
 		}, nil
+
+	case "constant":
+		val := int(spec.Params["value"])
+		return &ConstantSampler{value: val}, nil
 
 	case "empirical":
 		if spec.File == "" && len(spec.Params) == 0 {

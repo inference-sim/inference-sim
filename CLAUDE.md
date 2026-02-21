@@ -302,7 +302,7 @@ inference-sim/
 ├── sim/workload/              # ServeGen-informed workload generation (PR10)
 │   ├── spec.go                # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
 │   ├── arrival.go             # ArrivalSampler: Poisson, Gamma (Marsaglia-Tsang), Weibull (bisection)
-│   ├── distribution.go        # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF
+│   ├── distribution.go        # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF, Constant
 │   ├── client.go              # Rate normalization, prefix group management
 │   ├── generator.go           # GenerateRequests pipeline with client decomposition
 │   ├── servegen.go            # Native ServeGen data file loading (chunk-*-trace.csv + dataset.json)
@@ -312,6 +312,7 @@ inference-sim/
 │   ├── multimodal.go          # Multimodal token generation (text+image+audio+video)
 │   ├── reasoning.go           # Reasoning multi-turn with context accumulation
 │   ├── network.go             # Client-perspective latency (RTT + bandwidth)
+│   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
 │   └── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 ├── sim/kv/                    # P/D cross-instance KV transfer (planned, PR14)
 ├── sim/trace/                 # Decision trace recording (PR13)
