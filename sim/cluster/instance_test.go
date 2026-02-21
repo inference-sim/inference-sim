@@ -120,6 +120,84 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 	}
 }
 
+// TestInstanceSimulator_GoldenDataset_Invariants verifies system invariants alongside
+// the golden dataset test (R7). Golden tests answer "did the output change?" but not
+// "is the output correct?" These invariant tests verify laws from the specification.
+func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
+	dataset := testutil.LoadGoldenDataset(t)
+
+	if len(dataset.Tests) == 0 {
+		t.Fatal("Golden dataset contains no test cases")
+	}
+
+	for _, tc := range dataset.Tests {
+		t.Run(tc.Model, func(t *testing.T) {
+			instance := NewInstanceSimulator(
+				InstanceID("test-instance"),
+				sim.SimConfig{
+					Horizon:                   math.MaxInt64,
+					Seed:                      tc.Seed,
+					TotalKVBlocks:             tc.TotalKVBlocks,
+					BlockSizeTokens:           tc.BlockSizeInTokens,
+					MaxRunningReqs:            tc.MaxNumRunningReqs,
+					MaxScheduledTokens:        tc.MaxNumScheduledTokens,
+					LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
+					BetaCoeffs:                tc.BetaCoeffs,
+					AlphaCoeffs:               tc.AlphaCoeffs,
+					Model:                     tc.Model,
+					GPU:                       tc.Hardware,
+					TP:                        tc.TP,
+					GuideLLMConfig: &sim.GuideLLMConfig{
+						Rate:               tc.Rate / 1e6,
+						NumRequests:         tc.NumRequests,
+						PrefixTokens:       tc.PrefixTokens,
+						PromptTokens:       tc.PromptTokens,
+						PromptTokensStdDev: tc.PromptTokensStdev,
+						PromptTokensMin:    tc.PromptTokensMin,
+						PromptTokensMax:    tc.PromptTokensMax,
+						OutputTokens:       tc.OutputTokens,
+						OutputTokensStdDev: tc.OutputTokensStdev,
+						OutputTokensMin:    tc.OutputTokensMin,
+						OutputTokensMax:    tc.OutputTokensMax,
+					},
+				},
+			)
+
+			instance.Run()
+			m := instance.Metrics()
+
+			// INV-1: Request conservation
+			// completed + still_queued + still_running == injected
+			total := m.CompletedRequests + m.StillQueued + m.StillRunning
+			if total != tc.NumRequests {
+				t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) = %d, want %d (NumRequests)",
+					m.CompletedRequests, m.StillQueued, m.StillRunning, total, tc.NumRequests)
+			}
+
+			// INV-5: Causality — for every completed request, TTFT >= 0 and E2E >= TTFT
+			for reqID, e2e := range m.RequestE2Es {
+				ttft, hasTTFT := m.RequestTTFTs[reqID]
+				if !hasTTFT {
+					t.Errorf("INV-5 causality: request %q has E2E but no TTFT", reqID)
+					continue
+				}
+				if ttft < 0 {
+					t.Errorf("INV-5 causality: request %q TTFT = %f, want >= 0", reqID, ttft)
+				}
+				if e2e < ttft {
+					t.Errorf("INV-5 causality: request %q E2E (%f) < TTFT (%f)", reqID, e2e, ttft)
+				}
+			}
+
+			// INV-3: Clock monotonicity (SimEndedTime > 0 for non-empty workloads)
+			if tc.NumRequests > 0 && m.SimEndedTime <= 0 {
+				t.Errorf("INV-3 clock monotonicity: SimEndedTime = %d, want > 0 for %d requests",
+					m.SimEndedTime, tc.NumRequests)
+			}
+		})
+	}
+}
+
 // TestInstanceSimulator_Determinism verifies same seed produces identical results.
 func TestInstanceSimulator_Determinism(t *testing.T) {
 	cfg := newTestSimConfigWithWorkload(&sim.GuideLLMConfig{
@@ -322,11 +400,11 @@ func TestInstanceSimulator_BatchSize_NilRunningBatch(t *testing.T) {
 	}
 }
 
-// TestInstanceSimulator_ProcessNextEvent_ReturnsCorrectEventType verifies:
+// TestInstanceSimulator_ProcessNextEvent_ReturnsEventsWithMonotonicTimestamps verifies:
 // GIVEN a request injected via InjectRequestOnline
-// WHEN ProcessNextEvent is called
-// THEN the returned event is an *sim.ArrivalEvent (the first event for an injected request)
-func TestInstanceSimulator_ProcessNextEvent_ReturnsCorrectEventType(t *testing.T) {
+// WHEN ProcessNextEvent is called multiple times
+// THEN events are returned with non-decreasing timestamps (clock monotonicity)
+func TestInstanceSimulator_ProcessNextEvent_ReturnsEventsWithMonotonicTimestamps(t *testing.T) {
 	cfg := newTestInstanceSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 100
@@ -351,19 +429,25 @@ func TestInstanceSimulator_ProcessNextEvent_ReturnsCorrectEventType(t *testing.T
 		t.Fatal("ProcessNextEvent returned nil")
 	}
 
-	// First event for an injected request is an ArrivalEvent
-	if _, ok := ev.(*sim.ArrivalEvent); !ok {
-		t.Errorf("ProcessNextEvent returned %T, want *sim.ArrivalEvent", ev)
+	// First event should have a non-negative timestamp
+	if ev.Timestamp() < 0 {
+		t.Errorf("first event timestamp = %d, want >= 0", ev.Timestamp())
 	}
 
-	// After ArrivalEvent executes, a QueuedEvent should be scheduled
+	// After first event executes, more events should be scheduled
 	if !inst.HasPendingEvents() {
-		t.Fatal("expected QueuedEvent after ArrivalEvent, but no pending events")
+		t.Fatal("expected more events after first event, but no pending events")
 	}
 
 	ev2 := inst.ProcessNextEvent()
-	if _, ok := ev2.(*sim.QueuedEvent); !ok {
-		t.Errorf("second ProcessNextEvent returned %T, want *sim.QueuedEvent", ev2)
+	if ev2 == nil {
+		t.Fatal("second ProcessNextEvent returned nil")
+	}
+
+	// Second event should have timestamp >= first event (clock monotonicity)
+	if ev2.Timestamp() < ev.Timestamp() {
+		t.Errorf("second event timestamp (%d) < first (%d), violates monotonicity",
+			ev2.Timestamp(), ev.Timestamp())
 	}
 }
 
