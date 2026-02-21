@@ -210,6 +210,32 @@ run_sim 42 \
 
 analyze tuning "$RESULTS_DIR"/exp3_*.txt
 
+# ── Experiment 4: Calibrated bucket (Opus 4.6 review) ────────────────────────
+# Previous experiments used cap=500 < mean_input=512 — structurally impossible.
+# This experiment uses properly calibrated parameters where the bucket CAN
+# admit average-sized requests: cap=100000, refill matched to target throughput.
+
+echo ""
+echo "Experiment 4: Calibrated bucket — cap >> mean_input (3 seeds)"
+echo "  (Addresses reviewer feedback: cap=500 < mean_input=512 is structural rejection)"
+echo ""
+
+for SEED in 42 123 456; do
+    echo "  Seed $SEED: always-admit..."
+    run_sim "$SEED" \
+        --admission-policy always-admit \
+        > "$RESULTS_DIR/exp4_always_${SEED}.txt"
+
+    echo "  Seed $SEED: calibrated bucket (cap=100000, refill=600000)..."
+    run_sim "$SEED" \
+        --admission-policy token-bucket \
+        --token-bucket-capacity 100000 \
+        --token-bucket-refill-rate 600000 \
+        > "$RESULTS_DIR/exp4_calibrated_${SEED}.txt"
+done
+
+analyze calibrated "$RESULTS_DIR"/exp4_*.txt
+
 echo ""
 echo "============================================================================"
 echo "  See FINDINGS.md for detailed analysis"

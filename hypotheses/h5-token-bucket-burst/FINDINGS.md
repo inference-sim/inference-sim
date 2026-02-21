@@ -1,6 +1,6 @@
 # H5: Token-Bucket Admission Control Under Burst
 
-**Status:** Confirmed
+**Status:** Confirmed (with nuance — see Experiment 4)
 **Tier:** 3 (system understanding)
 **Type:** Statistical / Dominance
 **Date:** 2026-02-20
@@ -62,6 +62,23 @@ The effect amplifies with rate until saturation (~rate=2000). At rate=200, the s
 
 Larger bucket capacity/refill admits more requests (12→33) at the cost of modestly worse TTFT P99 (16→30ms). The tradeoff is monotonic and smooth.
 
+### Experiment 4: Calibrated Bucket (cap >> mean_input)
+
+Addresses reviewer feedback (Opus 4.6): cap=500 < mean_input=512 is structural rejection, not burst smoothing. This experiment uses cap=100,000 (200x the mean input) with refill=600,000 to match demand.
+
+| Seed | Policy | TTFT P99 | E2E P99 | Rejected | Completed | Effect |
+|------|--------|--------:|---------:|--------:|---------:|--------|
+| 42 | always-admit | 1,281.5 | 12,713.0 | 0 | 500 | |
+| 42 | calibrated | 1,222.7 | 12,708.1 | 22 | 478 | **1.05x better P99** |
+| 123 | always-admit | 1,147.3 | 13,672.9 | 0 | 500 | |
+| 123 | calibrated | 1,145.6 | 13,676.0 | 4 | 496 | **1.00x — no effect** |
+| 456 | always-admit | 1,186.2 | 12,239.0 | 0 | 500 | |
+| 456 | calibrated | 1,145.1 | 12,582.0 | 26 | 474 | **1.04x better P99** |
+
+**INCONCLUSIVE: With properly calibrated bucket (cap=100K, refill=600K), only 0.8-5.2% rejection and <5% TTFT P99 improvement.** The token-bucket at these parameters barely smooths Gamma CV=3.5 bursts.
+
+**This reveals a fundamental tradeoff**: either you reject massively (96%) for massive TTFT improvement (69x), or you calibrate properly and get negligible improvement (<5%). There is **no practical sweet spot** under Gamma CV=3.5 where moderate rejection gives moderate improvement.
+
 ## Root Cause Analysis
 
 The hypothesis is confirmed, but the 96% rejection rate is driven by a mechanism more fundamental than burstiness alone:
@@ -102,6 +119,7 @@ Despite the extreme demand/supply mismatch:
 | 96% rejection driven by per-input-token cost (512 tokens/req >> 500 capacity) | Surprise | Token demand exceeds supply by 2,560x. Not a bug — correct per-token admission model, but parameters need calibration for token-cost (not request-count) admission. |
 | TTFT improvement is monotonically rate-dependent (9x→69x from 200→2000) | Confirmation | Documented here |
 | Bucket parameter sensitivity is smooth and monotonic | Confirmation | Documented here |
+| Calibrated bucket (cap=100K, refill=600K) shows <5% TTFT improvement with <5% rejection | Surprise | No practical sweet spot under Gamma CV=3.5 — the 69x result was from load shedding, not burst smoothing |
 
 ## Standards Audit
 

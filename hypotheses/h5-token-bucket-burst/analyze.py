@@ -257,10 +257,92 @@ def analyze_tuning(files):
         )
 
 
+def analyze_calibrated(files):
+    """Experiment 4: Calibrated bucket (cap >> mean_input) across seeds."""
+    results = {}
+    for f in files:
+        name = Path(f).stem
+        results[name] = parse_output(f)
+
+    seeds = sorted(
+        {name.split("_")[2] for name in results if "exp4_" in name}
+    )
+
+    print(
+        f"  {'Seed':<6} {'Policy':<30}"
+        f" | {'TTFT Mean':>10} {'P99':>10}"
+        f" | {'E2E P99':>10}"
+        f" | {'Rej':>5} {'Comp':>5} {'Thru':>6}"
+    )
+    print(
+        f"  {'-'*6} {'-'*30}"
+        f"-+-{'-'*10} {'-'*10}"
+        f"-+-{'-'*10}"
+        f"-+-{'-'*5} {'-'*5} {'-'*6}"
+    )
+
+    ratios = []
+    for seed in seeds:
+        aa = results.get(f"exp4_always_{seed}")
+        cb = results.get(f"exp4_calibrated_{seed}")
+        if not aa or not cb:
+            continue
+
+        for label, r in [
+            ("always-admit", aa),
+            ("calibrated (cap=100K,ref=600K)", cb),
+        ]:
+            print(
+                f"  {seed:<6} {label:<30}"
+                f" | {r['ttft_mean']:>10.1f} {r['ttft_p99']:>10.1f}"
+                f" | {r['e2e_p99']:>10.1f}"
+                f" | {r['rejected']:>5} {r['completed']:>5}"
+                f" {r['throughput']:>6.1f}"
+            )
+
+        if cb["ttft_p99"] > 0:
+            ratio = aa["ttft_p99"] / cb["ttft_p99"]
+            pct_rejected = (
+                cb["rejected"] / (cb["completed"] + cb["rejected"]) * 100
+                if (cb["completed"] + cb["rejected"]) > 0
+                else 0
+            )
+            ratios.append(ratio)
+            print(
+                f"  {'':>6} {'Effect':>30}"
+                f" | P99 ratio: {ratio:.2f}x,"
+                f" rejection: {pct_rejected:.1f}%"
+                f" ({cb['rejected']}/{cb['completed']+cb['rejected']})"
+            )
+        print()
+
+    # Summary
+    if ratios:
+        min_r = min(ratios)
+        max_r = max(ratios)
+        all_better = all(r > 1.0 for r in ratios)
+        print(f"  Summary: Calibrated bucket (cap=100K >> mean_input=512):")
+        print(f"    P99 ratio: min={min_r:.2f}x  max={max_r:.2f}x")
+        if all_better and min_r > 1.2:
+            print(
+                f"    CONFIRMED: Calibrated token-bucket reduces tail latency"
+                f" with practical rejection rate"
+            )
+        elif all_better:
+            print(
+                f"    INCONCLUSIVE: Better but <20% in some seeds"
+            )
+        else:
+            print(
+                f"    MIXED: Not consistently better across seeds"
+            )
+
+
 ANALYZERS = {
     "core": analyze_core,
     "rate-scaling": analyze_rate_scaling,
     "tuning": analyze_tuning,
+    "calibrated": analyze_calibrated,
 }
 
 if __name__ == "__main__":

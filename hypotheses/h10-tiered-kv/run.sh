@@ -208,6 +208,63 @@ done
 
 analyze bandwidth "$RESULTS_DIR"/exp3_*.txt
 
+# ── Experiment 4: Confound matrix — routing × tier (Opus 4.6 review) ─────────
+# Fill the 2×2 table to isolate routing vs tier effects:
+#   |              | round-robin  | least-loaded |
+#   | single-tier  | (a) H8 match | (b) exp1     |
+#   | tiered       | (c) NEW      | (d) exp1     |
+# Also: (e) control with offload threshold=1.0 (disables maybeOffload)
+
+echo ""
+echo "Experiment 4: Confound matrix — routing × tier isolation (seed=42)"
+echo "  (Addresses reviewer feedback: isolate routing policy vs tiered cache effects)"
+echo ""
+
+# (a) Round-robin + single-tier — should match H8 and trigger preemptions
+echo "  [4a] round-robin + single-tier (H8 replication)..."
+if ! timeout 120 "$BINARY" run \
+    --model "$MODEL" --num-instances "$INSTANCES" --seed 42 \
+    --workload-spec "$RESULTS_DIR/wl_42.yaml" \
+    --total-kv-blocks "$GPU_BLOCKS" --block-size-in-tokens 16 \
+    --routing-policy round-robin --scheduler fcfs \
+    --priority-policy constant --admission-policy always-admit \
+    --kv-cpu-blocks 0 \
+    --log error --summarize-trace --trace-level decisions \
+    > "$RESULTS_DIR/exp4_rr_single.txt" 2>/dev/null; then
+    echo "    WARNING: Timed out or crashed"
+    echo "TIMEOUT_OR_CRASH" > "$RESULTS_DIR/exp4_rr_single.txt"
+fi
+
+# (c) Round-robin + tiered — isolates tier effect under preemption-inducing routing
+echo "  [4c] round-robin + tiered (CPU=500, offload=0.8)..."
+if ! timeout 120 "$BINARY" run \
+    --model "$MODEL" --num-instances "$INSTANCES" --seed 42 \
+    --workload-spec "$RESULTS_DIR/wl_42.yaml" \
+    --total-kv-blocks "$GPU_BLOCKS" --block-size-in-tokens 16 \
+    --routing-policy round-robin --scheduler fcfs \
+    --priority-policy constant --admission-policy always-admit \
+    --kv-cpu-blocks 500 --kv-offload-threshold 0.8 \
+    --kv-transfer-bandwidth 100 --kv-transfer-base-latency 10 \
+    --log error --summarize-trace --trace-level decisions \
+    > "$RESULTS_DIR/exp4_rr_tiered.txt" 2>/dev/null; then
+    echo "    WARNING: Timed out or crashed"
+    echo "TIMEOUT_OR_CRASH" > "$RESULTS_DIR/exp4_rr_tiered.txt"
+fi
+
+# (e) Least-loaded + tiered but maybeOffload disabled (threshold=1.0)
+echo "  [4e] least-loaded + tiered (offload=1.0 — maybeOffload disabled)..."
+if ! run_sim 42 \
+    --kv-cpu-blocks 500 \
+    --kv-offload-threshold 1.0 \
+    --kv-transfer-bandwidth 100 \
+    --kv-transfer-base-latency 10 \
+    > "$RESULTS_DIR/exp4_ll_tiered_noop.txt" 2>&1; then
+    echo "    WARNING: Timed out or crashed"
+    echo "TIMEOUT_OR_CRASH" > "$RESULTS_DIR/exp4_ll_tiered_noop.txt"
+fi
+
+analyze confound "$RESULTS_DIR"/exp4_*.txt "$RESULTS_DIR"/exp1_single_42.txt "$RESULTS_DIR"/exp1_tiered_42.txt
+
 echo ""
 echo "============================================================================"
 echo "  See FINDINGS.md for detailed analysis"

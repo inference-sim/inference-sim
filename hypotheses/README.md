@@ -18,8 +18,8 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 | H12 | Request conservation holds across all policy configurations | **Confirmed** (with bug) | INV-1 holds for 10 policy combinations (67 checks); preemption path panics on empty RunningBatch (simulator.go:383) |
 | H14 | Pathological templates produce worse behavior; anomaly detectors fire | **Partially confirmed** | 4.5x worse TTFT confirmed; 3 bugs found (HOL blind spot, priority inversion false positives, double inversion cancellation) |
 | H8 | Reducing KV blocks increases preemption frequency and worsens tail latency | **Confirmed** | Sharp cliff at ~2200 blocks: 4.7x TTFT p99 with 4.5% fewer blocks; cascade effect amplifies preemptions; conservation (INV-1) holds under pressure |
-| H5 | Token-bucket admission reduces tail latency under Gamma burst | **Confirmed** | 56-69x TTFT p99 improvement; 96% rejection because per-input-token cost (mean 512) exceeds bucket capacity (500); rate-dependent (9x→69x) |
-| H10 | Tiered KV cache reduces preemptions vs single-tier | **Partially confirmed** (surprise) | Zero preemptions (routing policy mismatch with H8); tiered improves TTFT 18-28% via `maybeOffload` prefix hash stripping, not capacity increase |
+| H5 | Token-bucket admission reduces tail latency under Gamma burst | **Confirmed** (with nuance) | 69x TTFT improvement from 96% load shedding; calibrated bucket (cap=100K) shows <5% improvement — no sweet spot under CV=3.5 |
+| H10 | Tiered KV cache reduces preemptions vs single-tier | **Partially confirmed** (surprise) | `maybeOffload` confirmed as sole mechanism via confound matrix (offload=1.0 → byte-identical to single-tier); routing irrelevant; directional mechanism partially open |
 | H13 | Same seed produces byte-identical output | **Confirmed** | INV-6 holds for 5 policy configurations including stateful prefix-affinity scorer with LRU eviction |
 
 ## Running Experiments

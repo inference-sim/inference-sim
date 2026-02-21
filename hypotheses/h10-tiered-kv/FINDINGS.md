@@ -85,28 +85,32 @@ H8 used the default `round-robin` routing; this experiment used `least-loaded`. 
 
 With least-loaded routing at 2100 blocks, no single instance exceeds its KV capacity, so preemptions never trigger. H8's preemption cliff at 2100 blocks is **specific to round-robin routing** — least-loaded shifts the cliff to a lower block count.
 
-### Why the 18-28% TTFT improvement? Partially identified — open question
+### Why the 18-28% TTFT improvement? `maybeOffload` confirmed as mechanism
 
-Code-level investigation identified the code path that diverges but **the full causal chain is incomplete** (this section was revised after external review per RCV-3).
+**Experiment 4 (confound matrix) definitively resolves this question.**
 
-**What we know (verified):**
+The control experiment with `--kv-offload-threshold 1.0` (disables `maybeOffload`) produces output **byte-identical to single-tier** (TTFT=417.2ms). Setting it back to 0.8 produces TTFT=299.4ms. This proves `maybeOffload` is the sole cause of the 28% improvement.
 
-`NewKVStore` at `sim/kv_store.go:31-36` does NOT change GPU block count — both configurations have exactly 2100 GPU blocks. The only behavioral difference is:
+Additionally, the confound matrix shows **routing policy is irrelevant**: round-robin and least-loaded produce byte-identical output in all combinations. This disproves the earlier hypothesis about routing shifting the preemption cliff.
 
-1. `TieredKVCache.ReleaseKVBlocks` (`kvcache_tiered.go:149-151`) calls `maybeOffload()` after every request completion.
-2. `maybeOffload` (`kvcache_tiered.go:199-230`) checks if GPU utilization exceeds the offload threshold (0.8). When it does, it finds free blocks with cached prefix hashes and **strips the hash from GPU** (`delete(t.gpu.HashToBlock, blk.Hash)` at line 224), copying the content to CPU.
-3. These blocks remain on the GPU free list (re-added as empty blocks at line 228), but their **prefix cache entries are removed from GPU's hash table**.
-4. Subsequent `GetCachedBlocks` calls find fewer cached blocks on GPU, changing `startIndex` and `numNewTokens` in `makeRunningBatch` (`simulator.go:522-530`).
+**Confound Matrix (seed=42, GPU blocks=2100):**
 
-**What we don't know (logical gap):**
+| Routing | Tier | TTFT Mean | TTFT P99 | Preempt |
+|---|---|---|---|---|
+| round-robin | single-tier | 417.2 | 2305.0 | 0 |
+| round-robin | tiered(CPU=500, offload=0.8) | 299.4 | 1616.8 | 0 |
+| least-loaded | single-tier | 417.2 | 2305.0 | 0 |
+| least-loaded | tiered(CPU=500, offload=0.8) | 299.4 | 1616.8 | 0 |
+| least-loaded | tiered(CPU=500, **offload=1.0**) | **417.2** | **2305.0** | 0 |
 
-Step 4 produces **fewer cache hits**, which naively should increase `numNewTokens` and make TTFT **worse**, not better. The 18-28% improvement requires an explanation for why fewer cache hits helps. Candidate hypotheses (unverified):
+**The verified mechanism (steps 1-4, `sim/kvcache_tiered.go`):**
 
-- **Cache pollution avoidance**: Stale prefix hashes may produce false cache hits — the hash matches but the underlying block content is from a different eviction cycle. Stripping hashes forces fresh allocation, which may be faster than attempting to reuse partially-valid cached prefixes.
-- **Free list ordering effects**: Blocks stripped of hashes are re-appended to the free list tail (`kvcache_tiered.go:228`), changing the allocation order for subsequent requests. This could improve locality patterns.
-- **Second-order DES timing effects**: At 200 requests, small per-step latency differences cascade through the event queue, shifting when later requests arrive relative to batch boundaries.
+1. `ReleaseKVBlocks` (line 149-151) calls `maybeOffload()` after every request completion.
+2. `maybeOffload` (lines 199-230) checks if GPU utilization > 0.8. When it does, it strips prefix hashes from GPU free blocks via `delete(t.gpu.HashToBlock, blk.Hash)` at line 224.
+3. Subsequent `GetCachedBlocks` calls find fewer cached blocks, changing `numNewTokens` in `makeRunningBatch` (`simulator.go:522-530`).
+4. This different cache hit pattern cascades through batch formation and step timing.
 
-**To resolve**: A control experiment with `--kv-offload-threshold 1.0` (threshold=100%, so `maybeOffload` never fires) would isolate the `maybeOffload` mechanism. If TTFT difference vanishes, the mechanism is confirmed. If it persists, another explanation is needed.
+**The remaining directional question** — why fewer cache hits improves TTFT rather than worsening it — is partially open. Most likely explanation: `maybeOffload` strips **stale** prefix hashes that don't match upcoming requests. These stale entries cause `GetCachedBlocks` to return blocks that still need fresh allocation (false positive cache hits), adding overhead without saving prefill work. Stripping them eliminates this overhead. Further investigation would require logging per-request cache hit validity.
 
 ### Why the threshold effect (100 CPU blocks = full benefit)?
 
@@ -120,12 +124,13 @@ No blocks are actually reloaded from CPU to GPU (the `tryReloadFromCPU` path at 
 
 | Finding | Type | Action |
 |---------|------|--------|
-| Tiered KV improves TTFT by 18-28% — divergence point identified (`maybeOffload` hash stripping) but full causal chain incomplete | Surprise (open) | Code path verified; directional explanation has a logical gap (fewer cache hits should worsen TTFT). Control experiment proposed. |
-| Improvement is a threshold effect (100 CPU blocks = full benefit) | Surprise | Documented here — any CPU tier activates `maybeOffload`, exact size irrelevant |
-| Transfer bandwidth has zero impact when no reload occurs | Confirmation | Validates that the effect is hash-stripping, not block transfer |
-| Zero preemptions due to routing policy difference with H8 | Design limitation | H10 used least-loaded; H8 used round-robin. Preemption cliff is routing-dependent. |
-| INV-1 (conservation) holds across all 15 configurations | Confirmation | Documented here |
-| macOS `grep -P` (Perl regex) not available | Bug (script) | Fixed: use `grep -oE` instead |
+| `maybeOffload` confirmed as sole mechanism via control (offload=1.0 → byte-identical to single-tier) | Confirmation | Definitively resolved by Experiment 4 confound matrix |
+| Routing policy is irrelevant (round-robin = least-loaded, byte-identical) | Surprise | Disproves earlier hypothesis about routing shifting preemption cliff |
+| Improvement is a threshold effect (100 CPU blocks = full benefit) | Confirmation | Any CPU tier activates `maybeOffload`; exact size irrelevant |
+| Transfer bandwidth has zero impact when no reload occurs | Confirmation | `tryReloadFromCPU` never fires — no CPU→GPU transfers |
+| Directional mechanism partially open: fewer cache hits improves TTFT (likely stale hash elimination) | Open question | Needs per-request cache hit validity logging to fully resolve |
+| INV-1 (conservation) holds across all 20 configurations (exp1-4) | Confirmation | Documented here |
+| macOS `grep -P` (Perl regex) not available | Bug (script) | Use `grep -oE` instead |
 
 ## Standards Audit
 

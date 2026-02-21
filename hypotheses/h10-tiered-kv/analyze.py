@@ -282,10 +282,110 @@ def analyze_bandwidth(files):
         )
 
 
+def analyze_confound(files):
+    """Experiment 4: Confound matrix — routing × tier isolation."""
+    results = {}
+    for f in files:
+        name = Path(f).stem
+        results[name] = parse_output(f)
+
+    # Map names to the 2×2 matrix + control
+    matrix = {
+        "rr_single": ("round-robin", "single-tier",
+                       results.get("exp4_rr_single")),
+        "rr_tiered": ("round-robin", "tiered(CPU=500)",
+                       results.get("exp4_rr_tiered")),
+        "ll_single": ("least-loaded", "single-tier",
+                       results.get("exp1_single_42")),
+        "ll_tiered": ("least-loaded", "tiered(CPU=500)",
+                       results.get("exp1_tiered_42")),
+        "ll_noop":   ("least-loaded", "tiered(offload=1.0)",
+                       results.get("exp4_ll_tiered_noop")),
+    }
+
+    print("  Confound Matrix: Routing × Tier (seed=42)")
+    print()
+    print(
+        f"  {'Routing':<14} {'Tier':<22}"
+        f" | {'TTFT Mean':>10} {'P99':>10}"
+        f" | {'E2E P99':>10}"
+        f" | {'Preempt':>7} {'Comp':>5} {'INV-1':>5}"
+    )
+    print(
+        f"  {'-'*14} {'-'*22}"
+        f"-+-{'-'*10} {'-'*10}"
+        f"-+-{'-'*10}"
+        f"-+-{'-'*7} {'-'*5} {'-'*5}"
+    )
+
+    for key in ["rr_single", "rr_tiered", "ll_single", "ll_tiered",
+                "ll_noop"]:
+        routing, tier, r = matrix[key]
+        if r is None:
+            print(
+                f"  {routing:<14} {tier:<22}"
+                f" | {'TIMEOUT':>10} {'':>10}"
+                f" | {'':>10}"
+                f" | {'':>7} {'':>5} {'':>5}"
+            )
+            continue
+        inv1 = "OK" if r["conserved"] else "FAIL"
+        print(
+            f"  {routing:<14} {tier:<22}"
+            f" | {r['ttft_mean']:>10.1f} {r['ttft_p99']:>10.1f}"
+            f" | {r['e2e_p99']:>10.1f}"
+            f" | {r['preemptions']:>7} {r['completed']:>5} {inv1:>5}"
+        )
+
+    # Interpretation
+    rr_s = matrix["rr_single"][2]
+    rr_t = matrix["rr_tiered"][2]
+    ll_s = matrix["ll_single"][2]
+    ll_t = matrix["ll_tiered"][2]
+    ll_n = matrix["ll_noop"][2]
+
+    print()
+    if rr_s and rr_t:
+        if rr_s["preemptions"] > 0 and rr_t["preemptions"] < rr_s["preemptions"]:
+            pct = (
+                (rr_s["preemptions"] - rr_t["preemptions"])
+                / rr_s["preemptions"] * 100
+            )
+            print(
+                f"  Round-robin: tiered reduces preemptions by {pct:.1f}%"
+                f" ({rr_s['preemptions']}→{rr_t['preemptions']})"
+            )
+        elif rr_s and rr_s["preemptions"] > 0:
+            print(
+                f"  Round-robin: single-tier has {rr_s['preemptions']}"
+                f" preemptions; tiered has {rr_t['preemptions'] if rr_t else '?'}"
+            )
+        else:
+            print("  Round-robin: no preemptions in either tier")
+
+    if ll_t and ll_n:
+        delta = ll_n["ttft_mean"] - ll_t["ttft_mean"]
+        if abs(delta) < 1.0:
+            print(
+                f"  maybeOffload control: threshold=1.0 produces"
+                f" TTFT={ll_n['ttft_mean']:.1f}ms vs"
+                f" threshold=0.8 TTFT={ll_t['ttft_mean']:.1f}ms"
+                f" (delta={delta:.1f}ms — maybeOffload has NO effect)"
+            )
+        else:
+            print(
+                f"  maybeOffload control: threshold=1.0 produces"
+                f" TTFT={ll_n['ttft_mean']:.1f}ms vs"
+                f" threshold=0.8 TTFT={ll_t['ttft_mean']:.1f}ms"
+                f" (delta={delta:.1f}ms — maybeOffload IS the mechanism)"
+            )
+
+
 ANALYZERS = {
     "core": analyze_core,
     "scaling": analyze_scaling,
     "bandwidth": analyze_bandwidth,
+    "confound": analyze_confound,
 }
 
 if __name__ == "__main__":
