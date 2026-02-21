@@ -1,9 +1,11 @@
 # H10: Tiered KV Cache (GPU+CPU Offload)
 
-**Status:** Partially confirmed (surprise finding)
+**Status:** Inconclusive (hypothesis untested; surprise finding instead)
+**Resolution:** The hypothesis predicted preemption reduction via CPU offload. Zero preemptions occurred in ALL configurations (single-tier, tiered, round-robin, least-loaded), so the preemption-reduction claim was never tested. A surprise finding emerged: `maybeOffload` improves TTFT by 28% through prefix hash stripping (mechanism confirmed via byte-identical control experiment), but the directional explanation (why fewer cache hits helps) remains an open question requiring per-request cache-hit-validity logging.
 **Tier:** 3 (system understanding)
 **Type:** Statistical / Dominance
 **Date:** 2026-02-20
+**Rounds:** 3 (Round 1: wrong root cause. Round 2: mechanism identified but direction unexplained. Round 3: confound matrix confirmed mechanism, directional gap acknowledged as open.)
 
 ## Hypothesis
 
@@ -136,21 +138,23 @@ No blocks are actually reloaded from CPU to GPU (the `tryReloadFromCPU` path at 
 
 Findings checked against docs/standards/:
 - [x] Any violations of existing rules? **None found.** All configurations complete 200/200 requests with INV-1 satisfied.
-- [x] Any new rules needed? **Candidate R21: Document capacity thresholds and their dependencies.** The preemption cliff at 2100 blocks is routing-policy-dependent (round-robin vs least-loaded). When a feature's behavior depends on a sharp threshold, document which parameters affect it. **Candidate R22: Controlled experiments must match ALL parameters.** H10 inadvertently changed routing policy from H8's setup, invalidating the precondition calibration.
+- [x] Any new rules needed? **Candidate R21: Document capacity thresholds and their dependencies.** H8 found the preemption cliff at 2100-2200 blocks, but H10's confound matrix shows zero preemptions at 2100 blocks with BOTH round-robin and least-loaded. The cliff appears to have shifted between H8 and current HEAD (possibly #307 bugfix). Thresholds should be re-validated after code changes. **Candidate R22: Controlled experiments must match ALL parameters (ED-6).** H10 initially used different routing than H8 without noticing.
 - [x] Any new invariants needed? **None** — existing INV-1 and INV-4 cover the relevant properties.
 - [x] Any existing rules/invariants confirmed? **INV-1 confirmed** across all 15 configurations (5 CPU sizes × 3 tiers + 5 bandwidth configs). **INV-4 implied** (no allocation failures).
 
 ## Implications for Users
 
-1. **The CPU tier changes prefix cache behavior even without preemptions.** Adding any CPU tier activates `maybeOffload`, which strips prefix hashes from GPU free blocks. This subtly changes cache hit patterns and can improve TTFT by 18-28%. The benefit is not from "more capacity" but from different cache behavior.
+1. **The hypothesis (preemption reduction via offload) was never tested.** Zero preemptions occurred in all configurations. The preemption cliff from H8 (2100-2200 blocks) appears to have shifted — possibly due to the #307 bugfix. Users should not cite this experiment as evidence that tiered KV reduces preemptions.
 
-2. **Don't over-provision the CPU tier for this effect.** 100 CPU blocks produces the full benefit; 1,000 produces identical output. The `maybeOffload` mechanism saturates as soon as there's any CPU capacity available.
+2. **Adding a CPU tier improves TTFT by 18-28% through an unexpected mechanism.** `maybeOffload` strips prefix hashes from GPU free blocks, changing cache hit patterns. This is confirmed via byte-identical control (threshold=1.0 = single-tier behavior). However, **why** this improves TTFT rather than worsening it (fewer cache hits should mean more prefill work) is not yet understood.
 
-3. **Transfer bandwidth doesn't matter unless preemptions trigger reloads.** Without GPU allocation failures, no blocks transfer between tiers. Only configure bandwidth when operating below the preemption cliff.
+3. **Don't over-provision the CPU tier for this effect.** 100 CPU blocks produces the full benefit; 1,000 produces identical output. The mechanism saturates once any CPU capacity exists.
 
-4. **The preemption cliff depends on routing policy.** H8 found the cliff at 2100-2200 blocks with round-robin routing. Least-loaded routing shifts it lower by balancing KV pressure. Always specify the routing policy when citing preemption thresholds.
+4. **Transfer bandwidth is irrelevant in this regime.** No CPU-to-GPU transfers occur because GPU allocation never fails. Only configure bandwidth parameters when operating below the preemption cliff.
 
-5. **To test actual offload/reload mechanics:** Use round-robin routing (to match H8's preemption conditions) with GPU blocks at or below the cliff (2000-2100). Alternatively, use least-loaded with fewer blocks (~1500-1800).
+5. **To properly test the original hypothesis (preemption reduction):** Use fewer GPU blocks (1500-1800) to trigger actual preemptions, then compare single-tier vs tiered. This experiment did not do that.
+
+6. **The experiment's value is in the surprise finding and the methodology.** The confound matrix (routing × tier × offload threshold) is a reusable pattern for isolating mechanisms in multi-variable experiments.
 
 ## Reproducing
 

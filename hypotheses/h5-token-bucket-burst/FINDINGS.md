@@ -1,9 +1,11 @@
 # H5: Token-Bucket Admission Control Under Burst
 
-**Status:** Confirmed (with nuance — see Experiment 4)
+**Status:** Refuted
+**Resolution:** Refuted — wrong mental model. The hypothesis predicted burst smoothing (reject some during bursts, improve latency for the rest). Actual results: at practical bucket parameters (cap >> mean input), rejection is 0.8-5% and TTFT improvement is <5% (negligible). At the original parameters (cap < mean input), 96% rejection produces 69x improvement — but that is load shedding, not burst smoothing. There is no sweet spot under Gamma CV=3.5 where moderate rejection gives meaningful improvement.
 **Tier:** 3 (system understanding)
 **Type:** Statistical / Dominance
 **Date:** 2026-02-20
+**Rounds:** 3 (Round 1: wrong root cause. Round 2: corrected token-cost math. Round 3: calibrated bucket disproved burst smoothing.)
 
 ## Hypothesis
 
@@ -114,12 +116,11 @@ Despite the extreme demand/supply mismatch:
 
 | Finding | Type | Action |
 |---------|------|--------|
-| Token-bucket reduces TTFT p99 by 56-69x under Gamma CV=3.5 burst | Confirmation | Documented here |
+| **Burst smoothing does not work under Gamma CV=3.5** | Refutation | The central hypothesis claim. Calibrated bucket (cap=100K) admits ~95% of traffic with <5% TTFT improvement. The mechanism the hypothesis predicted does not produce meaningful results. |
+| 69x TTFT improvement is load shedding, not burst smoothing | Design limitation | Token-bucket at cap=500 rejects 96% of traffic. The improvement is trivially explained by near-empty queues for the 4% that get through. |
+| Token-bucket cost is per-input-token (`admission.go:45`), not per-request | Design limitation | `--token-bucket-capacity` and `--token-bucket-refill-rate` parameter names suggest per-request cost. Users must size relative to input token counts. File issue to clarify CLI help text. |
 | Gamma arrival sampler (Marsaglia-Tsang) produces expected burstiness | Confirmation | Validated by rate-scaling monotonicity |
-| 96% rejection driven by per-input-token cost (512 tokens/req >> 500 capacity) | Surprise | Token demand exceeds supply by 2,560x. Not a bug — correct per-token admission model, but parameters need calibration for token-cost (not request-count) admission. |
-| TTFT improvement is monotonically rate-dependent (9x→69x from 200→2000) | Confirmation | Documented here |
-| Bucket parameter sensitivity is smooth and monotonic | Confirmation | Documented here |
-| Calibrated bucket (cap=100K, refill=600K) shows <5% TTFT improvement with <5% rejection | Surprise | No practical sweet spot under Gamma CV=3.5 — the 69x result was from load shedding, not burst smoothing |
+| No practical sweet spot exists under Gamma CV=3.5 | Design limitation | Either massive load shedding (96% reject → 69x better) or negligible effect (<5% reject → <5% better). The middle ground does not exist for this workload. |
 
 ## Standards Audit
 
@@ -131,15 +132,15 @@ Findings checked against docs/standards/:
 
 ## Implications for Users
 
-1. **Token-bucket is effective for tail latency under burst**, but the per-input-token cost model means parameters must be sized relative to token counts, not request counts. With mean input=512 tokens, a bucket capacity of 500 cannot even hold one average request.
+1. **Token-bucket does NOT smooth bursts under Gamma CV=3.5.** At practical parameters (cap >> mean input), the bucket admits almost everything and provides negligible latency improvement. The hypothesis that admission control can smooth bursty traffic at high CV is wrong for this system — the queues build and drain too quickly for per-request token-level admission to help.
 
-2. **Size bucket capacity to your token distribution**: Capacity should be >> mean input tokens (e.g., cap=50,000 for mean=512). The refill rate should match the desired token throughput (e.g., refill=500,000 for 1,000 req/s × 512 tokens/req). The experiment's parameters (cap=500, refill=400) model extreme load shedding, not moderate smoothing.
+2. **The 69x result is load shedding, not admission control.** Rejecting 96% of traffic trivially improves latency for the 4% that pass. This is useful only if you genuinely want to serve 4% of traffic (e.g., protecting a degraded system from total overload). It is not a tuning knob for normal operation.
 
-3. **The improvement is consistent**: 56-69x TTFT P99 improvement across all 3 seeds, with <2x variation between seeds. This is a robust, not fragile, effect.
+3. **Token-bucket cost model is per-input-token**, not per-request (`admission.go:45`). Parameters must be sized relative to token distributions. With mean input=512 tokens, `--token-bucket-capacity 500` cannot admit a single average request. This is a documentation gap.
 
-4. **Rate-dependent**: At low rates (200 req/s), the system absorbs bursts naturally and the token-bucket adds less value (9x vs 69x). Consider admission control only when the system operates near saturation.
+4. **For burst smoothing under high CV, look elsewhere.** Rate limiting at the arrival layer (e.g., Poisson thinning before the token-bucket) or queue-depth-based admission (reject when queue exceeds threshold) may be more effective than token-bucket for Gamma CV>3. This experiment does not test those alternatives.
 
-5. **E2E latency is NOT reduced by the same magnitude**: Token-bucket TTFT improves by 69x but E2E improves by only 1.7x (12,713→7,398). This is because E2E includes decode time which is independent of admission policy. Token-bucket specifically helps the **queuing** component of latency.
+5. **The experiment's value is in the refutation.** Knowing that token-bucket burst smoothing doesn't work at CV=3.5 prevents users from deploying it in that regime expecting it to help.
 
 ## Reproducing
 
