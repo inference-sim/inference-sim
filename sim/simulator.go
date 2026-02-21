@@ -410,9 +410,19 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 	for {
 		if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int64{}); !ok {
 			// Could not allocate (e.g., no free blocks)
+
+			// Circuit breaker: if batch is empty and allocation still fails,
+			// the KV cache is too small for this request. Return false instead
+			// of panicking on empty slice access. (#293, #297, R19)
+			if len(sim.RunningBatch.Requests) == 0 {
+				logrus.Warnf("[tick %07d] preemption: KV cache too small for request %s (need %d tokens, no running requests to evict)",
+					now, req.ID, numNewTokens)
+				return false
+			}
+
 			sim.preemptionHappened = true
 			sim.Metrics.PreemptionCount++
-			preemptionDelay := sim.getPreemptionProcessingTime() // model it or constant?
+			preemptionDelay := sim.getPreemptionProcessingTime()
 			preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
 			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", now, preemptedRequest.ID)
 			sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]

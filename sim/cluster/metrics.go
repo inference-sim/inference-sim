@@ -164,9 +164,10 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 // detectPriorityInversions counts priority inversion events from per-instance metrics.
 // PR9 heuristic: counts pairs where an earlier-arriving request has
 // worse E2E than a later-arriving request (with 2× threshold).
+// Requests are grouped by SLO class before comparison — cross-class differences
+// reflect workload size heterogeneity, not scheduling unfairness. (#292, R20)
 // When priorityPolicy is "constant" or "" (both map to ConstantPriority),
-// returns 0 — all requests share the same priority, so E2E differences
-// reflect workload variance, not scheduling unfairness.
+// returns 0 — all requests share the same priority.
 func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string) int {
 	if priorityPolicy == "constant" || priorityPolicy == "" {
 		return 0
@@ -180,11 +181,18 @@ func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string)
 			arrived float64
 			e2e     float64
 		}
-		var reqs []reqInfo
+		// Group requests by SLO class to avoid cross-class false positives (#292, R20).
+		// Requests in different SLO classes have naturally different E2E due to
+		// workload size differences, not scheduling unfairness.
+		groups := make(map[string][]reqInfo)
 		skippedCount := 0
 		for id, rm := range m.Requests {
 			if e2e, ok := m.RequestE2Es[id]; ok {
-				reqs = append(reqs, reqInfo{arrived: rm.ArrivedAt, e2e: e2e})
+				sloClass := rm.SLOClass
+				if sloClass == "" {
+					sloClass = "default"
+				}
+				groups[sloClass] = append(groups[sloClass], reqInfo{arrived: rm.ArrivedAt, e2e: e2e})
 			} else {
 				skippedCount++
 			}
@@ -192,13 +200,26 @@ func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string)
 		if skippedCount > 0 {
 			logrus.Warnf("detectPriorityInversions: %d requests missing E2E data, skipped", skippedCount)
 		}
-		sort.Slice(reqs, func(i, j int) bool {
-			return reqs[i].arrived < reqs[j].arrived
-		})
-		for i := 0; i < len(reqs)-1; i++ {
-			for j := i + 1; j < len(reqs); j++ {
-				if reqs[i].e2e > reqs[j].e2e*2.0 {
-					count++
+		// Check inversions within each SLO class.
+		// Sort group keys for deterministic iteration (R2).
+		sloClasses := make([]string, 0, len(groups))
+		for cls := range groups {
+			sloClasses = append(sloClasses, cls)
+		}
+		sort.Strings(sloClasses)
+		for _, cls := range sloClasses {
+			reqs := groups[cls]
+			if len(reqs) < 2 {
+				continue
+			}
+			sort.Slice(reqs, func(i, j int) bool {
+				return reqs[i].arrived < reqs[j].arrived
+			})
+			for i := 0; i < len(reqs)-1; i++ {
+				for j := i + 1; j < len(reqs); j++ {
+					if reqs[i].e2e > reqs[j].e2e*2.0 {
+						count++
+					}
 				}
 			}
 		}
@@ -209,30 +230,31 @@ func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string)
 // detectHOLBlocking counts head-of-line blocking events from per-instance metrics.
 // HOL blocking is detected when any instance's average queue depth exceeds
 // 2× the mean average queue depth across all instances.
+// Instances with no traffic are included with avg=0.0 — an instance receiving
+// 0 requests while a sibling receives 500 IS HOL blocking. (#291, R20)
 func detectHOLBlocking(perInstance []*sim.Metrics) int {
 	if len(perInstance) < 2 {
 		return 0
 	}
 
-	// Only include instances with queue depth samples in the mean calculation
-	var avgDepths []float64
+	// Include ALL instances in the comparison. Instances with no traffic
+	// contribute avg=0.0, which correctly lowers the mean and makes
+	// concentrated instances stand out. (#291, R20)
+	avgDepths := make([]float64, 0, len(perInstance))
 	totalAvg := 0.0
 	for _, m := range perInstance {
-		if len(m.NumWaitQRequests) == 0 {
-			continue
+		avg := 0.0
+		if len(m.NumWaitQRequests) > 0 {
+			sum := 0
+			for _, d := range m.NumWaitQRequests {
+				sum += d
+			}
+			avg = float64(sum) / float64(len(m.NumWaitQRequests))
 		}
-		sum := 0
-		for _, d := range m.NumWaitQRequests {
-			sum += d
-		}
-		avg := float64(sum) / float64(len(m.NumWaitQRequests))
 		avgDepths = append(avgDepths, avg)
 		totalAvg += avg
 	}
 
-	if len(avgDepths) < 2 {
-		return 0 // need at least 2 instances with samples
-	}
 	meanAvg := totalAvg / float64(len(avgDepths))
 
 	count := 0
