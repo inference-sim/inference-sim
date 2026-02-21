@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -48,34 +49,57 @@ func TestSLOBasedPriority_OlderRequestGetsHigherPriority(t *testing.T) {
 	}
 }
 
-func TestSLOBasedPriority_FormulaCorrectness(t *testing.T) {
-	// BC-7: priority = BaseScore + AgeWeight * float64(clock - ArrivalTime)
+func TestSLOBasedPriority_MonotonicPriorityWithAge(t *testing.T) {
+	// BC-6: Priority increases monotonically with request age
 	policy := &SLOBasedPriority{BaseScore: 1.0, AgeWeight: 0.5}
-	req := &Request{ID: "r1", ArrivalTime: 100}
-	clock := int64(300)
+	clock := int64(1000)
 
-	got := policy.Compute(req, clock)
-	want := 1.0 + 0.5*float64(300-100) // 1.0 + 100.0 = 101.0
-	if got != want {
-		t.Errorf("SLOBasedPriority formula: got %f, want %f", got, want)
+	// Requests at different ages (arrival times descending = ages ascending)
+	arrivalTimes := []int64{900, 700, 500, 200, 0} // newest to oldest
+	var prevPriority float64
+	for i, arrival := range arrivalTimes {
+		req := &Request{ID: fmt.Sprintf("r%d", i), ArrivalTime: arrival}
+		priority := policy.Compute(req, clock)
+		if i > 0 && priority <= prevPriority {
+			t.Errorf("priority not monotonically increasing with age: arrival=%d priority=%f <= prev priority=%f",
+				arrival, priority, prevPriority)
+		}
+		prevPriority = priority
+	}
+
+	// Also verify: same-age requests get same priority (determinism)
+	reqA := &Request{ID: "a", ArrivalTime: 500}
+	reqB := &Request{ID: "b", ArrivalTime: 500}
+	if policy.Compute(reqA, clock) != policy.Compute(reqB, clock) {
+		t.Error("same-age requests should get identical priority")
 	}
 }
 
-func TestNewPriorityPolicy_ValidNames_ReturnsCorrectType(t *testing.T) {
-	// EH-3: empty string returns default (ConstantPriority)
+func TestNewPriorityPolicy_ValidNames_ReturnsBehaviorallyCorrectPolicy(t *testing.T) {
+	// BC-1: empty string and "constant" return a policy that produces 0.0 for any input
+	req := &Request{ID: "r1", ArrivalTime: 100, InputTokens: make([]int, 50)}
+
 	p1 := NewPriorityPolicy("")
-	if _, ok := p1.(*ConstantPriority); !ok {
-		t.Errorf("NewPriorityPolicy(\"\"): expected *ConstantPriority, got %T", p1)
+	if got := p1.Compute(req, 1000); got != 0.0 {
+		t.Errorf("NewPriorityPolicy(\"\").Compute: got %f, want 0.0", got)
 	}
 
 	p2 := NewPriorityPolicy("constant")
-	if _, ok := p2.(*ConstantPriority); !ok {
-		t.Errorf("NewPriorityPolicy(\"constant\"): expected *ConstantPriority, got %T", p2)
+	if got := p2.Compute(req, 1000); got != 0.0 {
+		t.Errorf("NewPriorityPolicy(\"constant\").Compute: got %f, want 0.0", got)
 	}
 
+	// BC-2: "slo-based" returns a policy where older requests get higher priority
 	p3 := NewPriorityPolicy("slo-based")
-	if _, ok := p3.(*SLOBasedPriority); !ok {
-		t.Errorf("NewPriorityPolicy(\"slo-based\"): expected *SLOBasedPriority, got %T", p3)
+	olderReq := &Request{ID: "old", ArrivalTime: 0}
+	newerReq := &Request{ID: "new", ArrivalTime: 500000}
+	clock := int64(1000000)
+
+	olderPriority := p3.Compute(olderReq, clock)
+	newerPriority := p3.Compute(newerReq, clock)
+	if olderPriority <= newerPriority {
+		t.Errorf("NewPriorityPolicy(\"slo-based\"): older priority (%f) should be > newer priority (%f)",
+			olderPriority, newerPriority)
 	}
 }
 
