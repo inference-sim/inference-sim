@@ -70,3 +70,116 @@ func validateInferencePerfSpec(spec *InferencePerfSpec) error {
 	}
 	return nil
 }
+
+// ExpandInferencePerfSpec converts an InferencePerfSpec into a standard WorkloadSpec.
+// The seed is passed through to the resulting WorkloadSpec.
+// Returns error if the spec is invalid.
+func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec, error) {
+	if err := validateInferencePerfSpec(spec); err != nil {
+		return nil, fmt.Errorf("validating inference-perf spec: %w", err)
+	}
+
+	sp := spec.SharedPrefix
+	numClients := sp.NumUniqueSystemPrompts * sp.NumUsersPerSystemPrompt
+
+	// Compute aggregate rate as time-weighted average across stages.
+	// Division is safe: validation guarantees at least one stage with positive duration.
+	var totalDuration int64
+	var weightedRateSum float64
+	for _, stage := range spec.Stages {
+		totalDuration += stage.Duration
+		weightedRateSum += stage.Rate * float64(stage.Duration)
+	}
+	aggregateRate := weightedRateSum / float64(totalDuration)
+
+	// Compute lifecycle windows from stages (nil for single stage)
+	windows := stagesToWindows(spec.Stages)
+
+	// Build constant distributions for fixed lengths
+	inputDist := constantDist(float64(sp.QuestionLen))
+	outputDist := constantDist(float64(sp.OutputLen))
+
+	// Build optional reasoning spec for multi-turn
+	var reasoning *ReasoningSpec
+	if sp.EnableMultiTurnChat {
+		reasoning = &ReasoningSpec{
+			ReasonRatioDist: DistSpec{
+				Type:   "constant",
+				Params: map[string]float64{"value": 0},
+			},
+			MultiTurn: &MultiTurnSpec{
+				MaxRounds:     5,
+				ThinkTimeUs:   500000, // 500ms
+				ContextGrowth: "accumulate",
+			},
+		}
+	}
+
+	category := "language"
+	if sp.EnableMultiTurnChat {
+		category = "reasoning"
+	}
+
+	// Generate N*M clients
+	clients := make([]ClientSpec, 0, numClients)
+	rateFraction := 1.0 / float64(numClients)
+
+	for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+		prefixGroup := fmt.Sprintf("prompt-%d", p)
+		for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+			clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+			client := ClientSpec{
+				ID:           clientID,
+				TenantID:     prefixGroup,
+				SLOClass:     "batch",
+				RateFraction: rateFraction,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    inputDist,
+				OutputDist:   outputDist,
+				PrefixGroup:  prefixGroup,
+				PrefixLength: sp.SystemPromptLen,
+				Reasoning:    reasoning,
+			}
+			if len(windows) > 0 {
+				client.Lifecycle = &LifecycleSpec{Windows: windows}
+			}
+			clients = append(clients, client)
+		}
+	}
+
+	return &WorkloadSpec{
+		Version:       "1",
+		Seed:          seed,
+		Category:      category,
+		AggregateRate: aggregateRate,
+		Clients:       clients,
+	}, nil
+}
+
+// stagesToWindows converts stage specs into lifecycle ActiveWindows.
+// Returns nil for single-stage specs (always active, no windows needed).
+// Duration is in seconds, converted to microseconds for BLIS.
+func stagesToWindows(stages []StageSpec) []ActiveWindow {
+	if len(stages) <= 1 {
+		return nil
+	}
+	windows := make([]ActiveWindow, len(stages))
+	var offsetUs int64
+	for i, stage := range stages {
+		durationUs := stage.Duration * 1_000_000 // seconds to microseconds
+		windows[i] = ActiveWindow{
+			StartUs: offsetUs,
+			EndUs:   offsetUs + durationUs,
+		}
+		offsetUs += durationUs
+	}
+	return windows
+}
+
+// constantDist creates a DistSpec for a constant (zero-variance) distribution.
+func constantDist(value float64) DistSpec {
+	return DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": value},
+	}
+}
