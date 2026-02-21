@@ -71,8 +71,8 @@ The distinction: **"open and requires different tooling"** is a stopping point. 
 **Steps 1-4 apply to Round 1 only. Subsequent rounds start at step 5.**
 
 1. **Select or pose hypothesis** — from `docs/plans/research.md` or from a new observation
-2. **Classify** — deterministic or statistical? If statistical, which subtype? (See [experiments.md](../standards/experiments.md))
-3. **Design experiment** — ED-1 through ED-6
+2. **Classify** — (a) which hypothesis family? (b) deterministic or statistical? If statistical, which subtype? The family determines which design rules and verification steps are most important. (See [experiments.md](../standards/experiments.md))
+3. **Design experiment** — ED-1 through ED-6, with family-specific considerations
 4. **Implement** — create `hypotheses/<name>/run.sh`, `analyze.py`
 5. **Code review experiment code** — BEFORE running. See [Code Review Before Execution](#code-review-before-execution) below.
 6. **Run** — execute across required seeds; verify reproducibility (ED-5)
@@ -235,13 +235,10 @@ H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H
 - Standards: [docs/standards/experiments.md](../standards/experiments.md)
 - Template: [docs/templates/hypothesis.md](../templates/hypothesis.md)
 - Hypothesis catalog: [docs/plans/research.md](../plans/research.md)
-- Validated experiments:
-  - `hypotheses/h3-signal-freshness/` — signal freshness (Tier 2, statistical dominance)
-  - `hypotheses/h8-kv-pressure/` — KV cache pressure (Tier 3, statistical monotonicity)
-  - `hypotheses/h9-prefix-caching/` — prefix caching effectiveness (Tier 2, statistical monotonicity)
-  - `hypotheses/h12-conservation/` — request conservation invariant (Tier 1, deterministic)
-  - `hypotheses/h14-pathological-templates/` — pathological policy templates (Tier 2, statistical dominance)
-  - `hypotheses/prefix-affinity/` — prefix-affinity routing (Tier 2, statistical dominance)
-  - `hypotheses/h5-token-bucket-burst/` — token-bucket admission under burst (Tier 3, statistical dominance)
-  - `hypotheses/h10-tiered-kv/` — tiered KV cache GPU+CPU offload (Tier 3, statistical dominance)
-  - `hypotheses/h13-determinism/` — determinism invariant INV-6 (Tier 1, deterministic)
+- Validated experiments (by family):
+  - **Scheduler invariants:** `h12-conservation/` (Tier 1, deterministic), `h13-determinism/` (Tier 1, deterministic)
+  - **Structural model:** `h3-signal-freshness/` (Tier 2, dominance), `h8-kv-pressure/` (Tier 3, monotonicity), `h9-prefix-caching/` (Tier 2, monotonicity), `h10-tiered-kv/` (Tier 3, dominance)
+  - **Robustness/failure-mode:** `h14-pathological-templates/` (Tier 2, dominance), `h5-token-bucket-burst/` (Tier 3, dominance)
+  - **Cross-policy comparative:** `prefix-affinity/` (Tier 2, dominance)
+  - **Workload/arrival:** *(none yet)*
+  - **Performance-regime:** *(none yet)*

@@ -2,6 +2,8 @@
 
 Invariants are properties that must hold at all times during and after simulation. They are verified by invariant tests (see R7) and checked during self-audit (Step 4.75).
 
+**Hypothesis family mapping:** INV-1 through INV-6 belong to the **Scheduler invariants (safety/liveness)** family. INV-7 belongs to the **Structural model** family. See `docs/standards/experiments.md` for hypothesis family definitions.
+
 ## INV-1: Request Conservation
 
 **Statement:** `injected_requests == completed_requests + still_queued + still_running` at simulation end (all levels).

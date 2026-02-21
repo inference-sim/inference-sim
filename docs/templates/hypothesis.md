@@ -11,6 +11,7 @@ Every experiment's `FINDINGS.md` MUST contain these sections:
 
 **Status:** Confirmed | Confirmed with nuance | Partially confirmed | Refuted | Inconclusive
 **Resolution:** <one of: Clean confirmation | Confirmation with wrong mechanism | Confirmation with bug discovery | Partial confirmation with surprise | Refuted — mechanism not plausible | Refuted — system design flaw | Refuted — wrong mental model | Inconclusive — parameter-dependent | Converged to open question>
+**Family:** <one of: Workload/arrival | Scheduler invariants | Performance-regime | Structural model | Robustness/failure-mode | Cross-policy comparative>
 **Tier:** <tier number from research.md>
 **Type:** Deterministic | Statistical (<subtype>)
 **Date:** YYYY-MM-DD

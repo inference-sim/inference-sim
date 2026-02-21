@@ -94,6 +94,52 @@ When a conceptual hypothesis fails because the implementation doesn't support th
 
 ---
 
+## Hypothesis Families
+
+Every hypothesis belongs to a **family** (what domain is being tested) AND a **type** (how rigor is assessed). These are orthogonal — a scheduler invariant can be deterministic or statistical; a cross-policy comparison is always statistical.
+
+### The six families
+
+| Family | Tests | Hypothesis shape | Typical type | Examples |
+|--------|-------|-----------------|-------------|---------|
+| **Workload/arrival** | Input generation: distributions, rates, burstiness, mix proportions | "Generator X produces arrivals matching distribution D within tolerance T" | Statistical | H5 (Gamma burstiness), H16, H20 |
+| **Scheduler invariants (safety/liveness)** | Conservation, determinism, lifecycle, livelock protection | "For ALL configurations, property P holds" (universally quantified) | Deterministic | H12 (conservation), H13 (determinism), H25 |
+| **Performance-regime (scaling laws)** | Saturation curves, throughput-latency tradeoffs, horizontal scaling | "Metric M is monotonic/convex in parameter P" | Statistical/Monotonicity | H7 (scaling), H8 (KV pressure), H11 (batch formation) |
+| **Structural model** | DES model assumptions: phase structure, KV mechanics, signal freshness, prefix caching | "Component C behaves according to model assumption A" | Mixed | H3 (signal freshness), H9 (prefix caching), H10 (tiered KV), H26 |
+| **Robustness/failure-mode** | Overload, misconfiguration, degenerate inputs, pathological policies | "Under stress condition S, the system exhibits defined behavior B (not undefined state)" | Deterministic or Statistical | H14 (pathological), H21, H22, H24 |
+| **Cross-policy comparative** | Policy ordering, Pareto frontiers, robustness to workload shifts | "There EXISTS a workload where policy A beats B on metric M" (existentially quantified) | Statistical/Dominance or Pareto | H1, H2, H4, H6, H15, H17, H18, H19, H23 |
+
+### Family × Type matrix
+
+| | Deterministic | Statistical/Dominance | Statistical/Monotonicity | Statistical/Equivalence | Statistical/Pareto |
+|---|---|---|---|---|---|
+| Workload/arrival | Seed reproducibility | Distribution match | Rate scaling | — | — |
+| Scheduler invariants | **Primary** (INV-1 through INV-6) | — | — | — | — |
+| Performance-regime | — | — | **Primary** (scaling curves) | Baseline sanity | Knee behavior |
+| Structural model | Phase structure | Signal freshness | Cache effectiveness | — | — |
+| Robustness | Input validation | Overload behavior | — | — | — |
+| Cross-policy | — | **Primary** (A vs B) | — | Low-load equivalence | Multi-scorer tradeoffs |
+
+### Family determines rigor requirements
+
+- **Scheduler invariants**: Single seed sufficient. Pass/fail is exact. One failure = bug.
+- **Cross-policy comparative**: 3+ seeds minimum. Must control confounding variables (ED-1, ED-6).
+- **Performance-regime**: Sweep points (≥3 values of the independent variable), not just pairwise comparison.
+- **Workload/arrival**: Statistical tests on generated distributions. Long runs for accurate rate estimation.
+- **Structural model**: Code-level verification (RCV-1, RCV-4) is essential — these test implementation assumptions.
+- **Robustness**: Must test BOTH the defined behavior AND verify no undefined states (deadlock, panic, data loss).
+
+### Relationship to existing invariants and rules
+
+| Family | Related invariants | Related rules |
+|--------|-------------------|---------------|
+| Scheduler invariants | INV-1 (conservation), INV-2 (lifecycle), INV-3 (clock monotonicity), INV-5 (causality), INV-6 (determinism) | R1 (no silent data loss), R5 (transactional mutation) |
+| Structural model | INV-4 (KV conservation), INV-7 (signal freshness) | R2 (sort map keys), R11 (guard division), R17 (signal freshness) |
+| Robustness | — | R3 (validate CLI flags), R19 (livelock protection), R20 (degenerate inputs) |
+| Cross-policy | — | R18 (CLI flag precedence) |
+
+---
+
 ## Experiment Design Rules
 
 ### ED-1: Controlled comparison

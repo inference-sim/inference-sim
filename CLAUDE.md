@@ -343,7 +343,7 @@ inference-sim/
 - `docs/standards/rules.md`: **20 antipattern rules** (R1-R20) — each with evidence, checks, enforcement locations
 - `docs/standards/invariants.md`: **7 system invariants** (INV-1 through INV-7) — with verification strategies
 - `docs/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
-- `docs/standards/experiments.md`: **Experiment standards** — taxonomy, rigor requirements, findings classification
+- `docs/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol, findings classification
 
 ### Process (how to do each activity)
 
