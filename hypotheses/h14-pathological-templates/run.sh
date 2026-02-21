@@ -58,13 +58,13 @@ trap "rm -rf $RESULTS_DIR" EXIT
 
 echo "Experiment 1: Normal vs Pathological (rate=2000, 500 requests, 3 seeds)"
 echo "  Normal:       least-loaded + priority-fcfs + slo-based"
-echo "  Pathological: always-busiest + reverse-priority + inverted-slo"
+echo "  Pathological: always-busiest + priority-fcfs + inverted-slo"
 echo ""
 
 for SEED in 42 123 456; do
     run_sim "least-loaded" "priority-fcfs" "slo-based" "$SEED" \
         > "$RESULTS_DIR/normal_${SEED}.txt"
-    run_sim "always-busiest" "reverse-priority" "inverted-slo" "$SEED" \
+    run_sim "always-busiest" "priority-fcfs" "inverted-slo" "$SEED" \
         > "$RESULTS_DIR/patho_${SEED}.txt"
 done
 analyze core "$RESULTS_DIR"/normal_*.txt "$RESULTS_DIR"/patho_*.txt
@@ -83,8 +83,8 @@ cp "$RESULTS_DIR/patho_42.txt" "$RESULTS_DIR/patho.txt"
 run_sim "always-busiest" "priority-fcfs" "slo-based" 42 \
     > "$RESULTS_DIR/routing_only.txt"
 
-# Scheduling-only pathological: normal routing + reverse-priority + inverted-slo
-run_sim "least-loaded" "reverse-priority" "inverted-slo" 42 \
+# Scheduling-only pathological: normal routing + priority-fcfs + inverted-slo
+run_sim "least-loaded" "priority-fcfs" "inverted-slo" 42 \
     > "$RESULTS_DIR/sched_only.txt"
 
 analyze decomposed "$RESULTS_DIR/normal.txt" "$RESULTS_DIR/routing_only.txt" \
