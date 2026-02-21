@@ -15,6 +15,15 @@ import sys
 from pathlib import Path
 
 
+def _warn_if_section_present(content, section_header, metric_name, filepath):
+    """Warn on stderr if a section header exists but a metric regex didn't match."""
+    if section_header in content:
+        print(f"WARNING: '{metric_name}' not found in '{filepath}' "
+              f"despite '{section_header}' section being present. "
+              f"Check regex against cmd/root.go format strings.",
+              file=sys.stderr)
+
+
 def parse_output(filepath):
     """Parse multi-block BLIS output into cluster metrics + KV cache metrics."""
     content = Path(filepath).read_text()
@@ -38,12 +47,18 @@ def parse_output(filepath):
     pr_match = re.search(r"Preemption Rate: ([\d.]+)", content)
     if pr_match:
         preemption_rate = float(pr_match.group(1))
+    else:
+        _warn_if_section_present(content, "=== KV Cache Metrics ===",
+                                 "Preemption Rate", filepath)
 
     # Extract cache hit rate
     cache_hit_rate = 0.0
     chr_match = re.search(r"Cache Hit Rate: ([\d.]+)", content)
     if chr_match:
         cache_hit_rate = float(chr_match.group(1))
+    else:
+        _warn_if_section_present(content, "=== KV Cache Metrics ===",
+                                 "Cache Hit Rate", filepath)
 
     # Sum preemption_count from per-instance JSON blocks (new field)
     json_preemption_total = 0
