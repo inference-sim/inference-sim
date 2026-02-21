@@ -5,26 +5,22 @@ import (
 	"testing"
 )
 
-// countFreeListBlocks walks the free list and returns the actual count.
-// Used by conservation invariant tests to independently verify UsedBlockCnt.
-func countFreeListBlocks(kvc *KVCacheState) int64 {
-	count := int64(0)
-	blk := kvc.FreeHead
-	for blk != nil {
-		count++
-		blk = blk.NextFree
-	}
-	return count
-}
-
-// assertBlockConservation verifies the KV block conservation invariant
-// by independently counting free list blocks (not derived from UsedBlockCnt).
+// assertBlockConservation verifies the KV block conservation invariant (INV-4)
+// using only public API methods.
 func assertBlockConservation(t *testing.T, kvc *KVCacheState) {
 	t.Helper()
-	actualFree := countFreeListBlocks(kvc)
-	if kvc.UsedBlockCnt+actualFree != kvc.TotalBlocks {
-		t.Errorf("block conservation violated: UsedBlockCnt=%d + actualFree=%d != TotalBlocks=%d",
-			kvc.UsedBlockCnt, actualFree, kvc.TotalBlocks)
+	used := kvc.UsedBlocks()
+	total := kvc.TotalCapacity()
+	free := total - used
+	if used+free != total {
+		t.Errorf("block conservation violated: UsedBlocks=%d + free=%d != TotalCapacity=%d",
+			used, free, total)
+	}
+	if used < 0 {
+		t.Errorf("UsedBlocks = %d, must be >= 0", used)
+	}
+	if free < 0 {
+		t.Errorf("free blocks = %d, must be >= 0", free)
 	}
 }
 
@@ -120,8 +116,8 @@ func TestAllocateKVBlocks_MidLoopFailure_RollsBackNewBlocks(t *testing.T) {
 	dummy := &Request{ID: "dummy", InputTokens: []int{1, 2, 3, 4, 5, 6}}
 	kvc.AllocateKVBlocks(dummy, 0, 6, []int64{})
 
-	usedBefore := kvc.UsedBlockCnt
-	freeBefore := kvc.TotalBlocks - usedBefore
+	usedBefore := kvc.UsedBlocks()
+	freeBefore := kvc.TotalCapacity() - usedBefore
 
 	// WHEN we try to allocate 3 blocks (6 tokens / 2 per block) but only 2 are free
 	req := &Request{ID: "r_fail", InputTokens: []int{10, 20, 30, 40, 50, 60}}
@@ -133,8 +129,8 @@ func TestAllocateKVBlocks_MidLoopFailure_RollsBackNewBlocks(t *testing.T) {
 	}
 
 	// BC-6: Conservation invariant
-	usedAfter := kvc.UsedBlockCnt
-	freeAfter := kvc.TotalBlocks - usedAfter
+	usedAfter := kvc.UsedBlocks()
+	freeAfter := kvc.TotalCapacity() - usedAfter
 	if usedAfter != usedBefore {
 		t.Errorf("UsedBlockCnt changed: before=%d, after=%d (should be unchanged after rollback)", usedBefore, usedAfter)
 	}
@@ -164,7 +160,7 @@ func TestAllocateKVBlocks_CachedBlockRollback_OnNewBlockFailure(t *testing.T) {
 	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
 	// Now: 1 used (filler), 3 free (2 with cached hashes)
 
-	usedBefore := kvc.UsedBlockCnt // 1
+	usedBefore := kvc.UsedBlocks() // 1
 	missesBefore := kvc.CacheMisses
 
 	// Step 3: Try to allocate with cached prefix + new tokens
@@ -188,8 +184,8 @@ func TestAllocateKVBlocks_CachedBlockRollback_OnNewBlockFailure(t *testing.T) {
 	}
 
 	// THEN all mutations are rolled back: UsedBlockCnt, CacheMisses, RequestMap
-	if kvc.UsedBlockCnt != usedBefore {
-		t.Errorf("UsedBlockCnt: got %d, want %d (should be unchanged after rollback)", kvc.UsedBlockCnt, usedBefore)
+	if kvc.UsedBlocks() != usedBefore {
+		t.Errorf("UsedBlockCnt: got %d, want %d (should be unchanged after rollback)", kvc.UsedBlocks(), usedBefore)
 	}
 	if kvc.CacheMisses != missesBefore {
 		t.Errorf("CacheMisses: got %d, want %d (should be unchanged after rollback)", kvc.CacheMisses, missesBefore)
@@ -228,8 +224,8 @@ func TestAllocateKVBlocks_BlockConservation_AfterAllocateReleaseCycles(t *testin
 	assertBlockConservation(t, kvc)
 
 	// Expected: 2 requests still hold 1 block each = 2 used, 8 free
-	if kvc.UsedBlockCnt != 2 {
-		t.Errorf("UsedBlockCnt = %d, want 2 (2 requests with 1 block each)", kvc.UsedBlockCnt)
+	if kvc.UsedBlocks() != 2 {
+		t.Errorf("UsedBlockCnt = %d, want 2 (2 requests with 1 block each)", kvc.UsedBlocks())
 	}
 }
 
