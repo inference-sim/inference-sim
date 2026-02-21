@@ -493,7 +493,7 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 ---
 
-## H24: Combining always-busiest routing with reverse-priority scheduling should produce maximum measurable anomalies
+## H24: Combining always-busiest routing with inverted-slo scheduling should produce maximum measurable anomalies
 
 **Intuition:** `always-busiest` routes every request to the most loaded instance (maximizing HOL blocking). `inverted-slo` gives newer requests higher priority when used with `priority-fcfs`, starving older ones (maximizing priority inversions). Combining them should trigger both anomaly detectors simultaneously — the most pathological configuration possible. Warning: do NOT pair `inverted-slo` with `reverse-priority` -- the double inversion cancels out (see issue #295).
 
