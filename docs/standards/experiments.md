@@ -149,19 +149,16 @@ Evidence: H10 proposed `maybeOffload` as the mechanism. The control experiment (
 
 ## Iterative Review Protocol
 
-Every hypothesis experiment must go through **three rounds** of experimentation interleaved with external LLM review (see `docs/process/hypothesis.md` for the full protocol). This is enforced because:
+Every hypothesis experiment iterates **until convergence** (max 10 rounds), with **three parallel Opus 4.6 reviews per round**. No minimum round count — convergence in Round 1 is valid if all three reviewers agree.
 
-1. **Round 1** produces confident but often wrong root cause analyses
-2. **Round 2** (post-review) identifies confounds, missing controls, and logical gaps
-3. **Round 3** (post-review) produces definitive evidence via targeted experiments
+Each round runs three parallel reviews with different focus areas (see `docs/process/hypothesis.md` for the full protocol):
+- **Reviewer A (Mechanism):** Code-level verification of causal claims (RCV-1, RCV-3, RCV-4)
+- **Reviewer B (Design):** Confounds, missing controls, parameter calibration (ED-1 through ED-6)
+- **Reviewer C (Rigor):** First-principles calculations, sample size, scope of claims (RCV-2)
 
-The external review uses frontier LLMs (default: Claude Opus 4.6 via `/review-plan aws/claude-opus-4-6`) as independent technical reviewers. Their value is in catching:
-- Confounding variables invisible to the experimenter (ED-1 violations)
-- Logical gaps in causal chains (RCV-3 violations)
-- Missing first-principles calculations (RCV-2 violations)
-- Configuration assumptions that need verification (ED-6 violations)
+**Convergence:** All three reviewers have no remaining items that require a new experiment. Max 10 rounds as a safety valve.
 
-Evidence: PR #310 required 4 rounds across H5/H10 to reach correct conclusions. The confound matrix (Round 3) was designed entirely from Opus 4.6 review feedback and produced the definitive result.
+**Why three parallel reviewers instead of sequential rounds:** PR #310's multi-model reviews showed no single reviewer caught all issues. Gemini 3 Pro caught the queue-time split, Opus 4.6 caught the confound matrix need, GPT-4o caught scope limitations. Three parallel reviewers maximize coverage per round.
 
 ---
 

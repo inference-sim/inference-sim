@@ -11,37 +11,64 @@ This document describes the process for running a hypothesis-driven experiment. 
 
 ## The Three-Round Protocol
 
-Every hypothesis experiment goes through **at least three rounds** of experimentation interleaved with external LLM review, continuing **until convergence**. This is non-negotiable — it exists because single-pass experiments produce plausible-sounding but incorrect analyses (evidence: H5 and H10 in PR #310 required 4 rounds to reach correct conclusions).
+Every hypothesis experiment goes through **iterative rounds** of experimentation interleaved with **three parallel external reviews**, continuing **until convergence** (max 10 rounds). There is no minimum round count — if three thorough reviewers all converge in Round 1, the experiment is done.
 
 ```
-Round 1: Design → Run → Analyze → Document draft FINDINGS.md
-                ↓
-         External Review (Opus 4.6 via /review-plan)
-                ↓
-Round 2: Address review gaps → Run additional experiments → Update FINDINGS.md
-                ↓
-         External Review (Opus 4.6 via /review-plan)
-                ↓
-Round 3: Resolve remaining questions → Final experiments if needed → Finalize FINDINGS.md
-                ↓
-         External Review (Opus 4.6 — convergence check)
-                ↓
-         Converged? → Commit and PR
-         Not converged? → Round 4+ (repeat until converged)
+Round N:
+  Design → Code Review → Run → Analyze → Document FINDINGS.md
+                          ↓
+              ┌───────────┼───────────┐
+              ↓           ↓           ↓
+         Reviewer A   Reviewer B  Reviewer C     (3 parallel Opus 4.6 reviews)
+         (mechanism)  (design)    (rigor)
+              ↓           ↓           ↓
+              └───────────┼───────────┘
+                          ↓
+                  All 3 converged? → Commit and PR
+                  Any has actionable experiment? → Round N+1
+                  Round 10 reached? → Stop, document remaining gaps
 ```
+
+### Three Parallel Reviewers
+
+Each round runs **three Opus 4.6 reviews in parallel**, each with a different (but overlapping) focus area. This catches what single-reviewer sequential rounds miss — different reviewers have different blind spots.
+
+Run all three in parallel: `/review-plan <findings> aws/claude-opus-4-6`
+
+**Reviewer A — Mechanism Verification:**
+- Are causal claims traced through code with `file:line` citations? (RCV-1)
+- Does the mechanism explain the direction, not just the correlation? (RCV-3)
+- Is there a control experiment that disables only the proposed mechanism? (RCV-4)
+- Do the code paths cited actually produce the claimed behavior?
+
+**Reviewer B — Experimental Design:**
+- Are there confounding variables? (ED-1, ED-6)
+- Are there missing control experiments or confound matrix cells?
+- Are parameters properly calibrated? (e.g., bucket cap vs mean input)
+- Is the config diff against referenced experiments documented? (ED-6)
+
+**Reviewer C — Statistical Rigor & Generalizability:**
+- Are "surprises" computed from first principles? (RCV-2)
+- Is the sample size adequate (seeds, operating points)?
+- Are claims properly scoped (not over-generalized from narrow evidence)?
+- Is the evidence quality table complete and honest?
+
+Each reviewer's prompt should include their focus area AND the full FINDINGS.md. The overlapping coverage means any critical issue is likely caught by at least one reviewer.
 
 ### Convergence Criterion
 
-An experiment **converges** when the reviewer's only remaining items are **"acknowledged as open"** — not **"needs a new experiment."** Specifically:
+An experiment **converges** when **all three reviewers** have no remaining items that require a new experiment. Specifically:
 
-- **Converged**: "The directional question (why fewer cache hits helps) remains open and would require per-request logging to resolve." → This is acknowledged. No further rounds needed.
-- **Not converged**: "There is a confounding variable — you need a control with routing=round-robin." → This is an actionable experiment. Another round required.
+- **Converged**: All three reviewers' remaining items are "acknowledged as open" (requires different tooling) or documentation fixes. No new experiments needed.
+- **Not converged**: Any reviewer raises an actionable experiment (confound matrix, control, calibrated parameters, etc.). Another round required.
 
 The distinction: **"open and requires different tooling"** is a stopping point. **"Open and answerable by running another experiment"** is not.
 
-Three rounds is the **minimum**, not the target. Most experiments will converge in 3 rounds. Some may need 4-5. The process stops when the review produces no new actionable experiments, regardless of round count.
+**Max 10 rounds.** If convergence is not reached by Round 10, stop and document remaining gaps as future work. This prevents unbounded iteration on irreducibly complex systems.
 
-### Round 1: Initial Experiment
+### Round Structure (each round)
+
+**Steps 1-4 apply to Round 1 only. Subsequent rounds start at step 5.**
 
 1. **Select or pose hypothesis** — from `docs/plans/research.md` or from a new observation
 2. **Classify** — deterministic or statistical? If statistical, which subtype? (See [experiments.md](../standards/experiments.md))
@@ -51,53 +78,16 @@ Three rounds is the **minimum**, not the target. Most experiments will converge 
 6. **Run** — execute across required seeds; verify reproducibility (ED-5)
 7. **Analyze** — produce comparison tables, compute effect sizes
 8. **Verify root cause** — trace every causal claim through code (RCV-1, RCV-2, RCV-3)
-9. **Document draft FINDINGS.md** — results, root cause, classification, standards audit
+9. **Document FINDINGS.md** — results, root cause, classification, standards audit
+10. **Three parallel external reviews** — run Reviewers A, B, C simultaneously
+11. **Assess convergence** — if all three converge, proceed to finalization. If any has actionable feedback, start next round at step 5.
 
-### Round 1 Review
+### Finalization (after convergence)
 
-Run external review: `/review-plan <path-to-findings> aws/claude-opus-4-6`
-
-Focus areas for the reviewer:
-- Are causal claims verified against code? (RCV-1)
-- Are "surprises" computed from first principles? (RCV-2)
-- Does the mechanism explain the direction, not just the correlation? (RCV-3)
-- Are there confounding variables? (ED-1, ED-6)
-- Are there missing control experiments?
-
-### Round 2: Address Review Gaps
-
-9. **Design additional experiments** to address review feedback:
-   - Confound matrices (isolate variables the reviewer flagged)
-   - Control experiments (disable proposed mechanism to verify causality)
-   - Calibrated parameters (test with corrected/proper values)
-10. **Run additional experiments**
-11. **Update FINDINGS.md** — incorporate new results, correct or qualify earlier claims
-
-### Round 2 Review
-
-Run external review again on the updated FINDINGS.md.
-
-Focus areas:
-- Did the new experiments resolve the Round 1 gaps?
-- Are there remaining directional questions (mechanism identified but effect direction unexplained)?
-- Are findings appropriately qualified (confirmed vs partially confirmed vs open)?
-
-### Round 3: Resolve or Acknowledge
-
-12. **Final experiments** if Round 2 review identified remaining gaps
-13. **Finalize FINDINGS.md** — every open question must be either resolved or explicitly marked as "open, requires future work" with a specific proposed experiment
-14. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, or surprise
-15. **Audit against standards** — check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`
-16. **File issues** — for any bugs (`--label bug`), design limitations (`--label design`), or new rules/invariants discovered
-
-### Round 3 Review (Confirmation Pass)
-
-Final external review — this is a confirmation pass, not a discovery pass. The reviewer should confirm:
-- All previously flagged issues are addressed or explicitly acknowledged
-- No new concerns
-- FINDINGS.md is ready for merge
-
-17. **Commit and PR** — rebase on upstream/main, push, create PR
+12. **Classify findings** — confirmation, bug, new rule, new invariant, design limitation, or surprise
+13. **Audit against standards** — check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`
+14. **File issues** — for any bugs (`--label bug`), design limitations (`--label design`), or new rules/invariants discovered
+15. **Commit and PR** — rebase on upstream/main, push, create PR
 
 ## Code Review Before Execution
 
@@ -151,27 +141,39 @@ Three of the four major bugs in this PR would have been caught by code review be
 - [ ] Experiment design follows ED-1 through ED-6
 - [ ] If reusing prior calibration data, config diff documented (ED-6)
 - [ ] Results reproducible via `./run.sh`
-- [ ] At least three rounds completed with external reviews
-- [ ] **Convergence reached**: reviewer's only remaining items are "acknowledged as open" (requires different tooling), not "needs a new experiment"
+- [ ] **Convergence reached**: all three parallel reviewers have no remaining actionable experiments
 - [ ] All review feedback addressed or explicitly acknowledged as open
-- [ ] Findings classified per the findings table
+- [ ] Findings classified per the findings table (including resolution type)
 - [ ] Standards audit completed
 - [ ] Issues filed for all actionable findings
 
-## Why At Least Three Rounds?
+## Why Three Parallel Reviewers?
+
+Evidence from PR #310 multi-model reviews:
+
+| Reviewer | Unique insight no other reviewer caught |
+|----------|----------------------------------------|
+| **Gemini 3 Pro** | Queue-time vs compute-time split for H10; hard-block behavior for H5 |
+| **Claude Opus 4** | Process enforcement gaps; analysis paralysis risk |
+| **Claude Opus 4.6** | Confound matrix design; cap < mean_input is structural rejection; ED-7 pre-registration |
+| **GPT-4o** | H13 scope narrowness; dynamic bucket policies |
+
+No single reviewer caught all issues. Three parallel reviewers with different focus areas (mechanism, design, rigor) maximize coverage per round, potentially converging faster than sequential single-reviewer rounds.
+
+## Why Iterate Until Convergence (Not Fixed Rounds)?
 
 Evidence from PR #310 (H5, H10, H13):
 
 | Round | What happened | What was caught |
 |-------|---------------|-----------------|
-| **1** | Initial experiments + FINDINGS.md | Plausible but wrong root causes published |
-| **2** | Code review + external review | H10: "capacity increase" was wrong (NewKVStore doesn't change GPU blocks). H5: "96% surprise" was mathematically inevitable. |
-| **3** | Confound matrix + calibrated bucket | H10: `maybeOffload` confirmed as sole mechanism via byte-identical control. H5: calibrated bucket shows <5% effect — original was load shedding. |
-| **After 3** | H10 directional question remains | "Why do fewer cache hits improve TTFT?" — requires code instrumentation, not experiments. **Converged**: acknowledged as open. |
+| **1** | Initial experiments | Wrong root causes for H5 and H10 |
+| **2** | Code + external review | Corrected math (H5), identified mechanism (H10), designed confound matrix |
+| **3** | Confound matrix + calibrated bucket | H5 refuted, H10 analyzer bug masked preemptions |
+| **4** | Corrected analyzer | H10 confirmed — preemptions DO occur, cache hits INCREASE |
 
-Round 1 produced confident but wrong answers. Round 2 identified the errors. Round 3 produced definitive evidence. H10 converged after Round 3 despite having an open question, because the remaining question requires different tooling (per-request logging), not another experiment sweep.
+H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H10 required Round 4 due to an analyzer bug. Fixed round counts would have either stopped too early (missing the H10 bug) or forced unnecessary work (H13 didn't need Round 2).
 
-**Three rounds is the minimum, not the maximum.** The stopping criterion is convergence: the reviewer raises no new actionable experiments.
+**Iterate until convergence, max 10 rounds.** Three parallel reviewers per round. No minimum.
 
 ## References
 
