@@ -301,5 +301,141 @@ func TestExpandInferencePerfSpec_EqualRateFractions(t *testing.T) {
 	}
 }
 
+// --- Stage-based rate tests (Task 4) ---
+
+func TestExpandInferencePerfSpec_TwoStages_LifecycleWindows(t *testing.T) {
+	// BC-1: stage-to-lifecycle expansion
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 8.0, Duration: 600},
+			{Rate: 20.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ws.Clients) != 1 {
+		t.Fatalf("client count = %d, want 1", len(ws.Clients))
+	}
+	lc := ws.Clients[0].Lifecycle
+	if lc == nil {
+		t.Fatal("lifecycle should be set for multi-stage spec")
+	}
+	if len(lc.Windows) != 2 {
+		t.Fatalf("window count = %d, want 2", len(lc.Windows))
+	}
+	// Window 1: [0, 600_000_000)
+	if lc.Windows[0].StartUs != 0 {
+		t.Errorf("window[0].StartUs = %d, want 0", lc.Windows[0].StartUs)
+	}
+	if lc.Windows[0].EndUs != 600_000_000 {
+		t.Errorf("window[0].EndUs = %d, want 600000000", lc.Windows[0].EndUs)
+	}
+	// Window 2: [600_000_000, 1_200_000_000)
+	if lc.Windows[1].StartUs != 600_000_000 {
+		t.Errorf("window[1].StartUs = %d, want 600000000", lc.Windows[1].StartUs)
+	}
+	if lc.Windows[1].EndUs != 1_200_000_000 {
+		t.Errorf("window[1].EndUs = %d, want 1200000000", lc.Windows[1].EndUs)
+	}
+}
+
+func TestExpandInferencePerfSpec_TwoStages_AggregateRate(t *testing.T) {
+	// BC-2: aggregate rate is time-weighted average
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 8.0, Duration: 600},
+			{Rate: 20.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Time-weighted average: (8*600 + 20*600) / 1200 = 14.0
+	expectedRate := 14.0
+	if ws.AggregateRate != expectedRate {
+		t.Errorf("aggregate rate = %f, want %f", ws.AggregateRate, expectedRate)
+	}
+}
+
+func TestExpandInferencePerfSpec_SingleStage_NoLifecycle(t *testing.T) {
+	// Single stage: no lifecycle windows needed
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ws.Clients[0].Lifecycle != nil {
+		t.Error("single stage should not set lifecycle windows")
+	}
+	if ws.AggregateRate != 10.0 {
+		t.Errorf("aggregate rate = %f, want 10.0", ws.AggregateRate)
+	}
+}
+
+func TestExpandInferencePerfSpec_ThreeStages_CumulativeWindows(t *testing.T) {
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 100},
+			{Rate: 10.0, Duration: 200},
+			{Rate: 15.0, Duration: 300},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lc := ws.Clients[0].Lifecycle
+	if lc == nil || len(lc.Windows) != 3 {
+		t.Fatalf("expected 3 lifecycle windows")
+	}
+	// Window 1: [0, 100_000_000)
+	if lc.Windows[0].EndUs != 100_000_000 {
+		t.Errorf("window[0].EndUs = %d, want 100000000", lc.Windows[0].EndUs)
+	}
+	// Window 2: [100_000_000, 300_000_000)
+	if lc.Windows[1].StartUs != 100_000_000 || lc.Windows[1].EndUs != 300_000_000 {
+		t.Errorf("window[1] = [%d, %d), want [100000000, 300000000)", lc.Windows[1].StartUs, lc.Windows[1].EndUs)
+	}
+	// Window 3: [300_000_000, 600_000_000)
+	if lc.Windows[2].StartUs != 300_000_000 || lc.Windows[2].EndUs != 600_000_000 {
+		t.Errorf("window[2] = [%d, %d), want [300000000, 600000000)", lc.Windows[2].StartUs, lc.Windows[2].EndUs)
+	}
+}
+
 // suppress unused import for sim (used in later tests)
 var _ = sim.StateQueued
