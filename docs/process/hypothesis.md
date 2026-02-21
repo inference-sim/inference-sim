@@ -253,12 +253,13 @@ Use code review skills (e.g., `/code-review`, `pr-review-toolkit:code-reviewer`,
    - `cmd/root.go` — what text does the CLI print? (e.g., `"Preemption Rate: %.4f"` at line 544)
    - `sim/metrics_utils.go` — what JSON fields exist? (e.g., `preemption_count` vs `Preemption Rate`)
    - Match every regex in `analyze.py` against the format string in the producer code
+   - **Silent defaults**: Verify that when a regex matches nothing, `analyze.py` emits a warning to stderr rather than silently defaulting to 0. A silent default can mask real data for multiple review rounds (H10: analyzer reported 0 preemptions for 2 rounds because the regex never matched).
 
 2. **CLI flag correctness**: For every flag in `run.sh`, verify the flag name and value match `cmd/root.go` defaults and help text. Check for typos that strict parsing would reject.
 
 3. **Workload YAML field names**: Verify against `sim/workload/spec.go` struct tags. `KnownFields(true)` will reject typos at runtime, but catching them at review saves a failed experiment run.
 
-4. **Config diff against referenced experiments (ED-6)**: If the experiment reuses calibration from a prior experiment, diff every flag. The reviewer should explicitly list differences.
+4. **Config diff against referenced experiments (ED-6)**: If the experiment reuses calibration from a prior experiment, diff every flag. The reviewer should explicitly list differences. The `run.sh` must include an explicit `# Reference: hypotheses/<name>/run.sh` comment with the file path, so the diff is easy to perform.
 
 5. **Seed and determinism**: Verify `--seed` is passed correctly and workload YAML `seed:` field doesn't conflict.
 

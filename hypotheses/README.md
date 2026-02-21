@@ -20,7 +20,7 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 | H12 | Scheduler invariant | Request conservation holds across all policy configurations | **Confirmed** (with bug) | INV-1 holds (67 checks); preemption path panics on empty RunningBatch |
 | H14 | Robustness | Pathological templates produce worse behavior; anomaly detectors fire | **Partially confirmed** | 4.5x worse TTFT; 3 detector bugs found |
 | H8 | Performance-regime | Reducing KV blocks increases preemption frequency and worsens tail latency | **Confirmed** | Sharp cliff at ~2200 blocks; cascade amplifies preemptions |
-| H5 | Robustness | Token-bucket admission smooths bursts under Gamma CV=3.5 | **Refuted** | Mechanism not plausible: per-input-token cost makes burst smoothing structurally impossible at practical parameters |
+| H5 | Robustness | Token-bucket admission smooths bursts under Gamma CV=3.5 | **Confirmed with nuance** | 56-69x TTFT improvement holds, but via 96% load shedding, not burst smoothing. Calibrated bucket (cap=100K) shows <5% — wrong mechanism, not wrong direction. |
 | H10 | Structural model | Tiered KV cache reduces preemptions vs single-tier | **Confirmed** | Preemptions halved (17.5%→8.5%); `maybeOffload` preserves prefix hashes; 4 rounds to resolve |
 | H13 | Scheduler invariant | Same seed produces byte-identical output | **Confirmed** | INV-6 holds for 5 policy configurations |
 

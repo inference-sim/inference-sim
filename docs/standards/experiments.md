@@ -263,8 +263,9 @@ A root cause analysis that says "the tiered cache increases total capacity" with
 - Which function implements the claimed behavior?
 - What are the exact conditions under which it fires?
 - Does the claimed mechanism actually change the measured metric?
+- **Tracing depth**: The citation must trace to the code that *directly modifies the measured metric*, not just to the constructor or factory that creates the relevant object. Citing `NewKVStore` and claiming "this creates a tiered cache with more capacity" is insufficient — you must verify that the GPU block count actually changes in the created object.
 
-Evidence: H10 claimed "CPU tier increases total effective capacity" — but `NewKVStore` (`kv_store.go:31-36`) does not change GPU block count. The actual mechanism was `maybeOffload` stripping prefix hashes (`kvcache_tiered.go:224`).
+Evidence: H10 claimed "CPU tier increases total effective capacity" — but `NewKVStore` (`kv_store.go:31-36`) does not change GPU block count. The actual mechanism was `maybeOffload` preserving prefix hashes (`kvcache_tiered.go:214-224`).
 
 ### RCV-2: Every "surprise" must have a first-principles calculation
 
@@ -275,6 +276,8 @@ Evidence: H5 labeled 96% rejection as a "surprise." But `admission.go:45` charge
 ### RCV-3: Check the mechanism, not just the direction
 
 Confirming that "A is better than B" is necessary but not sufficient. The root cause analysis must explain *why* through a specific code path. A correct directional result with an incorrect explanation is a ticking time bomb — the explanation will mislead future experiments.
+
+**Paradox flag**: If the proposed mechanism predicts the *opposite* direction of what would be intuitive (e.g., "fewer cache hits improving performance"), treat this as a red flag. Before accepting a paradoxical explanation, independently verify the underlying data. In H10, the claim "fewer cache hits → better TTFT" survived two rounds because the data (from a buggy analyzer) appeared to support it. The corrected data showed cache hits *increased*, resolving the paradox. When mechanism and intuition disagree, verify the data first.
 
 ### RCV-4: Validate causal claims with control experiments
 

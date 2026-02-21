@@ -1,7 +1,7 @@
 # H5: Token-Bucket Admission Control Under Burst
 
-**Status:** Refuted
-**Resolution:** Refuted — mechanism not plausible. The hypothesis assumed burst smoothing: reject some requests during bursts, improve latency for the rest. The token-bucket's per-input-token cost model (`admission.go:45`, cost = `len(req.InputTokens)` ≈ 512 >> capacity 500) makes burst smoothing structurally impossible at practical parameters. At calibrated parameters (cap=100K >> mean input), rejection is 0.8-5% and TTFT improvement is <5%. The conceptual hypothesis exposed a design limitation: the cost model is underdocumented and users would not expect per-token admission costs.
+**Status:** Confirmed with nuance
+**Resolution:** Confirmation with wrong mechanism. The directional prediction (token-bucket reduces TTFT) holds across all 3 seeds with 56-69x improvement. However, the hypothesized mechanism (burst smoothing — reject some during bursts, improve latency for the rest) is not plausible: the per-input-token cost model (`admission.go:45`, cost = `len(req.InputTokens)` ≈ 512 >> capacity 500) rejects 96% of traffic, making the improvement pure load shedding. At calibrated parameters (cap=100K >> mean input), rejection drops to 0.8-5% and TTFT improvement is <5%, showing the burst-smoothing mechanism does not produce meaningful results. The conceptual hypothesis exposed a design limitation: the cost model is underdocumented and users would not expect per-token admission costs.
 **Family:** Robustness/failure-mode
 **VV&UQ:** Validation
 **Tier:** 3 (system understanding)
@@ -118,7 +118,7 @@ Despite the extreme demand/supply mismatch:
 
 | Finding | Type | Action |
 |---------|------|--------|
-| **Burst smoothing does not work under Gamma CV=3.5** | Refutation | The central hypothesis claim. Calibrated bucket (cap=100K) admits ~95% of traffic with <5% TTFT improvement. The mechanism the hypothesis predicted does not produce meaningful results. |
+| **Directional prediction holds (56-69x TTFT improvement) but via load shedding, not burst smoothing** | Confirmation with wrong mechanism | The predicted direction holds, but the mechanism is 96% load shedding, not burst smoothing. Calibrated bucket (cap=100K) shows <5% improvement, confirming the mechanism is wrong. |
 | 69x TTFT improvement is load shedding, not burst smoothing | Design limitation | Token-bucket at cap=500 rejects 96% of traffic. The improvement is trivially explained by near-empty queues for the 4% that get through. |
 | Token-bucket cost is per-input-token (`admission.go:45`), not per-request | Design limitation | `--token-bucket-capacity` and `--token-bucket-refill-rate` parameter names suggest per-request cost. Users must size relative to input token counts. File issue to clarify CLI help text. |
 | Gamma arrival sampler (Marsaglia-Tsang) produces expected burstiness | Confirmation | Validated by rate-scaling monotonicity |
