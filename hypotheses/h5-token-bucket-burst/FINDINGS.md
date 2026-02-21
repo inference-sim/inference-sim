@@ -2,6 +2,8 @@
 
 **Status:** Refuted
 **Resolution:** Refuted — mechanism not plausible. The hypothesis assumed burst smoothing: reject some requests during bursts, improve latency for the rest. The token-bucket's per-input-token cost model (`admission.go:45`, cost = `len(req.InputTokens)` ≈ 512 >> capacity 500) makes burst smoothing structurally impossible at practical parameters. At calibrated parameters (cap=100K >> mean input), rejection is 0.8-5% and TTFT improvement is <5%. The conceptual hypothesis exposed a design limitation: the cost model is underdocumented and users would not expect per-token admission costs.
+**Family:** Robustness/failure-mode
+**VV&UQ:** Validation
 **Tier:** 3 (system understanding)
 **Type:** Statistical / Dominance
 **Date:** 2026-02-20
@@ -37,7 +39,7 @@
 | 456  | always-admit |    606.6  |  1,186.2 |  12,239.0 |        0 |       500 |        |
 | 456  | token-bucket |     14.4  |     21.1 |  12,166.5 |      483 |        17 | **56.3x better P99** |
 
-**CONFIRMED: Token-bucket reduces TTFT p99 by 56-69x across all 3 seeds (>20% threshold met by orders of magnitude).**
+**Token-bucket reduces TTFT p99 by 56-69x across all 3 seeds — but via 96% load shedding, not burst smoothing (see Root Cause Analysis).**
 
 ### Experiment 2: Rate Scaling
 
@@ -83,7 +85,7 @@ Addresses reviewer feedback (Opus 4.6): cap=500 < mean_input=512 is structural r
 
 ## Root Cause Analysis
 
-The hypothesis is confirmed, but the 96% rejection rate is driven by a mechanism more fundamental than burstiness alone:
+The directional outcome (TTFT reduction) holds, but the burst-smoothing mechanism is refuted. The 96% rejection rate is driven by a mechanism more fundamental than burstiness:
 
 ### Critical finding: token cost is per-input-token, not per-request
 

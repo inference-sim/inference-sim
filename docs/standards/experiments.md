@@ -35,7 +35,7 @@ Legacy experiments using the 20%/>10%/5% thresholds remain valid but new experim
 
 Where applicable, validate DES outputs against analytically-tractable models under matching assumptions. This grounds the simulator in theory.
 
-- **M/M/k baseline**: Under Poisson arrivals with exponential service times, compare DES queue length distribution against the M/M/k analytical solution. Divergence indicates a modeling error.
+- **M/M/k baseline**: Under Poisson arrivals with exponential service times and k servers, compare DES queue length distribution against the M/M/k analytical solution. **Caveat:** BLIS uses batching and deterministic service times (alpha/beta coefficients), so exact M/M/k matching is not possible. The comparison requires configuring BLIS with batch_size=1 and interpreting the service time distribution as approximately exponential. Divergence may indicate modeling errors OR fundamental architectural differences from M/M/k assumptions.
 - **Little's Law**: For any stable configuration, verify L = λW (average queue length = arrival rate × average wait time). This is a universal law that must hold.
 - **Phase structure**: Verify that prefill time ∝ prompt tokens and decode time ∝ output tokens by fitting linear models and checking R² > 0.95.
 
@@ -135,11 +135,11 @@ Every hypothesis belongs to a **family** (what domain is being tested) AND a **t
 
 | Family | Tests | Hypothesis shape | Typical type | Examples |
 |--------|-------|-----------------|-------------|---------|
-| **Workload/arrival** | Input generation: distributions, rates, burstiness, mix proportions | "Generator X produces arrivals matching distribution D within tolerance T" | Statistical | H5 (Gamma burstiness), H16, H20 |
+| **Workload/arrival** | Input generation: distributions, rates, burstiness, mix proportions | "Generator X produces arrivals matching distribution D within tolerance T" | Statistical | H16, H20 |
 | **Scheduler invariants (safety/liveness)** | Conservation, determinism, lifecycle, livelock protection | "For ALL configurations, property P holds" (universally quantified) | Deterministic | H12 (conservation), H13 (determinism), H25 |
 | **Performance-regime (scaling laws)** | Saturation curves, throughput-latency tradeoffs, horizontal scaling | "Metric M is monotonic/convex in parameter P" | Statistical/Monotonicity | H7 (scaling), H8 (KV pressure), H11 (batch formation) |
 | **Structural model** | DES model assumptions: phase structure, KV mechanics, signal freshness, prefix caching | "Component C behaves according to model assumption A" | Mixed | H3 (signal freshness), H9 (prefix caching), H10 (tiered KV), H26 |
-| **Robustness/failure-mode** | Overload, misconfiguration, degenerate inputs, pathological policies | "Under stress condition S, the system exhibits defined behavior B (not undefined state)" | Deterministic or Statistical | H14 (pathological), H21, H22, H24 |
+| **Robustness/failure-mode** | Overload, misconfiguration, degenerate inputs, pathological policies | "Under stress condition S, the system exhibits defined behavior B (not undefined state)" | Deterministic or Statistical | H5 (token-bucket), H14 (pathological), H21, H22, H24 |
 | **Cross-policy comparative** | Policy ordering, Pareto frontiers, robustness to workload shifts | "There EXISTS a workload where policy A beats B on metric M" (existentially quantified) | Statistical/Dominance or Pareto | H1, H2, H4, H6, H15, H17, H18, H19, H23 |
 
 ### Family-specific hypothesis sentence patterns
@@ -316,7 +316,7 @@ Every hypothesis resolves to a **status** (did the prediction hold?) and a **res
 |--------|-----------|---------|
 | **Confirmed** | The predicted directional outcome holds across all seeds | H13: same seed → byte-identical output |
 | **Confirmed with nuance** | The prediction holds but the mechanism or practical implications differ from expected | H5: token-bucket reduces TTFT 69x but via 96% load shedding, not burst smoothing; no practical sweet spot |
-| **Partially confirmed** | Some predictions hold, others don't, or the experiment tested something different than intended | H10: preemption reduction untestable (zero preemptions), but `maybeOffload` improves TTFT 28%; H14: routing pathological confirmed, scheduling showed double-inversion cancellation |
+| **Partially confirmed** | Some predictions hold, others don't, or the experiment tested something different than intended | H14: routing pathological confirmed, scheduling showed double-inversion cancellation |
 | **Refuted** | The predicted outcome does not hold across seeds | *(not yet observed — the refutation IS the value)* |
 | **Inconclusive** | Effect is within noise (<10% in any seed) or parameter-dependent | H5 exp4: calibrated bucket shows <5% TTFT improvement |
 
@@ -326,13 +326,13 @@ Every hypothesis resolves to a **status** (did the prediction hold?) and a **res
 |-----------|-----------|--------|---------|
 | **Clean confirmation** | Hypothesis holds, mechanism matches prediction | Document. No further action. | H13, H3, H8 |
 | **Confirmation with wrong mechanism** | Prediction holds directionally but the underlying cause differs | Correct the explanation. May change user guidance entirely. | H5: improvement is load shedding, not burst smoothing |
-| **Confirmation with bug discovery** | Prediction holds but experiment surfaces code defects | File issues (`--label bug`). Fix in separate PRs. | H12: conservation holds but preemption panics. H14: routing works but 3 detector bugs |
-| **Partial confirmation with surprise** | Some predictions fail; unexpected useful insights emerge | Document surprise. May spawn new hypotheses. | H10: no preemptions but discovered `maybeOffload` TTFT mechanism |
+| **Confirmation with bug discovery** | Prediction holds but experiment surfaces code defects | File issues (`--label bug`). Fix in separate PRs. | H12: conservation holds but preemption panics. H14: routing works but 3 detector bugs. H10: tiered KV confirmed but analyzer bug masked preemptions for 2 rounds. |
+| **Partial confirmation with surprise** | Some predictions fail; unexpected useful insights emerge | Document surprise. May spawn new hypotheses. | *(use when the experiment finds something valuable but different from what was hypothesized)* |
 | **Refuted — mechanism not plausible** | The hypothesis assumed a mechanism that the implementation doesn't support | File design issue if the mechanism *should* exist but doesn't. Document the actual mechanism. | H5: hypothesis assumed burst smoothing, but per-input-token cost model (`admission.go:45`) makes burst smoothing structurally impossible at practical parameters |
 | **Refuted — system design flaw** | Prediction fails because system doesn't work as designed | File design issue (`--label design`). May require architectural change. | *(not yet observed)* |
 | **Refuted — wrong mental model** | Prediction fails because experimenter's assumptions were wrong | Correct understanding. Document what the system actually does. | *(not yet observed)* |
 | **Inconclusive — parameter-dependent** | Effect exists at some parameters but not others | Document the parameter boundary. May need recalibration. | H5 exp4: <5% effect with calibrated bucket |
-| **Converged to open question** | Mechanism identified but directional explanation requires different tooling | Mark as open. Propose specific tooling needed. | H10: why fewer cache hits helps — needs per-request logging |
+| **Converged to open question** | Mechanism identified but directional explanation requires different tooling | Mark as open. Propose specific tooling needed. | *(use when remaining questions require code instrumentation, not more experiment sweeps)* |
 
 ### Choosing status vs resolution
 

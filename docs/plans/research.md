@@ -554,7 +554,7 @@ Hypotheses are organized by **family** (what domain is tested) and **tier** (pri
 | Family | Hypotheses | Status | Gaps |
 |--------|-----------|--------|------|
 | **Scheduler invariants** | H12 ✅, H13 ✅, H25 | 2/3 done | Lifecycle (INV-2), causality (INV-5) never directly tested |
-| **Structural model** | H3 ✅, H8 ✅, H9 ✅, H10 ✅, H26 | 4/5 done | Event pipeline causal ordering (H26) |
+| **Structural model** | H3 ✅, H9 ✅, H10 ✅, H26 | 3/4 done | Event pipeline causal ordering (H26) |
 | **Performance-regime** | H7, H8 ✅, H11 | 1/3 done | Horizontal scaling (H7), batch formation tradeoff (H11) |
 | **Robustness/failure-mode** | H5 ✅, H14 ✅, H21, H22, H24 | 2/5 done | Extreme weights, input validation, pathological combos |
 | **Workload/arrival** | H16, H20 | **0/2 done** | Generator distributions never validated; Gamma/Weibull/ParetoLogNormal untested |

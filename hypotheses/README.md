@@ -1,6 +1,6 @@
 # Hypothesis Experiments
 
-This directory contains validated hypothesis experiments for BLIS. Each hypothesis follows the methodology described in `docs/plans/research.md`:
+This directory contains validated hypothesis experiments for BLIS. Each hypothesis follows the methodology described in `docs/process/hypothesis.md`, with hypotheses drawn from the catalog in `docs/plans/research.md`:
 
 1. **Identify hypothesis family** — which domain is being tested?
 2. **Pose an intuitive, behavioral hypothesis** — conceptual claim, not code-grounded
@@ -40,7 +40,7 @@ Scripts are self-contained — they build the binary, run all experiment variant
 | Family | Done | Pending | Gaps |
 |--------|------|---------|------|
 | **Scheduler invariants** | H12 ✓, H13 ✓ | H25 | Lifecycle (INV-2), causality (INV-5) never directly tested |
-| **Structural model** | H3 ✓, H8 ✓, H9 ✓, H10 ✓ | H26 | Event pipeline causal ordering; roofline mode |
+| **Structural model** | H3 ✓, H9 ✓, H10 ✓ | H26 | Event pipeline causal ordering; roofline mode |
 | **Robustness/failure-mode** | H14 ✓, H5 ✓ | H21, H22, H24 | Extreme weights, input validation, pathological combos |
 | **Cross-policy comparative** | Prefix-Affinity ✓ | H1, H2, H4, H6, H15, H17, H18, H19, H23 | **Largest gap** — 9 pending hypotheses |
 | **Performance-regime** | H8 ✓ | H7, H11 | Horizontal scaling, batch formation tradeoff |
@@ -49,7 +49,7 @@ Scripts are self-contained — they build the binary, run all experiment variant
 ## Hypothesis Tiers (priority from research.md)
 
 - **Tier 1**: Correctness baselines (H12 ✓, H13 ✓)
-- **Tier 2**: High diagnostic value (H3 ✓, H9 ✓, H14 ✓)
+- **Tier 2**: High diagnostic value (H3 ✓, H9 ✓, H14 ✓, Prefix-Affinity ✓)
 - **Tier 3**: System understanding (H1, H5 ✓, H10 ✓, H11)
 - **Tier 4**: Research questions (H15, H17, H19)
 - **Tier 5**: Workload diversity (H2, H16, H18, H20)

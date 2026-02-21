@@ -55,11 +55,11 @@ A good hypothesis is **behavioral** (about observable system behavior), **testab
 3. **Write the sentence**: Use the family-specific pattern from experiments.md.
 4. **Add the diagnostic clause**: "If this fails, it would indicate..."
 5. **Check for redundancy**: Search existing hypotheses in `docs/plans/research.md` and filed issues with `--label hypothesis`.
-6. **File as a GitHub issue**: Use `--label hypothesis` with the [issue body template](docs/process/hypothesis.md#issue-taxonomy-after-convergence).
+6. **File as a GitHub issue**: Use `--label hypothesis` with the [issue body template](#issue-taxonomy-after-convergence).
 
 External contributors should file a GitHub issue with the `hypothesis` label. The issue body should include: the hypothesis sentence, the proposed family, the diagnostic clause, and a rough experiment design (which configurations to compare, which metric to measure).
 
-## The Three-Round Protocol
+## The Iterative Review Protocol
 
 Every hypothesis experiment goes through **iterative rounds** of experimentation interleaved with **three parallel external reviews**, continuing **until convergence** (max 10 rounds). There is no minimum round count — if three thorough reviewers all converge in Round 1, the experiment is done.
 
@@ -164,6 +164,7 @@ After convergence and PR creation, walk the findings classification table in FIN
 | Confirmation with bug discovery | Bug: one per code defect. Enhancement: if detector/tooling needs improvement. |
 | Partial confirmation with surprise | New hypothesis: follow-up experiments to investigate surprise. |
 | Refuted — system design flaw | Design: architectural limitation. Enhancement: proposed fix. |
+| Refuted — mechanism not plausible | Design: document the limitation. Enhancement: update CLI help or user docs if the mechanism assumption stems from misleading parameter names. |
 | Refuted — wrong mental model | Usually none. Optionally: enhancement if CLI help text is misleading. |
 | Inconclusive — parameter-dependent | New hypothesis: test at different parameters. |
 | Converged to open question | New hypothesis: specific experiment or tooling to resolve. |
@@ -287,8 +288,8 @@ H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H
 - Hypothesis catalog: [docs/plans/research.md](../plans/research.md)
 - Validated experiments (by family):
   - **Scheduler invariants:** `h12-conservation/` (Tier 1, deterministic), `h13-determinism/` (Tier 1, deterministic)
-  - **Structural model:** `h3-signal-freshness/` (Tier 2, dominance), `h8-kv-pressure/` (Tier 3, monotonicity), `h9-prefix-caching/` (Tier 2, monotonicity), `h10-tiered-kv/` (Tier 3, dominance)
+  - **Structural model:** `h3-signal-freshness/` (Tier 2, dominance), `h9-prefix-caching/` (Tier 2, monotonicity), `h10-tiered-kv/` (Tier 3, dominance)
+  - **Performance-regime:** `h8-kv-pressure/` (Tier 3, monotonicity)
   - **Robustness/failure-mode:** `h14-pathological-templates/` (Tier 2, dominance), `h5-token-bucket-burst/` (Tier 3, dominance)
   - **Cross-policy comparative:** `prefix-affinity/` (Tier 2, dominance)
   - **Workload/arrival:** *(none yet)*
-  - **Performance-regime:** *(none yet)*

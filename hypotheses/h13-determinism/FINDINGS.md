@@ -1,9 +1,13 @@
 # H13: Determinism Invariant
 
 **Status:** Confirmed
+**Resolution:** Clean confirmation
+**Family:** Scheduler invariants
+**VV&UQ:** Verification
 **Tier:** 1 (correctness baseline)
 **Type:** Deterministic
 **Date:** 2026-02-20
+**Rounds:** 1
 
 ## Hypothesis
 

@@ -1,7 +1,9 @@
 # H10: Tiered KV Cache (GPU+CPU Offload)
 
 **Status:** Confirmed
-**Resolution:** Clean confirmation. Tiered cache reduces preemptions (17.5% → 8.5%) and improves TTFT (417ms → 299ms, 28% better) via prefix hash preservation. `maybeOffload` offloads prefix hashes to CPU; when the same prefix recurs, tiered reloads from CPU instead of recomputing. Cache hit rate increases 9x (0.5% → 4.5%). Control experiment (offload=1.0) produces output byte-identical to single-tier, confirming `maybeOffload` as the sole mechanism.
+**Resolution:** Confirmation with bug discovery. Tiered cache reduces preemptions (17.5% → 8.5%) and improves TTFT (417ms → 299ms, 28% better) via prefix hash preservation. `maybeOffload` offloads prefix hashes to CPU; when the same prefix recurs, tiered reloads from CPU instead of recomputing. Cache hit rate increases 9x (0.5% → 4.5%). Control experiment (offload=1.0) produces output byte-identical to single-tier, confirming `maybeOffload` as the sole mechanism.
+**Family:** Structural model
+**VV&UQ:** Validation
 **Tier:** 3 (system understanding)
 **Type:** Statistical / Dominance
 **Date:** 2026-02-20
