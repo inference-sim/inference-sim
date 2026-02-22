@@ -51,6 +51,7 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 - **prefix_cache_index.go**: `PrefixCacheIndex` — per-instance LRU cache of hierarchical block hashes for router-side prefix matching
 - **priority.go**: `PriorityPolicy` interface with `ConstantPriority`, `SLOBasedPriority`, and `InvertedSLO` templates, `NewPriorityPolicy` factory
 - **scheduler.go**: `InstanceScheduler` interface with `FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler`, and `ReversePriority` templates, `NewScheduler` factory
+- **latency_model.go**: `LatencyModel` interface (5 methods: StepTime, QueueingTime, OutputTokenProcessingTime, SchedulingProcessingTime, PreemptionProcessingTime), `BlackboxLatencyModel` (alpha/beta regression), `RooflineLatencyModel` (analytical FLOPs/bandwidth), `NewLatencyModel` factory
 - **router_state.go**: `RouterState` bridge type (Snapshots + Clock) for cluster-level policy interfaces
 - **bundle.go**: `PolicyBundle` struct with YAML loading (`LoadPolicyBundle`), validation (`Validate`)
 - **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
@@ -83,7 +84,7 @@ Observation-only trace recording for cluster-level policy decisions:
 
 ### Latency Estimation
 
-Two modes controlled by `--model-config-folder` presence:
+Two modes, selected by `NewLatencyModel()` factory based on `--model-config-folder` presence:
 
 1. **Blackbox mode** (default): Uses trained alpha/beta coefficients from `defaults.yaml`
    - Alpha coefficients: queueing time estimation
@@ -276,6 +277,7 @@ inference-sim/
 │   ├── prefix_cache_index.go  # PrefixCacheIndex: per-instance LRU of hierarchical block hashes
 │   ├── priority.go            # PriorityPolicy interface, ConstantPriority, SLOBasedPriority, NewPriorityPolicy factory
 │   ├── scheduler.go           # InstanceScheduler interface, FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, NewScheduler factory
+│   ├── latency_model.go       # LatencyModel interface, BlackboxLatencyModel, RooflineLatencyModel, NewLatencyModel factory
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
