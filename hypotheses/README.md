@@ -25,6 +25,7 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 | H13 | Scheduler invariant | Same seed produces byte-identical output | **Confirmed** | INV-6 holds for 5 policy configurations |
 | H-Phase-Structure | Structural model | TTFT linear in input tokens, decode time linear in output tokens | **Confirmed** | R² = 1.000000 (adjusted); slopes match α/β predictions within <0.01% |
 | H-MMK | Structural model | DES matches M/M/k analytical model under matching assumptions | **Partially confirmed** | Within 3.3% at ρ ≤ 0.3; diverges 28-71% at ρ ≥ 0.5 (discrete step processing) |
+| H-Arrival | Workload/arrival | Poisson/Gamma/Weibull samplers match theoretical CDF | **Confirmed with limitation** | Poisson/low-CV pass KS; high-CV fail due to int64 μs clamping (42% for Gamma CV=3.5) |
 
 ## Running Experiments
 
@@ -48,7 +49,7 @@ Scripts are self-contained — they build the binary, run all experiment variant
 | **Robustness/failure-mode** | H14 ✓, H5 ✓ | H21, H22, H24 | Extreme weights, input validation, pathological combos |
 | **Cross-policy comparative** | Prefix-Affinity ✓ | H1, H2, H4, H6, H15, H17, H18, H19, H23 | **Largest gap** — 9 pending hypotheses |
 | **Performance-regime** | H8 ✓ | H7, H11 | Horizontal scaling, batch formation tradeoff |
-| **Workload/arrival** | — | H16, H20 | **No coverage** — generator distributions never validated |
+| **Workload/arrival** | H-Arrival ✓ | H16, H20 | int64 clamping limits high-CV accuracy; distribution comparison untested |
 
 ## Hypothesis Tiers (priority from research.md)
 
