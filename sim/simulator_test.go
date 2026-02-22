@@ -815,3 +815,94 @@ func TestSimulator_ObservationMethods_MatchDirectAccess(t *testing.T) {
 		t.Errorf("QueueDepth mismatch: method=%d, direct=%d", s.QueueDepth(), s.WaitQ.Len())
 	}
 }
+
+// TestWorkConserving_StepRestartsWhenWaitQNonEmpty verifies INV-8:
+// GIVEN a simulator with MaxRunningReqs=1 and two requests arriving at t=0 and t=1
+// WHEN the simulation runs to completion (infinite horizon, no further arrivals)
+// THEN both requests complete (the second is not stranded when the first finishes)
+// AND the second request's scheduling delay is bounded by the first's service time.
+//
+// Without the work-conserving fix (simulator.go Work-conserving comment block), the
+// second request would be stranded forever: its QueuedEvent already fired (seeing
+// stepEvent != nil), and when the first request completes, stepEvent is set to nil
+// without checking WaitQ. No third arrival exists to trigger a new StepEvent via
+// QueuedEvent.
+func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:            math.MaxInt64,
+		Seed:               42,
+		TotalKVBlocks:      10000,
+		BlockSizeTokens:    16,
+		MaxRunningReqs:     1, // KEY: only one request can run at a time
+		MaxScheduledTokens: 2048,
+		BetaCoeffs:         []float64{1000, 10, 5},
+		AlphaCoeffs:        []float64{100, 1, 100},
+		Model:              "test-work-conserving",
+		GPU:                "H100",
+		TP:                 1,
+	}
+
+	s := mustNewSimulator(t, cfg)
+
+	// Request A: arrives at t=0
+	s.InjectArrival(&Request{
+		ID: "req-A", ArrivalTime: 0,
+		InputTokens:  make([]int, 10),
+		OutputTokens: make([]int, 5),
+		State:        StateQueued,
+	})
+	// Request B: arrives at t=1 (during A's service time, which is ~6000μs)
+	s.InjectArrival(&Request{
+		ID: "req-B", ArrivalTime: 1,
+		InputTokens:  make([]int, 10),
+		OutputTokens: make([]int, 5),
+		State:        StateQueued,
+	})
+
+	s.Run()
+
+	// BC-1: Both requests MUST complete.
+	// Without the work-conserving fix, only req-A completes (req-B stranded forever).
+	if s.Metrics.CompletedRequests != 2 {
+		t.Fatalf("INV-8 violated: CompletedRequests = %d, want 2 "+
+			"(second request stranded when running batch emptied without checking WaitQ)",
+			s.Metrics.CompletedRequests)
+	}
+
+	// BC-2: req-B's scheduling delay must be bounded.
+	// It should wait approximately one service time of req-A (~6000μs), not be stuck indefinitely.
+	delayA := s.Metrics.RequestSchedulingDelays["req-A"]
+	delayB := s.Metrics.RequestSchedulingDelays["req-B"]
+
+	// req-A should be scheduled almost immediately (only alpha queueing delay)
+	if delayA > 10000 {
+		t.Errorf("req-A scheduling delay = %d μs, want < 10000 (should be near-immediate)", delayA)
+	}
+
+	// req-B should wait approximately one service time of req-A, not be unbounded.
+	// With beta=[1000,10,5] and 10 input + 5 output tokens, service time is ~6000-7000μs.
+	// We use a generous 2× bound to avoid brittleness.
+	if delayB > 2*20000 {
+		t.Errorf("req-B scheduling delay = %d μs, exceeds 2× expected service time bound "+
+			"(may indicate work-conserving violation)", delayB)
+	}
+
+	// req-B must have waited longer than req-A (it was queued behind A)
+	if delayB <= delayA {
+		t.Errorf("req-B scheduling delay (%d) <= req-A delay (%d), "+
+			"but B should have waited for A to complete", delayB, delayA)
+	}
+
+	// INV-1: Request conservation still holds
+	injected := len(s.Metrics.Requests)
+	total := s.Metrics.CompletedRequests + s.WaitQ.Len()
+	running := 0
+	if s.RunningBatch != nil {
+		running = len(s.RunningBatch.Requests)
+	}
+	total += running
+	if total != injected {
+		t.Errorf("INV-1 conservation: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
+			s.Metrics.CompletedRequests, s.WaitQ.Len(), running, total, injected)
+	}
+}
