@@ -169,6 +169,7 @@ Full details (verification strategies, evidence): see [`docs/standards/invariant
 - **INV-5 Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
 - **INV-6 Determinism**: Same seed must produce byte-identical stdout across runs. Wall-clock timing goes to stderr.
 - **INV-7 Signal freshness**: Routing snapshot signals have tiered freshness — PendingRequests (synchronous) vs KVUtilization (stale across batch steps). See `docs/standards/invariants.md` for the full hierarchy.
+- **INV-8 Work-conserving**: After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while work is waiting.
 
 ### Engineering Principles
 
@@ -341,7 +342,7 @@ inference-sim/
 ### Standards (what rules apply)
 
 - `docs/standards/rules.md`: **20 antipattern rules** (R1-R20) — each with evidence, checks, enforcement locations
-- `docs/standards/invariants.md`: **7 system invariants** (INV-1 through INV-7) — with verification strategies
+- `docs/standards/invariants.md`: **8 system invariants** (INV-1 through INV-8) — with verification strategies
 - `docs/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol, findings classification
 

@@ -1173,3 +1173,154 @@ func sortedRequestMetrics(m map[string]sim.RequestMetrics) []sim.RequestMetrics 
 	}
 	return result
 }
+
+// TestClusterSimulator_Conservation_PolicyMatrix verifies INV-1 at cluster level
+// across 10 policy combinations (promoted from H12 hypothesis experiment):
+// GIVEN each policy combination with infinite horizon and ample resources
+// WHEN the cluster simulation completes
+// THEN completed + still_queued + still_running == injected (three-term conservation)
+// AND all requests complete (infinite horizon, no resource pressure).
+func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
+	matrix := []struct {
+		name            string
+		numInstances    int
+		routingPolicy   string
+		scorerConfigs   []sim.ScorerConfig
+		scheduler       string
+		priorityPolicy  string
+		admissionPolicy string
+	}{
+		{"round-robin/fcfs/2inst", 2, "round-robin", nil, "fcfs", "constant", "always-admit"},
+		{"least-loaded/fcfs/3inst", 3, "least-loaded", nil, "fcfs", "constant", "always-admit"},
+		{"weighted/fcfs/2inst", 2, "weighted", sim.DefaultScorerConfigs(), "fcfs", "constant", "always-admit"},
+		{"prefix-affinity/fcfs/2inst", 2, "prefix-affinity", nil, "fcfs", "constant", "always-admit"},
+		{"round-robin/sjf/3inst", 3, "round-robin", nil, "sjf", "constant", "always-admit"},
+		{"round-robin/priority-fcfs/slo/2inst", 2, "round-robin", nil, "priority-fcfs", "slo-based", "always-admit"},
+		{"least-loaded/priority-fcfs/slo/3inst", 3, "least-loaded", nil, "priority-fcfs", "slo-based", "always-admit"},
+		{"weighted/sjf/4inst", 4, "weighted", sim.DefaultScorerConfigs(), "sjf", "constant", "always-admit"},
+		{"round-robin/fcfs/token-bucket/2inst", 2, "round-robin", nil, "fcfs", "constant", "token-bucket"},
+		{"least-loaded/fcfs/4inst", 4, "least-loaded", nil, "fcfs", "constant", "always-admit"},
+	}
+
+	const numRequests = 50
+
+	for _, tc := range matrix {
+		t.Run(tc.name, func(t *testing.T) {
+			config := newTestDeploymentConfig(tc.numInstances)
+			config.RoutingPolicy = tc.routingPolicy
+			config.RoutingScorerConfigs = tc.scorerConfigs
+			config.Scheduler = tc.scheduler
+			config.PriorityPolicy = tc.priorityPolicy
+			config.AdmissionPolicy = tc.admissionPolicy
+			// Token bucket with generous capacity so all requests are admitted
+			if tc.admissionPolicy == "token-bucket" {
+				config.TokenBucketCapacity = 1e6
+				config.TokenBucketRefillRate = 1e6
+			}
+
+			workload := newTestWorkload(numRequests)
+			cs := NewClusterSimulator(config, workload, "")
+			mustRun(t, cs)
+
+			agg := cs.AggregatedMetrics()
+			injected := len(agg.Requests)
+
+			// BC-3: Three-term conservation equation (INV-1)
+			conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
+			if conservation != injected {
+				t.Errorf("INV-1 conservation: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
+					agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
+			}
+
+			// BC-4: All complete under infinite horizon with ample resources
+			if agg.CompletedRequests != numRequests {
+				t.Errorf("infinite horizon: CompletedRequests = %d, want %d",
+					agg.CompletedRequests, numRequests)
+			}
+
+			// Cross-check: sum of per-instance completions == aggregated
+			sumCompleted := 0
+			for _, inst := range cs.Instances() {
+				sumCompleted += inst.Metrics().CompletedRequests
+			}
+			if sumCompleted != agg.CompletedRequests {
+				t.Errorf("aggregation: sum(per-instance) = %d, aggregated = %d",
+					sumCompleted, agg.CompletedRequests)
+			}
+		})
+	}
+}
+
+// TestClusterSimulator_Determinism_PrefixAffinity_ByteIdentical verifies INV-6
+// for routing policies that use stateful scorers with internal maps (promoted from H13):
+// GIVEN identical config with prefix-affinity or weighted routing (includes prefix scorer)
+// WHEN run twice with same seed
+// THEN per-request metrics JSON is byte-identical.
+//
+// This specifically targets the PrefixCacheIndex LRU which uses map iteration internally.
+// Non-deterministic map iteration in scoring or eviction would cause divergence here.
+func TestClusterSimulator_Determinism_PrefixAffinity_ByteIdentical(t *testing.T) {
+	policies := []struct {
+		name          string
+		routingPolicy string
+		scorerConfigs []sim.ScorerConfig
+	}{
+		{"prefix-affinity", "prefix-affinity", sim.DefaultScorerConfigs()},
+		{"weighted-default", "weighted", sim.DefaultScorerConfigs()},
+	}
+
+	for _, pol := range policies {
+		t.Run(pol.name, func(t *testing.T) {
+			mkSim := func() *ClusterSimulator {
+				config := newTestDeploymentConfig(3)
+				config.RoutingPolicy = pol.routingPolicy
+				config.RoutingScorerConfigs = pol.scorerConfigs
+				// Use prefix tokens to exercise the prefix cache index
+				workload := &sim.GuideLLMConfig{
+					Rate:               10.0 / 1e6,
+					NumRequests:        30,
+					PrefixTokens:       32,
+					PromptTokens:       100,
+					PromptTokensStdDev: 20,
+					PromptTokensMin:    10,
+					PromptTokensMax:    200,
+					OutputTokens:       50,
+					OutputTokensStdDev: 10,
+					OutputTokensMin:    10,
+					OutputTokensMax:    100,
+				}
+				cs := NewClusterSimulator(config, workload, "")
+				mustRun(t, cs)
+				return cs
+			}
+
+			cs1 := mkSim()
+			cs2 := mkSim()
+
+			m1 := cs1.AggregatedMetrics()
+			m2 := cs2.AggregatedMetrics()
+
+			// Integer fields must match exactly
+			if m1.CompletedRequests != m2.CompletedRequests {
+				t.Errorf("CompletedRequests: %d vs %d", m1.CompletedRequests, m2.CompletedRequests)
+			}
+			if m1.TotalInputTokens != m2.TotalInputTokens {
+				t.Errorf("TotalInputTokens: %d vs %d", m1.TotalInputTokens, m2.TotalInputTokens)
+			}
+			if m1.TotalOutputTokens != m2.TotalOutputTokens {
+				t.Errorf("TotalOutputTokens: %d vs %d", m1.TotalOutputTokens, m2.TotalOutputTokens)
+			}
+			if m1.SimEndedTime != m2.SimEndedTime {
+				t.Errorf("SimEndedTime: %d vs %d", m1.SimEndedTime, m2.SimEndedTime)
+			}
+
+			// Per-request metrics must be byte-identical (sorted JSON)
+			j1, _ := json.Marshal(sortedRequestMetrics(m1.Requests))
+			j2, _ := json.Marshal(sortedRequestMetrics(m2.Requests))
+			if !bytes.Equal(j1, j2) {
+				t.Error("INV-6 violated: per-request metrics JSON differs between runs " +
+					"(likely non-deterministic map iteration in prefix cache or scorer)")
+			}
+		})
+	}
+}
