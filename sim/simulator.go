@@ -469,12 +469,53 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 	}
 }
 
-// In vllm, the processing of requests proceeds iteratively in steps.
-// Step simulates a single vllm step(), which roughly corresponds to a single scheduler.schedule()
-// to construct a batch, model execution of the batch and scheduler.update().
+// recordQueueSnapshots records the wait queue and running batch sizes at this step.
+// Called after batch formation, before execution.
+func (sim *Simulator) recordQueueSnapshots() {
+	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, sim.WaitQ.Len())
+	sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, len(sim.RunningBatch.Requests))
+}
+
+// recordKVUsageMetrics records peak and time-weighted KV block usage.
+// Called after execution, before completion processing.
+func (sim *Simulator) recordKVUsageMetrics(stepDuration int64) {
+	used := sim.KVCache.UsedBlocks()
+	if used > sim.Metrics.PeakKVBlocksUsed {
+		sim.Metrics.PeakKVBlocksUsed = used
+	}
+	sim.Metrics.KVBlocksUsed += float64(used) * float64(stepDuration)
+}
+
+// recordRequestCompletion records per-request metrics for a completed request.
+// Called after state transitions (req.State, req.ITL, req.FinishedStepIdx)
+// and KV cleanup are done.
+func (sim *Simulator) recordRequestCompletion(req *Request) {
+	sim.Metrics.CompletedRequests++
+
+	var itlSum int64
+	for _, v := range req.ITL {
+		itlSum += v
+	}
+	lat := req.FirstTokenTime + itlSum
+	sim.Metrics.RequestE2Es[req.ID] = float64(lat)
+	logrus.Debugf("Finished req: ID: %s at time: %d", req.ID, lat+req.ArrivalTime)
+	if len(req.OutputTokens) > 0 {
+		reqTotalOutput := lat - req.FirstTokenTime
+		sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
+	} else {
+		sim.Metrics.RequestITLs[req.ID] = 0
+	}
+	sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
+	sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
+	sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
+}
+
+// Step simulates a single vllm step(): batch scheduling, model execution, and completion.
+// Phases: (1) schedule batch, (2) execute prefill/decode, (3) process completions, (4) schedule next step.
+// Observational metrics are recorded via helper methods at phase boundaries.
 func (sim *Simulator) Step(now int64) {
 
-	// increment Step counter
+	// === Phase 1: Schedule batch ===
 	sim.stepCount += 1
 
 	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
@@ -491,11 +532,10 @@ func (sim *Simulator) Step(now int64) {
 	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
 	sim.makeRunningBatch(now)
 
-	// save waitQ length for analysis
-	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, sim.WaitQ.Len())
+	// Record queue depth observations after batch formation
+	sim.recordQueueSnapshots()
 
-	// save runningBatch length for analysis
-	sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, len(sim.RunningBatch.Requests))
+	// === Phase 2: Execute batch (prefill + decode) ===
 
 	// Estimate step time via LatencyModel (blackbox or roofline, selected at construction)
 	currStepAdvance := sim.latencyModel.StepTime(sim.RunningBatch.Requests)
@@ -524,15 +564,10 @@ func (sim *Simulator) Step(now int64) {
 		}
 	}
 
-	// Subprocess: check completion and push next step event, similar to vLLM's
-	// scheduler.update_from_output()
+	// Record KV cache usage observations after execution
+	sim.recordKVUsageMetrics(currStepAdvance)
 
-	// Write KVBlocks usage metrics
-
-	if sim.KVCache.UsedBlocks() > sim.Metrics.PeakKVBlocksUsed {
-		sim.Metrics.PeakKVBlocksUsed = sim.KVCache.UsedBlocks()
-	}
-	sim.Metrics.KVBlocksUsed += float64(sim.KVCache.UsedBlocks()) * float64(currStepAdvance)
+	// === Phase 3: Process completions ===
 
 	// IMPORTANT: This completion loop MUST run as a separate pass after the
 	// prefill/decode execution loop above. For zero-output-token requests,
@@ -545,6 +580,7 @@ func (sim *Simulator) Step(now int64) {
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
 		if req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1 {
+			// State transitions
 			req.State = StateCompleted
 			req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 			if len(req.OutputTokens) > 0 {
@@ -555,44 +591,23 @@ func (sim *Simulator) Step(now int64) {
 				}
 			}
 			// ReleaseKVBlocks is safe even when the final-token allocation failed:
-		// AllocateKVBlocks only modifies RequestMap on success, so Release
-		// frees exactly the blocks from prior successful allocations.
-		sim.KVCache.ReleaseKVBlocks(req)
-			sim.Metrics.CompletedRequests++
-			// trigger the RequestLeftEvent with no delay
+			// AllocateKVBlocks only modifies RequestMap on success, so Release
+			// frees exactly the blocks from prior successful allocations.
+			sim.KVCache.ReleaseKVBlocks(req)
+			req.FinishedStepIdx = sim.stepCount
 			sim.Schedule(&RequestLeftEvent{
 				time:    now + currStepAdvance,
 				Request: req,
 			})
 
-			// we need to add the token postprocessing time for all output tokens for E2E latency
-			ITLSum := func(nums []int64) int64 {
-				s := int64(0)
-				for _, v := range nums {
-					s += v
-				}
-				return s
-			}(req.ITL)
-			lat := req.FirstTokenTime + ITLSum
-			sim.Metrics.RequestE2Es[req.ID] = float64(lat)
-			logrus.Debugf("Finished req: ID: %s at time: %d", req.ID, lat+req.ArrivalTime)
-			if len(req.OutputTokens) > 0 {
-				reqTotalOutput := lat - req.FirstTokenTime
-				// TPOT calculation in vLLM excludes the first generated token, calculated in ms
-				sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
-			} else {
-				sim.Metrics.RequestITLs[req.ID] = 0
-			}
-			req.FinishedStepIdx = sim.stepCount
-			sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
-			sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
-			sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
+			// Record completion metrics
+			sim.recordRequestCompletion(req)
 		} else {
 			remaining = append(remaining, req)
 		}
 	}
 
-	// push the next step event as needed
+	// === Phase 4: Schedule next step ===
 	if len(remaining) > 0 {
 		sim.RunningBatch.Requests = remaining
 		// estimate queue overhead from LR (sim.features)
