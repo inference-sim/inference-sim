@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"reflect"
 	"sort"
 	"testing"
 
@@ -14,22 +15,20 @@ import (
 // newTestDeploymentConfig creates a DeploymentConfig suitable for testing.
 func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
-		NumInstances:              numInstances,
-		Horizon:                   math.MaxInt64,
-		Seed:                      42,
-		TotalKVBlocks:             10000,
-		BlockSizeTokens:           16,
-		MaxRunningReqs:            256,
-		MaxScheduledTokens:        2048,
-		LongPrefillTokenThreshold: 0,
-		BetaCoeffs:                []float64{1000, 10, 5},
-		AlphaCoeffs:               []float64{100, 1, 100},
-		ModelConfig:               sim.ModelConfig{},
-		HWConfig:                  sim.HardwareCalib{},
-		Model:                     "test-model",
-		GPU:                       "H100",
-		TP:                        1,
-		Roofline:                  false,
+		SimConfig: sim.SimConfig{
+			Horizon:            math.MaxInt64,
+			Seed:               42,
+			TotalKVBlocks:      10000,
+			BlockSizeTokens:    16,
+			MaxRunningReqs:     256,
+			MaxScheduledTokens: 2048,
+			BetaCoeffs:         []float64{1000, 10, 5},
+			AlphaCoeffs:        []float64{100, 1, 100},
+			Model:              "test-model",
+			GPU:                "H100",
+			TP:                 1,
+		},
+		NumInstances: numInstances,
 	}
 }
 
@@ -70,72 +69,34 @@ func TestPerInstanceMetrics_BeforeRun_Panics(t *testing.T) {
 	cs.PerInstanceMetrics() // should panic
 }
 
-// TestDeploymentConfig_ToSimConfig_FieldMapping verifies all fields are correctly mapped
-// and workload fields are intentionally omitted.
-func TestDeploymentConfig_ToSimConfig_FieldMapping(t *testing.T) {
+// TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig verifies that
+// ToSimConfig() returns exactly the embedded SimConfig (BC-1).
+func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 	dc := DeploymentConfig{
-		NumInstances:              3,
-		Horizon:                   999,
-		Seed:                      7,
-		TotalKVBlocks:             500,
-		BlockSizeTokens:           32,
-		MaxRunningReqs:            128,
-		MaxScheduledTokens:        4096,
-		LongPrefillTokenThreshold: 512,
-		BetaCoeffs:                []float64{1, 2, 3},
-		AlphaCoeffs:               []float64{4, 5, 6},
-		Model:                     "test-model",
-		GPU:                       "H100",
-		TP:                        2,
-		Roofline:                  true,
-		KVTransferBaseLatency:     42,
+		SimConfig: sim.SimConfig{
+			Horizon: 999, Seed: 7, TotalKVBlocks: 500, BlockSizeTokens: 32,
+			MaxRunningReqs: 128, MaxScheduledTokens: 4096,
+			LongPrefillTokenThreshold: 512,
+			BetaCoeffs: []float64{1, 2, 3}, AlphaCoeffs: []float64{4, 5, 6},
+			Model: "test-model", GPU: "H100", TP: 2, Roofline: true,
+			PriorityPolicy: "slo-based", Scheduler: "priority-fcfs",
+			KVTransferBaseLatency: 42,
+		},
+		NumInstances:    3,
+		AdmissionPolicy: "token-bucket",
+		TraceLevel:      "decisions",
 	}
 
 	sc := dc.ToSimConfig()
 
-	if sc.Horizon != 999 {
-		t.Errorf("Horizon: got %d, want 999", sc.Horizon)
+	// BC-1: ToSimConfig returns exactly the embedded SimConfig
+	// Note: SimConfig contains slices (BetaCoeffs, AlphaCoeffs) so direct
+	// == comparison won't compile. Use reflect.DeepEqual instead.
+	if !reflect.DeepEqual(sc, dc.SimConfig) {
+		t.Errorf("ToSimConfig() differs from embedded SimConfig:\n  got:  %+v\n  want: %+v", sc, dc.SimConfig)
 	}
-	if sc.Seed != 7 {
-		t.Errorf("Seed: got %d, want 7", sc.Seed)
-	}
-	if sc.TotalKVBlocks != 500 {
-		t.Errorf("TotalKVBlocks: got %d, want 500", sc.TotalKVBlocks)
-	}
-	if sc.BlockSizeTokens != 32 {
-		t.Errorf("BlockSizeTokens: got %d, want 32", sc.BlockSizeTokens)
-	}
-	if sc.MaxRunningReqs != 128 {
-		t.Errorf("MaxRunningReqs: got %d, want 128", sc.MaxRunningReqs)
-	}
-	if sc.MaxScheduledTokens != 4096 {
-		t.Errorf("MaxScheduledTokens: got %d, want 4096", sc.MaxScheduledTokens)
-	}
-	if sc.LongPrefillTokenThreshold != 512 {
-		t.Errorf("LongPrefillTokenThreshold: got %d, want 512", sc.LongPrefillTokenThreshold)
-	}
-	if len(sc.BetaCoeffs) != 3 || sc.BetaCoeffs[0] != 1 {
-		t.Errorf("BetaCoeffs: got %v, want [1 2 3]", sc.BetaCoeffs)
-	}
-	if len(sc.AlphaCoeffs) != 3 || sc.AlphaCoeffs[0] != 4 {
-		t.Errorf("AlphaCoeffs: got %v, want [4 5 6]", sc.AlphaCoeffs)
-	}
-	if sc.Model != "test-model" {
-		t.Errorf("Model: got %q, want %q", sc.Model, "test-model")
-	}
-	if sc.GPU != "H100" {
-		t.Errorf("GPU: got %q, want %q", sc.GPU, "H100")
-	}
-	if sc.TP != 2 {
-		t.Errorf("TP: got %d, want 2", sc.TP)
-	}
-	if !sc.Roofline {
-		t.Error("Roofline: got false, want true")
-	}
-	if sc.KVTransferBaseLatency != 42 {
-		t.Errorf("KVTransferBaseLatency: got %d, want 42", sc.KVTransferBaseLatency)
-	}
-	// Workload fields must be intentionally omitted
+
+	// BC-4: Workload fields zero-valued (cluster generates workload centrally)
 	if sc.GuideLLMConfig != nil {
 		t.Error("GuideLLMConfig should be nil (workload generated centrally)")
 	}
@@ -144,28 +105,27 @@ func TestDeploymentConfig_ToSimConfig_FieldMapping(t *testing.T) {
 	}
 }
 
-func TestDeploymentConfig_ToSimConfig_PrioritySchedulerFields(t *testing.T) {
-	dc := DeploymentConfig{
-		NumInstances:       1,
-		Horizon:            999,
-		Seed:               7,
-		TotalKVBlocks:      500,
-		BlockSizeTokens:    32,
-		MaxRunningReqs:     128,
-		MaxScheduledTokens: 4096,
-		BetaCoeffs:         []float64{1, 2, 3},
-		AlphaCoeffs:        []float64{4, 5, 6},
-		PriorityPolicy:     "slo-based",
-		Scheduler:          "priority-fcfs",
+// TestDeploymentConfig_NoFieldShadowing verifies that no directly-declared
+// DeploymentConfig field shares a name with any SimConfig field (BC-6).
+func TestDeploymentConfig_NoFieldShadowing(t *testing.T) {
+	dcType := reflect.TypeOf(DeploymentConfig{})
+	scType := reflect.TypeOf(sim.SimConfig{})
+
+	// Build set of SimConfig field names
+	simFields := make(map[string]bool)
+	for i := 0; i < scType.NumField(); i++ {
+		simFields[scType.Field(i).Name] = true
 	}
 
-	sc := dc.ToSimConfig()
-
-	if sc.PriorityPolicy != "slo-based" {
-		t.Errorf("PriorityPolicy: got %q, want %q", sc.PriorityPolicy, "slo-based")
-	}
-	if sc.Scheduler != "priority-fcfs" {
-		t.Errorf("Scheduler: got %q, want %q", sc.Scheduler, "priority-fcfs")
+	// Check each directly-declared DeploymentConfig field (skip embedded SimConfig)
+	for i := 0; i < dcType.NumField(); i++ {
+		field := dcType.Field(i)
+		if field.Anonymous {
+			continue // skip the embedded SimConfig itself
+		}
+		if simFields[field.Name] {
+			t.Errorf("DeploymentConfig field %q shadows SimConfig field — use promoted access instead", field.Name)
+		}
 	}
 }
 
@@ -183,22 +143,21 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 	for _, tc := range dataset.Tests {
 		t.Run(tc.Model, func(t *testing.T) {
 			config := DeploymentConfig{
-				NumInstances:              1,
-				Horizon:                   math.MaxInt64,
-				Seed:                      tc.Seed,
-				TotalKVBlocks:             tc.TotalKVBlocks,
-				BlockSizeTokens:           tc.BlockSizeInTokens,
-				MaxRunningReqs:            tc.MaxNumRunningReqs,
-				MaxScheduledTokens:        tc.MaxNumScheduledTokens,
-				LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
-				BetaCoeffs:                tc.BetaCoeffs,
-				AlphaCoeffs:               tc.AlphaCoeffs,
-				ModelConfig:               sim.ModelConfig{},
-				HWConfig:                  sim.HardwareCalib{},
-				Model:                     tc.Model,
-				GPU:                       tc.Hardware,
-				TP:                        tc.TP,
-				Roofline:                  false,
+				SimConfig: sim.SimConfig{
+					Horizon:                   math.MaxInt64,
+					Seed:                      tc.Seed,
+					TotalKVBlocks:             tc.TotalKVBlocks,
+					BlockSizeTokens:           tc.BlockSizeInTokens,
+					MaxRunningReqs:            tc.MaxNumRunningReqs,
+					MaxScheduledTokens:        tc.MaxNumScheduledTokens,
+					LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
+					BetaCoeffs:                tc.BetaCoeffs,
+					AlphaCoeffs:               tc.AlphaCoeffs,
+					Model:                     tc.Model,
+					GPU:                       tc.Hardware,
+					TP:                        tc.TP,
+				},
+				NumInstances: 1,
 			}
 
 			workload := &sim.GuideLLMConfig{
@@ -861,19 +820,21 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 
 			// Cluster workload generation
 			config := DeploymentConfig{
-				NumInstances:              1,
-				Horizon:                   math.MaxInt64,
-				Seed:                      tc.Seed,
-				TotalKVBlocks:             tc.TotalKVBlocks,
-				BlockSizeTokens:           tc.BlockSizeInTokens,
-				MaxRunningReqs:            tc.MaxNumRunningReqs,
-				MaxScheduledTokens:        tc.MaxNumScheduledTokens,
-				LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
-				BetaCoeffs:                tc.BetaCoeffs,
-				AlphaCoeffs:               tc.AlphaCoeffs,
-				Model:                     tc.Model,
-				GPU:                       tc.Hardware,
-				TP:                        tc.TP,
+				SimConfig: sim.SimConfig{
+					Horizon:                   math.MaxInt64,
+					Seed:                      tc.Seed,
+					TotalKVBlocks:             tc.TotalKVBlocks,
+					BlockSizeTokens:           tc.BlockSizeInTokens,
+					MaxRunningReqs:            tc.MaxNumRunningReqs,
+					MaxScheduledTokens:        tc.MaxNumScheduledTokens,
+					LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
+					BetaCoeffs:                tc.BetaCoeffs,
+					AlphaCoeffs:               tc.AlphaCoeffs,
+					Model:                     tc.Model,
+					GPU:                       tc.Hardware,
+					TP:                        tc.TP,
+				},
+				NumInstances: 1,
 			}
 			cs := NewClusterSimulator(config, guideLLMConfig, "")
 			requests := cs.generateRequestsFromDistribution()

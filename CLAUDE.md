@@ -69,7 +69,7 @@ Multi-replica extension using composition over the single-instance simulator:
 - **instance.go**: `InstanceSimulator` wraps `sim.Simulator` via `NewInstanceSimulator(id, SimConfig)` with run-once guard; delegates to Simulator observation methods (`QueueDepth()`, `BatchSize()`, etc.) instead of direct field access
 - **cluster.go**: `ClusterSimulator` orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; `Run()` returns `error`
 - **metrics.go**: `RawMetrics`, `Distribution`, `FitnessResult`, `CollectRawMetrics` (accepts `priorityPolicy` to suppress false-positive inversion detection for constant priority), `ComputeFitness` (returns `(FitnessResult, error)` — fails on unknown keys), anomaly detection, `ParseFitnessWeights` with NaN/Inf validation
-- **deployment.go**: `DeploymentConfig` struct with `ToSimConfig()` for per-instance construction
+- **deployment.go**: `DeploymentConfig` embeds `sim.SimConfig` + cluster-only fields; `ToSimConfig()` returns the embedded config
 - **workload.go**: Centralized request generation (distribution-based or CSV traces) for cluster dispatch
 - **counterfactual.go**: `computeCounterfactual()` for top-k candidate ranking and regret computation
 - **evaluation.go**: `EvaluationResult` wrapper (RawMetrics + FitnessResult + trace + summary)
@@ -300,7 +300,7 @@ inference-sim/
 │   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent
 │   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
 │   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, anomaly detection, per-SLO-class metrics, JainFairnessIndex
-│   ├── deployment.go          # DeploymentConfig struct
+│   ├── deployment.go          # DeploymentConfig (embeds sim.SimConfig) + cluster-only fields
 │   └── workload.go            # Centralized request generation for cluster dispatch
 ├── sim/workload/              # ServeGen-informed workload generation (PR10)
 │   ├── spec.go                # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading

@@ -12,15 +12,13 @@ import (
 // THEN all pendingRequests values are 0 (every routed request was absorbed)
 func TestClusterSimulator_PendingRequests_DrainsToZeroAfterProcessing(t *testing.T) {
 	config := DeploymentConfig{
-		NumInstances:       2,
-		Horizon:            10000000,
-		Seed:               42,
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 2048,
-		BetaCoeffs:         []float64{1000, 10, 5},
-		AlphaCoeffs:        []float64{100, 50, 25},
+		SimConfig: sim.SimConfig{
+			Horizon: 10000000, Seed: 42,
+			TotalKVBlocks: 100, BlockSizeTokens: 16,
+			MaxRunningReqs: 10, MaxScheduledTokens: 2048,
+			BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
+		},
+		NumInstances:         2,
 		RoutingPolicy:        "weighted",
 		RoutingScorerConfigs: sim.DefaultScorerConfigs(),
 	}
@@ -50,7 +48,9 @@ func TestClusterSimulator_PendingRequests_DrainsToZeroAfterProcessing(t *testing
 
 // TestClusterSimulator_PendingRequests_VisibleInRoutingState verifies:
 // GIVEN a 1-instance cluster with pre-generated requests at identical timestamps
-//       and non-zero routing latency (so routing decisions overlap with pending state)
+//
+//	and non-zero routing latency (so routing decisions overlap with pending state)
+//
 // WHEN routing decisions are traced
 // THEN at least one routing decision observes PendingRequests > 0
 //
@@ -60,18 +60,16 @@ func TestClusterSimulator_PendingRequests_DrainsToZeroAfterProcessing(t *testing
 // routing decision.
 func TestClusterSimulator_PendingRequests_VisibleInRoutingState(t *testing.T) {
 	config := DeploymentConfig{
-		NumInstances:       1,
-		Horizon:            10000000,
-		Seed:               42,
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 2048,
-		BetaCoeffs:         []float64{1000, 10, 5},
-		AlphaCoeffs:        []float64{100, 50, 25},
-		RoutingLatency:     100, // Creates window where pending is visible
-		TraceLevel:         "decisions",
-		CounterfactualK:    1,
+		SimConfig: sim.SimConfig{
+			Horizon: 10000000, Seed: 42,
+			TotalKVBlocks: 100, BlockSizeTokens: 16,
+			MaxRunningReqs: 10, MaxScheduledTokens: 2048,
+			BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
+		},
+		NumInstances:    1,
+		RoutingLatency:  100, // Creates window where pending is visible
+		TraceLevel:      "decisions",
+		CounterfactualK: 1,
 	}
 
 	// Pre-generate requests at the same arrival time so their routing decisions
@@ -135,21 +133,20 @@ func TestClusterSimulator_PendingRequests_VisibleInRoutingState(t *testing.T) {
 // WHEN requests are processed
 // THEN pending drains to zero (each QueuedEvent triggered exactly one decrement)
 // AND at least one routing decision observes PendingRequests > 0 (proving decrement
-//     happens on QueuedEvent, not prematurely on ArrivalEvent)
+//
+//	happens on QueuedEvent, not prematurely on ArrivalEvent)
 func TestClusterSimulator_PendingRequests_CausalDecrement(t *testing.T) {
 	config := DeploymentConfig{
-		NumInstances:       1,
-		Horizon:            10000000,
-		Seed:               42,
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 2048,
-		BetaCoeffs:         []float64{1000, 10, 5},
-		AlphaCoeffs:        []float64{100, 50, 25},
-		RoutingLatency:     100, // Creates overlap window where pending is visible
-		TraceLevel:         "decisions",
-		CounterfactualK:    1,
+		SimConfig: sim.SimConfig{
+			Horizon: 10000000, Seed: 42,
+			TotalKVBlocks: 100, BlockSizeTokens: 16,
+			MaxRunningReqs: 10, MaxScheduledTokens: 2048,
+			BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
+		},
+		NumInstances:    1,
+		RoutingLatency:  100, // Creates overlap window where pending is visible
+		TraceLevel:      "decisions",
+		CounterfactualK: 1,
 	}
 
 	// Pre-generate requests all at t=0 so they route in quick succession.
@@ -212,18 +209,16 @@ func TestClusterSimulator_PendingRequests_CausalDecrement(t *testing.T) {
 // THEN at least one candidate has PendingRequests > 0 (proving the field is populated)
 func TestClusterSimulator_PendingRequests_CounterfactualIncludesPending(t *testing.T) {
 	config := DeploymentConfig{
-		NumInstances:       1,
-		Horizon:            10000000,
-		Seed:               42,
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 2048,
-		BetaCoeffs:         []float64{1000, 10, 5},
-		AlphaCoeffs:        []float64{100, 50, 25},
-		RoutingLatency:     100, // Creates pending state visible to routing
-		TraceLevel:         "decisions",
-		CounterfactualK:    1,
+		SimConfig: sim.SimConfig{
+			Horizon: 10000000, Seed: 42,
+			TotalKVBlocks: 100, BlockSizeTokens: 16,
+			MaxRunningReqs: 10, MaxScheduledTokens: 2048,
+			BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
+		},
+		NumInstances:    1,
+		RoutingLatency:  100, // Creates pending state visible to routing
+		TraceLevel:      "decisions",
+		CounterfactualK: 1,
 	}
 
 	// Pre-generate requests at t=0 to create routing overlap
@@ -306,4 +301,3 @@ func TestComputeCounterfactual_IncludesPendingRequests(t *testing.T) {
 		}
 	}
 }
-
