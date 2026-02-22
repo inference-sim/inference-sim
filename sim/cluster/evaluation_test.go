@@ -11,17 +11,15 @@ import (
 func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T) {
 	// GIVEN a simulation with tracing enabled
 	config := DeploymentConfig{
-		NumInstances:       2,
-		Horizon:            5000000,
-		Seed:               42,
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 2048,
-		BetaCoeffs:         []float64{1000, 10, 5},
-		AlphaCoeffs:        []float64{100, 50, 25},
-		TraceLevel:         "decisions",
-		CounterfactualK:    2,
+		SimConfig: sim.SimConfig{
+			Horizon: 5000000, Seed: 42,
+			TotalKVBlocks: 100, BlockSizeTokens: 16,
+			MaxRunningReqs: 10, MaxScheduledTokens: 2048,
+			BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
+		},
+		NumInstances:    2,
+		TraceLevel:      "decisions",
+		CounterfactualK: 2,
 	}
 	workload := &sim.GuideLLMConfig{
 		Rate: 1.0 / 1e6, NumRequests: 3,

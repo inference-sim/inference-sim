@@ -13,7 +13,7 @@ func TestGenerateRequestsFromDistribution_ZeroRate_Panics(t *testing.T) {
 	cs := &ClusterSimulator{
 		rng:     sim.NewPartitionedRNG(42),
 		workload: &sim.GuideLLMConfig{Rate: 0, NumRequests: 10},
-		config:  DeploymentConfig{Horizon: 1000},
+		config:  DeploymentConfig{SimConfig: sim.SimConfig{Horizon: 1000}},
 	}
 
 	defer func() {

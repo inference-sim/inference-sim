@@ -10,16 +10,14 @@ import (
 func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 	// GIVEN trace level none (default)
 	config := DeploymentConfig{
-		NumInstances:       2,
-		Horizon:            1000000,
-		Seed:               42,
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 2048,
-		BetaCoeffs:         []float64{1000, 10, 5},
-		AlphaCoeffs:        []float64{100, 50, 25},
-		TraceLevel:         "none",
+		SimConfig: sim.SimConfig{
+			Horizon: 1000000, Seed: 42,
+			TotalKVBlocks: 100, BlockSizeTokens: 16,
+			MaxRunningReqs: 10, MaxScheduledTokens: 2048,
+			BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
+		},
+		NumInstances: 2,
+		TraceLevel:   "none",
 	}
 	workload := &sim.GuideLLMConfig{
 		Rate: 1.0 / 1e6, NumRequests: 3,
@@ -42,17 +40,15 @@ func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 	// GIVEN trace level decisions with 5 requests and 2 instances
 	config := DeploymentConfig{
-		NumInstances:       2,
-		Horizon:            10000000,
-		Seed:               42,
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 2048,
-		BetaCoeffs:         []float64{1000, 10, 5},
-		AlphaCoeffs:        []float64{100, 50, 25},
-		TraceLevel:         "decisions",
-		CounterfactualK:    0,
+		SimConfig: sim.SimConfig{
+			Horizon: 10000000, Seed: 42,
+			TotalKVBlocks: 100, BlockSizeTokens: 16,
+			MaxRunningReqs: 10, MaxScheduledTokens: 2048,
+			BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
+		},
+		NumInstances:    2,
+		TraceLevel:      "decisions",
+		CounterfactualK: 0,
 	}
 	workload := &sim.GuideLLMConfig{
 		Rate: 1.0 / 1e6, NumRequests: 5,
@@ -89,19 +85,17 @@ func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 	// GIVEN trace with counterfactual k=2 and weighted scoring
 	config := DeploymentConfig{
-		NumInstances:       2,
-		Horizon:            10000000,
-		Seed:               42,
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 2048,
-		BetaCoeffs:         []float64{1000, 10, 5},
-		AlphaCoeffs:        []float64{100, 50, 25},
+		SimConfig: sim.SimConfig{
+			Horizon: 10000000, Seed: 42,
+			TotalKVBlocks: 100, BlockSizeTokens: 16,
+			MaxRunningReqs: 10, MaxScheduledTokens: 2048,
+			BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
+		},
+		NumInstances:         2,
 		RoutingPolicy:        "weighted",
 		RoutingScorerConfigs: sim.DefaultScorerConfigs(),
 		TraceLevel:           "decisions",
-		CounterfactualK:    2,
+		CounterfactualK:      2,
 	}
 	workload := &sim.GuideLLMConfig{
 		Rate: 1.0 / 1e6, NumRequests: 3,
@@ -133,15 +127,13 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
 	// GIVEN token bucket admission that rejects some requests
 	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon: 5000000, Seed: 42,
+			TotalKVBlocks: 100, BlockSizeTokens: 16,
+			MaxRunningReqs: 10, MaxScheduledTokens: 2048,
+			BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
+		},
 		NumInstances:          1,
-		Horizon:               5000000,
-		Seed:                  42,
-		TotalKVBlocks:         100,
-		BlockSizeTokens:       16,
-		MaxRunningReqs:        10,
-		MaxScheduledTokens:    2048,
-		BetaCoeffs:            []float64{1000, 10, 5},
-		AlphaCoeffs:           []float64{100, 50, 25},
 		AdmissionPolicy:       "token-bucket",
 		TokenBucketCapacity:   2,        // very small: only 2 tokens
 		TokenBucketRefillRate: 0.000001, // near-zero refill
