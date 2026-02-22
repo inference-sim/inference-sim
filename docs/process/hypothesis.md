@@ -157,12 +157,13 @@ After convergence and PR creation, walk the findings classification table in FIN
 | **New hypothesis** | `--label hypothesis` | Follow-up experiment spawned by current findings | `hypothesis: <claim to test>` | `hypothesis: test tiered KV at GPU=1500 blocks to trigger preemption-path offload` (H10) |
 | **Design limitation** | `--label design` | System works as coded but has undocumented behavioral limitation | `design: <limitation>` | `design: no burst-smoothing sweet spot under Gamma CV>3` (H5) |
 | **Standards update** | `--label standards` | New rule or invariant discovered that should be added | `standards: <rule/invariant>` | `standards: R17 signal freshness — routing signals have tiered staleness` (H3) |
+| **Promotion** | `--label promotion` | Confirmed hypothesis finding promoted from bash experiment to Go test suite (see [Promotion of Confirmed Hypotheses](#promotion-of-confirmed-hypotheses)) | `enhancement: promote <hypothesis> <finding> to Go test suite` | `enhancement: promote H-Overload conservation under 10x to Go test suite` (#337) |
 
 **Mapping from resolution type to expected issues:**
 
 | Resolution | Expected issues |
 |------------|----------------|
-| Clean confirmation | Usually none. Optionally: standards update confirming existing rules. |
+| Clean confirmation | Usually none. Optionally: promotion to Go test suite, standards update confirming existing rules. |
 | Confirmation with wrong mechanism | Enhancement: update documentation with correct mechanism. |
 | Confirmation with bug discovery | Bug: one per code defect. Enhancement: if detector/tooling needs improvement. |
 | Partial confirmation with surprise | New hypothesis: follow-up experiments to investigate surprise. |
