@@ -102,6 +102,40 @@ func TestBlackboxLatencyModel_PlaceholderOverheads(t *testing.T) {
 	}
 }
 
+// TestBlackboxLatencyModel_StepTime_Monotonic verifies BC-1 invariant:
+// more prefill tokens must increase step time.
+func TestBlackboxLatencyModel_StepTime_Monotonic(t *testing.T) {
+	model := &BlackboxLatencyModel{
+		betaCoeffs:  []float64{1000, 10, 5},
+		alphaCoeffs: []float64{100, 1, 100},
+	}
+
+	small := []*Request{{InputTokens: make([]int, 50), ProgressIndex: 0, NumNewTokens: 10}}
+	large := []*Request{{InputTokens: make([]int, 200), ProgressIndex: 0, NumNewTokens: 100}}
+
+	if model.StepTime(large) <= model.StepTime(small) {
+		t.Errorf("monotonicity violated: StepTime(100 tokens) = %d <= StepTime(10 tokens) = %d",
+			model.StepTime(large), model.StepTime(small))
+	}
+}
+
+// TestBlackboxLatencyModel_QueueingTime_Monotonic verifies BC-3 invariant:
+// longer input sequences must yield higher queueing times.
+func TestBlackboxLatencyModel_QueueingTime_Monotonic(t *testing.T) {
+	model := &BlackboxLatencyModel{
+		betaCoeffs:  []float64{1000, 10, 5},
+		alphaCoeffs: []float64{100, 1, 100},
+	}
+
+	short := &Request{InputTokens: make([]int, 10)}
+	long := &Request{InputTokens: make([]int, 500)}
+
+	if model.QueueingTime(long) <= model.QueueingTime(short) {
+		t.Errorf("monotonicity violated: QueueingTime(500 tokens) = %d <= QueueingTime(10 tokens) = %d",
+			model.QueueingTime(long), model.QueueingTime(short))
+	}
+}
+
 // TestRooflineLatencyModel_StepTime_PositiveAndMonotonic verifies BC-2:
 // StepTime produces positive results and more tokens yield longer step time.
 func TestRooflineLatencyModel_StepTime_PositiveAndMonotonic(t *testing.T) {
