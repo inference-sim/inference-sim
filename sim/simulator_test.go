@@ -881,9 +881,9 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 
 	// req-B should wait approximately one service time of req-A, not be unbounded.
 	// With beta=[1000,10,5] and 10 input + 5 output tokens, service time is ~6000-7000μs.
-	// We use a generous 2× bound to avoid brittleness.
-	if delayB > 2*20000 {
-		t.Errorf("req-B scheduling delay = %d μs, exceeds 2× expected service time bound "+
+	// We use a generous bound (40000μs ≈ 6× service time) to avoid brittleness.
+	if delayB > 40000 {
+		t.Errorf("req-B scheduling delay = %d μs, exceeds generous service time bound "+
 			"(may indicate work-conserving violation)", delayB)
 	}
 
