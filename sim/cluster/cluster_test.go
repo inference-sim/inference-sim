@@ -1321,3 +1321,106 @@ func TestClusterSimulator_Determinism_PrefixAffinity_ByteIdentical(t *testing.T)
 		})
 	}
 }
+
+// TestClusterSimulator_OverloadConservation verifies INV-1 under 10x overload
+// (promoted from H-Overload hypothesis experiment, PR #335):
+// GIVEN a 4-instance cluster at extreme overload rate
+// WHEN the simulation runs to a finite horizon
+// THEN conservation holds:
+//   - always-admit: completed + still_queued + still_running == injected
+//   - token-bucket: completed + still_queued + still_running + rejected == total_generated
+//
+// AND no panics occur (BC-5).
+func TestClusterSimulator_OverloadConservation(t *testing.T) {
+	// Use a high rate relative to capacity to create genuine overload.
+	// With beta=[1000,10,5], 4 instances, max-running=256: capacity is very high
+	// due to batching. A rate of 500 req/s with only 200 requests and a short
+	// horizon creates a burst that overloads the system.
+	cases := []struct {
+		name            string
+		admissionPolicy string
+		// Token bucket params (only used when admission is "token-bucket")
+		tbCapacity   float64
+		tbRefillRate float64
+	}{
+		{"always-admit", "always-admit", 0, 0},
+		{"token-bucket", "token-bucket", 5000, 10000},
+	}
+
+	const (
+		numRequests  = 500
+		numInstances = 4
+		rateReqPerS  = 50_000.0
+		maxRunning   = 2 // Tightly constrain batch size to create genuine overload
+		// All 500 requests arrive in ~10ms (500/50000). With max-running=2
+		// per instance (8 total slots), service time far exceeds horizon.
+		horizon = 100_000 // 0.1 seconds in microsecond ticks
+	)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			config := newTestDeploymentConfig(numInstances)
+			config.Horizon = horizon
+			config.MaxRunningReqs = maxRunning
+			config.AdmissionPolicy = tc.admissionPolicy
+			config.RoutingPolicy = "least-loaded"
+			config.Scheduler = "fcfs"
+			config.PriorityPolicy = "constant"
+			if tc.admissionPolicy == "token-bucket" {
+				config.TokenBucketCapacity = tc.tbCapacity
+				config.TokenBucketRefillRate = tc.tbRefillRate
+			}
+
+			workload := &sim.GuideLLMConfig{
+				Rate:               rateReqPerS / 1e6,
+				NumRequests:        numRequests,
+				PrefixTokens:       0,
+				PromptTokens:       100,
+				PromptTokensStdDev: 20,
+				PromptTokensMin:    10,
+				PromptTokensMax:    200,
+				OutputTokens:       50,
+				OutputTokensStdDev: 10,
+				OutputTokensMin:    10,
+				OutputTokensMax:    100,
+			}
+
+			cs := NewClusterSimulator(config, workload, "")
+			mustRun(t, cs)
+
+			agg := cs.AggregatedMetrics()
+			injected := len(agg.Requests)
+			rejected := cs.RejectedRequests()
+
+			// BC-1/BC-2: Conservation equation
+			conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
+			if tc.admissionPolicy == "always-admit" {
+				// Three-term conservation: no rejections
+				if conservation != injected {
+					t.Errorf("INV-1 conservation (always-admit): completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
+						agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
+				}
+				if rejected != 0 {
+					t.Errorf("always-admit should have 0 rejections, got %d", rejected)
+				}
+			} else {
+				// Four-term conservation: injected + rejected == total generated
+				totalGenerated := injected + rejected
+				if conservation != injected {
+					t.Errorf("INV-1 conservation (token-bucket): completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
+						agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
+				}
+				if totalGenerated != numRequests {
+					t.Errorf("four-term conservation: injected(%d) + rejected(%d) = %d, want %d (total generated)",
+						injected, rejected, totalGenerated, numRequests)
+				}
+			}
+
+			// Verify overload: under finite horizon, not all requests should complete
+			// (this confirms the test is actually exercising overload, not a trivial case)
+			if agg.CompletedRequests == numRequests && tc.admissionPolicy == "always-admit" {
+				t.Logf("warning: all %d requests completed — overload may not be genuine (increase rate or decrease horizon)", numRequests)
+			}
+		})
+	}
+}
