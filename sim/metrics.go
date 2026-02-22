@@ -19,13 +19,12 @@ type Metrics struct {
 	CompletedRequests int     // Number of requests completed
 	TotalInputTokens  int     // Total number of input tokens
 	TotalOutputTokens int     // Total number of output tokens
-	RequestRate       float64 // Incoming request rate
 	SimEndedTime      int64   // Sim clock time in ticks when simulation ends
 	KVBlocksUsed      float64 // Integral of KVBlockUsage over time
 	PeakKVBlocksUsed  int64   // Max number of simultaneously used KV blocks
 	PreemptionCount      int64   // Total preemption events (PR12)
 	KVAllocationFailures int64   // KV allocation failures for the final decode token at completion; non-zero indicates a cache accounting anomaly (#183)
-	CacheHitRate         float64 // Cumulative cache hit rate at finalization (PR12)
+	CacheHitRate         float64 // Cumulative cache hit rate at finalization (PR12). Intentional observability signal: set by cluster/instance.go Finalize() from KVStore.CacheHitRate(). Read-only statistic — does not feed back into state evolution.
 	KVThrashingRate      float64 // KV thrashing rate at finalization (PR12)
 	StillQueued          int     // Requests still in wait queue at sim end
 	StillRunning         int     // Requests still in running batch at sim end

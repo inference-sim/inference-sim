@@ -113,8 +113,8 @@ func (sim *Simulator) generateRandomTokenIDs(length int) []int {
 
 // generateWorkloadDistribution generates request arrivals according to gen config
 func (sim *Simulator) generateWorkloadDistribution() {
-	if sim.Metrics.RequestRate <= 0 {
-		panic("generateWorkloadDistribution: RequestRate must be > 0 (validate at CLI level)")
+	if sim.requestRate <= 0 {
+		panic("generateWorkloadDistribution: requestRate must be > 0 (validate at CLI level)")
 	}
 
 	currentTime := int64(0)
@@ -159,7 +159,7 @@ func (sim *Simulator) generateWorkloadDistribution() {
 		sim.InjectArrival(req)
 
 		// estimate arrivalTime based on constant RPS
-		currentTime += int64(1 / sim.Metrics.RequestRate)
+		currentTime += int64(1 / sim.requestRate)
 
 		// move on to the next request
 		reqIdx++
