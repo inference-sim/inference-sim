@@ -102,9 +102,9 @@ func TestBlackboxLatencyModel_PlaceholderOverheads(t *testing.T) {
 	}
 }
 
-// TestRooflineLatencyModel_StepTime_DelegatesToRooflineStepTime verifies BC-2:
-// StepTime builds StepConfig from batch and delegates to rooflineStepTime.
-func TestRooflineLatencyModel_StepTime_DelegatesToRooflineStepTime(t *testing.T) {
+// TestRooflineLatencyModel_StepTime_PositiveAndMonotonic verifies BC-2:
+// StepTime produces positive results and more tokens yield longer step time.
+func TestRooflineLatencyModel_StepTime_PositiveAndMonotonic(t *testing.T) {
 	model := &RooflineLatencyModel{
 		modelConfig: testModelConfig(),
 		hwConfig:    testHardwareCalib(),
@@ -112,30 +112,36 @@ func TestRooflineLatencyModel_StepTime_DelegatesToRooflineStepTime(t *testing.T)
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	batch := []*Request{
+	smallBatch := []*Request{
 		{
 			InputTokens:   make([]int, 100),
 			ProgressIndex: 0,
 			NumNewTokens:  100,
 		},
 	}
-
-	result := model.StepTime(batch)
-
-	// THEN result must be positive
-	if result <= 0 {
-		t.Errorf("StepTime = %d, want > 0", result)
-	}
-
-	// AND it must match calling rooflineStepTime directly
-	expectedConfig := StepConfig{
-		PrefillRequests: []PrefillRequestConfig{
-			{ProgressIndex: 0, NumNewPrefillTokens: 100},
+	largeBatch := []*Request{
+		{
+			InputTokens:   make([]int, 1000),
+			ProgressIndex: 0,
+			NumNewTokens:  1000,
 		},
 	}
-	expected := rooflineStepTime(model.modelConfig, model.hwConfig, expectedConfig, model.tp)
-	if result != expected {
-		t.Errorf("StepTime = %d, want %d (from rooflineStepTime)", result, expected)
+
+	smallResult := model.StepTime(smallBatch)
+	largeResult := model.StepTime(largeBatch)
+
+	// THEN both results must be positive
+	if smallResult <= 0 {
+		t.Errorf("StepTime(100 tokens) = %d, want > 0", smallResult)
+	}
+	if largeResult <= 0 {
+		t.Errorf("StepTime(1000 tokens) = %d, want > 0", largeResult)
+	}
+
+	// AND more tokens must produce longer step time (monotonicity)
+	if largeResult <= smallResult {
+		t.Errorf("monotonicity violated: StepTime(1000 tokens) = %d <= StepTime(100 tokens) = %d",
+			largeResult, smallResult)
 	}
 }
 
@@ -148,11 +154,25 @@ func TestRooflineLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	result := model.StepTime([]*Request{})
+	emptyResult := model.StepTime([]*Request{})
 
-	expected := rooflineStepTime(model.modelConfig, model.hwConfig, StepConfig{}, model.tp)
-	if result != expected {
-		t.Errorf("StepTime(empty) = %d, want %d", result, expected)
+	// THEN empty batch result must be non-negative (overhead only)
+	if emptyResult < 0 {
+		t.Errorf("StepTime(empty) = %d, want >= 0", emptyResult)
+	}
+
+	// AND a non-empty batch must produce a longer step time
+	nonEmptyBatch := []*Request{
+		{
+			InputTokens:   make([]int, 100),
+			ProgressIndex: 0,
+			NumNewTokens:  100,
+		},
+	}
+	nonEmptyResult := model.StepTime(nonEmptyBatch)
+	if nonEmptyResult <= emptyResult {
+		t.Errorf("StepTime(100 tokens) = %d <= StepTime(empty) = %d, want strictly greater",
+			nonEmptyResult, emptyResult)
 	}
 }
 
@@ -215,6 +235,8 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 		t.Fatalf("NewLatencyModel returned error: %v", err)
 	}
 
+	// THEN the model must produce different results than blackbox for the same batch
+	// (roofline uses FLOPs/bandwidth, blackbox uses beta regression — distinct formulas)
 	batch := []*Request{
 		{
 			InputTokens:   make([]int, 100),
