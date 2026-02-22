@@ -2,7 +2,7 @@
 
 Invariants are properties that must hold at all times during and after simulation. They are verified by invariant tests (see R7) and checked during self-audit (Step 4.75).
 
-**Hypothesis family mapping:** INV-1 through INV-3, INV-5, and INV-6 belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation) and INV-7 (signal freshness) belong to the **Structural model** family. See `docs/standards/experiments.md` for hypothesis family definitions.
+**Hypothesis family mapping:** INV-1 through INV-3, INV-5, and INV-6 belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation), INV-7 (signal freshness), and INV-8 (work-conserving property) belong to the **Structural model** family. See `docs/standards/experiments.md` for hypothesis family definitions.
 
 ## INV-1: Request Conservation
 
@@ -83,3 +83,17 @@ Invariants are properties that must hold at all times during and after simulatio
 **Verification:** H3 hypothesis experiment (`hypotheses/h3-signal-freshness/`).
 
 **Evidence:** Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth.
+
+---
+
+## INV-8: Work-Conserving Property
+
+**Statement:** After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while there is work waiting.
+
+**Verification:** `sim/simulator_test.go` — `TestWorkConserving_StepRestartsWhenWaitQNonEmpty`. Deterministic test with `MaxRunningReqs=1`, two requests arriving simultaneously. Without the property, the second request is stranded forever (no arrival to trigger a new StepEvent). With the property, both complete.
+
+**Evidence:** H-MMK experiment (PR #325) — without the work-conserving fix, W_q error was 151,000% at ρ=0.3. After fix, error dropped to 47% (remaining gap is discrete step processing, not a bug).
+
+**Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
+
+**Hypothesis family:** Structural model (same as INV-4, INV-7).
