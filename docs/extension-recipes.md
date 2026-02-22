@@ -80,6 +80,24 @@ Examples:
 - See `RoutingRecord` with `CandidateScore` for a record with nested counterfactual data
 - See `computeCounterfactual()` in `sim/cluster/counterfactual.go` for derived computation that lives in `sim/cluster/` (not `sim/trace/`) because it needs `sim.RoutingSnapshot`
 
+## Adding New Latency Model Backends
+
+To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-LLM, neural surrogate):
+
+1. **Implement the `LatencyModel` interface** in `sim/latency_model.go` (or a new file for complex models) — 5 methods:
+   - `StepTime(batch []*Request) int64` — estimate batch step duration from request states
+   - `QueueingTime(req *Request) int64` — estimate arrival-to-queue delay
+   - `OutputTokenProcessingTime() int64` — per-token post-processing overhead
+   - `SchedulingProcessingTime() int64` — scheduling overhead per request
+   - `PreemptionProcessingTime() int64` — preemption overhead per eviction
+2. **Register in `NewLatencyModel` factory** in `sim/latency_model.go`: add a branch based on `SimConfig` fields (e.g., a new string field or boolean)
+3. **Add behavioral tests** — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)
+4. Extension friction: **2 touch points** (implementation + factory branch)
+
+Examples:
+- See `BlackboxLatencyModel` in `sim/latency_model.go` for a simple stateless model (alpha/beta regression)
+- See `RooflineLatencyModel` in `sim/latency_model.go` for a model that uses hardware config (FLOPs/bandwidth)
+
 ## Adding New Per-Request Metric Fields
 
 To add a new field to per-request JSON output (appears in `--results-path` output):

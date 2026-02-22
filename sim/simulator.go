@@ -30,15 +30,6 @@ func (eq *EventQueue) Pop() any {
 	return item
 }
 
-type RegressionFeatures struct {
-	TotalCacheMissTokens int64 `json:"num_cache_miss_tokens"`
-	TotalDecodeTokens    int64 `json:"total_decode_tokens"`
-	NumDecodeRequests    int64 `json:"num_decode_requests"`
-	NumPrefillRequests   int64 `json:"num_prefill_requests"`
-	TotalPrefillTokens   int64 `json:"total_prefill_tokens"`
-	MaxPrefillTokens     int64 `json:"max_prefill_tokens"`
-}
-
 type PrefillRequestConfig struct {
 	ProgressIndex       int64 `json:"progress_index"`
 	NumNewPrefillTokens int   `json:"num_new_prefill_tokens"`
@@ -149,12 +140,7 @@ type Simulator struct {
 	// max number of requests RunningBatch can hold
 	maxRunningReqs int64
 	// max total number of new tokens across all requests in RunningBatch
-	maxScheduledTokens int64
-	betaCoeffs         []float64
-	alphaCoeffs        []float64
-	// runningBatchFeatures is a map of form: {"num_decode_requests": a, "num_prefill_requests": b
-	// , "total_decode_tokens": c, "total_prefill_tokens": d}
-	runningBatchFeatures      RegressionFeatures
+	maxScheduledTokens        int64
 	longPrefillTokenThreshold int64
 	stepEvent                 Event
 	stepCount                 int
@@ -164,14 +150,11 @@ type Simulator struct {
 	guideLLMConfig         *GuideLLMConfig
 	model                  string
 	gpu                    string
-	tp                     int
-	roofline               bool
 	tracesWorkloadFilePath string
-	modelConfig            ModelConfig
-	hwConfig               HardwareCalib
 	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
 	priorityPolicy         PriorityPolicy
 	scheduler              InstanceScheduler
+	latencyModel           LatencyModel
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct.
@@ -180,27 +163,15 @@ type Simulator struct {
 //   - GuideLLMConfig != nil → generate workload from distribution
 //   - Both zero-valued → no workload (caller injects via InjectArrival)
 func NewSimulator(cfg SimConfig) (*Simulator, error) {
-	if !cfg.Roofline {
-		if len(cfg.BetaCoeffs) < 3 {
-			panic(fmt.Sprintf("SimConfig.BetaCoeffs requires at least 3 elements, got %d", len(cfg.BetaCoeffs)))
-		}
-		if len(cfg.AlphaCoeffs) < 3 {
-			panic(fmt.Sprintf("SimConfig.AlphaCoeffs requires at least 3 elements, got %d", len(cfg.AlphaCoeffs)))
-		}
-	}
 	if cfg.TotalKVBlocks <= 0 {
 		panic(fmt.Sprintf("SimConfig.TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
 	}
 	if cfg.BlockSizeTokens <= 0 {
 		panic(fmt.Sprintf("SimConfig.BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
 	}
-	if cfg.Roofline {
-		if cfg.TP <= 0 {
-			return nil, fmt.Errorf("roofline validation: SimConfig.TP must be > 0, got %d", cfg.TP)
-		}
-		if err := ValidateRooflineConfig(cfg.ModelConfig, cfg.HWConfig); err != nil {
-			return nil, fmt.Errorf("roofline validation: %w", err)
-		}
+	latencyModel, err := NewLatencyModel(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating latency model: %w", err)
 	}
 
 	s := &Simulator{
@@ -213,9 +184,6 @@ func NewSimulator(cfg SimConfig) (*Simulator, error) {
 		Metrics:                   NewMetrics(),
 		maxRunningReqs:            cfg.MaxRunningReqs,
 		maxScheduledTokens:        cfg.MaxScheduledTokens,
-		betaCoeffs:                cfg.BetaCoeffs,
-		alphaCoeffs:               cfg.AlphaCoeffs,
-		runningBatchFeatures:      RegressionFeatures{},
 		longPrefillTokenThreshold: cfg.LongPrefillTokenThreshold,
 		stepEvent:                 nil,
 		stepCount:                 0,
@@ -223,12 +191,9 @@ func NewSimulator(cfg SimConfig) (*Simulator, error) {
 		preemptionHappened:        false,
 		guideLLMConfig:            cfg.GuideLLMConfig,
 		tracesWorkloadFilePath:    cfg.TracesWorkloadFilePath,
-		modelConfig:               cfg.ModelConfig,
-		hwConfig:                  cfg.HWConfig,
 		model:                     cfg.Model,
 		gpu:                       cfg.GPU,
-		tp:                        cfg.TP,
-		roofline:                  cfg.Roofline,
+		latencyModel:              latencyModel,
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
 	s.priorityPolicy = NewPriorityPolicy(cfg.PriorityPolicy)
@@ -346,65 +311,6 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	sim.Metrics.TotalInputTokens += len(r.InputTokens)
 }
 
-// Queueing time estimation using alpha model
-func (sim *Simulator) getQueueingTime(req *Request) int64 {
-	var totalProcessingTime float64
-	totalProcessingTime += sim.alphaCoeffs[0]                                 // alpha0
-	totalProcessingTime += sim.alphaCoeffs[1] * float64(len(req.InputTokens)) // alpha1 * input_len
-	return int64(totalProcessingTime)                                         // in microseconds                                     // in microseconds
-}
-
-// Per output token processing time estimation using alpha model
-func (sim *Simulator) getOutputTokenProcessingTime() int64 {
-	totalProcessingTime := sim.alphaCoeffs[2] // only alpha2
-	return int64(totalProcessingTime)         // in microseconds
-}
-
-// Scheduling processing time estimation (step has been doing some book keeping and processing before scheduling the request)
-func (sim *Simulator) getSchedulingProcessingTime() int64 {
-	// ToDo: incorporate some alphas here or constant?
-	return int64(0)
-
-}
-
-// Request Preemption processing time estimation
-func (sim *Simulator) getPreemptionProcessingTime() int64 {
-	// ToDo: incorporate some alphas here or maybe constat
-	return int64(0)
-}
-
-// Estimate Step Advance Time using regression features and coefficients
-func (sim *Simulator) getStepTime() int64 {
-	var totalStepTime float64
-	totalStepTime += sim.betaCoeffs[0]
-	totalStepTime += sim.betaCoeffs[1] * float64(sim.runningBatchFeatures.TotalCacheMissTokens)
-	totalStepTime += sim.betaCoeffs[2] * float64(sim.runningBatchFeatures.TotalDecodeTokens)
-	return int64(totalStepTime) // in microseconds
-}
-
-// Estimate Step Advance Time using roofline model
-func (sim *Simulator) getStepTimeRoofline() int64 {
-	stepConfig := StepConfig{
-		PrefillRequests: make([]PrefillRequestConfig, 0, len(sim.RunningBatch.Requests)),
-		DecodeRequests:  make([]DecodeRequestConfig, 0, len(sim.RunningBatch.Requests)),
-	}
-	for _, req := range sim.RunningBatch.Requests {
-		if req.ProgressIndex < Len64(req.InputTokens) {
-			stepConfig.PrefillRequests = append(stepConfig.PrefillRequests, PrefillRequestConfig{
-				ProgressIndex:       req.ProgressIndex,
-				NumNewPrefillTokens: req.NumNewTokens,
-			})
-		} else {
-			stepConfig.DecodeRequests = append(stepConfig.DecodeRequests, DecodeRequestConfig{
-				ProgressIndex:      req.ProgressIndex,
-				NumNewDecodeTokens: req.NumNewTokens,
-			})
-		}
-	}
-	stepTime := rooflineStepTime(sim.modelConfig, sim.hwConfig, stepConfig, sim.tp)
-	return stepTime
-}
-
 func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool {
 
 	for {
@@ -422,7 +328,7 @@ func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool 
 
 			sim.preemptionHappened = true
 			sim.Metrics.PreemptionCount++
-			preemptionDelay := sim.getPreemptionProcessingTime()
+			preemptionDelay := sim.latencyModel.PreemptionProcessingTime()
 			preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
 			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", now, preemptedRequest.ID)
 			sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
@@ -481,11 +387,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 			}
 
 			tokenBudget -= numNewTokens
-			sim.runningBatchFeatures.TotalCacheMissTokens += numNewTokens
 			req.NumNewTokens = int(numNewTokens)
-			sim.runningBatchFeatures.NumPrefillRequests += 1
-			sim.runningBatchFeatures.TotalPrefillTokens += numNewTokens
-			sim.runningBatchFeatures.MaxPrefillTokens = max(sim.runningBatchFeatures.MaxPrefillTokens, numNewTokens)
 			sim.reqNumComputedTokens[req.ID] += numNewTokens
 
 		}
@@ -502,10 +404,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 			// this needs to be updated with speculative decoding
 			tokenBudget--
 
-			// update decode-related features in RunningBatchFeatures
 			req.NumNewTokens = 1
-			sim.runningBatchFeatures.NumDecodeRequests += 1
-			sim.runningBatchFeatures.TotalDecodeTokens += 1
 			sim.reqNumComputedTokens[req.ID] += 1
 		}
 	}
@@ -546,7 +445,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
 		next.ScheduledStepIdx = sim.stepCount
 		// create a scheduledevent for the request that just went into running batch
-		scheduledDelay := sim.getSchedulingProcessingTime() // ToDo: there are some minor processing time above - model it or constant?
+		scheduledDelay := sim.latencyModel.SchedulingProcessingTime() // ToDo: there are some minor processing time above - model it or constant?
 		sim.Schedule(&ScheduledEvent{
 			time:    now + scheduledDelay,
 			Request: next,
@@ -559,12 +458,7 @@ func (sim *Simulator) makeRunningBatch(now int64) {
 		// change the state of the request from queued to running
 		next.State = StateRunning
 
-		// update prefill-related features in RunningBatchFeatures
-		sim.runningBatchFeatures.NumPrefillRequests += 1
 		next.NumNewTokens = int(numNewTokens)
-		sim.runningBatchFeatures.TotalPrefillTokens += numNewTokens
-		sim.runningBatchFeatures.TotalCacheMissTokens += numNewTokens
-		sim.runningBatchFeatures.MaxPrefillTokens = max(sim.runningBatchFeatures.MaxPrefillTokens, numNewTokens)
 		sim.reqNumComputedTokens[next.ID] = numNewTokens + Len64(cachedBlocks)*sim.KVCache.BlockSize()
 	}
 }
@@ -577,11 +471,6 @@ func (sim *Simulator) Step(now int64) {
 	// increment Step counter
 	sim.stepCount += 1
 
-	// refreshing RunningBatchFeatures for current Step
-	sim.runningBatchFeatures = RegressionFeatures{
-		TotalDecodeTokens:    0,
-		TotalCacheMissTokens: 0,
-	}
 	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
 	sim.KVCache.SetClock(now)
 
@@ -602,13 +491,8 @@ func (sim *Simulator) Step(now int64) {
 	// save runningBatch length for analysis
 	sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, len(sim.RunningBatch.Requests))
 
-	// Estimate step times, either based on runningBatch state or on Roofline model
-	var currStepAdvance int64
-	if sim.roofline {
-		currStepAdvance = sim.getStepTimeRoofline()
-	} else {
-		currStepAdvance = sim.getStepTime()
-	}
+	// Estimate step time via LatencyModel (blackbox or roofline, selected at construction)
+	currStepAdvance := sim.latencyModel.StepTime(sim.RunningBatch.Requests)
 
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
 	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()
@@ -624,11 +508,11 @@ func (sim *Simulator) Step(now int64) {
 			// this request goes through decode phase in this batch
 			req.ProgressIndex++
 			sim.Metrics.TotalOutputTokens++
-			req.ITL = append(req.ITL, currStepAdvance+sim.getOutputTokenProcessingTime())
+			req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 		}
 		if req.ProgressIndex == Len64(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
-			req.FirstTokenTime = now + currStepAdvance + sim.getOutputTokenProcessingTime() - req.ArrivalTime
+			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime // in microsec
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
 		}
@@ -656,7 +540,7 @@ func (sim *Simulator) Step(now int64) {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
 		if req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1 {
 			req.State = StateCompleted
-			req.ITL = append(req.ITL, currStepAdvance+sim.getOutputTokenProcessingTime())
+			req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 			if len(req.OutputTokens) > 0 {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
