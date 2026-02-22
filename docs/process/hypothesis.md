@@ -339,9 +339,9 @@ H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H
 - Template: [docs/templates/hypothesis.md](../templates/hypothesis.md)
 - Hypothesis catalog: [docs/plans/research.md](../plans/research.md)
 - Validated experiments (by family):
-  - **Scheduler invariants:** `h12-conservation/` (Tier 1, deterministic), `h13-determinism/` (Tier 1, deterministic)
-  - **Structural model:** `h3-signal-freshness/` (Tier 2, dominance), `h9-prefix-caching/` (Tier 2, monotonicity), `h10-tiered-kv/` (Tier 3, dominance)
+  - **Scheduler invariants:** `h12-conservation/` (Tier 1, deterministic), `h13-determinism/` (Tier 1, deterministic), `h-liveness/` (Tier 1, deterministic)
+  - **Structural model:** `h3-signal-freshness/` (Tier 2, dominance), `h9-prefix-caching/` (Tier 2, monotonicity), `h10-tiered-kv/` (Tier 3, dominance), `h-phase-structure/` (Tier 1, monotonicity), `h-mmk-validation/` (Tier 1, validation)
   - **Performance-regime:** `h8-kv-pressure/` (Tier 3, monotonicity)
-  - **Robustness/failure-mode:** `h14-pathological-templates/` (Tier 2, dominance), `h5-token-bucket-burst/` (Tier 3, dominance)
-  - **Cross-policy comparative:** `prefix-affinity/` (Tier 2, dominance)
-  - **Workload/arrival:** *(none yet)*
+  - **Robustness/failure-mode:** `h14-pathological-templates/` (Tier 2, dominance), `h5-token-bucket-burst/` (Tier 3, dominance), `h-overload/` (Tier 1, deterministic)
+  - **Cross-policy comparative:** `prefix-affinity/` (Tier 2, dominance), `h1-sjf-scheduling/` (Tier 3, dominance)
+  - **Workload/arrival:** `h-arrival-generators/` (Tier 1, statistical)

@@ -553,12 +553,12 @@ Hypotheses are organized by **family** (what domain is tested) and **tier** (pri
 
 | Family | Hypotheses | Status | Gaps |
 |--------|-----------|--------|------|
-| **Scheduler invariants** | H12 ✅, H13 ✅, H25 | 2/3 done | Lifecycle (INV-2), causality (INV-5) never directly tested |
-| **Structural model** | H3 ✅, H9 ✅, H10 ✅, H26 | 3/4 done | Event pipeline causal ordering (H26) |
+| **Scheduler invariants** | H12 ✅, H13 ✅, H-Liveness ✅, H25 | 3/4 done | Causality (INV-5) never directly tested |
+| **Structural model** | H3 ✅, H9 ✅, H10 ✅, H-Phase ✅, H-MMK ✅, H26 | 5/6 done | Event pipeline causal ordering (H26) |
 | **Performance-regime** | H7, H8 ✅, H11 | 1/3 done | Horizontal scaling (H7), batch formation tradeoff (H11) |
-| **Robustness/failure-mode** | H5 ✅, H14 ✅, H21, H22, H24 | 2/5 done | Extreme weights, input validation, pathological combos |
-| **Workload/arrival** | H16, H20 | **0/2 done** | Generator distributions never validated; Gamma/Weibull/ParetoLogNormal untested |
-| **Cross-policy comparative** | Prefix-Affinity ✅, H1, H2, H4, H6, H15, H17, H18, H19, H23 | **1/10 done** | Largest gap — SJF, priority, fitness, Pareto, roofline, fairness all pending |
+| **Robustness/failure-mode** | H5 ✅, H14 ✅, H-Overload ✅, H21, H22, H24 | 3/6 done | Overload+KV pressure, extreme weights, input validation, pathological combos |
+| **Workload/arrival** | H-Arrival ✅, H16, H20 | 1/3 done | Distribution comparison, heavy-tailed distributions untested |
+| **Cross-policy comparative** | Prefix-Affinity ✅, H1-SJF ✅, H2, H4, H6, H15, H17, H18, H19, H23 | **2/10 done** | Priority, fitness, Pareto, roofline, fairness all pending |
 
 ### Legacy Coverage Map (by area)
 

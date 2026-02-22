@@ -26,6 +26,9 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 | H-Phase-Structure | Structural model | TTFT linear in input tokens, decode time linear in output tokens | **Confirmed** | R² = 1.000000 (adjusted); slopes match α/β predictions within <0.01% |
 | H-MMK | Structural model | DES matches M/M/k analytical model under matching assumptions | **Partially confirmed** | Within 3.3% at ρ ≤ 0.3; diverges 28-71% at ρ ≥ 0.5 (discrete step processing) |
 | H-Arrival | Workload/arrival | Poisson/Gamma/Weibull samplers match theoretical CDF | **Confirmed with limitation** | Poisson/low-CV pass KS; high-CV fail due to int64 μs clamping (42% for Gamma CV=3.5) |
+| H-Liveness | Scheduler invariant | All schedulers satisfy liveness under admissible load | **Confirmed** | 45/45 pass (ρ=0.3-0.85); batching masks scheduler at default batch=256; SJF 31% faster under constrained batch |
+| H-Overload | Robustness | 10x overload: no panics, conservation holds | **Confirmed** | 84/84 INV-1 checks pass; token-bucket rejects 70% at 10x; off-by-1 root-caused as alpha-model horizon edge |
+| H1-SJF | Cross-policy | SJF reduces TTFT for short requests in bimodal workloads | **Confirmed** | 94% TTFT reduction for 32-token requests vs 1024-token (bimodal 32:1024); scheduling delay drops 98% |
 
 ## Running Experiments
 
@@ -44,10 +47,10 @@ Scripts are self-contained — they build the binary, run all experiment variant
 
 | Family | Done | Pending | Gaps |
 |--------|------|---------|------|
-| **Scheduler invariants** | H12 ✓, H13 ✓ | H25 | Lifecycle (INV-2), causality (INV-5) never directly tested |
+| **Scheduler invariants** | H12 ✓, H13 ✓, H-Liveness ✓ | H25 | INV-2 liveness confirmed at ρ=0.3-0.85; causality (INV-5) untested |
 | **Structural model** | H3 ✓, H9 ✓, H10 ✓, H-Phase ✓, H-MMK ✓ | H26 | Event pipeline causal ordering; roofline mode |
-| **Robustness/failure-mode** | H14 ✓, H5 ✓ | H21, H22, H24 | Extreme weights, input validation, pathological combos |
-| **Cross-policy comparative** | Prefix-Affinity ✓ | H1, H2, H4, H6, H15, H17, H18, H19, H23 | **Largest gap** — 9 pending hypotheses |
+| **Robustness/failure-mode** | H14 ✓, H5 ✓, H-Overload ✓ | H21, H22, H24 | Overload+KV pressure untested; extreme weights, input validation |
+| **Cross-policy comparative** | Prefix-Affinity ✓, H1-SJF ✓ | H2, H4, H6, H15, H17, H18, H19, H23 | 8 pending hypotheses |
 | **Performance-regime** | H8 ✓ | H7, H11 | Horizontal scaling, batch formation tradeoff |
 | **Workload/arrival** | H-Arrival ✓ | H16, H20 | int64 clamping limits high-CV accuracy; distribution comparison untested |
 
@@ -55,6 +58,6 @@ Scripts are self-contained — they build the binary, run all experiment variant
 
 - **Tier 1**: Correctness baselines (H12 ✓, H13 ✓, H-Phase ✓, H-MMK ✓)
 - **Tier 2**: High diagnostic value (H3 ✓, H9 ✓, H14 ✓, Prefix-Affinity ✓)
-- **Tier 3**: System understanding (H1, H5 ✓, H10 ✓, H11)
+- **Tier 3**: System understanding (H1 ✓, H5 ✓, H10 ✓, H11)
 - **Tier 4**: Research questions (H15, H17, H19)
 - **Tier 5**: Workload diversity (H2, H16, H18, H20)

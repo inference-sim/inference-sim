@@ -1,0 +1,30 @@
+seed: 42
+aggregate_rate: 3000
+num_requests: 1000
+clients:
+  - id: short-jobs
+    slo_class: interactive
+    rate_fraction: 0.5
+    arrival:
+      process: poisson
+    input_distribution:
+      type: constant
+      params:
+        value: 32
+    output_distribution:
+      type: constant
+      params:
+        value: 64
+  - id: long-jobs
+    slo_class: batch
+    rate_fraction: 0.5
+    arrival:
+      process: poisson
+    input_distribution:
+      type: constant
+      params:
+        value: 1024
+    output_distribution:
+      type: constant
+      params:
+        value: 128
