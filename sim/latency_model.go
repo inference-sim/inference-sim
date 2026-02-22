@@ -1,5 +1,7 @@
 package sim
 
+import "fmt"
+
 // LatencyModel estimates execution times for the DES step loop.
 // Two implementations exist: BlackboxLatencyModel (alpha/beta regression)
 // and RooflineLatencyModel (analytical FLOPs/bandwidth).
@@ -65,4 +67,77 @@ func (m *BlackboxLatencyModel) SchedulingProcessingTime() int64 {
 
 func (m *BlackboxLatencyModel) PreemptionProcessingTime() int64 {
 	return 0
+}
+
+// RooflineLatencyModel estimates latency using analytical FLOPs/bandwidth roofline model.
+// Step time is computed via rooflineStepTime(); overhead estimates use alpha coefficients.
+type RooflineLatencyModel struct {
+	modelConfig ModelConfig
+	hwConfig    HardwareCalib
+	tp          int
+	alphaCoeffs []float64
+}
+
+func (m *RooflineLatencyModel) StepTime(batch []*Request) int64 {
+	stepConfig := StepConfig{
+		PrefillRequests: make([]PrefillRequestConfig, 0, len(batch)),
+		DecodeRequests:  make([]DecodeRequestConfig, 0, len(batch)),
+	}
+	for _, req := range batch {
+		if req.ProgressIndex < Len64(req.InputTokens) {
+			stepConfig.PrefillRequests = append(stepConfig.PrefillRequests, PrefillRequestConfig{
+				ProgressIndex:       req.ProgressIndex,
+				NumNewPrefillTokens: req.NumNewTokens,
+			})
+		} else {
+			stepConfig.DecodeRequests = append(stepConfig.DecodeRequests, DecodeRequestConfig{
+				ProgressIndex:      req.ProgressIndex,
+				NumNewDecodeTokens: req.NumNewTokens,
+			})
+		}
+	}
+	return rooflineStepTime(m.modelConfig, m.hwConfig, stepConfig, m.tp)
+}
+
+func (m *RooflineLatencyModel) QueueingTime(req *Request) int64 {
+	var totalProcessingTime float64
+	totalProcessingTime += m.alphaCoeffs[0]
+	totalProcessingTime += m.alphaCoeffs[1] * float64(len(req.InputTokens))
+	return int64(totalProcessingTime)
+}
+
+func (m *RooflineLatencyModel) OutputTokenProcessingTime() int64 {
+	return int64(m.alphaCoeffs[2])
+}
+
+func (m *RooflineLatencyModel) SchedulingProcessingTime() int64 {
+	return 0
+}
+
+func (m *RooflineLatencyModel) PreemptionProcessingTime() int64 {
+	return 0
+}
+
+// NewLatencyModel creates the appropriate LatencyModel based on SimConfig.
+// Returns RooflineLatencyModel if cfg.Roofline is true, BlackboxLatencyModel otherwise.
+// Returns error if roofline config validation fails.
+func NewLatencyModel(cfg SimConfig) (LatencyModel, error) {
+	if cfg.Roofline {
+		if cfg.TP <= 0 {
+			return nil, fmt.Errorf("latency model: roofline requires TP > 0, got %d", cfg.TP)
+		}
+		if err := ValidateRooflineConfig(cfg.ModelConfig, cfg.HWConfig); err != nil {
+			return nil, fmt.Errorf("latency model: %w", err)
+		}
+		return &RooflineLatencyModel{
+			modelConfig: cfg.ModelConfig,
+			hwConfig:    cfg.HWConfig,
+			tp:          cfg.TP,
+			alphaCoeffs: cfg.AlphaCoeffs,
+		}, nil
+	}
+	return &BlackboxLatencyModel{
+		betaCoeffs:  cfg.BetaCoeffs,
+		alphaCoeffs: cfg.AlphaCoeffs,
+	}, nil
 }
