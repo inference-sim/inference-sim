@@ -1250,3 +1250,77 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 		})
 	}
 }
+
+// TestClusterSimulator_Determinism_PrefixAffinity_ByteIdentical verifies INV-6
+// for routing policies that use stateful scorers with internal maps (promoted from H13):
+// GIVEN identical config with prefix-affinity or weighted routing (includes prefix scorer)
+// WHEN run twice with same seed
+// THEN per-request metrics JSON is byte-identical.
+//
+// This specifically targets the PrefixCacheIndex LRU which uses map iteration internally.
+// Non-deterministic map iteration in scoring or eviction would cause divergence here.
+func TestClusterSimulator_Determinism_PrefixAffinity_ByteIdentical(t *testing.T) {
+	policies := []struct {
+		name          string
+		routingPolicy string
+		scorerConfigs []sim.ScorerConfig
+	}{
+		{"prefix-affinity", "prefix-affinity", sim.DefaultScorerConfigs()},
+		{"weighted-default", "weighted", sim.DefaultScorerConfigs()},
+	}
+
+	for _, pol := range policies {
+		t.Run(pol.name, func(t *testing.T) {
+			mkSim := func() *ClusterSimulator {
+				config := newTestDeploymentConfig(3)
+				config.RoutingPolicy = pol.routingPolicy
+				config.RoutingScorerConfigs = pol.scorerConfigs
+				// Use prefix tokens to exercise the prefix cache index
+				workload := &sim.GuideLLMConfig{
+					Rate:               10.0 / 1e6,
+					NumRequests:        30,
+					PrefixTokens:       32,
+					PromptTokens:       100,
+					PromptTokensStdDev: 20,
+					PromptTokensMin:    10,
+					PromptTokensMax:    200,
+					OutputTokens:       50,
+					OutputTokensStdDev: 10,
+					OutputTokensMin:    10,
+					OutputTokensMax:    100,
+				}
+				cs := NewClusterSimulator(config, workload, "")
+				mustRun(t, cs)
+				return cs
+			}
+
+			cs1 := mkSim()
+			cs2 := mkSim()
+
+			m1 := cs1.AggregatedMetrics()
+			m2 := cs2.AggregatedMetrics()
+
+			// Integer fields must match exactly
+			if m1.CompletedRequests != m2.CompletedRequests {
+				t.Errorf("CompletedRequests: %d vs %d", m1.CompletedRequests, m2.CompletedRequests)
+			}
+			if m1.TotalInputTokens != m2.TotalInputTokens {
+				t.Errorf("TotalInputTokens: %d vs %d", m1.TotalInputTokens, m2.TotalInputTokens)
+			}
+			if m1.TotalOutputTokens != m2.TotalOutputTokens {
+				t.Errorf("TotalOutputTokens: %d vs %d", m1.TotalOutputTokens, m2.TotalOutputTokens)
+			}
+			if m1.SimEndedTime != m2.SimEndedTime {
+				t.Errorf("SimEndedTime: %d vs %d", m1.SimEndedTime, m2.SimEndedTime)
+			}
+
+			// Per-request metrics must be byte-identical (sorted JSON)
+			j1, _ := json.Marshal(sortedRequestMetrics(m1.Requests))
+			j2, _ := json.Marshal(sortedRequestMetrics(m2.Requests))
+			if !bytes.Equal(j1, j2) {
+				t.Error("INV-6 violated: per-request metrics JSON differs between runs " +
+					"(likely non-deterministic map iteration in prefix cache or scorer)")
+			}
+		})
+	}
+}
