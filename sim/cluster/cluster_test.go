@@ -1173,3 +1173,80 @@ func sortedRequestMetrics(m map[string]sim.RequestMetrics) []sim.RequestMetrics 
 	}
 	return result
 }
+
+// TestClusterSimulator_Conservation_PolicyMatrix verifies INV-1 at cluster level
+// across 10 policy combinations (promoted from H12 hypothesis experiment):
+// GIVEN each policy combination with infinite horizon and ample resources
+// WHEN the cluster simulation completes
+// THEN completed + still_queued + still_running == injected (three-term conservation)
+// AND all requests complete (infinite horizon, no resource pressure).
+func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
+	matrix := []struct {
+		name            string
+		numInstances    int
+		routingPolicy   string
+		scorerConfigs   []sim.ScorerConfig
+		scheduler       string
+		priorityPolicy  string
+		admissionPolicy string
+	}{
+		{"round-robin/fcfs/2inst", 2, "round-robin", nil, "fcfs", "constant", "always-admit"},
+		{"least-loaded/fcfs/3inst", 3, "least-loaded", nil, "fcfs", "constant", "always-admit"},
+		{"weighted/fcfs/2inst", 2, "weighted", sim.DefaultScorerConfigs(), "fcfs", "constant", "always-admit"},
+		{"prefix-affinity/fcfs/2inst", 2, "prefix-affinity", nil, "fcfs", "constant", "always-admit"},
+		{"round-robin/sjf/3inst", 3, "round-robin", nil, "sjf", "constant", "always-admit"},
+		{"round-robin/priority-fcfs/slo/2inst", 2, "round-robin", nil, "priority-fcfs", "slo-based", "always-admit"},
+		{"least-loaded/priority-fcfs/slo/3inst", 3, "least-loaded", nil, "priority-fcfs", "slo-based", "always-admit"},
+		{"weighted/sjf/4inst", 4, "weighted", sim.DefaultScorerConfigs(), "sjf", "constant", "always-admit"},
+		{"round-robin/fcfs/token-bucket/2inst", 2, "round-robin", nil, "fcfs", "constant", "token-bucket"},
+		{"least-loaded/fcfs/4inst", 4, "least-loaded", nil, "fcfs", "constant", "always-admit"},
+	}
+
+	const numRequests = 50
+
+	for _, tc := range matrix {
+		t.Run(tc.name, func(t *testing.T) {
+			config := newTestDeploymentConfig(tc.numInstances)
+			config.RoutingPolicy = tc.routingPolicy
+			config.RoutingScorerConfigs = tc.scorerConfigs
+			config.Scheduler = tc.scheduler
+			config.PriorityPolicy = tc.priorityPolicy
+			config.AdmissionPolicy = tc.admissionPolicy
+			// Token bucket with generous capacity so all requests are admitted
+			if tc.admissionPolicy == "token-bucket" {
+				config.TokenBucketCapacity = 1e6
+				config.TokenBucketRefillRate = 1e6
+			}
+
+			workload := newTestWorkload(numRequests)
+			cs := NewClusterSimulator(config, workload, "")
+			mustRun(t, cs)
+
+			agg := cs.AggregatedMetrics()
+			injected := len(agg.Requests)
+
+			// BC-3: Three-term conservation equation (INV-1)
+			conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
+			if conservation != injected {
+				t.Errorf("INV-1 conservation: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
+					agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
+			}
+
+			// BC-4: All complete under infinite horizon with ample resources
+			if agg.CompletedRequests != numRequests {
+				t.Errorf("infinite horizon: CompletedRequests = %d, want %d",
+					agg.CompletedRequests, numRequests)
+			}
+
+			// Cross-check: sum of per-instance completions == aggregated
+			sumCompleted := 0
+			for _, inst := range cs.Instances() {
+				sumCompleted += inst.Metrics().CompletedRequests
+			}
+			if sumCompleted != agg.CompletedRequests {
+				t.Errorf("aggregation: sum(per-instance) = %d, aggregated = %d",
+					sumCompleted, agg.CompletedRequests)
+			}
+		})
+	}
+}
