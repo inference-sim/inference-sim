@@ -114,7 +114,7 @@ func (sim *Simulator) generateRandomTokenIDs(length int) []int {
 // generateWorkloadDistribution generates request arrivals according to gen config
 func (sim *Simulator) generateWorkloadDistribution() {
 	if sim.requestRate <= 0 {
-		panic("generateWorkloadDistribution: RequestRate must be > 0 (validate at CLI level)")
+		panic("generateWorkloadDistribution: requestRate must be > 0 (validate at CLI level)")
 	}
 
 	currentTime := int64(0)

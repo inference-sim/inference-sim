@@ -501,6 +501,7 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	logrus.Debugf("Finished req: ID: %s at time: %d", req.ID, lat+req.ArrivalTime)
 	if len(req.OutputTokens) > 0 {
 		reqTotalOutput := lat - req.FirstTokenTime
+		// TPOT calculation in vLLM excludes the first generated token
 		sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
 	} else {
 		sim.Metrics.RequestITLs[req.ID] = 0
@@ -545,6 +546,8 @@ func (sim *Simulator) Step(now int64) {
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
+	// Note: TotalOutputTokens++ and TTFT metrics are recorded inline (not extracted to helpers)
+	// because they are tightly coupled to the prefill/decode state transitions in this loop.
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex < Len64(req.InputTokens) {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
