@@ -713,5 +713,15 @@ func (sim *Simulator) Step(now int64) {
 	} else {
 		sim.RunningBatch = nil
 		sim.stepEvent = nil
+		// Work-conserving: if WaitQ has pending requests, immediately
+		// schedule a new step to form the next batch. Without this,
+		// queued requests are stranded until the next arrival event
+		// triggers a QueuedEvent — violating the work-conserving
+		// property that real vLLM maintains.
+		if sim.WaitQ.Len() > 0 {
+			pbe := StepEvent{time: now + currStepAdvance}
+			sim.Schedule(&pbe)
+			sim.stepEvent = &pbe
+		}
 	}
 }
