@@ -222,7 +222,7 @@ Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weig
 
 ### Extension Recipes
 
-Step-by-step guides for adding policies, scorers, KV tiers, trace records, and per-request metrics: see `docs/extension-recipes.md`.
+Step-by-step guides for adding policies, scorers, latency model backends, KV tiers, trace records, and per-request metrics: see `docs/extension-recipes.md`.
 
 ### Adding New Scorers (Weighted Routing)
 

@@ -234,7 +234,7 @@ BLIS models an extensible distributed inference platform — not any single syst
 | **Priority** | Compute request priority for scheduler | `PriorityPolicy` (single method) | Implemented, frozen |
 | **KV Cache Manager** | Allocate/release/cache KV blocks | `KVStore` (9 methods) | Implemented |
 | **AutoScaler** | Add/remove instances based on load signals | `AutoScalePolicy` (planned) | Target — PR11 |
-| **Latency Model** | Estimate step execution time | Hardcoded in `Step()` | Target — needs interface extraction |
+| **Latency Model** | Estimate step execution time | `LatencyModel` (5 methods) | Implemented — `NewLatencyModel` factory |
 | **Batch Formation** | Select requests from queue for next step | Hardcoded in `makeRunningBatch()` | Target — needs interface extraction |
 | **Workload Generator** | Produce request streams from specs/traces | `GenerateRequests()` function | Implemented |
 | **Trace Recorder** | Record decisions for analysis | `SimulationTrace` | Implemented |
@@ -289,7 +289,7 @@ When a design doc introduces a new module boundary, it must specify the expected
 | New KV cache tier | ~4 files | 4-5 files (acceptable) |
 | New config parameter | ~3 files | 5-6 files (exceeds — known friction) |
 | New observable metric | ~3 files | 6 files (exceeds — known friction) |
-| New latency model backend | ~2 files | Not possible today (hardcoded) |
+| New latency model backend | ~2 files | 2 files (meets target) |
 | New batch formation strategy | ~2 files | Not possible today (hardcoded) |
 
 If a design exceeds the reference target, the design doc must acknowledge the friction and explain whether it's acceptable (justified complexity) or whether structural improvement should happen first or concurrently. The goal is **awareness, not rigidity** — some modules genuinely require more touch points, but that should be a conscious choice, not an accident.
