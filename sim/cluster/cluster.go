@@ -337,8 +337,5 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.CacheHitRate /= float64(n)
 		merged.KVThrashingRate /= float64(n)
 	}
-	if c.workload != nil {
-		merged.RequestRate = c.workload.Rate
-	}
 	return merged
 }

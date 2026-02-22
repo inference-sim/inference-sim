@@ -461,9 +461,6 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 	if agg.ITLSum != sumITLSum {
 		t.Errorf("aggregated ITLSum: got %d, want %d (sum)", agg.ITLSum, sumITLSum)
 	}
-	if agg.RequestRate != workload.Rate {
-		t.Errorf("aggregated RequestRate: got %v, want %v", agg.RequestRate, workload.Rate)
-	}
 }
 
 // TestClusterSimulator_SharedClock_MonotonicGlobal verifies BC-6:

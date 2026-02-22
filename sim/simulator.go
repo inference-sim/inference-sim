@@ -155,6 +155,7 @@ type Simulator struct {
 	priorityPolicy         PriorityPolicy
 	scheduler              InstanceScheduler
 	latencyModel           LatencyModel
+	requestRate            float64 // arrival rate for workload generation (moved from Metrics — DES state/statistics separation, #243)
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct.
@@ -200,12 +201,12 @@ func NewSimulator(cfg SimConfig) (*Simulator, error) {
 	s.scheduler = NewScheduler(cfg.Scheduler)
 
 	if cfg.TracesWorkloadFilePath != "" && cfg.GuideLLMConfig == nil {
-		s.Metrics.RequestRate = 0.0
+		s.requestRate = 0.0
 		if err := s.generateWorkloadFromCSV(); err != nil {
 			return nil, fmt.Errorf("loading CSV workload: %w", err)
 		}
 	} else if cfg.GuideLLMConfig != nil {
-		s.Metrics.RequestRate = cfg.GuideLLMConfig.Rate
+		s.requestRate = cfg.GuideLLMConfig.Rate
 		s.generateWorkloadDistribution()
 	}
 	// else: no workload — caller injects via InjectArrival
@@ -304,6 +305,11 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 
 // SimHorizon returns the simulation horizon (in ticks).
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
+
+// SetRequestRate sets the arrival rate for workload generation.
+// Used by cluster mode to propagate the per-instance rate.
+// Precondition: rate >= 0. Callers are responsible for validation (R3).
+func (sim *Simulator) SetRequestRate(rate float64) { sim.requestRate = rate }
 
 // Adds a newly arrived request to the waiting queue
 func (sim *Simulator) EnqueueRequest(r *Request) {

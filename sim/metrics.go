@@ -18,9 +18,8 @@ import (
 type Metrics struct {
 	CompletedRequests int     // Number of requests completed
 	TotalInputTokens  int     // Total number of input tokens
-	TotalOutputTokens int     // Total number of output tokens
-	RequestRate       float64 // Incoming request rate
-	SimEndedTime      int64   // Sim clock time in ticks when simulation ends
+	TotalOutputTokens int   // Total number of output tokens
+	SimEndedTime      int64 // Sim clock time in ticks when simulation ends
 	KVBlocksUsed      float64 // Integral of KVBlockUsage over time
 	PeakKVBlocksUsed  int64   // Max number of simultaneously used KV blocks
 	PreemptionCount      int64   // Total preemption events (PR12)
