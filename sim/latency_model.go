@@ -120,8 +120,12 @@ func (m *RooflineLatencyModel) PreemptionProcessingTime() int64 {
 
 // NewLatencyModel creates the appropriate LatencyModel based on SimConfig.
 // Returns RooflineLatencyModel if cfg.Roofline is true, BlackboxLatencyModel otherwise.
-// Returns error if roofline config validation fails.
+// Returns error if coefficient slices are too short or roofline config validation fails.
 func NewLatencyModel(cfg SimConfig) (LatencyModel, error) {
+	// Both implementations index alphaCoeffs[0..2]; validate upfront.
+	if len(cfg.AlphaCoeffs) < 3 {
+		return nil, fmt.Errorf("latency model: AlphaCoeffs requires at least 3 elements, got %d", len(cfg.AlphaCoeffs))
+	}
 	if cfg.Roofline {
 		if cfg.TP <= 0 {
 			return nil, fmt.Errorf("latency model: roofline requires TP > 0, got %d", cfg.TP)
@@ -135,6 +139,10 @@ func NewLatencyModel(cfg SimConfig) (LatencyModel, error) {
 			tp:          cfg.TP,
 			alphaCoeffs: cfg.AlphaCoeffs,
 		}, nil
+	}
+	// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
+	if len(cfg.BetaCoeffs) < 3 {
+		return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(cfg.BetaCoeffs))
 	}
 	return &BlackboxLatencyModel{
 		betaCoeffs:  cfg.BetaCoeffs,

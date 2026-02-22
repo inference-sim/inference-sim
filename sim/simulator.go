@@ -163,14 +163,6 @@ type Simulator struct {
 //   - GuideLLMConfig != nil → generate workload from distribution
 //   - Both zero-valued → no workload (caller injects via InjectArrival)
 func NewSimulator(cfg SimConfig) (*Simulator, error) {
-	if !cfg.Roofline {
-		if len(cfg.BetaCoeffs) < 3 {
-			panic(fmt.Sprintf("SimConfig.BetaCoeffs requires at least 3 elements, got %d", len(cfg.BetaCoeffs)))
-		}
-		if len(cfg.AlphaCoeffs) < 3 {
-			panic(fmt.Sprintf("SimConfig.AlphaCoeffs requires at least 3 elements, got %d", len(cfg.AlphaCoeffs)))
-		}
-	}
 	if cfg.TotalKVBlocks <= 0 {
 		panic(fmt.Sprintf("SimConfig.TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
 	}

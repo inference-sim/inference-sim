@@ -262,3 +262,55 @@ func TestNewLatencyModel_InvalidRoofline(t *testing.T) {
 		t.Fatal("expected error for invalid roofline config, got nil")
 	}
 }
+
+// TestNewLatencyModel_ShortAlphaCoeffs verifies factory rejects short alpha slices.
+func TestNewLatencyModel_ShortAlphaCoeffs(t *testing.T) {
+	tests := []struct {
+		name     string
+		roofline bool
+		alpha    []float64
+		beta     []float64
+	}{
+		{"blackbox_empty_alpha", false, []float64{}, []float64{1, 2, 3}},
+		{"blackbox_short_alpha", false, []float64{1, 2}, []float64{1, 2, 3}},
+		{"roofline_empty_alpha", true, []float64{}, nil},
+		{"roofline_short_alpha", true, []float64{1}, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := SimConfig{
+				Roofline:    tc.roofline,
+				AlphaCoeffs: tc.alpha,
+				BetaCoeffs:  tc.beta,
+			}
+			_, err := NewLatencyModel(cfg)
+			if err == nil {
+				t.Fatal("expected error for short AlphaCoeffs, got nil")
+			}
+		})
+	}
+}
+
+// TestNewLatencyModel_ShortBetaCoeffs verifies factory rejects short beta slices for blackbox.
+func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
+	tests := []struct {
+		name string
+		beta []float64
+	}{
+		{"empty", []float64{}},
+		{"short", []float64{1, 2}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := SimConfig{
+				Roofline:    false,
+				AlphaCoeffs: []float64{100, 1, 100},
+				BetaCoeffs:  tc.beta,
+			}
+			_, err := NewLatencyModel(cfg)
+			if err == nil {
+				t.Fatal("expected error for short BetaCoeffs, got nil")
+			}
+		})
+	}
+}
