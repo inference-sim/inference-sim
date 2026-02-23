@@ -61,60 +61,106 @@ External contributors should file a GitHub issue using the Hypothesis Proposal t
 
 ## The Iterative Review Protocol
 
-Every hypothesis experiment goes through **iterative rounds** of experimentation interleaved with **three parallel external reviews**, continuing **until convergence** (max 10 rounds). There is no minimum round count — if three thorough reviewers all converge in Round 1, the experiment is done.
+Every hypothesis experiment goes through **iterative rounds** of experimentation interleaved with **five parallel internal reviews**, continuing **until convergence** (max 10 rounds). There is no minimum round count — if no reviewer flags any CRITICAL or IMPORTANT item in Round 1, the experiment is done.
 
 ```
 Round N:
   Design → Code Review → Run → Analyze → Document FINDINGS.md
                           ↓
-              ┌───────────┼───────────┐
-              ↓           ↓           ↓
-         Reviewer A   Reviewer B  Reviewer C     (3 parallel Opus 4.6 reviews)
-         (mechanism)  (design)    (rigor)
-              ↓           ↓           ↓
-              └───────────┼───────────┘
+         ┌────────┬───────┼───────┬────────┐
+         ↓        ↓       ↓       ↓        ↓
+       Code    Experiment  Stats  Control  Standards     (5 parallel Task agents)
+       Verify  Designer   Rigor  Auditor  Compliance
+         ↓        ↓       ↓       ↓        ↓
+         └────────┴───────┼───────┴────────┘
                           ↓
-                  All 3 converged? → Commit and PR
+                  0 CRITICAL + 0 IMPORTANT? → Commit and PR
                   Any has actionable experiment? → Round N+1
                   Round 10 reached? → Stop, document remaining gaps
 ```
 
-### Three Parallel Reviewers
+### Five Parallel Internal Reviewers
 
-Each round runs **three Opus 4.6 reviews in parallel**, each with a different (but overlapping) focus area. This catches what single-reviewer sequential rounds miss — different reviewers have different blind spots.
+Each round runs **five internal Task agents in parallel**, each with a different (but overlapping) focus area. Internal agents can read the actual source files, verify `file:line` citations, cross-reference analyzer regexes against `cmd/root.go` format strings, and check workload YAML field names against `sim/workload/spec.go` struct tags — capabilities that external LLM reviews lack.
 
-Run all three in parallel: `/review-plan <findings> aws/claude-opus-4-6`
+**How to run:** Launch all five as background Task agents. Each agent receives the FINDINGS.md path and its specific focus area. Collect results and assess convergence when all five complete.
 
-**For external contributors without AI review infrastructure:** Submit your FINDINGS.md via PR. Maintainers will run the three-reviewer protocol on your behalf. You can also conduct the three reviews manually by having three different people review the FINDINGS.md, each focusing on one of the three areas below.
+```
+# Launch all 5 in parallel (one Task tool call per reviewer):
+Task(subagent_type="general-purpose", run_in_background=True,
+     prompt="You are Reviewer N (<role>). Read FINDINGS.md at <path>.
+             <reviewer-specific checklist from below>
+             Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
+             Report: (1) list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.")
+```
 
-**Reviewer A — Mechanism Verification:**
-- Are causal claims traced through code with `file:line` citations? (RCV-1)
-- Does the mechanism explain the direction, not just the correlation? (RCV-3)
-- Is there a control experiment that disables only the proposed mechanism? (RCV-4)
-- Do the code paths cited actually produce the claimed behavior?
+**Timeout:** 5 minutes per reviewer agent. If an agent exceeds this, check its output file and restart if stalled.
 
-**Reviewer B — Experimental Design:**
-- Are there confounding variables? (ED-1, ED-6)
+**Failure handling:** If a reviewer agent fails or hangs, fall back to performing that review directly (read the FINDINGS.md yourself with that reviewer's checklist). Do not skip a reviewer perspective.
+
+**Expected output format:** Each reviewer produces a list of findings, each classified as CRITICAL/IMPORTANT/SUGGESTION, with a summary count. Convergence assessment: sum CRITICAL and IMPORTANT counts across all 5 reviewers. If the sum is zero, the experiment converges.
+
+**For external contributors without AI review infrastructure:** Submit your FINDINGS.md via PR. Maintainers will run the five-reviewer protocol on your behalf. You can also conduct the reviews manually by having people review the FINDINGS.md, each focusing on one of the five areas below.
+
+**Reviewer 1 — Code Verifier:**
+- READ the actual source files cited in the FINDINGS.md. Verify every `file:line` citation against current code.
+- Does the code at the cited location actually produce the claimed behavior?
+- Are there off-by-one errors in line citations? (Acceptable: ±2 lines. Flag: >2 lines off.)
+- Does the mechanism explanation match what the code does, not just what it's named?
+
+**Reviewer 2 — Experiment Designer:**
+- Are there confounding variables? Is exactly one dimension varied? (ED-1)
+- Was the experiment run at a rate where the effect should vanish, to confirm mechanism dependence? (ED-2)
+- Are experiment preconditions verified in the script (e.g., queue depth > batch size for SJF tests)? (ED-3)
+- Is workload seed handling correct? Does `--seed` on the CLI properly vary across runs? (ED-4)
+- Is the experiment reproducible from `run.sh` alone — binary built, seeds documented, no manual steps? (ED-5)
+- Is the config diff against referenced experiments documented? (ED-6)
 - Are there missing control experiments or confound matrix cells?
 - Are parameters properly calibrated? (e.g., bucket cap vs mean input)
-- Is the config diff against referenced experiments documented? (ED-6)
+- Cross-reference every CLI flag in `run.sh` against `cmd/root.go` flag definitions.
+- Cross-reference every YAML field name against `sim/workload/spec.go` struct tags.
 
-**Reviewer C — Statistical Rigor & Generalizability:**
+**Reviewer 3 — Statistical Rigor:**
 - Are "surprises" computed from first principles? (RCV-2)
 - Is the sample size adequate (seeds, operating points)?
 - Are claims properly scoped (not over-generalized from narrow evidence)?
 - Is the evidence quality table complete and honest?
+- Do per-seed effect sizes meet the legacy thresholds (>20% for dominance, <5% for equivalence)?
+- Is the status classification consistent with the data? (e.g., "Confirmed" requires >20% in ALL seeds.)
 
-Each reviewer's prompt should include their focus area AND the full FINDINGS.md. The overlapping coverage means any critical issue is likely caught by at least one reviewer.
+**Reviewer 4 — Control Experiment Auditor:**
+- Does every proposed mechanism (RCV-3: a specific code path claimed to cause the observed effect) have a corresponding control experiment (RCV-4: disabling only that mechanism)?
+- Were control experiments actually EXECUTED, not just proposed? Look for conditional language ("one would test", "could be confirmed by") vs past tense with data ("the control showed 0.0% difference"). Verify that control results appear in the Results section with actual numbers, not just in Root Cause Analysis as narrative.
+- Does each control isolate exactly one variable? Diff the CLI flags between treatment and control runs in `run.sh` — the control should differ by exactly one flag or parameter.
+- Do the control results confirm or refute the proposed mechanism?
+- Do the control experiment results in the Evidence Quality table accurately reflect the current round (not stale text from a prior round)?
+- Does the mechanism explain the direction using experimental evidence (e.g., "disabling the mechanism reversed the effect"), not just code-reading claims? (This complements Reviewer 1, who verifies the mechanism via code; Reviewer 4 verifies it via experimental data.)
 
-### Convergence Criterion
+**Reviewer 5 — Standards Compliance:**
+- Are ALL 12 FINDINGS.md sections present and non-empty? (per `docs/templates/hypothesis.md`)
+- Is the hypothesis correctly classified (family, VV&UQ category, type)?
+- Does the Devil's Advocate section (RCV-5) argue both directions convincingly?
+- Are scope and limitations (RCV-6) complete — operating point, dependencies, what was NOT tested, generalizability, UQ?
+- Does the standards audit correctly check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`?
+- Are any new rules or invariants warranted by the findings?
 
-An experiment **converges** when **all three reviewers** have no remaining items that require a new experiment. Specifically:
+The overlap is intentional — multiple perspectives checking the same FINDINGS.md means different reviewers catch different issues. Evidence from PR #385: Reviewer 1 (code) and Reviewer 3 (rigor) both caught H19's stale evidence quality row; Reviewer 2 (design) caught H16's sub-threshold seed that Reviewers 1 and 3 missed; Reviewer 4 (control) caught H21's unexecuted control experiments that Reviewers 2 and 3 didn't flag as actionable.
 
-- **Converged**: All three reviewers' remaining items are "acknowledged as open" (requires different tooling) or documentation fixes. No new experiments needed.
-- **Not converged**: Any reviewer raises an actionable experiment (confound matrix, control, calibrated parameters, etc.). Another round required.
+### Convergence Defined
 
-The distinction: **"open and requires different tooling"** is a stopping point. **"Open and answerable by running another experiment"** is not.
+An experiment **converges** when **no reviewer flags any CRITICAL or IMPORTANT item in the current round**. Convergence is not about agreement between reviewers — it is about the absence of actionable findings.
+
+- **Converged**: Zero CRITICAL items and zero IMPORTANT items across all five reviewers. Remaining items are SUGGESTION-level (documentation nits, cosmetic fixes, minor citation off-by-ones). No new experiments needed.
+- **Not converged**: Any reviewer flags a CRITICAL or IMPORTANT item (missing control experiment, sub-threshold effect size, stale claims contradicted by data, unexecuted proposed experiments). Another round required.
+
+**Severity levels** (each reviewer must classify every finding):
+- **CRITICAL**: Must fix before merge. Examples: missing control experiment (RCV-4), status classification contradicted by data, silent data loss in analyzer, cross-document contradiction on protocol definition.
+- **IMPORTANT**: Should fix before merge. The key test: **would merging with this unfixed item mislead a reader or produce incorrect conclusions?** Examples: sub-threshold effect size in one seed (misleads on significance), stale text contradicting Round 2 results (factual error in FINDINGS), undocumented confound (incomplete experiment), missing ED coverage in reviewer prompt (gap in review process).
+- **SUGGESTION**: Does not affect correctness or reader understanding. Examples: off-by-one line citation (±2 lines), cosmetic terminology, additional scoping qualifier, style consistency.
+
+**When in doubt between IMPORTANT and SUGGESTION:** If fixing the item would change any conclusion, metric, or user guidance in FINDINGS.md, it is IMPORTANT. If it would only improve readability or precision without changing any conclusion, it is SUGGESTION. If multiple reviewers classify the same item at different severities, the highest severity applies.
+
+**Note on broadening from the old definition:** The old convergence criterion (pre-v2) was "no remaining items that require a new experiment." The new criterion (zero CRITICAL + zero IMPORTANT) is intentionally broader — it also blocks on factual errors in documentation (e.g., stale claims) even when no new experiment is needed. This prevents shipping FINDINGS.md with incorrect text that readers would trust.
 
 **Max 10 rounds.** If convergence is not reached by Round 10, stop and document remaining gaps as future work. This prevents unbounded iteration on irreducibly complex systems.
 
@@ -131,8 +177,8 @@ The distinction: **"open and requires different tooling"** is a stopping point. 
 7. **Analyze** — produce comparison tables, compute effect sizes
 8. **Verify root cause** — trace every causal claim through code (RCV-1, RCV-2, RCV-3)
 9. **Document FINDINGS.md** — results, root cause, classification, standards audit
-10. **Three parallel external reviews** — run Reviewers A, B, C simultaneously
-11. **Assess convergence** — if all three converge, proceed to finalization. If any has actionable feedback, start next round at step 5.
+10. **Five parallel internal reviews** — launch Reviewers 1-5 as background Task agents simultaneously
+11. **Assess convergence** — if zero CRITICAL and zero IMPORTANT items across all five reviewers, proceed to finalization. If any reviewer flags a CRITICAL or IMPORTANT item, start next round at step 5.
 
 ### Finalization (after convergence)
 
@@ -278,6 +324,10 @@ Three of the four major bugs in this PR would have been caught by code review be
 ## Quality Gates
 
 ### Pre-Execution Gates (check BEFORE running experiments)
+- [ ] `run.sh` sources `hypotheses/lib/harness.sh` and uses `blis_run` for every simulation call
+- [ ] Every `blis_run` call has an appropriate timeout tier (`TIMEOUT_QUICK`/`TIMEOUT_STANDARD`/`TIMEOUT_EXTENDED`)
+- [ ] KV safety pre-flight: if experiment uses `--total-kv-blocks`, call `preflight_kv_check` with max expected input tokens
+- [ ] `analyze.py` imports `analyze_helpers` and uses `parse_blis_output` (handles timeouts gracefully)
 - [ ] `run.sh` flags verified against `cmd/root.go` help text
 - [ ] `analyze.py` regexes verified against actual output format strings in `cmd/root.go` and `sim/metrics_utils.go`
 - [ ] Workload YAML field names verified against `sim/workload/spec.go` struct tags
@@ -288,14 +338,14 @@ Three of the four major bugs in this PR would have been caught by code review be
 - [ ] Every causal claim cites `file:line` (RCV-1)
 - [ ] Every "surprise" has a first-principles calculation (RCV-2)
 - [ ] Root cause explains mechanism AND direction (RCV-3)
-- [ ] External review completed and feedback addressed
+- [ ] Five internal reviewer assessments completed and all CRITICAL/IMPORTANT items addressed
 
 ### Final Gates (check before PR)
 - [ ] Hypothesis classified (deterministic or statistical + subtype)
 - [ ] Experiment design follows ED-1 through ED-6
 - [ ] If reusing prior calibration data, config diff documented (ED-6)
 - [ ] Results reproducible via `./run.sh`
-- [ ] **Convergence reached**: all three parallel reviewers have no remaining actionable experiments
+- [ ] **Convergence reached**: zero CRITICAL and zero IMPORTANT items across all five internal reviewers in the current round
 - [ ] All review feedback addressed or explicitly acknowledged as open
 - [ ] Findings classified per the findings table (including resolution type)
 - [ ] Standards audit completed
@@ -306,18 +356,41 @@ Three of the four major bugs in this PR would have been caught by code review be
 - [ ] Each issue references the PR number
 - [ ] No issues filed for "documented here" findings with no action needed
 
-## Why Three Parallel Reviewers?
+## Why Five Internal Reviewers?
 
-Evidence from PR #310 multi-model reviews:
+### Evolution from external to internal reviews
+
+**v1 (PR #310):** Three external LLM reviews via `/review-plan` (Claude, GPT-4o, Gemini). External models caught different issues, proving the value of parallel review. However, none could read the codebase — citations like `sim/routing.go:180` were taken on faith.
+
+**v2 (PR #385):** Five internal Task agents with codebase access. Each agent reads the actual source files, verifies `file:line` citations, cross-references regexes, and checks struct tags. This caught issues external reviews could never find.
+
+### Evidence from PR #385 (internal reviews)
 
 | Reviewer | Unique insight no other reviewer caught |
 |----------|----------------------------------------|
-| **Gemini 3 Pro** | Queue-time vs compute-time split for H10; hard-block behavior for H5 |
-| **Claude Opus 4** | Process enforcement gaps; analysis paralysis risk |
-| **Claude Opus 4.6** | Confound matrix design; cap < mean_input is structural rejection; ED-7 pre-registration |
-| **GPT-4o** | H13 scope narrowness; dynamic bucket policies |
+| **Code Verifier** (H21) | Verified all 18 `file:line` citations against actual source. Found that `sim/routing.go:180` strict `>` causes positional bias — confirmed by reading the code, not by trusting the FINDINGS claim. |
+| **Experiment Designer** (H16) | Seed 456 at 9% TTFT p99 difference — below the 10% "inconclusive" threshold. Caught by reading per-seed data and cross-referencing against `docs/standards/experiments.md` line 98. |
+| **Statistical Rigor** (H16) | p99 from 500 requests = ~5 data points per seed. Flagged as insufficient for precise effect size, leading to the 2000-request Round 2 experiment that revealed the load-duration dependence. |
+| **Control Auditor** (H21) | Caught that two control experiments were *proposed* but not *executed*. The FINDINGS said "one would test" — conditional language, not a report. Led to Round 2 with both controls actually run. |
+| **Standards Compliance** (H19) | Found stale Round 1 text surviving into Round 2 FINDINGS — "control experiment proposed but not yet run" in the Evidence Quality table, when the control had been executed. |
 
-No single reviewer caught all issues. Three parallel reviewers with different focus areas (mechanism, design, rigor) maximize coverage per round, potentially converging faster than sequential single-reviewer rounds.
+### Why internal agents beat external LLMs
+
+| Capability | External (`/review-plan`) | Internal (Task agent) |
+|-----------|--------------------------|----------------------|
+| Read source files | No | Yes — verifies every citation |
+| Cross-ref regexes against format strings | No | Yes — catches analyzer bugs before they hide data |
+| Check YAML fields against struct tags | No | Yes — catches typos that `KnownFields(true)` would reject at runtime |
+| Run `grep` to verify claims | No | Yes — can search for "one would test" vs executed controls |
+| API reliability | Fragile (auth, timeouts, rate limits) | Reliable (same process, no external dependency) |
+| Cost | External API call per review | Included in session (no additional cost) |
+
+### Why 5 instead of 3
+
+Evidence from PR #385: with 3 reviewers (mechanism, design, rigor), the H19 experiment needed 3 separate review agents (Round 1 + two Round 2 reviews) to fully cover the space. The control experiment auditor perspective (Reviewer 4) and the standards compliance perspective (Reviewer 5) were not distinct roles — they were folded into "mechanism" and "rigor" respectively, where they received less attention. Splitting them into dedicated roles ensures:
+
+- **RCV-4 control experiments** get a dedicated auditor who checks execution status, not just design
+- **Template completeness** gets a dedicated checker who verifies all 12 FINDINGS.md sections, not just the ones related to mechanism or statistics
 
 ## Why Iterate Until Convergence (Not Fixed Rounds)?
 
@@ -332,7 +405,7 @@ Evidence from PR #310 (H5, H10, H13):
 
 H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H10 required Round 4 due to an analyzer bug. Fixed round counts would have either stopped too early (missing the H10 bug) or forced unnecessary work (H13 didn't need Round 2).
 
-**Iterate until convergence, max 10 rounds.** Three parallel reviewers per round. No minimum.
+**Iterate until convergence, max 10 rounds.** Five parallel internal reviewers per round. No minimum.
 
 ## References
 
@@ -340,9 +413,9 @@ H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H
 - Template: [docs/templates/hypothesis.md](../templates/hypothesis.md)
 - Hypothesis catalog: [docs/plans/research.md](../plans/research.md)
 - Validated experiments (by family):
-  - **Scheduler invariants:** `h12-conservation/` (Tier 1, deterministic), `h13-determinism/` (Tier 1, deterministic), `h-liveness/` (Tier 1, deterministic)
-  - **Structural model:** `h3-signal-freshness/` (Tier 2, dominance), `h9-prefix-caching/` (Tier 2, monotonicity), `h10-tiered-kv/` (Tier 3, dominance), `h-phase-structure/` (Tier 1, monotonicity), `h-mmk-validation/` (Tier 1, validation)
-  - **Performance-regime:** `h8-kv-pressure/` (Tier 3, monotonicity)
-  - **Robustness/failure-mode:** `h14-pathological-templates/` (Tier 2, dominance), `h5-token-bucket-burst/` (Tier 3, dominance), `h-overload/` (Tier 1, deterministic)
-  - **Cross-policy comparative:** `prefix-affinity/` (Tier 2, dominance), `h1-sjf-scheduling/` (Tier 3, dominance)
-  - **Workload/arrival:** `h-arrival-generators/` (Tier 1, statistical)
+  - **Scheduler invariants:** `h12-conservation/` (Tier 1, deterministic), `h13-determinism/` (Tier 1, deterministic), `h-liveness/` (Tier 1, deterministic), `h25-integration-stress/` (Tier 1, deterministic)
+  - **Structural model:** `h3-signal-freshness/` (Tier 2, dominance), `h9-prefix-caching/` (Tier 2, monotonicity), `h10-tiered-kv/` (Tier 3, dominance), `h-phase-structure/` (Tier 1, monotonicity), `h-mmk-validation/` (Tier 1, validation), `h26-admission-latency/` (Tier 2, dominance), `h-step-quantum/` (Tier 1, validation), `h19-roofline-vs-blackbox/` (Tier B, equivalence)
+  - **Performance-regime:** `h8-kv-pressure/` (Tier 3, monotonicity), `h11-token-budget/` (Tier 3, dominance)
+  - **Robustness/failure-mode:** `h14-pathological-templates/` (Tier 2, dominance), `h5-token-bucket-burst/` (Tier 3, dominance), `h-overload/` (Tier 1, deterministic), `h-overload-kv/` (Tier 1, deterministic), `h22-zero-blocks/` (Tier 2, deterministic), `h21-extreme-weights/` (Tier B, equivalence), `h24-combined-pathological/` (Tier 2, dominance)
+  - **Cross-policy comparative:** `prefix-affinity/` (Tier 2, dominance), `h1-sjf-scheduling/` (Tier 3, dominance), `h2-priority-fcfs/` (Tier 5, dominance), `h17-pareto-frontier/` (Tier 4, Pareto)
+  - **Workload/arrival:** `h-arrival-generators/` (Tier 1, statistical), `h16-gamma-vs-poisson/` (Tier 2, dominance)

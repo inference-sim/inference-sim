@@ -321,16 +321,18 @@ Evidence: H10's "28% TTFT improvement" is specific to GPU=2100 blocks near the p
 
 ## Iterative Review Protocol
 
-Every hypothesis experiment iterates **until convergence** (max 10 rounds), with **three parallel Opus 4.6 reviews per round**. No minimum round count — convergence in Round 1 is valid if all three reviewers agree.
+Every hypothesis experiment iterates **until convergence** (max 10 rounds), with **five parallel internal reviewer agents per round**. No minimum round count — convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item.
 
-Each round runs three parallel reviews with different focus areas (see `docs/process/hypothesis.md` for the full protocol):
-- **Reviewer A (Mechanism):** Code-level verification of causal claims (RCV-1, RCV-3, RCV-4)
-- **Reviewer B (Design):** Confounds, missing controls, parameter calibration (ED-1 through ED-6)
-- **Reviewer C (Rigor):** First-principles calculations, sample size, scope of claims (RCV-2)
+Each round runs five internal Task agents with different (but overlapping) focus areas:
+- **Reviewer 1 (Code Verifier):** Read source files, verify every `file:line` citation (RCV-1)
+- **Reviewer 2 (Experiment Designer):** Confounds, controls, parameter calibration, rate awareness, reproducibility (ED-1 through ED-6)
+- **Reviewer 3 (Statistical Rigor):** First-principles calculations, sample size, effect thresholds, claim scoping (RCV-2, RCV-6)
+- **Reviewer 4 (Control Auditor):** Control experiments executed (not just proposed), single-variable isolation (RCV-3, RCV-4)
+- **Reviewer 5 (Standards Compliance):** Template completeness, classification correctness, Devil's Advocate quality (RCV-5), standards audit
 
-**Convergence:** All three reviewers have no remaining items that require a new experiment. Max 10 rounds as a safety valve.
+**Convergence:** Zero CRITICAL and zero IMPORTANT items from any reviewer in the current round. SUGGESTION-level items (documentation nits, cosmetic fixes) do not block convergence. Max 10 rounds as a safety valve. See `docs/process/hypothesis.md` for the full protocol, reviewer prompts, and severity definitions.
 
-**Why three parallel reviewers instead of sequential rounds:** PR #310's multi-model reviews showed no single reviewer caught all issues. Gemini 3 Pro caught the queue-time split, Opus 4.6 caught the confound matrix need, GPT-4o caught scope limitations. Three parallel reviewers maximize coverage per round.
+**Why internal agents instead of external LLM reviews:** Internal Task agents can read the actual source files, verify `file:line` citations, cross-reference analyzer regexes against `cmd/root.go` format strings, and check YAML fields against struct tags — capabilities external LLM reviews lack. Evidence from PR #385: internal agents caught stale citations, sub-threshold effect sizes, and unexecuted control experiments that external reviews could not have detected.
 
 ---
 

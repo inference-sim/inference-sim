@@ -107,29 +107,36 @@ cd hypotheses/<name>
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BINARY="$REPO_ROOT/simulation_worker"
+source "$SCRIPT_DIR/../lib/harness.sh"
 
-# Build if needed
-if [[ "${1:-}" == "--rebuild" ]] || [[ ! -x "$BINARY" ]]; then
-    echo "Building simulation_worker..."
-    (cd "$REPO_ROOT" && go build -o simulation_worker main.go)
-fi
-
-MODEL="meta-llama/llama-3.1-8b-instruct"
-
-run_sim() {
-    # Wrapper around the binary with common flags
-    "$BINARY" run --model "$MODEL" --num-instances 4 \
-        --log error --summarize-trace --trace-level decisions \
-        "$@" 2>/dev/null
-}
-
-RESULTS_DIR=$(mktemp -d)
-trap "rm -rf $RESULTS_DIR" EXIT
+setup_experiment "${1:-}"
 
 # -- Experiment sections -----------------------------------------------
-# Each experiment: run configurations, save to temp files, call analyze.py
+# Each experiment: use blis_run with appropriate timeout tier.
+# NOTE: blis_run (not run_sim) — define your own run_sim() wrapper if needed.
+#
+# Example (basic):
+#   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \
+#       --model "$MODEL" --num-instances 4 --seed 42 \
+#       --workload-spec "$WORKLOAD_YAML" --log error
+#
+# Example (with stderr capture for robustness experiments):
+#   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \
+#       --stderr "$RESULTS_DIR/config_a_stderr.txt" \
+#       --model "$MODEL" --num-instances 4 --seed 42 --log error
+#
+# Example (with per-request JSON):
+#   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \
+#       --model "$MODEL" --num-instances 4 --seed 42 --log error \
+#       --results-path "$RESULTS_DIR/config_a_results.json"
+#
+# Example (robustness/stress — non-zero exit expected, use || true under set -e):
+#   blis_run $TIMEOUT_EXTENDED "$RESULTS_DIR/stress.txt" \
+#       --stderr "$RESULTS_DIR/stress_stderr.txt" \
+#       --model "$MODEL" --num-instances 4 --seed 42 --log error || true
+#
+# For KV-constrained experiments, add pre-flight check (advisory, never aborts):
+#   preflight_kv_check 800 16 512  # total_blocks, block_size (default: 16), max_input
 # ----------------------------------------------------------------------
 ```
 
@@ -140,56 +147,23 @@ trap "rm -rf $RESULTS_DIR" EXIT
 """Analysis script for <hypothesis name>.
 
 Parses BLIS multi-block output and produces comparison tables.
-
-BLIS output format (see cmd/root.go and sim/metrics_utils.go):
-- Per-instance and cluster JSON blocks, each preceded by "=== Simulation Metrics ==="
-- Cluster block has "instance_id": "cluster"
-- KV cache summary lines: "Preemption Rate: 0.1750", "Cache Hit Rate: 0.0452"
-- Trace summary lines: "Target Distribution:", "Rejected Requests: N"
 """
-import json, math, re, sys
+import sys
 from pathlib import Path
 
-def parse_output(filepath):
-    """Parse BLIS output -> cluster metrics + KV summary + trace summary."""
-    content = Path(filepath).read_text()
+# Import shared helpers
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+from analyze_helpers import parse_blis_output, check_for_timeout
 
-    # Extract cluster-level JSON block (matches "instance_id": "cluster")
-    cluster = None
-    for match in re.finditer(
-        r"=== Simulation Metrics ===\s*\n(\{[^}]+\})", content, re.DOTALL
-    ):
-        block = json.loads(match.group(1))
-        if block.get("instance_id") == "cluster":
-            cluster = block
-
-    # Extract KV cache summary metrics (printed by cmd/root.go:544-546)
-    # IMPORTANT: use "Preemption Rate" (float), NOT "preemption_count" from JSON
-    preemption_rate = 0.0
-    m = re.search(r"Preemption Rate: ([0-9.]+)", content)
-    if m:
-        preemption_rate = float(m.group(1))
-
-    cache_hit_rate = 0.0
-    m = re.search(r"Cache Hit Rate: ([0-9.]+)", content)
-    if m:
-        cache_hit_rate = float(m.group(1))
-
-    # Extract trace summary: rejected count, target distribution
-    rejected = 0
-    m = re.search(r"Rejected Requests: (\d+)", content)
-    if m:
-        rejected = int(m.group(1))
-
-    return {
-        "ttft_mean": cluster["ttft_mean_ms"] if cluster else 0,
-        "ttft_p99": cluster["ttft_p99_ms"] if cluster else 0,
-        "e2e_mean": cluster["e2e_mean_ms"] if cluster else 0,
-        "e2e_p99": cluster["e2e_p99_ms"] if cluster else 0,
-        "throughput": cluster["responses_per_sec"] if cluster else 0,
-        "completed": cluster["completed_requests"] if cluster else 0,
-        "preemption_rate": preemption_rate,
-        "cache_hit_rate": cache_hit_rate,
-        "rejected": rejected,
-    }
+# -- Analysis code --------------------------------------------------------
+# Use parse_blis_output(filepath) to get metrics dict.
+# The dict includes a 'timed_out' flag — check it before computing ratios.
+#
+# Example:
+#   metrics = parse_blis_output(sys.argv[1])
+#   if metrics["timed_out"]:
+#       print(f"  SKIPPED (timeout)", file=sys.stderr)
+#   else:
+#       print(f"  TTFT mean: {metrics['ttft_mean']:.2f} ms")
+# -------------------------------------------------------------------------
 ```
