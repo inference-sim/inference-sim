@@ -37,80 +37,6 @@ go test -v ./...
 go test -cover ./...
 ```
 
-## Code Architecture
-
-### Core Simulation Engine (`sim/`)
-
-The simulator uses a discrete-event architecture with a min-heap event queue:
-
-- **config.go**: Module-scoped sub-config types (`KVCacheConfig`, `BatchConfig`, `LatencyCoeffs`, `ModelHardwareConfig`, `PolicyConfig`, `WorkloadConfig`) — composed into `SimConfig` via embedding (R16)
-- **simulator.go**: `SimConfig` struct (composed of 6 embedded sub-configs + Horizon/Seed), `NewSimulator(SimConfig) (*Simulator, error)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (delegated to `BatchFormation` interface), step execution with phased metric recording (`recordQueueSnapshots`, `recordKVUsageMetrics`, `recordRequestCompletion`), observation methods (`QueueDepth()`, `BatchSize()`, `CurrentClock()`, `SimHorizon()`)
-- **admission.go**: `AdmissionPolicy` interface (accepts `*RouterState`), `AlwaysAdmit`, `TokenBucket`, `RejectAll`, `NewAdmissionPolicy` factory
-- **routing.go**: `RoutingPolicy` interface (accepts `*RouterState`), `RoutingSnapshot` (with `EffectiveLoad()` for canonical load calculation), `RoutingDecision` (with `Priority` hint), `RoundRobin`, `LeastLoaded`, `WeightedScoring` (composable scorer pipeline), `PrefixAffinity`, `AlwaysBusiest` templates, `NewRoutingPolicy` factory
-- **routing_scorers.go**: `ScorerConfig`, scorer implementations (queue-depth, kv-utilization, load-balance), `ParseScorerConfigs`, `IsValidScorer`, `DefaultScorerConfigs`, `newScorerWithObserver` factory
-- **routing_prefix_scorer.go**: Prefix-affinity scorer with router-side cache — proportional prefix match scoring via `PrefixCacheIndex`, observer hook for post-routing state updates
-- **prefix_cache_index.go**: `PrefixCacheIndex` — per-instance LRU cache of hierarchical block hashes for router-side prefix matching
-- **priority.go**: `PriorityPolicy` interface with `ConstantPriority`, `SLOBasedPriority`, and `InvertedSLO` templates, `NewPriorityPolicy` factory
-- **scheduler.go**: `InstanceScheduler` interface with `FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler`, and `ReversePriority` templates, `NewScheduler` factory
-- **latency_model.go**: `LatencyModel` interface (5 methods: StepTime, QueueingTime, OutputTokenProcessingTime, SchedulingProcessingTime, PreemptionProcessingTime), `BlackboxLatencyModel` (alpha/beta regression), `RooflineLatencyModel` (analytical FLOPs/bandwidth), `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)` factory
-- **router_state.go**: `RouterState` bridge type (Snapshots + Clock) for cluster-level policy interfaces
-- **bundle.go**: `PolicyBundle` struct with YAML loading (`LoadPolicyBundle`), validation (`Validate`)
-- **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
-- **request.go**: `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`), Request lifecycle and state machine, `Priority` field for scheduler-aware ordering, `AssignedInstance` for cluster routing provenance (#181)
-- **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching, `CacheHits`/`CacheMisses` counters, transactional `AllocateKVBlocks` with `rollbackAllocation` on mid-loop failure
-- **kv_store.go**: `KVStore` interface (11 methods: +`SetClock`, +`ConsumePendingTransferLatency`), `NewKVStore(KVCacheConfig)` factory with input validation (returns single-tier or tiered based on config)
-- **kvcache_tiered.go**: `TieredKVCache` (GPU+CPU composition), `cpuTier`, `offloadedBlock`, offload/reload/transfer latency, `PendingTransferLatency()` (pure query), `ConsumePendingTransferLatency()` (read-and-clear)
-- **batch.go**: Batch struct (group of requests processed in a single forward pass)
-- **batch_formation.go**: `BatchFormation` interface, `BatchContext`/`BatchResult` types, `VLLMBatchFormation` (FCFS + chunked-prefill + preemption), `NewBatchFormation(LatencyModel)` factory
-- **queue.go**: FIFO wait queue for pending requests
-
-### Cluster Simulation (`sim/cluster/`)
-
-Multi-replica extension using composition over the single-instance simulator:
-
-- **instance.go**: `InstanceSimulator` wraps `sim.Simulator` via `NewInstanceSimulator(id, SimConfig)` with run-once guard; delegates to Simulator observation methods (`QueueDepth()`, `BatchSize()`, etc.) instead of direct field access
-- **cluster.go**: `ClusterSimulator` orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; `Run()` returns `error`
-- **metrics.go**: `RawMetrics`, `Distribution`, `FitnessResult`, `CollectRawMetrics` (accepts `priorityPolicy` to suppress false-positive inversion detection for constant priority), `ComputeFitness` (returns `(FitnessResult, error)` — fails on unknown keys), anomaly detection, `ParseFitnessWeights` with NaN/Inf validation
-- **deployment.go**: `DeploymentConfig` embeds `sim.SimConfig` + cluster-only fields; `ToSimConfig()` returns the embedded config
-- **workload.go**: Centralized request generation (distribution-based or CSV traces) for cluster dispatch
-- **counterfactual.go**: `computeCounterfactual()` for top-k candidate ranking and regret computation
-- **evaluation.go**: `EvaluationResult` wrapper (RawMetrics + FitnessResult + trace + summary)
-
-### Decision Tracing (`sim/trace/`)
-
-Observation-only trace recording for cluster-level policy decisions:
-
-- **trace.go**: `TraceLevel`, `TraceConfig`, `SimulationTrace`, `NewSimulationTrace`, recording methods
-- **record.go**: `AdmissionRecord`, `RoutingRecord`, `CandidateScore` (pure data types, no `sim/` dependency)
-- **summary.go**: `TraceSummary`, `Summarize()` aggregation
-
-### Latency Estimation
-
-Two modes, selected by `NewLatencyModel()` factory based on `--model-config-folder` presence:
-
-1. **Blackbox mode** (default): Uses trained alpha/beta coefficients from `defaults.yaml`
-   - Alpha coefficients: queueing time estimation
-   - Beta coefficients: step time estimation based on batch features
-
-2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `roofline_step.go`
-   - Requires HuggingFace `config.json` in `model_configs/`
-   - Requires `hardware_config.json` with GPU specs
-
-### Configuration Loading
-
-- **model_hardware_config.go**: `HFConfig` (raw HuggingFace config), `ModelConfig` (extracted params), `HardwareCalib` (GPU specs), `ValidateRooflineConfig` (validates all roofline denominator fields)
-- **defaults.yaml**: Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
-- **cmd/default_config.go**: Loading and lookup functions for defaults.yaml
-
-### Key Data Flow
-
-```
-Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
-                                            ↓              ↓
-                                      KV Allocation   Latency Estimation (alpha/beta or roofline)
-```
-Note: Admission and Routing steps apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
-
 ## Development Guidelines
 
 ### Design Principles
@@ -251,6 +177,8 @@ Run lint locally before pushing: `golangci-lint run ./...`
 
 ## File Organization
 
+The simulator uses a discrete-event architecture with a min-heap event queue.
+
 ```
 inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
@@ -260,25 +188,25 @@ inference-sim/
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
-│   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, etc.)
-│   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs), NewSimulator(SimConfig), event loop, batch formation, step execution
-│   ├── admission.go           # AdmissionPolicy interface, AlwaysAdmit, TokenBucket, NewAdmissionPolicy factory
-│   ├── routing.go             # RoutingPolicy interface, RoutingSnapshot, RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity
-│   ├── routing_scorers.go     # ScorerConfig, scorerFunc, stateless scorers, ParseScorerConfigs, newScorerWithObserver
+│   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16)
+│   ├── simulator.go           # SimConfig struct (composed of 6 embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor, event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording (recordQueueSnapshots, recordKVUsageMetrics, recordRequestCompletion), observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon())
+│   ├── admission.go           # AdmissionPolicy interface (accepts *RouterState), AlwaysAdmit, TokenBucket, RejectAll, NewAdmissionPolicy factory
+│   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() for canonical load calculation), RoutingDecision (with Priority hint), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), PrefixAffinity, AlwaysBusiest templates, NewRoutingPolicy factory
+│   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs, IsValidScorer, DefaultScorerConfigs, newScorerWithObserver factory
 │   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer (proportional prefix matching)
 │   ├── prefix_cache_index.go  # PrefixCacheIndex: per-instance LRU of hierarchical block hashes
 │   ├── priority.go            # PriorityPolicy interface, ConstantPriority, SLOBasedPriority, NewPriorityPolicy factory
 │   ├── scheduler.go           # InstanceScheduler interface, FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, NewScheduler factory
-│   ├── latency_model.go       # LatencyModel interface, BlackboxLatencyModel, RooflineLatencyModel, NewLatencyModel factory
+│   ├── latency_model.go       # LatencyModel interface (5 methods: StepTime, QueueingTime, OutputTokenProcessingTime, SchedulingProcessingTime, PreemptionProcessingTime), BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
-│   ├── request.go             # Request state machine (queued → running → completed), Priority field, workload metadata (TenantID, SLOClass, etc.)
-│   ├── kvcache.go             # Block-based KV cache with LRU eviction, prefix caching, transactional rollback
-│   ├── kv_store.go            # KVStore interface, NewKVStore factory
-│   ├── kvcache_tiered.go      # TieredKVCache: GPU+CPU composition, offload/reload, transfer latency
+│   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted), Request lifecycle and state machine, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.)
+│   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching, CacheHits/CacheMisses counters, transactional AllocateKVBlocks with rollbackAllocation on mid-loop failure
+│   ├── kv_store.go            # KVStore interface (11 methods: +SetClock, +ConsumePendingTransferLatency), NewKVStore(KVCacheConfig) factory with input validation (returns single-tier or tiered based on config)
+│   ├── kvcache_tiered.go      # TieredKVCache (GPU+CPU composition), cpuTier, offloadedBlock, offload/reload/transfer latency, PendingTransferLatency() (pure query), ConsumePendingTransferLatency() (read-and-clear)
 │   ├── batch.go               # Batch struct
-│   ├── batch_formation.go     # BatchFormation interface, VLLMBatchFormation, NewBatchFormation factory
+│   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (FCFS + chunked-prefill + preemption), NewBatchFormation(LatencyModel) factory
 │   ├── queue.go               # FIFO wait queue
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
@@ -288,12 +216,13 @@ inference-sim/
 │   ├── workload_config.go     # CSV trace loading and distribution-based workload generation
 │   └── internal/testutil/     # Shared test infrastructure (golden dataset loading)
 ├── sim/cluster/               # Multi-replica cluster simulation
-│   ├── instance.go            # InstanceSimulator wrapper with run-once guard
-│   ├── cluster.go             # ClusterSimulator: shared-clock event loop, online routing, aggregation
+│   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
+│   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; Run() returns error
 │   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent
+│   ├── counterfactual.go      # computeCounterfactual() for top-k candidate ranking and regret computation
 │   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
-│   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, anomaly detection, per-SLO-class metrics, JainFairnessIndex
-│   ├── deployment.go          # DeploymentConfig (embeds sim.SimConfig) + cluster-only fields
+│   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
+│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields; ToSimConfig() returns the embedded config
 │   ├── workload.go            # Centralized request generation for cluster dispatch
 │   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
 ├── sim/workload/              # ServeGen-informed workload generation (PR10)
@@ -312,11 +241,11 @@ inference-sim/
 │   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
 │   └── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 ├── sim/trace/                 # Decision trace recording (PR13)
-│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace
-│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore
+│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
+│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
 ├── model_configs/             # HuggingFace config.json files
-├── defaults.yaml              # Trained coefficients, defaults
+├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files
 ├── hypotheses/                # Hypothesis experiment artifacts (run.sh, analyze.py, FINDINGS.md)
@@ -331,6 +260,27 @@ inference-sim/
 │   └── extension-recipes.md   # Step-by-step extension guides
 └── CONTRIBUTING.md            # Contributor guide (references docs/standards/)
 ```
+
+### Latency Estimation
+
+Two modes, selected by `NewLatencyModel()` factory based on `--model-config-folder` presence:
+
+1. **Blackbox mode** (default): Uses trained alpha/beta coefficients from `defaults.yaml`
+   - Alpha coefficients: queueing time estimation
+   - Beta coefficients: step time estimation based on batch features
+
+2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `roofline_step.go`
+   - Requires HuggingFace `config.json` in `model_configs/`
+   - Requires `hardware_config.json` with GPU specs
+
+### Key Data Flow
+
+```
+Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
+                                            ↓              ↓
+                                      KV Allocation   Latency Estimation (alpha/beta or roofline)
+```
+Note: Admission and Routing steps apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
 
 ## Project Governance Documents
 
