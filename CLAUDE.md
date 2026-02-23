@@ -256,7 +256,6 @@ inference-sim/
 │   ├── templates/             # Artifact templates (micro-plan, macro-plan, design-guidelines, hypothesis)
 │   ├── plans/                 # Active implementation plans
 │   │   └── archive/           # Completed design docs (architectural reference)
-│   ├── pr-history.md          # Completed PRs and design doc catalog
 │   └── extension-recipes.md   # Step-by-step extension guides
 └── CONTRIBUTING.md            # Contributor guide (references docs/standards/)
 ```
@@ -305,6 +304,8 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 - `docs/templates/micro-plan.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts
 - `docs/templates/hypothesis.md`: Template for hypothesis experiment artifacts
 
-### Per-Feature Plans and PR History
+### Per-Feature Plans
 
-See `docs/pr-history.md` for the full catalog of design documents, micro-plans, and completed PR summaries.
+- **Active plans:** `docs/plans/` (implementation plans for in-progress work)
+- **Archived design docs:** `docs/plans/archive/` (completed design docs for architectural reference)
+- **PR history:** Use `git log --oneline main` for the definitive commit history
