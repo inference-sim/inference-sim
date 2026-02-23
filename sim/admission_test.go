@@ -47,7 +47,8 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 	})
 
 	t.Run("rejects when tokens exhausted", func(t *testing.T) {
-		tb := NewTokenBucket(10, 0)
+		// Use tiny refill rate so tokens don't replenish within the test window
+		tb := NewTokenBucket(10, 0.001)
 		req := &Request{ID: "r0", InputTokens: make([]int, 10)}
 
 		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
@@ -113,13 +114,32 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 	})
 
 	t.Run("zero-cost request always admitted", func(t *testing.T) {
-		tb := NewTokenBucket(0, 0)
+		// Even with minimal capacity, a zero-cost request (0 input tokens) is admitted
+		tb := NewTokenBucket(1, 1)
 		req := &Request{ID: "r0", InputTokens: []int{}}
 
 		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
 			t.Fatal("zero-cost request should always be admitted")
 		}
+	})
+
+	t.Run("panics on zero capacity", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("expected panic for capacity=0, got none")
+			}
+		}()
+		NewTokenBucket(0, 1)
+	})
+
+	t.Run("panics on zero refill rate", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("expected panic for refillRate=0, got none")
+			}
+		}()
+		NewTokenBucket(10, 0)
 	})
 }
 
@@ -145,7 +165,7 @@ func TestNewAdmissionPolicy_ValidNames(t *testing.T) {
 	})
 
 	t.Run("token-bucket rate-limits", func(t *testing.T) {
-		p := NewAdmissionPolicy("token-bucket", 5, 0) // capacity=5, no refill
+		p := NewAdmissionPolicy("token-bucket", 5, 0.001) // capacity=5, negligible refill
 		admitted, _ := p.Admit(req, state)             // cost=10 > capacity=5
 		if admitted {
 			t.Error("token-bucket should reject request exceeding capacity")

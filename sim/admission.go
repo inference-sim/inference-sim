@@ -1,6 +1,9 @@
 package sim
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // AdmissionPolicy decides whether a request is admitted for processing.
 // Used by ClusterSimulator's online routing pipeline to gate incoming requests.
@@ -25,7 +28,14 @@ type TokenBucket struct {
 }
 
 // NewTokenBucket creates a TokenBucket with the given capacity and refill rate.
+// Panics if capacity or refillRate is <= 0, NaN, or Inf (R3: validate at construction).
 func NewTokenBucket(capacity, refillRate float64) *TokenBucket {
+	if capacity <= 0 || math.IsNaN(capacity) || math.IsInf(capacity, 0) {
+		panic(fmt.Sprintf("NewTokenBucket: capacity must be a finite value > 0, got %v", capacity))
+	}
+	if refillRate <= 0 || math.IsNaN(refillRate) || math.IsInf(refillRate, 0) {
+		panic(fmt.Sprintf("NewTokenBucket: refillRate must be a finite value > 0, got %v", refillRate))
+	}
 	return &TokenBucket{
 		capacity:      capacity,
 		refillRate:    refillRate,
