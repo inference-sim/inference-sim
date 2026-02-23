@@ -1192,7 +1192,7 @@ func sortedRequestMetrics(m map[string]sim.RequestMetrics) []sim.RequestMetrics 
 // across 10 policy combinations (promoted from H12 hypothesis experiment):
 // GIVEN each policy combination with infinite horizon and ample resources
 // WHEN the cluster simulation completes
-// THEN completed + still_queued + still_running == injected (three-term conservation)
+// THEN completed + still_queued + still_running == len(Requests) (map-based conservation)
 // AND all requests complete (infinite horizon, no resource pressure).
 func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 	matrix := []struct {
@@ -1239,7 +1239,10 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 			agg := cs.AggregatedMetrics()
 			injected := len(agg.Requests)
 
-			// BC-3: Three-term conservation equation (INV-1)
+			// INV-1 conservation (map-based): len(Requests) == completed + queued + running.
+			// Three-term because dropped requests are deleted from the Requests map.
+			// The four-term formula (including dropped) is verified via InjectedRequests
+			// in TestSaveResults_DroppedUnservable_InJSON.
 			conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
 			if conservation != injected {
 				t.Errorf("INV-1 conservation: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
@@ -1409,10 +1412,11 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 			injected := len(agg.Requests)
 			rejected := cs.RejectedRequests()
 
-			// BC-1/BC-2: Conservation equation
+			// INV-1 conservation (map-based): len(Requests) == completed + queued + running.
+			// Three-term because dropped requests are deleted from the Requests map.
 			conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
 			if tc.admissionPolicy == "always-admit" {
-				// Three-term conservation: no rejections
+				// No rejections expected
 				if conservation != injected {
 					t.Errorf("INV-1 conservation (always-admit): completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
 						agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
@@ -1421,14 +1425,14 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 					t.Errorf("always-admit should have 0 rejections, got %d", rejected)
 				}
 			} else {
-				// Four-term conservation: injected + rejected == total generated
+				// Pipeline conservation: injected + rejected == total generated
 				totalGenerated := injected + rejected
 				if conservation != injected {
 					t.Errorf("INV-1 conservation (token-bucket): completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
 						agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
 				}
 				if totalGenerated != numRequests {
-					t.Errorf("four-term conservation: injected(%d) + rejected(%d) = %d, want %d (total generated)",
+					t.Errorf("pipeline conservation: injected(%d) + rejected(%d) = %d, want %d (total generated)",
 						injected, rejected, totalGenerated, numRequests)
 				}
 			}
