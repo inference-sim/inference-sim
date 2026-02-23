@@ -91,7 +91,7 @@ BLIS has four extension types. Identify which type your change is, then follow t
 Requires a design doc defining the module contract (observes / controls / owns / invariants / events / extension friction). See design guidelines Section 5.3.
 
 1. Write design doc with module contract, event integration, state ownership, failure modes, default behavior
-2. Create implementation plan via `prmicroplanprompt-v2.md`
+2. Create implementation plan via `docs/templates/micro-plan.md`
 3. Implement interface + default implementation + factory
 4. Integrate into cluster event pipeline
 5. Add CLI flags with full validation

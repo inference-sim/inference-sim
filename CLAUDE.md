@@ -333,7 +333,8 @@ inference-sim/
 │   ├── standards/             # Canonical rules, invariants, principles, experiment standards
 │   ├── process/               # Activity workflows (PR, design, macro-plan, hypothesis)
 │   ├── templates/             # Artifact templates (micro-plan, macro-plan, design-guidelines, hypothesis)
-│   ├── plans/                 # Per-feature implementation plans
+│   ├── plans/                 # Active implementation plans
+│   │   └── archive/           # Completed design docs (architectural reference)
 │   ├── pr-history.md          # Completed PRs and design doc catalog
 │   └── extension-recipes.md   # Step-by-step extension guides
 └── CONTRIBUTING.md            # Contributor guide (references docs/standards/)

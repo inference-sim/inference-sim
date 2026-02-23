@@ -62,7 +62,7 @@ To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
 Examples:
 - See `TieredKVCache` in `sim/kvcache_tiered.go` for 2-tier GPU+CPU composition
 - See `KVCacheState` in `sim/kvcache.go` for single-tier baseline (also implements `KVStore`)
-- See `docs/plans/pr12-architectural-predesign.md` for the design decisions behind the tiered architecture
+- See `docs/plans/archive/pr12-architectural-predesign.md` for the design decisions behind the tiered architecture
 
 ## Adding New Trace Record Types
 

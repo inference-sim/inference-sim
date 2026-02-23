@@ -16,7 +16,7 @@ This document serves two audiences:
 - A reference for evaluating whether a design doc or a new module meets BLIS's quality bar
 
 **What this document is NOT:**
-- Not an implementation plan (refactoring happens in separate PRs, each following `prworkflow.md`)
+- Not an implementation plan (refactoring happens in separate PRs, each following `docs/process/pr-workflow.md`)
 - Not a replacement for CLAUDE.md (which captures engineering rules and code-level patterns)
 - Not a replacement for the micro-plan template (which captures PR-level planning structure)
 
@@ -468,5 +468,5 @@ If a design doc follows this principle, its content stays durable, its modules s
 1. Banks, J., Carson, J. S., Nelson, B. L., & Nicol, D. M. *Discrete-Event System Simulation* (5th ed.). Pearson. — Foundational text on DES methodology, model scoping, input modeling, output analysis, V&V.
 2. Misra, J. "Distributed Discrete-Event Simulation." *Computing Surveys*, Vol. 18, No. 1, March 1986. — Formal correctness proofs for DES, causal ordering, simulation as formal property.
 3. BLIS Issue #183 — Golden dataset encoded a silently-dropped request. Conservation invariant test would have caught it on day one.
-4. BLIS PR12 Pre-Design (`docs/plans/pr12-architectural-predesign.md`) — Gold standard for decision records: 9 decisions, each with trade-off analysis.
-5. BLIS Hardening Design (`docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md`) — Extension scenario analysis identifying friction points for autoscaling, LMCache, heterogeneous HW, new engines.
+4. BLIS PR12 Pre-Design (`docs/plans/archive/pr12-architectural-predesign.md`) — Gold standard for decision records: 9 decisions, each with trade-off analysis.
+5. BLIS Hardening Design (`docs/plans/archive/2026-02-18-hardening-antipattern-refactoring-design.md`) — Extension scenario analysis identifying friction points for autoscaling, LMCache, heterogeneous HW, new engines.

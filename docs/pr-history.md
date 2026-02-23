@@ -2,20 +2,23 @@
 
 ## Design Documents (per-feature)
 
-- `docs/plans/2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension
-- `docs/plans/2026-02-11-macro-implementation-plan-v2--deprecated.md`: **DEPRECATED** — Macro-level implementation plan (v3.4, 16 PRs across 6 phases, PRs 1-16). Historical reference for completed PRs.
+### Active
+
 - `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`: **ACTIVE** — Composable scorer framework macro plan (2 PRs: PR 17-18)
-- `docs/plans/2026-02-19-weighted-scoring-evolution-design.md`: Design doc for composable scorer framework (specification species)
-- `docs/plans/2026-02-13-simplification-assessment.md`: Architectural simplification assessment (constructor collapse, unified CLI, field privatization, interface dedup)
-- `docs/plans/2026-02-16-workload-generator-design.md`: ServeGen-informed workload generator design (multi-client specs, arrival processes, calibration)
-- `docs/plans/2026-02-17-pr13-decision-traces.md`: PR13 decision trace design (RoutingRecord, counterfactual analysis, TraceSummary)
-- `docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md`: Hardening design — antipattern elimination, extension scenario analysis, modularity improvements
-- `docs/plans/pr12-architectural-predesign.md`: PR12 architectural pre-design — 6 binding design decisions for tiered KV cache (gold standard for decision records)
+- `docs/plans/2026-02-21-latency-model-extraction-design.md`: LatencyModel interface extraction design (#241)
+- `docs/plans/latency-model-extraction-plan.md`: LatencyModel extraction implementation plan (#241)
 
-## Micro-Level Implementation Plans
+### Archived (`docs/plans/archive/`)
 
-- `docs/plans/pr10-workload-generator-plan.md`: PR10 micro-level implementation plan (workload generator)
-- `docs/plans/fix-silent-correctness-bugs-plan.md`: Fix silent correctness bugs (#285, #281, #278)
+- `2026-02-06-evolutionary-policy-optimization-design.md`: Full technical specification for cluster simulation extension (covers future PR11/PR15)
+- `2026-02-19-weighted-scoring-evolution-design.md`: Design doc for composable scorer framework (specification species)
+- `2026-02-13-simplification-assessment.md`: Architectural simplification assessment (constructor collapse, unified CLI, field privatization, interface dedup)
+- `2026-02-16-workload-generator-design.md`: ServeGen-informed workload generator design (multi-client specs, arrival processes, calibration)
+- `2026-02-18-hardening-antipattern-refactoring-design.md`: Hardening design — antipattern elimination, extension scenario analysis, modularity improvements
+- `2026-02-20-seed-unification-design.md`: Seed unification design (#284)
+- `pr12-architectural-predesign.md`: PR12 architectural pre-design — 6 binding design decisions for tiered KV cache (gold standard for decision records)
+- `2026-02-13-mock-study-findings.md`: Post-PR3 mock study findings
+- `2026-02-13-mock-study-implementation.md`: Mock study implementation plan
 
 ## Completed PRs
 

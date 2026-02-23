@@ -11,8 +11,8 @@ This document describes the complete workflow for implementing a PR from any sou
 - **Design guidelines:** `docs/templates/design-guidelines.md` — DES foundations, module architecture, extension framework. Read before writing any design doc or macro plan.
 - **Macro-planning template:** `docs/templates/macro-plan.md` (updated 2026-02-18 — aligned with design guidelines)
 - **Micro-planning template:** `docs/templates/micro-plan.md` (updated 2026-02-18)
-- **Active macro plan:** `docs/plans/2026-02-11-macro-implementation-plan-v2.md` (v3.4)
-- **Deprecated micro-planning:** `docs/plans/prmicroplanprompt-v1-deprecated.md` (for reference only)
+- **Active macro plan:** `docs/plans/2026-02-19-weighted-scoring-macro-plan.md` (scorer framework)
+- **Archived design docs:** `docs/plans/archive/` (completed design docs for reference)
 
 ---
 
@@ -46,7 +46,7 @@ This workflow requires the following Claude Code skills to be available:
 **Alternative workflows:**
 If skills are unavailable, you can implement each step manually:
 - Step 1: Use `git worktree add ../repo-prN -b prN-name` directly
-- Step 2: Follow `prmicroplanprompt-v2.md` template manually
+- Step 2: Follow `docs/templates/micro-plan.md` template manually
 - Step 2.5/4.5: Manual code review or skip automated review
 - Step 4: Implement tasks manually following plan; on failure, debug manually
 - Step 4.75: Self-audit is always available (no skill required — just critical thinking)
@@ -129,6 +129,7 @@ If skills are unavailable, you can implement each step manually:
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
 **Example for PR 8 (same-session workflow with `.worktrees/`):**
+> **Note:** Examples below use file paths from completed PRs. Referenced plan files may have been archived or removed. Adapt the pattern using current plans from `docs/plans/`.
 ```bash
 # Step 1: Create worktree (stays in same session)
 /superpowers:using-git-worktrees pr8-routing-state-and-policy-bundle
@@ -233,8 +234,8 @@ If skills are unavailable, you can implement each step manually:
 ```
 
 The `<source-document>` can be any of:
-- A macro plan: `@docs/plans/2026-02-11-macro-implementation-plan-v2.md`
-- A design document: `@docs/plans/2026-02-18-hardening-design.md`
+- A macro plan: `@docs/plans/<active-macro-plan>.md` (e.g., `@docs/plans/2026-02-19-weighted-scoring-macro-plan.md`)
+- A design document: `@docs/plans/<design-doc>.md` or `@docs/plans/archive/<design-doc>.md`
 - GitHub issues: reference by number in the prompt text (e.g., "for issues #183, #189, #195")
 
 **Examples:**
@@ -251,7 +252,7 @@ The `<source-document>` can be any of:
 
 **What Happens:**
 - Claude reads the source document (macro plan section, design doc, or issue descriptions)
-- Claude reads prmicroplanprompt-v2.md as the template
+- Claude reads `docs/templates/micro-plan.md` as the template
 - Claude inspects the codebase (Phase 0: Component Context)
 - Claude creates behavioral contracts (Phase 1)
 - Claude breaks implementation into 6-12 TDD tasks (Phase 4)
@@ -362,7 +363,7 @@ Verify the plan is complete, internally consistent, and implementation-ready.
 - Flag tasks that modify the same file and could conflict.
 
 **Check 2: Template Completeness**
-- Verify all sections from `prmicroplanprompt-v2.md` are present and non-empty:
+- Verify all sections from `docs/templates/micro-plan.md` are present and non-empty:
   - Header (Goal, Architecture, Source Reference)
   - Part 1: A) Executive Summary, B) Behavioral Contracts, C) Component Interaction, D) Deviation Log, E) Review Guide
   - Part 2: F) Implementation Overview, G) Task Breakdown, H) Test Strategy, I) Risk Analysis
@@ -697,7 +698,7 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 |-------|-------------|-------|--------|
 | `commit-commands:clean_gone` | **Step 1** - Pre-cleanup of stale branches | None | Removed stale branches |
 | `using-git-worktrees` | **Step 1** - Create isolated workspace FIRST | Branch name | Worktree directory path |
-| `writing-plans` | **Step 2** - Create implementation plan from source document | Source document (macro plan/design doc/issues) + prmicroplanprompt-v2.md | Plan file with contracts + tasks |
+| `writing-plans` | **Step 2** - Create implementation plan from source document | Source document (macro plan/design doc/issues) + `docs/templates/micro-plan.md` | Plan file with contracts + tasks |
 | `review-plan` | **Step 2.5 Pass 0** - External LLM review (catches design bugs) | Plan file path | Independent review feedback |
 | `pr-review-toolkit:review-pr` | **Step 2.5 Passes 1-3** - Focused plan review passes | Targeted prompts (see checklist) | Critical/important issues per pass |
 | `executing-plans` | **Step 4** - Execute plan tasks continuously | Plan file path | Implemented code + commits |
@@ -710,6 +711,8 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 ---
 
 ## Example A: Macro Plan PR Workflow (Same-Session with `.worktrees/`)
+
+> **Note:** Examples below use file paths from completed PRs (PR6, PR8, hardening). Referenced plan files have been archived or removed. Adapt the pattern using current plans from `docs/plans/`.
 
 ```bash
 # Step 1: Clean up stale branches, then create worktree
@@ -951,7 +954,7 @@ golangci-lint run ./path/to/modified/package/...
 **v2.9 (2026-02-20):** Convergence re-run protocol for both Step 2.5 and Step 4.5. After all review passes complete with fixes, re-run all passes from scratch to verify fixes didn't introduce cross-pass issues. Repeat until convergence (0 CRITICAL, 0 IMPORTANT). Evidence: Wave 1 parallel PR session — Track B's full re-run validated that 3 fixes (including 2 CRITICAL: overwrite-existing-test-file and incomplete zero-value coverage) introduced no regressions across all 5 passes.
 
 **Key improvements in v2.0:**
-- **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/macroplan.md`)
+- **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/<macro-plan>.md`)
 - **Single planning stage:** Produces both design contracts and executable tasks
 - **Automated plan review:** Catches design issues before implementation (Step 2.5)
 - **Automated code review:** Catches implementation issues before PR creation (Step 4.5)
