@@ -187,6 +187,16 @@ func testHardwareCalib() HardwareCalib {
 		MfuPrefill:       0.55,
 		MfuDecode:        0.30,
 		AllReduceLatency: 10.0,
+		// Roofline calibration factors (reasonable defaults for tests)
+		TpScalingExponent:          0.8,   // Sublinear TP scaling
+		DecodeTpScalingExponent:    1.0,   // Linear for decode
+		MfuPrefillMultiplier:       1.0,   // No adjustment
+		MfuDecodeMultiplier:        1.0,   // No adjustment
+		PrefillBwFactor:            1.0,   // No reduction
+		DecodeBwFactor:             1.0,   // No reduction
+		VectorPeakFraction:         0.1,   // 10% for non-tensor ops
+		PrefillOverheadMicros:      100.0, // Per request overhead
+		MixedPrefillOverheadMicros: 50.0,  // Lower overhead in mixed batch
 	}
 }
 
@@ -204,8 +214,8 @@ func TestRooflineStepTime_TPScaling_TP2LessThanTP1(t *testing.T) {
 		},
 	}
 
-	tp1 := rooflineStepTime(mc, hc, step, 1)
-	tp2 := rooflineStepTime(mc, hc, step, 2)
+	tp1 := rooflineStepTime("", mc, hc, step, 1)
+	tp2 := rooflineStepTime("", mc, hc, step, 2)
 
 	if tp2 >= tp1 {
 		t.Errorf("TP=2 latency (%d µs) should be less than TP=1 (%d µs)", tp2, tp1)
@@ -256,7 +266,7 @@ func TestRooflineStepTime_Smoke_ValidInputsProducePositiveFiniteResult(t *testin
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := rooflineStepTime(mc, hc, tt.step, 1)
+			result := rooflineStepTime("", mc, hc, tt.step, 1)
 			if result <= 0 {
 				t.Errorf("expected positive latency, got %d µs", result)
 			}
@@ -270,7 +280,7 @@ func TestRooflineStepTime_EmptyStep_ReturnsOverheadOnly(t *testing.T) {
 	hc := testHardwareCalib()
 
 	step := StepConfig{} // empty
-	result := rooflineStepTime(mc, hc, step, 1)
+	result := rooflineStepTime("", mc, hc, step, 1)
 
 	// Should be approximately TOverheadMicros (50) + layer overhead
 	if result <= 0 {
