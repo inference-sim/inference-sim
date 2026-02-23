@@ -97,6 +97,8 @@ This **refutes** the Round 1 hypothesis that the failure was "rate/load-dependen
 
 The prefix=0 value matches the no-cache calculation perfectly. But prefix=512 should give TTFT = alpha0+beta0 = 11.73ms (zero cache miss tokens), not 22.74ms. This means **the prefix cache is NOT producing KV cache hits**. The 1ms increase per prefix level may be from prefix cache index lookup overhead (`sim/prefix_cache_index.go`) without corresponding StepTime reduction. Root cause unverified — requires code-level investigation of whether the KV cache block-hash matching works with synthetically-generated constant-value tokens from the workload generator. This is filed as an open question, not a confirmed mechanism.
 
+> **Erratum (2026-02-23, #399 closed as not-a-bug):** The above analysis is incorrect. The prefix cache IS working correctly. The error was in the expected TTFT calculation: `prefix_length=512` + `input_distribution.value=512` produces 1024 total input tokens (prefix is prepended at `generator.go:171-172`), not 512. With 1024 total and 512 prefix cached, requests 2-N have 512 cache-miss tokens — identical step time as prefix=0 with 512 input. The ~1ms TTFT increase is the cold-start penalty on request 1 averaged over N=10: `beta1 * 512 / 10 = 998us`. Verified experimentally: Cache Hit Rate = 0.4000 (matches theoretical 288/720 exactly), mean TTFT = 22.735ms (matches prediction of 22.714ms within 0.02ms). See #399 for full derivation.
+
 **H10 — Tiered KV — INCONCLUSIVE:**
 
 Per-seed results: seed 42: single=0.095 vs tiered=0.090 (5.3% reduction, <20% threshold), seed 123: single=0.020 vs tiered=0.010 (50% reduction, >20%), seed 456: single=0.090 vs tiered=0.090 (0% reduction). Only 1/3 seeds exceeds the 20% dominance threshold. The predicted direction does not hold across ALL seeds (seed 456 = 0%). Classification: Inconclusive per the directional consistency requirement.
@@ -119,6 +121,8 @@ The preemption rate at 2100 blocks is only 2-9.5% for Qwen (vs llama's 17.5%), p
 
 **H9 prefix cache non-hits:** The isolation control (batch=1, rate=0.001, single instance) demonstrates that prefix=512 does NOT reduce TTFT even under zero queueing and zero batching. The most likely root cause is that the KV cache prefix matching mechanism (`sim/kvcache.go` block-hash matching) does not find cache hits for synthetically-generated tokens from the workload generator. This requires code-level investigation and is filed as an open question.
 
+> **Erratum (2026-02-23, #399):** The claim above that "the prefix cache is NOT producing KV cache hits" is incorrect. The cache produces hits at exactly the theoretical rate (0.4000 for N=10 requests). The analysis error was assuming total input = 512 when it is actually 1024 (prefix is additive). See erratum in Results section above.
+
 ## Devil's Advocate (RCV-5)
 
 **If this is "Partially confirmed," argue why it might be fully confirmed:**
@@ -136,7 +140,7 @@ The 12 confirmed findings include 4 invariant checks (model-independent by const
 | Phase linearity (H-Phase) generalizes perfectly (R²=1.0) | Confirmation | Validates latency model architecture |
 | H14 pathological effect STRONGER with Qwen (6.5x vs 4.5x) | Surprise | Higher beta2 amplifies routing concentration penalty |
 | Prefix-Affinity does NOT generalize even under load | Scope limitation | User guidance: prefix-affinity benefit is profile-dependent |
-| H9 prefix cache not producing cache hits with synthetic tokens | Open question | Requires code investigation of KV cache block-hash matching with workload generator tokens |
+| ~~H9 prefix cache not producing cache hits with synthetic tokens~~ H9 prefix cache works correctly; analysis used wrong expected TTFT | ~~Open question~~ Analysis error — corrected | See erratum; #399 closed as not-a-bug |
 | H10 tiered KV inconclusive at 2100 blocks | Scope limitation | Requires lower block count to produce equivalent pressure |
 | H-MMK divergence potentially reduced with alpha2=0 | Surprise | Consistent with H-Step-Quantum but cross-experiment comparison has confounds |
 
@@ -167,7 +171,7 @@ Findings checked against docs/standards/:
 | Signal freshness (H3) | 3/3 directionally consistent, 1 seed <20% effect | Medium — direction holds but 1 seed at 2.5% gap |
 | Cache-related agreement | 0/3 (Prefix-Affinity, H9, H10) | Low — Prefix-Affinity refuted by control; H9 cache hits absent; H10 inconclusive |
 | Effect size adequacy | 8/10 statistical findings >20% in all seeds | Medium |
-| Control experiments (Round 2) | 2 executed (Prefix-Affinity high-rate, H9 isolation) | Prefix-Affinity control refuted rate-dependent hypothesis; H9 control confirmed cache non-hits |
+| Control experiments (Round 2) | 2 executed (Prefix-Affinity high-rate, H9 isolation) | Prefix-Affinity control refuted rate-dependent hypothesis; ~~H9 control confirmed cache non-hits~~ H9 control actually confirms cache IS working (see erratum, #399) |
 
 ## Implications for Users
 
