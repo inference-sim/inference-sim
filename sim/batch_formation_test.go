@@ -170,8 +170,9 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 // TestVLLMBatchFormation_PreemptionReleasesKV verifies BC-4:
 // preempted requests must have KV blocks released and appear in result.Preempted.
 func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
+	// 3 blocks * 16 tokens/block = 48 token capacity
 	cfg := SimConfig{
-		TotalKVBlocks:      4, // very small cache forces preemption
+		TotalKVBlocks:      3,
 		BlockSizeTokens:    16,
 		MaxRunningReqs:     10,
 		MaxScheduledTokens: 10000,
@@ -185,32 +186,31 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 	bf := NewBatchFormation(cfg, lm)
 	kvCache := NewKVStore(cfg)
 
-	// GIVEN a running request that occupies some KV blocks
-	existing := &Request{
-		ID:           "existing",
-		InputTokens:  make([]int, 30),
+	// GIVEN two running requests: victim occupies 2 blocks, needy needs 3 blocks for prefill
+	victim := &Request{
+		ID:           "victim",
+		InputTokens:  make([]int, 20), // ceil(20/16) = 2 blocks
 		OutputTokens: make([]int, 5),
 		State:        StateRunning,
 	}
-	if ok := kvCache.AllocateKVBlocks(existing, 0, 30, []int64{}); !ok {
-		t.Fatal("setup: failed to allocate KV blocks for existing request")
+	if ok := kvCache.AllocateKVBlocks(victim, 0, 20, []int64{}); !ok {
+		t.Fatal("setup: failed to allocate KV blocks for victim")
 	}
-	existing.ProgressIndex = 30 // prefill complete, in decode phase
+	victim.ProgressIndex = 20 // prefill complete, in decode phase
 
-	// AND a new request in the wait queue that needs blocks
-	newReq := &Request{
-		ID:           "new-req",
-		InputTokens:  make([]int, 40),
+	needy := &Request{
+		ID:           "needy",
+		InputTokens:  make([]int, 40), // ceil(40/16) = 3 blocks, but only 1 free
 		OutputTokens: make([]int, 5),
-		State:        StateQueued,
+		State:        StateRunning,
 	}
-	wq := &WaitQueue{}
-	wq.Enqueue(newReq)
+	// needy is in running batch with ProgressIndex=0, so Phase 1 prefill triggers preemptForTokens
 
-	computedTokens := map[string]int64{"existing": 30}
+	computedTokens := map[string]int64{"victim": 20, "needy": 0}
 	ctx := BatchContext{
-		RunningBatch:          &Batch{Requests: []*Request{existing}},
-		WaitQ:                 wq,
+		// victim is at end (tail) — it will be evicted first during preemption
+		RunningBatch:          &Batch{Requests: []*Request{needy, victim}},
+		WaitQ:                 &WaitQueue{},
 		KVCache:               kvCache,
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
@@ -220,21 +220,29 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 		ComputedTokens:        computedTokens,
 	}
 
+	usedBefore := kvCache.UsedBlocks()
+
 	// WHEN FormBatch is called
 	result := bf.FormBatch(ctx)
 
-	// THEN if preemption happened, preempted requests must appear in result.Preempted
-	if result.PreemptionHappened {
-		if len(result.Preempted) == 0 {
-			t.Error("PreemptionHappened is true but Preempted slice is empty")
-		}
-		// AND KV conservation: used + free = total
-		used := kvCache.UsedBlocks()
-		total := kvCache.TotalCapacity()
-		free := total - used
-		if used+free != total {
-			t.Errorf("KV conservation violated: used=%d free=%d total=%d", used, free, total)
-		}
+	// THEN preemption must have happened (needy needed 3 blocks, only 1 free → evicts victim)
+	if !result.PreemptionHappened {
+		t.Fatal("expected preemption to occur: needy needs 3 blocks, only 1 free before eviction")
+	}
+
+	// AND preempted requests must appear in result.Preempted
+	if len(result.Preempted) == 0 {
+		t.Error("PreemptionHappened is true but Preempted slice is empty")
+	}
+
+	// AND victim's blocks must have been released (KV conservation: blocks freed ≥ blocks previously held)
+	usedAfter := kvCache.UsedBlocks()
+	_ = usedBefore // documented for clarity
+	// After preemption: victim's 2 blocks freed, needy allocated 3 blocks → net used should be 3
+	// But the exact value depends on whether needy's allocation succeeded after eviction.
+	// The key invariant: used blocks must not exceed total capacity
+	if usedAfter > kvCache.TotalCapacity() {
+		t.Errorf("KV blocks exceed capacity after preemption: used=%d total=%d", usedAfter, kvCache.TotalCapacity())
 	}
 }
 

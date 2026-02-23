@@ -65,9 +65,9 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 }
 
 // TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse verifies BC-4 (#297):
-// preemption evicts until empty, then stops without panic.
+// preemption evicts until batch is empty, then circuit breaker fires.
 func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
-	// GIVEN a batch formation with very small KV cache
+	// GIVEN a batch formation with very small KV cache (2 blocks * 16 = 32 tokens)
 	config := SimConfig{
 		TotalKVBlocks:      2,
 		BlockSizeTokens:    16,
@@ -94,22 +94,21 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 	if ok := kvCache.AllocateKVBlocks(existing, 0, 10, []int64{}); !ok {
 		t.Fatal("setup: failed to allocate KV blocks for existing request")
 	}
-	existing.ProgressIndex = 10 // past prefill, in decode
 
-	// AND a new request in the wait queue that needs more blocks than total capacity
+	// AND a huge request also in the running batch at ProgressIndex=0 (needs prefill)
+	// This forces Phase 1 to try allocating for huge, fail, and trigger preemption.
 	huge := &Request{
 		ID:           "huge-req",
-		InputTokens:  make([]int, 200),
+		InputTokens:  make([]int, 200), // needs 13 blocks, only 2 total
 		OutputTokens: make([]int, 1),
-		State:        StateQueued,
+		State:        StateRunning,
 	}
-	wq := &WaitQueue{}
-	wq.Enqueue(huge)
 
-	computedTokens := map[string]int64{"existing": 10}
+	// huge is first in batch (processed first in Phase 1), existing is at tail (evicted first)
+	computedTokens := map[string]int64{"existing": 10, "huge-req": 0}
 	ctx := BatchContext{
-		RunningBatch:          &Batch{Requests: []*Request{existing}},
-		WaitQ:                 wq,
+		RunningBatch:          &Batch{Requests: []*Request{huge, existing}},
+		WaitQ:                 &WaitQueue{},
 		KVCache:               kvCache,
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
@@ -122,14 +121,18 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 	// WHEN FormBatch is called
 	result := bf.FormBatch(ctx)
 
-	// THEN KV cache conservation must hold (INV-4)
-	usedBlocks := kvCache.UsedBlocks()
-	totalBlocks := kvCache.TotalCapacity()
-	if usedBlocks < 0 || usedBlocks > totalBlocks {
-		t.Errorf("KV conservation violated: used=%d total=%d", usedBlocks, totalBlocks)
+	// THEN preemption must have happened
+	if !result.PreemptionHappened {
+		t.Fatal("expected preemption to occur")
 	}
 
-	// AND the result must not contain the huge request (insufficient blocks)
+	// AND KV cache conservation must hold (INV-4): after full eviction, all blocks freed
+	usedBlocks := kvCache.UsedBlocks()
+	if usedBlocks != 0 {
+		t.Errorf("expected 0 used blocks after all requests evicted, got %d", usedBlocks)
+	}
+
+	// AND huge request should not be in the batch (insufficient blocks even after evicting existing)
 	for _, r := range result.RunningBatch.Requests {
 		if r.ID == "huge-req" {
 			t.Error("huge request should not be in batch")
