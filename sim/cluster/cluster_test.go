@@ -126,15 +126,26 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 
 // TestDeploymentConfig_NoFieldShadowing verifies that no directly-declared
 // DeploymentConfig field shares a name with any SimConfig field (BC-6).
+// After SimConfig decomposition, this recursively collects promoted field names
+// from embedded sub-configs (KVCacheConfig, BatchConfig, etc.).
 func TestDeploymentConfig_NoFieldShadowing(t *testing.T) {
 	dcType := reflect.TypeOf(DeploymentConfig{})
 	scType := reflect.TypeOf(sim.SimConfig{})
 
-	// Build set of SimConfig field names
+	// Recursively collect all field names from SimConfig (including promoted from embedded structs)
 	simFields := make(map[string]bool)
-	for i := 0; i < scType.NumField(); i++ {
-		simFields[scType.Field(i).Name] = true
+	var collectFields func(t reflect.Type)
+	collectFields = func(t reflect.Type) {
+		for i := 0; i < t.NumField(); i++ {
+			field := t.Field(i)
+			if field.Anonymous {
+				collectFields(field.Type)
+			} else {
+				simFields[field.Name] = true
+			}
+		}
 	}
+	collectFields(scType)
 
 	// Check each directly-declared DeploymentConfig field (skip embedded SimConfig)
 	for i := 0; i < dcType.NumField(); i++ {
