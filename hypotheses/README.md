@@ -48,6 +48,7 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 | H-Phase-Structure | Structural model | TTFT linear in input tokens, decode time linear in output tokens | **Confirmed** | R² = 1.000000 (adjusted); slopes match α/β predictions within <0.01% |
 | H-Reasoning-KV | Performance-regime | Multi-turn reasoning triggers preemption cliff proportional to peak demand | **Refuted** | Mean demand drives cliff (1.09x shift), not peak; surprise 63.8% prefix cache hit rate from context accumulation |
 | H-Step-Quantum | Structural model | Reducing step-time quantum proportionally reduces DES-to-M/M/1 divergence | **Refuted** | Divergence caused by alpha/beta split, not step quantization; reducing beta worsens divergence 47%→99% |
+| H-Cross-Model | Structural model | All confirmed behavioral findings hold for Qwen/Qwen2.5-7B-Instruct | **Partially confirmed** | 12/15 findings generalize; invariants and policy ordering are model-agnostic; cache-related findings are parameter-dependent |
 
 ## Running Experiments
 
