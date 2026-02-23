@@ -72,6 +72,7 @@ type MetricsOutput struct {
 	SchedulingDelayP99Ms     float64          `json:"scheduling_delay_p99_ms"`
 	KVAllocationFailures    int64            `json:"kv_allocation_failures,omitempty"`
 	PreemptionCount         int64            `json:"preemption_count"`
+	DroppedUnservable       int              `json:"dropped_unservable"`
 	Requests                []RequestMetrics `json:"requests,omitempty"`
 }
 
