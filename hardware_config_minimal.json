@@ -1,0 +1,10 @@
+{
+    "H100": {
+        "TFlopsPeak": 989.5,
+        "BwPeakTBs": 3.35
+    },
+    "A100-SXM": {
+        "TFlopsPeak": 312.0,
+        "BwPeakTBs": 2.039
+    }
+}
