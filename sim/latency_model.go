@@ -99,7 +99,58 @@ func (m *RooflineLatencyModel) StepTime(batch []*Request) int64 {
 			})
 		}
 	}
-	return rooflineStepTime(m.modelConfig, m.hwConfig, stepConfig, m.tp)
+	return rooflineStepTime("", m.modelConfig, m.hwConfig, stepConfig, m.tp)
+}
+
+// RooflineLatencyModelV2 estimates latency using MFU-based roofline model (roofline v2).
+// Uses MFU database for per-GEMM and per-attention MFU lookups for improved accuracy.
+type RooflineLatencyModelV2 struct {
+	modelConfig ModelConfig
+	hwConfig    HardwareCalib
+	tp          int
+	mfuDB       *MFUDatabase
+	gpu         string
+	alphaCoeffs []float64
+}
+
+func (m *RooflineLatencyModelV2) StepTime(batch []*Request) int64 {
+	stepConfig := StepConfig{
+		PrefillRequests: make([]PrefillRequestConfig, 0, len(batch)),
+		DecodeRequests:  make([]DecodeRequestConfig, 0, len(batch)),
+	}
+	for _, req := range batch {
+		if req.ProgressIndex < Len64(req.InputTokens) {
+			stepConfig.PrefillRequests = append(stepConfig.PrefillRequests, PrefillRequestConfig{
+				ProgressIndex:       req.ProgressIndex,
+				NumNewPrefillTokens: req.NumNewTokens,
+			})
+		} else if len(req.OutputTokens) > 0 {
+			stepConfig.DecodeRequests = append(stepConfig.DecodeRequests, DecodeRequestConfig{
+				ProgressIndex:      req.ProgressIndex,
+				NumNewDecodeTokens: req.NumNewTokens,
+			})
+		}
+	}
+	return rooflineStepTimeV2(m.gpu, m.modelConfig, m.hwConfig, stepConfig, m.tp, m.mfuDB)
+}
+
+func (m *RooflineLatencyModelV2) QueueingTime(req *Request) int64 {
+	var totalProcessingTime float64
+	totalProcessingTime += m.alphaCoeffs[0]
+	totalProcessingTime += m.alphaCoeffs[1] * float64(len(req.InputTokens))
+	return int64(totalProcessingTime)
+}
+
+func (m *RooflineLatencyModelV2) OutputTokenProcessingTime() int64 {
+	return int64(m.alphaCoeffs[2])
+}
+
+func (m *RooflineLatencyModelV2) SchedulingProcessingTime() int64 {
+	return 0
+}
+
+func (m *RooflineLatencyModelV2) PreemptionProcessingTime() int64 {
+	return 0
 }
 
 func (m *RooflineLatencyModel) QueueingTime(req *Request) int64 {
@@ -135,7 +186,9 @@ func validateCoeffs(name string, coeffs []float64) error {
 }
 
 // NewLatencyModel creates the appropriate LatencyModel based on config.
-// Returns RooflineLatencyModel if hw.Roofline is true, BlackboxLatencyModel otherwise.
+// Returns RooflineLatencyModelV2 if hw.MFUDatabase is set (roofline v2 with MFU lookups),
+// RooflineLatencyModel if hw.Roofline is true (roofline v1 with calibrated constants),
+// BlackboxLatencyModel otherwise (alpha/beta regression).
 // Returns error if coefficient slices are too short, contain NaN/Inf, or roofline config validation fails.
 func NewLatencyModel(coeffs LatencyCoeffs, hw ModelHardwareConfig) (LatencyModel, error) {
 	// Both implementations index alphaCoeffs[0..2]; validate upfront.
@@ -152,6 +205,18 @@ func NewLatencyModel(coeffs LatencyCoeffs, hw ModelHardwareConfig) (LatencyModel
 		if err := ValidateRooflineConfig(hw.ModelConfig, hw.HWConfig); err != nil {
 			return nil, fmt.Errorf("latency model: %w", err)
 		}
+		// Use roofline v2 if MFU database is available
+		if hw.MFUDatabase != nil {
+			return &RooflineLatencyModelV2{
+				modelConfig: hw.ModelConfig,
+				hwConfig:    hw.HWConfig,
+				tp:          hw.TP,
+				mfuDB:       hw.MFUDatabase,
+				gpu:         hw.GPU,
+				alphaCoeffs: coeffs.AlphaCoeffs,
+			}, nil
+		}
+		// Otherwise use roofline v1
 		return &RooflineLatencyModel{
 			modelConfig: hw.ModelConfig,
 			hwConfig:    hw.HWConfig,

@@ -181,8 +181,16 @@ var runCmd = &cobra.Command{
 				modelConfigFolder, hwConfigPath, benchDataPath, gpu, tensorParallelism)
 			roofline = true
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
-			modelConfig = *sim.GetModelConfig(hfPath)
-			hwConfig = sim.GetHWConfig(hwConfigPath, gpu)
+			mc, err := sim.GetModelConfig(hfPath)
+			if err != nil {
+				logrus.Fatalf("Failed to load model config: %v", err)
+			}
+			modelConfig = *mc
+			hc, err := sim.GetHWConfig(hwConfigPath, gpu)
+			if err != nil {
+				logrus.Fatalf("Failed to load hardware config: %v", err)
+			}
+			hwConfig = hc
 		} else if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
 			// Fall back to checking if coefficients are zero and warn about missing paths
 			logrus.Warnf("No valid coefficients found for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
@@ -441,6 +449,12 @@ var runCmd = &cobra.Command{
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances)
+		// Build ModelHardwareConfig and add MFU database if available (roofline v2)
+		mhwConfig := sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, roofline)
+		if mfuDB != nil {
+			mhwConfig = mhwConfig.WithMFUDatabase(mfuDB)
+		}
+
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,
@@ -449,7 +463,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, roofline),
+				ModelHardwareConfig: mhwConfig,
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,
