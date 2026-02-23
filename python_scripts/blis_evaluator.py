@@ -78,7 +78,7 @@ class BLISEvaluator:
             #  - If bench_data/ exists with MFU CSVs -> roofline v2 (per-GEMM MFU lookups)
             #  - Otherwise -> roofline v1 (calibrated constants from hardware_config.json)
             "--model-config-folder", model_config_folder,
-            "--hardware-config", "hardware_config.json",
+            "--hardware-config", "hardware_config_roofline_valid.json",  # Roofline v2: minimal config (TFlopsPeak + BwPeakTBs only)
             "--bench-data-path", "bench_data",
             # Cluster config (v0.6.1)
             "--num-instances", "1",  # Single instance for evaluation
