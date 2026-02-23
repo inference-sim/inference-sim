@@ -52,8 +52,8 @@ To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
 
 1. **Implement the `KVStore` interface** in `sim/kvcache_*.go` (11 methods: allocate, get cached, release, capacity queries, metrics, `SetClock`, `ConsumePendingTransferLatency`)
 2. **Compose existing tiers** — e.g., wrap `TieredKVCache` (GPU+CPU) with NVMe logic, following the same delegation pattern
-3. **Update `NewKVStore` factory** in `sim/kv_store.go` to instantiate your tier based on `SimConfig` fields
-4. **Add CLI flags** in `cmd/root.go` for new parameters (e.g., `--kv-nvme-blocks`)
+3. **Update `NewKVStore` factory** in `sim/kv_store.go` to instantiate your tier based on `KVCacheConfig` fields (add new fields to `KVCacheConfig` in `sim/config.go`)
+4. **Add CLI flags** in `cmd/root.go` for new parameters (e.g., `--kv-nvme-blocks`) and wire them into the `KVCacheConfig` sub-config
 5. **Aggregate metrics** — combine hit/miss/thrashing counters from all tiers; see `TieredKVCache.CacheHitRate()` for the 2-tier pattern
 6. **Add behavioral tests** in `sim/kvcache_*_test.go`
 7. **Preserve rollback semantics** — `KVCacheState.AllocateKVBlocks` is transactional: on mid-loop failure, `rollbackAllocation()` undoes all mutations (UsedBlockCnt, CacheMisses, CacheHits, RefCount, InUse, free list, HashToBlock, RequestMap). If your tier adds mutations beyond what delegation to `gpu.AllocateKVBlocks()` handles, you must roll those back too. See `cachedBlockMutation` and `newBlockMutation` types in `sim/kvcache.go`.
@@ -90,7 +90,7 @@ To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-L
    - `OutputTokenProcessingTime() int64` — per-token post-processing overhead
    - `SchedulingProcessingTime() int64` — scheduling overhead per request
    - `PreemptionProcessingTime() int64` — preemption overhead per eviction
-2. **Register in `NewLatencyModel` factory** in `sim/latency_model.go`: add a branch based on `SimConfig` fields (e.g., a new string field or boolean)
+2. **Register in `NewLatencyModel` factory** in `sim/latency_model.go`: add a branch based on `ModelHardwareConfig` fields (e.g., a new string field or boolean in `sim/config.go`). The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
 3. **Add behavioral tests** — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)
 4. Extension friction: **2 touch points** (implementation + factory branch)
 
@@ -108,11 +108,11 @@ To add a new batch formation strategy (e.g., disaggregated prefill/decode, specu
    - The implementation MUST update `ctx.ComputedTokens[req.ID]` for each request that receives new tokens (Phase 2 of `Step()` reads this map to advance `ProgressIndex`)
    - The implementation may mutate `WaitQ` (dequeue/prepend) and `KVCache` (allocate/release) during batch formation
    - The implementation MUST NOT schedule events or record metrics — return decisions in `BatchResult`, the Simulator applies them
-2. **Register in `NewBatchFormation` factory** in `sim/batch_formation.go`: add a selection branch (currently returns `VLLMBatchFormation` unconditionally — a future PR will add `SimConfig.BatchFormation` field for strategy selection)
+2. **Register in `NewBatchFormation` factory** in `sim/batch_formation.go`: add a selection branch. The factory signature is `NewBatchFormation(LatencyModel)` — a future PR will add a strategy selection parameter (e.g., a string field in `PolicyConfig` or `BatchConfig`)
 3. **Add behavioral tests** — token budget enforcement, batch size limits, KV conservation, preemption behavior (if applicable), FCFS ordering
 4. Extension friction: **2 touch points** (implementation + factory registration)
 
-**Note:** Currently only `VLLMBatchFormation` exists. Adding a second strategy will also require: (a) a `BatchFormation string` field in `SimConfig`, (b) a CLI flag in `cmd/root.go`, (c) validation in `sim/bundle.go`, (d) selection logic in `NewBatchFormation`.
+**Note:** Currently only `VLLMBatchFormation` exists. Adding a second strategy will also require: (a) a `BatchFormation string` field in `PolicyConfig` or `BatchConfig` (in `sim/config.go`), (b) a CLI flag in `cmd/root.go`, (c) validation in `sim/bundle.go`, (d) selection logic in `NewBatchFormation`.
 
 Examples:
 - See `VLLMBatchFormation` in `sim/batch_formation.go` for the vLLM FCFS + chunked-prefill + preemption strategy

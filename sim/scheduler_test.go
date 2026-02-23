@@ -253,7 +253,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		},
 		PolicyConfig: PolicyConfig{
 			PriorityPolicy: "slo-based",
-			Scheduler:       "priority-fcfs",
+			Scheduler:      "priority-fcfs",
 		},
 	}
 	s := mustNewSimulator(t, cfg)
@@ -452,7 +452,7 @@ func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
 		},
 		PolicyConfig: PolicyConfig{
 			PriorityPolicy: "slo-based",
-			Scheduler:       "priority-fcfs",
+			Scheduler:      "priority-fcfs",
 		},
 	}
 	s := mustNewSimulator(t, cfg)

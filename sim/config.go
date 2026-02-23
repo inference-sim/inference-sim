@@ -36,7 +36,7 @@ type ModelHardwareConfig struct {
 // PolicyConfig groups scheduling and priority policy selection.
 type PolicyConfig struct {
 	PriorityPolicy string // "constant" (default) or "slo-based"
-	Scheduler      string // "fcfs" (default), "priority-fcfs", "sjf"
+	Scheduler      string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
 }
 
 // WorkloadConfig groups workload generation parameters.
