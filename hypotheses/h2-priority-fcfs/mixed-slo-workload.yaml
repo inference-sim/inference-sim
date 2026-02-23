@@ -1,0 +1,44 @@
+seed: 42
+aggregate_rate: 500
+num_requests: 500
+clients:
+  - id: realtime
+    slo_class: realtime
+    rate_fraction: 0.33
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: constant
+      params:
+        value: 256
+    output_distribution:
+      type: constant
+      params:
+        value: 128
+  - id: interactive
+    slo_class: interactive
+    rate_fraction: 0.34
+    arrival:
+      process: poisson
+    input_distribution:
+      type: constant
+      params:
+        value: 256
+    output_distribution:
+      type: constant
+      params:
+        value: 128
+  - id: batch
+    slo_class: batch
+    rate_fraction: 0.33
+    arrival:
+      process: poisson
+    input_distribution:
+      type: constant
+      params:
+        value: 256
+    output_distribution:
+      type: constant
+      params:
+        value: 128
