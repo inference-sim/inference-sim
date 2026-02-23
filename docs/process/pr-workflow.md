@@ -82,7 +82,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 4.5: code review   │ (5 perspectives per round — see checklist)
+│ Step 4.5: code review   │ (10 perspectives per round — see checklist)
 └──────────┬──────────────┘
            │
            ▼
@@ -103,9 +103,9 @@ If skills are unavailable, you can implement each step manually:
    - Enables parallel work on multiple PRs
 
 2. **Three-stage quality assurance:**
-   - **Plan Review** (Step 2.5) - round of 5 parallel perspectives: substance, cross-doc, architecture, codebase, structural
+   - **Plan Review** (Step 2.5) - round of 10 parallel perspectives: substance, cross-doc, architecture, codebase, structural, DES expert, vLLM/SGLang expert, distributed platform, performance, security
      - Catches design issues before implementation
-   - **Code Review** (Step 4.5) - round of 5 parallel perspectives: substance, code quality, test quality, getting-started, automated reviewer
+   - **Code Review** (Step 4.5) - round of 10 parallel perspectives: substance, code quality, test quality, getting-started, automated reviewer, DES expert, vLLM/SGLang expert, distributed platform, performance, security
      - Catches implementation issues before PR creation
    - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 9 dimensions
      - Catches substance bugs that pattern-matching agents miss
@@ -120,10 +120,10 @@ If skills are unavailable, you can implement each step manually:
 |------|---------|
 | **1. Create worktree** | `/superpowers:using-git-worktrees pr<N>-<name>` |
 | **2. Create plan** | `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/templates/micro-plan.md and @<source-document>` |
-| **2.5. Review plan** | Round of 5 parallel perspectives: substance, cross-doc, architecture, codebase, structural |
+| **2.5. Review plan** | Round of 10 parallel perspectives (see Step 2.5 for full list) |
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
-| **4.5. Review code** | Round of 5 parallel perspectives: substance, code quality, test quality, getting-started, automated reviewer |
+| **4.5. Review code** | Round of 10 parallel perspectives (see Step 4.5 for full list) |
 | **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
@@ -273,9 +273,9 @@ The `<source-document>` can be any of:
 
 **Context:** Worktree (same or new session)
 
-> **For Claude:** When the user asks you to execute Step 2.5, run all 5 perspectives below
+> **For Claude:** When the user asks you to execute Step 2.5, run all 10 perspectives below
 > **in parallel** as a single round. Use `/pr-review-toolkit:review-pr` with the **exact
-> prompt text** shown for Perspectives 1-4, and perform Perspective 5 directly (no agent).
+> prompt text** shown for Perspectives 1-4 and 6-10. Perform Perspective 5 directly (no agent).
 > Collect all findings, then report the full round results to the user.
 >
 > **If 0 CRITICAL and 0 IMPORTANT findings:** The round converged. Proceed to Step 3.
@@ -381,6 +381,71 @@ Verify the plan is complete, internally consistent, and implementation-ready.
 
 ---
 
+#### Perspective 6: DES Expert Review
+
+Catch event-driven simulation bugs that domain-agnostic reviewers miss.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a discrete-event simulation expert. Check for: event ordering bugs, clock monotonicity violations, stale signal propagation between event types, heap priority errors, event-driven race conditions, and incorrect assumptions about DES event processing semantics. Verify that any new events respect the (timestamp, priority, seqID) ordering contract.
+```
+
+**Catches:** Event ordering violations, clock regression, stale-signal bugs, priority inversion in event queues.
+
+---
+
+#### Perspective 7: vLLM/SGLang Expert Review
+
+Catch mismatches between BLIS's model and real inference server behavior.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a vLLM/SGLang inference serving expert. Check for: batching semantics that don't match real continuous-batching servers, KV cache eviction policies that differ from vLLM's implementation, chunked prefill behavior mismatches, preemption policy differences, and missing scheduling features that real servers have. Flag any assumption about LLM serving that this plan gets wrong.
+```
+
+**Catches:** Batching model inaccuracies, KV cache behavior mismatches, prefill/decode pipeline errors, scheduling assumption violations.
+
+---
+
+#### Perspective 8: Distributed Inference Platform Expert Review
+
+Catch multi-instance coordination and routing issues.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a distributed inference platform expert (llm-d, KServe, vLLM multi-node). Check for: multi-instance coordination bugs, routing load imbalance under high request rates, stale snapshot propagation between instances, admission control edge cases at scale, horizontal scaling assumption violations, and prefix-affinity routing correctness across instances.
+```
+
+**Catches:** Load imbalance, stale routing state, admission control failures, scaling assumption violations, cross-instance coordination bugs.
+
+---
+
+#### Perspective 9: Performance & Scalability Analyst
+
+Catch algorithmic and memory efficiency issues.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a performance and scalability analyst. Check for: algorithmic complexity issues (O(n²) where O(n) suffices), unnecessary allocations in hot paths, map iteration in O(n) loops that could grow, benchmark-sensitive changes, memory growth patterns, and any changes that would degrade performance at 1000+ requests or 10+ instances.
+```
+
+**Catches:** Algorithmic complexity regressions, hot-path allocations, memory growth, scalability bottlenecks.
+
+---
+
+#### Perspective 10: Security & Robustness Reviewer
+
+Catch input validation gaps and failure mode issues.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a security and robustness reviewer. Check for: input validation completeness (all CLI flags, YAML fields, config values), panic paths reachable from user input, resource exhaustion vectors (unbounded loops, unlimited memory growth), degenerate input handling (empty, zero, negative, NaN, Inf), and configuration injection risks.
+```
+
+**Catches:** Input validation gaps, user-reachable panics, resource exhaustion, degenerate input failures, injection risks.
+
+---
+
 ### Step 3: Human Review of Plan
 
 **Context:** Worktree (same or new session)
@@ -456,7 +521,7 @@ This skill provides structured root-cause analysis: reproduce → isolate → hy
 
 **Context:** Worktree (after implementation complete)
 
-> **For Claude:** When the user asks you to execute Step 4.5, run all 5 perspectives below
+> **For Claude:** When the user asks you to execute Step 4.5, run all 10 perspectives below
 > **in parallel** as a single round. Use `/pr-review-toolkit:review-pr` with the **exact
 > prompt text** shown for each perspective. Collect all findings, then report the full round.
 >
@@ -532,10 +597,64 @@ Catch what GitHub Copilot, Claude, and Codex would flag.
 
 **Catches:** Exported mutable globals, user-controlled panic paths, YAML typo acceptance, NaN/Inf validation gaps, redundant code, style nits.
 
+---
+
+#### Perspective 6: DES Expert Review
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a discrete-event simulation expert. Check for: event ordering bugs, clock monotonicity violations, stale signal propagation between event types, heap priority errors, event-driven race conditions, work-conserving property violations, and incorrect assumptions about DES event processing semantics.
+```
+
+**Catches:** Event ordering violations, clock regression, stale-signal bugs, work-conserving property gaps.
 
 ---
 
-#### During Any Pass: Filing Pre-Existing Issues
+#### Perspective 7: vLLM/SGLang Expert Review
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a vLLM/SGLang inference serving expert. Check for: batching semantics that don't match real continuous-batching servers, KV cache eviction mismatches, chunked prefill behavior errors, preemption policy differences, and missing scheduling features. Flag any assumption about LLM serving that this code gets wrong.
+```
+
+**Catches:** Batching model inaccuracies, KV cache behavior mismatches, scheduling assumption violations.
+
+---
+
+#### Perspective 8: Distributed Inference Platform Expert Review
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a distributed inference platform expert (llm-d, KServe, vLLM multi-node). Check for: multi-instance coordination bugs, routing load imbalance, stale snapshot propagation, admission control edge cases, horizontal scaling assumptions, and prefix-affinity routing correctness.
+```
+
+**Catches:** Load imbalance, stale routing state, scaling assumption violations, cross-instance bugs.
+
+---
+
+#### Perspective 9: Performance & Scalability Analyst
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a performance and scalability analyst. Check for: algorithmic complexity issues, unnecessary allocations in hot paths, map iteration in O(n) loops, benchmark-sensitive changes, memory growth patterns, and changes that would degrade performance at 1000+ requests or 10+ instances.
+```
+
+**Catches:** Complexity regressions, hot-path allocations, memory growth, scalability bottlenecks.
+
+---
+
+#### Perspective 10: Security & Robustness Reviewer
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a security and robustness reviewer. Check for: input validation completeness, panic paths reachable from user input, resource exhaustion vectors, degenerate input handling (empty, zero, NaN, Inf), and configuration injection risks.
+```
+
+**Catches:** Validation gaps, user-reachable panics, resource exhaustion, degenerate input failures.
+
+---
+
+#### During Any Perspective: Filing Pre-Existing Issues
 
 Review passes naturally surface pre-existing bugs in surrounding code. These are valuable discoveries but outside the current PR's scope.
 
@@ -560,7 +679,7 @@ gh issue create --title "Bug: <concise description>" --body "<location, impact, 
 
 #### Convergence Protocol
 
-Run all 5 code review perspectives as a parallel round. **Convergence** means the round completes with 0 CRITICAL and 0 IMPORTANT findings — the reviews were clean from the start.
+Run all 10 code review perspectives as a parallel round. **Convergence** means the round completes with 0 CRITICAL and 0 IMPORTANT findings — the reviews were clean from the start.
 
 If any CRITICAL or IMPORTANT findings are reported: fix all issues, then re-run the entire round from scratch. The re-run is what converges (or triggers another fix-and-rerun cycle). Repeat until a full round produces 0 CRITICAL and 0 IMPORTANT.
 
