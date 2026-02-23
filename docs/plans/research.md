@@ -47,71 +47,17 @@ We want to generate 20 more testable hypotheses that:
 BLIS is a Go-based discrete-event simulator (~19K LOC) for LLM inference serving. It models the full serving pipeline: request arrival -> admission control -> routing -> per-instance queueing -> batch formation -> step execution (prefill/decode) -> completion. The simulator supports both blackbox mode (trained alpha/beta coefficients) and roofline mode (analytical FLOPs/bandwidth estimation).
 
 ## Technology Stack
-- **Language:** Go 1.24
-- **CLI:** Cobra (spf13/cobra)
-- **Logging:** logrus
-- **Testing:** testify (assert/require), table-driven tests, BDD naming
-- **CI:** GitHub Actions (go build, golangci-lint v2.9.0, go test)
-- **Config:** YAML (gopkg.in/yaml.v3) with strict parsing (KnownFields)
 
-## Relevant Architecture
+> See [`CLAUDE.md`](../../CLAUDE.md) for the full technology stack and build/test commands.
 
-### Two-Layer Design
-1. **Simulation kernel** (domain-agnostic): event queue (min-heap), clock, PartitionedRNG, statistics
-2. **Domain modules** (LLM inference): router, scheduler, KV cache manager, latency model, batch formation
+## Architecture Reference
 
-### Key Event Flow
-```
-Request Arrival -> Admission (cluster) -> Routing (cluster) -> WaitQueue (instance) -> Batch Formation -> Step Execution -> Completion
-```
-
-### Policy Architecture (Frozen Interfaces)
-- **Cluster-level** (receive `*RouterState` with global snapshot): `AdmissionPolicy`, `RoutingPolicy`
-- **Instance-level** (local data only): `PriorityPolicy`, `InstanceScheduler`
-- Policies are pluggable via factory functions (`NewRoutingPolicy`, `NewAdmissionPolicy`, etc.)
-
-### Composable Scorer Pipeline (PR17+PR18)
-The `weighted` routing policy evaluates instances using independent scorers:
-- `prefix-affinity` (stateful, router-side LRU cache)
-- `queue-depth` (min-max normalization of effective load)
-- `kv-utilization` (1 - utilization)
-- `load-balance` (inverse transform)
-Scorers combined via weighted sum, argmax selection.
-
-### KV Cache
-- Single-tier: block-based with LRU eviction, prefix caching via content-addressed hashing
-- Tiered: GPU+CPU with offload/reload mechanics, transfer latency modeling
-- Cache hits reduce prefill tokens in `makeRunningBatch` (`simulator.go:466-467`)
-
-### Workload Generation
-- `WorkloadSpec` YAML: multi-client specs with arrival processes, distributions, prefix groups
-- Multi-turn reasoning: context accumulation across rounds (shared prefix tokens)
-- Configurable `prefix_length` per prefix group
-- Built-in scenarios: bursty, unfair tenants, prefix-heavy, mixed-SLO
-
-## Key Files and Components
-
-| File | Purpose | Hypothesis Coverage |
-|------|---------|-------------------|
-| `sim/simulator.go` | Event loop, batch formation, step execution | Scheduling, latency |
-| `sim/routing.go` | RoutingPolicy interface, WeightedScoring with observer hook | Routing hypotheses |
-| `sim/routing_scorers.go` | Scorer implementations, config parsing | Scorer weight sensitivity |
-| `sim/routing_prefix_scorer.go` | Prefix-affinity scorer + PrefixCacheIndex | Prefix/cache locality |
-| `sim/kvcache.go` | Block-based KV cache, LRU eviction, prefix caching | Cache behavior |
-| `sim/kvcache_tiered.go` | GPU+CPU tiered cache, offload/reload | Tiered storage |
-| `sim/admission.go` | TokenBucket, AlwaysAdmit | Admission control |
-| `sim/priority.go` | SLOBasedPriority, ConstantPriority | Priority/fairness |
-| `sim/scheduler.go` | FCFS, SJF, PriorityFCFS | Scheduling order |
-| `sim/cluster/cluster.go` | Multi-instance event loop, online routing | Cluster behavior |
-| `sim/cluster/metrics.go` | RawMetrics, fitness, anomaly detection | Measurement |
-| `sim/workload/generator.go` | Request generation pipeline | Workload patterns |
-| `sim/workload/reasoning.go` | Multi-turn with context accumulation | Session patterns |
-| `sim/workload/scenarios.go` | Built-in presets | Experiment baselines |
+> For the full architecture overview, file organization, and key data flow, see [`CLAUDE.md`](../../CLAUDE.md).
 
 ## Existing Patterns and Conventions
 
 - **BDD testing:** `TestType_Scenario_Behavior` naming, behavioral assertions only
-- **Antipattern rules:** 11 codified rules (no silent data loss, sort map keys, validate CLI flags, etc.)
+- **Antipattern rules:** 20 codified rules — see `docs/standards/rules.md`
 - **Determinism invariant:** Same seed -> byte-identical output
 - **Conservation invariants:** injected == completed + queued + running; allocated + free == total blocks
 
@@ -275,7 +221,7 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Precondition:** Ensure `total_kv_blocks × block_size_in_tokens > prefix_length × num_instances` so cached prefixes fit in memory. If prefix_length exceeds per-instance cache capacity, LRU eviction will destroy cached blocks between requests, inverting the expected monotonic decrease. (This is itself an interesting finding — document the inflection point if observed.)
 
-**If hypothesis fails:** May indicate (a) `GetCachedBlocks()` isn't finding cached blocks despite shared prefix tokens (check hash matching in `kvcache.go:126-141`), (b) block eviction is clearing cached blocks between requests (LRU capacity too small — see precondition), or (c) the latency model (beta coefficients) doesn't weight prefill tokens enough for the savings to be measurable. This hypothesis is a direct test of the `simulator.go:466-467` cache-hit-reduces-prefill mechanism.
+**If hypothesis fails:** May indicate (a) `GetCachedBlocks()` isn't finding cached blocks despite shared prefix tokens (check hash matching in `kvcache.go:126-141`), (b) block eviction is clearing cached blocks between requests (LRU capacity too small — see precondition), or (c) the latency model (beta coefficients) doesn't weight prefill tokens enough for the savings to be measurable. This hypothesis is a direct test of the cache-hit-reduces-prefill mechanism in `batch_formation.go` (formerly `simulator.go`, extracted in #371).
 
 **Coverage:** Prefix caching effectiveness on latency, GetCachedBlocks correctness, cache eviction pressure
 

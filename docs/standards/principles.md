@@ -62,3 +62,30 @@ Never use `continue` in an error path without propagating, counting, or document
 - Observable output: `assert.Equal(policy.Compute(req, clock), 0.0)`
 - Invariant verification: `assert.Equal(completed+queued+running, injected)`
 - Ordering/ranking: `assert.True(scoreA > scoreB)`
+
+## Documentation Single Source of Truth
+
+Every piece of documentation lives in exactly one canonical location. Other files may contain **working copies** (summaries for quick reference) with explicit canonical-source headers.
+
+**The canonical-source pattern:**
+
+> **Canonical source:** [`docs/standards/rules.md`](rules.md). If this section diverges, rules.md is authoritative.
+
+**When updating any standard, invariant, rule, or recipe:**
+1. Update the canonical source FIRST
+2. Then update any working copies that reference it
+3. If you can't update working copies immediately, the canonical-source header ensures readers know which version to trust
+
+**Single-source-of-truth map:**
+
+| Content | Canonical Source | Working Copies |
+|---------|-----------------|----------------|
+| Antipattern rules (R1-R20) | `docs/standards/rules.md` | CLAUDE.md (table), CONTRIBUTING.md (checklist) |
+| System invariants (INV-1–INV-8) | `docs/standards/invariants.md` | CLAUDE.md (summary) |
+| Engineering principles | `docs/standards/principles.md` | CLAUDE.md (summary) |
+| Extension recipes (policies, scorers, KV tiers) | `docs/extension-recipes.md` | — |
+| File organization and architecture | CLAUDE.md (File Organization tree) | README.md (Project Structure tree) |
+| Hypothesis catalog and specifications | `docs/plans/research.md` | — |
+| Experiment status and coverage | `hypotheses/README.md` | — |
+| Experiment standards | `docs/standards/experiments.md` | — |
+| PR workflow | `docs/process/pr-workflow.md` | — |

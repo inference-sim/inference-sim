@@ -610,6 +610,8 @@ See [design documentation](./docs/plans/) for details.
 
 ## Project Structure
 
+> For the authoritative file-level architecture documentation with interface names, method signatures, and module descriptions, see [`CLAUDE.md`](./CLAUDE.md).
+
 ```
 inference-sim/
 ├── main.go                 # CLI entry point
