@@ -10,23 +10,23 @@ BLIS's roofline v2 model has higher prediction error than expected. We propose t
 | **1** | One GuideLLM trace (≥100 requests) | < 15% E2E MAPE | When vLLM version changes |
 | **2** | Automated GPU micro-benchmarks | < 12% E2E MAPE | When hardware changes |
 
-Tier 0 requires zero fitted parameters — it corrects six structural mismatches between what the model assumes and how GPUs and vLLM actually behave. Tier 1 extracts version-specific overhead from a single client-side trace. Tier 2 replaces uniform bandwidth assumptions with measured per-access-pattern values.
+Tier 0 requires zero fitted parameters — it corrects seven structural mismatches between what the model assumes and how GPUs and vLLM actually behave. Tier 1 extracts version-specific overhead from a single client-side trace. Tier 2 replaces uniform bandwidth assumptions with measured per-access-pattern values.
 
 **Constraint**: No server-side traces or vLLM instrumentation. All corrections derive from client-side metrics, analytical modeling, or offline benchmarks.
 
-The six error patterns addressed by Tier 0 are detailed in [Section 1](#1-six-hypotheses-observable-error-patterns). Recommended execution order: H1 and H2 first (largest expected impact), then H3 and H5, then H4 and H6.
+The seven error patterns addressed by Tier 0 are detailed in [Section 1](#1-seven-hypotheses-observable-error-patterns). Recommended execution order: H1 and H2 first (largest expected impact), then H3 and H5, then H4 and H6, then H7 (MoE — requires config parsing extension).
 
 ---
 
 ## Abstract
 
-BLIS's roofline v2 model produces higher prediction errors than expected. We identify six **observable error patterns** in the simulator's output — systematic biases that can be detected purely by comparing predicted vs. measured latency across different workload regimes. Each pattern points to a structural mismatch between the model's assumptions and the physics of GPU execution or vLLM serving. We propose the **Tiered Accuracy Model (TAM)**, a three-tier correction framework organized by calibration cost: Tier 0 (zero-config), Tier 1 (one-trace calibration), Tier 2 (hardware characterization).
+BLIS's roofline v2 model produces higher prediction errors than expected. We identify seven **observable error patterns** in the simulator's output — systematic biases that can be detected purely by comparing predicted vs. measured latency across different workload regimes. Each pattern points to a structural mismatch between the model's assumptions and the physics of GPU execution or vLLM serving. We propose the **Tiered Accuracy Model (TAM)**, a three-tier correction framework organized by calibration cost: Tier 0 (zero-config), Tier 1 (one-trace calibration), Tier 2 (hardware characterization).
 
 **Constraint**: No server-side traces, vLLM internal instrumentation, or framework-specific logging. All improvements derive from client-side metrics (GuideLLM), analytical modeling, and offline kernel benchmarks.
 
 ---
 
-## 1. Six Hypotheses: Observable Error Patterns
+## 1. Seven Hypotheses: Observable Error Patterns
 
 Each hypothesis is a testable claim about what the simulator gets wrong. The proposed mechanism explains *why* the error exists. Implementation details and code references appear in the evidence section.
 
@@ -170,6 +170,106 @@ Both InferSim and BLIS use nearest-neighbor MFU lookup without interpolation. GP
 
 </details>
 
+### H7: The simulator has no MoE-aware latency model, treating sparse expert layers as dense MLP
+
+> For Mixture-of-Experts models (Mixtral, DeepSeek-V3, Qwen3-MoE), the simulator computes MLP FLOPs as if all parameters are active every step. In reality, only `topK` of `numExperts` experts are routed per token, and the active experts execute as grouped GEMMs with different MFU characteristics than standard dense GEMMs. Additionally, expert weight loading can become the bottleneck (memory-bound), and shared experts (when present) execute in parallel with routed experts. Missing all of these produces large errors on MoE architectures.
+
+This hypothesis decomposes into five sub-hypotheses, each addressing a distinct MoE modeling gap.
+
+#### H7a: Sparse FLOPs scaling and expert routing
+
+> The simulator should compute MLP FLOPs as `topK * expertIntermediateDim` per token instead of `fullIntermediateDim`. An explicit router GEMM (`[batchSize, hiddenDim] @ [hiddenDim, numExperts]`) should be added.
+
+**Implementation**: Detect MoE from HuggingFace config.json fields `num_local_experts` (or `num_routed_experts`) and `num_experts_per_tok`. When present:
+- Replace MLP GEMM dimensions: use `moe_intermediate_size` (or `intermediate_size` per expert) instead of the dense `intermediate_size`
+- Scale active FLOPs: `numActiveExperts = numSharedExperts + numExpertsPerTok`, per-token MLP FLOPs = `numActiveExperts * 3 * 2 * hiddenSize * expertIntermediateDim` (factor of 3: up + activation + down projections)
+- Add router GEMM: `computeGEMMTime(batchSize, hiddenDim, numExperts, ...)`
+
+**InferSim reference**: [`flops/flops.py:get_moe_gflops()`](https://github.com/alibaba/InferSim/blob/main/flops/flops.py) computes `act = num_shared_experts + num_experts_per_tok; gflops = act * 3.0 * gemm_flops(1, hidden_size, intermediate_size)`. [`layers/moe.py:18-87`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L18) implements the full decode MoE calculation.
+
+#### H7b: Grouped GEMM MFU differs from standard GEMM MFU
+
+> MoE routed experts execute as grouped GEMMs, not independent dense GEMMs. Grouped GEMMs have lower MFU than standard GEMMs due to uneven token-to-expert distribution, synchronization overhead, and irregular SM occupancy. Using standard GEMM MFU for MoE expert computation overestimates throughput.
+
+**Implementation**: Two options:
+- *Option A (Tier 0)*: Apply a conservative MFU discount factor to standard GEMM MFU when computing routed expert time. InferSim's benchmarked grouped GEMM MFU is typically 0.15-0.18 vs. 0.35-0.6 for dense GEMM — a ~2-3× gap.
+- *Option B (Tier 2)*: Add grouped GEMM benchmark CSVs to the MFU database, keyed by `(num_routed_experts, num_gpus, topk, hidden_size, intermediate_size, batch_size)`, with separate up-projection and down-projection MFU values.
+
+**InferSim reference**: [`mfu/mfu.py:get_groupedgemm_decode_mfu()`](https://github.com/alibaba/InferSim/blob/main/mfu/mfu.py) and [`mfu/mfu.py:get_groupedgemm_prefill_mfu()`](https://github.com/alibaba/InferSim/blob/main/mfu/mfu.py) load from `bench_data/grouped_gemm/{decode,prefill}/{device_type}/data.csv` with columns: `num_experts, num_gpus, num_local_experts, topk, hidden_size, intermediate_size, batch_size_per_gpu, tokens_per_expert, up_proj_us, up_mfu, down_proj_us, down_mfu`. Floor-preferring lookup on `batch_size_per_gpu`.
+
+#### H7c: Expert weight loading can dominate MoE layer latency
+
+> MoE models have far more total MLP parameters than dense models (Mixtral: 8× expert weights; DeepSeek-V3: 256×), but only load `topK` experts' weights per step. The per-step expert weight loading time can exceed the grouped GEMM compute time, making MoE layers memory-bandwidth-bound. The correct model is `max(computeTime, loadTime)`, not just `computeTime`.
+
+**Implementation**: Compute expert weight bytes per GPU:
+```
+expertParamBytes = 3 * hiddenSize * expertIntermediateDim * bytesPerParam
+totalLoadBytes = expertParamBytes * numRoutedExperts / numGPUs
+loadTimeS = totalLoadBytes / effectiveBandwidthBytesPerS
+moeTimeS = max(routedExpertComputeS, loadTimeS) + sharedExpertTimeS
+```
+
+**InferSim reference**: [`params/params.py:get_expert_params_size()`](https://github.com/alibaba/InferSim/blob/main/params/params.py) computes `3 * hidden_size * intermediate_size * bytes_per_elem`. [`params/params.py:load_moe_weights_time()`](https://github.com/alibaba/InferSim/blob/main/params/params.py) divides by EP world size and GPU memory bandwidth. [`layers/moe.py:62`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L62) applies `max(routed_experts_latency, moe_load_time)`.
+
+#### H7d: Shared experts execute differently from routed experts
+
+> Models like DeepSeek-V3 (`num_shared_experts: 1`) and Qwen3-MoE have shared experts that run on every token as standard dense GEMMs, while routed experts use grouped GEMMs. The shared expert compute is additive (sequential) with the routed expert compute, and uses standard GEMM MFU — not grouped GEMM MFU.
+
+**Implementation**: When `numSharedExperts > 0`:
+```
+sharedExpertTimeS = computeGEMMTime(batchSize, hiddenDim, sharedExpertIntermediateDim, peakFlops, standardGEMM_MFU) * 3
+routedExpertTimeS = groupedGEMMTime(...)  // uses grouped GEMM MFU
+moeTimeS = max(routedExpertTimeS, loadTimeS) + sharedExpertTimeS
+```
+
+**InferSim reference**: [`layers/moe.py:70-82`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L70) computes shared experts via `get_gemm_mfu_and_latency()` (standard GEMM, not grouped), then adds sequentially: `t += shared_expert_time`.
+
+#### H7e: MoE communication uses all-to-all, not all-reduce
+
+> When Expert Parallelism (EP) is used, MoE layers require all-to-all dispatch (tokens → assigned experts) and combine (results → original GPUs) instead of all-reduce. All-to-all has different latency characteristics: it scales with `numTokens * topK * hiddenSize` and uses RDMA for inter-node + NVLink for intra-node, not the ring-reduce pattern of all-reduce.
+
+**Implementation**: When EP > 1, replace per-layer MoE communication:
+```
+if expertParallelism > 1:
+    dispatchBytes = batchSize * topK * hiddenDim * bytesPerParam
+    dispatchTimeS = dispatchBytes / rdmaBandwidth   // inter-node
+                  + dispatchBytes / nvlinkBandwidth  // intra-node
+    combineTimeS = dispatchTimeS  // symmetric
+    moeCommTimeS = dispatchTimeS + combineTimeS
+else:
+    moeCommTimeS = allReduceLatency * 2  // standard TP communication
+```
+
+**InferSim reference**: [`comm/comm.py:dispatch()`](https://github.com/alibaba/InferSim/blob/main/comm/comm.py) and [`comm/comm.py:combine()`](https://github.com/alibaba/InferSim/blob/main/comm/comm.py) implement DeepEP dispatch/combine with separate `normal` (prefill) and `low_latency` (decode) modes. Communication uses `size_bw_model()` which selects RDMA for inter-node and NVLink for intra-node.
+
+---
+
+**How to test H7 (all sub-hypotheses)**: Two-part test.
+
+*Part A (simulator-internal, no ground truth needed)*: Implement H7a-e and compute predicted TPOT and TTFT for Mixtral-8x7b (`model_configs/mixtral-8x7b-v0.1/config.json`) and DeepSeek-V3 (config from InferSim: `InferSim/hf_configs/deepseek_v3_config.json`). Compare BLIS predictions against InferSim's published predictions from the [InferSim technical report](https://github.com/user-attachments/files/23016438/infersim_tech_report.pdf). For DeepSeek-V3 on H800, InferSim predicts decode TGS of 2675 vs. actual 2324 (~15% error) — BLIS should land within the same range.
+
+*Part B (aggregate accuracy, requires MoE ground truth)*: When MoE ground truth traces become available, run BLIS with H7 corrections against measured TTFT/TPOT. This is blocked until MoE experiments are added to `eval/ground_truth/`.
+
+**Data constraint**: No MoE models exist in the current 14 ground truth experiments. Part A validates against InferSim's published numbers as a cross-simulator sanity check. Part B requires new data collection.
+
+**Accept criterion**: Part A predictions within 20% of InferSim's published predictions for the same model/GPU configuration; Part B (when data available) achieves E2E MAPE < 20% on MoE models.
+
+<details>
+<summary><b>Mechanism and evidence</b></summary>
+
+BLIS currently has zero MoE support. The `ModelConfig` struct (`sim/model_hardware_config.go:13-21`) does not parse `num_local_experts`, `num_experts_per_tok`, `moe_intermediate_size`, or `num_shared_experts`. The roofline computation (`sim/roofline_step_v2.go`) treats all MLP layers as dense with `intermediate_size` dimensions. For Mixtral-8x7b (8 experts, top-2), this means BLIS computes 4× too many MLP FLOPs (using full `intermediate_size=14336` instead of `topK/numExperts * intermediate_size = 2/8 * 14336 = 3584` equivalent). For DeepSeek-V3 (256 experts, top-8, `moe_intermediate_size=2048`), the error is even larger — BLIS would use `intermediate_size=18432` (dense) instead of the effective `9 * 2048 = 18432` (which happens to be similar for DeepSeek-V3, but with completely wrong MFU characteristics due to grouped GEMM).
+
+- BLIS `ModelConfig`: no MoE fields — [`sim/model_hardware_config.go:13-21`](sim/model_hardware_config.go#L13)
+- BLIS MLP computation: uses dense `dFF` — [`sim/roofline_step_v2.go:73-82`](sim/roofline_step_v2.go#L73)
+- Mixtral config: `num_local_experts: 8`, `num_experts_per_tok: 2` — [`model_configs/mixtral-8x7b-v0.1/config.json`](model_configs/mixtral-8x7b-v0.1/config.json)
+- InferSim MoE layer: [`layers/moe.py`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py)
+- InferSim grouped GEMM MFU: [`mfu/mfu.py:96-130`](https://github.com/alibaba/InferSim/blob/main/mfu/mfu.py#L96)
+- InferSim expert weight loading: [`params/params.py`](https://github.com/alibaba/InferSim/blob/main/params/params.py)
+- InferSim EP communication: [`comm/comm.py`](https://github.com/alibaba/InferSim/blob/main/comm/comm.py)
+- InferSim DeepSeek-V3 accuracy: decode TGS predicted 2675 vs. actual 2324 (~15% error) — [InferSim technical report](https://github.com/user-attachments/files/23016438/infersim_tech_report.pdf)
+
+</details>
+
 ---
 
 ## 2. The Tiered Accuracy Model (TAM)
@@ -188,8 +288,9 @@ Corrections derived entirely from hardware physics, execution semantics, or stan
 | H4 | Aggregate roofline masks bottleneck transitions | Synthetic: ≥10% diff at crossover; Aggregate: E2E MAPE ≥1pp better | Mechanism via synthetic test; accuracy via aggregate |
 | H5 | Weighted-average mixed-batch model | Synthetic: ≥15% diff at 50/50; Aggregate: E2E MAPE ≥2pp better at high QPS | Weakest — no batch composition visibility; QPS as proxy |
 | H6 | MFU grid-boundary discontinuities | ≥80% fewer discontinuities; per-request variance decreases | Full — simulator-internal + aggregate |
+| H7 | No MoE-aware latency model | Part A: within 20% of InferSim predictions; Part B: E2E MAPE < 20% on MoE models | Part A via cross-simulator check; Part B blocked on MoE ground truth |
 
-**Overfitting risk**: None for H1, H3, H4, H5 (zero fitted parameters). H2 uses a sweep but selects against held-out data. H6 is a standard numerical technique.
+**Overfitting risk**: None for H1, H3, H4, H5, H7a/c/d (zero fitted parameters — architecture-derived). H2 uses a sweep but selects against held-out data. H6 is a standard numerical technique. H7b Option A uses a conservative discount factor; Option B uses benchmarked data.
 
 ### Tier 1: One-Trace Calibration
 
@@ -229,6 +330,10 @@ InferSim's core insight: *"The accuracy of the MFU directly determines the accur
 
 A vLLM step consists of two sequential phases: GPU compute (GEMMs + attention) and CPU scheduling (Python-level batch formation, block allocation, detokenization). These are fundamentally different phenomena with different scaling. H2 addresses the missing scheduling component.
 
+### 3.4 MoE Sparsity and Grouped Execution
+
+MoE layers replace the dense MLP with a gating network that routes each token to `topK` of `numExperts` experts. The key modeling implications: (1) active FLOPs scale with `topK`, not `numExperts`, so a 256-expert model with top-8 routing uses only 3% of total expert parameters per token; (2) active experts execute as a single grouped GEMM kernel with uneven per-expert token counts, achieving lower MFU than equivalent dense GEMMs; (3) expert weight loading from HBM can become the bottleneck when total expert parameters exceed what fits in L2 cache. InferSim models this as `max(computeTime, loadTime)` per MoE layer ([`layers/moe.py:62`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L62)). H7 addresses all five aspects of this modeling gap.
+
 ---
 
 ## 4. Addressing Reviewer Concerns
@@ -247,7 +352,7 @@ Tier 0 is vLLM-agnostic. Tier 1 adapts via one trace. Different vLLM configs pro
 
 ### 4.4 Generalization Across LLMs
 
-All corrections derive from model architecture parameters and hardware physics. Cross-validation on a different architecture family (e.g., Qwen2.5-7B) required before acceptance.
+All corrections derive from model architecture parameters and hardware physics. H7 extends coverage to MoE architectures (Mixtral, DeepSeek-V3, Qwen3-MoE) via architecture-aware dispatch — detecting `num_local_experts` / `num_experts_per_tok` from HuggingFace config and adjusting FLOPs, MFU, memory traffic, and communication accordingly. Cross-validation on a different architecture family (e.g., Qwen2.5-7B for dense, Mixtral-8x7b for MoE) required before acceptance.
 
 ### 4.5 Across Hardware Types
 
@@ -291,7 +396,9 @@ Tier 0: Fully deterministic. Tier 1: Deterministic given same trace + seed (INV-
 
 6. **Non-NVIDIA GPUs**: The bandwidth efficiency constant is validated only for NVIDIA HBM GPUs in InferSim. Tier 2 addresses other hardware through direct measurement.
 
-7. **Ground truth coverage gaps**: The 14 experiments cover 4 model families on a single GPU type (H100). No decode-only or prefill-only workloads exist in the ground truth — all are mixed-workload sweeps. No experiments vary KV cache length independently of batch size. This limits the ability to test H1 and H4 in the targeted regimes described by their mechanisms.
+7. **Ground truth coverage gaps**: The 14 experiments cover 4 dense model families on a single GPU type (H100). No decode-only or prefill-only workloads exist in the ground truth — all are mixed-workload sweeps. No experiments vary KV cache length independently of batch size. This limits the ability to test H1 and H4 in the targeted regimes described by their mechanisms.
+
+8. **MoE ground truth and MFU data**: No MoE models (Mixtral, DeepSeek-V3, Qwen3-MoE) exist in the current ground truth experiments. H7 Part B is blocked until MoE traces are collected. Additionally, H7b requires either grouped GEMM benchmark CSVs (from InferSim's `bench_data/grouped_gemm/` or equivalent) or a conservative MFU discount approximation. Without benchmarked grouped GEMM MFU, MoE compute time predictions rely on an estimated correction factor rather than measured data.
 
 ---
 
@@ -313,6 +420,14 @@ Tier 0: Fully deterministic. Tier 1: Deterministic given same trace + seed (INV-
 | BLIS v2 mixed weights | [`sim/roofline_step_v2.go:288-291`](sim/roofline_step_v2.go#L288) |
 | BLIS hardware config | [`hardware_config.json:6,18-19`](hardware_config.json#L6) |
 | BLIS calibration | [`sim/workload/calibrate.go`](sim/workload/calibrate.go) |
+| BLIS Mixtral config | [`model_configs/mixtral-8x7b-v0.1/config.json`](model_configs/mixtral-8x7b-v0.1/config.json) |
+| InferSim MoE layer | [`layers/moe.py`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py) |
+| InferSim grouped GEMM MFU | [`mfu/mfu.py:96-130`](https://github.com/alibaba/InferSim/blob/main/mfu/mfu.py#L96) |
+| InferSim MoE FLOPs | [`flops/flops.py:get_moe_gflops()`](https://github.com/alibaba/InferSim/blob/main/flops/flops.py) |
+| InferSim expert params | [`params/params.py`](https://github.com/alibaba/InferSim/blob/main/params/params.py) |
+| InferSim EP communication | [`comm/comm.py`](https://github.com/alibaba/InferSim/blob/main/comm/comm.py) |
+| InferSim technical report | [infersim_tech_report.pdf](https://github.com/user-attachments/files/23016438/infersim_tech_report.pdf) |
+| InferSim DeepSeek-V3 config | [`hf_configs/deepseek_v3_config.json`](https://github.com/alibaba/InferSim/blob/main/hf_configs/deepseek_v3_config.json) |
 | Roofline model | Williams et al., "Roofline: An Insightful Visual Performance Model", CACM 2009 |
 | FlashAttention | Dao et al., "FlashAttention: Fast and Memory-Efficient Exact Attention", NeurIPS 2022 |
 | PagedAttention | Kwon et al., "Efficient Memory Management for LLM Serving with PagedAttention", SOSP 2023 |
