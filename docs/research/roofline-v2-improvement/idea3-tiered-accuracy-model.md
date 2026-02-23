@@ -2,26 +2,19 @@
 
 ## Executive Summary
 
-BLIS's roofline v2 latency model has higher prediction error than InferSim (which reports 4-15% on Qwen/DeepSeek). We traced this to six observable error patterns — not bugs, but structural mismatches between what the model assumes and how GPUs and vLLM actually behave.
+BLIS's roofline v2 model has higher prediction error than expected. We propose the **Tiered Accuracy Model (TAM)** — a three-tier framework that progressively improves accuracy with increasing calibration effort:
 
-| # | What's wrong (observable) | Likely magnitude |
-|---|--------------------------|-----------------|
-| H1 | Underestimates memory-bound steps | ~13% E2E error |
-| H2 | Missing fixed per-step scheduling overhead | ~33% step error |
-| H3 | MFU lookups use wrong GEMM shapes (split vs. fused) | Model-dependent |
-| H4 | Aggregate roofline masks per-component bottleneck transitions | Workload-dependent |
-| H5 | Mixed-batch error correlates with prefill/decode ratio | Mixed-batch only |
-| H6 | Artificial latency jumps at MFU grid boundaries | Increases variance |
+| Tier | What you need | What you get | Recalibration |
+|------|--------------|--------------|---------------|
+| **0** | Nothing — physics and execution semantics only | < 20% E2E MAPE | Never |
+| **1** | One GuideLLM trace (≥100 requests) | < 15% E2E MAPE | When vLLM version changes |
+| **2** | Automated GPU micro-benchmarks | < 12% E2E MAPE | When hardware changes |
 
-**Proposed fix — Tiered Accuracy Model (TAM):**
+Tier 0 requires zero fitted parameters — it corrects six structural mismatches between what the model assumes and how GPUs and vLLM actually behave. Tier 1 extracts version-specific overhead from a single client-side trace. Tier 2 replaces uniform bandwidth assumptions with measured per-access-pattern values.
 
-- **Tier 0** (zero-config): Fix all six using hardware physics, execution semantics, and standard numerics. No fitted parameters. Expected: 15-25pp MAPE reduction.
-- **Tier 1** (one trace): Extract vLLM-version-specific overhead from one GuideLLM run. Expected: additional 5-10pp.
-- **Tier 2** (hardware benchmarks): Measure per-access-pattern bandwidth. Expected: additional 2-5pp.
+**Constraint**: No server-side traces or vLLM instrumentation. All corrections derive from client-side metrics, analytical modeling, or offline benchmarks.
 
-**Key constraint**: No server-side traces or vLLM instrumentation. All corrections derive from client-side metrics, analytical modeling, or offline benchmarks.
-
-**Recommended execution order**: H1 and H2 first (largest expected impact, simplest to implement and validate), then H3 and H5, then H4 and H6.
+The six error patterns addressed by Tier 0 are detailed in [Section 1](#1-six-hypotheses-observable-error-patterns). Recommended execution order: H1 and H2 first (largest expected impact), then H3 and H5, then H4 and H6.
 
 ---
 
