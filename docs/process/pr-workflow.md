@@ -82,7 +82,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 4.5: code review   │ (4 perspectives per round — see checklist)
+│ Step 4.5: code review   │ (5 perspectives per round — see checklist)
 └──────────┬──────────────┘
            │
            ▼
@@ -105,7 +105,7 @@ If skills are unavailable, you can implement each step manually:
 2. **Three-stage quality assurance:**
    - **Plan Review** (Step 2.5) - round of 5 parallel perspectives: substance, cross-doc, architecture, codebase, structural
      - Catches design issues before implementation
-   - **Code Review** (Step 4.5) - round of 4 parallel perspectives: code quality, test quality, getting-started, automated reviewer
+   - **Code Review** (Step 4.5) - round of 5 parallel perspectives: substance, code quality, test quality, getting-started, automated reviewer
      - Catches implementation issues before PR creation
    - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 9 dimensions
      - Catches substance bugs that pattern-matching agents miss
@@ -123,7 +123,7 @@ If skills are unavailable, you can implement each step manually:
 | **2.5. Review plan** | Round of 5 parallel perspectives: substance, cross-doc, architecture, codebase, structural |
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
-| **4.5. Review code** | 4 focused passes: code quality, test behavioral quality, getting-started, automated reviewer sim |
+| **4.5. Review code** | Round of 5 parallel perspectives: substance, code quality, test quality, getting-started, automated reviewer |
 | **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
@@ -286,6 +286,8 @@ The `<source-document>` can be any of:
 **Why rounds with multiple perspectives?** Generic "review everything" misses issues that targeted perspectives catch. Different lenses find different bugs: cross-doc consistency catches stale references, architecture catches boundary violations, substance catches design bugs. Running them in parallel maximizes coverage per round. The hypothesis process proved this model: 3 parallel reviewers with different foci caught issues that sequential single-reviewer rounds missed.
 
 **Convergence definition:** A round **converges** when all perspectives complete and report 0 CRITICAL and 0 IMPORTANT findings. Convergence means the review was clean from the start — not that issues were found and fixed. If you had to fix issues, the subsequent re-run is what converges (or not).
+
+**Hard gate — NO EXCEPTIONS:** If any CRITICAL or IMPORTANT finding was reported in a round, you MUST re-run the entire round after fixing. You may NOT skip the re-run, propose alternative steps, or rationalize that fixes were "small enough." The re-run is the only way to verify that fixes didn't introduce new issues. This is non-negotiable — the same discipline as the hypothesis convergence protocol.
 
 ---
 
@@ -454,7 +456,7 @@ This skill provides structured root-cause analysis: reproduce → isolate → hy
 
 **Context:** Worktree (after implementation complete)
 
-> **For Claude:** When the user asks you to execute Step 4.5, run all 4 perspectives below
+> **For Claude:** When the user asks you to execute Step 4.5, run all 5 perspectives below
 > **in parallel** as a single round. Use `/pr-review-toolkit:review-pr` with the **exact
 > prompt text** shown for each perspective. Collect all findings, then report the full round.
 >
@@ -463,11 +465,24 @@ This skill provides structured root-cause analysis: reproduce → isolate → hy
 > **If any CRITICAL or IMPORTANT findings:** Fix all issues, then re-run the entire round
 > from scratch. Repeat until convergence (see Convergence Protocol below).
 
-**Why 4 perspectives in parallel?** Each catches issues the others miss. PR8 experience: Perspective 1 found mutable exported maps and YAML typo acceptance. Perspective 2 found 2 structural tests and 3 mixed tests. Perspective 3 found missing metrics glossary and contributor guide gaps. Perspective 4 found CLI panic paths and NaN validation gaps.
+**Why 5 perspectives in parallel?** Each catches issues the others miss. In the standards-audit-hardening PR, Perspective 1 found a runtime-breaking regression (`GetWorkloadConfig` panic), Perspective 2 found weakened test coverage (missing regression anchors), Perspective 3 found the same runtime break from the user's perspective, and Perspective 4 found stale terminology and user-unfriendly panic paths. The substance perspective catches design-level issues that structural checks miss.
 
 ---
 
-#### Perspective 1: Code Quality + Error Handling
+#### Perspective 1: Substance & Design
+
+Catch logic bugs, design mismatches, and mathematical errors in the implementation.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff for substance: Are there logic bugs, design mismatches between contracts and implementation, mathematical errors, or silent regressions? Check from first principles — not just structural patterns. Does the implementation actually achieve what the behavioral contracts promise?
+```
+
+**Catches:** Design bugs, formula errors, silent regressions, semantic mismatches between intent and implementation.
+
+---
+
+#### Perspective 2: Code Quality + Error Handling
 
 Find bugs, logic errors, silent failures, and convention violations.
 
@@ -480,7 +495,7 @@ Find bugs, logic errors, silent failures, and convention violations.
 
 ---
 
-#### Perspective 2: Test Behavioral Quality
+#### Perspective 3: Test Behavioral Quality
 
 Verify tests are truly behavioral (testing WHAT) not structural (testing HOW).
 
@@ -493,7 +508,7 @@ Verify tests are truly behavioral (testing WHAT) not structural (testing HOW).
 
 ---
 
-#### Perspective 3: Getting-Started Experience
+#### Perspective 4: Getting-Started Experience
 
 Simulate the journey of a new user and a new contributor.
 
@@ -506,7 +521,7 @@ Simulate the journey of a new user and a new contributor.
 
 ---
 
-#### Perspective 4: Automated Reviewer Simulation
+#### Perspective 5: Automated Reviewer Simulation
 
 Catch what GitHub Copilot, Claude, and Codex would flag.
 
@@ -545,9 +560,11 @@ gh issue create --title "Bug: <concise description>" --body "<location, impact, 
 
 #### Convergence Protocol
 
-Run all 4 perspectives as a parallel round. **Convergence** means the round completes with 0 CRITICAL and 0 IMPORTANT findings — the reviews were clean from the start.
+Run all 5 code review perspectives as a parallel round. **Convergence** means the round completes with 0 CRITICAL and 0 IMPORTANT findings — the reviews were clean from the start.
 
 If any CRITICAL or IMPORTANT findings are reported: fix all issues, then re-run the entire round from scratch. The re-run is what converges (or triggers another fix-and-rerun cycle). Repeat until a full round produces 0 CRITICAL and 0 IMPORTANT.
+
+**Hard gate — NO EXCEPTIONS:** You MUST re-run after fixes. You may NOT skip the re-run, propose alternative steps (e.g., "proceed to self-audit instead"), or rationalize that fixes were trivial. The re-run is the only evidence of convergence. This is non-negotiable.
 
 ---
 
