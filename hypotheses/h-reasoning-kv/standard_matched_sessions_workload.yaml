@@ -1,0 +1,20 @@
+version: "1.0"
+seed: 42
+category: language
+aggregate_rate: 2.0
+num_requests: 500
+clients:
+  - id: standard-client
+    tenant_id: default
+    slo_class: interactive
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: constant
+      params:
+        value: 896
+    output_distribution:
+      type: constant
+      params:
+        value: 256
