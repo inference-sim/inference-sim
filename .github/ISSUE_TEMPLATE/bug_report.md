@@ -23,6 +23,8 @@ What should happen? Reference an invariant if applicable:
 - Causality: arrival <= schedule <= completion
 - Clock monotonicity: clock never decreases
 - Determinism: same seed produces identical output
+- Signal freshness: routing snapshot signals have tiered freshness
+- Work-conserving: simulator must not idle while work is waiting
 
 **Actual behavior**
 What happens instead? Include relevant log output or JSON metrics.
@@ -34,6 +36,8 @@ What happens instead? Include relevant log output or JSON metrics.
 - [ ] Causality
 - [ ] Clock monotonicity
 - [ ] Determinism
+- [ ] Signal freshness
+- [ ] Work-conserving
 - [ ] None / unknown
 
 **Environment**

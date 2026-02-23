@@ -22,7 +22,7 @@
 
 ## Completed PRs
 
-16 PRs across 6 phases extending BLIS to multi-replica cluster simulation (12 completed, 4 remaining):
+23 PRs/issues across 6 phases extending BLIS to multi-replica cluster simulation (19 completed, 4 remaining):
 
 - **PR1**: PartitionedRNG
 - **PR2**: InstanceSimulator
@@ -37,6 +37,13 @@
 - **PR12**: TieredKVCache (GPU+CPU offload/reload), `KVStore` interface, `NewKVStore` factory, `--kv-cpu-blocks --kv-offload-threshold --kv-transfer-bandwidth`
 - **PR13**: DecisionTrace, counterfactual analysis, TraceSummary, EvaluationResult, `--trace-level --counterfactual-k --summarize-trace`
 - **PR17**: Composable scorer framework for weighted routing with stateless scorers
+- **PR18**: Prefix-affinity scorer + router-side cache for weighted routing
+- **#371**: BatchFormation interface extraction from makeRunningBatch() (#242)
+- **#372**: Tier A hypothesis experiments (H25, H26, H17, H-Step-Quantum) (#329)
+- **#380**: 14 audit bugs across KV cache, latency, routing, workload, metrics
+- **#381**: SimConfig decomposition into 6 module-scoped sub-configs (#350)
+- **#385**: Shared experiment harness + Tier B hypotheses (H16, H19, H21, H24)
+- **#386**: KV livelock fix — prevent infinite preempt loop when request exceeds cache capacity (#373)
 - **Hardening**: 6 phases (structural helpers, correctness fixes, metric fixes, invariant tests, input validation, modularity)
 - **Bug fix**: Silent correctness bugs — `--total-kv-blocks` CLI override (#285), `--snapshot-refresh-interval` validation (#281), multi-client workload starvation (#278)
 
