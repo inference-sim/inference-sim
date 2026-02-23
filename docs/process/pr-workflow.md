@@ -553,10 +553,10 @@ Find bugs, logic errors, silent failures, and convention violations.
 
 **Prompt:**
 ```
-/pr-review-toolkit:review-pr Also check: (1) any new error paths that use `continue` or early `return` — do they clean up partial state? (2) any map iteration that accumulates floats — are keys sorted? (3) any struct field added — are all construction sites updated? (4) does library code (sim/) call logrus.Fatalf anywhere in new code? (5) any exported mutable maps — should they be unexported with IsValid*() accessors? (6) any YAML config fields using float64 instead of *float64 where zero is valid? (7) any division where the denominator derives from runtime state without a zero guard? (8) any new interface with methods only meaningful for one implementation? (9) any method >50 lines spanning multiple concerns (scheduling + latency + metrics)?
+/pr-review-toolkit:review-pr Also check: (1) any new error paths that use `continue` or early `return` — do they clean up partial state? (2) any map iteration that accumulates floats — are keys sorted? (3) any struct field added — are all construction sites updated? (4) does library code (sim/) call logrus.Fatalf anywhere in new code? (5) any exported mutable maps — should they be unexported with IsValid*() accessors? (6) any YAML config fields using float64 instead of *float64 where zero is valid? (7) any division where the denominator derives from runtime state without a zero guard? (8) any new interface with methods only meaningful for one implementation? (9) any method >50 lines spanning multiple concerns (scheduling + latency + metrics)? (10) any changes to docs/standards/ files — are CLAUDE.md working copies updated to match?
 ```
 
-**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling os.Exit, exported mutable maps, YAML zero-value ambiguity, division by zero in runtime computation, leaky interfaces, monolith methods.
+**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling os.Exit, exported mutable maps, YAML zero-value ambiguity, division by zero in runtime computation, leaky interfaces, monolith methods, documentation drift.
 
 ---
 
@@ -733,6 +733,7 @@ Wait for user approval before proceeding to Step 4.75.
 7. **Test epistemology (R7, R12):** For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)
 8. **Construction site uniqueness (R4):** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
 9. **Error path completeness (R1, R5):** For every error/failure path in new code, what happens to partially-mutated state? Does every `continue` or early `return` clean up what was started? Is there a counter or log so the failure is observable?
+10. **Documentation DRY (source-of-truth map):** Does this PR modify content that exists as a working copy elsewhere? Check the source-of-truth map in `docs/standards/principles.md`. If a canonical source was updated (rules.md, invariants.md, principles.md, extension-recipes.md), verify all working copies listed in the map are also updated. If a new file or section was added, verify it appears in the File Organization tree. If a hypothesis experiment was completed, verify `hypotheses/README.md` is updated.
 
 **Fix all issues found. Then wait for user approval before Step 5.**
 

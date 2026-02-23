@@ -195,8 +195,8 @@ inference-sim/
 │   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs, IsValidScorer, DefaultScorerConfigs, newScorerWithObserver factory
 │   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer (proportional prefix matching)
 │   ├── prefix_cache_index.go  # PrefixCacheIndex: per-instance LRU of hierarchical block hashes
-│   ├── priority.go            # PriorityPolicy interface, ConstantPriority, SLOBasedPriority, NewPriorityPolicy factory
-│   ├── scheduler.go           # InstanceScheduler interface, FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, NewScheduler factory
+│   ├── priority.go            # PriorityPolicy interface with ConstantPriority, SLOBasedPriority, and InvertedSLO templates, NewPriorityPolicy factory
+│   ├── scheduler.go           # InstanceScheduler interface with FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, and ReversePriority templates, NewScheduler factory
 │   ├── latency_model.go       # LatencyModel interface (5 methods: StepTime, QueueingTime, OutputTokenProcessingTime, SchedulingProcessingTime, PreemptionProcessingTime), BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate

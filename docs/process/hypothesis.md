@@ -177,6 +177,7 @@ An experiment **converges** when **no reviewer flags any CRITICAL or IMPORTANT i
 7. **Analyze** — produce comparison tables, compute effect sizes
 8. **Verify root cause** — trace every causal claim through code (RCV-1, RCV-2, RCV-3)
 9. **Document FINDINGS.md** — results, root cause, classification, standards audit
+9b. **Update `hypotheses/README.md`** — Add a row to the "Validated Hypotheses" table with the experiment's ID, family, hypothesis sentence, status (from FINDINGS.md), and key finding. Also update the "Coverage by Family" table if this experiment changes a family's completion status.
 10. **Five parallel internal reviews** — launch Reviewers 1-5 as background Task agents simultaneously
 11. **Assess convergence** — if zero CRITICAL and zero IMPORTANT items across all five reviewers, proceed to finalization. If any reviewer flags a CRITICAL or IMPORTANT item, start next round at step 5.
 

@@ -531,6 +531,7 @@ Before implementation, verify:
 - [ ] CLAUDE.md updated if: new files/packages added, file organization
       changed, plan milestone completed, new CLI flags added.
 - [ ] No stale references left in CLAUDE.md.
+- [ ] Documentation DRY: If this PR modifies a canonical source (docs/standards/rules.md, docs/standards/invariants.md, docs/standards/principles.md, docs/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the CLAUDE.md File Organization tree.
 - [ ] Deviation log reviewed — no unresolved deviations.
 - [ ] Each task produces working, testable code (no scaffolding).
 - [ ] Task dependencies are correctly ordered.
