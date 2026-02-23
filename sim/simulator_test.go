@@ -1091,3 +1091,55 @@ func TestRequestLifecycle_ValidTransitions(t *testing.T) {
 		t.Error("request never entered StateRunning")
 	}
 }
+
+func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
+	// BC-5: TTFT must be recorded before E2E for zero-output-token requests.
+	// This tests the two-pass invariant: executeBatchStep (Phase 2) records TTFT,
+	// then processCompletions (Phase 3) records E2E.
+	cfg := SimConfig{
+		Horizon:       100_000_000,
+		KVCacheConfig: NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(100, 10000, 100),
+		LatencyCoeffs: NewLatencyCoeffs(
+			[]float64{1000, 10, 2},
+			[]float64{500, 1, 1000},
+		),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Create a request with zero output tokens
+	req := &Request{
+		ID:           "zero-output",
+		ArrivalTime:  0,
+		InputTokens:  make([]int, 10),
+		OutputTokens: []int{}, // zero output tokens
+		State:        StateQueued,
+	}
+	sim.InjectArrival(req)
+
+	// Run until completion
+	sim.Run()
+
+	// TTFT must be recorded
+	ttft, hasTTFT := sim.Metrics.RequestTTFTs[req.ID]
+	if !hasTTFT {
+		t.Fatal("TTFT must be recorded for zero-output request")
+	}
+	if ttft <= 0 {
+		t.Errorf("TTFT must be positive, got %f", ttft)
+	}
+
+	// E2E must be recorded
+	e2e, hasE2E := sim.Metrics.RequestE2Es[req.ID]
+	if !hasE2E {
+		t.Fatal("E2E must be recorded for zero-output request")
+	}
+	if e2e <= 0 {
+		t.Errorf("E2E must be positive, got %f", e2e)
+	}
+
+	// Request must have completed
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("expected 1 completed request, got %d", sim.Metrics.CompletedRequests)
+	}
+}

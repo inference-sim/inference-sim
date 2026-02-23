@@ -362,10 +362,16 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 
 // Step simulates a single vllm step(): batch scheduling, model execution, and completion.
 // Phases: (1) schedule batch, (2) execute prefill/decode, (3) process completions, (4) schedule next step.
-// Observational metrics are recorded via helper methods at phase boundaries.
 func (sim *Simulator) Step(now int64) {
+	sim.scheduleBatch(now)
+	currStepAdvance := sim.executeBatchStep(now)
+	remaining := sim.processCompletions(now, currStepAdvance)
+	sim.scheduleNextStep(now, currStepAdvance, remaining)
+}
 
-	// === Phase 1: Schedule batch ===
+// scheduleBatch handles Phase 1: priority assignment, queue reordering, batch formation,
+// and event scheduling for preemptions and newly scheduled requests.
+func (sim *Simulator) scheduleBatch(now int64) {
 	sim.stepCount += 1
 
 	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
@@ -417,9 +423,11 @@ func (sim *Simulator) Step(now int64) {
 
 	// Record queue depth observations after batch formation
 	sim.recordQueueSnapshots()
+}
 
-	// === Phase 2: Execute batch (prefill + decode) ===
-
+// executeBatchStep handles Phase 2: model execution (prefill + decode) for all requests
+// in the running batch. Returns the step time advance in ticks.
+func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// Estimate step time via LatencyModel (blackbox or roofline, selected at construction)
 	currStepAdvance := sim.latencyModel.StepTime(sim.RunningBatch.Requests)
 
@@ -452,15 +460,20 @@ func (sim *Simulator) Step(now int64) {
 	// Record KV cache usage observations after execution
 	sim.recordKVUsageMetrics(currStepAdvance)
 
-	// === Phase 3: Process completions ===
+	return currStepAdvance
+}
 
-	// IMPORTANT: This completion loop MUST run as a separate pass after the
-	// prefill/decode execution loop above. For zero-output-token requests,
-	// both "prefill completed" and "request completed" conditions are true
-	// in the same step. The two-pass design ensures prefill metrics (TTFT)
-	// are recorded before completion metrics (E2E). If these loops were ever
-	// consolidated into a single pass, both branches would fire for the
-	// same request in the same step.
+// processCompletions handles Phase 3: identifies completed requests, performs state
+// transitions, releases KV blocks, and records completion metrics.
+// Returns the remaining (non-completed) requests.
+//
+// IMPORTANT: This MUST run as a separate pass after executeBatchStep (BC-5).
+// For zero-output-token requests, both "prefill completed" and "request completed"
+// conditions are true in the same step. The two-pass design ensures prefill metrics
+// (TTFT) are recorded before completion metrics (E2E). If these were ever
+// consolidated into a single pass, both branches would fire for the same request
+// in the same step.
+func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request {
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
@@ -491,8 +504,13 @@ func (sim *Simulator) Step(now int64) {
 			remaining = append(remaining, req)
 		}
 	}
+	return remaining
+}
 
-	// === Phase 4: Schedule next step ===
+// scheduleNextStep handles Phase 4: schedules the next step event based on
+// remaining requests, or starts a new batch if only WaitQ has pending work
+// (work-conserving property, INV-8).
+func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*Request) {
 	if len(remaining) > 0 {
 		sim.RunningBatch.Requests = remaining
 		// estimate queue overhead from LR (sim.features)
