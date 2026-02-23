@@ -1,7 +1,9 @@
 package workload
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -125,5 +127,52 @@ func TestTraceV2_IntegerTimestamps_Preserved(t *testing.T) {
 	}
 	if r.SendTimeUs != 1708100000000010 {
 		t.Errorf("send = %d, want 1708100000000010", r.SendTimeUs)
+	}
+}
+
+// TestLoadTraceV2_UnknownYAMLField_ReturnsError verifies BC-11: strict YAML parsing.
+func TestLoadTraceV2_UnknownYAMLField_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+
+	// GIVEN a header with a typo
+	if err := os.WriteFile(headerPath, []byte("tme_unit: microseconds\ntrace_version: 2\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataPath, []byte("request_id\n1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// WHEN loading
+	_, err := LoadTraceV2(headerPath, dataPath)
+
+	// THEN error about unknown field
+	if err == nil {
+		t.Fatal("expected error for unknown YAML field, got nil")
+	}
+	if !strings.Contains(err.Error(), "tme_unit") {
+		t.Errorf("error should mention unknown field 'tme_unit', got: %s", err.Error())
+	}
+}
+
+// TestParseTraceRecord_InvalidInteger_ReturnsError verifies BC-12: CSV error propagation.
+func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
+	// GIVEN a row with a non-numeric request_id
+	row := make([]string, 22)
+	row[0] = "abc" // request_id should be integer
+	for i := 1; i < len(row); i++ {
+		row[i] = "0"
+	}
+
+	// WHEN parsing
+	_, err := parseTraceRecord(row)
+
+	// THEN error about invalid value
+	if err == nil {
+		t.Fatal("expected error for non-numeric request_id, got nil")
+	}
+	if !strings.Contains(err.Error(), "request_id") {
+		t.Errorf("error should mention 'request_id', got: %s", err.Error())
 	}
 }

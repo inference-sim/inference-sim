@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -149,7 +150,9 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		return nil, fmt.Errorf("reading trace header: %w", err)
 	}
 	var header TraceHeader
-	if err := yaml.Unmarshal(headerData, &header); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(headerData))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&header); err != nil {
 		return nil, fmt.Errorf("parsing trace header: %w", err)
 	}
 
@@ -191,21 +194,66 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 }
 
 func parseTraceRecord(row []string) (*TraceRecord, error) {
-	requestID, _ := strconv.Atoi(row[0])
-	roundIndex, _ := strconv.Atoi(row[5])
-	streaming, _ := strconv.ParseBool(row[7])
-	inputTokens, _ := strconv.Atoi(row[8])
-	outputTokens, _ := strconv.Atoi(row[9])
-	textTokens, _ := strconv.Atoi(row[10])
-	imageTokens, _ := strconv.Atoi(row[11])
-	audioTokens, _ := strconv.Atoi(row[12])
-	videoTokens, _ := strconv.Atoi(row[13])
-	reasonRatio, _ := strconv.ParseFloat(row[14], 64)
-	arrivalTimeUs, _ := strconv.ParseInt(row[15], 10, 64)
-	sendTimeUs, _ := strconv.ParseInt(row[16], 10, 64)
-	firstChunkTimeUs, _ := strconv.ParseInt(row[17], 10, 64)
-	lastChunkTimeUs, _ := strconv.ParseInt(row[18], 10, 64)
-	numChunks, _ := strconv.Atoi(row[19])
+	requestID, err := strconv.Atoi(row[0])
+	if err != nil {
+		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
+	}
+	roundIndex, err := strconv.Atoi(row[5])
+	if err != nil {
+		return nil, fmt.Errorf("parsing round_index %q: %w", row[5], err)
+	}
+	streaming, err := strconv.ParseBool(row[7])
+	if err != nil {
+		return nil, fmt.Errorf("parsing streaming %q: %w", row[7], err)
+	}
+	inputTokens, err := strconv.Atoi(row[8])
+	if err != nil {
+		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[8], err)
+	}
+	outputTokens, err := strconv.Atoi(row[9])
+	if err != nil {
+		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[9], err)
+	}
+	textTokens, err := strconv.Atoi(row[10])
+	if err != nil {
+		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[10], err)
+	}
+	imageTokens, err := strconv.Atoi(row[11])
+	if err != nil {
+		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[11], err)
+	}
+	audioTokens, err := strconv.Atoi(row[12])
+	if err != nil {
+		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[12], err)
+	}
+	videoTokens, err := strconv.Atoi(row[13])
+	if err != nil {
+		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[13], err)
+	}
+	reasonRatio, err := strconv.ParseFloat(row[14], 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[14], err)
+	}
+	arrivalTimeUs, err := strconv.ParseInt(row[15], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[15], err)
+	}
+	sendTimeUs, err := strconv.ParseInt(row[16], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[16], err)
+	}
+	firstChunkTimeUs, err := strconv.ParseInt(row[17], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[17], err)
+	}
+	lastChunkTimeUs, err := strconv.ParseInt(row[18], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[18], err)
+	}
+	numChunks, err := strconv.Atoi(row[19])
+	if err != nil {
+		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[19], err)
+	}
 
 	status := "ok"
 	errorMessage := ""
