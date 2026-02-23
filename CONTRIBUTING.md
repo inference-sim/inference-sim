@@ -144,7 +144,7 @@ Follow `docs/process/hypothesis.md` for the full process. Key steps:
 3. Code review experiment code against simulator output format BEFORE running
 4. Run and document in `FINDINGS.md` using `docs/templates/hypothesis.md`
 
-**Review protocol:** Experiments are reviewed via three parallel external reviews (AI-assisted) per round, iterating until convergence. External contributors without AI review infrastructure should submit their `FINDINGS.md` via PR — maintainers will run the review protocol. Only standard-library Python packages are needed (json, math, re, sys, pathlib).
+**Review protocol:** Experiments are reviewed via five parallel internal reviewer agents per round, iterating until convergence (zero CRITICAL + zero IMPORTANT items from any reviewer). External contributors without AI review infrastructure should submit their `FINDINGS.md` via PR — maintainers will run the review protocol. Only standard-library Python packages are needed (json, math, re, sys, pathlib).
 
 | Document | Purpose |
 |---|---|
