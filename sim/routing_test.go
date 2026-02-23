@@ -9,7 +9,7 @@ import (
 // TestRoutingPolicy_Interface_Contract verifies the RoutingPolicy interface contract (BC-1).
 func TestRoutingPolicy_Interface_Contract(t *testing.T) {
 	// GIVEN a RoutingPolicy implementation (RoundRobin)
-	policy := NewRoutingPolicy("round-robin", nil)
+	policy := NewRoutingPolicy("round-robin", nil, 16)
 
 	// WHEN Route() is called with valid inputs
 	req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
@@ -40,7 +40,7 @@ func TestRoutingPolicy_Interface_Contract(t *testing.T) {
 // TestRoundRobin_DeterministicOrdering verifies BC-2.
 func TestRoundRobin_DeterministicOrdering(t *testing.T) {
 	// GIVEN RoundRobin policy
-	policy := NewRoutingPolicy("round-robin", nil)
+	policy := NewRoutingPolicy("round-robin", nil, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0"},
 		{ID: "instance_1"},
@@ -72,7 +72,7 @@ func TestRoundRobin_EmptySnapshots_Panics(t *testing.T) {
 		}
 	}()
 
-	policy := NewRoutingPolicy("round-robin", nil)
+	policy := NewRoutingPolicy("round-robin", nil, 16)
 	req := &Request{ID: "req1"}
 	policy.Route(req, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 1000})
 }
@@ -85,12 +85,12 @@ func TestNewRoutingPolicy_UnknownName_Panics(t *testing.T) {
 		}
 	}()
 
-	NewRoutingPolicy("invalid-policy", nil)
+	NewRoutingPolicy("invalid-policy", nil, 16)
 }
 
 // TestNewRoutingPolicy_DefaultName verifies empty string defaults to round-robin behavior.
 func TestNewRoutingPolicy_DefaultName(t *testing.T) {
-	policy := NewRoutingPolicy("", nil)
+	policy := NewRoutingPolicy("", nil, 16)
 	if policy == nil {
 		t.Fatal("Expected non-nil policy for empty string, got nil")
 	}
@@ -106,7 +106,7 @@ func TestNewRoutingPolicy_DefaultName(t *testing.T) {
 
 // TestLeastLoaded_LoadBasedSelection verifies BC-3.
 func TestLeastLoaded_LoadBasedSelection(t *testing.T) {
-	policy := NewRoutingPolicy("least-loaded", nil)
+	policy := NewRoutingPolicy("least-loaded", nil, 16)
 
 	tests := []struct {
 		name      string
@@ -155,7 +155,7 @@ func TestLeastLoaded_LoadBasedSelection(t *testing.T) {
 // TestLeastLoaded_PendingRequests_BreaksTie verifies that PendingRequests is included
 // in load calculation, preventing pile-on at high request rates (#175).
 func TestLeastLoaded_PendingRequests_BreaksTie(t *testing.T) {
-	policy := NewRoutingPolicy("least-loaded", nil)
+	policy := NewRoutingPolicy("least-loaded", nil, 16)
 
 	// GIVEN two instances with equal QueueDepth+BatchSize but different PendingRequests
 	snapshots := []RoutingSnapshot{
@@ -181,7 +181,7 @@ func TestLeastLoaded_EmptySnapshots_Panics(t *testing.T) {
 		}
 	}()
 
-	policy := NewRoutingPolicy("least-loaded", nil)
+	policy := NewRoutingPolicy("least-loaded", nil, 16)
 	req := &Request{ID: "req1"}
 	policy.Route(req, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 1000})
 }
@@ -191,7 +191,7 @@ func TestLeastLoaded_EmptySnapshots_Panics(t *testing.T) {
 // TestWeightedScoring_DefaultScorers_RoutesToBestComposite verifies BC-17-6 (argmax).
 func TestWeightedScoring_DefaultScorers_RoutesToBestComposite(t *testing.T) {
 	// GIVEN weighted policy with default scorers and instances with varying load/utilization
-	policy := NewRoutingPolicy("weighted", nil)
+	policy := NewRoutingPolicy("weighted", nil, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 10, BatchSize: 0, KVUtilization: 0.8},
 		{ID: "instance_1", QueueDepth: 2, BatchSize: 0, KVUtilization: 0.2},
@@ -214,7 +214,7 @@ func TestWeightedScoring_DefaultScorers_RoutesToBestComposite(t *testing.T) {
 
 // TestWeightedScoring_HighestScoreWins verifies BC-17-6: target has the highest score.
 func TestWeightedScoring_HighestScoreWins(t *testing.T) {
-	policy := NewRoutingPolicy("weighted", nil)
+	policy := NewRoutingPolicy("weighted", nil, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 5, KVUtilization: 0.5},
 		{ID: "instance_1", QueueDepth: 1, KVUtilization: 0.1},
@@ -249,12 +249,12 @@ func TestWeightedScoring_WeightsNormalized(t *testing.T) {
 		{Name: "queue-depth", Weight: 3.0},
 		{Name: "kv-utilization", Weight: 2.0},
 		{Name: "load-balance", Weight: 2.0},
-	})
+	}, 16)
 	scaled := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "queue-depth", Weight: 6.0},
 		{Name: "kv-utilization", Weight: 4.0},
 		{Name: "load-balance", Weight: 4.0},
-	})
+	}, 16)
 
 	d1 := unnormalized.Route(&Request{ID: "r1"}, &RouterState{Snapshots: snapshots, Clock: 1000})
 	d2 := scaled.Route(&Request{ID: "r2"}, &RouterState{Snapshots: snapshots, Clock: 1000})
@@ -268,7 +268,7 @@ func TestWeightedScoring_WeightsNormalized(t *testing.T) {
 
 // TestWeightedScoring_SingleScorer_LoadBalance verifies single-scorer configuration.
 func TestWeightedScoring_SingleScorer_LoadBalance(t *testing.T) {
-	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "load-balance", Weight: 1.0}})
+	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "load-balance", Weight: 1.0}}, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 10},
 		{ID: "instance_1", QueueDepth: 2},
@@ -296,14 +296,14 @@ func TestWeightedScoring_DifferentScorerWeights_FlipDecision(t *testing.T) {
 	qdDominant := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "queue-depth", Weight: 9.0},
 		{Name: "kv-utilization", Weight: 1.0},
-	})
+	}, 16)
 	d1 := qdDominant.Route(&Request{ID: "r1"}, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// WHEN using kv-utilization-dominant weights
 	kvDominant := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "queue-depth", Weight: 1.0},
 		{Name: "kv-utilization", Weight: 9.0},
-	})
+	}, 16)
 	d2 := kvDominant.Route(&Request{ID: "r2"}, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// THEN different weights produce different decisions
@@ -314,7 +314,7 @@ func TestWeightedScoring_DifferentScorerWeights_FlipDecision(t *testing.T) {
 
 // TestWeightedScoring_AllIdle_NoDivisionByZero verifies BC-17-9 (no NaN/Inf).
 func TestWeightedScoring_AllIdle_NoDivisionByZero(t *testing.T) {
-	policy := NewRoutingPolicy("weighted", nil)
+	policy := NewRoutingPolicy("weighted", nil, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.0},
 		{ID: "instance_1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.0},
@@ -343,14 +343,14 @@ func TestWeightedScoring_EmptySnapshots_Panics(t *testing.T) {
 		}
 	}()
 
-	policy := NewRoutingPolicy("weighted", nil)
+	policy := NewRoutingPolicy("weighted", nil, 16)
 	policy.Route(&Request{ID: "req1"}, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 1000})
 }
 
 // TestWeightedScoring_NilConfigs_UsesDefaults verifies default scorer configuration.
 func TestWeightedScoring_NilConfigs_UsesDefaults(t *testing.T) {
 	// GIVEN nil scorerConfigs
-	policy := NewRoutingPolicy("weighted", nil)
+	policy := NewRoutingPolicy("weighted", nil, 16)
 
 	// WHEN routing a request with differentiated snapshots
 	snapshots := []RoutingSnapshot{
@@ -371,7 +371,7 @@ func TestWeightedScoring_NilConfigs_UsesDefaults(t *testing.T) {
 // TestWeightedScoring_PendingRequests_AffectsScorers verifies that PendingRequests
 // affects queue-depth and load-balance scorers.
 func TestWeightedScoring_PendingRequests_AffectsScorers(t *testing.T) {
-	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "load-balance", Weight: 1.0}})
+	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "load-balance", Weight: 1.0}}, 16)
 
 	// GIVEN two instances with equal QueueDepth but different PendingRequests
 	snapshots := []RoutingSnapshot{
@@ -390,7 +390,7 @@ func TestWeightedScoring_PendingRequests_AffectsScorers(t *testing.T) {
 
 // TestWeightedScoring_EmptyConfigs_UsesDefaults verifies that empty scorer slice falls back to defaults.
 func TestWeightedScoring_EmptyConfigs_UsesDefaults(t *testing.T) {
-	policy := NewRoutingPolicy("weighted", []ScorerConfig{})
+	policy := NewRoutingPolicy("weighted", []ScorerConfig{}, 16)
 	snapshots := []RoutingSnapshot{{ID: "a", QueueDepth: 1}}
 	decision := policy.Route(&Request{ID: "r1"}, &RouterState{Snapshots: snapshots, Clock: 1000})
 	if decision.TargetInstance != "a" {
@@ -402,7 +402,7 @@ func TestWeightedScoring_EmptyConfigs_UsesDefaults(t *testing.T) {
 
 // TestPrefixAffinity_CacheHit verifies BC-5 (cache-aware routing).
 func TestPrefixAffinity_CacheHit(t *testing.T) {
-	policy := NewRoutingPolicy("prefix-affinity", nil)
+	policy := NewRoutingPolicy("prefix-affinity", nil, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 10, BatchSize: 5},
 		{ID: "instance_1", QueueDepth: 2, BatchSize: 1},
@@ -424,7 +424,7 @@ func TestPrefixAffinity_CacheHit(t *testing.T) {
 
 // TestPrefixAffinity_CacheMiss verifies fallback to LeastLoaded.
 func TestPrefixAffinity_CacheMiss(t *testing.T) {
-	policy := NewRoutingPolicy("prefix-affinity", nil)
+	policy := NewRoutingPolicy("prefix-affinity", nil, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 10, BatchSize: 5}, // load=15
 		{ID: "instance_1", QueueDepth: 2, BatchSize: 1},  // load=3 (min)
@@ -440,7 +440,7 @@ func TestPrefixAffinity_CacheMiss(t *testing.T) {
 
 // TestPrefixAffinity_DifferentPrefixes verifies distinct hashing.
 func TestPrefixAffinity_DifferentPrefixes(t *testing.T) {
-	policy := NewRoutingPolicy("prefix-affinity", nil)
+	policy := NewRoutingPolicy("prefix-affinity", nil, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 5, BatchSize: 5},
 		{ID: "instance_1", QueueDepth: 5, BatchSize: 5},
@@ -475,8 +475,8 @@ func TestPrefixAffinity_HashMatchesKVCache(t *testing.T) {
 
 // TestPrefixAffinity_NoStateLeak verifies BC-8 (no cross-simulation state leak).
 func TestPrefixAffinity_NoStateLeak(t *testing.T) {
-	policy1 := NewRoutingPolicy("prefix-affinity", nil)
-	policy2 := NewRoutingPolicy("prefix-affinity", nil)
+	policy1 := NewRoutingPolicy("prefix-affinity", nil, 16)
+	policy2 := NewRoutingPolicy("prefix-affinity", nil, 16)
 
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 5, BatchSize: 5},
@@ -505,13 +505,13 @@ func TestPrefixAffinity_EmptySnapshots_Panics(t *testing.T) {
 		}
 	}()
 
-	policy := NewRoutingPolicy("prefix-affinity", nil)
+	policy := NewRoutingPolicy("prefix-affinity", nil, 16)
 	policy.Route(&Request{ID: "req1", InputTokens: []int{1}}, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 1000})
 }
 
 // TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded verifies stale cache path.
 func TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded(t *testing.T) {
-	policy := NewRoutingPolicy("prefix-affinity", nil)
+	policy := NewRoutingPolicy("prefix-affinity", nil, 16)
 
 	// First call: maps prefix to instance_1 (least loaded)
 	snapshots1 := []RoutingSnapshot{
@@ -544,7 +544,7 @@ func TestRoutingDecision_PriorityHint_DefaultZero(t *testing.T) {
 
 	for _, name := range policyNames {
 		t.Run(name, func(t *testing.T) {
-			policy := NewRoutingPolicy(name, nil)
+			policy := NewRoutingPolicy(name, nil, 16)
 			state := &RouterState{
 				Snapshots: []RoutingSnapshot{{ID: "instance_0", QueueDepth: 1}},
 				Clock:     1000,
@@ -563,7 +563,7 @@ func TestRoutingDecision_PriorityHint_DefaultZero(t *testing.T) {
 
 // TestAlwaysBusiest_RouteToHighestLoad verifies BC-6.
 func TestAlwaysBusiest_RouteToHighestLoad(t *testing.T) {
-	policy := NewRoutingPolicy("always-busiest", nil)
+	policy := NewRoutingPolicy("always-busiest", nil, 16)
 	req := &Request{ID: "r1", InputTokens: []int{1, 2}}
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 2, BatchSize: 1},
@@ -581,7 +581,7 @@ func TestAlwaysBusiest_RouteToHighestLoad(t *testing.T) {
 // TestAlwaysBusiest_PendingRequests_IncludedInLoad verifies that PendingRequests
 // is included in AlwaysBusiest load calculation (#175).
 func TestAlwaysBusiest_PendingRequests_IncludedInLoad(t *testing.T) {
-	policy := NewRoutingPolicy("always-busiest", nil)
+	policy := NewRoutingPolicy("always-busiest", nil, 16)
 
 	// GIVEN two instances with equal QueueDepth+BatchSize but different PendingRequests
 	snapshots := []RoutingSnapshot{
@@ -605,6 +605,6 @@ func TestAlwaysBusiest_EmptySnapshots_Panics(t *testing.T) {
 			t.Error("expected panic on empty snapshots")
 		}
 	}()
-	policy := NewRoutingPolicy("always-busiest", nil)
+	policy := NewRoutingPolicy("always-busiest", nil, 16)
 	policy.Route(&Request{ID: "r1"}, &RouterState{Snapshots: []RoutingSnapshot{}, Clock: 0})
 }

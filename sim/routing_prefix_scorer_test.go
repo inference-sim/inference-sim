@@ -23,7 +23,7 @@ func TestPrefixAffinityScorer_NoHistory_ZeroScores(t *testing.T) {
 	// GIVEN a weighted policy with prefix-affinity scorer (no prior routing)
 	policy := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "prefix-affinity", Weight: 1.0},
-	})
+	}, 16)
 
 	snapshots := []RoutingSnapshot{
 		{ID: "inst_0", QueueDepth: 0},
@@ -46,7 +46,7 @@ func TestPrefixAffinityScorer_NoHistory_ZeroScores(t *testing.T) {
 func TestPrefixAffinityScorer_ObserverBuildsAffinity(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "prefix-affinity", Weight: 1.0},
-	})
+	}, 16)
 
 	snapshots := []RoutingSnapshot{
 		{ID: "inst_0", QueueDepth: 0},
@@ -73,7 +73,7 @@ func TestPrefixAffinityScorer_ObserverBuildsAffinity(t *testing.T) {
 func TestPrefixAffinityScorer_ProportionalScoring(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "prefix-affinity", Weight: 1.0},
-	})
+	}, 16)
 
 	// Set up: 4 blocks per request at block_size=16
 	snapshots := []RoutingSnapshot{
@@ -114,7 +114,7 @@ func TestPrefixAffinityScorer_ProportionalScoring(t *testing.T) {
 func TestPrefixAffinityScorer_ShortPrefix_ZeroScore(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "prefix-affinity", Weight: 1.0},
-	})
+	}, 16)
 
 	snapshots := []RoutingSnapshot{{ID: "inst_0"}, {ID: "inst_1"}}
 
@@ -165,11 +165,11 @@ func TestPrefixAffinityScorer_Deterministic(t *testing.T) {
 	policy1 := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "prefix-affinity", Weight: 3.0},
 		{Name: "queue-depth", Weight: 2.0},
-	})
+	}, 16)
 	policy2 := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "prefix-affinity", Weight: 3.0},
 		{Name: "queue-depth", Weight: 2.0},
-	})
+	}, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "inst_0", QueueDepth: 0},
 		{ID: "inst_1", QueueDepth: 0},
@@ -220,7 +220,7 @@ func TestPrefixAffinityScorer_WeightSensitivity_ConcentratesRouting(t *testing.T
 	affinityPolicy := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "prefix-affinity", Weight: 5.0},
 		{Name: "load-balance", Weight: 1.0},
-	})
+	}, 16)
 	affinityCounts := make(map[string]int)
 	for _, req := range buildWorkload() {
 		d := affinityPolicy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
@@ -230,7 +230,7 @@ func TestPrefixAffinityScorer_WeightSensitivity_ConcentratesRouting(t *testing.T
 	// Run with load-only weights (no prefix awareness)
 	loadPolicy := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "load-balance", Weight: 1.0},
-	})
+	}, 16)
 	loadCounts := make(map[string]int)
 	for _, req := range buildWorkload() {
 		d := loadPolicy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
@@ -278,7 +278,7 @@ func TestPrefixAffinityScorer_INV1_INV2_Conformance(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", []ScorerConfig{
 		{Name: "prefix-affinity", Weight: 3.0},
 		{Name: "queue-depth", Weight: 2.0},
-	})
+	}, 16)
 
 	snapshots := []RoutingSnapshot{
 		{ID: "inst_0", QueueDepth: 2},
@@ -321,7 +321,7 @@ func TestPrefixAffinityScorer_NonWeightedPolicies_Unchanged(t *testing.T) {
 
 	for _, name := range policies {
 		t.Run(name, func(t *testing.T) {
-			policy := NewRoutingPolicy(name, nil)
+			policy := NewRoutingPolicy(name, nil, 16)
 			req := &Request{ID: "r1", InputTokens: []int{1, 2, 3}}
 			d := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 			// Just verify it doesn't panic and returns valid target

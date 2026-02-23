@@ -201,6 +201,7 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 // for finite-duration simulations; large-cardinality workloads will consume proportional memory.
 type PrefixAffinity struct {
 	prefixMap map[string]string // prefix hash → instance ID (unbounded; grows with unique prefix count)
+	blockSize int64             // KV cache block size for block-aligned prefix hashing
 }
 
 // Route implements RoutingPolicy for PrefixAffinity.
@@ -266,7 +267,7 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 // If scorerConfigs is nil/empty for "weighted", DefaultScorerConfigs() is used.
 // Non-weighted policies ignore scorerConfigs.
 // Panics on unrecognized names.
-func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig) RoutingPolicy {
+func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
@@ -282,7 +283,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig) RoutingPolicy {
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, defaultBlockSize)
+			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize))
 			scorers[i] = scorer
 			if obs != nil {
 				observers = append(observers, obs)
@@ -291,7 +292,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig) RoutingPolicy {
 		weights := normalizeScorerWeights(scorerConfigs)
 		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
 	case "prefix-affinity":
-		return &PrefixAffinity{prefixMap: make(map[string]string)}
+		return &PrefixAffinity{prefixMap: make(map[string]string), blockSize: blockSize}
 	case "always-busiest":
 		return &AlwaysBusiest{}
 	default:

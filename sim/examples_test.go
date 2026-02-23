@@ -84,7 +84,7 @@ func TestExampleConfigs_EPPEstimatePrefix_RoutingBehavior(t *testing.T) {
 	require.NoError(t, err)
 
 	// WHEN creating a routing policy from the config
-	policy := NewRoutingPolicy(bundle.Routing.Policy, bundle.Routing.Scorers)
+	policy := NewRoutingPolicy(bundle.Routing.Policy, bundle.Routing.Scorers, 16)
 
 	// GIVEN instances with different loads
 	snapshots := []RoutingSnapshot{
@@ -120,7 +120,7 @@ func TestExampleConfigs_EPPPrecisePrefix_RoutingBehavior(t *testing.T) {
 	require.NoError(t, err)
 
 	// WHEN creating a routing policy from the config
-	policy := NewRoutingPolicy(bundle.Routing.Policy, bundle.Routing.Scorers)
+	policy := NewRoutingPolicy(bundle.Routing.Policy, bundle.Routing.Scorers, 16)
 
 	// GIVEN instances with different loads and utilizations
 	snapshots := []RoutingSnapshot{
@@ -156,7 +156,7 @@ func TestExampleConfigs_EPPPrecisePrefix_WeightRatioEffect(t *testing.T) {
 	require.NoError(t, err)
 
 	// WHEN creating a routing policy from the config
-	policy := NewRoutingPolicy(bundle.Routing.Policy, bundle.Routing.Scorers)
+	policy := NewRoutingPolicy(bundle.Routing.Policy, bundle.Routing.Scorers, 16)
 
 	// GIVEN instances where prefix-affinity and load-balancing disagree:
 	// - First, route a request to build prefix cache
@@ -215,7 +215,7 @@ func TestExampleConfigs_EPPEstimatePrefix_LoadBalanceMonotonicity(t *testing.T) 
 	assert.True(t, hasLoadBalance, "load-balance scorer should be present")
 
 	// WHEN routing through the policy with instances of varying load
-	policy := NewRoutingPolicy(bundle.Routing.Policy, bundle.Routing.Scorers)
+	policy := NewRoutingPolicy(bundle.Routing.Policy, bundle.Routing.Scorers, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "low", QueueDepth: 0, BatchSize: 0},   // lowest load
 		{ID: "mid", QueueDepth: 5, BatchSize: 0},   // medium load
@@ -255,7 +255,7 @@ func TestExampleConfigs_EPPPrecisePrefix_QueueDepthMonotonicity(t *testing.T) {
 	assert.True(t, hasQueueDepth, "queue-depth scorer should be present")
 
 	// WHEN routing through a queue-depth-only policy with instances of varying load
-	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "queue-depth", Weight: 1.0}})
+	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "queue-depth", Weight: 1.0}}, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "empty", QueueDepth: 0, BatchSize: 0},   // lowest load
 		{ID: "half", QueueDepth: 5, BatchSize: 0},    // medium load
@@ -295,7 +295,7 @@ func TestExampleConfigs_EPPPrecisePrefix_KVUtilizationMonotonicity(t *testing.T)
 	assert.True(t, hasKVUtil, "kv-utilization scorer should be present")
 
 	// WHEN routing through a kv-utilization-only policy with instances of varying utilization
-	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "kv-utilization", Weight: 1.0}})
+	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "kv-utilization", Weight: 1.0}}, 16)
 	snapshots := []RoutingSnapshot{
 		{ID: "empty", KVUtilization: 0.0},  // lowest utilization
 		{ID: "half", KVUtilization: 0.5},   // medium utilization
