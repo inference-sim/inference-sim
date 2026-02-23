@@ -4,93 +4,138 @@ import (
 	"testing"
 )
 
-// TestPreempt_EmptyBatch_ReturnsFalse verifies BC-1 (#293):
-// preempt() must return false (not panic) when the batch is empty.
+// TestPreempt_EmptyBatch_ReturnsFalse verifies BC-6 (#293):
+// preemption with empty batch must not panic.
 func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
-	// GIVEN a simulator with minimal KV cache (2 blocks, block size 16)
+	// GIVEN a batch formation with minimal KV cache (2 blocks, block size 16)
 	config := SimConfig{
-		TotalKVBlocks:     2,
-		BlockSizeTokens:   16,
-		MaxRunningReqs:    10,
+		TotalKVBlocks:      2,
+		BlockSizeTokens:    16,
+		MaxRunningReqs:     10,
 		MaxScheduledTokens: 10000,
-		Horizon:           1000000,
-		BetaCoeffs:        []float64{100, 1, 1},
-		AlphaCoeffs:       []float64{100, 1, 100},
+		Horizon:            1000000,
+		BetaCoeffs:         []float64{100, 1, 1},
+		AlphaCoeffs:        []float64{100, 1, 100},
 	}
-	s, err := NewSimulator(config)
+	lm, err := NewLatencyModel(config)
 	if err != nil {
-		t.Fatalf("NewSimulator: %v", err)
+		t.Fatalf("NewLatencyModel: %v", err)
 	}
+	bf := NewBatchFormation(config, lm)
+	kvCache := NewKVStore(config)
 
 	// AND the running batch is empty
-	s.RunningBatch = &Batch{Requests: []*Request{}}
-
-	// AND a request that needs far more blocks than available
+	// AND a request that needs far more blocks than available, in the wait queue
 	req := &Request{
-		ID:          "large-req",
-		InputTokens: make([]int, 200), // needs ~13 blocks, only 2 available
+		ID:           "large-req",
+		InputTokens:  make([]int, 200), // needs ~13 blocks, only 2 available
+		OutputTokens: make([]int, 1),
+		State:        StateQueued,
+	}
+	wq := &WaitQueue{}
+	wq.Enqueue(req)
+
+	ctx := BatchContext{
+		RunningBatch:          &Batch{Requests: []*Request{}},
+		WaitQ:                 wq,
+		KVCache:               kvCache,
+		MaxScheduledTokens:    10000,
+		MaxRunningReqs:        10,
+		PrefillTokenThreshold: 0,
+		Now:                   0,
+		StepCount:             0,
+		ComputedTokens:        make(map[string]int64),
 	}
 
-	// WHEN preempt is called
-	// THEN it must return false (not panic)
-	result := s.preempt(req, 0, 200)
-	if result {
-		t.Error("expected preempt to return false when batch is empty and allocation fails")
+	// WHEN FormBatch is called
+	// THEN it must not panic
+	result := bf.FormBatch(ctx)
+
+	// AND the large request must not be in the batch
+	for _, r := range result.RunningBatch.Requests {
+		if r.ID == "large-req" {
+			t.Error("large request should not be in batch when KV blocks insufficient")
+		}
 	}
 
 	// AND KV cache conservation must hold (INV-4): no blocks leaked
-	if s.KVCache.UsedBlocks() != 0 {
-		t.Errorf("expected 0 used blocks after failed allocation on empty batch, got %d", s.KVCache.UsedBlocks())
+	if kvCache.UsedBlocks() != 0 {
+		t.Errorf("expected 0 used blocks after failed allocation on empty batch, got %d", kvCache.UsedBlocks())
 	}
 }
 
-// TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse verifies BC-2 (#297):
-// preempt() must not loop forever when KV blocks are insufficient for any request.
+// TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse verifies BC-4 (#297):
+// preemption evicts until batch is empty, then circuit breaker fires.
 func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
-	// GIVEN a simulator with very small KV cache
+	// GIVEN a batch formation with very small KV cache (2 blocks * 16 = 32 tokens)
 	config := SimConfig{
-		TotalKVBlocks:     2,
-		BlockSizeTokens:   16,
-		MaxRunningReqs:    10,
+		TotalKVBlocks:      2,
+		BlockSizeTokens:    16,
+		MaxRunningReqs:     10,
 		MaxScheduledTokens: 10000,
-		Horizon:           1000000,
-		BetaCoeffs:        []float64{100, 1, 1},
-		AlphaCoeffs:       []float64{100, 1, 100},
+		Horizon:            1000000,
+		BetaCoeffs:         []float64{100, 1, 1},
+		AlphaCoeffs:        []float64{100, 1, 100},
 	}
-	s, err := NewSimulator(config)
+	lm, err := NewLatencyModel(config)
 	if err != nil {
-		t.Fatalf("NewSimulator: %v", err)
+		t.Fatalf("NewLatencyModel: %v", err)
 	}
+	bf := NewBatchFormation(config, lm)
+	kvCache := NewKVStore(config)
 
-	// AND one small request in the running batch
+	// AND one small request in the running batch with KV blocks allocated
 	existing := &Request{
-		ID:          "existing",
-		InputTokens: make([]int, 10),
-		State:       StateRunning,
+		ID:           "existing",
+		InputTokens:  make([]int, 10),
+		OutputTokens: make([]int, 1),
+		State:        StateRunning,
 	}
-	s.RunningBatch = &Batch{Requests: []*Request{existing}}
-	// Allocate some blocks for the existing request
-	if ok := s.KVCache.AllocateKVBlocks(existing, 0, 10, []int64{}); !ok {
+	if ok := kvCache.AllocateKVBlocks(existing, 0, 10, []int64{}); !ok {
 		t.Fatal("setup: failed to allocate KV blocks for existing request")
 	}
 
-	// AND a new request that needs more blocks than total capacity
-	req := &Request{
-		ID:          "huge-req",
-		InputTokens: make([]int, 200),
+	// AND a huge request also in the running batch at ProgressIndex=0 (needs prefill)
+	// This forces Phase 1 to try allocating for huge, fail, and trigger preemption.
+	huge := &Request{
+		ID:           "huge-req",
+		InputTokens:  make([]int, 200), // needs 13 blocks, only 2 total
+		OutputTokens: make([]int, 1),
+		State:        StateRunning,
 	}
 
-	// WHEN preempt is called (should evict existing, then fail on empty batch)
-	result := s.preempt(req, 0, 200)
-
-	// THEN it must return false (not hang or panic)
-	if result {
-		t.Error("expected preempt to return false when blocks are insufficient for any request")
+	// huge is first in batch (processed first in Phase 1), existing is at tail (evicted first)
+	computedTokens := map[string]int64{"existing": 10, "huge-req": 0}
+	ctx := BatchContext{
+		RunningBatch:          &Batch{Requests: []*Request{huge, existing}},
+		WaitQ:                 &WaitQueue{},
+		KVCache:               kvCache,
+		MaxScheduledTokens:    10000,
+		MaxRunningReqs:        10,
+		PrefillTokenThreshold: 0,
+		Now:                   0,
+		StepCount:             0,
+		ComputedTokens:        computedTokens,
 	}
 
-	// AND KV cache conservation must hold (INV-4): all blocks free after eviction
-	usedBlocks := s.KVCache.UsedBlocks()
+	// WHEN FormBatch is called
+	result := bf.FormBatch(ctx)
+
+	// THEN preemption must have happened
+	if !result.PreemptionHappened {
+		t.Fatal("expected preemption to occur")
+	}
+
+	// AND KV cache conservation must hold (INV-4): after full eviction, all blocks freed
+	usedBlocks := kvCache.UsedBlocks()
 	if usedBlocks != 0 {
 		t.Errorf("expected 0 used blocks after all requests evicted, got %d", usedBlocks)
+	}
+
+	// AND huge request should not be in the batch (insufficient blocks even after evicting existing)
+	for _, r := range result.RunningBatch.Requests {
+		if r.ID == "huge-req" {
+			t.Error("huge request should not be in batch")
+		}
 	}
 }

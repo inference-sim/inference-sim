@@ -98,6 +98,26 @@ Examples:
 - See `BlackboxLatencyModel` in `sim/latency_model.go` for a simple stateless model (alpha/beta regression)
 - See `RooflineLatencyModel` in `sim/latency_model.go` for a model that uses hardware config (FLOPs/bandwidth)
 
+## Adding New Batch Formation Strategies
+
+To add a new batch formation strategy (e.g., disaggregated prefill/decode, speculative decoding, continuous batching without preemption):
+
+1. **Implement the `BatchFormation` interface** in `sim/batch_formation.go` (or a new file for complex strategies) — 1 method:
+   - `FormBatch(ctx BatchContext) BatchResult` — compose the running batch for the next step
+   - The implementation receives `BatchContext` with: RunningBatch, WaitQ, KVCache, token budget, batch size limit, chunked prefill threshold, simulation time, step count, and ComputedTokens map
+   - The implementation MUST update `ctx.ComputedTokens[req.ID]` for each request that receives new tokens (Phase 2 of `Step()` reads this map to advance `ProgressIndex`)
+   - The implementation may mutate `WaitQ` (dequeue/prepend) and `KVCache` (allocate/release) during batch formation
+   - The implementation MUST NOT schedule events or record metrics — return decisions in `BatchResult`, the Simulator applies them
+2. **Register in `NewBatchFormation` factory** in `sim/batch_formation.go`: add a selection branch (currently returns `VLLMBatchFormation` unconditionally — a future PR will add `SimConfig.BatchFormation` field for strategy selection)
+3. **Add behavioral tests** — token budget enforcement, batch size limits, KV conservation, preemption behavior (if applicable), FCFS ordering
+4. Extension friction: **2 touch points** (implementation + factory registration)
+
+**Note:** Currently only `VLLMBatchFormation` exists. Adding a second strategy will also require: (a) a `BatchFormation string` field in `SimConfig`, (b) a CLI flag in `cmd/root.go`, (c) validation in `sim/bundle.go`, (d) selection logic in `NewBatchFormation`.
+
+Examples:
+- See `VLLMBatchFormation` in `sim/batch_formation.go` for the vLLM FCFS + chunked-prefill + preemption strategy
+- See `preemptForTokens` for the KV allocation + eviction loop pattern
+
 ## Adding New Per-Request Metric Fields
 
 To add a new field to per-request JSON output (appears in `--results-path` output):

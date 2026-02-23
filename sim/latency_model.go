@@ -8,7 +8,7 @@ import "fmt"
 // All time estimates are in microseconds (ticks).
 type LatencyModel interface {
 	// StepTime estimates the duration of one batch step given the running batch.
-	// Precondition: each request in batch has NumNewTokens set by makeRunningBatch().
+	// Precondition: each request in batch has NumNewTokens set by BatchFormation.FormBatch().
 	StepTime(batch []*Request) int64
 
 	// QueueingTime estimates the arrival-to-queue delay for a request.
@@ -39,7 +39,7 @@ func (m *BlackboxLatencyModel) StepTime(batch []*Request) int64 {
 			// Prefill phase: NumNewTokens are cache-miss tokens
 			totalCacheMissTokens += int64(req.NumNewTokens)
 		} else if len(req.OutputTokens) > 0 {
-			// Decode phase: NumNewTokens is 1 (set by makeRunningBatch)
+			// Decode phase: NumNewTokens is 1 (set by FormBatch)
 			totalDecodeTokens += int64(req.NumNewTokens)
 		}
 	}

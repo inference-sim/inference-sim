@@ -43,7 +43,7 @@ go test -cover ./...
 
 The simulator uses a discrete-event architecture with a min-heap event queue:
 
-- **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig) (*Simulator, error)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (`makeRunningBatch`), step execution with phased metric recording (`recordQueueSnapshots`, `recordKVUsageMetrics`, `recordRequestCompletion`), observation methods (`QueueDepth()`, `BatchSize()`, `CurrentClock()`, `SimHorizon()`)
+- **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig) (*Simulator, error)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (delegated to `BatchFormation` interface), step execution with phased metric recording (`recordQueueSnapshots`, `recordKVUsageMetrics`, `recordRequestCompletion`), observation methods (`QueueDepth()`, `BatchSize()`, `CurrentClock()`, `SimHorizon()`)
 - **admission.go**: `AdmissionPolicy` interface (accepts `*RouterState`), `AlwaysAdmit`, `TokenBucket`, `RejectAll`, `NewAdmissionPolicy` factory
 - **routing.go**: `RoutingPolicy` interface (accepts `*RouterState`), `RoutingSnapshot` (with `EffectiveLoad()` for canonical load calculation), `RoutingDecision` (with `Priority` hint), `RoundRobin`, `LeastLoaded`, `WeightedScoring` (composable scorer pipeline), `PrefixAffinity`, `AlwaysBusiest` templates, `NewRoutingPolicy` factory
 - **routing_scorers.go**: `ScorerConfig`, scorer implementations (queue-depth, kv-utilization, load-balance), `ParseScorerConfigs`, `IsValidScorer`, `DefaultScorerConfigs`, `newScorerWithObserver` factory
@@ -59,7 +59,8 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 - **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching, `CacheHits`/`CacheMisses` counters, transactional `AllocateKVBlocks` with `rollbackAllocation` on mid-loop failure
 - **kv_store.go**: `KVStore` interface (11 methods: +`SetClock`, +`ConsumePendingTransferLatency`), `NewKVStore` factory with input validation (returns single-tier or tiered based on config)
 - **kvcache_tiered.go**: `TieredKVCache` (GPU+CPU composition), `cpuTier`, `offloadedBlock`, offload/reload/transfer latency, `PendingTransferLatency()` (pure query), `ConsumePendingTransferLatency()` (read-and-clear)
-- **batch.go**: Batch formation respecting token budgets and batch size limits
+- **batch.go**: Batch struct (group of requests processed in a single forward pass)
+- **batch_formation.go**: `BatchFormation` interface, `BatchContext`/`BatchResult` types, `VLLMBatchFormation` (FCFS + chunked-prefill + preemption), `NewBatchFormation` factory
 - **queue.go**: FIFO wait queue for pending requests
 
 ### Cluster Simulation (`sim/cluster/`)

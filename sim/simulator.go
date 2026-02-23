@@ -145,9 +145,9 @@ type Simulator struct {
 	stepEvent                 Event
 	stepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
-	reqNumComputedTokens   map[string]int64
-	preemptionHappened     bool
-	guideLLMConfig         *GuideLLMConfig
+	reqNumComputedTokens map[string]int64
+	batchFormation       BatchFormation
+	guideLLMConfig       *GuideLLMConfig
 	model                  string
 	gpu                    string
 	tracesWorkloadFilePath string
@@ -174,6 +174,7 @@ func NewSimulator(cfg SimConfig) (*Simulator, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating latency model: %w", err)
 	}
+	batchFormation := NewBatchFormation(cfg, latencyModel)
 
 	s := &Simulator{
 		Clock:                     0,
@@ -189,7 +190,7 @@ func NewSimulator(cfg SimConfig) (*Simulator, error) {
 		stepEvent:                 nil,
 		stepCount:                 0,
 		reqNumComputedTokens:      make(map[string]int64),
-		preemptionHappened:        false,
+		batchFormation:            batchFormation,
 		guideLLMConfig:            cfg.GuideLLMConfig,
 		tracesWorkloadFilePath:    cfg.TracesWorkloadFilePath,
 		model:                     cfg.Model,
@@ -317,158 +318,6 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	sim.Metrics.TotalInputTokens += len(r.InputTokens)
 }
 
-func (sim *Simulator) preempt(req *Request, now int64, numNewTokens int64) bool {
-
-	for {
-		if ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int64{}); !ok {
-			// Could not allocate (e.g., no free blocks)
-
-			// Circuit breaker: if batch is empty and allocation still fails,
-			// the KV cache is too small for this request. Return false instead
-			// of panicking on empty slice access. (#293, #297, R19)
-			if len(sim.RunningBatch.Requests) == 0 {
-				logrus.Warnf("[tick %07d] preemption: KV cache too small for request %s (need %d tokens, no running requests to evict)",
-					now, req.ID, numNewTokens)
-				return false
-			}
-
-			sim.preemptionHappened = true
-			sim.Metrics.PreemptionCount++
-			preemptionDelay := sim.latencyModel.PreemptionProcessingTime()
-			preemptedRequest := sim.RunningBatch.Requests[len(sim.RunningBatch.Requests)-1]
-			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", now, preemptedRequest.ID)
-			sim.RunningBatch.Requests = sim.RunningBatch.Requests[:len(sim.RunningBatch.Requests)-1]
-			sim.Schedule(&PreemptionEvent{
-				time:    now + preemptionDelay,
-				Request: preemptedRequest,
-			})
-
-			preemptedRequest.State = StateQueued
-			preemptedRequest.ProgressIndex = 0
-			sim.KVCache.ReleaseKVBlocks(preemptedRequest)
-			sim.WaitQ.PrependFront(preemptedRequest)
-
-			if preemptedRequest == req {
-				return false
-			}
-		} else {
-			return true
-		}
-	}
-
-}
-
-func (sim *Simulator) makeRunningBatch(now int64) {
-	if sim.RunningBatch == nil {
-		sim.RunningBatch = &Batch{}
-	}
-
-	// clear PreemptionHappened if it doesn't exist
-	sim.preemptionHappened = false
-
-	// allocate a max token budget at the start of each Step
-	tokenBudget := sim.maxScheduledTokens
-
-	// First run requests in the RunningBatch.
-	// Requests could be in either prefill or decode.
-	for _, req := range sim.RunningBatch.Requests {
-		if tokenBudget <= 0 {
-			// Simulator has run out of token budget. Cannot run any more requests in this Step.
-			// Wait for currently running requests to finish, and try again in next Step
-			logrus.Warnf("[tick %07d] token budget exhausted, deferring remaining requests to next step", now)
-			break
-		}
-		numNewTokens := Len64(req.InputTokens) - req.ProgressIndex
-		// if a request is in running queue in this function and in prefill phase,
-		// request must be doing chunked prefill
-		// cache hits cannot happen here
-		if numNewTokens > 0 {
-			if 0 < sim.longPrefillTokenThreshold && sim.longPrefillTokenThreshold < numNewTokens {
-				numNewTokens = sim.longPrefillTokenThreshold
-			}
-			numNewTokens = min(numNewTokens, tokenBudget)
-
-			if can_schedule := sim.preempt(req, now, numNewTokens); !can_schedule {
-				break
-			}
-
-			tokenBudget -= numNewTokens
-			req.NumNewTokens = int(numNewTokens)
-			sim.reqNumComputedTokens[req.ID] += numNewTokens
-
-		}
-		// if it is in decode phase, then allocate blocks for the token generated in the previous Step
-		if req.ProgressIndex >= Len64(req.InputTokens) && len(req.OutputTokens) > 0 {
-			// Decode phase: exactly 1 new token per step. Compute explicitly
-			// instead of reusing numNewTokens (which is negative during decode:
-			// len(InputTokens) - ProgressIndex where ProgressIndex > len(InputTokens)).
-			decodeTokens := int64(1)
-			if can_schedule := sim.preempt(req, now, decodeTokens); !can_schedule {
-				break
-			}
-			// currently each request produces 1 token per decode.
-			// this needs to be updated with speculative decoding
-			tokenBudget--
-
-			req.NumNewTokens = 1
-			sim.reqNumComputedTokens[req.ID] += 1
-		}
-	}
-
-	// Next, attempt to dequeue requests in waiting queue, if batch size is not exceeded and not any preemption happened
-	for len(sim.RunningBatch.Requests) < int(sim.maxRunningReqs) && sim.WaitQ.Len() > 0 && tokenBudget > 0 && !sim.preemptionHappened {
-		// we will attempt to dequeue `next` request
-		// if that attempt fails, we will break out of the loop
-
-		next := sim.WaitQ.Peek()
-
-		// first find cache hits. This only happens once per prefill (regardless of chunked)
-		cachedBlocks := sim.KVCache.GetCachedBlocks(next.InputTokens)
-		numNewTokens := Len64(next.InputTokens) - Len64(cachedBlocks)*sim.KVCache.BlockSize()
-
-		// now check for chunked prefill
-		if 0 < sim.longPrefillTokenThreshold && sim.longPrefillTokenThreshold < numNewTokens {
-			numNewTokens = sim.longPrefillTokenThreshold
-		}
-		numNewTokens = min(numNewTokens, tokenBudget)
-		startIndex := Len64(cachedBlocks) * sim.KVCache.BlockSize()
-		endIndex := startIndex + numNewTokens
-
-		// estimate the number of new blocks needed for the next request
-		// and allocate if possible
-		if ok := sim.KVCache.AllocateKVBlocks(next, startIndex, endIndex, cachedBlocks); !ok {
-			// cannot allocate enough blocks for remaining tokens, do not schedule current request
-			// vLLM maintains First-Come-First-Served order of requests, so we cannot move onto the
-			// next request.
-			break
-		}
-
-		// at this point: the `next` request is deemed schedulable
-
-		// dequeue this request
-		sim.WaitQ.DequeueBatch()
-		// make it part of the running batch
-		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, next)
-		next.ScheduledStepIdx = sim.stepCount
-		// create a scheduledevent for the request that just went into running batch
-		scheduledDelay := sim.latencyModel.SchedulingProcessingTime() // ToDo: there are some minor processing time above - model it or constant?
-		sim.Schedule(&ScheduledEvent{
-			time:    now + scheduledDelay,
-			Request: next,
-		})
-		// record request scheduling delay
-		sim.Metrics.RequestSchedulingDelays[next.ID] = now + scheduledDelay - next.ArrivalTime
-
-		// decrement the token budget
-		tokenBudget = tokenBudget - numNewTokens
-		// change the state of the request from queued to running
-		next.State = StateRunning
-
-		next.NumNewTokens = int(numNewTokens)
-		sim.reqNumComputedTokens[next.ID] = numNewTokens + Len64(cachedBlocks)*sim.KVCache.BlockSize()
-	}
-}
-
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
 // Called after batch formation, before execution.
 func (sim *Simulator) recordQueueSnapshots() {
@@ -530,8 +379,41 @@ func (sim *Simulator) Step(now int64) {
 		sim.scheduler.OrderQueue(reqs, now)
 	})
 
-	// Subprocess: fill running batch from wait queue, similar to vLLM's scheduler.schedule()
-	sim.makeRunningBatch(now)
+	// Delegate batch composition to the pluggable BatchFormation strategy.
+	// Event scheduling and metrics recording happen after FormBatch returns (kernel concerns).
+	batchCtx := BatchContext{
+		RunningBatch:          sim.RunningBatch,
+		WaitQ:                 sim.WaitQ,
+		KVCache:               sim.KVCache,
+		MaxScheduledTokens:    sim.maxScheduledTokens,
+		MaxRunningReqs:        sim.maxRunningReqs,
+		PrefillTokenThreshold: sim.longPrefillTokenThreshold,
+		Now:                   now,
+		StepCount:             sim.stepCount,
+		ComputedTokens:        sim.reqNumComputedTokens,
+	}
+	batchResult := sim.batchFormation.FormBatch(batchCtx)
+
+	// Apply result: update running batch
+	sim.RunningBatch = batchResult.RunningBatch
+
+	// Schedule events for preempted requests and record preemption metrics
+	for _, p := range batchResult.Preempted {
+		sim.Schedule(&PreemptionEvent{
+			time:    now + p.PreemptionDelay,
+			Request: p.Request,
+		})
+		sim.Metrics.PreemptionCount++
+	}
+
+	// Schedule events for newly scheduled requests and record scheduling metrics
+	for _, s := range batchResult.NewlyScheduled {
+		sim.Schedule(&ScheduledEvent{
+			time:    now + s.ScheduledDelay,
+			Request: s.Request,
+		})
+		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now + s.ScheduledDelay - s.Request.ArrivalTime
+	}
 
 	// Record queue depth observations after batch formation
 	sim.recordQueueSnapshots()
