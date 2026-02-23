@@ -553,33 +553,33 @@ Hypotheses are organized by **family** (what domain is tested) and **tier** (pri
 
 | Family | Hypotheses | Status | Gaps |
 |--------|-----------|--------|------|
-| **Scheduler invariants** | H12 ✅, H13 ✅, H-Liveness ✅, H25 | 3/4 done | Causality (INV-5) never directly tested |
-| **Structural model** | H3 ✅, H9 ✅, H10 ✅, H-Phase ✅, H-MMK ✅, H26 | 5/6 done | Event pipeline causal ordering (H26) |
-| **Performance-regime** | H7, H8 ✅, H11 | 1/3 done | Horizontal scaling (H7), batch formation tradeoff (H11) |
-| **Robustness/failure-mode** | H5 ✅, H14 ✅, H-Overload ✅, H21, H22, H24 | 3/6 done | Overload+KV pressure, extreme weights, input validation, pathological combos |
+| **Scheduler invariants** | H12 ✅, H13 ✅, H-Liveness ✅, H25 ✅ | **4/4 done** | None — all planned hypotheses complete |
+| **Structural model** | H3 ✅, H9 ✅, H10 ✅, H-Phase ✅, H-MMK ✅, H26 ✅, H-Step-Quantum ✅ | **7/7 done** | None — H26 confirmed event pipeline; H-Step-Quantum (#329) discovered alpha/beta service time split |
+| **Performance-regime** | H7, H8 ✅, H11 ✅ | 2/3 done | Horizontal scaling (H7) |
+| **Robustness/failure-mode** | H5 ✅, H14 ✅, H-Overload ✅, H-Overload-KV ✅, H21, H22 ✅, H24 | 5/7 done | Extreme weights (H21), pathological combos (H24) |
 | **Workload/arrival** | H-Arrival ✅, H16, H20 | 1/3 done | Distribution comparison, heavy-tailed distributions untested |
-| **Cross-policy comparative** | Prefix-Affinity ✅, H1-SJF ✅, H2, H4, H6, H15, H17, H18, H19, H23 | **2/10 done** | Priority, fitness, Pareto, roofline, fairness all pending |
+| **Cross-policy comparative** | Prefix-Affinity ✅, H1-SJF ✅, H2 ✅, H4, H6, H15, H17 ✅, H18, H19, H23 | 4/10 done | Fitness (H15), roofline (H19), fairness (H18), baselines (H4, H6, H23) |
 
 ### Legacy Coverage Map (by area)
 
 | Area | Hypotheses | Components Tested |
 |------|-----------|-------------------|
-| **Routing** | H3, H4, H6 | Scorer freshness, round-robin, counterfactual |
-| **Scheduling** | H1, H2 | SJF, Priority-FCFS, batch interaction |
-| **Admission** | H5 | Token-bucket, burst smoothing |
-| **KV Cache** | H8, H9 | Preemption, prefix caching effectiveness |
-| **Tiered Storage** | H10 | GPU+CPU offload/reload, transfer latency |
-| **Batch Formation** | H11 | Token budget, throughput-latency tradeoff |
-| **Invariants** | H12, H13 | Conservation, determinism |
-| **Anomaly Detection** | H14 | Pathological templates, HOL blocking |
-| **Multi-Scorer** | H17 | Pareto frontier, weight sensitivity |
+| **Routing** | H3 ✅, H4, H6 | Scorer freshness, round-robin, counterfactual |
+| **Scheduling** | H1 ✅, H2 ✅ | SJF, Priority-FCFS, batch interaction |
+| **Admission** | H5 ✅ | Token-bucket, burst smoothing |
+| **KV Cache** | H8 ✅, H9 ✅ | Preemption, prefix caching effectiveness |
+| **Tiered Storage** | H10 ✅ | GPU+CPU offload/reload, transfer latency |
+| **Batch Formation** | H11 ✅ | Token budget, throughput-latency tradeoff |
+| **Invariants** | H12 ✅, H13 ✅ | Conservation, determinism |
+| **Anomaly Detection** | H14 ✅ | Pathological templates, HOL blocking |
+| **Multi-Scorer** | H17 ✅ | Cross-workload dominance, weight sensitivity, kv-heavy micro-bursting |
 | **Fitness** | H15 | Multi-objective scoring |
 | **Workload Patterns** | H16, H18, H20 | Bursty, unfair, heavy-tailed |
-| **Latency Model** | H19 | Roofline vs blackbox |
+| **Latency Model** | H19, H-Step-Quantum ✅ | Roofline vs blackbox; alpha/beta service time split (#329) |
 | **Scaling** | H7 | Instance count throughput |
-| **Prefix Affinity** | H9, H15, H17 | Cache hits, routing, weight tuning |
-| **Edge Cases** | H21, H22, H23, H24 | Extreme weights, input validation, underload, pathological combos |
-| **Integration** | H25, H26 | Full policy stack, event pipeline causal ordering |
+| **Prefix Affinity** | H9 ✅, H15, H17 ✅ | Cache hits, routing, weight tuning |
+| **Edge Cases** | H21, H22 ✅, H23, H24 | Extreme weights, input validation, underload, pathological combos |
+| **Integration** | H25 ✅, H26 ✅ | Full policy stack, event pipeline causal ordering |
 
 ## Reviewer Consensus
 
@@ -633,16 +633,30 @@ This prevents the scenario where an experiment runs but the measurement doesn't 
 
 **Priority order for implementation:**
 
-1. **Tier 1 (run first — correctness baselines):** H12 (conservation), H13 (determinism)
-2. **Tier 2 (high diagnostic value):** H3 (signal freshness), H9 (prefix caching), H14 (pathological)
-3. **Tier 3 (system understanding):** H1 (SJF), H5 (token-bucket), H10 (tiered KV), H11 (batch formation)
-4. **Tier 4 (research questions):** H15 (fitness), H17 (Pareto frontier), H19 (roofline vs blackbox)
-5. **Tier 5 (workload diversity):** H2, H16, H18, H20
+1. ~~**Tier 1 (run first — correctness baselines):** H12 (conservation), H13 (determinism)~~ **DONE**
+2. ~~**Tier 2 (high diagnostic value):** H3 (signal freshness), H9 (prefix caching), H14 (pathological)~~ **DONE**
+3. ~~**Tier 3 (system understanding):** H1 (SJF), H5 (token-bucket), H10 (tiered KV), H11 (batch formation)~~ **DONE**
+4. **Tier 4 (research questions):** ~~H17 (Pareto frontier)~~ **DONE (#368)**, H15 (fitness), H19 (roofline vs blackbox)
+5. **Tier 5 (workload diversity):** ~~H2~~ **DONE (#345)**, H16, H18, H20
+
+**Additional completed (not in original tiers):**
+- H-Liveness, H-Overload, H-Overload-KV, H-MMK, H-Phase, H-Arrival (methodology validation experiments)
+- H22 (zero blocks CLI validation, #343)
+- H25 (integration stress test, #367)
+- H26 (admission latency causal ordering, #366)
+- H-Step-Quantum (#329 → #369, refuted — discovered alpha/beta service time split)
+
+**Remaining (11 hypotheses):**
+- H4 (round-robin vs least-loaded baseline), H6 (counterfactual regret), H7 (horizontal scaling)
+- H15 (fitness evaluation), H16 (Gamma vs Poisson), H18 (unfair tenant fairness)
+- H19 (roofline vs blackbox), H20 (heavy-tailed distributions)
+- H21 (extreme scorer weights), H23 (low-load equivalence), H24 (combined pathological)
 
 ## Next Steps
 
-1. Create workload-spec YAMLs for each hypothesis (most experiments need multi-client specs, not CLI flags)
-2. Implement as a shell script suite (`examples/hypothesis-experiments.sh`) that runs all 20 experiments
-3. Start with Tier 1 (invariants) to establish correctness baselines
-4. Each hypothesis that fails should trigger the PR18 debugging methodology: investigate → fix → re-validate → document
-5. Results become the experiment documentation in `examples/` and validation evidence in the PR history
+1. ~~Create workload-spec YAMLs for each hypothesis~~ — done for all completed experiments
+2. ~~Start with Tier 1 (invariants) to establish correctness baselines~~ — done
+3. **Remaining highest-ROI:** H24 (combined pathological anomalies), H19 (roofline vs blackbox), H7 (horizontal scaling)
+4. **Act on #329 findings:** file design issue for DES service time split; update H-MMK FINDINGS; propose calibration rule
+5. **Act on H17 findings:** file design issue for kv-heavy micro-bursting; follow-up hypothesis at high utilization
+6. **Promote confirmed hypotheses to Go tests:** H26 (event pipeline), H25 (full-stack conservation)
