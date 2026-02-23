@@ -153,10 +153,10 @@ type Simulator struct {
 //   - Both zero-valued → no workload (caller injects via InjectArrival)
 func NewSimulator(cfg SimConfig) (*Simulator, error) {
 	if cfg.TotalKVBlocks <= 0 {
-		panic(fmt.Sprintf("SimConfig.TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
+		panic(fmt.Sprintf("KVCacheConfig.TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
 	}
 	if cfg.BlockSizeTokens <= 0 {
-		panic(fmt.Sprintf("SimConfig.BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
+		panic(fmt.Sprintf("KVCacheConfig.BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
 	}
 	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
