@@ -1,6 +1,9 @@
 package sim
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // LatencyModel estimates execution times for the DES step loop.
 // Two implementations exist: BlackboxLatencyModel (alpha/beta regression)
@@ -89,7 +92,7 @@ func (m *RooflineLatencyModel) StepTime(batch []*Request) int64 {
 				ProgressIndex:       req.ProgressIndex,
 				NumNewPrefillTokens: req.NumNewTokens,
 			})
-		} else {
+		} else if len(req.OutputTokens) > 0 {
 			stepConfig.DecodeRequests = append(stepConfig.DecodeRequests, DecodeRequestConfig{
 				ProgressIndex:      req.ProgressIndex,
 				NumNewDecodeTokens: req.NumNewTokens,
@@ -118,13 +121,29 @@ func (m *RooflineLatencyModel) PreemptionProcessingTime() int64 {
 	return 0
 }
 
+// validateCoeffs checks for NaN or Inf in a coefficient slice.
+func validateCoeffs(name string, coeffs []float64) error {
+	for i, c := range coeffs {
+		if math.IsNaN(c) {
+			return fmt.Errorf("latency model: %s[%d] is NaN", name, i)
+		}
+		if math.IsInf(c, 0) {
+			return fmt.Errorf("latency model: %s[%d] is Inf", name, i)
+		}
+	}
+	return nil
+}
+
 // NewLatencyModel creates the appropriate LatencyModel based on SimConfig.
 // Returns RooflineLatencyModel if cfg.Roofline is true, BlackboxLatencyModel otherwise.
-// Returns error if coefficient slices are too short or roofline config validation fails.
+// Returns error if coefficient slices are too short, contain NaN/Inf, or roofline config validation fails.
 func NewLatencyModel(cfg SimConfig) (LatencyModel, error) {
 	// Both implementations index alphaCoeffs[0..2]; validate upfront.
 	if len(cfg.AlphaCoeffs) < 3 {
 		return nil, fmt.Errorf("latency model: AlphaCoeffs requires at least 3 elements, got %d", len(cfg.AlphaCoeffs))
+	}
+	if err := validateCoeffs("AlphaCoeffs", cfg.AlphaCoeffs); err != nil {
+		return nil, err
 	}
 	if cfg.Roofline {
 		if cfg.TP <= 0 {
@@ -143,6 +162,9 @@ func NewLatencyModel(cfg SimConfig) (LatencyModel, error) {
 	// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 	if len(cfg.BetaCoeffs) < 3 {
 		return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(cfg.BetaCoeffs))
+	}
+	if err := validateCoeffs("BetaCoeffs", cfg.BetaCoeffs); err != nil {
+		return nil, err
 	}
 	return &BlackboxLatencyModel{
 		betaCoeffs:  cfg.BetaCoeffs,

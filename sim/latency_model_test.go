@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"math"
 	"testing"
 )
 
@@ -346,5 +347,65 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 				t.Fatal("expected error for short BetaCoeffs, got nil")
 			}
 		})
+	}
+}
+
+// TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError verifies BC-4: NaN in alpha rejected.
+func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
+	cfg := SimConfig{
+		AlphaCoeffs: []float64{math.NaN(), 1.0, 100.0},
+		BetaCoeffs:  []float64{5000, 10, 5},
+	}
+	_, err := NewLatencyModel(cfg)
+	if err == nil {
+		t.Fatal("expected error for NaN AlphaCoeffs, got nil")
+	}
+}
+
+// TestNewLatencyModel_InfBetaCoeffs_ReturnsError verifies BC-4: Inf in beta rejected.
+func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
+	cfg := SimConfig{
+		AlphaCoeffs: []float64{100, 1.0, 100.0},
+		BetaCoeffs:  []float64{math.Inf(1), 10, 5},
+	}
+	_, err := NewLatencyModel(cfg)
+	if err == nil {
+		t.Fatal("expected error for Inf BetaCoeffs, got nil")
+	}
+}
+
+// TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification verifies BC-5:
+// Both models handle requests past prefill with 0 output tokens consistently.
+func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T) {
+	// GIVEN a request past prefill with 0 output tokens (edge case)
+	req := &Request{
+		InputTokens:   []int{1, 2, 3},
+		OutputTokens:  []int{},
+		ProgressIndex: 3,
+		NumNewTokens:  0,
+	}
+	batch := []*Request{req}
+
+	blackbox := &BlackboxLatencyModel{
+		betaCoeffs:  []float64{5000, 10, 5},
+		alphaCoeffs: []float64{100, 1, 100},
+	}
+	roofline := &RooflineLatencyModel{
+		modelConfig: testModelConfig(),
+		hwConfig:    testHardwareCalib(),
+		tp:          2,
+		alphaCoeffs: []float64{100, 1, 100},
+	}
+
+	// WHEN both models compute step time
+	blackboxTime := blackbox.StepTime(batch)
+	rooflineTime := roofline.StepTime(batch)
+
+	// THEN both should produce non-negative step times (neither panics or goes negative)
+	if blackboxTime < 0 {
+		t.Errorf("blackbox step time = %d, want >= 0", blackboxTime)
+	}
+	if rooflineTime < 0 {
+		t.Errorf("roofline step time = %d, want >= 0", rooflineTime)
 	}
 }
