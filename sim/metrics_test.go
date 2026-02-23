@@ -276,3 +276,37 @@ func TestSaveResults_ConservationFields(t *testing.T) {
 	// Conservation identity: injected = completed + queued + running
 	assert.Equal(t, output.InjectedRequests, output.CompletedRequests+output.StillQueued+output.StillRunning)
 }
+
+// TestSaveResults_PerRequestITL_InMilliseconds verifies BC-14:
+// per-request itl_ms and scheduling_delay_ms are in milliseconds.
+func TestSaveResults_PerRequestITL_InMilliseconds(t *testing.T) {
+	m := NewMetrics()
+	m.CompletedRequests = 1
+	m.SimEndedTime = 1e6 // 1 second in ticks (prevents division by zero in ResponsesPerSec)
+	m.TotalOutputTokens = 10
+	m.Requests["r1"] = NewRequestMetrics(
+		&Request{ID: "r1", InputTokens: make([]int, 5), OutputTokens: make([]int, 10)},
+		0,
+	)
+	m.RequestTTFTs["r1"] = 10000.0  // 10000 ticks = 10 ms
+	m.RequestE2Es["r1"] = 50000.0   // 50000 ticks = 50 ms
+	m.RequestITLs["r1"] = 5000.0    // 5000 ticks = should be 5 ms
+	m.RequestSchedulingDelays["r1"] = 2000 // 2000 ticks = should be 2 ms
+	m.AllITLs = []int64{5000}
+
+	outputPath := filepath.Join(t.TempDir(), "results.json")
+	m.SaveResults("test", 1e15, 100, outputPath)
+
+	data, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	var output MetricsOutput
+	require.NoError(t, json.Unmarshal(data, &output))
+
+	// THEN per-request ITL and scheduling delay should be in ms (divided by 1e3)
+	require.Len(t, output.Requests, 1)
+	assert.InDelta(t, 5.0, output.Requests[0].ITL, 0.001, "ITL should be in ms")
+	assert.InDelta(t, 2.0, output.Requests[0].SchedulingDelay, 0.001, "SchedulingDelay should be in ms")
+	// TTFT and E2E should also be in ms (pre-existing behavior)
+	assert.InDelta(t, 10.0, output.Requests[0].TTFT, 0.001, "TTFT should be in ms")
+	assert.InDelta(t, 50.0, output.Requests[0].E2E, 0.001, "E2E should be in ms")
+}

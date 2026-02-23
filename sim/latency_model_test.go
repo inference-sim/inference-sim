@@ -397,15 +397,19 @@ func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	// WHEN both models compute step time
-	blackboxTime := blackbox.StepTime(batch)
-	rooflineTime := roofline.StepTime(batch)
+	// WHEN both models compute step time with and without the zero-output request
+	emptyBatch := []*Request{}
+	blackboxEmpty := blackbox.StepTime(emptyBatch)
+	rooflineEmpty := roofline.StepTime(emptyBatch)
+	blackboxWith := blackbox.StepTime(batch)
+	rooflineWith := roofline.StepTime(batch)
 
-	// THEN both should produce non-negative step times (neither panics or goes negative)
-	if blackboxTime < 0 {
-		t.Errorf("blackbox step time = %d, want >= 0", blackboxTime)
+	// THEN the zero-output request should not change step time
+	// (it contributes nothing to either prefill or decode computation)
+	if blackboxWith != blackboxEmpty {
+		t.Errorf("blackbox: zero-output request should not change step time: with=%d empty=%d", blackboxWith, blackboxEmpty)
 	}
-	if rooflineTime < 0 {
-		t.Errorf("roofline step time = %d, want >= 0", rooflineTime)
+	if rooflineWith != rooflineEmpty {
+		t.Errorf("roofline: zero-output request should not change step time: with=%d empty=%d", rooflineWith, rooflineEmpty)
 	}
 }

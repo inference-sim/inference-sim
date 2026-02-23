@@ -237,6 +237,22 @@ func TestConstantSampler_ZeroValue_ReturnsOne(t *testing.T) {
 	}
 }
 
+// TestParetoLogNormalSampler_ZeroUniform_NoOverflow verifies BC-9:
+// extreme u values produce valid (finite, positive) samples.
+func TestParetoLogNormalSampler_ZeroUniform_NoOverflow(t *testing.T) {
+	// The Pareto formula xm/u^(1/alpha) can produce +Inf for very small u.
+	// The sampler guards against this by returning 1 for Inf/NaN results.
+	s := &ParetoLogNormalSampler{alpha: 1.0, xm: 100.0, mu: 0, sigma: 1, mixWeight: 1.0}
+	rng := rand.New(rand.NewSource(42))
+	// Run many samples; none should panic or return non-positive
+	for i := 0; i < 1000; i++ {
+		result := s.Sample(rng)
+		if result < 1 {
+			t.Errorf("sample %d returned %d, want >= 1", i, result)
+		}
+	}
+}
+
 func TestNewLengthSampler_InvalidType_ReturnsError(t *testing.T) {
 	_, err := NewLengthSampler(DistSpec{Type: "unknown"})
 	if err == nil {
@@ -265,6 +281,11 @@ func TestNewLengthSampler_MissingRequiredParams_ReturnsError(t *testing.T) {
 			name:    "pareto_lognormal missing alpha",
 			spec:    DistSpec{Type: "pareto_lognormal", Params: map[string]float64{"xm": 1, "mu": 0, "sigma": 1, "mix_weight": 0.5}},
 			wantErr: "alpha",
+		},
+		{
+			name:    "constant missing value",
+			spec:    DistSpec{Type: "constant", Params: map[string]float64{}},
+			wantErr: "value",
 		},
 	}
 	for _, tt := range tests {

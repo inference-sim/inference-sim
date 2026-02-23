@@ -70,6 +70,10 @@ func (s *ParetoLogNormalSampler) Sample(rng *rand.Rand) int {
 		z := rng.NormFloat64()
 		val = math.Exp(s.mu + s.sigma*z)
 	}
+	// Guard against +Inf from extreme u or sigma values
+	if math.IsInf(val, 0) || math.IsNaN(val) {
+		return 1
+	}
 	result := int(math.Round(val))
 	if result < 1 {
 		return 1
@@ -193,6 +197,9 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 		}, nil
 
 	case "constant":
+		if err := requireParam(spec.Params, "value"); err != nil {
+			return nil, err
+		}
 		val := int(spec.Params["value"])
 		return &ConstantSampler{value: val}, nil
 
