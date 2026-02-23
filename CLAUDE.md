@@ -234,25 +234,6 @@ Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weig
 
 Step-by-step guides for adding policies, scorers, latency model backends, KV tiers, trace records, and per-request metrics: see `docs/extension-recipes.md`.
 
-### Adding New Scorers (Weighted Routing)
-
-To add a new scoring dimension for the `weighted` routing policy (e.g., predicted-latency):
-
-1. **Implement the scorer function** in `sim/routing_scorers.go` (stateless) or a new file (stateful) — a `scorerFunc` that takes `(*Request, []RoutingSnapshot)` and returns `map[string]float64` with scores in [0,1] per instance. Stateful scorers also return an `observerFunc` called after each routing decision.
-2. **Register the scorer** in `sim/routing_scorers.go`: add to `validScorerNames` map + `newScorerWithObserver` factory switch
-3. **Add behavioral tests** — monotonicity, boundary values, INV-1/INV-2 conformance
-4. Extension friction: **2 touch points** (implementation + registration)
-
-**Stateful scorers and observers:**
-- Stateful scorers (like prefix-affinity) return an `observerFunc` alongside the `scorerFunc`. The `observerFunc` signature is `func(req *Request, targetInstance string)`.
-- The observer is called by `WeightedScoring.Route()` after argmax selects the target instance but before returning the `RoutingDecision`. This lets the scorer update internal state (e.g., recording which blocks were routed to which instance).
-- The scorer and observer share state via closure. See `newPrefixAffinityScorer` in `sim/routing_prefix_scorer.go`: both the scorer and observer close over the same `PrefixCacheIndex`, so the observer's `RecordBlocks` calls are visible to subsequent scorer invocations.
-
-Examples:
-- See `scoreLoadBalance` in `sim/routing_scorers.go` for a simple stateless scorer
-- See `scoreQueueDepth` for a scorer with edge case handling (uniform load)
-- See `newPrefixAffinityScorer` in `sim/routing_prefix_scorer.go` for a stateful scorer with observer and router-side cache
-
 ### Code Style
 
 - Use composition over inheritance (e.g., `InstanceSimulator` wraps existing `sim` components)
