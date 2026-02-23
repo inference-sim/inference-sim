@@ -75,8 +75,8 @@ Invariants are properties that must hold at all times during and after simulatio
 | PendingRequests | Cluster | Synchronous | `RoutingDecisionEvent.Execute()` |
 | QueueDepth | Instance | Stale within tick | `QueuedEvent.Execute()` |
 | BatchSize | Instance | Stale within tick | `StepEvent.Execute()` |
-| KVUtilization | Instance | Stale across batch steps | `makeRunningBatch()` -> `AllocateKVBlocks()` |
-| CacheHitRate | Instance | Stale across batch steps | `makeRunningBatch()` |
+| KVUtilization | Instance | Stale across batch steps | `FormBatch()` -> `AllocateKVBlocks()` |
+| CacheHitRate | Instance | Stale across batch steps | `FormBatch()` |
 
 **Design implication:** `EffectiveLoad()` = `QueueDepth + BatchSize + PendingRequests` compensates for Tier 2 staleness by including the Tier 1 PendingRequests term. KVUtilization has no analogous compensation.
 
