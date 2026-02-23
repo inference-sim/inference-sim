@@ -9,14 +9,20 @@ func TestSimulator_DecodePhase_RequestCompletesSuccessfully(t *testing.T) {
 	// BC-9: A request with known input/output tokens completes through
 	// the full prefill->decode pipeline via normal simulation
 	sim := mustNewSimulator(t, SimConfig{
-		Horizon:            math.MaxInt64,
-		Seed:               42,
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    4,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 1000,
-		BetaCoeffs:         []float64{100, 0.5, 0.5},
-		AlphaCoeffs:        []float64{100, 0.1, 50},
+		Horizon: math.MaxInt64,
+		Seed:    42,
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   100,
+			BlockSizeTokens: 4,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     10,
+			MaxScheduledTokens: 1000,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 0.5, 0.5},
+			AlphaCoeffs: []float64{100, 0.1, 50},
+		},
 	})
 
 	// Create a request with known input/output that exercises decode phase

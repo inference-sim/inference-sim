@@ -231,9 +231,13 @@ func TestRooflineLatencyModel_QueueingTime(t *testing.T) {
 // TestNewLatencyModel_BlackboxMode verifies BC-4 (blackbox path).
 func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 	cfg := SimConfig{
-		Roofline:    false,
-		BetaCoeffs:  []float64{1000, 10, 5},
-		AlphaCoeffs: []float64{100, 1, 100},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{1000, 10, 5},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
+		ModelHardwareConfig: ModelHardwareConfig{
+			Roofline: false,
+		},
 	}
 
 	model, err := NewLatencyModel(cfg)
@@ -258,11 +262,15 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 // TestNewLatencyModel_RooflineMode verifies BC-4 (roofline path).
 func TestNewLatencyModel_RooflineMode(t *testing.T) {
 	cfg := SimConfig{
-		Roofline:    true,
-		AlphaCoeffs: []float64{100, 1, 100},
-		ModelConfig: testModelConfig(),
-		HWConfig:    testHardwareCalib(),
-		TP:          2,
+		LatencyCoeffs: LatencyCoeffs{
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
+		ModelHardwareConfig: ModelHardwareConfig{
+			Roofline:    true,
+			ModelConfig: testModelConfig(),
+			HWConfig:    testHardwareCalib(),
+			TP:          2,
+		},
 	}
 
 	model, err := NewLatencyModel(cfg)
@@ -288,8 +296,12 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 // TestNewLatencyModel_InvalidRoofline verifies BC-8.
 func TestNewLatencyModel_InvalidRoofline(t *testing.T) {
 	cfg := SimConfig{
-		Roofline:    true,
-		AlphaCoeffs: []float64{100, 1, 100},
+		LatencyCoeffs: LatencyCoeffs{
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
+		ModelHardwareConfig: ModelHardwareConfig{
+			Roofline: true,
+		},
 	}
 
 	_, err := NewLatencyModel(cfg)
@@ -314,9 +326,13 @@ func TestNewLatencyModel_ShortAlphaCoeffs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := SimConfig{
-				Roofline:    tc.roofline,
-				AlphaCoeffs: tc.alpha,
-				BetaCoeffs:  tc.beta,
+				LatencyCoeffs: LatencyCoeffs{
+					AlphaCoeffs: tc.alpha,
+					BetaCoeffs:  tc.beta,
+				},
+				ModelHardwareConfig: ModelHardwareConfig{
+					Roofline: tc.roofline,
+				},
 			}
 			_, err := NewLatencyModel(cfg)
 			if err == nil {
@@ -338,9 +354,13 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := SimConfig{
-				Roofline:    false,
-				AlphaCoeffs: []float64{100, 1, 100},
-				BetaCoeffs:  tc.beta,
+				LatencyCoeffs: LatencyCoeffs{
+					AlphaCoeffs: []float64{100, 1, 100},
+					BetaCoeffs:  tc.beta,
+				},
+				ModelHardwareConfig: ModelHardwareConfig{
+					Roofline: false,
+				},
 			}
 			_, err := NewLatencyModel(cfg)
 			if err == nil {
