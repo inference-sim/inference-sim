@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-BLIS Evaluator
+BLIS Evaluator (v0.6.1 + Roofline Compatible)
 
 Evaluates BLIS roofline model predictions against ground truth data from
 vLLM experiments. Runs BLIS simulations for each experiment/QPS point and
 compares predicted metrics against server-side measurements.
+
+Compatible with BLIS v0.6.1+ cluster architecture and roofline v1/v2 modes.
 """
 
 import json
 import subprocess
-import sys
 from pathlib import Path
 from typing import Dict, List, Any
 
@@ -47,6 +48,8 @@ class BLISEvaluator:
         """
         Build BLIS command from experiment configuration and QPS point.
 
+        Compatible with v0.6.1 cluster architecture and roofline modes.
+
         Args:
             experiment: Experiment dict from combined_ground_truth.json
             qps_sweep: Single QPS sweep point with metrics
@@ -62,7 +65,7 @@ class BLISEvaluator:
         model_folder_name = model_name.split("/")[1].lower()
         model_config_folder = f"model_configs/{model_folder_name}"
 
-        # Build command
+        # Build command (v0.6.1 compatible)
         cmd = [
             str(self.blis_binary_path),
             "run",
@@ -70,16 +73,24 @@ class BLISEvaluator:
             "--tp", str(vllm_config["tensor_parallelism"]),
             "--hardware", "H100",
             "--vllm-version", "vllm/vllm-openai:v0.8.4",
+            # Roofline mode flags
+            # Auto-selects between v1 (calibrated) and v2 (MFU-based):
+            #  - If bench_data/ exists with MFU CSVs -> roofline v2 (per-GEMM MFU lookups)
+            #  - Otherwise -> roofline v1 (calibrated constants from hardware_config.json)
             "--model-config-folder", model_config_folder,
             "--hardware-config", "hardware_config.json",
             "--bench-data-path", "bench_data",
+            # Cluster config (v0.6.1)
+            "--num-instances", "1",  # Single instance for evaluation
+            # KV cache config
             "--total-kv-blocks", str(experiment["total_kv_blocks"]),
             "--max-num-running-reqs", str(vllm_config["max_num_seqs"]),
             "--max-num-scheduled-tokens", str(vllm_config["max_num_batched_tokens"]),
             "--max-model-len", str(vllm_config["max_model_len"]),
+            # Workload config
             "--workload", "distribution",
             "--rate", str(qps_sweep["qps"]),
-            "--max-prompts", str(workload_config["max_requests"]),
+            "--num-requests", str(workload_config["max_requests"]),  # Changed from --max-prompts
             "--prefix-tokens", str(workload_config["data"]["prefix_tokens"]),
             "--prompt-tokens", str(workload_config["data"]["prompt_tokens"]),
             "--prompt-tokens-stdev", str(workload_config["data"]["prompt_tokens_stdev"]),
@@ -96,6 +107,8 @@ class BLISEvaluator:
     def run_blis(self, command: List[str]) -> Dict[str, Any]:
         """
         Execute BLIS via subprocess and capture stdout.
+
+        Handles v0.6.1 cluster output format with instance_id field.
 
         Args:
             command: Command list for subprocess
@@ -121,15 +134,37 @@ class BLISEvaluator:
                 raise ValueError("Empty BLIS output")
 
             # Try to parse JSON from stdout
-            # BLIS might output logs before JSON, so try to find JSON block
+            # v0.6.1 outputs logs before JSON, so extract JSON block
             try:
+                # First try direct parse
                 metrics = json.loads(stdout)
                 return metrics
             except json.JSONDecodeError:
                 # Try to extract JSON if there's text before it
                 json_start = stdout.find('{')
                 if json_start != -1:
+                    # Find the last complete JSON object (in case of multiple)
+                    # Look for the one after "=== Simulation Metrics ==="
+                    metrics_marker = "=== Simulation Metrics ==="
+                    if metrics_marker in stdout:
+                        json_start = stdout.find('{', stdout.find(metrics_marker))
+
                     json_str = stdout[json_start:]
+                    # Find the end of the JSON object
+                    brace_count = 0
+                    end_pos = 0
+                    for i, char in enumerate(json_str):
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_pos = i + 1
+                                break
+
+                    if end_pos > 0:
+                        json_str = json_str[:end_pos]
+
                     metrics = json.loads(json_str)
                     return metrics
                 else:
@@ -202,7 +237,7 @@ class BLISEvaluator:
         # Run BLIS and handle errors
         try:
             blis_output = self.run_blis(command)
-        except Exception as e:
+        except Exception:
             if not self.verbose:
                 print(f"  ERROR at QPS {qps_sweep['qps']:.3f}")
             print(f"  Failed command: {' '.join(command)}")
