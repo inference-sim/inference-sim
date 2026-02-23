@@ -1,14 +1,20 @@
 # Hypothesis Experiments
 
+> **Canonical source:** [`docs/process/hypothesis.md`](../docs/process/hypothesis.md). If this step list diverges, hypothesis.md is authoritative.
+
 This directory contains validated hypothesis experiments for BLIS. Each hypothesis follows the methodology described in `docs/process/hypothesis.md`, with hypotheses drawn from the catalog in `docs/plans/research.md`:
 
-1. **Identify hypothesis family** — which domain is being tested?
-2. **Pose an intuitive, behavioral hypothesis** — conceptual claim, not code-grounded
-3. **Design a controlled experiment** — configurations differing in exactly one dimension
-4. **Code review experiment code** — verify parsers against simulator output format
-5. **Run across multiple seeds** (42, 123, 456) for statistical rigor
-6. **Analyze with three parallel external reviews** — iterate until convergence
-7. **Document findings** — the experiment becomes a reproducible artifact with honest resolution
+0. **Create isolated worktree** — `.worktrees/h-<name>` using worktree skill
+1. **Select and classify hypothesis** — family, VV&UQ category, type
+2. **Design experiment** — ED-1 through ED-6, then 5-perspective Design Review → convergence
+3. **Human approval** — present design for approval before implementation
+4. **Implement** — create `run.sh` and `analyze.py` using shared harness (`hypotheses/lib/`)
+5. **Code Review** — 5-perspective review of experiment code → convergence
+6. **Run** — execute across required seeds; verify reproducibility (ED-5)
+7. **Analyze and document** — produce comparison tables, write FINDINGS.md
+8. **FINDINGS Review** — 10-perspective review → convergence (iterate until clean)
+9. **Self-audit** — 6 dimensions: logic, determinism, consistency, contradictions, guidance, issues
+10. **Commit and PR** — verification gate (if code fixes), then `commit-push-pr` skill
 
 ## Validated Hypotheses
 

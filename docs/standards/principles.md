@@ -87,5 +87,6 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | File organization and architecture | CLAUDE.md (File Organization tree) | README.md (Project Structure tree) |
 | Hypothesis catalog and specifications | `docs/plans/research.md` | — |
 | Experiment status and coverage | `hypotheses/README.md` | — |
-| Experiment standards | `docs/standards/experiments.md` | — |
+| Experiment standards | `docs/standards/experiments.md` | — (note: review protocol subsection references `docs/process/hypothesis.md` as canonical) |
+| Hypothesis experiment workflow | `docs/process/hypothesis.md` | CONTRIBUTING.md (summary), hypotheses/README.md (step list) |
 | PR workflow | `docs/process/pr-workflow.md` | — |
