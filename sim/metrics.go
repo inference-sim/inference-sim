@@ -137,8 +137,8 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 			detail := m.Requests[id]
 			detail.TTFT = m.RequestTTFTs[id] / 1e3   // zero if not in map
 			detail.E2E = m.RequestE2Es[id] / 1e3      // zero if not in map
-			detail.ITL = m.RequestITLs[id]             // zero if not in map
-			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id])
+			detail.ITL = m.RequestITLs[id] / 1e3             // ticks → ms (consistent with TTFT, E2E)
+			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id]) / 1e3 // ticks → ms
 			output.Requests = append(output.Requests, detail)
 		}
 

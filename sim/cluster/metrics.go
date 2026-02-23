@@ -380,7 +380,7 @@ func JainFairnessIndex(throughputs map[string]float64) float64 {
 		sumX2 += x * x
 	}
 	if sumX2 == 0 {
-		return 0
+		return 1.0 // All values identical (including all-zero) → perfectly fair
 	}
 	return (sumX * sumX) / (n * sumX2)
 }
