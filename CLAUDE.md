@@ -165,7 +165,7 @@ When asked to update the macro implementation plan, directly edit the document. 
 
 Full details (verification strategies, evidence): see [`docs/standards/invariants.md`](docs/standards/invariants.md).
 
-- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
+- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
 - **INV-2 Request lifecycle**: Requests transition queued → running → completed; not completed before horizon remain in current state
 - **INV-3 Clock monotonicity**: Simulation clock never decreases
 - **INV-4 KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
