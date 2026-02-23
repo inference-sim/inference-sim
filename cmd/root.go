@@ -283,6 +283,15 @@ var runCmd = &cobra.Command{
 		if blockSizeTokens <= 0 {
 			logrus.Fatalf("--block-size-in-tokens must be > 0, got %d", blockSizeTokens)
 		}
+		if maxRunningReqs <= 0 {
+			logrus.Fatalf("--max-num-running-reqs must be > 0, got %d", maxRunningReqs)
+		}
+		if maxScheduledTokens <= 0 {
+			logrus.Fatalf("--max-num-scheduled-tokens must be > 0, got %d", maxScheduledTokens)
+		}
+		if longPrefillTokenThreshold < 0 {
+			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
+		}
 
 		if workloadType == "traces" && tracesWorkloadFilePath == "" {
 			logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")
@@ -324,6 +333,16 @@ var runCmd = &cobra.Command{
 		}
 
 		// Validate policy names (catches CLI typos before they become panics)
+		// Token bucket parameter validation (R3: validate when policy is selected)
+		if admissionPolicy == "token-bucket" {
+			if tokenBucketCapacity <= 0 || math.IsNaN(tokenBucketCapacity) || math.IsInf(tokenBucketCapacity, 0) {
+				logrus.Fatalf("--token-bucket-capacity must be a finite value > 0, got %v", tokenBucketCapacity)
+			}
+			if tokenBucketRefillRate <= 0 || math.IsNaN(tokenBucketRefillRate) || math.IsInf(tokenBucketRefillRate, 0) {
+				logrus.Fatalf("--token-bucket-refill-rate must be a finite value > 0, got %v", tokenBucketRefillRate)
+			}
+		}
+
 		if !sim.IsValidAdmissionPolicy(admissionPolicy) {
 			logrus.Fatalf("Unknown admission policy %q. Valid: %s", admissionPolicy, strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
 		}
