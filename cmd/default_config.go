@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -25,11 +26,13 @@ type Workload struct {
 	OutputTokensMax   int `yaml:"output_tokens_max"`
 }
 
-// Define struct for YAML
+// Config represents the full defaults.yaml structure.
+// All top-level sections must be listed to satisfy KnownFields(true) strict parsing (R10).
 type Config struct {
-	Models   []Model                  `yaml:"models"`
-	Defaults map[string]DefaultConfig `yaml:"defaults"`
-	Version  string                   `yaml:"version"`
+	Models    []Model                  `yaml:"models"`
+	Defaults  map[string]DefaultConfig `yaml:"defaults"`
+	Version   string                   `yaml:"version"`
+	Workloads map[string]Workload      `yaml:"workloads"`
 }
 
 // Define the inner structure for default config given model
@@ -47,6 +50,7 @@ type Model struct {
 	TensorParallelism int       `yaml:"tensor_parallelism"`
 	VLLMVersion       string    `yaml:"vllm_version"`
 	TotalKVBlocks     int64     `yaml:"total_kv_blocks"`
+	BestLoss          float64   `yaml:"best_loss"` // Calibration metric from coefficient fitting; not used at runtime
 }
 
 func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float64, numRequests int) *sim.GuideLLMConfig {
@@ -56,9 +60,11 @@ func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float6
 		panic(err)
 	}
 
-	// Parse YAML
+	// Parse YAML with strict field checking (R10: typos must cause errors)
 	var cfg WorkloadConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		panic(err)
 	}
 
@@ -83,9 +89,11 @@ func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion
 		panic(err)
 	}
 
-	// Parse YAML
+	// Parse YAML with strict field checking (R10: typos must cause errors)
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		panic(err)
 	}
 
@@ -103,9 +111,11 @@ func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, default
 		panic(err)
 	}
 
-	// Parse YAML
+	// Parse YAML with strict field checking (R10: typos must cause errors)
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		panic(err)
 	}
 
