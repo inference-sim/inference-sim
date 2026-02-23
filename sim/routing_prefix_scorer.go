@@ -9,6 +9,12 @@ const defaultLRUCapacity = 10000
 // prefix each instance has cached. The observer updates the cache index
 // after each routing decision.
 //
+// Signal freshness (R17, INV-7):
+//
+//	Reads: No RoutingSnapshot fields — uses router-side PrefixCacheIndex only.
+//	The cache index is synchronously updated by the observer after each routing
+//	decision, making this scorer effectively Tier 1 (always fresh).
+//
 // Both the scorer and observer share the same PrefixCacheIndex via closure.
 // The blockSize should match the simulation's KV cache block size.
 func newPrefixAffinityScorer(blockSize int) (scorerFunc, observerFunc) {

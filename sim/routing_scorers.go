@@ -116,6 +116,12 @@ func newScorerWithObserver(name string, blockSize int) (scorerFunc, observerFunc
 // scoreQueueDepth computes per-instance queue depth scores using min-max normalization.
 // Lower effective load → higher score. All-equal loads → all score 1.0.
 // Matches llm-d's queue-scorer semantics.
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: EffectiveLoad() = QueueDepth (Tier 2: stale within tick) +
+//	       BatchSize (Tier 2) + PendingRequests (Tier 1: synchronous).
+//	The Tier 1 PendingRequests term compensates for Tier 2 staleness.
 func scoreQueueDepth(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
 	minLoad, maxLoad := math.MaxInt, 0
@@ -142,6 +148,13 @@ func scoreQueueDepth(_ *Request, snapshots []RoutingSnapshot) map[string]float64
 // scoreKVUtilization computes per-instance KV utilization scores.
 // Lower utilization → higher score: score = 1 - KVUtilization.
 // Matches llm-d's kv-cache-utilization-scorer semantics.
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: KVUtilization (Tier 3: stale across batch steps).
+//	WARNING: At high request rates, this signal can be significantly stale.
+//	Pair with a Tier 1 scorer (e.g., queue-depth) for load-aware routing.
+//	See H3 experiment: 200x worse distribution uniformity at rate=5000.
 func scoreKVUtilization(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
 	for _, snap := range snapshots {
@@ -153,6 +166,10 @@ func scoreKVUtilization(_ *Request, snapshots []RoutingSnapshot) map[string]floa
 // scoreLoadBalance computes per-instance load balance scores using inverse transform.
 // Lower effective load → higher score: score = 1/(1 + effectiveLoad).
 // BLIS-native formula preserving absolute load differences (alternative to min-max).
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: EffectiveLoad() — same as scoreQueueDepth (Tier 1+2 composite).
 func scoreLoadBalance(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
 	for _, snap := range snapshots {
