@@ -1,13 +1,13 @@
 # H7: Horizontal Scaling
 
 **Status:** Confirmed with nuance
-**Resolution:** Clean confirmation
+**Resolution:** Confirmation with surprise
 **Family:** Performance-regime (scaling laws)
 **VV&UQ:** Validation
 **Tier:** 2 (behavioral comparison)
 **Type:** Statistical (Monotonicity)
 **Date:** 2026-02-23
-**Rounds:** 1
+**Rounds:** 2
 
 ## Hypothesis
 
@@ -25,7 +25,7 @@ The intuition is that if a workload saturates k instances (causing long queues a
 - C (8 inst): Same with `--num-instances 8`
 - Control: Same configurations at `--rate 100` (sub-saturation)
 
-**Controlled variables:** Model (llama-3.1-8b-instruct), rate (1000 for main, 100 for control), num-requests (500), routing (least-loaded), scheduler (fcfs), priority (constant), admission (always-admit), KV blocks (1000000 default -- no KV pressure)
+**Controlled variables:** Model (llama-3.1-8b-instruct), rate (1000 for main, 100 for control), num-requests (500), routing (least-loaded), scheduler (fcfs), priority (constant), admission (always-admit), KV blocks (132139 from defaults.yaml for this model/GPU/TP -- no KV pressure)
 
 **Varied variable:** `--num-instances` (2, 4, 8)
 
@@ -33,7 +33,7 @@ The intuition is that if a workload saturates k instances (causing long queues a
 
 **Preconditions verified:**
 - Saturation confirmed: At rate=1000, TTFT p99 at 4 instances (917.70 ms) is >> TTFT p99 at rate=100 (39.42 ms), confirming ~23x amplification from queue buildup
-- No KV pressure: 0 preemptions across all runs (default 1000000 blocks is ample)
+- No KV pressure: 0 preemptions across all runs (132139 blocks from defaults.yaml is ample)
 - INV-1 conservation: passes for all 18 runs
 
 **Reference:** `hypotheses/h16-gamma-vs-poisson/run.sh` (same rate-sizing rationale, same cluster configuration except instance count is varied)
@@ -96,15 +96,15 @@ The TTFT p99 improvement from horizontal scaling is **better** than the predicte
 
 1. **Least-loaded routing** (`sim/routing.go:107-125`) distributes requests to the instance with the lowest `EffectiveLoad()` (`sim/routing.go:23-25`), which sums `QueueDepth + BatchSize + PendingRequests`. This achieves near-uniform distribution across instances (Join-Shortest-Queue approximation).
 
-2. **TTFT is dominated by queue waiting time under saturation.** The alpha coefficients (`sim/latency_model.go:56-61`) add ~2.5ms of queueing delay per request (alpha0=1601 + alpha1*256=~2500 us). But the real TTFT driver under saturation is scheduling_delay -- how long a request waits in the queue before being scheduled. With k instances processing at ~85 req/s each, the effective arrival rate per instance is rate/k.
+2. **TTFT is dominated by queue waiting time under saturation.** The alpha coefficients (`sim/latency_model.go:56-61`) add ~3.4ms of queueing delay per request (alpha0=1601 + alpha1*512=~3398 us). But the real TTFT driver under saturation is scheduling_delay -- how long a request waits in the queue before being scheduled. With k instances processing at ~57.4 req/s each (step time ~17.4ms from beta coefficients: 6910 + 17.67*512 + 2.84*512 = 17411 us), the effective arrival rate per instance is rate/k.
 
-3. **First-principles calculation** (RCV-2): At rate=1000 req/s with 4 instances, per-instance rate is ~250 req/s against a capacity of ~85 req/s (rho=2.94). With 8 instances, per-instance rate is ~125 req/s (rho=1.47). Queue depth scales super-linearly with rho under heavy load (M/M/1: L = rho/(1-rho) diverges near rho=1, but above rho=1, queue grows linearly at rate (lambda-mu)*t). Doubling instances from 4 to 8 halves per-instance rho from 2.94 to 1.47 -- both are above 1.0, so both accumulate infinite queues, but the 8-instance queue grows at (125-85)=40 req/s vs (250-85)=165 req/s per instance. The growth rate ratio is 40/165 = 0.24x, which aligns closely with the observed 0.297x TTFT p99 ratio.
+3. **First-principles calculation** (RCV-2): At rate=1000 req/s with 4 instances, per-instance rate is ~250 req/s against a capacity of ~57.4 req/s (rho=4.35). With 8 instances, per-instance rate is ~125 req/s (rho=2.18). Both are above 1.0, so both accumulate infinite queues, but at different rates. The 8-instance queue grows at (125-57.4)=67.6 req/s vs (250-57.4)=192.6 req/s per instance. The growth rate ratio is 67.6/192.6 = 0.351x, which is reasonably close to the observed 0.297x TTFT p99 ratio (15% discrepancy). The qualitative mechanism -- super-linear improvement from the non-linear dependence of queue growth rate on (lambda/k - mu) -- is confirmed, though the simple fluid model overestimates the ratio slightly (predicts less improvement than observed), likely because batching effects further reduce effective queueing at lower per-instance rates.
 
-4. **E2E does not halve** because E2E = TTFT + decode time, and decode time (~5000ms for 128 output tokens at 11.8ms/step) is constant regardless of instance count. The TTFT improvement (from ~1000ms to ~280ms) is a small fraction of total E2E (~5500ms). E2E p99 ratio 8/4 is approximately 0.93-0.95x -- modest because decode dominates.
+4. **E2E does not halve** because E2E = TTFT + decode time, and decode time (~5000ms for 512 output tokens at ~10ms/decode-step) is constant regardless of instance count. The TTFT improvement (from ~1000ms to ~280ms) is a small fraction of total E2E (~5500ms). E2E p99 ratio 8/4 is approximately 0.93-0.95x -- modest because decode dominates.
 
 5. **Throughput appears to scale only 1.075x** (not 2x) because throughput = completed/sim_time, and all 500 requests complete in every configuration. The difference is in sim_time: 8 instances finish the same 500 requests faster (shorter queues mean the last request completes sooner). True capacity scaling would be visible with a longer horizon or infinite request stream.
 
-**Control experiment validates the mechanism** (RCV-4): At rate=100 (sub-saturation, rho=0.29 at 4 instances), queues never build up significantly, so TTFT p99 is ~40ms regardless of instance count (0.942x ratio). This confirms the scaling benefit comes from queue depth reduction, not from some other effect of the `--num-instances` flag.
+**Control experiment validates the mechanism** (RCV-4): At rate=100 (sub-saturation, rho=0.44 at 4 instances), queues never build up significantly, so TTFT p99 is ~40ms regardless of instance count (0.942x ratio). This confirms the scaling benefit comes from queue depth reduction, not from some other effect of the `--num-instances` flag.
 
 ## Devil's Advocate (RCV-5)
 
@@ -119,7 +119,7 @@ The core prediction -- that TTFT p99 decreases significantly when doubling insta
 | Finding | Type | Action |
 |---------|------|--------|
 | TTFT p99 decreases monotonically with instance count under saturation | Confirmation | documented here |
-| 8-vs-4 TTFT p99 ratio is 0.297x (better than 0.5x halving) | Surprise | documented here -- first-principles explains: queue growth rate ratio (40/165=0.24x) tracks the improvement |
+| 8-vs-4 TTFT p99 ratio is 0.297x (better than 0.5x halving) | Surprise | documented here -- first-principles explains: queue growth rate ratio (67.6/192.6=0.351x) approximates the improvement |
 | E2E is insensitive to horizontal scaling (decode dominates) | Design limitation | documented here |
 | Throughput scaling appears sub-linear due to fixed request count | Design limitation | documented here |
 | Sub-saturation control confirms queue-depth is the mechanism | Confirmation | documented here |
@@ -134,7 +134,7 @@ Findings checked against docs/standards/:
 
 ## Scope and Limitations (RCV-6)
 
-- **Operating point tested:** 2/4/8 instances, rate=1000 (saturating) and rate=100 (sub-saturation), 500 requests, least-loaded routing, fcfs scheduler, Poisson arrivals, Gaussian input/output distributions (mean 256/128), seeds 42/123/456, default KV (1000000 blocks)
+- **Operating point tested:** 2/4/8 instances, rate=1000 (saturating) and rate=100 (sub-saturation), 500 requests, least-loaded routing, fcfs scheduler, Poisson arrivals, Gaussian input/output distributions (default mean 512/512), seeds 42/123/456, KV blocks 132139 (from defaults.yaml)
 - **Parameters findings depend on:** Saturation requires rate >> capacity. Least-loaded routing ensures even distribution. Default KV blocks ensure no preemption confound.
 - **What was NOT tested:** Instance counts > 8 (16, 32); intermediate saturation levels (rho near 1.0); non-least-loaded routing (round-robin would distribute unevenly); KV-constrained regimes; workloads with heterogeneous request sizes; weighted routing.
 - **Generalizability:** The monotonicity finding generalizes to any configuration where (a) the workload saturates the cluster and (b) routing distributes load approximately evenly. With round-robin routing, cyclic assignment may create uneven queues that weaken the scaling benefit. With very heterogeneous request sizes, JSQ (least-loaded) may not achieve even load.
@@ -149,7 +149,7 @@ Findings checked against docs/standards/:
 | Throughput monotonicity | 3/3 seeds strictly increasing | High -- unanimous |
 | Sub-saturation control | 0.942x avg (effect vanishes) | High -- validates mechanism |
 | Sample size | 3 seeds x 5 configs = 15 data points | Medium -- 3 seeds is standard for this project but limits formal statistical testing |
-| Mechanism | Queue growth rate reduction via load distribution | High -- first-principles calculation matches observation (0.24x predicted vs 0.297x observed) and control confirms |
+| Mechanism | Queue growth rate reduction via load distribution | High -- first-principles calculation approximates observation (0.351x predicted vs 0.297x observed, 15% discrepancy) and control confirms |
 
 ## Implications for Users
 

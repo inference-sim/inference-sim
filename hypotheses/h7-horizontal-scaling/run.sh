@@ -18,14 +18,14 @@
 #   - ED-5: Self-contained, builds binary, reproducible
 #   - ED-6: Reference: hypotheses/h16-gamma-vs-poisson/run.sh (similar rate sizing rationale)
 #
-# Rate sizing rationale:
-#   Step time ~= 6910 + 17.67*256 + 2.84*128 ~= 11797 us ~= 11.8ms
-#   Capacity per instance ~= 1/0.0118 ~= 85 req/s
-#   2 instances: 170 req/s capacity
-#   4 instances: 339 req/s capacity
-#   8 instances: 678 req/s capacity
-#   Rate 1000 ~= 5.9x overload at 2 inst, 2.95x at 4 inst, 1.47x at 8 inst
-#   Rate 100  ~= 0.29x utilization at 4 inst (sub-saturation control)
+# Rate sizing rationale (CLI defaults: prompt-tokens=512, output-tokens=512):
+#   Step time ~= 6910 + 17.67*512 + 2.84*512 ~= 17411 us ~= 17.4ms
+#   Capacity per instance ~= 1/0.0174 ~= 57.4 req/s
+#   2 instances: 115 req/s capacity
+#   4 instances: 230 req/s capacity
+#   8 instances: 460 req/s capacity
+#   Rate 1000 ~= 8.7x overload at 2 inst, 4.35x at 4 inst, 2.17x at 8 inst
+#   Rate 100  ~= 0.44x utilization at 4 inst (sub-saturation control)
 #
 # Usage: ./run.sh [--rebuild]
 #

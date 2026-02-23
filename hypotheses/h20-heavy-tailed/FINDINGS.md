@@ -1,13 +1,15 @@
 # H20: Heavy-Tailed Input Distributions
 
-**Status:** Refuted
-**Resolution:** Refuted -- wrong mental model
+**Status:** Partially confirmed with surprise
+**Resolution:** Confirmation with wrong mechanism
 **Family:** Workload/arrival
 **VV&UQ:** Validation
 **Tier:** 2
 **Type:** Statistical (Dominance)
 **Date:** 2026-02-23
-**Rounds:** 1
+**Rounds:** 2
+
+**Analyzer override note:** The automated analyzer outputs "INCONCLUSIVE -- mixed directionality across seeds" because TTFT p99 directionality is inconsistent at overload (2/3 seeds in Exp 1, 1/3 in Exp 2). We classify this as "Partially confirmed with surprise" rather than "Inconclusive" or "Refuted" because: (a) the TTFT p99 tail penalty IS consistently confirmed at sub-saturation (3/3 seeds, 1.54x avg) — establishing a real effect via prefill cost; (b) the preemption prediction is clearly wrong in direction (Gaussian > ParetoLN); (c) the bimodal KV demand mechanism is a genuine surprise finding. The hypothesis's observable prediction (worse tail latency) partially holds, but the hypothesized mechanisms (preemptions and HOL blocking) are wrong.
 
 ## Hypothesis
 
@@ -98,11 +100,11 @@ The hypothesis was based on a flawed mental model that assumed heavy-tailed dist
 
 ### 1. TTFT p99 tail from prefill cost (confirmed at sub-saturation)
 
-ParetoLogNormal's TTFT p99 is consistently ~1.5x worse at sub-saturation (Exp 3) where queues never form. This is a direct consequence of the distribution shape: the p99 input length for ParetoLN is much longer than Gaussian's p99 (bounded at 512). The step time formula (`sim/latency_model.go:50-55`, `StepTime = beta0 + beta1*cacheMissTokens + beta2*decodeTokens`) means longer inputs produce proportionally longer prefill steps. This is not HOL blocking -- it is the intrinsic cost of serving longer requests.
+ParetoLogNormal's TTFT p99 is consistently ~1.5x worse at sub-saturation (Exp 3) where queues never form. This is a direct consequence of the distribution shape: the p99 input length for ParetoLN is much longer than Gaussian's p99 (bounded at 512). The step time formula (`sim/latency_model.go:49-53`, `StepTime = beta0 + beta1*cacheMissTokens + beta2*decodeTokens`) means longer inputs produce proportionally longer prefill steps. This is not HOL blocking -- it is the intrinsic cost of serving longer requests.
 
 ### 2. ParetoLogNormal does NOT increase preemptions (refuted by Exp 2)
 
-Under KV pressure (2000 blocks), Gaussian actually produces more preemptions on average (336 vs 290). The mechanism is bimodal: ParetoLogNormal's mixture produces many short requests (from the LogNormal component, median ~ exp(5.2) = 181 tokens) alongside occasional long ones. These short requests:
+Under KV pressure (2000 blocks), Gaussian produces more preemptions on average (336 vs 290, ~14% difference). **Note:** This 14% effect size is below the 20% significance threshold from `docs/standards/experiments.md`, and the direction is consistent in only 2/3 seeds (seed 456: ParetoLN has slightly more). The preemption reversal is suggestive but not statistically robust. The mechanism is bimodal: ParetoLogNormal's mixture produces many short requests (from the LogNormal component, median ~ exp(5.2) = 181 tokens) alongside occasional long ones. These short requests:
 - Require fewer KV blocks (ceil(181/16) = 12 vs Gaussian's ceil(256/16) = 16)
 - Complete faster, releasing blocks sooner
 - Create a "breathing room" effect between the rare long requests
@@ -135,8 +137,9 @@ E2E p99 ratios are ~1.0x across all experiments because E2E is dominated by deco
 - Direction: ParetoLN reduces preemptions relative to Gaussian (opposite of hypothesis)
 
 **RCV-4 (control experiment):**
-- Sub-saturation control (Exp 3) confirms TTFT tail is from prefill cost, not queueing
+- Sub-saturation control (Exp 3) confirms TTFT tail is from prefill cost, not queueing. Note: the sub-saturation control was designed expecting the TTFT effect to VANISH (per HOL blocking mechanism). Instead it PERSISTS (1.54x), which refutes the HOL blocking mechanism while revealing the prefill cost mechanism.
 - KV-constrained experiment (Exp 2) confirms preemption mechanism is NOT tail-driven
+- **RCV-4 gap:** No dedicated control for the "bimodal KV demand" mechanism. A proper control would equalize median demand (e.g., Gaussian with mean=181 matching ParetoLN median) to confirm whether the median-driven breathing room explains the preemption reversal. This mechanism is analytically grounded (RCV-2) but experimentally unconfirmed.
 
 ## Devil's Advocate (RCV-5)
 
@@ -149,7 +152,7 @@ The experiment used only 2000 KV blocks. With an even more constrained KV (e.g.,
 
 | Finding | Type | Action |
 |---------|------|--------|
-| Heavy-tailed distributions do NOT inherently increase preemptions | Refuted hypothesis | Documented here |
+| Heavy-tailed distributions do NOT inherently increase preemptions | Surprise (opposite of hypothesis) | Documented here |
 | ParetoLogNormal TTFT p99 penalty is from prefill cost, not HOL blocking | Surprise | Documented here |
 | Distribution median (not mean) drives KV pressure behavior | Surprise | Documented here |
 | E2E is insensitive to input distribution shape | Confirmation | Confirms H16 finding that decode time dominates E2E |

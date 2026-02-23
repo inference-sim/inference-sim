@@ -7,7 +7,7 @@
 **Tier:** 2
 **Type:** Statistical (Pareto)
 **Date:** 2026-02-23
-**Rounds:** 1
+**Rounds:** 2
 
 ## Hypothesis
 
@@ -94,7 +94,7 @@ The hypothesis assumed that high utilization would create load imbalance from ca
 
 **1. Cache-heavy routing does NOT create load imbalance.** The per-instance distribution for cache-heavy at high rate is perfectly balanced: `[125, 125, 125, 125]` across all seeds (`sim/routing.go:175-184`). This is because multi-turn chat sessions are independently assigned to instances at session start (round 1), and subsequent rounds follow the cached prefix. With ~100 sessions distributed across 4 instances, the law of large numbers ensures near-uniform session-to-instance assignment. The prefix-affinity scorer (`sim/routing_prefix_scorer.go:28-35`) gives score 1.0 to the instance with the cached prefix and 0.0 to others for rounds 2-5, creating session stickiness WITHOUT load imbalance. The queue-depth:1 component in C1 breaks ties on round 1 (when no prefix exists), distributing new sessions evenly.
 
-**2. The prefill cost reduction from cache locality is multiplicative, not additive.** With beta1=17.67 per cache-miss token (`sim/latency_model.go:51`), each cached block saves 17.67 * blockSize = 17.67 * 16 = 282.7 us. With 5 rounds of context accumulation, rounds 2-5 reuse increasing fractions of the prefix. The cache-heavy config achieves 39.7% cache hit rate (vs 11.3% for load-only), saving approximately (0.397 - 0.113) * mean_input * 17.67 = 0.284 * 128 * 17.67 = 642 us per request in prefill time. This translates directly to the ~40ms TTFT mean advantage observed (33.1 vs 73.2 ms).
+**2. The prefill cost reduction from cache locality contributes to the queueing advantage.** With beta1=17.67 per cache-miss token (`sim/latency_model.go:51`), each cached block saves 17.67 * blockSize = 17.67 * 16 = 282.7 us. With 5 rounds of context accumulation, rounds 2-5 reuse increasing fractions of the prefix. The cache-heavy config achieves 39.7% cache hit rate (vs 11.3% for load-only), saving approximately (0.397 - 0.113) * mean_input * 17.67 = 0.284 * 128 * 17.67 = 642 us per request in prefill step time. This per-request savings contributes to the ~40ms TTFT mean advantage observed (33.1 vs 73.2 ms) via queueing amplification: shorter prefill steps mean faster batch turnover, which drains queues faster under load. The 642 us direct savings is amplified ~62x to the 40ms TTFT gap because each microsecond of per-step reduction compounds through the queueing dynamics at 3x overload.
 
 **3. The load imbalance penalty of cache-heavy is zero.** Because cache-heavy distributes sessions uniformly across instances (point 1), there is no queueing penalty to offset the prefill savings. The hypothesis assumed cache-affinity would concentrate requests on fewer instances, but multi-turn session stickiness is inherently load-balanced -- each instance gets roughly the same number of sessions, and within-session temporal spacing (500ms think_time) prevents burst concentration.
 
@@ -105,6 +105,10 @@ At high rate (1000 req/s), more requests arrive during a given time window, incr
 ### Control experiment (RCV-4)
 
 The moderate-rate condition (300 req/s) serves as the control for the "high utilization produces Pareto frontier" mechanism. At both high and moderate rates, cache-heavy dominates all others with no Pareto frontier. The absence of a Pareto frontier at moderate rate is consistent with H17. The absence at high rate refutes the hypothesis. The control confirms that utilization level does not change the qualitative dominance pattern -- only the effect magnitudes change (wider spreads at high rate).
+
+**Control ambiguity note:** Since cache-heavy dominates at both tested rates (88% and 294% utilization), the control cannot distinguish between (a) "the Pareto frontier never emerges at any utilization" and (b) "the Pareto frontier emerges at an untested intermediate utilization (~100%)." The near-saturation regime is explicitly noted as untested in Scope and Limitations.
+
+**Per-seed directional consistency:** The analyzer confirms that cache-heavy ranks best for TTFT mean, TTFT p99, E2E mean, and throughput in ALL 3 seeds at BOTH rates. No seed shows a different ranking order. This was verified from the analyzer output's directional consistency check.
 
 ## Devil's Advocate (RCV-5)
 
@@ -137,6 +141,7 @@ Findings checked against docs/standards/:
 - **Operating point tested:** 4 instances, rates=300 and 1000 req/s, 500 requests (multi-turn, ~100 sessions), llama-3.1-8b-instruct, default KV blocks, 3 seeds
 - **Parameters findings depend on:** Multi-turn chat with context accumulation (creates prefix overlap). Gaussian input/output distributions (relatively uniform). Default KV blocks (no KV pressure -- 0 preemptions). 4 instances (enough for law-of-large-numbers session balancing).
 - **What was NOT tested:**
+  - The "near saturation" regime (95-105% utilization, ~350 req/s) where the hypothesis was originally framed. The experiment tested 88% and 294% utilization but not the transition region. The refutation applies to the extreme overload regime; the near-saturation regime remains untested.
   - Much higher request counts (5000+) that would create deeper queues
   - Fewer instances (2) where session imbalance is more likely
   - KV-constrained scenarios (low total-kv-blocks) where preemptions could create load imbalance
@@ -144,7 +149,7 @@ Findings checked against docs/standards/:
   - Mixed workloads (prefix-heavy + independent) at high rate -- H17's mixed workload was at rate=500 only
   - Non-multi-turn workloads with prefix groups (shared system prompts) where prefix-affinity might create unbalanced routing
 - **Generalizability:** The finding that "cache-heavy dominates on prefix-heavy workloads" generalizes to any multi-turn workload with context accumulation at these utilization levels. The finding that "load imbalance does not emerge" is specific to workloads where sessions are independently assigned at round 1 -- workloads with prefix groups that cluster requests to specific instances might show different behavior.
-- **Uncertainty quantification:** UQ not performed -- single operating point per rate level. The effect sizes are large (55% TTFT spread at high rate) and consistent across 3 seeds. The refutation is robust: cache-heavy wins all metrics by 20%+ in all seeds. Seed variability for cache-heavy TTFT mean at high rate: [29.3, 39.3] ms (34% range), which is smaller than the inter-config spread.
+- **Uncertainty quantification:** UQ not performed -- only two rate levels tested, insufficient for threshold estimation. The effect sizes are large (55% TTFT spread at high rate) and consistent across 3 seeds. The refutation is robust: cache-heavy wins all metrics by 20%+ in all seeds. Seed variability for cache-heavy TTFT mean at high rate: [29.3, 39.3] ms (34% range), which is smaller than the inter-config spread.
 
 ## Evidence Quality
 
