@@ -1,5 +1,30 @@
 # Tiered Accuracy Model for MFU-Based LLM Inference Simulation
 
+## Executive Summary
+
+BLIS's roofline v2 latency model has higher prediction error than InferSim (which reports 4-15% on Qwen/DeepSeek). We traced this to six observable error patterns — not bugs, but structural mismatches between what the model assumes and how GPUs and vLLM actually behave.
+
+| # | What's wrong (observable) | Likely magnitude |
+|---|--------------------------|-----------------|
+| H1 | Underestimates memory-bound steps | ~13% E2E error |
+| H2 | Missing fixed per-step scheduling overhead | ~33% step error |
+| H3 | MFU lookups use wrong GEMM shapes (split vs. fused) | Model-dependent |
+| H4 | Aggregate roofline masks per-component bottleneck transitions | Workload-dependent |
+| H5 | Mixed-batch error correlates with prefill/decode ratio | Mixed-batch only |
+| H6 | Artificial latency jumps at MFU grid boundaries | Increases variance |
+
+**Proposed fix — Tiered Accuracy Model (TAM):**
+
+- **Tier 0** (zero-config): Fix all six using hardware physics, execution semantics, and standard numerics. No fitted parameters. Expected: 15-25pp MAPE reduction.
+- **Tier 1** (one trace): Extract vLLM-version-specific overhead from one GuideLLM run. Expected: additional 5-10pp.
+- **Tier 2** (hardware benchmarks): Measure per-access-pattern bandwidth. Expected: additional 2-5pp.
+
+**Key constraint**: No server-side traces or vLLM instrumentation. All corrections derive from client-side metrics, analytical modeling, or offline benchmarks.
+
+**Recommended execution order**: H1 and H2 first (largest expected impact, simplest to implement and validate), then H3 and H5, then H4 and H6.
+
+---
+
 ## Abstract
 
 BLIS's roofline v2 model produces higher prediction errors than expected. We identify six **observable error patterns** in the simulator's output — systematic biases that can be detected purely by comparing predicted vs. measured latency across different workload regimes. Each pattern points to a structural mismatch between the model's assumptions and the physics of GPU execution or vLLM serving. We propose the **Tiered Accuracy Model (TAM)**, a three-tier correction framework organized by calibration cost: Tier 0 (zero-config), Tier 1 (one-trace calibration), Tier 2 (hardware characterization).
