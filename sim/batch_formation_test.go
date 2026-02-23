@@ -346,3 +346,72 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 		t.Errorf("expected 0 used blocks, got %d", kvCache.UsedBlocks())
 	}
 }
+
+// TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue verifies BC-9:
+// when KV allocation fails for a wait queue request, no further requests are dequeued.
+func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
+	cfg := SimConfig{
+		TotalKVBlocks:      3, // limited KV blocks
+		BlockSizeTokens:    16,
+		MaxRunningReqs:     10,
+		MaxScheduledTokens: 10000,
+		BetaCoeffs:         []float64{100, 1, 1},
+		AlphaCoeffs:        []float64{100, 1, 100},
+	}
+	lm, err := NewLatencyModel(cfg)
+	if err != nil {
+		t.Fatalf("NewLatencyModel: %v", err)
+	}
+	bf := NewBatchFormation(cfg, lm)
+	kvCache := NewKVStore(cfg)
+
+	// GIVEN: first request fits, second needs too many blocks, third is small but can't skip
+	req1 := &Request{ID: "small", InputTokens: make([]int, 16), OutputTokens: make([]int, 2), State: StateQueued}
+	req2 := &Request{ID: "big", InputTokens: make([]int, 100), OutputTokens: make([]int, 2), State: StateQueued}
+	req3 := &Request{ID: "also-small", InputTokens: make([]int, 10), OutputTokens: make([]int, 2), State: StateQueued}
+
+	wq := &WaitQueue{}
+	wq.Enqueue(req1)
+	wq.Enqueue(req2)
+	wq.Enqueue(req3)
+
+	ctx := BatchContext{
+		RunningBatch:          &Batch{},
+		WaitQ:                 wq,
+		KVCache:               kvCache,
+		MaxScheduledTokens:    10000,
+		MaxRunningReqs:        10,
+		PrefillTokenThreshold: 0,
+		Now:                   1000,
+		StepCount:             1,
+		ComputedTokens:        make(map[string]int64),
+	}
+
+	// WHEN FormBatch is called
+	result := bf.FormBatch(ctx)
+
+	// THEN req1 should be scheduled (enough blocks)
+	foundSmall := false
+	for _, r := range result.RunningBatch.Requests {
+		if r.ID == "small" {
+			foundSmall = true
+		}
+	}
+	if !foundSmall {
+		t.Error("expected 'small' request to be scheduled")
+	}
+
+	// AND req2 should NOT be scheduled (allocation fails)
+	for _, r := range result.RunningBatch.Requests {
+		if r.ID == "big" {
+			t.Error("'big' request should not be scheduled when KV allocation fails")
+		}
+	}
+
+	// AND req3 should NOT be scheduled (FCFS: can't skip req2)
+	for _, r := range result.RunningBatch.Requests {
+		if r.ID == "also-small" {
+			t.Error("'also-small' should not be scheduled — FCFS prevents skipping failed req2")
+		}
+	}
+}
