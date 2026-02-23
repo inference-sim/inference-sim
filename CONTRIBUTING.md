@@ -125,6 +125,8 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 
 ## Running or Contributing Hypothesis Experiments
 
+> **Canonical source:** [`docs/process/hypothesis.md`](docs/process/hypothesis.md). If this section diverges, hypothesis.md is authoritative.
+
 BLIS uses hypothesis-driven experimentation to validate system behavior, surface bugs, and document design tradeoffs. Experiments are organized into 6 families (workload/arrival, scheduler invariants, performance-regime, structural model, robustness, cross-policy comparative).
 
 **To run existing experiments:**
@@ -138,18 +140,21 @@ See `hypotheses/README.md` for the full list and coverage gaps.
 File a GitHub issue using the "Hypothesis Proposal" template. Include: the hypothesis sentence, family, diagnostic value, and rough experiment design.
 
 **To implement and run a new experiment:**
-Follow `docs/process/hypothesis.md` for the full process. Key steps:
-1. Classify by family and type
-2. Implement `run.sh` and `analyze.py`
-3. Code review experiment code against simulator output format BEFORE running
-4. Run and document in `FINDINGS.md` using `docs/templates/hypothesis.md`
+Follow `docs/process/hypothesis.md` for the full process (Steps 0-10). Key phases:
+1. Create worktree, classify hypothesis, design experiment
+2. **Design Review** (5 perspectives) → convergence → **human approval**
+3. Implement `run.sh` and `analyze.py` using shared harness (`hypotheses/lib/`)
+4. **Code Review** (5 perspectives) → convergence
+5. Run experiments, document FINDINGS.md
+6. **FINDINGS Review** (10 perspectives) → convergence
+7. Self-audit (6 dimensions), verification gate, commit and PR
 
-**Review protocol:** Experiments are reviewed via five parallel internal reviewer agents per round, iterating until convergence (zero CRITICAL + zero IMPORTANT items from any reviewer). External contributors without AI review infrastructure should submit their `FINDINGS.md` via PR — maintainers will run the review protocol. Only standard-library Python packages are needed (json, math, re, sys, pathlib).
+**Review protocol:** Three review gates at different lifecycle stages, each using the universal convergence protocol (zero CRITICAL + zero IMPORTANT from all reviewers). External contributors without AI review infrastructure should submit their artifacts via PR — maintainers will run the review protocols. Only standard-library Python packages are needed (json, math, re, sys, pathlib).
 
 | Document | Purpose |
 |---|---|
 | `hypotheses/README.md` | Existing experiments, coverage gaps |
-| `docs/process/hypothesis.md` | Full process (generation, execution, review, issue filing) |
+| `docs/process/hypothesis.md` | Full process (Steps 0-10, review gates, convergence protocol) |
 | `docs/standards/experiments.md` | Rigor requirements (families, types, VV&UQ, RCV rules) |
 | `docs/templates/hypothesis.md` | FINDINGS.md template |
 
