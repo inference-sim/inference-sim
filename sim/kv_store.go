@@ -18,10 +18,10 @@ type KVStore interface {
 	SetClock(clock int64) // Synchronize clock for time-dependent operations. No-op for single-tier.
 }
 
-// NewKVStore creates a KVStore from SimConfig.
+// NewKVStore creates a KVStore from KVCacheConfig.
 // Returns *KVCacheState for single-tier (KVCPUBlocks <= 0, the default).
 // Returns *TieredKVCache for tiered mode (KVCPUBlocks > 0).
-func NewKVStore(cfg SimConfig) KVStore {
+func NewKVStore(cfg KVCacheConfig) KVStore {
 	if cfg.TotalKVBlocks <= 0 {
 		panic(fmt.Sprintf("KVStore: TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
 	}

@@ -158,18 +158,18 @@ func NewSimulator(cfg SimConfig) (*Simulator, error) {
 	if cfg.BlockSizeTokens <= 0 {
 		panic(fmt.Sprintf("SimConfig.BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
 	}
-	latencyModel, err := NewLatencyModel(cfg)
+	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating latency model: %w", err)
 	}
-	batchFormation := NewBatchFormation(cfg, latencyModel)
+	batchFormation := NewBatchFormation(latencyModel)
 
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   cfg.Horizon,
 		eventQueue:                make(EventQueue, 0),
 		WaitQ:                     &WaitQueue{},
-		KVCache:                   NewKVStore(cfg),
+		KVCache:                   NewKVStore(cfg.KVCacheConfig),
 		RunningBatch:              &Batch{},
 		Metrics:                   NewMetrics(),
 		maxRunningReqs:            cfg.MaxRunningReqs,

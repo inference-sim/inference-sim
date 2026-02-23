@@ -24,11 +24,11 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 			AlphaCoeffs: []float64{100, 1, 100},
 		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
+	bf := NewBatchFormation(lm)
 	if bf == nil {
 		t.Fatal("NewBatchFormation returned nil")
 	}
@@ -37,7 +37,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 	ctx := BatchContext{
 		RunningBatch:          &Batch{},
 		WaitQ:                 &WaitQueue{},
-		KVCache:               NewKVStore(cfg),
+		KVCache:               NewKVStore(cfg.KVCacheConfig),
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
 		PrefillTokenThreshold: 0,
@@ -71,12 +71,12 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 			AlphaCoeffs: []float64{100, 1, 100},
 		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN 3 requests in the wait queue, each needing 30 tokens (total 90 > budget 50)
 	wq := &WaitQueue{}
@@ -136,12 +136,12 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 			AlphaCoeffs: []float64{100, 1, 100},
 		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN 5 requests in the wait queue
 	wq := &WaitQueue{}
@@ -203,12 +203,12 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 			AlphaCoeffs: []float64{100, 1, 100},
 		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN two running requests: victim occupies 2 blocks, needy needs 3 blocks for prefill
 	victim := &Request{
@@ -281,12 +281,12 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 			AlphaCoeffs: []float64{100, 1, 100},
 		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN two running requests where req2's prefill will trigger preemption
 	req1 := &Request{ID: "r1", InputTokens: make([]int, 20), OutputTokens: make([]int, 5), State: StateRunning}
@@ -348,12 +348,12 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 			AlphaCoeffs: []float64{100, 1, 100},
 		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN a request needing more blocks than total capacity
 	huge := &Request{ID: "huge", InputTokens: make([]int, 200), OutputTokens: make([]int, 5), State: StateQueued}
@@ -405,12 +405,12 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 			AlphaCoeffs: []float64{100, 1, 100},
 		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN: first request fits, second needs too many blocks, third is small but can't skip
 	req1 := &Request{ID: "small", InputTokens: make([]int, 16), OutputTokens: make([]int, 2), State: StateQueued}

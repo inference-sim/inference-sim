@@ -240,7 +240,7 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 		},
 	}
 
-	model, err := NewLatencyModel(cfg)
+	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel returned error: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 		},
 	}
 
-	model, err := NewLatencyModel(cfg)
+	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel returned error: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestNewLatencyModel_InvalidRoofline(t *testing.T) {
 		},
 	}
 
-	_, err := NewLatencyModel(cfg)
+	_, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err == nil {
 		t.Fatal("expected error for invalid roofline config, got nil")
 	}
@@ -325,16 +325,14 @@ func TestNewLatencyModel_ShortAlphaCoeffs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := SimConfig{
-				LatencyCoeffs: LatencyCoeffs{
-					AlphaCoeffs: tc.alpha,
-					BetaCoeffs:  tc.beta,
-				},
-				ModelHardwareConfig: ModelHardwareConfig{
-					Roofline: tc.roofline,
-				},
+			coeffs := LatencyCoeffs{
+				AlphaCoeffs: tc.alpha,
+				BetaCoeffs:  tc.beta,
 			}
-			_, err := NewLatencyModel(cfg)
+			hw := ModelHardwareConfig{
+				Roofline: tc.roofline,
+			}
+			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for short AlphaCoeffs, got nil")
 			}
@@ -353,16 +351,14 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := SimConfig{
-				LatencyCoeffs: LatencyCoeffs{
-					AlphaCoeffs: []float64{100, 1, 100},
-					BetaCoeffs:  tc.beta,
-				},
-				ModelHardwareConfig: ModelHardwareConfig{
-					Roofline: false,
-				},
+			coeffs := LatencyCoeffs{
+				AlphaCoeffs: []float64{100, 1, 100},
+				BetaCoeffs:  tc.beta,
 			}
-			_, err := NewLatencyModel(cfg)
+			hw := ModelHardwareConfig{
+				Roofline: false,
+			}
+			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for short BetaCoeffs, got nil")
 			}
