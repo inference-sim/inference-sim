@@ -1138,6 +1138,11 @@ func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
 		t.Errorf("E2E must be positive, got %f", e2e)
 	}
 
+	// BC-5 ordering: TTFT must be <= E2E (TTFT recorded in Phase 2, E2E in Phase 3)
+	if e2e < ttft {
+		t.Errorf("BC-5 violated: E2E (%f) < TTFT (%f) — two-pass ordering broken", e2e, ttft)
+	}
+
 	// Request must have completed
 	if sim.Metrics.CompletedRequests != 1 {
 		t.Errorf("expected 1 completed request, got %d", sim.Metrics.CompletedRequests)
