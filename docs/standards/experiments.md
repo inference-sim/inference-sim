@@ -255,7 +255,7 @@ Evidence: H10 used `--routing-policy least-loaded` while H8 used the default `ro
 
 ## Root Cause Verification
 
-After analyzing results (step 7) and before classifying findings (step 8), every experiment MUST verify its causal explanations. This step exists because plausible narratives can pass review without being correct.
+After analyzing results and before finalizing FINDINGS.md, every experiment MUST verify its causal explanations. This step exists because plausible narratives can pass review without being correct.
 
 ### RCV-1: Every causal claim must cite `file:line`
 
@@ -321,18 +321,17 @@ Evidence: H10's "28% TTFT improvement" is specific to GPU=2100 blocks near the p
 
 ## Iterative Review Protocol
 
-Every hypothesis experiment iterates **until convergence** (max 10 rounds), with **five parallel internal reviewer agents per round**. No minimum round count — convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item.
+> **Canonical source:** [`docs/process/hypothesis.md`](../process/hypothesis.md) (Universal Convergence Protocol section). If this section diverges, hypothesis.md is authoritative.
 
-Each round runs five internal Task agents with different (but overlapping) focus areas:
-- **Reviewer 1 (Code Verifier):** Read source files, verify every `file:line` citation (RCV-1)
-- **Reviewer 2 (Experiment Designer):** Confounds, controls, parameter calibration, rate awareness, reproducibility (ED-1 through ED-6)
-- **Reviewer 3 (Statistical Rigor):** First-principles calculations, sample size, effect thresholds, claim scoping (RCV-2, RCV-6)
-- **Reviewer 4 (Control Auditor):** Control experiments executed (not just proposed), single-variable isolation (RCV-3, RCV-4)
-- **Reviewer 5 (Standards Compliance):** Template completeness, classification correctness, Devil's Advocate quality (RCV-5), standards audit
+Every hypothesis experiment iterates until convergence (max 10 rounds per gate) through three review gates, each using the universal convergence protocol:
 
-**Convergence:** Zero CRITICAL and zero IMPORTANT items from any reviewer in the current round. SUGGESTION-level items (documentation nits, cosmetic fixes) do not block convergence. Max 10 rounds as a safety valve. See `docs/process/hypothesis.md` for the full protocol, reviewer prompts, and severity definitions.
+1. **Design Review** (5 perspectives) — after experiment design, before implementation
+2. **Code Review** (5 perspectives) — after implementing run.sh/analyze.py, before execution
+3. **FINDINGS Review** (10 perspectives) — after documenting results, before finalization
 
-**Why internal agents instead of external LLM reviews:** Internal Task agents can read the actual source files, verify `file:line` citations, cross-reference analyzer regexes against `cmd/root.go` format strings, and check YAML fields against struct tags — capabilities external LLM reviews lack. Evidence from PR #385: internal agents caught stale citations, sub-threshold effect sizes, and unexecuted control experiments that external reviews could not have detected.
+**Convergence:** Zero CRITICAL and zero IMPORTANT items from any reviewer perspective in the current round. No minimum round count — convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item. SUGGESTION-level items do not block convergence. See `docs/process/hypothesis.md` for the full protocol, reviewer prompts, perspective checklists, and severity definitions.
+
+**Why internal agents instead of external LLM reviews:** Internal Task agents can read the actual source files, verify `file:line` citations, and cross-reference analyzer regexes against simulator output format strings — capabilities external LLM reviews lack. See `docs/process/hypothesis.md` for the full evidence and comparison table.
 
 ---
 
