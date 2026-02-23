@@ -7,7 +7,7 @@ experiments into a single combined JSON file. It extracts:
 - Model and vLLM configuration
 - Workload configuration
 - Total KV blocks
-- Per-QPS server-side metrics (TTFT, ITL, E2E latencies)
+- Per-QPS client-side metrics from GuideLLM (TTFT, ITL, E2E latencies)
 """
 
 import json
@@ -15,59 +15,12 @@ import os
 import re
 import sys
 import yaml
-import pandas as pd
 from pathlib import Path
 
 
 # ============================================================================
 # Utility Functions
 # ============================================================================
-
-def read_traces_jsonl(filepath):
-    """
-    vLLM traces is a JSONL file.
-    This function loads raw data from traces file.
-    """
-    traces_raw_data = []
-    with open(filepath, 'r', encoding='utf-8') as f:
-        for line in f:
-            json_object = json.loads(line.strip())
-            traces_raw_data.append(json_object)
-    return traces_raw_data
-
-
-def get_server_side_metrics_from_traces(traces_raw_data):
-    """
-    Fetch server-side info from traces file per request.
-    We currently fetch vLLM requestID, input, output tokens,
-    e2e latency, waiting, prefill and decode time per request.
-    """
-    all_requests = []
-    for data in traces_raw_data:
-        for resourceSpan in data["resourceSpans"]:
-            for scopeSpan in resourceSpan["scopeSpans"]:
-                for span in scopeSpan["spans"]:
-                    request = {}
-                    for attribute in span["attributes"]:
-                        if attribute["key"] == "gen_ai.request.id":
-                            request["request_id"] = attribute["value"]["stringValue"].rsplit("-0", 1)[0]
-                        if attribute["key"] == "gen_ai.usage.prompt_tokens":
-                            request["input_tokens"] = int(attribute["value"]["intValue"])
-                        if attribute["key"] == "gen_ai.usage.completion_tokens":
-                            request["output_tokens"] = int(attribute["value"]["intValue"])
-                        if attribute["key"] == "gen_ai.latency.e2e":
-                            request["e2e_latency"] = attribute["value"]["doubleValue"]
-                        if attribute["key"] == "gen_ai.latency.time_to_first_token":
-                            request["ttft"] = attribute["value"]["doubleValue"]
-                        if attribute["key"] == "gen_ai.latency.time_in_queue":
-                            request["queued_time"] = attribute["value"]["doubleValue"]
-                        if attribute["key"] == "gen_ai.latency.time_in_model_prefill":
-                            request["prefill_time"] = attribute["value"]["doubleValue"]
-                        if attribute["key"] == "gen_ai.latency.time_in_model_decode":
-                            request["decode_time"] = attribute["value"]["doubleValue"]
-                    all_requests.append(request)
-    return all_requests
-
 
 def get_GuideLLM_rps_list(guidellm_results):
     """
@@ -80,6 +33,31 @@ def get_GuideLLM_rps_list(guidellm_results):
         if strategies["type_"] == "constant":
             rps_list.append(float(strategies["rate"]))
     return rps_list
+
+
+def get_metrics_from_guidellm(benchmark):
+    """
+    Extract all 5 latency metrics from a single GuideLLM benchmark entry.
+
+    GuideLLM stores:
+      - request_latency in seconds (E2E)
+      - time_to_first_token_ms in milliseconds (TTFT)
+      - inter_token_latency_ms in milliseconds (ITL)
+
+    Returns dict with keys matching combined_ground_truth.json format.
+    """
+    metrics = benchmark["metrics"]
+    e2e = metrics["request_latency"]["successful"]
+    ttft = metrics["time_to_first_token_ms"]["successful"]
+    itl = metrics["inter_token_latency_ms"]["successful"]
+
+    return {
+        "ttft_mean_ms": ttft["mean"],
+        "ttft_p90_ms": ttft["percentiles"]["p90"],
+        "itl_mean_ms": itl["mean"],
+        "e2e_mean_ms": e2e["mean"] * 1000,           # seconds -> ms
+        "e2e_p90_ms": e2e["percentiles"]["p90"] * 1000,  # seconds -> ms
+    }
 
 
 def get_sweep_info(guidellm_results, rps_list):
@@ -169,7 +147,6 @@ def process_experiment(exp_folder_path, exp_name):
     profile_path = os.path.join(exp_folder_path, "profile.yaml")
     guidellm_results_path = os.path.join(exp_folder_path, "guidellm-results.json")
     vllm_log_path = os.path.join(exp_folder_path, "vllm.log")
-    traces_path = os.path.join(exp_folder_path, "traces.json")
 
     # Load configurations
     vllm_config = load_yaml_config(exp_config_path)
@@ -192,43 +169,25 @@ def process_experiment(exp_folder_path, exp_name):
     if total_kv_blocks == 0:
         print(f"  Warning: Could not extract total_kv_blocks from {vllm_log_path}")
 
-    # Get RPS list and sweep information from GuideLLM results (for request IDs)
+    # Get RPS list from GuideLLM results
     try:
         rps_list = get_GuideLLM_rps_list(guidellm_results)
-        sweep_info = get_sweep_info(guidellm_results, rps_list)
     except Exception as e:
-        print(f"  Skipping {exp_name}: Failed to extract sweep info: {e}")
+        print(f"  Skipping {exp_name}: Failed to extract RPS list: {e}")
         return None
 
-    # Read traces and get server-side metrics
-    try:
-        traces_raw_data = read_traces_jsonl(traces_path)
-        all_requests = get_server_side_metrics_from_traces(traces_raw_data)
-        requests_df = pd.DataFrame(all_requests)
-    except Exception as e:
-        print(f"  Skipping {exp_name}: Failed to process traces: {e}")
-        return None
-
-    # Build QPS sweeps array with server-side latency metrics from traces
+    # Build QPS sweeps array with client-side metrics from GuideLLM
+    # GuideLLM benchmarks layout: [0]=synchronous, [1]=throughput, [2..]=constant rate
     qps_sweeps = []
-    for sweep in sweep_info:
-        # Filter trace data by request IDs for this sweep
-        benchmark_request_ids = sweep["requestIDs"]
-        benchmark_df = requests_df[requests_df["request_id"].isin(benchmark_request_ids)].copy()
-
-        if len(benchmark_df) == 0:
-            print(f"  Warning: No trace data found for sweep at RPS {sweep['rps']}")
+    for i, rps in enumerate(rps_list):
+        bench_idx = i + 2  # skip synchronous and throughput benchmarks
+        if bench_idx >= len(guidellm_results["benchmarks"]):
+            print(f"  Warning: No GuideLLM benchmark for RPS index {i} (rate={rps})")
             continue
 
-        # Calculate server-side metrics from traces
-        qps_data = {
-            "qps": sweep["rps"],
-            "ttft_mean_ms": benchmark_df["ttft"].mean() * 1e3,
-            "ttft_p90_ms": benchmark_df["ttft"].quantile(0.9) * 1e3,
-            "itl_mean_ms": (benchmark_df["prefill_time"] + benchmark_df["decode_time"]).sum() / benchmark_df["output_tokens"].sum() * 1e3,
-            "e2e_mean_ms": benchmark_df["e2e_latency"].mean() * 1e3,
-            "e2e_p90_ms": benchmark_df["e2e_latency"].quantile(0.9) * 1e3
-        }
+        benchmark = guidellm_results["benchmarks"][bench_idx]
+        qps_data = get_metrics_from_guidellm(benchmark)
+        qps_data["qps"] = rps
         qps_sweeps.append(qps_data)
 
     # For train experiments, sample only min, max, and middle QPS

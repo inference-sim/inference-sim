@@ -1,112 +1,112 @@
 #!/usr/bin/env python3
 """
 Plot benchmark results for roofline v2 evaluation.
-Updated with latest evaluation results using hardware_config_roofline_valid.json.
+Ground truth: GuideLLM client-side metrics (not vLLM traces).
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-# --- New evaluation results (roofline v2 with minimal hardware config) ---
+# --- Evaluation results (roofline v2, GuideLLM ground truth) ---
 
 codesweep_data = {
     '20260210-codellama-34b-tp2': {
-        'ttft_mean_ms': 87.42,
-        'ttft_p90_ms': 88.73,
-        'itl_mean_ms': 57.01,
-        'e2e_mean_ms': 45.14,
-        'e2e_p90_ms': 48.21
+        'ttft_mean_ms': 88.07,
+        'ttft_p90_ms': 89.23,
+        'itl_mean_ms': 50.91,
+        'e2e_mean_ms': 45.60,
+        'e2e_p90_ms': 48.79
     },
     '20260210-llama2-70b-tp4': {
-        'ttft_mean_ms': 88.09,
-        'ttft_p90_ms': 88.78,
-        'itl_mean_ms': 54.82,
-        'e2e_mean_ms': 42.60,
-        'e2e_p90_ms': 45.33
+        'ttft_mean_ms': 88.63,
+        'ttft_p90_ms': 89.23,
+        'itl_mean_ms': 48.32,
+        'e2e_mean_ms': 43.03,
+        'e2e_p90_ms': 46.62
     },
     '20260210-qwen3-14b-tp1': {
-        'ttft_mean_ms': 83.53,
-        'ttft_p90_ms': 86.25,
-        'itl_mean_ms': 54.70,
-        'e2e_mean_ms': 43.19,
-        'e2e_p90_ms': 47.64
+        'ttft_mean_ms': 84.66,
+        'ttft_p90_ms': 86.99,
+        'itl_mean_ms': 50.63,
+        'e2e_mean_ms': 43.69,
+        'e2e_p90_ms': 47.59
     },
     'jan30-llama2-7b-tp1': {
-        'ttft_mean_ms': 85.36,
-        'ttft_p90_ms': 85.73,
-        'itl_mean_ms': 51.43,
-        'e2e_mean_ms': 38.07,
-        'e2e_p90_ms': 43.47
+        'ttft_mean_ms': 87.09,
+        'ttft_p90_ms': 87.32,
+        'itl_mean_ms': 46.00,
+        'e2e_mean_ms': 39.15,
+        'e2e_p90_ms': 44.61
     },
     'jan30-llama2-7b-tp2': {
-        'ttft_mean_ms': 90.61,
-        'ttft_p90_ms': 91.18,
-        'itl_mean_ms': 69.39,
-        'e2e_mean_ms': 61.41,
-        'e2e_p90_ms': 66.64
+        'ttft_mean_ms': 92.18,
+        'ttft_p90_ms': 92.53,
+        'itl_mean_ms': 65.98,
+        'e2e_mean_ms': 62.42,
+        'e2e_p90_ms': 67.73
     },
     'jan30-llama2-7b-tp4': {
-        'ttft_mean_ms': 94.89,
-        'ttft_p90_ms': 95.03,
-        'itl_mean_ms': 80.08,
-        'e2e_mean_ms': 75.54,
-        'e2e_p90_ms': 77.76
+        'ttft_mean_ms': 95.96,
+        'ttft_p90_ms': 95.99,
+        'itl_mean_ms': 77.90,
+        'e2e_mean_ms': 76.39,
+        'e2e_p90_ms': 78.34
     }
 }
 
 chatsweep_data = {
     '20260210-codellama-34b-tp2': {
-        'ttft_mean_ms': 19.40,
-        'ttft_p90_ms': 15.76,
-        'itl_mean_ms': 31.54,
-        'e2e_mean_ms': 31.31,
-        'e2e_p90_ms': 30.56
+        'ttft_mean_ms': 33.30,
+        'ttft_p90_ms': 19.60,
+        'itl_mean_ms': 31.61,
+        'e2e_mean_ms': 31.15,
+        'e2e_p90_ms': 30.72
     },
     '20260210-llama2-70b-tp4': {
-        'ttft_mean_ms': 30.93,
-        'ttft_p90_ms': 19.98,
-        'itl_mean_ms': 20.40,
-        'e2e_mean_ms': 19.14,
-        'e2e_p90_ms': 18.55
+        'ttft_mean_ms': 40.95,
+        'ttft_p90_ms': 29.61,
+        'itl_mean_ms': 20.47,
+        'e2e_mean_ms': 19.06,
+        'e2e_p90_ms': 18.69
     },
     '20260210-qwen3-14b-tp2': {
-        'ttft_mean_ms': 47.43,
-        'ttft_p90_ms': 36.98,
-        'itl_mean_ms': 20.54,
-        'e2e_mean_ms': 20.35,
-        'e2e_p90_ms': 21.50
+        'ttft_mean_ms': 60.82,
+        'ttft_p90_ms': 51.81,
+        'itl_mean_ms': 20.49,
+        'e2e_mean_ms': 20.52,
+        'e2e_p90_ms': 21.33
     },
     'jan30-llama2-7b-tp1': {
-        'ttft_mean_ms': 33.78,
-        'ttft_p90_ms': 26.73,
-        'itl_mean_ms': 31.82,
-        'e2e_mean_ms': 31.66,
-        'e2e_p90_ms': 32.55
+        'ttft_mean_ms': 53.31,
+        'ttft_p90_ms': 41.29,
+        'itl_mean_ms': 31.84,
+        'e2e_mean_ms': 31.56,
+        'e2e_p90_ms': 32.67
     },
     'jan30-llama2-7b-tp2': {
-        'ttft_mean_ms': 68.53,
-        'ttft_p90_ms': 66.18,
-        'itl_mean_ms': 56.03,
-        'e2e_mean_ms': 56.07,
-        'e2e_p90_ms': 56.58
+        'ttft_mean_ms': 80.02,
+        'ttft_p90_ms': 77.12,
+        'itl_mean_ms': 55.99,
+        'e2e_mean_ms': 56.31,
+        'e2e_p90_ms': 56.56
     },
     'jan30-llama2-7b-tp4': {
-        'ttft_mean_ms': 80.18,
-        'ttft_p90_ms': 76.01,
-        'itl_mean_ms': 60.96,
-        'e2e_mean_ms': 61.28,
-        'e2e_p90_ms': 58.77
+        'ttft_mean_ms': 87.98,
+        'ttft_p90_ms': 84.55,
+        'itl_mean_ms': 60.79,
+        'e2e_mean_ms': 61.73,
+        'e2e_p90_ms': 58.96
     }
 }
 
 # Summarization experiment (standalone)
 summarization_data = {
     'dec17-tp1-qwen7': {
-        'ttft_mean_ms': 84.92,
-        'ttft_p90_ms': 78.89,
-        'itl_mean_ms': 21.67,
-        'e2e_mean_ms': 27.96,
-        'e2e_p90_ms': 26.88
+        'ttft_mean_ms': 86.76,
+        'ttft_p90_ms': 81.35,
+        'itl_mean_ms': 23.65,
+        'e2e_mean_ms': 27.59,
+        'e2e_p90_ms': 26.96
     }
 }
 
