@@ -175,10 +175,16 @@ var runCmd = &cobra.Command{
 				totalKVBlocks = kvBlocks
 			}
 		}
-		// Enable roofline mode if all required paths are provided
-		if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(benchDataPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
-			logrus.Infof("Enabling roofline mode: model-config-folder=%s, hardware-config=%s, bench-data-path=%s, gpu=%s, tp=%d",
-				modelConfigFolder, hwConfigPath, benchDataPath, gpu, tensorParallelism)
+		// Enable roofline mode if minimum required paths are provided
+		// bench-data-path is optional: if provided → roofline v2 (MFU-based), if not → roofline v1 (calibrated)
+		if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
+			if len(benchDataPath) > 0 {
+				logrus.Infof("Enabling roofline v2 mode: model-config-folder=%s, hardware-config=%s, bench-data-path=%s, gpu=%s, tp=%d",
+					modelConfigFolder, hwConfigPath, benchDataPath, gpu, tensorParallelism)
+			} else {
+				logrus.Infof("Enabling roofline v1 mode: model-config-folder=%s, hardware-config=%s, gpu=%s, tp=%d",
+					modelConfigFolder, hwConfigPath, gpu, tensorParallelism)
+			}
 			roofline = true
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
 			mc, err := sim.GetModelConfig(hfPath)
@@ -198,13 +204,12 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Please provide model config folder containing config.json via --model-config-folder")
 			} else if len(hwConfigPath) == 0 {
 				logrus.Fatalf("Please provide hardware config path via --hardware-config")
-			} else if len(benchDataPath) == 0 {
-				logrus.Fatalf("Please provide benchmark data path via --bench-data-path")
 			} else if len(gpu) == 0 {
 				logrus.Fatalf("Please provide GPU type via --gpu")
 			} else if tensorParallelism == 0 {
 				logrus.Fatalf("Please provide tensor parallelism via --tp")
 			}
+			// Note: bench-data-path is optional - without it, roofline v1 is used
 		}
 
 		// Load MFU database if roofline mode is enabled

@@ -266,9 +266,13 @@ func invalidPositiveFloat(v float64) bool {
 
 // ValidateRooflineConfig checks that all fields required by the roofline latency
 // model are valid positive values. Returns an error listing all invalid fields, or nil if valid.
-func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib) error {
+// ValidateRooflineConfig validates roofline configuration.
+// Set hasMFUDatabase=true for roofline v2 (MFU-based), which only requires TFlopsPeak and BwPeakTBs.
+// Set hasMFUDatabase=false for roofline v1 (calibrated), which requires all calibration fields.
+func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib, hasMFUDatabase bool) error {
 	var problems []string
 
+	// Model config validation (required for both v1 and v2)
 	if mc.NumHeads <= 0 {
 		problems = append(problems, fmt.Sprintf("ModelConfig.NumHeads must be > 0, got %d", mc.NumHeads))
 	}
@@ -281,20 +285,26 @@ func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib) error {
 	if invalidPositiveFloat(mc.BytesPerParam) {
 		problems = append(problems, fmt.Sprintf("ModelConfig.BytesPerParam must be a valid positive number, got %v", mc.BytesPerParam))
 	}
+
+	// Core hardware specs (required for both v1 and v2)
 	if invalidPositiveFloat(hc.TFlopsPeak) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.TFlopsPeak must be a valid positive number, got %v", hc.TFlopsPeak))
 	}
 	if invalidPositiveFloat(hc.BwPeakTBs) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.BwPeakTBs must be a valid positive number, got %v", hc.BwPeakTBs))
 	}
-	if invalidPositiveFloat(hc.BwEffConstant) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.BwEffConstant must be a valid positive number, got %v", hc.BwEffConstant))
-	}
-	if invalidPositiveFloat(hc.MfuPrefill) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuPrefill must be a valid positive number, got %v", hc.MfuPrefill))
-	}
-	if invalidPositiveFloat(hc.MfuDecode) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuDecode must be a valid positive number, got %v", hc.MfuDecode))
+
+	// Roofline v1-specific fields (only required when no MFU database)
+	if !hasMFUDatabase {
+		if invalidPositiveFloat(hc.BwEffConstant) {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.BwEffConstant must be a valid positive number, got %v. Are you running roofline v2? Use --bench-data-path with MFU benchmark data.", hc.BwEffConstant))
+		}
+		if invalidPositiveFloat(hc.MfuPrefill) {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.MfuPrefill must be a valid positive number, got %v. Are you running roofline v2? Use --bench-data-path with MFU benchmark data.", hc.MfuPrefill))
+		}
+		if invalidPositiveFloat(hc.MfuDecode) {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.MfuDecode must be a valid positive number, got %v. Are you running roofline v2? Use --bench-data-path with MFU benchmark data.", hc.MfuDecode))
+		}
 	}
 
 	if len(problems) > 0 {

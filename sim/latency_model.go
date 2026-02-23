@@ -202,7 +202,9 @@ func NewLatencyModel(coeffs LatencyCoeffs, hw ModelHardwareConfig) (LatencyModel
 		if hw.TP <= 0 {
 			return nil, fmt.Errorf("latency model: roofline requires TP > 0, got %d", hw.TP)
 		}
-		if err := ValidateRooflineConfig(hw.ModelConfig, hw.HWConfig); err != nil {
+		// Validate config based on which roofline mode we're using
+		hasMFUDatabase := hw.MFUDatabase != nil
+		if err := ValidateRooflineConfig(hw.ModelConfig, hw.HWConfig, hasMFUDatabase); err != nil {
 			return nil, fmt.Errorf("latency model: %w", err)
 		}
 		// Use roofline v2 if MFU database is available

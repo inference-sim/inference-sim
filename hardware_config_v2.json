@@ -1,0 +1,18 @@
+{
+    "H100": {
+        "TFlopsPeak": 989.5,
+        "BwPeakTBs": 3.35,
+        "TOverheadMicros": 50.0,
+        "PrefillOverheadMicros": 100.0,
+        "MixedPrefillOverheadMicros": 50.0,
+        "AllReduceLatency": 20.0
+    },
+    "A100-SXM": {
+        "TFlopsPeak": 312.0,
+        "BwPeakTBs": 2.039,
+        "TOverheadMicros": 60.0,
+        "PrefillOverheadMicros": 120.0,
+        "MixedPrefillOverheadMicros": 60.0,
+        "AllReduceLatency": 25.0
+    }
+}
