@@ -273,8 +273,8 @@ func TestSaveResults_ConservationFields(t *testing.T) {
 	assert.Equal(t, 1, output.StillQueued)
 	assert.Equal(t, 1, output.StillRunning)
 	assert.Equal(t, 10, output.InjectedRequests)
-	// Conservation identity: injected = completed + queued + running
-	assert.Equal(t, output.InjectedRequests, output.CompletedRequests+output.StillQueued+output.StillRunning)
+	// Conservation identity: injected = completed + queued + running + dropped (INV-1)
+	assert.Equal(t, output.InjectedRequests, output.CompletedRequests+output.StillQueued+output.StillRunning+output.DroppedUnservable)
 }
 
 // TestSaveResults_PerRequestITL_InMilliseconds verifies BC-14:

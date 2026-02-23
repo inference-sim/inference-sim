@@ -205,11 +205,11 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 			m := instance.Metrics()
 
 			// INV-1: Request conservation
-			// completed + still_queued + still_running == injected
-			total := m.CompletedRequests + m.StillQueued + m.StillRunning
+			// completed + still_queued + still_running + dropped == injected
+			total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
 			if total != tc.NumRequests {
-				t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) = %d, want %d (NumRequests)",
-					m.CompletedRequests, m.StillQueued, m.StillRunning, total, tc.NumRequests)
+				t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d (NumRequests)",
+					m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, total, tc.NumRequests)
 			}
 
 			// INV-5: Causality — for every completed request, TTFT >= 0 and E2E >= TTFT
