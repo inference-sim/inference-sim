@@ -9,11 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Define struct for YAML
-type WorkloadConfig struct {
-	Workloads map[string]Workload `yaml:"workloads"`
-}
-
+// Workload describes a preset workload configuration in defaults.yaml.
 type Workload struct {
 	PrefixTokens      int `yaml:"prefix_tokens"`
 	PromptTokensMean  int `yaml:"prompt_tokens"`

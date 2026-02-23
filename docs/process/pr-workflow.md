@@ -67,7 +67,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 2.5: plan review   │ (5 passes: external + 3 focused + structural)
+│ Step 2.5: plan review   │ (10 perspectives per round — see checklist)
 └──────────┬──────────────┘
            │
            ▼
@@ -530,7 +530,7 @@ This skill provides structured root-cause analysis: reproduce → isolate → hy
 > **If any CRITICAL or IMPORTANT findings:** Fix all issues, then re-run the entire round
 > from scratch. Repeat until convergence (see Convergence Protocol below).
 
-**Why 5 perspectives in parallel?** Each catches issues the others miss. In the standards-audit-hardening PR, Perspective 1 found a runtime-breaking regression (`GetWorkloadConfig` panic), Perspective 2 found weakened test coverage (missing regression anchors), Perspective 3 found the same runtime break from the user's perspective, and Perspective 4 found stale terminology and user-unfriendly panic paths. The substance perspective catches design-level issues that structural checks miss.
+**Why 10 perspectives in parallel?** Each catches issues the others miss. In the standards-audit-hardening PR, Perspective 1 (substance) found a runtime-breaking regression, Perspective 3 (tests) found weakened coverage, Perspective 7 (vLLM expert) confirmed CLI validation matches real server semantics, and Perspective 10 (security) found pre-existing factory validation gaps. Domain-specific perspectives (DES, vLLM, distributed platform) catch issues that generic code-quality reviewers miss.
 
 ---
 
@@ -824,11 +824,11 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 | `commit-commands:clean_gone` | **Step 1** - Pre-cleanup of stale branches | None | Removed stale branches |
 | `using-git-worktrees` | **Step 1** - Create isolated workspace FIRST | Branch name | Worktree directory path |
 | `writing-plans` | **Step 2** - Create implementation plan from source document | Source document (macro plan/design doc/issues) + `docs/templates/micro-plan.md` | Plan file with contracts + tasks |
-| `pr-review-toolkit:review-pr` | **Step 2.5** - 5 parallel perspectives per round | Targeted prompts (see checklist) | Critical/important issues per perspective |
+| `pr-review-toolkit:review-pr` | **Step 2.5** - 10 parallel perspectives per round | Targeted prompts (see checklist) | Critical/important issues per perspective |
 | `executing-plans` | **Step 4** - Execute plan tasks continuously | Plan file path | Implemented code + commits |
 | `systematic-debugging` | **Step 4 (on failure)** - Structured root-cause analysis | Failing test/error context | Root cause + fix |
 | `subagent-driven-development` | **Step 4 (alt)** - Execute plan in-session | Plan file path | Implemented code + commits |
-| `pr-review-toolkit:review-pr` | **Step 4.5** - 4 focused code review passes | Targeted prompts (see checklist) | Critical/important issues per pass |
+| `pr-review-toolkit:review-pr` | **Step 4.5** - 10 parallel perspectives per round | Targeted prompts (see checklist) | Critical/important issues per perspective |
 | `verification-before-completion` | **Step 4.5 (gate)** - Enforced build/test/lint verification | None | Evidence-based pass/fail |
 | `commit-commands:commit-push-pr` | **Step 5** - Commit, push, create PR (all in one) | Current branch state | Commit + push + PR URL |
 
