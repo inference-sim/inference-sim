@@ -310,3 +310,35 @@ func TestSaveResults_PerRequestITL_InMilliseconds(t *testing.T) {
 	assert.InDelta(t, 10.0, output.Requests[0].TTFT, 0.001, "TTFT should be in ms")
 	assert.InDelta(t, 50.0, output.Requests[0].E2E, 0.001, "E2E should be in ms")
 }
+
+// BC-4: DroppedUnservable appears in JSON output
+func TestSaveResults_DroppedUnservable_InJSON(t *testing.T) {
+	// GIVEN metrics with dropped requests
+	m := NewMetrics()
+	m.DroppedUnservable = 2
+	m.SimEndedTime = 1_000_000
+
+	// WHEN saving results to a temp file
+	tmpFile := filepath.Join(t.TempDir(), "test_output.json")
+	m.SaveResults("test", 10_000_000, 100, tmpFile)
+
+	// THEN the JSON file must contain dropped_unservable
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("reading output: %v", err)
+	}
+
+	var output MetricsOutput
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+
+	if output.DroppedUnservable != 2 {
+		t.Errorf("DroppedUnservable in JSON = %d, want 2", output.DroppedUnservable)
+	}
+
+	// AND InjectedRequests must include dropped requests (BC-5)
+	if output.InjectedRequests != 2 {
+		t.Errorf("InjectedRequests = %d, want 2 (should include dropped)", output.InjectedRequests)
+	}
+}

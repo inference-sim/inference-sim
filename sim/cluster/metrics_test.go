@@ -135,6 +135,21 @@ func TestCollectRawMetrics_RejectedRequests(t *testing.T) {
 	}
 }
 
+// TestCollectRawMetrics_DroppedUnservable verifies dropped count is captured.
+func TestCollectRawMetrics_DroppedUnservable(t *testing.T) {
+	// GIVEN aggregated metrics with dropped requests
+	m := sim.NewMetrics()
+	m.DroppedUnservable = 3
+
+	// WHEN collecting raw metrics
+	raw := CollectRawMetrics(m, nil, 0, "")
+
+	// THEN DroppedUnservable is captured
+	if raw.DroppedUnservable != 3 {
+		t.Errorf("DroppedUnservable: got %d, want 3", raw.DroppedUnservable)
+	}
+}
+
 // TestComputeFitness_WeightedScore verifies BC-3.
 func TestComputeFitness_WeightedScore(t *testing.T) {
 	raw := &RawMetrics{
