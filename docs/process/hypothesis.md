@@ -229,6 +229,8 @@ Create `hypotheses/<name>/run.sh` and `hypotheses/<name>/analyze.py`.
 
 **Every `run.sh` and `analyze.py` must be code-reviewed BEFORE running experiments.** This is non-negotiable. Three of four major bugs in PR #310 would have been caught by code review before a single experiment ran.
 
+**Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable, wrong operating point), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval.
+
 Run the **5-perspective Code Review** using the [universal convergence protocol](#universal-convergence-protocol):
 
 #### Code Review Perspectives
@@ -287,7 +289,7 @@ Execute experiments across required seeds:
 
 1. **Analyze** — produce comparison tables, compute effect sizes
 2. **Verify root cause** — trace every causal claim through code (RCV-1, RCV-2, RCV-3)
-3. **Document FINDINGS.md** — use the [template](../templates/hypothesis.md). All 12 sections must be present and non-empty.
+3. **Document FINDINGS.md** — use the [template](../templates/hypothesis.md). All sections must be present and non-empty.
 4. **Update `hypotheses/README.md`** — add a row to the "Validated Hypotheses" table and update "Coverage by Family" if needed
 
 ---
@@ -297,6 +299,8 @@ Execute experiments across required seeds:
 **Context:** Worktree (after FINDINGS.md documented)
 
 Run the **10-perspective FINDINGS Review** using the [universal convergence protocol](#universal-convergence-protocol).
+
+**Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable not identified in design), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. Maximum 2 cross-gate regressions per experiment — if the design still has fundamental issues after 2 regressions, suspend the experiment and escalate for a re-scoping decision.
 
 **How to run:** Launch all 10 as parallel Task agents. Each agent receives the FINDINGS.md path and its specific focus area. Collect results and assess convergence when all 10 complete.
 
@@ -346,7 +350,7 @@ Task(subagent_type="general-purpose", run_in_background=True,
 - Does the mechanism explain the direction using experimental evidence, not just code-reading claims?
 
 **Reviewer 5 — Standards Compliance:**
-- Are ALL 12 FINDINGS.md sections present and non-empty? (per `docs/templates/hypothesis.md`)
+- Are ALL FINDINGS.md sections present and non-empty? (per `docs/templates/hypothesis.md`)
 - Is the hypothesis correctly classified (family, VV&UQ category, type)?
 - Does the Devil's Advocate section (RCV-5) argue both directions convincingly?
 - Are scope and limitations (RCV-6) complete — operating point, dependencies, what was NOT tested, generalizability, UQ?
@@ -493,6 +497,7 @@ The #385/#390 pattern: run N hypothesis experiments simultaneously with a team l
 - Each agent creates files ONLY in its own `hypotheses/<name>/` directory — no file conflicts
 - **README.md updates are deferred** to the team lead's consolidation step (not done by individual agents)
 - **Team lead MUST independently run convergence review** for each experiment. Do NOT delegate convergence assessment to the same agent that ran the experiment. Evidence from #390: agents self-reported "Round 1 convergence" but actual independent review found 3 CRITICAL + 18 IMPORTANT issues.
+- **Step 3 is a synchronization point.** All agents pause at Step 3 until the human has reviewed and approved each design independently. The team lead should batch-present all designs for human review to minimize idle time.
 - Solo mode is the degenerate case (team size = 1)
 
 ### Consolidation
@@ -560,6 +565,7 @@ See [Issue Taxonomy](#issue-taxonomy-after-convergence) for the complete filing 
 - [ ] All review feedback addressed or explicitly acknowledged as open
 - [ ] Findings classified per the findings table (including resolution type)
 - [ ] Standards audit completed
+- [ ] Promotion assessment completed (see [Promotion of Confirmed Hypotheses](#promotion-of-confirmed-hypotheses))
 - [ ] If code fixes involved: `go build`, `go test`, `golangci-lint` all pass
 
 ### Post-PR Gates (check after PR creation — Step 10)

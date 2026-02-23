@@ -288,14 +288,14 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 - `docs/standards/rules.md`: **20 antipattern rules** (R1-R20) — each with evidence, checks, enforcement locations
 - `docs/standards/invariants.md`: **8 system invariants** (INV-1 through INV-8) — with verification strategies
 - `docs/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
-- `docs/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `hypothesis.md`), findings classification
+- `docs/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/process/hypothesis.md`), findings classification
 
 ### Process (how to do each activity)
 
 - `docs/process/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
 - `docs/process/design.md`: Design document creation process
 - `docs/process/macro-plan.md`: Macro-level (multi-PR) planning process
-- `docs/process/hypothesis.md`: Hypothesis experiment process
+- `docs/process/hypothesis.md`: End-to-end hypothesis experiment process (Steps 0-10, three review gates, convergence protocol)
 
 ### Templates (what to produce)
 

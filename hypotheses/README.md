@@ -1,5 +1,7 @@
 # Hypothesis Experiments
 
+> **Canonical source:** [`docs/process/hypothesis.md`](../docs/process/hypothesis.md). If this step list diverges, hypothesis.md is authoritative.
+
 This directory contains validated hypothesis experiments for BLIS. Each hypothesis follows the methodology described in `docs/process/hypothesis.md`, with hypotheses drawn from the catalog in `docs/plans/research.md`:
 
 0. **Create isolated worktree** — `.worktrees/h-<name>` using worktree skill
