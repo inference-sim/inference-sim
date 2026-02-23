@@ -82,7 +82,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 4.5: code review   │ (4 focused review passes — see checklist)
+│ Step 4.5: code review   │ (4 perspectives per round — see checklist)
 └──────────┬──────────────┘
            │
            ▼
@@ -105,7 +105,7 @@ If skills are unavailable, you can implement each step manually:
 2. **Three-stage quality assurance:**
    - **Plan Review** (Step 2.5) - round of 5 parallel perspectives: substance, cross-doc, architecture, codebase, structural
      - Catches design issues before implementation
-   - **Code Review** (Step 4.5) - 4 passes: code quality, test quality, getting-started, automated reviewer
+   - **Code Review** (Step 4.5) - round of 4 parallel perspectives: code quality, test quality, getting-started, automated reviewer
      - Catches implementation issues before PR creation
    - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 9 dimensions
      - Catches substance bugs that pattern-matching agents miss
@@ -584,7 +584,7 @@ Wait for user approval before proceeding to Step 4.75.
 > full context. Report all issues found. If you find zero issues, explain why you're confident
 > for each dimension.
 
-**Why this step exists:** In PR9, the 4-pass automated code review (Step 4.5) found 0 new issues in Pass 4. Then the user asked "are you confident?" and Claude found 3 real bugs by thinking critically: a wrong reference scale for token throughput normalization, non-deterministic map iteration in output, and inconsistent comment patterns. Automated review passes check structure; this step checks substance.
+**Why this step exists:** In PR9, the 4-perspective automated code review (Step 4.5) found 0 new issues in the final perspective. Then the user asked "are you confident?" and Claude found 3 real bugs by thinking critically: a wrong reference scale for token throughput normalization, non-deterministic map iteration in output, and inconsistent comment patterns. Automated review perspectives check structure; this step checks substance.
 
 **Self-audit dimensions — think through each one:**
 
@@ -929,7 +929,7 @@ golangci-lint run ./path/to/modified/package/...
 **v2.8 (2026-02-18):** Auto-close issues on PR merge. Added `**Closes:**` field to micro plan header template (`prmicroplanprompt-v2.md`) that captures GitHub closing keywords (e.g., `Fixes #183, fixes #189`). Updated Step 5 PR description spec to propagate closing keywords into the PR body. GitHub auto-closes referenced issues when the PR merges — no manual cleanup needed.
 **v2.9 (2026-02-20):** Convergence re-run protocol for both Step 2.5 and Step 4.5. After all review passes complete with fixes, re-run all passes from scratch to verify fixes didn't introduce cross-pass issues. Repeat until convergence (0 CRITICAL, 0 IMPORTANT). Evidence: Wave 1 parallel PR session — Track B's full re-run validated that 3 fixes (including 2 CRITICAL: overwrite-existing-test-file and incomplete zero-value coverage) introduced no regressions across all 5 passes.
 
-**v3.0 (2026-02-23):** Two structural changes aligned with the hypothesis process model: (1) **Multi-perspective rounds replace sequential passes.** Step 2.5 and Step 4.5 now run all perspectives in parallel as a single "round" instead of sequentially with fixes between passes. This matches the hypothesis process's 3-parallel-reviewer model. (2) **External LLM review (`review-plan`) removed.** Replaced by an internal "Substance & Design" perspective that checks for mathematical errors, scale mismatches, and logical flaws — the same coverage, without the external API dependency. (3) **Convergence redefined.** A round converges when ALL perspectives report 0 CRITICAL and 0 IMPORTANT findings on first pass. If issues are found, fix and re-run the entire round. Convergence is a property of a clean round, not of iterative fixes within a round.
+**v3.0 (2026-02-23):** Three structural changes aligned with the hypothesis process model: (1) **Multi-perspective rounds replace sequential passes.** Step 2.5 and Step 4.5 now run all perspectives in parallel as a single "round" instead of sequentially with fixes between passes. This matches the hypothesis process's 3-parallel-reviewer model. (2) **External LLM review (`review-plan`) removed.** Replaced by an internal "Substance & Design" perspective that checks for mathematical errors, scale mismatches, and logical flaws — the same coverage, without the external API dependency. (3) **Convergence redefined.** A round converges when ALL perspectives report 0 CRITICAL and 0 IMPORTANT findings on first pass. If issues are found, fix and re-run the entire round. Convergence is a property of a clean round, not of iterative fixes within a round.
 
 **Key improvements in v2.0:**
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/<macro-plan>.md`)

@@ -263,11 +263,23 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 		},
 	}
 	result := model.StepTime(batch)
-	// Regression anchor: exact value via factory path. This is the ONE test that
-	// deliberately reproduces the formula to catch accidental coefficient changes.
-	// All other tests use behavioral assertions (monotonicity, positivity, bounds).
+	// Regression anchors: exact values via factory path to catch accidental
+	// coefficient changes. All other tests use behavioral assertions.
 	if result != 1300 {
-		t.Errorf("StepTime = %d, want 1300 (blackbox regression anchor)", result)
+		t.Errorf("StepTime = %d, want 1300 (regression anchor: beta0 + beta1*30)", result)
+	}
+
+	// QueueingTime regression anchor (alpha0 + alpha1 * inputLen)
+	req := &Request{InputTokens: make([]int, 50)}
+	qt := model.QueueingTime(req)
+	if qt != 150 {
+		t.Errorf("QueueingTime = %d, want 150 (regression anchor: alpha0 + alpha1*50)", qt)
+	}
+
+	// OutputTokenProcessingTime regression anchor (alpha2)
+	otp := model.OutputTokenProcessingTime()
+	if otp != 100 {
+		t.Errorf("OutputTokenProcessingTime = %d, want 100 (regression anchor: alpha2)", otp)
 	}
 }
 

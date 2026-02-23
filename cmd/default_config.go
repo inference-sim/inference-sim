@@ -54,10 +54,9 @@ type Model struct {
 }
 
 func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float64, numRequests int) *sim.GuideLLMConfig {
-	// Read YAML file
 	data, err := os.ReadFile(workloadFilePath)
 	if err != nil {
-		panic(err)
+		logrus.Fatalf("Failed to read defaults file: %v", err)
 	}
 
 	// Parse YAML with strict field checking (R10: typos must cause errors)
@@ -65,7 +64,7 @@ func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float6
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
-		panic(err)
+		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
 	}
 
 	if workload, workloadExists := cfg.Workloads[workloadType]; workloadExists {
@@ -83,10 +82,9 @@ func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float6
 }
 
 func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion string) {
-	// Read YAML file
 	data, err := os.ReadFile(defaultsFilePath)
 	if err != nil {
-		panic(err)
+		logrus.Fatalf("Failed to read defaults file: %v", err)
 	}
 
 	// Parse YAML with strict field checking (R10: typos must cause errors)
@@ -94,7 +92,7 @@ func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
-		panic(err)
+		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
 	}
 
 	if _, modelExists := cfg.Defaults[LLM]; modelExists {
@@ -105,10 +103,9 @@ func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion
 }
 
 func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, defaultsFilePath string) ([]float64, []float64, int64) {
-	// Read YAML file
 	data, err := os.ReadFile(defaultsFilePath)
 	if err != nil {
-		panic(err)
+		logrus.Fatalf("Failed to read defaults file %s: %v", defaultsFilePath, err)
 	}
 
 	// Parse YAML with strict field checking (R10: typos must cause errors)
@@ -116,7 +113,7 @@ func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, default
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
-		panic(err)
+		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
 	}
 
 	for _, model := range cfg.Models {
