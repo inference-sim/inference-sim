@@ -3,6 +3,7 @@ package workload
 import (
 	"math"
 	"math/rand"
+	"strings"
 	"testing"
 )
 
@@ -240,5 +241,41 @@ func TestNewLengthSampler_InvalidType_ReturnsError(t *testing.T) {
 	_, err := NewLengthSampler(DistSpec{Type: "unknown"})
 	if err == nil {
 		t.Fatal("expected error for unknown distribution type")
+	}
+}
+
+// TestNewLengthSampler_MissingRequiredParams_ReturnsError verifies BC-10.
+func TestNewLengthSampler_MissingRequiredParams_ReturnsError(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    DistSpec
+		wantErr string
+	}{
+		{
+			name:    "gaussian missing mean",
+			spec:    DistSpec{Type: "gaussian", Params: map[string]float64{"std_dev": 1, "min": 1, "max": 10}},
+			wantErr: "mean",
+		},
+		{
+			name:    "exponential missing mean",
+			spec:    DistSpec{Type: "exponential", Params: map[string]float64{}},
+			wantErr: "mean",
+		},
+		{
+			name:    "pareto_lognormal missing alpha",
+			spec:    DistSpec{Type: "pareto_lognormal", Params: map[string]float64{"xm": 1, "mu": 0, "sigma": 1, "mix_weight": 0.5}},
+			wantErr: "alpha",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewLengthSampler(tt.spec)
+			if err == nil {
+				t.Fatal("expected error for missing required param")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q should mention %q", err.Error(), tt.wantErr)
+			}
+		})
 	}
 }
