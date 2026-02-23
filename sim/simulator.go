@@ -300,8 +300,20 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // Precondition: rate >= 0. Callers are responsible for validation (R3).
 func (sim *Simulator) SetRequestRate(rate float64) { sim.requestRate = rate }
 
-// Adds a newly arrived request to the waiting queue
+// EnqueueRequest adds a newly arrived request to the waiting queue.
+// Requests whose input tokens require more KV blocks than the total cache
+// capacity are dropped with a warning (R19: livelock protection). This mirrors
+// real vLLM behavior where oversized requests are rejected before entering
+// the engine.
 func (sim *Simulator) EnqueueRequest(r *Request) {
+	blocksNeeded := (int64(len(r.InputTokens)) + sim.KVCache.BlockSize() - 1) / sim.KVCache.BlockSize()
+	if blocksNeeded > sim.KVCache.TotalCapacity() {
+		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
+			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
+		sim.Metrics.DroppedUnservable++
+		delete(sim.Metrics.Requests, r.ID)
+		return
+	}
 	sim.WaitQ.Enqueue(r)
 	sim.Metrics.TotalInputTokens += len(r.InputTokens)
 }

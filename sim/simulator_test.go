@@ -1010,3 +1010,232 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 			s.Metrics.CompletedRequests, s.WaitQ.Len(), running, total, injected)
 	}
 }
+
+// BC-1: Oversized request dropped at enqueue
+func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
+	// GIVEN a simulator with 10 KV blocks of 16 tokens each (160 token capacity)
+	cfg := SimConfig{
+		Horizon: 1_000_000,
+		Seed:    42,
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   10,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     256,
+			MaxScheduledTokens: 2048,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{1000, 1, 1},
+			AlphaCoeffs: []float64{0, 0, 0},
+		},
+	}
+	sim, err := NewSimulator(cfg)
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
+
+	// AND a request with 200 input tokens (needs ceil(200/16) = 13 blocks > 10 total)
+	oversized := &Request{
+		ID:          "oversized_req",
+		InputTokens: make([]int, 200),
+		State:       StateQueued,
+	}
+	// Register it in Metrics.Requests (simulating InjectArrival behavior)
+	sim.Metrics.Requests[oversized.ID] = NewRequestMetrics(oversized, 0)
+
+	// WHEN we try to enqueue it
+	sim.EnqueueRequest(oversized)
+
+	// THEN it must NOT be in the wait queue
+	if sim.WaitQ.Len() != 0 {
+		t.Errorf("WaitQ.Len() = %d, want 0 (oversized request should not be enqueued)", sim.WaitQ.Len())
+	}
+
+	// AND DroppedUnservable must be incremented
+	if sim.Metrics.DroppedUnservable != 1 {
+		t.Errorf("DroppedUnservable = %d, want 1", sim.Metrics.DroppedUnservable)
+	}
+
+	// AND the request must be removed from per-request tracking (BC-7)
+	if _, exists := sim.Metrics.Requests[oversized.ID]; exists {
+		t.Error("dropped request should be removed from Metrics.Requests")
+	}
+
+	// AND TotalInputTokens must NOT include the dropped request's tokens
+	if sim.Metrics.TotalInputTokens != 0 {
+		t.Errorf("TotalInputTokens = %d, want 0 (dropped request tokens not counted)", sim.Metrics.TotalInputTokens)
+	}
+}
+
+// BC-2: Normal requests unaffected
+func TestEnqueueRequest_NormalInput_Enqueued(t *testing.T) {
+	// GIVEN a simulator with 100 KV blocks of 16 tokens each
+	cfg := SimConfig{
+		Horizon: 1_000_000,
+		Seed:    42,
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   100,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     256,
+			MaxScheduledTokens: 2048,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{1000, 1, 1},
+			AlphaCoeffs: []float64{0, 0, 0},
+		},
+	}
+	sim, err := NewSimulator(cfg)
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
+
+	// AND a request that fits (100 tokens needs ceil(100/16) = 7 blocks <= 100 total)
+	normal := &Request{
+		ID:          "normal_req",
+		InputTokens: make([]int, 100),
+		State:       StateQueued,
+	}
+
+	// WHEN we enqueue it
+	sim.EnqueueRequest(normal)
+
+	// THEN it must be in the wait queue
+	if sim.WaitQ.Len() != 1 {
+		t.Errorf("WaitQ.Len() = %d, want 1", sim.WaitQ.Len())
+	}
+
+	// AND DroppedUnservable must remain 0
+	if sim.Metrics.DroppedUnservable != 0 {
+		t.Errorf("DroppedUnservable = %d, want 0", sim.Metrics.DroppedUnservable)
+	}
+
+	// AND TotalInputTokens must include the request's tokens
+	if sim.Metrics.TotalInputTokens != 100 {
+		t.Errorf("TotalInputTokens = %d, want 100", sim.Metrics.TotalInputTokens)
+	}
+}
+
+// BC-3, BC-5, BC-6: Simulation terminates with mixed oversized and normal requests
+func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
+	// GIVEN a simulator with very small KV cache (50 blocks × 16 tokens = 800 tokens)
+	// This is the exact reproduction case from issue #373
+	cfg := SimConfig{
+		Horizon: 10_000_000,
+		Seed:    42,
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   50,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     256,
+			MaxScheduledTokens: 2048,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{6910, 17.67, 2.84},
+			AlphaCoeffs: []float64{0, 0, 0},
+		},
+	}
+	sim, err := NewSimulator(cfg)
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
+
+	// AND a mix of requests: some fit, some don't
+	// Request 0: 900 tokens → ceil(900/16) = 57 blocks > 50 → dropped
+	oversized := &Request{
+		ID:           "request_oversized",
+		InputTokens:  make([]int, 900),
+		OutputTokens: make([]int, 10),
+		ArrivalTime:  100_000,
+		State:        StateQueued,
+	}
+	// Request 1: 100 tokens → ceil(100/16) = 7 blocks <= 50 → fits
+	normal := &Request{
+		ID:           "request_normal",
+		InputTokens:  make([]int, 100),
+		OutputTokens: make([]int, 10),
+		ArrivalTime:  200_000,
+		State:        StateQueued,
+	}
+
+	sim.InjectArrival(oversized)
+	sim.InjectArrival(normal)
+
+	// WHEN we run the simulation
+	sim.Run()
+
+	// THEN it must terminate (reaching this line proves no livelock — BC-6)
+
+	// AND the oversized request must be dropped
+	if sim.Metrics.DroppedUnservable != 1 {
+		t.Errorf("DroppedUnservable = %d, want 1", sim.Metrics.DroppedUnservable)
+	}
+
+	// AND the normal request must complete
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
+	}
+
+	// AND conservation must hold (BC-5):
+	// completed + still_queued + still_running + dropped = total injected into EnqueueRequest
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != 2 {
+		t.Errorf("conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 2",
+			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,
+			sim.Metrics.DroppedUnservable, total)
+	}
+}
+
+// BC-6: All oversized — simulation still terminates
+func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
+	// GIVEN a simulator with tiny KV cache
+	cfg := SimConfig{
+		Horizon: 10_000_000,
+		Seed:    42,
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   5,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     256,
+			MaxScheduledTokens: 2048,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{1000, 1, 1},
+			AlphaCoeffs: []float64{0, 0, 0},
+		},
+	}
+	sim, err := NewSimulator(cfg)
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
+
+	// AND all requests are oversized (200 tokens → 13 blocks > 5 total)
+	for i := 0; i < 5; i++ {
+		req := &Request{
+			ID:           fmt.Sprintf("request_%d", i),
+			InputTokens:  make([]int, 200),
+			OutputTokens: make([]int, 10),
+			ArrivalTime:  int64(i) * 100_000,
+			State:        StateQueued,
+		}
+		sim.InjectArrival(req)
+	}
+
+	// WHEN we run the simulation
+	sim.Run()
+
+	// THEN it must terminate (no livelock)
+	// AND all requests must be dropped
+	if sim.Metrics.DroppedUnservable != 5 {
+		t.Errorf("DroppedUnservable = %d, want 5", sim.Metrics.DroppedUnservable)
+	}
+
+	// AND no requests completed
+	if sim.Metrics.CompletedRequests != 0 {
+		t.Errorf("CompletedRequests = %d, want 0", sim.Metrics.CompletedRequests)
+	}
+}

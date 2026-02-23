@@ -506,11 +506,12 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.DroppedUnservable > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
 			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
+			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
 		}
 
 		// Print KV cache metrics if any nonzero (BC-1, BC-2)
