@@ -3,7 +3,45 @@ package cmd
 import (
 	"os"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
+
+// TestGetCoefficients_StrictParsing_RejectsUnknownFields verifies BC-5 (R10):
+// GIVEN a YAML file with a typo (unknown field "beta_coefs" instead of "beta_coeffs")
+// WHEN GetCoefficients parses the file
+// THEN it MUST call logrus.Fatalf (strict parsing rejects unknown fields).
+func TestGetCoefficients_StrictParsing_RejectsUnknownFields(t *testing.T) {
+	tmpFile, err := os.CreateTemp(t.TempDir(), "defaults-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := `
+models:
+  - id: "test-model"
+    GPU: "H100"
+    tensor_parallelism: 2
+    vllm_version: "0.6.6"
+    alpha_coeffs: [100, 1, 100]
+    beta_coefs: [1000, 10, 5]
+    total_kv_blocks: 100
+`
+	if _, err := tmpFile.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	_ = tmpFile.Close()
+
+	// Intercept logrus.Fatalf to prevent os.Exit in tests
+	fatalCalled := false
+	logrus.StandardLogger().ExitFunc = func(int) { fatalCalled = true }
+	defer func() { logrus.StandardLogger().ExitFunc = nil }()
+
+	GetCoefficients("test-model", 2, "H100", "0.6.6", tmpFile.Name())
+
+	if !fatalCalled {
+		t.Error("expected logrus.Fatalf for unknown field 'beta_coefs', but it was not called")
+	}
+}
 
 // TestGetCoefficients_ReturnsTotalKVBlocks_CallerMustCheckChanged verifies BC-5 (#285):
 // GetCoefficients returns the model's default totalKVBlocks, but callers MUST

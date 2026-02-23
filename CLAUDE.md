@@ -155,7 +155,7 @@ When using Task agents: 1) Do NOT poll TaskList repeatedly — check at reasonab
 
 ### Code Review Standards
 
-During PR reviews, check all Antipattern Prevention rules (1-11) below. Pay special attention to rules 8-10 (exported mutable maps, YAML pointer types, strict YAML parsing) which are easy to miss in new code. Always run `go test ./...` and lint after fixes.
+During PR reviews, check all Antipattern Prevention rules (1-20) below. Pay special attention to rules 8-10 (exported mutable maps, YAML pointer types, strict YAML parsing) which are easy to miss in new code. Always run `go test ./...` and lint after fixes.
 
 ### Macro Plan Updates
 
@@ -289,6 +289,7 @@ inference-sim/
 │   ├── kv_store.go            # KVStore interface, NewKVStore factory
 │   ├── kvcache_tiered.go      # TieredKVCache: GPU+CPU composition, offload/reload, transfer latency
 │   ├── batch.go               # Batch struct
+│   ├── batch_formation.go     # BatchFormation interface, VLLMBatchFormation, NewBatchFormation factory
 │   ├── queue.go               # FIFO wait queue
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
@@ -304,7 +305,8 @@ inference-sim/
 │   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
 │   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, anomaly detection, per-SLO-class metrics, JainFairnessIndex
 │   ├── deployment.go          # DeploymentConfig (embeds sim.SimConfig) + cluster-only fields
-│   └── workload.go            # Centralized request generation for cluster dispatch
+│   ├── workload.go            # Centralized request generation for cluster dispatch
+│   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
 ├── sim/workload/              # ServeGen-informed workload generation (PR10)
 │   ├── spec.go                # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
 │   ├── arrival.go             # ArrivalSampler: Poisson, Gamma (Marsaglia-Tsang), Weibull (bisection)
@@ -320,12 +322,10 @@ inference-sim/
 │   ├── network.go             # Client-perspective latency (RTT + bandwidth)
 │   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
 │   └── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
-├── sim/kv/                    # P/D cross-instance KV transfer (planned, PR14)
 ├── sim/trace/                 # Decision trace recording (PR13)
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore
 │   └── summary.go             # TraceSummary, Summarize()
-├── sim/adapter/               # Framework adapters (planned, Phase 5)
 ├── model_configs/             # HuggingFace config.json files
 ├── defaults.yaml              # Trained coefficients, defaults
 ├── hardware_config.json       # GPU specifications

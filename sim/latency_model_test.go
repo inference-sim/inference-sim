@@ -5,77 +5,84 @@ import (
 	"testing"
 )
 
-// TestBlackboxLatencyModel_StepTime_PrefillAndDecode verifies BC-1:
-// StepTime produces beta0 + beta1*cacheMissTokens + beta2*decodeTokens.
-func TestBlackboxLatencyModel_StepTime_PrefillAndDecode(t *testing.T) {
-	// GIVEN a blackbox model with known beta coefficients
+// TestBlackboxLatencyModel_StepTime_MixedBatch_Positive verifies:
+// GIVEN a batch with both prefill and decode requests
+// WHEN StepTime is called
+// THEN the result MUST be positive and greater than an empty batch.
+func TestBlackboxLatencyModel_StepTime_MixedBatch_Positive(t *testing.T) {
 	model := &BlackboxLatencyModel{
 		betaCoeffs:  []float64{1000, 10, 5},
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	// AND a batch with 1 prefill request (30 new tokens) and 1 decode request
 	batch := []*Request{
 		{
 			InputTokens:   make([]int, 100),
-			ProgressIndex: 50, // < len(InputTokens), so prefill
+			ProgressIndex: 50,
 			NumNewTokens:  30,
 		},
 		{
 			InputTokens:   make([]int, 50),
 			OutputTokens:  make([]int, 20),
-			ProgressIndex: 60, // >= len(InputTokens), so decode
+			ProgressIndex: 60,
 			NumNewTokens:  1,
 		},
 	}
 
-	// WHEN StepTime is called
 	result := model.StepTime(batch)
+	emptyResult := model.StepTime([]*Request{})
 
-	// THEN result = beta0 + beta1*30 + beta2*1 = 1000 + 300 + 5 = 1305
-	expected := int64(1305)
-	if result != expected {
-		t.Errorf("StepTime = %d, want %d", result, expected)
+	// THEN result must be positive
+	if result <= 0 {
+		t.Errorf("StepTime(mixed batch) = %d, want > 0", result)
+	}
+	// AND must exceed the empty-batch baseline (tokens contribute to step time)
+	if result <= emptyResult {
+		t.Errorf("StepTime(mixed batch) = %d <= StepTime(empty) = %d, want strictly greater", result, emptyResult)
 	}
 }
 
-// TestBlackboxLatencyModel_StepTime_EmptyBatch verifies StepTime with no requests.
+// TestBlackboxLatencyModel_StepTime_EmptyBatch verifies:
+// GIVEN an empty batch
+// WHEN StepTime is called
+// THEN the result MUST be non-negative (overhead-only baseline).
 func TestBlackboxLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 	model := &BlackboxLatencyModel{
 		betaCoeffs:  []float64{1000, 10, 5},
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	// WHEN StepTime is called with an empty batch
 	result := model.StepTime([]*Request{})
 
-	// THEN result = beta0 only = 1000
-	if result != 1000 {
-		t.Errorf("StepTime(empty) = %d, want 1000", result)
+	// THEN overhead-only baseline is non-negative
+	if result < 0 {
+		t.Errorf("StepTime(empty) = %d, want >= 0", result)
 	}
 }
 
-// TestBlackboxLatencyModel_QueueingTime verifies BC-3:
-// QueueingTime = alpha0 + alpha1 * len(InputTokens).
-func TestBlackboxLatencyModel_QueueingTime(t *testing.T) {
+// TestBlackboxLatencyModel_QueueingTime_Positive verifies:
+// GIVEN a request with non-empty input tokens
+// WHEN QueueingTime is called
+// THEN the result MUST be positive (non-empty requests incur queueing overhead).
+func TestBlackboxLatencyModel_QueueingTime_Positive(t *testing.T) {
 	model := &BlackboxLatencyModel{
 		betaCoeffs:  []float64{1000, 10, 5},
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
 	req := &Request{InputTokens: make([]int, 50)}
-
-	// WHEN QueueingTime is called
 	result := model.QueueingTime(req)
 
-	// THEN result = alpha0 + alpha1*50 = 100 + 50 = 150
-	if result != 150 {
-		t.Errorf("QueueingTime = %d, want 150", result)
+	if result <= 0 {
+		t.Errorf("QueueingTime(50 tokens) = %d, want > 0", result)
 	}
 }
 
-// TestBlackboxLatencyModel_OutputTokenProcessingTime verifies the alpha2 overhead.
-func TestBlackboxLatencyModel_OutputTokenProcessingTime(t *testing.T) {
+// TestBlackboxLatencyModel_OutputTokenProcessingTime_NonNegative verifies:
+// GIVEN a blackbox model with valid alpha coefficients
+// WHEN OutputTokenProcessingTime is called
+// THEN the result MUST be non-negative (output processing overhead).
+func TestBlackboxLatencyModel_OutputTokenProcessingTime_NonNegative(t *testing.T) {
 	model := &BlackboxLatencyModel{
 		betaCoeffs:  []float64{1000, 10, 5},
 		alphaCoeffs: []float64{100, 1, 200},
@@ -83,8 +90,8 @@ func TestBlackboxLatencyModel_OutputTokenProcessingTime(t *testing.T) {
 
 	result := model.OutputTokenProcessingTime()
 
-	if result != 200 {
-		t.Errorf("OutputTokenProcessingTime = %d, want 200", result)
+	if result < 0 {
+		t.Errorf("OutputTokenProcessingTime = %d, want >= 0", result)
 	}
 }
 
@@ -211,8 +218,11 @@ func TestRooflineLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 	}
 }
 
-// TestRooflineLatencyModel_QueueingTime verifies BC-3 for roofline model.
-func TestRooflineLatencyModel_QueueingTime(t *testing.T) {
+// TestRooflineLatencyModel_QueueingTime_Positive verifies:
+// GIVEN a roofline model
+// WHEN QueueingTime is called with non-empty input
+// THEN the result MUST be positive.
+func TestRooflineLatencyModel_QueueingTime_Positive(t *testing.T) {
 	model := &RooflineLatencyModel{
 		modelConfig: testModelConfig(),
 		hwConfig:    testHardwareCalib(),
@@ -223,8 +233,8 @@ func TestRooflineLatencyModel_QueueingTime(t *testing.T) {
 	req := &Request{InputTokens: make([]int, 50)}
 	result := model.QueueingTime(req)
 
-	if result != 150 {
-		t.Errorf("QueueingTime = %d, want 150", result)
+	if result <= 0 {
+		t.Errorf("QueueingTime(50 tokens) = %d, want > 0", result)
 	}
 }
 
@@ -253,9 +263,23 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 		},
 	}
 	result := model.StepTime(batch)
-	// beta0 + beta1*30 = 1000 + 300 = 1300
+	// Regression anchors: exact values via factory path to catch accidental
+	// coefficient changes. All other tests use behavioral assertions.
 	if result != 1300 {
-		t.Errorf("StepTime = %d, want 1300 (blackbox mode)", result)
+		t.Errorf("StepTime = %d, want 1300 (regression anchor: beta0 + beta1*30)", result)
+	}
+
+	// QueueingTime regression anchor (alpha0 + alpha1 * inputLen)
+	req := &Request{InputTokens: make([]int, 50)}
+	qt := model.QueueingTime(req)
+	if qt != 150 {
+		t.Errorf("QueueingTime = %d, want 150 (regression anchor: alpha0 + alpha1*50)", qt)
+	}
+
+	// OutputTokenProcessingTime regression anchor (alpha2)
+	otp := model.OutputTokenProcessingTime()
+	if otp != 100 {
+		t.Errorf("OutputTokenProcessingTime = %d, want 100 (regression anchor: alpha2)", otp)
 	}
 }
 

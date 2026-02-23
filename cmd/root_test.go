@@ -89,3 +89,23 @@ func TestRunCmd_SnapshotRefreshInterval_FlagRegistered(t *testing.T) {
 	assert.GreaterOrEqual(t, defVal, int64(0),
 		"default snapshot-refresh-interval must be >= 0")
 }
+
+// TestRunCmd_MaxRunningReqs_FlagRegistered verifies BC-1:
+// --max-num-running-reqs flag exists with a positive default.
+func TestRunCmd_MaxRunningReqs_FlagRegistered(t *testing.T) {
+	flag := runCmd.Flags().Lookup("max-num-running-reqs")
+	assert.NotNil(t, flag, "max-num-running-reqs flag must be registered")
+	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
+	assert.NoError(t, err)
+	assert.Greater(t, defVal, int64(0), "default must be > 0 (passes validation)")
+}
+
+// TestRunCmd_MaxScheduledTokens_FlagRegistered verifies BC-2:
+// --max-num-scheduled-tokens flag exists with a positive default.
+func TestRunCmd_MaxScheduledTokens_FlagRegistered(t *testing.T) {
+	flag := runCmd.Flags().Lookup("max-num-scheduled-tokens")
+	assert.NotNil(t, flag, "max-num-scheduled-tokens flag must be registered")
+	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
+	assert.NoError(t, err)
+	assert.Greater(t, defVal, int64(0), "default must be > 0 (passes validation)")
+}

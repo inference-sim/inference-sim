@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v2.9 - updated 2026-02-20)
+**Status:** Active (v3.0 - updated 2026-02-23)
 
 This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request.
 
@@ -25,8 +25,7 @@ This workflow requires the following Claude Code skills to be available:
 | `commit-commands:clean_gone` | Clean up stale branches before worktree creation | Step 1 (pre-cleanup) |
 | `superpowers:using-git-worktrees` | Create isolated workspace for PR work | Step 1 |
 | `superpowers:writing-plans` | Generate implementation plan from templates | Step 2 |
-| `review-plan` | External LLM review of plan (catches blind spots) | Step 2.5 (Pass 0) |
-| `pr-review-toolkit:review-pr` | Automated multi-agent review | Step 2.5, Step 4.5 |
+| `pr-review-toolkit:review-pr` | Multi-perspective internal review | Step 2.5, Step 4.5 |
 | `superpowers:executing-plans` | Execute plan tasks continuously | Step 4 |
 | `superpowers:systematic-debugging` | Structured root-cause analysis on failure | Step 4 (on failure) |
 | `superpowers:verification-before-completion` | Enforced verification gate before commit | Step 4.5 (after passes) |
@@ -68,7 +67,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 2.5: plan review   │ (5 passes: external + 3 focused + structural)
+│ Step 2.5: plan review   │ (10 perspectives per round — see checklist)
 └──────────┬──────────────┘
            │
            ▼
@@ -83,7 +82,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 4.5: code review   │ (4 focused review passes — see checklist)
+│ Step 4.5: code review   │ (10 perspectives per round — see checklist)
 └──────────┬──────────────┘
            │
            ▼
@@ -104,9 +103,9 @@ If skills are unavailable, you can implement each step manually:
    - Enables parallel work on multiple PRs
 
 2. **Three-stage quality assurance:**
-   - **Plan Review** (Step 2.5) - 5 passes: external LLM, cross-doc, architecture, codebase, structural
+   - **Plan Review** (Step 2.5) - round of 10 parallel perspectives: substance, cross-doc, architecture, codebase, structural, DES expert, vLLM/SGLang expert, distributed platform, performance, security
      - Catches design issues before implementation
-   - **Code Review** (Step 4.5) - 4 passes: code quality, test quality, getting-started, automated reviewer
+   - **Code Review** (Step 4.5) - round of 10 parallel perspectives: substance, code quality, test quality, getting-started, automated reviewer, DES expert, vLLM/SGLang expert, distributed platform, performance, security
      - Catches implementation issues before PR creation
    - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 9 dimensions
      - Catches substance bugs that pattern-matching agents miss
@@ -121,10 +120,10 @@ If skills are unavailable, you can implement each step manually:
 |------|---------|
 | **1. Create worktree** | `/superpowers:using-git-worktrees pr<N>-<name>` |
 | **2. Create plan** | `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/templates/micro-plan.md and @<source-document>` |
-| **2.5. Review plan** | 5 passes: external review, cross-doc consistency, architecture boundary, codebase readiness, structural validation |
+| **2.5. Review plan** | Round of 10 parallel perspectives (see Step 2.5 for full list) |
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
-| **4.5. Review code** | 4 focused passes: code quality, test behavioral quality, getting-started, automated reviewer sim |
+| **4.5. Review code** | Round of 10 parallel perspectives (see Step 4.5 for full list) |
 | **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
@@ -270,41 +269,44 @@ The `<source-document>` can be any of:
 
 ---
 
-### Step 2.5: Focused Plan Review (5 Passes)
+### Step 2.5: Multi-Perspective Plan Review (Rounds)
 
 **Context:** Worktree (same or new session)
 
-> **For Claude:** When the user asks you to execute Step 2.5, run all 5 review passes below
-> sequentially. Pass 0 uses `review-plan`. Passes 1-3 use `/pr-review-toolkit:review-pr` with
-> the **exact prompt text** shown in the `Prompt:` field. Pass 4 is done directly (no agent
-> needed). After each pass, summarize findings and fix all critical/important issues before
-> starting the next pass. After all 5 passes complete, report a summary to the user and wait
-> for approval to proceed.
+> **For Claude:** When the user asks you to execute Step 2.5, run all 10 perspectives below
+> **in parallel** as a single round. Use `/pr-review-toolkit:review-pr` with the **exact
+> prompt text** shown for Perspectives 1-4 and 6-10. Perform Perspective 5 directly (no agent).
+> Collect all findings, then report the full round results to the user.
+>
+> **If 0 CRITICAL and 0 IMPORTANT findings:** The round converged. Proceed to Step 3.
+>
+> **If any CRITICAL or IMPORTANT findings:** Fix all issues, then re-run the entire round
+> from scratch. Repeat until a round produces 0 CRITICAL and 0 IMPORTANT findings.
 
-**Why focused passes?** Generic "review everything" misses issues that targeted reviews catch. PR8 experience: Pass 1 found 6 categories of stale macro plan content. PR9 experience: the 3 focused passes missed a fitness normalization design bug that was only caught by a separate targeted review. Pass 0 (external LLM review) catches blind spots that self-review misses.
+**Why rounds with multiple perspectives?** Generic "review everything" misses issues that targeted perspectives catch. Different lenses find different bugs: cross-doc consistency catches stale references, architecture catches boundary violations, substance catches design bugs. Running them in parallel maximizes coverage per round. The hypothesis process proved this model: 3 parallel reviewers with different foci caught issues that sequential single-reviewer rounds missed.
 
----
+**Convergence definition:** A round **converges** when all perspectives complete and report 0 CRITICAL and 0 IMPORTANT findings. Convergence means the review was clean from the start — not that issues were found and fixed. If you had to fix issues, the subsequent re-run is what converges (or not).
 
-#### Pass 0: External Plan Review (Quick Pre-Screen)
-
-Get an independent second opinion on the plan before detailed passes.
-
-**Skill:** `review-plan`
-
-**Invocation:**
-```
-/review-plan @docs/plans/pr<N>-<name>-plan.md
-```
-
-**Catches:** Design bugs, mathematical errors, logical inconsistencies, missing edge cases — issues that focused passes miss because they check structure, not substance.
-
-**Why this pass exists:** In PR9, the fitness normalization formula (`1/(1+value)`) passed all 3 focused passes but was a design bug (500,000× scale imbalance between throughput and latency). An external review caught what self-review missed.
-
-**Fix critical/important issues before Pass 1.**
+**Hard gate — NO EXCEPTIONS:** If any CRITICAL or IMPORTANT finding was reported in a round, you MUST re-run the entire round after fixing. You may NOT skip the re-run, propose alternative steps, or rationalize that fixes were "small enough." The re-run is the only way to verify that fixes didn't introduce new issues. This is non-negotiable — the same discipline as the hypothesis convergence protocol.
 
 ---
 
-#### Pass 1: Cross-Document Consistency
+#### Perspective 1: Substance & Design Review
+
+Catch design bugs, mathematical errors, and logical flaws that structural checks miss.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan for substance: Are the behavioral contracts logically sound? Are there mathematical errors, scale mismatches, or unit confusions? Could the design actually achieve what the contracts promise? Check formulas, thresholds, and edge cases from first principles — not just structural completeness. @docs/plans/<name>-plan.md
+```
+
+**Catches:** Design bugs, mathematical errors, logical inconsistencies, scale mismatches, missing edge cases.
+
+**Why this perspective exists:** In PR9, the fitness normalization formula (`1/(1+value)`) passed all structural checks but was a design bug (500,000x scale imbalance between throughput and latency). A substance-focused review caught what structure-focused reviews missed.
+
+---
+
+#### Perspective 2: Cross-Document Consistency
 
 Verify the micro plan matches the source document and both match the codebase.
 
@@ -317,11 +319,9 @@ For issue-based work, replace `@<source-document>` with the issue numbers in the
 
 **Catches:** Stale references, scope mismatch, missing deviations, wrong file paths.
 
-**Fix all critical/important issues before Pass 2.**
-
 ---
 
-#### Pass 2: Architecture Boundary Verification
+#### Perspective 3: Architecture Boundary Verification
 
 Verify the plan respects architectural boundaries and separation of concerns.
 
@@ -332,11 +332,9 @@ Verify the plan respects architectural boundaries and separation of concerns.
 
 **Catches:** Import cycle risks, boundary violations, missing bridge types, wrong abstraction level, construction site proliferation, high touch-point multipliers, error handling boundary violations.
 
-**Fix all critical/important issues before Pass 3.**
-
 ---
 
-#### Pass 3: Codebase Readiness
+#### Perspective 4: Codebase Readiness
 
 Verify the files to be modified are clean and ready for the planned changes.
 
@@ -347,11 +345,9 @@ Verify the files to be modified are clean and ready for the planned changes.
 
 **Catches:** Stale comments ("planned for PR N"), pre-existing bugs, missing dependencies, unclear insertion points.
 
-**Fix all critical/important issues. Then proceed to Pass 4.**
-
 ---
 
-#### Pass 4: Plan Structural Validation
+#### Perspective 5: Plan Structural Validation
 
 Verify the plan is complete, internally consistent, and implementation-ready.
 
@@ -383,7 +379,70 @@ Verify the plan is complete, internally consistent, and implementation-ready.
 
 **Catches:** Broken task ordering, missing template sections, unclear summaries, vague implementation steps that will cause agent confusion.
 
-**Fix all issues. Then report summary to user.**
+---
+
+#### Perspective 6: DES Expert Review
+
+Catch event-driven simulation bugs that domain-agnostic reviewers miss.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a discrete-event simulation expert. Check for: event ordering bugs, clock monotonicity violations, stale signal propagation between event types, heap priority errors, event-driven race conditions, and incorrect assumptions about DES event processing semantics. Verify that any new events respect the (timestamp, priority, seqID) ordering contract.
+```
+
+**Catches:** Event ordering violations, clock regression, stale-signal bugs, priority inversion in event queues.
+
+---
+
+#### Perspective 7: vLLM/SGLang Expert Review
+
+Catch mismatches between BLIS's model and real inference server behavior.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a vLLM/SGLang inference serving expert. Check for: batching semantics that don't match real continuous-batching servers, KV cache eviction policies that differ from vLLM's implementation, chunked prefill behavior mismatches, preemption policy differences, and missing scheduling features that real servers have. Flag any assumption about LLM serving that this plan gets wrong.
+```
+
+**Catches:** Batching model inaccuracies, KV cache behavior mismatches, prefill/decode pipeline errors, scheduling assumption violations.
+
+---
+
+#### Perspective 8: Distributed Inference Platform Expert Review
+
+Catch multi-instance coordination and routing issues.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a distributed inference platform expert (llm-d, KServe, vLLM multi-node). Check for: multi-instance coordination bugs, routing load imbalance under high request rates, stale snapshot propagation between instances, admission control edge cases at scale, horizontal scaling assumption violations, and prefix-affinity routing correctness across instances.
+```
+
+**Catches:** Load imbalance, stale routing state, admission control failures, scaling assumption violations, cross-instance coordination bugs.
+
+---
+
+#### Perspective 9: Performance & Scalability Analyst
+
+Catch algorithmic and memory efficiency issues.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a performance and scalability analyst. Check for: algorithmic complexity issues (O(n²) where O(n) suffices), unnecessary allocations in hot paths, map iteration in O(n) loops that could grow, benchmark-sensitive changes, memory growth patterns, and any changes that would degrade performance at 1000+ requests or 10+ instances.
+```
+
+**Catches:** Algorithmic complexity regressions, hot-path allocations, memory growth, scalability bottlenecks.
+
+---
+
+#### Perspective 10: Security & Robustness Reviewer
+
+Catch input validation gaps and failure mode issues.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this plan as a security and robustness reviewer. Check for: input validation completeness (all CLI flags, YAML fields, config values), panic paths reachable from user input, resource exhaustion vectors (unbounded loops, unlimited memory growth), degenerate input handling (empty, zero, negative, NaN, Inf), and configuration injection risks.
+```
+
+**Catches:** Input validation gaps, user-reachable panics, resource exhaustion, degenerate input failures, injection risks.
 
 ---
 
@@ -458,22 +517,37 @@ This skill provides structured root-cause analysis: reproduce → isolate → hy
 
 ---
 
-### Step 4.5: Focused Code Review (4 Passes)
+### Step 4.5: Multi-Perspective Code Review (Rounds)
 
 **Context:** Worktree (after implementation complete)
 
-> **For Claude:** When the user asks you to execute Step 4.5, run all 4 review passes below
-> sequentially. For each pass: invoke `/pr-review-toolkit:review-pr` with the **exact prompt
-> text** shown in the `Prompt:` field. After each pass, summarize findings and fix all
-> critical/important issues before starting the next pass. After all 4 passes complete, run
-> full verification (`go build && go test ./... -count=1 && golangci-lint run`), then report
-> a summary to the user and wait for approval to proceed.
+> **For Claude:** When the user asks you to execute Step 4.5, run all 10 perspectives below
+> **in parallel** as a single round. Use `/pr-review-toolkit:review-pr` with the **exact
+> prompt text** shown for each perspective. Collect all findings, then report the full round.
+>
+> **If 0 CRITICAL and 0 IMPORTANT findings:** The round converged. Run verification gate.
+>
+> **If any CRITICAL or IMPORTANT findings:** Fix all issues, then re-run the entire round
+> from scratch. Repeat until convergence (see Convergence Protocol below).
 
-**Why 4 passes?** Each catches issues the others miss. PR8 experience: Pass 1 found mutable exported maps and YAML typo acceptance. Pass 2 found 2 structural tests and 3 mixed tests. Pass 3 found missing metrics glossary and contributor guide gaps. Pass 4 found CLI panic paths and NaN validation gaps.
+**Why 10 perspectives in parallel?** Each catches issues the others miss. In the standards-audit-hardening PR, Perspective 1 (substance) found a runtime-breaking regression, Perspective 3 (tests) found weakened coverage, Perspective 7 (vLLM expert) confirmed CLI validation matches real server semantics, and Perspective 10 (security) found pre-existing factory validation gaps. Domain-specific perspectives (DES, vLLM, distributed platform) catch issues that generic code-quality reviewers miss.
 
 ---
 
-#### Pass 1: Code Quality + Error Handling
+#### Perspective 1: Substance & Design
+
+Catch logic bugs, design mismatches, and mathematical errors in the implementation.
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff for substance: Are there logic bugs, design mismatches between contracts and implementation, mathematical errors, or silent regressions? Check from first principles — not just structural patterns. Does the implementation actually achieve what the behavioral contracts promise?
+```
+
+**Catches:** Design bugs, formula errors, silent regressions, semantic mismatches between intent and implementation.
+
+---
+
+#### Perspective 2: Code Quality + Error Handling
 
 Find bugs, logic errors, silent failures, and convention violations.
 
@@ -484,11 +558,9 @@ Find bugs, logic errors, silent failures, and convention violations.
 
 **Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling os.Exit, exported mutable maps, YAML zero-value ambiguity, division by zero in runtime computation, leaky interfaces, monolith methods.
 
-**Fix all critical/important issues before Pass 2.**
-
 ---
 
-#### Pass 2: Test Behavioral Quality
+#### Perspective 3: Test Behavioral Quality
 
 Verify tests are truly behavioral (testing WHAT) not structural (testing HOW).
 
@@ -499,11 +571,9 @@ Verify tests are truly behavioral (testing WHAT) not structural (testing HOW).
 
 **Catches:** Structural tests (Go struct assignment, trivial getters), type assertions in factory tests, exact-formula assertions instead of behavioral invariants, tests that pass even if the feature is broken, golden-only tests that would perpetuate pre-existing bugs (issue #183: codellama golden dataset encoded a silently-dropped request as the expected value since its initial commit).
 
-**Fix: Delete structural tests, replace type assertions with behavior assertions. Add invariant tests alongside any golden-only tests.**
-
 ---
 
-#### Pass 3: Getting-Started Experience
+#### Perspective 4: Getting-Started Experience
 
 Simulate the journey of a new user and a new contributor.
 
@@ -514,11 +584,9 @@ Simulate the journey of a new user and a new contributor.
 
 **Catches:** Missing example files, undocumented output metrics, incomplete contributor guide, unclear extension points, README not updated for new features.
 
-**Fix: Add examples, glossaries, contributor docs. Then proceed to Pass 4.**
-
 ---
 
-#### Pass 4: Automated Reviewer Simulation
+#### Perspective 5: Automated Reviewer Simulation
 
 Catch what GitHub Copilot, Claude, and Codex would flag.
 
@@ -529,11 +597,64 @@ Catch what GitHub Copilot, Claude, and Codex would flag.
 
 **Catches:** Exported mutable globals, user-controlled panic paths, YAML typo acceptance, NaN/Inf validation gaps, redundant code, style nits.
 
-**Fix all critical issues. This is the final quality gate.**
+---
+
+#### Perspective 6: DES Expert Review
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a discrete-event simulation expert. Check for: event ordering bugs, clock monotonicity violations, stale signal propagation between event types, heap priority errors, event-driven race conditions, work-conserving property violations, and incorrect assumptions about DES event processing semantics.
+```
+
+**Catches:** Event ordering violations, clock regression, stale-signal bugs, work-conserving property gaps.
 
 ---
 
-#### During Any Pass: Filing Pre-Existing Issues
+#### Perspective 7: vLLM/SGLang Expert Review
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a vLLM/SGLang inference serving expert. Check for: batching semantics that don't match real continuous-batching servers, KV cache eviction mismatches, chunked prefill behavior errors, preemption policy differences, and missing scheduling features. Flag any assumption about LLM serving that this code gets wrong.
+```
+
+**Catches:** Batching model inaccuracies, KV cache behavior mismatches, scheduling assumption violations.
+
+---
+
+#### Perspective 8: Distributed Inference Platform Expert Review
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a distributed inference platform expert (llm-d, KServe, vLLM multi-node). Check for: multi-instance coordination bugs, routing load imbalance, stale snapshot propagation, admission control edge cases, horizontal scaling assumptions, and prefix-affinity routing correctness.
+```
+
+**Catches:** Load imbalance, stale routing state, scaling assumption violations, cross-instance bugs.
+
+---
+
+#### Perspective 9: Performance & Scalability Analyst
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a performance and scalability analyst. Check for: algorithmic complexity issues, unnecessary allocations in hot paths, map iteration in O(n) loops, benchmark-sensitive changes, memory growth patterns, and changes that would degrade performance at 1000+ requests or 10+ instances.
+```
+
+**Catches:** Complexity regressions, hot-path allocations, memory growth, scalability bottlenecks.
+
+---
+
+#### Perspective 10: Security & Robustness Reviewer
+
+**Prompt:**
+```
+/pr-review-toolkit:review-pr Review this diff as a security and robustness reviewer. Check for: input validation completeness, panic paths reachable from user input, resource exhaustion vectors, degenerate input handling (empty, zero, NaN, Inf), and configuration injection risks.
+```
+
+**Catches:** Validation gaps, user-reachable panics, resource exhaustion, degenerate input failures.
+
+---
+
+#### During Any Perspective: Filing Pre-Existing Issues
 
 Review passes naturally surface pre-existing bugs in surrounding code. These are valuable discoveries but outside the current PR's scope.
 
@@ -556,13 +677,17 @@ gh issue create --title "Bug: <concise description>" --body "<location, impact, 
 
 ---
 
-#### After All 4 Passes: Convergence Re-Run
+#### Convergence Protocol
 
-**After all passes complete with fixes, re-run all 4 passes from scratch** to verify fixes didn't introduce cross-pass issues. If the re-run finds new CRITICAL or IMPORTANT issues, fix and re-run again. Repeat until convergence: a clean pass with 0 CRITICAL and 0 IMPORTANT findings. Additive-only fixes (e.g., adding a comment without restructuring logic) may skip the re-run.
+Run all 10 code review perspectives as a parallel round. **Convergence** means the round completes with 0 CRITICAL and 0 IMPORTANT findings — the reviews were clean from the start.
+
+If any CRITICAL or IMPORTANT findings are reported: fix all issues, then re-run the entire round from scratch. The re-run is what converges (or triggers another fix-and-rerun cycle). Repeat until a full round produces 0 CRITICAL and 0 IMPORTANT.
+
+**Hard gate — NO EXCEPTIONS:** You MUST re-run after fixes. You may NOT skip the re-run, propose alternative steps (e.g., "proceed to self-audit instead"), or rationalize that fixes were trivial. The re-run is the only evidence of convergence. This is non-negotiable.
 
 ---
 
-#### After All 4 Passes: Enforced Verification Gate
+#### After Convergence: Enforced Verification Gate
 
 > **For Claude:** After fixing issues from all passes, invoke the verification skill to ensure
 > all claims are backed by evidence. This is non-optional — do NOT skip to Step 5.
@@ -595,7 +720,7 @@ Wait for user approval before proceeding to Step 4.75.
 > full context. Report all issues found. If you find zero issues, explain why you're confident
 > for each dimension.
 
-**Why this step exists:** In PR9, the 4-pass automated code review (Step 4.5) found 0 new issues in Pass 4. Then the user asked "are you confident?" and Claude found 3 real bugs by thinking critically: a wrong reference scale for token throughput normalization, non-deterministic map iteration in output, and inconsistent comment patterns. Automated review passes check structure; this step checks substance.
+**Why this step exists:** In PR9, the 4-perspective automated code review (Step 4.5) found 0 new issues in the final perspective. Then the user asked "are you confident?" and Claude found 3 real bugs by thinking critically: a wrong reference scale for token throughput normalization, non-deterministic map iteration in output, and inconsistent comment patterns. Automated review perspectives check structure; this step checks substance.
 
 **Self-audit dimensions — think through each one:**
 
@@ -699,12 +824,11 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 | `commit-commands:clean_gone` | **Step 1** - Pre-cleanup of stale branches | None | Removed stale branches |
 | `using-git-worktrees` | **Step 1** - Create isolated workspace FIRST | Branch name | Worktree directory path |
 | `writing-plans` | **Step 2** - Create implementation plan from source document | Source document (macro plan/design doc/issues) + `docs/templates/micro-plan.md` | Plan file with contracts + tasks |
-| `review-plan` | **Step 2.5 Pass 0** - External LLM review (catches design bugs) | Plan file path | Independent review feedback |
-| `pr-review-toolkit:review-pr` | **Step 2.5 Passes 1-3** - Focused plan review passes | Targeted prompts (see checklist) | Critical/important issues per pass |
+| `pr-review-toolkit:review-pr` | **Step 2.5** - 10 parallel perspectives per round | Targeted prompts (see checklist) | Critical/important issues per perspective |
 | `executing-plans` | **Step 4** - Execute plan tasks continuously | Plan file path | Implemented code + commits |
 | `systematic-debugging` | **Step 4 (on failure)** - Structured root-cause analysis | Failing test/error context | Root cause + fix |
 | `subagent-driven-development` | **Step 4 (alt)** - Execute plan in-session | Plan file path | Implemented code + commits |
-| `pr-review-toolkit:review-pr` | **Step 4.5** - 4 focused code review passes | Targeted prompts (see checklist) | Critical/important issues per pass |
+| `pr-review-toolkit:review-pr` | **Step 4.5** - 10 parallel perspectives per round | Targeted prompts (see checklist) | Critical/important issues per perspective |
 | `verification-before-completion` | **Step 4.5 (gate)** - Enforced build/test/lint verification | None | Evidence-based pass/fail |
 | `commit-commands:commit-push-pr` | **Step 5** - Commit, push, create PR (all in one) | Current branch state | Commit + push + PR URL |
 
@@ -727,17 +851,14 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 # Output: Plan created at docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
-# Step 2.5: Focused plan review (5 passes)
-# Pass 0: External LLM review (catches design bugs)
-/review-plan @docs/plans/pr8-routing-state-and-policy-bundle-plan.md
-# Pass 1: Cross-doc consistency (micro plan vs source document)
-/pr-review-toolkit:review-pr Does the micro plan match the source document? @docs/plans/pr8-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
-# Pass 2: Architecture boundary verification
-/pr-review-toolkit:review-pr Does this plan maintain architectural boundaries?
-# Pass 3: Codebase readiness scan
-/pr-review-toolkit:review-pr Review the codebase for readiness to implement this PR.
-# Pass 4: Structural validation (done directly, no agent)
-# [Fix issues between passes]
+# Step 2.5: Multi-perspective plan review (run as parallel round)
+# All 5 perspectives run in parallel — substance, cross-doc, architecture, codebase, structural
+/pr-review-toolkit:review-pr [substance review prompt] @docs/plans/pr8-plan.md
+/pr-review-toolkit:review-pr [cross-doc consistency prompt] @docs/plans/pr8-plan.md
+/pr-review-toolkit:review-pr [architecture boundary prompt] @docs/plans/pr8-plan.md
+/pr-review-toolkit:review-pr [codebase readiness prompt] @docs/plans/pr8-plan.md
+# Perspective 5: Structural validation (done directly, no agent)
+# If 0 CRITICAL/IMPORTANT: converged. If issues: fix and re-run entire round.
 
 # Step 3: Human review plan
 # [Read plan, verify contracts and tasks, approve to proceed]
@@ -747,16 +868,13 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 # Output: Tasks execute continuously → done (stops on failure)
 
-# Step 4.5: Focused code review (4 passes)
-# Pass 1: Code quality + error handling
-/pr-review-toolkit:review-pr
-# Pass 2: Test behavioral quality
-/pr-review-toolkit:review-pr Are all the tests truly behavioral?
-# Pass 3: Getting-started experience
-/pr-review-toolkit:review-pr Is it easy for a user and contributor to get started?
-# Pass 4: Automated reviewer simulation
-/pr-review-toolkit:review-pr Simulate what Copilot/Claude/Codex would flag.
-# [Fix issues between passes]
+# Step 4.5: Multi-perspective code review (run as parallel round)
+# All 4 perspectives run in parallel — code quality, test quality, getting-started, reviewer sim
+/pr-review-toolkit:review-pr [code quality prompt]
+/pr-review-toolkit:review-pr [test behavioral quality prompt]
+/pr-review-toolkit:review-pr [getting-started prompt]
+/pr-review-toolkit:review-pr [automated reviewer sim prompt]
+# If 0 CRITICAL/IMPORTANT: converged. If issues: fix and re-run entire round.
 # Enforced verification gate
 /superpowers:verification-before-completion
 
@@ -788,12 +906,8 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # Step 2: Create plan (source = design document, not macro plan)
 /superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
 
-# Step 2.5: Focused plan review (5 passes)
-# Pass 0: External LLM review
-/review-plan @docs/plans/hardening-plan.md
-# Pass 1: Cross-doc consistency (micro plan vs design doc)
-/pr-review-toolkit:review-pr Does the micro plan's scope match the design doc? @docs/plans/hardening-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
-# Passes 2-4: Same as Example A
+# Step 2.5: Multi-perspective plan review (parallel round — same as Example A)
+# All 5 perspectives in parallel, source doc = design doc instead of macro plan
 
 # Steps 3-5: Identical to Example A
 ```
@@ -844,11 +958,11 @@ claude -p "Read .review/*.md files. Produce a consolidated summary sorted by sev
 
 ### Review Strategy Tips
 
-**Always use focused prompts, not generic invocations.** Each focused review pass catches different issues:
+**Always use focused prompts, not generic invocations.** Each perspective catches different issues:
 
-| Pass | What It Catches That Others Miss |
-|------|----------------------------------|
-| External LLM review | Design bugs, mathematical errors, logical flaws (substance, not structure) |
+| Perspective | What It Catches That Others Miss |
+|-------------|----------------------------------|
+| Substance & design | Design bugs, mathematical errors, logical flaws (substance, not structure) |
 | Cross-doc consistency | Stale source document references, scope mismatch, wrong file paths |
 | Architecture boundary | Import cycles, boundary violations, wrong abstraction level |
 | Codebase readiness | Stale comments, pre-existing bugs, missing dependencies |
@@ -858,11 +972,9 @@ claude -p "Read .review/*.md files. Produce a consolidated summary sorted by sev
 | Getting-started experience | Missing examples, undocumented output, contributor friction |
 | Automated reviewer sim | Mutable globals, user-controlled panics, YAML typo acceptance |
 
-**Fix issues between passes, not after all passes.** Fixes from Pass 1 may affect what Pass 2 finds.
+**Run all perspectives in parallel as a round.** Collect all findings, then fix. Do NOT fix between individual perspectives — that breaks parallelism and makes it impossible to tell whether the round converged.
 
-**Re-run a pass if you made significant changes** during fixing. Don't assume the fix is correct.
-
-**After all passes complete with fixes, re-run all 5 passes from scratch** to verify fixes didn't introduce cross-pass issues (e.g., a Pass 0 fix breaking Pass 4 structural validation). If the re-run finds new CRITICAL or IMPORTANT issues, fix and re-run again. Repeat until convergence: a clean pass with 0 CRITICAL and 0 IMPORTANT findings. Additive-only fixes (e.g., adding a file to scope without restructuring tasks) may skip the re-run. Evidence: in the Wave 1 parallel PR session, Track B's re-run validated that 3 fixes (including 2 CRITICAL — overwrite-existing-file and incomplete zero-value test) introduced no regressions.
+**Convergence = clean round.** A round converges when ALL perspectives report 0 CRITICAL and 0 IMPORTANT findings. If any perspective found issues, the round did not converge — fix all issues and re-run the entire round. The re-run determines convergence, not the initial round with fixes applied.
 
 ---
 
@@ -952,6 +1064,8 @@ golangci-lint run ./path/to/modified/package/...
 **v2.7 (2026-02-18):** Generalized workflow from "macro plan only" to any source document (macro plan sections, design docs, GitHub issues, feature requests). Updated template references, review prompts, examples, and invocation patterns. Added Example B showing issue/design-doc workflow alongside macro plan workflow. The same rigor (behavioral contracts, TDD tasks, 5+4 review passes, self-audit) applies regardless of work source.
 **v2.8 (2026-02-18):** Auto-close issues on PR merge. Added `**Closes:**` field to micro plan header template (`prmicroplanprompt-v2.md`) that captures GitHub closing keywords (e.g., `Fixes #183, fixes #189`). Updated Step 5 PR description spec to propagate closing keywords into the PR body. GitHub auto-closes referenced issues when the PR merges — no manual cleanup needed.
 **v2.9 (2026-02-20):** Convergence re-run protocol for both Step 2.5 and Step 4.5. After all review passes complete with fixes, re-run all passes from scratch to verify fixes didn't introduce cross-pass issues. Repeat until convergence (0 CRITICAL, 0 IMPORTANT). Evidence: Wave 1 parallel PR session — Track B's full re-run validated that 3 fixes (including 2 CRITICAL: overwrite-existing-test-file and incomplete zero-value coverage) introduced no regressions across all 5 passes.
+
+**v3.0 (2026-02-23):** Three structural changes aligned with the hypothesis process model: (1) **Multi-perspective rounds replace sequential passes.** Step 2.5 and Step 4.5 now run all perspectives in parallel as a single "round" instead of sequentially with fixes between passes. This matches the hypothesis process's 3-parallel-reviewer model. (2) **External LLM review (`review-plan`) removed.** Replaced by an internal "Substance & Design" perspective that checks for mathematical errors, scale mismatches, and logical flaws — the same coverage, without the external API dependency. (3) **Convergence redefined.** A round converges when ALL perspectives report 0 CRITICAL and 0 IMPORTANT findings on first pass. If issues are found, fix and re-run the entire round. Convergence is a property of a clean round, not of iterative fixes within a round.
 
 **Key improvements in v2.0:**
 - **Simplified invocations:** No copy-pasting! Use @ file references (e.g., `@docs/plans/<macro-plan>.md`)

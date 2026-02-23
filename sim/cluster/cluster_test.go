@@ -236,6 +236,82 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 	}
 }
 
+// TestClusterSimulator_SingleInstance_GoldenInvariants verifies R7 companion:
+// GIVEN each golden dataset test case configured as NumInstances=1
+// WHEN Run() completes
+// THEN INV-1 (conservation), INV-5 (causality) hold for every test case.
+func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
+	dataset := testutil.LoadGoldenDataset(t)
+
+	for _, tc := range dataset.Tests {
+		t.Run(tc.Model+"_invariants", func(t *testing.T) {
+			config := DeploymentConfig{
+				SimConfig: sim.SimConfig{
+					Horizon: math.MaxInt64,
+					Seed:    tc.Seed,
+					KVCacheConfig: sim.KVCacheConfig{
+						TotalKVBlocks:   tc.TotalKVBlocks,
+						BlockSizeTokens: tc.BlockSizeInTokens,
+					},
+					BatchConfig: sim.BatchConfig{
+						MaxRunningReqs:            tc.MaxNumRunningReqs,
+						MaxScheduledTokens:        tc.MaxNumScheduledTokens,
+						LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
+					},
+					LatencyCoeffs: sim.LatencyCoeffs{
+						BetaCoeffs:  tc.BetaCoeffs,
+						AlphaCoeffs: tc.AlphaCoeffs,
+					},
+					ModelHardwareConfig: sim.ModelHardwareConfig{
+						Model: tc.Model,
+						GPU:   tc.Hardware,
+						TP:    tc.TP,
+					},
+				},
+				NumInstances: 1,
+			}
+
+			workload := &sim.GuideLLMConfig{
+				Rate:               tc.Rate / 1e6,
+				NumRequests:        tc.NumRequests,
+				PrefixTokens:      tc.PrefixTokens,
+				PromptTokens:      tc.PromptTokens,
+				PromptTokensStdDev: tc.PromptTokensStdev,
+				PromptTokensMin:   tc.PromptTokensMin,
+				PromptTokensMax:   tc.PromptTokensMax,
+				OutputTokens:      tc.OutputTokens,
+				OutputTokensStdDev: tc.OutputTokensStdev,
+				OutputTokensMin:   tc.OutputTokensMin,
+				OutputTokensMax:   tc.OutputTokensMax,
+			}
+
+			cs := NewClusterSimulator(config, workload, "")
+			mustRun(t, cs)
+			m := cs.AggregatedMetrics()
+
+			// INV-1: Request conservation — compare against tc.NumRequests (independent source).
+			conservation := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
+			if conservation != tc.NumRequests {
+				t.Errorf("INV-1 conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want numRequests(%d)",
+					m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
+					conservation, tc.NumRequests)
+			}
+
+			// INV-5: Causality — TTFT >= 0 and E2E >= TTFT for all completed requests
+			for reqID, ttft := range m.RequestTTFTs {
+				if ttft < 0 {
+					t.Errorf("INV-5 causality: request %s TTFT = %f < 0", reqID, ttft)
+				}
+				if e2e, ok := m.RequestE2Es[reqID]; ok {
+					if e2e < ttft {
+						t.Errorf("INV-5 causality: request %s E2E(%f) < TTFT(%f)", reqID, e2e, ttft)
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestClusterSimulator_MultiInstance_Determinism verifies BC-2:
 // GIVEN N=4, seed=42, 100 requests
 // WHEN run twice

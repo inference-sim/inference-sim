@@ -17,6 +17,8 @@ Reference specific issues, audit findings, or design doc sections.
 - [ ] Causality
 - [ ] Clock monotonicity
 - [ ] Determinism
+- [ ] Signal freshness
+- [ ] Work-conserving
 - [ ] None (pure refactoring)
 
 **Proposed fix**

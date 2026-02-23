@@ -1239,3 +1239,63 @@ func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
 		t.Errorf("CompletedRequests = %d, want 0", sim.Metrics.CompletedRequests)
 	}
 }
+
+// TestRequestLifecycle_ValidTransitions verifies INV-2:
+// GIVEN a request injected into the simulator
+// WHEN the simulation runs to completion
+// THEN the request transitions through queued → running → completed.
+func TestRequestLifecycle_ValidTransitions(t *testing.T) {
+	sim := mustNewSimulator(t, SimConfig{
+		Horizon: math.MaxInt64,
+		Seed:    42,
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   100,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     1,
+			MaxScheduledTokens: 2048,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{50, 0.1, 50},
+		},
+	})
+
+	req := &Request{
+		ID:           "lifecycle_test",
+		InputTokens:  make([]int, 16),
+		OutputTokens: make([]int, 4),
+		ArrivalTime:  0,
+		State:        StateQueued,
+	}
+
+	// GIVEN: request starts in queued state
+	if req.State != StateQueued {
+		t.Fatalf("initial state = %q, want %q", req.State, StateQueued)
+	}
+
+	sim.InjectArrival(req)
+
+	// Process events one by one to observe state transitions
+	sawRunning := false
+	for sim.HasPendingEvents() {
+		sim.ProcessNextEvent()
+		if req.State == StateRunning {
+			sawRunning = true
+		}
+		// THEN: completed must not occur before running
+		if req.State == StateCompleted && !sawRunning {
+			t.Fatal("request reached StateCompleted without transitioning through StateRunning")
+		}
+	}
+
+	// THEN: request MUST have completed
+	if req.State != StateCompleted {
+		t.Errorf("final state = %q, want %q", req.State, StateCompleted)
+	}
+	// THEN: request MUST have been running at some point
+	if !sawRunning {
+		t.Error("request never entered StateRunning")
+	}
+}

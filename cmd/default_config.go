@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -8,11 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Define struct for YAML
-type WorkloadConfig struct {
-	Workloads map[string]Workload `yaml:"workloads"`
-}
-
+// Workload describes a preset workload configuration in defaults.yaml.
 type Workload struct {
 	PrefixTokens      int `yaml:"prefix_tokens"`
 	PromptTokensMean  int `yaml:"prompt_tokens"`
@@ -25,11 +22,13 @@ type Workload struct {
 	OutputTokensMax   int `yaml:"output_tokens_max"`
 }
 
-// Define struct for YAML
+// Config represents the full defaults.yaml structure.
+// All top-level sections must be listed to satisfy KnownFields(true) strict parsing (R10).
 type Config struct {
-	Models   []Model                  `yaml:"models"`
-	Defaults map[string]DefaultConfig `yaml:"defaults"`
-	Version  string                   `yaml:"version"`
+	Models    []Model                  `yaml:"models"`
+	Defaults  map[string]DefaultConfig `yaml:"defaults"`
+	Version   string                   `yaml:"version"`
+	Workloads map[string]Workload      `yaml:"workloads"`
 }
 
 // Define the inner structure for default config given model
@@ -47,19 +46,23 @@ type Model struct {
 	TensorParallelism int       `yaml:"tensor_parallelism"`
 	VLLMVersion       string    `yaml:"vllm_version"`
 	TotalKVBlocks     int64     `yaml:"total_kv_blocks"`
+	BestLoss          float64   `yaml:"best_loss"` // Calibration metric from coefficient fitting; not used at runtime
 }
 
 func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float64, numRequests int) *sim.GuideLLMConfig {
-	// Read YAML file
 	data, err := os.ReadFile(workloadFilePath)
 	if err != nil {
-		panic(err)
+		logrus.Fatalf("Failed to read defaults file: %v", err)
 	}
 
-	// Parse YAML
-	var cfg WorkloadConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		panic(err)
+	// Parse into Config (not WorkloadConfig) because defaults.yaml has all top-level
+	// sections (models, defaults, workloads, version). KnownFields(true) requires all
+	// sections to be declared in the target struct (R10).
+	var cfg Config
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
+		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
 	}
 
 	if workload, workloadExists := cfg.Workloads[workloadType]; workloadExists {
@@ -77,16 +80,17 @@ func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float6
 }
 
 func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion string) {
-	// Read YAML file
 	data, err := os.ReadFile(defaultsFilePath)
 	if err != nil {
-		panic(err)
+		logrus.Fatalf("Failed to read defaults file: %v", err)
 	}
 
-	// Parse YAML
+	// Parse YAML with strict field checking (R10: typos must cause errors)
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		panic(err)
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
+		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
 	}
 
 	if _, modelExists := cfg.Defaults[LLM]; modelExists {
@@ -97,16 +101,17 @@ func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion
 }
 
 func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, defaultsFilePath string) ([]float64, []float64, int64) {
-	// Read YAML file
 	data, err := os.ReadFile(defaultsFilePath)
 	if err != nil {
-		panic(err)
+		logrus.Fatalf("Failed to read defaults file %s: %v", defaultsFilePath, err)
 	}
 
-	// Parse YAML
+	// Parse YAML with strict field checking (R10: typos must cause errors)
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		panic(err)
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
+		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
 	}
 
 	for _, model := range cfg.Models {
