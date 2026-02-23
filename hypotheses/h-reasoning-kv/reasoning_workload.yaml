@@ -1,0 +1,29 @@
+version: "1.0"
+seed: 42
+category: reasoning
+aggregate_rate: 2.0
+num_requests: 500
+clients:
+  - id: reasoning-client
+    tenant_id: default
+    slo_class: interactive
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: constant
+      params:
+        value: 128
+    output_distribution:
+      type: constant
+      params:
+        value: 256
+    reasoning:
+      reason_ratio_distribution:
+        type: constant
+        params:
+          value: 50
+      multi_turn:
+        max_rounds: 5
+        think_time_us: 5000000
+        context_growth: accumulate
