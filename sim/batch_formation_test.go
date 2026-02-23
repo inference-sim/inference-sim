@@ -220,8 +220,6 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 		ComputedTokens:        computedTokens,
 	}
 
-	usedBefore := kvCache.UsedBlocks()
-
 	// WHEN FormBatch is called
 	result := bf.FormBatch(ctx)
 
@@ -235,12 +233,8 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 		t.Error("PreemptionHappened is true but Preempted slice is empty")
 	}
 
-	// AND victim's blocks must have been released (KV conservation: blocks freed ≥ blocks previously held)
+	// AND KV usage must not exceed capacity (INV-4)
 	usedAfter := kvCache.UsedBlocks()
-	_ = usedBefore // documented for clarity
-	// After preemption: victim's 2 blocks freed, needy allocated 3 blocks → net used should be 3
-	// But the exact value depends on whether needy's allocation succeeded after eviction.
-	// The key invariant: used blocks must not exceed total capacity
 	if usedAfter > kvCache.TotalCapacity() {
 		t.Errorf("KV blocks exceed capacity after preemption: used=%d total=%d", usedAfter, kvCache.TotalCapacity())
 	}

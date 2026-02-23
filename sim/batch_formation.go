@@ -12,7 +12,10 @@ type BatchFormation interface {
 
 // BatchContext provides the inputs for batch formation.
 // The BatchFormation implementation may mutate WaitQ (dequeue/prepend) and
-// KVCache (allocate/release) during FormBatch.
+// KVCache (allocate/release) during FormBatch. ComputedTokens must be updated
+// by the implementation: for each request that receives new tokens, set or
+// increment ComputedTokens[req.ID] to the total computed tokens (including
+// cached). Phase 2 of Step() reads this map to advance ProgressIndex.
 type BatchContext struct {
 	RunningBatch          *Batch
 	WaitQ                 *WaitQueue
