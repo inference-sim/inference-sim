@@ -63,36 +63,51 @@ func TestTieredKVCache_Conservation_AllocateReleaseCycle(t *testing.T) {
 	}
 }
 
-func TestTieredKVCache_TransferLatency_QueryAndClear(t *testing.T) {
-	// BC-4: GIVEN a tiered cache with offloaded blocks that get reloaded
-	tiered := NewTieredKVCache(NewKVCacheState(10, 2), 10, 0.3, 1.0, 10)
+func TestTieredKVCache_TransferLatency_ConsumeClearsAccumulated(t *testing.T) {
+	// BC-2: GIVEN a tiered cache where blocks are offloaded to CPU, then reloaded to GPU
+	// Setup mirrors TestTieredKVCache_ThrashingDetected (known to trigger CPU-to-GPU reload)
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.3, 100.0, 10)
+	tiered.SetClock(100)
 
-	// Allocate, release (triggers offload), then fill GPU
-	reqs := make([]*Request, 4)
-	for i := 0; i < 4; i++ {
-		reqs[i] = &Request{ID: fmt.Sprintf("r%d", i), InputTokens: []int{i*4 + 1, i*4 + 2, i*4 + 3, i*4 + 4}}
-		tiered.AllocateKVBlocks(reqs[i], 0, 4, []int64{})
+	// Fill GPU to 80% (4 requests × 2 blocks = 8 used, 2 free)
+	target := &Request{ID: "target", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(target, 0, 4, []int64{})
+	for i := 0; i < 3; i++ {
+		other := &Request{ID: fmt.Sprintf("o%d", i), InputTokens: []int{i*4 + 10, i*4 + 11, i*4 + 12, i*4 + 13}}
+		tiered.AllocateKVBlocks(other, 0, 4, []int64{})
 	}
-	tiered.ReleaseKVBlocks(reqs[0])
-	tiered.ReleaseKVBlocks(reqs[1])
-	// Fill remaining GPU
-	for i := 10; i < 20; i++ {
+
+	// Release target → offload its cached blocks to CPU (util 60% > 30%)
+	tiered.ReleaseKVBlocks(target)
+	if tiered.offloadCount == 0 {
+		t.Fatal("setup error: offload should have triggered")
+	}
+
+	// Fill GPU so only 1 free block remains (6 used + 3 fillers = 9 used, 1 free)
+	tiered.SetClock(2000)
+	for i := 0; i < 3; i++ {
 		filler := &Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 100, i*2 + 101}}
 		tiered.AllocateKVBlocks(filler, 0, 2, []int64{})
 	}
-	// Trigger reload by allocating when GPU is full
-	newReq := &Request{ID: "new", InputTokens: []int{200, 201}}
-	tiered.AllocateKVBlocks(newReq, 0, 2, []int64{})
 
-	// WHEN we query PendingTransferLatency
-	lat1 := tiered.PendingTransferLatency()
-	lat2 := tiered.PendingTransferLatency()
+	// WHEN requesting the same prefix triggers CPU-to-GPU reload
+	sameReq := &Request{ID: "retry", InputTokens: []int{1, 2, 3, 4}}
+	cached := tiered.GetCachedBlocks([]int{1, 2, 3, 4})
+	start := int64(len(cached)) * tiered.BlockSize()
+	tiered.AllocateKVBlocks(sameReq, start, 4, cached)
 
-	// THEN second call returns 0 (query-and-clear semantics)
-	if lat2 != 0 {
-		t.Errorf("second PendingTransferLatency() = %d, want 0 (query-and-clear)", lat2)
+	// THEN first ConsumePendingTransferLatency returns non-zero (reload accumulated latency)
+	lat1 := tiered.ConsumePendingTransferLatency()
+	if lat1 == 0 {
+		t.Error("ConsumePendingTransferLatency() should return non-zero after CPU-to-GPU reload")
 	}
-	_ = lat1 // first call captures accumulated latency
+
+	// AND second consume returns 0 (read-and-clear semantics)
+	lat2 := tiered.ConsumePendingTransferLatency()
+	if lat2 != 0 {
+		t.Errorf("second ConsumePendingTransferLatency() = %d, want 0 (cleared)", lat2)
+	}
 }
 
 func TestTieredKVCache_ZeroBandwidth_Panics(t *testing.T) {
