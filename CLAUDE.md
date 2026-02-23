@@ -130,6 +130,8 @@ BLIS follows a layered design document hierarchy. Each tier has a specific abstr
 
 ### BDD/TDD Development
 
+> **Canonical source:** [`docs/standards/principles.md`](docs/standards/principles.md) (BDD/TDD section). If this section diverges, principles.md is authoritative.
+
 This project follows BDD/TDD practices. When implementing features:
 
 1. **Write behavioral contracts first**: Define invariants and expected behavior in Gherkin-style scenarios
@@ -163,6 +165,8 @@ When asked to update the macro implementation plan, directly edit the document. 
 
 ### Key Invariants to Maintain
 
+> **Canonical source:** [`docs/standards/invariants.md`](docs/standards/invariants.md). If this section diverges, invariants.md is authoritative.
+
 Full details (verification strategies, evidence): see [`docs/standards/invariants.md`](docs/standards/invariants.md).
 
 - **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
@@ -175,6 +179,8 @@ Full details (verification strategies, evidence): see [`docs/standards/invariant
 - **INV-8 Work-conserving**: After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while work is waiting.
 
 ### Engineering Principles
+
+> **Canonical source:** [`docs/standards/principles.md`](docs/standards/principles.md). If this section diverges, principles.md is authoritative.
 
 Full details: see [`docs/standards/principles.md`](docs/standards/principles.md).
 
@@ -191,6 +197,8 @@ Full details: see [`docs/standards/principles.md`](docs/standards/principles.md)
 **Error handling boundaries:** CLI → `logrus.Fatalf`. Library → `error` or `panic`. Never silent `continue` (R1).
 
 ### Antipattern Prevention
+
+> **Canonical source:** [`docs/standards/rules.md`](docs/standards/rules.md). If this section diverges, rules.md is authoritative.
 
 20 rules, each tracing to a real bug. Full details (evidence, checks, enforcement): see [`docs/standards/rules.md`](docs/standards/rules.md).
 
