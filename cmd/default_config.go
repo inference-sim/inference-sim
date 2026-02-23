@@ -59,8 +59,10 @@ func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float6
 		logrus.Fatalf("Failed to read defaults file: %v", err)
 	}
 
-	// Parse YAML with strict field checking (R10: typos must cause errors)
-	var cfg WorkloadConfig
+	// Parse into Config (not WorkloadConfig) because defaults.yaml has all top-level
+	// sections (models, defaults, workloads, version). KnownFields(true) requires all
+	// sections to be declared in the target struct (R10).
+	var cfg Config
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {

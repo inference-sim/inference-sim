@@ -17,18 +17,14 @@ Regenerate after ANY change that affects simulation output:
 
 ### How to regenerate
 
-```bash
-# From the repository root:
-go test ./sim/... -run TestSimulator_GoldenDataset -update-golden
-```
+Manually run the simulation with each golden dataset test case's parameters
+and update the expected metrics in `goldendataset.json`:
 
-If the `-update-golden` flag is not implemented, manually run the simulation
-with the golden dataset parameters and capture the output:
-
-```bash
-# See sim/internal/testutil/golden.go for the dataset format
-# Each test case specifies model, seed, coefficients, and expected metrics
-```
+1. Read `sim/internal/testutil/golden.go` for the dataset format
+2. Each test case specifies model, seed, coefficients, and expected metrics
+3. Run the simulator with those parameters and capture the output
+4. Update the `metrics` section for each test case
+5. Verify all tests pass: `go test ./sim/... -run Golden -v`
 
 ### Companion invariant tests
 
