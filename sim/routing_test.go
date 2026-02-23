@@ -538,6 +538,36 @@ func TestPrefixAffinity_StaleEntry_FallsBackToLeastLoaded(t *testing.T) {
 	}
 }
 
+// TestPrefixAffinity_SharedPrefix_DifferentSuffix_SameInstance verifies BC-8:
+// requests sharing a block-aligned prefix are routed to the same instance.
+func TestPrefixAffinity_SharedPrefix_DifferentSuffix_SameInstance(t *testing.T) {
+	// GIVEN two requests sharing a 32-token prefix but different suffixes
+	prefix := make([]int, 32)
+	for i := range prefix {
+		prefix[i] = i + 1
+	}
+	req1 := &Request{ID: "r1", InputTokens: append(append([]int{}, prefix...), 100, 101, 102)}
+	req2 := &Request{ID: "r2", InputTokens: append(append([]int{}, prefix...), 200, 201)}
+
+	snapshots := []RoutingSnapshot{
+		{ID: "inst_0", QueueDepth: 5, BatchSize: 5},
+		{ID: "inst_1", QueueDepth: 5, BatchSize: 5},
+	}
+	state := &RouterState{Snapshots: snapshots, Clock: 1000}
+
+	policy := NewRoutingPolicy("prefix-affinity", nil, 16)
+
+	// WHEN routing both requests
+	d1 := policy.Route(req1, state)
+	d2 := policy.Route(req2, state)
+
+	// THEN they should go to the same instance (shared block-aligned prefix)
+	if d1.TargetInstance != d2.TargetInstance {
+		t.Errorf("requests sharing block-aligned prefix should route to same instance, got %q and %q",
+			d1.TargetInstance, d2.TargetInstance)
+	}
+}
+
 // TestRoutingDecision_PriorityHint_DefaultZero verifies BC-9: default Priority is zero.
 func TestRoutingDecision_PriorityHint_DefaultZero(t *testing.T) {
 	policyNames := []string{"round-robin", "least-loaded", "weighted", "prefix-affinity"}
