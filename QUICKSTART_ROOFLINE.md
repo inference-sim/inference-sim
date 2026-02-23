@@ -13,29 +13,19 @@ git branch --show-current
 go build -o simulation_worker main.go
 ```
 
-## Step 1: Choose Hardware Config
+## Step 1: Check Hardware Config
 
-**Two config files are provided:**
+**One config file for everything:**
 
-### `hardware_config_v2.json` - **For Roofline v2** (Recommended)
-```bash
-cat hardware_config_v2.json
-```
-Only 6 fields needed:
-- `TFlopsPeak`, `BwPeakTBs` (core specs)
-- `TOverheadMicros`, `PrefillOverheadMicros`, `MixedPrefillOverheadMicros`, `AllReduceLatency` (overheads)
-
-✅ **Use this if you have MFU benchmark data in `bench_data/`**
-
-### `hardware_config.json` - For Roofline v1 (Fallback)
 ```bash
 cat hardware_config.json
 ```
-All 18 calibration fields:
-- Includes `MfuPrefill`, `MfuDecode`, `BwEffConstant`, etc.
-- Needed when no benchmark data available
 
-✅ **Use this if you DON'T have `bench_data/`**
+This config has all fields and works for **both** roofline v1 and v2:
+- Roofline v2: Only uses `TFlopsPeak`, `BwPeakTBs`, + optional overheads
+- Roofline v1: Uses all 18 calibration fields
+
+✅ **One config, both modes** - no confusion!
 
 ## Step 2: Run Roofline v2 (Recommended)
 
@@ -45,7 +35,7 @@ All 18 calibration fields:
 ./simulation_worker run \
   --model meta-llama/llama-3.1-8b-instruct \
   --model-config-folder model_configs/llama-3.1-8b-instruct \
-  --hardware-config hardware_config_v2.json \
+  --hardware-config hardware_config.json \
   --bench-data-path bench_data \
   --hardware H100 \
   --tp 1 \
@@ -53,12 +43,11 @@ All 18 calibration fields:
   --rate 10
 ```
 
-**Mode:** Roofline v2 (per-GEMM MFU lookups)
-**Config:** Minimal - only 6 fields needed!
+**Mode:** Roofline v2 (per-GEMM MFU lookups from database)
 
 ## Step 3: Run Roofline v1 (Fallback)
 
-**Without benchmark data** (uses calibrated constants):
+**Without benchmark data** (uses calibrated constants from config):
 
 ```bash
 ./simulation_worker run \
@@ -71,8 +60,7 @@ All 18 calibration fields:
   --rate 10
 ```
 
-**Mode:** Roofline v1 (calibrated)
-**Config:** Full - 18 calibration fields required
+**Mode:** Roofline v1 (uses MFU values from config)
 
 ## Step 4: Run Evaluator (Optional)
 
@@ -88,28 +76,19 @@ python3 python_scripts/blis_evaluator.py \
 
 ## What Was Fixed
 
-### Issue #1: Hardware Config Error (Original)
+### Original Issue: Missing Config Fields
 ```
 panic: NewInstanceSimulator(instance_0): creating latency model:
 latency model: invalid roofline config: HardwareCalib.BwEffConstant
 must be a valid positive number, got 0
 ```
 
-**Root Cause:** Missing calibration fields
-**Fix (commit `cba73b3`):** Added all 18 fields to `hardware_config.json`
+**Root Cause:** Config only had 2 fields, but roofline v1 needs 18
+**Fix (commit `cba73b3`):** Added all calibration fields to `hardware_config.json`
 
-### Issue #2: Unnecessary Fields for Roofline v2 (User's Question!)
-```
-"Why do you need the other fields in hardware_config.json when
-roofline v2 only needs 2 fields?"
-```
-
-**Root Cause:** Validation didn't distinguish between v1 (needs MFU from config) and v2 (needs MFU from database)
-**Fix (commit `451379f`):**
-- Made validation conditional based on MFU database presence
-- Created `hardware_config_v2.json` with minimal fields (6 vs 18)
-- Roofline v2 now works with just: `TFlopsPeak`, `BwPeakTBs`, + optional overheads
-- Roofline v1 still requires full calibration
+**Result:** One config file with all fields that works for both v1 and v2:
+- Roofline v2: Ignores MFU fields (gets from database)
+- Roofline v1: Uses all fields including MFU values
 
 ---
 
@@ -149,15 +128,14 @@ roofline v2 only needs 2 fields?"
 
 ---
 
-## Files Changed
+## Key Files
 
-| File | Change | Commit |
-|------|--------|--------|
-| `hardware_config.json` | Added 15+ calibration fields | `cba73b3` |
-| `python_scripts/blis_evaluator.py` | Updated for v0.6.1 CLI | `336f7fa` |
-| `sim/latency_model.go` | Added RooflineLatencyModelV2 | `f10e4c6` |
-| `sim/config.go` | Added MFUDatabase support | `f10e4c6` |
-| `sim/roofline_step_test.go` | Fixed function signatures | `6724947` |
+| File | Purpose |
+|------|---------|
+| `hardware_config.json` | Hardware specs (works for both v1 and v2) |
+| `sim/latency_model.go` | Latency model with roofline v1 & v2 |
+| `sim/roofline_step_v2.go` | Roofline v2 (MFU-based) |
+| `python_scripts/blis_evaluator.py` | Evaluator (v0.6.1 compatible) |
 
 ---
 

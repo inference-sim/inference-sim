@@ -1,0 +1,8 @@
+data/
+baseline_reg/
+eval/
+ShareGPT_V3_unfiltered_cleaned_split.json
+ShareGPT_V3_tokenized.json
+node_modules/
+.git/
+python_scripts/vidur
