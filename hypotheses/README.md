@@ -49,6 +49,12 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 | H-Reasoning-KV | Performance-regime | Multi-turn reasoning triggers preemption cliff proportional to peak demand | **Refuted** | Mean demand drives cliff (1.09x shift), not peak; surprise 63.8% prefix cache hit rate from context accumulation |
 | H-Step-Quantum | Structural model | Reducing step-time quantum proportionally reduces DES-to-M/M/1 divergence | **Refuted** | Divergence caused by alpha/beta split, not step quantization; reducing beta worsens divergence 47%→99% |
 | H-Cross-Model | Structural model | All confirmed behavioral findings hold for Qwen/Qwen2.5-7B-Instruct | **Partially confirmed** | 12/15 findings generalize; invariants and policy ordering are model-agnostic; cache-related findings are parameter-dependent |
+| H4 | Cross-policy | Round-robin matches least-loaded for uniform workloads at low rates | **Confirmed with nuance** | Mean metrics equivalent (<3.2% diff); TTFT p99 12-21% worse for LL due to tie-breaking bias; byte-identical results at high rate with constant tokens |
+| H6 | Cross-policy | Counterfactual regret higher for RR than weighted under variable load | **Confirmed with wrong mechanism** | RR mean regret=3.2, Weighted=0.0 (structurally zero by design, not empirical); higher regret does NOT imply worse TTFT — RR 5-15% lower TTFT due to perfect distribution uniformity |
+| H7 | Performance-regime | Increasing instances from 4 to 8 should roughly halve TTFT p99 for saturated workloads | **Confirmed** | 7.4x TTFT p99 improvement (4→8 instances) — super-linear due to non-linear queue growth rate reduction; E2E insensitive (1.06x); vanishes at sub-saturation |
+| H15 | Cross-policy | Fitness evaluation ranks prefix-affinity higher than load-only for prefix-heavy workloads | **Confirmed with nuance** | Fitness correctly ranks prefix-aware higher (+4.4% TTFT-heavy, +0.7% throughput-heavy); control (no prefix) produces byte-identical results; 1/(1+x) normalization compresses raw 14-38% TTFT p99 improvement |
+| H20 | Workload/arrival | Heavy-tailed (ParetoLogNormal) input distributions produce more preemptions and HOL blocking than Gaussian | **Refuted** | ParetoLogNormal produces FEWER preemptions (0.71x avg); distribution MEDIAN drives KV pressure, not mean or tail |
+| H23 | Cross-policy | All routing policies produce equivalent TTFT at near-zero load | **Confirmed with nuance** | All 4 policies within 4.40% at rate=1; surprise: high-load control also equivalent with uniform workloads — differentiation requires workload heterogeneity, not just high load |
 
 ## Running Experiments
 
@@ -68,16 +74,16 @@ Scripts are self-contained — they build the binary, run all experiment variant
 | Family | Done | Pending | Gaps |
 |--------|------|---------|------|
 | **Scheduler invariants** | H12, H13, H-Liveness, H25 | — | Family complete |
-| **Structural model** | H3, H9, H10, H-Phase, H-MMK, H26, H-Step-Quantum, H19 | — | Family complete |
+| **Structural model** | H3, H9, H10, H-Phase, H-MMK, H26, H-Step-Quantum, H19, H-Cross-Model | — | Family complete |
 | **Robustness/failure-mode** | H5, H14, H-Overload, H-Overload-KV, H21, H22, H24 | — | Family complete |
-| **Performance-regime** | H8, H11, H-Reasoning-KV | H7 | Horizontal scaling |
-| **Workload/arrival** | H-Arrival, H16 | H20 | Heavy-tailed distributions |
-| **Cross-policy comparative** | Prefix-Affinity, H1-SJF, H2, H17 | H4, H6, H15, H18, H23 | 5 remaining |
+| **Performance-regime** | H7, H8, H11, H-Reasoning-KV | — | Family complete |
+| **Workload/arrival** | H-Arrival, H16, H20 | — | Family complete |
+| **Cross-policy comparative** | Prefix-Affinity, H1-SJF, H2, H4, H6, H15, H17, H23 | H18 | 1 remaining |
 
 ## Hypothesis Tiers (priority from research.md)
 
 - **Tier 1**: Correctness baselines (H12 ✓, H13 ✓, H-Phase ✓, H-MMK ✓)
 - **Tier 2**: High diagnostic value (H3 ✓, H9 ✓, H14 ✓, Prefix-Affinity ✓)
 - **Tier 3**: System understanding (H1 ✓, H5 ✓, H10 ✓, H11 ✓)
-- **Tier 4**: Research questions (H15, H17 ✓, H19 ✓)
-- **Tier 5**: Workload diversity (H2 ✓, H16 ✓, H18, H20)
+- **Tier 4**: Research questions (H15 ✓, H17 ✓, H19 ✓)
+- **Tier 5**: Workload diversity (H2 ✓, H16 ✓, H18, H20 ✓)

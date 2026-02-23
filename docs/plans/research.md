@@ -501,16 +501,16 @@ Hypotheses are organized by **family** (what domain is tested) and **tier** (pri
 |--------|-----------|--------|------|
 | **Scheduler invariants** | H12 ✅, H13 ✅, H-Liveness ✅, H25 ✅ | **4/4 done** | None — all planned hypotheses complete |
 | **Structural model** | H3 ✅, H9 ✅, H10 ✅, H-Phase ✅, H-MMK ✅, H26 ✅, H-Step-Quantum ✅, H19 ✅ | **8/8 done** | None — H19 confirmed mean rankings preserved across latency modes; P99 diverges from alpha overhead |
-| **Performance-regime** | H7, H8 ✅, H11 ✅ | 2/3 done | Horizontal scaling (H7) |
+| **Performance-regime** | H7 ✅, H8 ✅, H11 ✅, H-Reasoning-KV ✅ | **4/4 done** | None — H7 confirmed super-linear scaling (7.4x TTFT improvement 4→8 instances) |
 | **Robustness/failure-mode** | H5 ✅, H14 ✅, H-Overload ✅, H-Overload-KV ✅, H21 ✅, H22 ✅, H24 ✅ | **7/7 done** | None — H21 refuted (cold-start cascade); H24 confirmed (4.9x TTFT, super-additive interaction) |
-| **Workload/arrival** | H-Arrival ✅, H16 ✅, H20 | 2/3 done | Heavy-tailed distributions (H20) |
-| **Cross-policy comparative** | Prefix-Affinity ✅, H1-SJF ✅, H2 ✅, H4, H6, H15, H17 ✅, H18, H23 | 4/9 done | Fitness (H15), fairness (H18), baselines (H4, H6, H23) |
+| **Workload/arrival** | H-Arrival ✅, H16 ✅, H20 ✅ | **3/3 done** | None — H20 refuted: ParetoLN produces fewer preemptions; distribution median drives KV pressure |
+| **Cross-policy comparative** | Prefix-Affinity ✅, H1-SJF ✅, H2 ✅, H4 ✅, H6 ✅, H15 ✅, H17 ✅, H18, H23 ✅ | **8/9 done** | H18 (fairness — blocked by #348) |
 
 ### Legacy Coverage Map (by area)
 
 | Area | Hypotheses | Components Tested |
 |------|-----------|-------------------|
-| **Routing** | H3 ✅, H4, H6 | Scorer freshness, round-robin, counterfactual |
+| **Routing** | H3 ✅, H4 ✅, H6 ✅ | Scorer freshness, round-robin (LL tie-breaking bias), counterfactual (structurally zero weighted regret) |
 | **Scheduling** | H1 ✅, H2 ✅ | SJF, Priority-FCFS, batch interaction |
 | **Admission** | H5 ✅ | Token-bucket, burst smoothing |
 | **KV Cache** | H8 ✅, H9 ✅ | Preemption, prefix caching effectiveness |
@@ -519,12 +519,12 @@ Hypotheses are organized by **family** (what domain is tested) and **tier** (pri
 | **Invariants** | H12 ✅, H13 ✅ | Conservation, determinism |
 | **Anomaly Detection** | H14 ✅ | Pathological templates, HOL blocking |
 | **Multi-Scorer** | H17 ✅ | Cross-workload dominance, weight sensitivity, kv-heavy micro-bursting |
-| **Fitness** | H15 | Multi-objective scoring |
-| **Workload Patterns** | H16 ✅, H18, H20 | Bursty (Gamma effect is load-duration dependent), unfair, heavy-tailed |
+| **Fitness** | H15 ✅ | Multi-objective scoring (1/(1+x) normalization compresses raw 14-38% improvement to <10% fitness score diff) |
+| **Workload Patterns** | H16 ✅, H18, H20 ✅ | Bursty (Gamma effect is load-duration dependent), unfair, heavy-tailed (median drives KV pressure, not tail) |
 | **Latency Model** | H19 ✅, H-Step-Quantum ✅ | Roofline vs blackbox (mean rankings preserved, P99 diverges from alpha); alpha/beta service time split (#329) |
-| **Scaling** | H7 | Instance count throughput |
-| **Prefix Affinity** | H9 ✅, H15, H17 ✅ | Cache hits, routing, weight tuning |
-| **Edge Cases** | H21 ✅, H22 ✅, H23, H24 ✅ | Extreme weights (refuted — cold-start cascade), input validation, underload, pathological combos (4.9x TTFT) |
+| **Scaling** | H7 ✅ | Instance count throughput (7.4x super-linear TTFT scaling 4→8; queue growth rate is non-linear in k) |
+| **Prefix Affinity** | H9 ✅, H15 ✅, H17 ✅ | Cache hits, routing, weight tuning, fitness evaluation |
+| **Edge Cases** | H21 ✅, H22 ✅, H23 ✅, H24 ✅ | Extreme weights (refuted — cold-start cascade), input validation, underload (all policies equivalent; uniform workload kills differentiation), pathological combos (4.9x TTFT) |
 | **Integration** | H25 ✅, H26 ✅ | Full policy stack, event pipeline causal ordering |
 
 ## Reviewer Consensus
@@ -582,8 +582,8 @@ This prevents the scenario where an experiment runs but the measurement doesn't 
 1. ~~**Tier 1 (run first — correctness baselines):** H12 (conservation), H13 (determinism)~~ **DONE**
 2. ~~**Tier 2 (high diagnostic value):** H3 (signal freshness), H9 (prefix caching), H14 (pathological)~~ **DONE**
 3. ~~**Tier 3 (system understanding):** H1 (SJF), H5 (token-bucket), H10 (tiered KV), H11 (batch formation)~~ **DONE**
-4. ~~**Tier 4 (research questions):** H17 (Pareto frontier), H19 (roofline vs blackbox)~~ **DONE**. H15 (fitness) remaining.
-5. **Tier 5 (workload diversity):** ~~H2~~ **DONE (#345)**, ~~H16~~ **DONE (#385)**, H18, H20
+4. ~~**Tier 4 (research questions):** H17 (Pareto frontier), H19 (roofline vs blackbox), H15 (fitness)~~ **DONE**
+5. ~~**Tier 5 (workload diversity):** H2, H16, H20~~ **DONE**. H18 remaining (blocked by #348).
 
 **Additional completed (not in original tiers):**
 - H-Liveness, H-Overload, H-Overload-KV, H-MMK, H-Phase, H-Arrival (methodology validation experiments)
@@ -596,17 +596,23 @@ This prevents the scenario where an experiment runs but the measurement doesn't 
 - H21 (extreme scorer weights — refuted: cold-start prefix cascade, tiebreaker is binary, #385)
 - H24 (combined pathological — confirmed: 4.9x TTFT, routing ~95% dominant, super-additive, #385)
 
-**Remaining (7 hypotheses):**
-- H4 (round-robin vs least-loaded baseline), H6 (counterfactual regret), H7 (horizontal scaling)
-- H15 (fitness evaluation), H18 (unfair tenant fairness)
-- H20 (heavy-tailed distributions), H23 (low-load equivalence)
+**Remaining (1 hypothesis):**
+- H18 (unfair tenant fairness — blocked by #348)
+
+**Newly completed:**
+- H4 (RR vs LL — confirmed with nuance: mean equivalent, LL p99 12-21% worse from tie-breaking)
+- H6 (counterfactual regret — confirmed with wrong mechanism: weighted regret structurally zero by design)
+- H7 (horizontal scaling — confirmed: 7.4x super-linear TTFT scaling due to non-linear queue growth rate)
+- H15 (fitness evaluation — confirmed with nuance: correctly ranks prefix-affinity; normalization compresses)
+- H20 (heavy-tailed — refuted: ParetoLN produces fewer preemptions; median drives KV pressure, not tail)
+- H23 (low-load equivalence — confirmed with nuance: all policies within 5%; uniform workload eliminates differentiation)
 
 ## Next Steps
 
 1. ~~Create workload-spec YAMLs for each hypothesis~~ — done for all completed experiments
 2. ~~Start with Tier 1 (invariants) to establish correctness baselines~~ — done
 3. ~~**Highest-ROI batch:** H24, H19, H21, H16~~ — done (#385). Used shared experiment harness (`hypotheses/lib/`) for timeout safety.
-4. **Remaining highest-ROI:** H7 (horizontal scaling), H15 (fitness evaluation), H20 (heavy-tailed distributions)
+4. ~~**Remaining highest-ROI:** H7 (horizontal scaling), H15 (fitness evaluation), H20 (heavy-tailed distributions)~~ **DONE**
 5. **Act on #329 findings:** file design issue for DES service time split; update H-MMK FINDINGS; propose calibration rule
 6. **Act on H17 findings:** file design issue for kv-heavy micro-bursting; follow-up hypothesis at high utilization
 7. **Act on #385 findings:**
@@ -614,3 +620,9 @@ This prevents the scenario where an experiment runs but the measurement doesn't 
    - H16: Gamma burst effect is load-duration dependent — Poisson may be sufficient for long-running workloads
    - H19: Consider adding explicit `--latency-mode roofline` flag independent of alpha coefficients (CLI design coupling)
 8. **Promote confirmed hypotheses to Go tests:** H26 (event pipeline), H25 (full-stack conservation), H24 (anomaly detection completeness)
+9. **Act on new findings:**
+   - H4: LL tie-breaking positional bias (instance 0 preference) — consider random tie-breaking option
+   - H6: Counterfactual regret is structurally zero for weighted policies — document limitation; regret only meaningful for non-score-based policies
+   - H7: Super-linear scaling is a general queueing property — document for capacity planning guidance
+   - H20: Distribution median (not mean/tail) drives KV pressure — document for workload configuration guidance
+   - H23: Routing policy differentiation requires workload heterogeneity — document as experiment design guidance
