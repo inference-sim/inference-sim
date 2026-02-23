@@ -600,3 +600,21 @@ func TestPathological_AlwaysBusiest_CausesImbalance(t *testing.T) {
 		t.Error("expected significant load imbalance or HOL blocking with always-busiest")
 	}
 }
+
+// TestJainFairnessIndex_AllZeroThroughputs_ReturnsPerfectFairness verifies BC-13:
+// all-zero throughputs means all tenants treated identically → perfectly fair.
+func TestJainFairnessIndex_AllZeroThroughputs_ReturnsPerfectFairness(t *testing.T) {
+	throughputs := map[string]float64{"t1": 0, "t2": 0, "t3": 0}
+	jfi := JainFairnessIndex(throughputs)
+	if jfi != 1.0 {
+		t.Errorf("JainFairnessIndex(all-zero) = %f, want 1.0 (perfectly fair)", jfi)
+	}
+}
+
+// TestJainFairnessIndex_Empty_ReturnsZero verifies edge case: no tenants.
+func TestJainFairnessIndex_Empty_ReturnsZero(t *testing.T) {
+	jfi := JainFairnessIndex(map[string]float64{})
+	if jfi != 0 {
+		t.Errorf("JainFairnessIndex(empty) = %f, want 0", jfi)
+	}
+}

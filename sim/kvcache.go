@@ -80,6 +80,21 @@ func (kvc *KVCacheState) appendToFreeList(block *KVBlock) {
 	}
 }
 
+// prependToFreeList adds a block to the HEAD of the free list.
+// Used by rollbackAllocation to restore blocks to their original position
+// (blocks were popped from the head, so rollback prepends them back).
+func (kvc *KVCacheState) prependToFreeList(block *KVBlock) {
+	block.PrevFree = nil
+	block.NextFree = kvc.FreeHead
+	if kvc.FreeHead != nil {
+		kvc.FreeHead.PrevFree = block
+	}
+	kvc.FreeHead = block
+	if kvc.FreeTail == nil {
+		kvc.FreeTail = block
+	}
+}
+
 // removeFromFreeList detaches a block from the LRU free list.
 func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
 	if block.PrevFree != nil {
@@ -146,7 +161,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 	logrus.Debugf("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d", req.ID, len(req.InputTokens), startIndex, endIndex)
 
 	var newTokens []int
-	var numNewBlocks = int64(1)
+	var numNewBlocks int64
 	if req.ProgressIndex < Len64(req.InputTokens) {
 		// request is in prefill (could be chunked)
 		newTokens = req.InputTokens[startIndex:endIndex]
@@ -213,7 +228,13 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 			}
 		} else {
 			// latest block is full or request is coming in for the first time.
-			// allocate new block(s) for the request
+			// allocate new block(s) for the request.
+			// Recompute blocks needed from remaining tokens (after partial fill consumed some).
+			remainingTokens := Len64(newTokens) - newTokenProgressIndex
+			if remainingTokens <= 0 {
+				break
+			}
+			numNewBlocks = (remainingTokens + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
 			for i := int64(0); i < numNewBlocks; i++ {
 				// Save the original prefix hash before popFreeBlock clears it.
 				// This allows rollback to restore cached prefix hashes.
@@ -297,7 +318,8 @@ type newBlockMutation struct {
 // Restores UsedBlockCnt, CacheMisses, CacheHits, RefCount, InUse, free list, HashToBlock, and RequestMap.
 // Also restores prefix hashes that were destroyed by popFreeBlock during allocation.
 func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cachedBlockMutation, newlyAllocated []newBlockMutation) {
-	// Undo new block allocations (reverse order for clean free list state)
+	// Undo new block allocations (reverse order so first-popped block
+	// ends up at the free list head, restoring original LRU order)
 	for i := len(newlyAllocated) - 1; i >= 0; i-- {
 		m := newlyAllocated[i]
 		blk := m.block
@@ -315,10 +337,13 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 		blk.Tokens = nil
 		kvc.UsedBlockCnt--
 		kvc.CacheMisses--
-		kvc.appendToFreeList(blk)
+		kvc.prependToFreeList(blk)
 	}
-	// Undo cached block mutations
-	for _, cm := range cachedMutations {
+	// Undo cached block mutations (reverse order so blocks are appended
+	// to the tail in the opposite order they were removed, restoring
+	// the original free list tail ordering)
+	for i := len(cachedMutations) - 1; i >= 0; i-- {
+		cm := cachedMutations[i]
 		cm.block.RefCount--
 		kvc.CacheHits--
 		if !cm.wasInUse && cm.block.RefCount == 0 {

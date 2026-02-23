@@ -201,17 +201,27 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 // for finite-duration simulations; large-cardinality workloads will consume proportional memory.
 type PrefixAffinity struct {
 	prefixMap map[string]string // prefix hash → instance ID (unbounded; grows with unique prefix count)
+	blockSize int64             // KV cache block size for block-aligned prefix hashing
 }
 
 // Route implements RoutingPolicy for PrefixAffinity.
+// Uses block-aligned hierarchical hashing (same scheme as the weighted-scoring
+// prefix-affinity scorer) so requests sharing block-aligned prefixes route together.
 func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecision {
 	snapshots := state.Snapshots
 	if len(snapshots) == 0 {
 		panic("PrefixAffinity.Route: empty snapshots")
 	}
 
-	// Compute prefix hash using KVCache's hashTokens (pipe-delimited decimal strings)
-	prefixHash := hashTokens(req.InputTokens)
+	// Compute block-aligned prefix hashes; use the last (longest prefix) as affinity key
+	blockHashes := computeBlockHashes(int(pa.blockSize), req.InputTokens)
+	var prefixHash string
+	if len(blockHashes) > 0 {
+		prefixHash = blockHashes[len(blockHashes)-1]
+	} else {
+		// Tokens shorter than one block: fall back to whole-input hash
+		prefixHash = hashTokens(req.InputTokens)
+	}
 
 	// Check cache for existing mapping
 	if targetID, found := pa.prefixMap[prefixHash]; found {
@@ -231,6 +241,24 @@ func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecisio
 	pa.prefixMap[prefixHash] = decision.TargetInstance
 
 	return NewRoutingDecision(decision.TargetInstance, "prefix-affinity (cache-miss, fallback to least-loaded)")
+}
+
+// computeBlockHashes returns hierarchical block hashes without requiring a PrefixCacheIndex.
+// Reuses the same hashBlock function from prefix_cache_index.go for consistency.
+func computeBlockHashes(blockSize int, tokens []int) []string {
+	numBlocks := len(tokens) / blockSize
+	if numBlocks == 0 {
+		return nil
+	}
+	hashes := make([]string, numBlocks)
+	prevHash := ""
+	for i := 0; i < numBlocks; i++ {
+		start := i * blockSize
+		end := start + blockSize
+		hashes[i] = hashBlock(prevHash, tokens[start:end])
+		prevHash = hashes[i]
+	}
+	return hashes
 }
 
 // AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + PendingRequests).
@@ -266,7 +294,7 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 // If scorerConfigs is nil/empty for "weighted", DefaultScorerConfigs() is used.
 // Non-weighted policies ignore scorerConfigs.
 // Panics on unrecognized names.
-func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig) RoutingPolicy {
+func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
@@ -282,7 +310,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig) RoutingPolicy {
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, defaultBlockSize)
+			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize))
 			scorers[i] = scorer
 			if obs != nil {
 				observers = append(observers, obs)
@@ -291,7 +319,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig) RoutingPolicy {
 		weights := normalizeScorerWeights(scorerConfigs)
 		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
 	case "prefix-affinity":
-		return &PrefixAffinity{prefixMap: make(map[string]string)}
+		return &PrefixAffinity{prefixMap: make(map[string]string), blockSize: blockSize}
 	case "always-busiest":
 		return &AlwaysBusiest{}
 	default:

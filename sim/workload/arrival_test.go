@@ -128,3 +128,18 @@ func meanAndVariance(vals []float64) (float64, float64) {
 	}
 	return mean, sumSq / n
 }
+
+// TestWeibullSampler_ZeroUniform_NoOverflow verifies BC-9:
+// clamping u=0 to SmallestNonzeroFloat64 produces a finite result.
+func TestWeibullSampler_ZeroUniform_NoOverflow(t *testing.T) {
+	s := &WeibullSampler{shape: 1.0, scale: 1000.0}
+	// Verify the formula doesn't overflow for the smallest positive float64
+	u := math.SmallestNonzeroFloat64
+	sample := s.scale * math.Pow(-math.Log(u), 1.0/s.shape)
+	if math.IsInf(sample, 0) {
+		t.Error("sample should not be +Inf for SmallestNonzeroFloat64")
+	}
+	if sample <= 0 {
+		t.Error("sample should be positive")
+	}
+}

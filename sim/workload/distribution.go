@@ -61,11 +61,18 @@ func (s *ParetoLogNormalSampler) Sample(rng *rand.Rand) int {
 	if rng.Float64() < s.mixWeight {
 		// Pareto: X = xm / U^(1/alpha)
 		u := rng.Float64()
+		if u == 0 {
+			u = math.SmallestNonzeroFloat64 // prevent division by zero → +Inf
+		}
 		val = s.xm / math.Pow(u, 1.0/s.alpha)
 	} else {
 		// LogNormal: X = exp(mu + sigma * Z)
 		z := rng.NormFloat64()
 		val = math.Exp(s.mu + s.sigma*z)
+	}
+	// Guard against +Inf from extreme u or sigma values
+	if math.IsInf(val, 0) || math.IsNaN(val) {
+		return 1
 	}
 	result := int(math.Round(val))
 	if result < 1 {
@@ -145,10 +152,23 @@ func (s *ConstantSampler) Sample(_ *rand.Rand) int {
 	return s.value
 }
 
+// requireParam checks that all required keys exist in a params map.
+func requireParam(params map[string]float64, keys ...string) error {
+	for _, k := range keys {
+		if _, ok := params[k]; !ok {
+			return fmt.Errorf("distribution requires parameter %q", k)
+		}
+	}
+	return nil
+}
+
 // NewLengthSampler creates a LengthSampler from a DistSpec.
 func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 	switch spec.Type {
 	case "gaussian":
+		if err := requireParam(spec.Params, "mean", "std_dev", "min", "max"); err != nil {
+			return nil, err
+		}
 		return &GaussianSampler{
 			mean:   spec.Params["mean"],
 			stdDev: spec.Params["std_dev"],
@@ -157,11 +177,17 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 		}, nil
 
 	case "exponential":
+		if err := requireParam(spec.Params, "mean"); err != nil {
+			return nil, err
+		}
 		return &ExponentialSampler{
 			mean: spec.Params["mean"],
 		}, nil
 
 	case "pareto_lognormal":
+		if err := requireParam(spec.Params, "alpha", "xm", "mu", "sigma", "mix_weight"); err != nil {
+			return nil, err
+		}
 		return &ParetoLogNormalSampler{
 			alpha:     spec.Params["alpha"],
 			xm:        spec.Params["xm"],
@@ -171,6 +197,9 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 		}, nil
 
 	case "constant":
+		if err := requireParam(spec.Params, "value"); err != nil {
+			return nil, err
+		}
 		val := int(spec.Params["value"])
 		return &ConstantSampler{value: val}, nil
 

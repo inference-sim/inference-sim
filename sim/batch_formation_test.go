@@ -420,3 +420,47 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 		}
 	}
 }
+
+// TestPreemptForTokens_CleansUpComputedTokens verifies BC-6:
+// preempted request's ComputedTokens entry is deleted.
+func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
+	// GIVEN a running request with a ComputedTokens entry
+	kv := NewKVStore(SimConfig{TotalKVBlocks: 4, BlockSizeTokens: 4})
+	victim := &Request{
+		ID:           "victim",
+		InputTokens:  []int{1, 2, 3, 4, 5, 6, 7, 8},
+		OutputTokens: []int{100},
+		State:        StateRunning,
+	}
+	kv.AllocateKVBlocks(victim, 0, 8, []int64{})
+	victim.ProgressIndex = 8 // simulate completed prefill
+	computedTokens := map[string]int64{victim.ID: 8}
+
+	ctx := BatchContext{
+		RunningBatch:   &Batch{Requests: []*Request{victim}},
+		WaitQ:          &WaitQueue{},
+		KVCache:        kv,
+		ComputedTokens: computedTokens,
+		Now:            1000,
+	}
+	result := BatchResult{RunningBatch: ctx.RunningBatch}
+
+	// A new request that needs more tokens than available
+	newReq := &Request{
+		ID:           "newcomer",
+		InputTokens:  []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160},
+		OutputTokens: []int{100},
+	}
+	bf := &VLLMBatchFormation{latencyModel: &BlackboxLatencyModel{
+		betaCoeffs:  []float64{100, 1, 1},
+		alphaCoeffs: []float64{100, 1, 100},
+	}}
+
+	// WHEN preemption evicts victim to make room for newcomer
+	bf.preemptForTokens(newReq, 16, &result, ctx)
+
+	// THEN ComputedTokens should NOT contain the preempted request's entry
+	if _, exists := computedTokens[victim.ID]; exists {
+		t.Error("preempted request should be removed from ComputedTokens")
+	}
+}

@@ -91,6 +91,9 @@ type WeibullSampler struct {
 func (s *WeibullSampler) SampleIAT(rng *rand.Rand) int64 {
 	// Inverse CDF: scale * (-ln(U))^(1/shape)
 	u := rng.Float64()
+	if u == 0 {
+		u = math.SmallestNonzeroFloat64 // prevent -ln(0) = +Inf
+	}
 	sample := s.scale * math.Pow(-math.Log(u), 1.0/s.shape)
 	iat := int64(sample)
 	if iat < 1 {

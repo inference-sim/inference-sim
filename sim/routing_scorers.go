@@ -18,11 +18,6 @@ type ScorerConfig struct {
 // Stateless scorers may ignore it.
 type scorerFunc func(req *Request, snapshots []RoutingSnapshot) map[string]float64
 
-// defaultBlockSize is the default block size for the prefix cache index.
-// Matches the most common KV cache block size. Used when constructing
-// the prefix-affinity scorer without explicit configuration.
-const defaultBlockSize = 16
-
 // validScorerNames maps scorer names to validity. Unexported to prevent mutation (antipattern rule 8).
 var validScorerNames = map[string]bool{
 	"prefix-affinity": true,
