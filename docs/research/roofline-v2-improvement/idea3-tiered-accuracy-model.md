@@ -28,15 +28,19 @@ BLIS's roofline v2 model produces higher prediction errors than expected. We ide
 
 ## 1. Six Hypotheses: Observable Error Patterns
 
-Each hypothesis is a testable claim about what the simulator gets wrong, stated in terms of observable metrics. The proposed mechanism explains *why* the error exists. Implementation details and code references appear in the evidence section.
+Each hypothesis is a testable claim about what the simulator gets wrong. The proposed mechanism explains *why* the error exists. Implementation details and code references appear in the evidence section.
+
+**Observability constraint**: Available ground truth is 14 GuideLLM experiments (`eval/ground_truth/`) providing client-side per-request metrics (TTFT, TPOT, E2E, token counts) from `guidellm-results.json`. No server-side per-step data (batch composition, scheduler overhead, per-layer timing) is available. This means hypotheses are testable at the *aggregate accuracy* level (does the correction reduce MAPE?) but most mechanisms cannot be verified in isolation from client data. Where possible, synthetic simulator-internal tests supplement the aggregate comparison. See [Section 5](#5-limitations-and-open-questions) for a full discussion of confounds.
 
 ### H1: The simulator systematically underestimates latency for memory-bound steps
 
 > Decode-heavy workloads should show consistent negative prediction bias. The magnitude of the bias should be proportional to the fraction of step time spent memory-bound. Correcting for achievable (not theoretical) memory bandwidth should reduce this bias.
 
-**How to test**: Run decode-only workloads at multiple batch sizes. Compare predicted vs. measured TPOT. The error should be directionally consistent (always underestimating) and larger at small batch sizes where steps are more memory-bound.
+**How to test**: Run BLIS against all 14 ground truth experiments (`eval/ground_truth/`) with and without the bandwidth efficiency correction (`peakBW *= 0.80`). Compare predicted vs. measured TPOT from `guidellm-results.json` per-request data. The correction should reduce TPOT prediction bias (predicted < measured) across workloads. Codesweep workloads (longer decode sequences, more memory-bound) should show larger improvement than chatsweep (shorter sequences, more compute-mixed). Compare low-QPS sweep points (minimal queuing) for the cleanest signal.
 
-**Accept criterion**: Decode-only MAPE improves by ≥5pp after correction.
+**Data constraint**: Client-side TPOT includes scheduling overhead and contention effects — we cannot isolate pure decode step time. The test measures aggregate TPOT improvement, not the mechanism (memory-boundedness) directly.
+
+**Accept criterion**: TPOT MAPE improves by ≥3pp across all 14 experiments; codesweep experiments improve more than chatsweep (directional evidence for memory-bound mechanism).
 
 <details>
 <summary><b>Mechanism and evidence</b></summary>
@@ -53,9 +57,11 @@ The model assumes GPUs sustain their datasheet peak HBM bandwidth. In practice, 
 
 > Across all workloads, there should be a constant positive residual (measured - predicted) per step. This residual should be roughly the same magnitude regardless of model size, batch size, or prefill/decode mix. It represents time spent outside GPU compute — scheduling, tensor preparation, output processing.
 
-**How to test**: Across multiple workloads, compute residual = measured_step_time - predicted_step_time. The residual should cluster around a fixed value (not scale with FLOPs or memory). Regress residual against batch composition — the intercept should be large (ms-scale) and the slope near zero.
+**How to test**: Run BLIS against all 14 ground truth experiments with the current overhead (~50μs) and with InferSim-scale overhead (5ms decode, 30ms prefill). Use the lowest-QPS sweep point per experiment where queuing effects are negligible — this isolates per-step overhead from contention. Compare predicted vs. measured TTFT and TPOT from `guidellm-results.json`. The overhead constant should be swept in 1ms increments; select the value that minimizes TPOT MAPE on a 70/30 train/holdout split across experiments (train on 10 experiments, hold out 4).
 
-**Accept criterion**: TPOT MAPE improves by ≥5pp after adding per-step overhead.
+**Data constraint**: We cannot observe individual step times or decompose per-request latency into "GPU compute" vs. "scheduler overhead" — that would require server-side OTEL traces. The test validates that adding a fixed overhead improves aggregate prediction accuracy, but cannot confirm the overhead is truly constant (independent of batch size). Tier 1 calibration captures any batch-size dependence.
+
+**Accept criterion**: TPOT MAPE improves by ≥3pp on the held-out experiments; TTFT MAPE does not worsen by >1pp.
 
 <details>
 <summary><b>Mechanism and evidence</b></summary>
@@ -72,9 +78,11 @@ The model captures GPU kernel execution time but misses the CPU-side overhead of
 
 > For models with grouped-query attention (GQA), the simulator should show larger GEMM-related prediction error than for models with standard multi-head attention — because GQA creates the largest shape mismatch between split (Q/K/V separate) and fused (QKV combined) projections. Aligning lookup shapes with execution shapes should reduce this error.
 
-**How to test**: Compare error on a GQA model (e.g., Llama-3.1-8B, where K/V have 8 heads vs. Q's 32) against a non-GQA model. The GQA model should show larger GEMM-component error. After fusing the QKV lookup, the gap should close.
+**How to test**: Run BLIS against all 14 ground truth experiments with split Q/K/V/O lookups (current) and fused QKV+O lookups. The ground truth includes both GQA models (CodeLlama-34B: 48Q/8KV heads, Llama2-70B: 64Q/8KV heads) and standard MHA (Qwen-7B: 28Q/28KV heads; Llama2-7B: 32Q/32KV heads). Compare E2E MAPE improvement per model family. GQA models should show larger improvement because fusing creates the biggest shape change for GQA (K/V dimensions are 4-8× smaller than Q).
 
-**Accept criterion**: GEMM-dominated workload MAPE improves by ≥2pp.
+**Data constraint**: We cannot isolate GEMM-component error from client-side data — only aggregate latency. The GQA vs. non-GQA comparison provides indirect mechanistic evidence: if the fix helps GQA models more, it confirms the shape-mismatch hypothesis.
+
+**Accept criterion**: E2E MAPE improves by ≥2pp on GQA models (CodeLlama-34B, Llama2-70B); improvement on GQA models exceeds improvement on non-GQA models (Qwen-7B, Llama2-7B).
 
 <details>
 <summary><b>Mechanism and evidence</b></summary>
@@ -91,9 +99,15 @@ vLLM fuses Q, K, V projections into a single `qkv_proj` GEMM with output dimensi
 
 > For decode steps with large KV caches (where attention is memory-bound) but small batch sizes (where GEMMs are also memory-bound but with different operational intensity), the aggregate roofline should underpredict more than it does for uniformly compute-bound or uniformly memory-bound steps. The error should increase as the operational intensities of different components diverge.
 
-**How to test**: Vary KV cache length while holding batch size fixed. At the crossover point where some components switch from compute-bound to memory-bound, prediction error should spike under the aggregate model but remain stable under per-component modeling.
+**How to test**: Two-part test.
 
-**Accept criterion**: Per-step prediction variance decreases; no systematic error spike at bottleneck transitions.
+*Part A (simulator-internal, no ground truth needed)*: Construct synthetic step configurations that sweep KV cache length from 128 to 8192 at fixed batch size. Compute step time under both aggregate `max(totalCompute, totalMemory)` and per-component `Σ_layers max(attnCompute, attnMemory) + max(mlpCompute, mlpMemory)`. Plot both curves. The aggregate curve should show artificial smoothness across the bottleneck transition; the per-component curve should show a clean knee.
+
+*Part B (aggregate accuracy)*: Run BLIS against all 14 ground truth experiments with aggregate vs. per-component roofline. Compare E2E MAPE. Workloads with longer output sequences (codesweep) generate larger KV caches and are more likely to cross bottleneck boundaries, so they should benefit more.
+
+**Data constraint**: We cannot observe per-step bottleneck transitions from client-side data. Part A validates the mechanism synthetically; Part B validates the aggregate accuracy impact.
+
+**Accept criterion**: Part A shows ≥10% latency difference between aggregate and per-component at the crossover region; Part B shows E2E MAPE improvement of ≥1pp across experiments.
 
 <details>
 <summary><b>Mechanism and evidence</b></summary>
@@ -110,9 +124,15 @@ The roofline model `T = max(W/P, Q/B)` assumes a single operational intensity. B
 
 > For workloads with mixed prefill+decode steps, prediction error should vary systematically with the ratio of prefill to decode tokens in each step. Steps that are mostly prefill or mostly decode should be more accurate; steps near 50/50 should be least accurate. This is because a weighted-average blend is most wrong when both components contribute equally.
 
-**How to test**: Bucket mixed-batch steps by prefill/decode ratio. Plot MAPE per bucket. The error should correlate with ratio distance from the extremes. After replacing the weighted average with an additive model, the correlation should disappear.
+**How to test**: Two-part test.
 
-**Accept criterion**: Mixed-batch MAPE improves by ≥3pp; error no longer correlates with prefill/decode ratio.
+*Part A (simulator-internal, no ground truth needed)*: Construct synthetic mixed-batch step configurations sweeping prefill/decode token ratio from 0% to 100% at fixed total tokens. Compare step time under the weighted-average model vs. the additive model (`GEMM(totalBatch) + PrefillAttn + DecodeAttn`). The weighted-average model should produce non-physical results near 50/50 (blending two independent predictions), while the additive model should produce a monotonic curve.
+
+*Part B (aggregate accuracy via QPS proxy)*: Run BLIS against all 14 ground truth experiments with both models. Higher QPS sweep points create more concurrent requests and thus more mixed batching in vLLM. Compare E2E MAPE at high-QPS vs. low-QPS sweep points — the additive model should show larger improvement at high QPS where mixed batches dominate.
+
+**Data constraint**: We have zero visibility into per-step batch composition from client-side data. We cannot bucket steps by prefill/decode ratio or verify the per-step correlation claim directly. The QPS-as-proxy approach provides weak indirect evidence — high QPS correlates with more mixed batching but also with more queuing and contention.
+
+**Accept criterion**: Part A shows ≥15% latency difference between additive and weighted-average at 50/50 ratio; Part B shows E2E MAPE improvement of ≥2pp, with the improvement concentrated at higher QPS sweep points.
 
 <details>
 <summary><b>Mechanism and evidence</b></summary>
@@ -129,9 +149,15 @@ In vLLM with chunked prefill, a mixed step executes as: (1) one fused GEMM over 
 
 > When batch size or sequence length crosses an MFU grid boundary, the simulator's predicted latency should jump discontinuously. This produces excess per-request prediction variance that is an artifact of the lookup method, not of real hardware behavior. Smoothing the MFU surface should reduce this variance.
 
-**How to test**: Sweep batch size by 1 across a grid boundary. Plot predicted latency vs. batch size. Nearest-neighbor should produce a step function; interpolation should produce a smooth curve. Measure per-request prediction variance before/after.
+**How to test**: Two-part test.
 
-**Accept criterion**: Per-request prediction variance decreases at grid boundaries.
+*Part A (simulator-internal, no ground truth needed)*: Sweep batch size by 1 from 1 to 256 and sequence length by 64 from 128 to 8192. For each point, call the MFU lookup with nearest-neighbor (current) and bilinear interpolation. Plot predicted latency vs. batch size and sequence length. Nearest-neighbor should produce step functions; interpolation should produce smooth surfaces. Quantify: count the number of ≥5% discontinuities across adjacent points.
+
+*Part B (aggregate accuracy)*: Run BLIS against all 14 ground truth experiments with nearest-neighbor vs. interpolated MFU. Compare per-request E2E prediction variance (not just MAPE — variance captures the smoothness benefit). Also compare aggregate E2E MAPE.
+
+**Data constraint**: None — this hypothesis is fully testable. Part A is purely simulator-internal. Part B uses standard client-side per-request comparison.
+
+**Accept criterion**: Part A eliminates ≥80% of artificial discontinuities; Part B shows per-request E2E prediction variance decreases and aggregate MAPE does not worsen by >1pp.
 
 <details>
 <summary><b>Mechanism and evidence</b></summary>
@@ -154,14 +180,14 @@ TAM organizes corrections by calibration cost. Each tier is independently testab
 
 Corrections derived entirely from hardware physics, execution semantics, or standard numerical techniques. Zero fitted parameters.
 
-| Hypothesis | What the simulator gets wrong | Accept criterion |
-|------------|------------------------------|------------------|
-| H1 | Underestimates memory-bound step latency | Decode-only MAPE ≥5pp better |
-| H2 | Missing per-step scheduling overhead | TPOT MAPE ≥5pp better |
-| H3 | MFU lookups use wrong GEMM shapes | GEMM-workload MAPE ≥2pp better |
-| H4 | Aggregate roofline masks bottleneck transitions | Per-step variance decreases |
-| H5 | Weighted-average mixed-batch model | Mixed MAPE ≥3pp better; no ratio correlation |
-| H6 | MFU grid-boundary discontinuities | Per-request variance decreases at boundaries |
+| Hypothesis | What the simulator gets wrong | Accept criterion | Testability with client data |
+|------------|------------------------------|------------------|------------------------------|
+| H1 | Underestimates memory-bound step latency | TPOT MAPE ≥3pp better across 14 experiments; codesweep > chatsweep | Aggregate only — cannot isolate memory-bound steps |
+| H2 | Missing per-step scheduling overhead | TPOT MAPE ≥3pp better on held-out experiments; TTFT not >1pp worse | Aggregate only — cannot observe per-step residuals |
+| H3 | MFU lookups use wrong GEMM shapes | E2E MAPE ≥2pp better on GQA models; GQA improvement > non-GQA | Strong — have both GQA and non-GQA models |
+| H4 | Aggregate roofline masks bottleneck transitions | Synthetic: ≥10% diff at crossover; Aggregate: E2E MAPE ≥1pp better | Mechanism via synthetic test; accuracy via aggregate |
+| H5 | Weighted-average mixed-batch model | Synthetic: ≥15% diff at 50/50; Aggregate: E2E MAPE ≥2pp better at high QPS | Weakest — no batch composition visibility; QPS as proxy |
+| H6 | MFU grid-boundary discontinuities | ≥80% fewer discontinuities; per-request variance decreases | Full — simulator-internal + aggregate |
 
 **Overfitting risk**: None for H1, H3, H4, H5 (zero fitted parameters). H2 uses a sweep but selects against held-out data. H6 is a standard numerical technique.
 
@@ -170,12 +196,12 @@ Corrections derived entirely from hardware physics, execution semantics, or stan
 > After Tier 0, the remaining prediction error should be dominated by version-specific vLLM overhead. One GuideLLM trace (≥100 requests) should be sufficient to extract this residual.
 
 **Protocol**:
-1. Run GuideLLM against real vLLM (any workload, ≥100 requests)
-2. Run BLIS with Tier 0 corrections, overhead = floor
-3. Match request pairs via calibration framework ([`sim/workload/calibrate.go`](sim/workload/calibrate.go))
-4. Compute residual = measured − predicted per request
-5. Fit: `residual_ms = a * numDecode + b * numPrefill + c * log2(1 + totalBatch) + d`
-6. Cross-validate on 80/20 split
+1. Select one of the 14 ground truth experiments (≥100 requests preferred)
+2. Run BLIS with Tier 0 corrections against the same workload config (`exp-config.yaml` + `profile.yaml`)
+3. Match request pairs via calibration framework ([`sim/workload/calibrate.go`](sim/workload/calibrate.go)) using per-request data from `guidellm-results.json`
+4. Compute residual = measured_client_TPOT − predicted_TPOT per request (network-adjusted via `calibrate.go`)
+5. Fit: `residual_ms = a * outputTokens + b * promptTokens + d` (note: `totalBatch` is unobservable from client data — use token counts as proxy)
+6. Cross-validate: train on 10 experiments, hold out 4 (ensuring at least one held-out experiment per model family)
 
 **Overfitting guard**: Validation MAPE > 2× training MAPE → reject, fall back to Tier 0.
 
@@ -253,15 +279,19 @@ Tier 0: Fully deterministic. Tier 1: Deterministic given same trace + seed (INV-
 
 ## 5. Limitations and Open Questions
 
-1. **MFU database coverage**: Accuracy is bounded by MFU data quality. Missing entries near target shapes degrade both nearest-neighbor and interpolation.
+1. **Client-side data confounds mechanism isolation**: All 14 ground truth experiments provide per-request TTFT, TPOT, and E2E from `guidellm-results.json` (client perspective). We have no per-step, per-batch, or per-component server-side data. This means we can measure whether a correction improves aggregate prediction accuracy, but we cannot scientifically distinguish whether the improvement comes from the hypothesized mechanism or from compensating for a different error. H1-H2-H4 are especially confounded — all three reduce underestimation of decode latency, so their individual contributions cannot be separated from client data alone. **Mitigation**: Apply corrections incrementally and measure marginal MAPE change. Use synthetic simulator-internal tests (H4 Part A, H5 Part A, H6 Part A) to validate mechanisms independently of ground truth.
 
-2. **InferSim as reference**: TAM aligns with InferSim's choices. InferSim itself has 4-15% error — we can approach but likely not exceed it without novel contributions.
+2. **MFU database coverage**: Accuracy is bounded by MFU data quality. Missing entries near target shapes degrade both nearest-neighbor and interpolation.
 
-3. **Mixed-batch validation**: H5 is a novel contribution (InferSim doesn't model mixed batches). The behavioral claim derives from vLLM's execution model but requires empirical validation.
+3. **InferSim as reference**: TAM aligns with InferSim's choices. InferSim itself has 4-15% error — we can approach but likely not exceed it without novel contributions.
 
-4. **Overhead functional form**: H2 assumes scheduling overhead is roughly fixed per step. In reality it may scale weakly with batch size. Tier 1's fit captures some scaling; the flat assumption must be verified experimentally.
+4. **Mixed-batch validation**: H5 is a novel contribution (InferSim doesn't model mixed batches). The behavioral claim derives from vLLM's execution model but requires empirical validation. H5 has the weakest testability — we have no batch composition visibility, and the QPS-as-proxy approach conflates mixed batching with queuing/contention effects.
 
-5. **Non-NVIDIA GPUs**: The bandwidth efficiency constant is validated only for NVIDIA HBM GPUs in InferSim. Tier 2 addresses other hardware through direct measurement.
+5. **Overhead functional form**: H2 assumes scheduling overhead is roughly fixed per step. In reality it may scale weakly with batch size. We cannot validate this assumption from client data — we can only validate that the aggregate effect improves MAPE. Tier 1's fit captures any batch-size dependence.
+
+6. **Non-NVIDIA GPUs**: The bandwidth efficiency constant is validated only for NVIDIA HBM GPUs in InferSim. Tier 2 addresses other hardware through direct measurement.
+
+7. **Ground truth coverage gaps**: The 14 experiments cover 4 model families on a single GPU type (H100). No decode-only or prefill-only workloads exist in the ground truth — all are mixed-workload sweeps. No experiments vary KV cache length independently of batch size. This limits the ability to test H1 and H4 in the targeted regimes described by their mechanisms.
 
 ---
 
