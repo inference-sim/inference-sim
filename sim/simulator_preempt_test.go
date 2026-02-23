@@ -9,20 +9,26 @@ import (
 func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 	// GIVEN a batch formation with minimal KV cache (2 blocks, block size 16)
 	config := SimConfig{
-		TotalKVBlocks:      2,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 10000,
-		Horizon:            1000000,
-		BetaCoeffs:         []float64{100, 1, 1},
-		AlphaCoeffs:        []float64{100, 1, 100},
+		Horizon: 1000000,
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   2,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     10,
+			MaxScheduledTokens: 10000,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
 	}
-	lm, err := NewLatencyModel(config)
+	lm, err := NewLatencyModel(config.LatencyCoeffs, config.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(config, lm)
-	kvCache := NewKVStore(config)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(config.KVCacheConfig)
 
 	// AND the running batch is empty
 	// AND a request that needs far more blocks than available, in the wait queue
@@ -69,20 +75,26 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 	// GIVEN a batch formation with very small KV cache (2 blocks * 16 = 32 tokens)
 	config := SimConfig{
-		TotalKVBlocks:      2,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 10000,
-		Horizon:            1000000,
-		BetaCoeffs:         []float64{100, 1, 1},
-		AlphaCoeffs:        []float64{100, 1, 100},
+		Horizon: 1000000,
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   2,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     10,
+			MaxScheduledTokens: 10000,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
 	}
-	lm, err := NewLatencyModel(config)
+	lm, err := NewLatencyModel(config.LatencyCoeffs, config.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(config, lm)
-	kvCache := NewKVStore(config)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(config.KVCacheConfig)
 
 	// AND one small request in the running batch with KV blocks allocated
 	existing := &Request{

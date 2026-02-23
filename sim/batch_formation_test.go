@@ -11,18 +11,24 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 	// This is a compile-time check; if it compiles, the interface is satisfied.
 	// We also verify the factory returns a working implementation.
 	cfg := SimConfig{
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 10000,
-		BetaCoeffs:         []float64{100, 1, 1},
-		AlphaCoeffs:        []float64{100, 1, 100},
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   100,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     10,
+			MaxScheduledTokens: 10000,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
+	bf := NewBatchFormation(lm)
 	if bf == nil {
 		t.Fatal("NewBatchFormation returned nil")
 	}
@@ -31,7 +37,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 	ctx := BatchContext{
 		RunningBatch:          &Batch{},
 		WaitQ:                 &WaitQueue{},
-		KVCache:               NewKVStore(cfg),
+		KVCache:               NewKVStore(cfg.KVCacheConfig),
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
 		PrefillTokenThreshold: 0,
@@ -52,19 +58,25 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 // total new tokens in result batch must not exceed MaxScheduledTokens.
 func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 	cfg := SimConfig{
-		TotalKVBlocks:      100,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 50, // tight token budget
-		BetaCoeffs:         []float64{100, 1, 1},
-		AlphaCoeffs:        []float64{100, 1, 100},
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   100,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     10,
+			MaxScheduledTokens: 50, // tight token budget
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN 3 requests in the wait queue, each needing 30 tokens (total 90 > budget 50)
 	wq := &WaitQueue{}
@@ -111,19 +123,25 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 // batch size must not exceed MaxRunningReqs.
 func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 	cfg := SimConfig{
-		TotalKVBlocks:      200,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     2, // tight batch size limit
-		MaxScheduledTokens: 10000,
-		BetaCoeffs:         []float64{100, 1, 1},
-		AlphaCoeffs:        []float64{100, 1, 100},
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   200,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     2, // tight batch size limit
+			MaxScheduledTokens: 10000,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN 5 requests in the wait queue
 	wq := &WaitQueue{}
@@ -172,19 +190,25 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 	// 3 blocks * 16 tokens/block = 48 token capacity
 	cfg := SimConfig{
-		TotalKVBlocks:      3,
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 10000,
-		BetaCoeffs:         []float64{100, 1, 1},
-		AlphaCoeffs:        []float64{100, 1, 100},
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   3,
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     10,
+			MaxScheduledTokens: 10000,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN two running requests: victim occupies 2 blocks, needy needs 3 blocks for prefill
 	victim := &Request{
@@ -244,19 +268,25 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 // no new requests dequeued after preemption.
 func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 	cfg := SimConfig{
-		TotalKVBlocks:      3, // very tight
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 10000,
-		BetaCoeffs:         []float64{100, 1, 1},
-		AlphaCoeffs:        []float64{100, 1, 100},
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   3, // very tight
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     10,
+			MaxScheduledTokens: 10000,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN two running requests where req2's prefill will trigger preemption
 	req1 := &Request{ID: "r1", InputTokens: make([]int, 20), OutputTokens: make([]int, 5), State: StateRunning}
@@ -305,19 +335,25 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 // empty batch + insufficient KV blocks must not panic.
 func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 	cfg := SimConfig{
-		TotalKVBlocks:      2, // very small
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 10000,
-		BetaCoeffs:         []float64{100, 1, 1},
-		AlphaCoeffs:        []float64{100, 1, 100},
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   2, // very small
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     10,
+			MaxScheduledTokens: 10000,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN a request needing more blocks than total capacity
 	huge := &Request{ID: "huge", InputTokens: make([]int, 200), OutputTokens: make([]int, 5), State: StateQueued}
@@ -356,19 +392,25 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 // when KV allocation fails for a wait queue request, no further requests are dequeued.
 func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 	cfg := SimConfig{
-		TotalKVBlocks:      3, // limited KV blocks
-		BlockSizeTokens:    16,
-		MaxRunningReqs:     10,
-		MaxScheduledTokens: 10000,
-		BetaCoeffs:         []float64{100, 1, 1},
-		AlphaCoeffs:        []float64{100, 1, 100},
+		KVCacheConfig: KVCacheConfig{
+			TotalKVBlocks:   3, // limited KV blocks
+			BlockSizeTokens: 16,
+		},
+		BatchConfig: BatchConfig{
+			MaxRunningReqs:     10,
+			MaxScheduledTokens: 10000,
+		},
+		LatencyCoeffs: LatencyCoeffs{
+			BetaCoeffs:  []float64{100, 1, 1},
+			AlphaCoeffs: []float64{100, 1, 100},
+		},
 	}
-	lm, err := NewLatencyModel(cfg)
+	lm, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
-	bf := NewBatchFormation(cfg, lm)
-	kvCache := NewKVStore(cfg)
+	bf := NewBatchFormation(lm)
+	kvCache := NewKVStore(cfg.KVCacheConfig)
 
 	// GIVEN: first request fits, second needs too many blocks, third is small but can't skip
 	req1 := &Request{ID: "small", InputTokens: make([]int, 16), OutputTokens: make([]int, 2), State: StateQueued}
@@ -425,7 +467,7 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 // preempted request's ComputedTokens entry is deleted.
 func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 	// GIVEN a running request with a ComputedTokens entry
-	kv := NewKVStore(SimConfig{TotalKVBlocks: 4, BlockSizeTokens: 4})
+	kv := NewKVStore(KVCacheConfig{TotalKVBlocks: 4, BlockSizeTokens: 4})
 	victim := &Request{
 		ID:           "victim",
 		InputTokens:  []int{1, 2, 3, 4, 5, 6, 7, 8},

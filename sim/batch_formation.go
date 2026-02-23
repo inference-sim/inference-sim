@@ -180,8 +180,7 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 
 // NewBatchFormation creates the default BatchFormation.
 // Currently returns VLLMBatchFormation (the only implementation).
-// SimConfig parameter is reserved for future strategy selection.
-func NewBatchFormation(_ SimConfig, latencyModel LatencyModel) BatchFormation {
+func NewBatchFormation(latencyModel LatencyModel) BatchFormation {
 	return &VLLMBatchFormation{
 		latencyModel: latencyModel,
 	}

@@ -58,15 +58,23 @@ func makeSharedPrefixRequests(numRequests int, sharedFraction float64,
 func baseDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:            50000000, // 50 seconds
-			Seed:               42,
-			TotalKVBlocks:      2000,
-			BlockSizeTokens:    16,
-			MaxRunningReqs:     64,
-			MaxScheduledTokens: 65536,
-			BetaCoeffs:         []float64{1000, 10, 5},
-			AlphaCoeffs:        []float64{100, 50, 25},
-			Model:              "test-model",
+			Horizon: 50000000, // 50 seconds
+			Seed:    42,
+			KVCacheConfig: sim.KVCacheConfig{
+				TotalKVBlocks:   2000,
+				BlockSizeTokens: 16,
+			},
+			BatchConfig: sim.BatchConfig{
+				MaxRunningReqs:     64,
+				MaxScheduledTokens: 65536,
+			},
+			LatencyCoeffs: sim.LatencyCoeffs{
+				BetaCoeffs:  []float64{1000, 10, 5},
+				AlphaCoeffs: []float64{100, 50, 25},
+			},
+			ModelHardwareConfig: sim.ModelHardwareConfig{
+				Model: "test-model",
+			},
 		},
 		NumInstances: numInstances,
 		TraceLevel:   "decisions",

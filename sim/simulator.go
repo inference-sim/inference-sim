@@ -94,32 +94,20 @@ func NewGuideLLMConfig(
 }
 
 // SimConfig holds all configuration for creating a Simulator.
+// Sub-configs are embedded so fields are accessible via promotion
+// (e.g., cfg.TotalKVBlocks resolves to cfg.KVCacheConfig.TotalKVBlocks).
 type SimConfig struct {
-	Horizon                   int64
-	Seed                      int64
-	TotalKVBlocks             int64
-	BlockSizeTokens           int64
-	MaxRunningReqs            int64
-	MaxScheduledTokens        int64
-	LongPrefillTokenThreshold int64
-	BetaCoeffs                []float64 // regression coefficients for step time (≥3 elements required)
-	AlphaCoeffs               []float64 // regression coefficients for queueing time (≥3 elements required)
-	ModelConfig               ModelConfig
-	HWConfig                  HardwareCalib
-	Model                     string
-	GPU                       string
-	TP                        int
-	Roofline                  bool
-	// Workload config (optional — nil/empty means no workload generation)
-	GuideLLMConfig         *GuideLLMConfig
-	TracesWorkloadFilePath string
-	PriorityPolicy         string // "constant" (default) or "slo-based"
-	Scheduler              string // "fcfs" (default), "priority-fcfs", "sjf"
-	// Tiered KV cache configuration (PR12)
-	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
-	KVOffloadThreshold    float64 // GPU utilization threshold for offload (default 0.9)
-	KVTransferBandwidth   float64 // blocks/tick transfer rate (default 100.0)
-	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
+	// Simulation control (no sub-config — no factory uses only these)
+	Horizon int64
+	Seed    int64
+
+	// Module-scoped sub-configs (R16)
+	KVCacheConfig
+	BatchConfig
+	LatencyCoeffs
+	ModelHardwareConfig
+	PolicyConfig
+	WorkloadConfig
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -165,23 +153,23 @@ type Simulator struct {
 //   - Both zero-valued → no workload (caller injects via InjectArrival)
 func NewSimulator(cfg SimConfig) (*Simulator, error) {
 	if cfg.TotalKVBlocks <= 0 {
-		panic(fmt.Sprintf("SimConfig.TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
+		panic(fmt.Sprintf("KVCacheConfig.TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
 	}
 	if cfg.BlockSizeTokens <= 0 {
-		panic(fmt.Sprintf("SimConfig.BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
+		panic(fmt.Sprintf("KVCacheConfig.BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
 	}
-	latencyModel, err := NewLatencyModel(cfg)
+	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating latency model: %w", err)
 	}
-	batchFormation := NewBatchFormation(cfg, latencyModel)
+	batchFormation := NewBatchFormation(latencyModel)
 
 	s := &Simulator{
 		Clock:                     0,
 		Horizon:                   cfg.Horizon,
 		eventQueue:                make(EventQueue, 0),
 		WaitQ:                     &WaitQueue{},
-		KVCache:                   NewKVStore(cfg),
+		KVCache:                   NewKVStore(cfg.KVCacheConfig),
 		RunningBatch:              &Batch{},
 		Metrics:                   NewMetrics(),
 		maxRunningReqs:            cfg.MaxRunningReqs,

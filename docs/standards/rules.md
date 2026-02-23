@@ -201,9 +201,9 @@ After completing a PR, grep for references to that PR number (`planned for PR N`
 
 Configuration parameters must be grouped by module — not added to a monolithic config struct mixing unrelated concerns. Each module's config should be independently specifiable and validatable.
 
-**Evidence:** `SimConfig` combines hardware identity, model parameters, simulation parameters, and policy choices. Adding one autoscaling parameter requires understanding the entire struct.
+**Evidence:** `SimConfig` previously combined hardware identity, model parameters, simulation parameters, and policy choices in 23 flat fields. Resolved in #350: `SimConfig` now embeds 6 module-scoped sub-configs (`KVCacheConfig`, `BatchConfig`, `LatencyCoeffs`, `ModelHardwareConfig`, `PolicyConfig`, `WorkloadConfig`). Factory signatures accept the narrowest sub-config (e.g., `NewKVStore(KVCacheConfig)`).
 
-**Check:** New config parameters go into the appropriate module's config group, not a catch-all struct.
+**Check:** New config parameters go into the appropriate sub-config in `sim/config.go`, not directly into `SimConfig`.
 
 **Enforced:** Micro-plan Phase 8.
 
