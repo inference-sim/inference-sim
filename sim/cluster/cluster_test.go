@@ -16,25 +16,12 @@ import (
 func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon: math.MaxInt64,
-			Seed:    42,
-			KVCacheConfig: sim.KVCacheConfig{
-				TotalKVBlocks:   10000,
-				BlockSizeTokens: 16,
-			},
-			BatchConfig: sim.BatchConfig{
-				MaxRunningReqs:     256,
-				MaxScheduledTokens: 2048,
-			},
-			LatencyCoeffs: sim.LatencyCoeffs{
-				BetaCoeffs:  []float64{1000, 10, 5},
-				AlphaCoeffs: []float64{100, 1, 100},
-			},
-			ModelHardwareConfig: sim.ModelHardwareConfig{
-				Model: "test-model",
-				GPU:   "H100",
-				TP:    1,
-			},
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, false),
 		},
 		NumInstances: numInstances,
 	}
@@ -82,24 +69,13 @@ func TestPerInstanceMetrics_BeforeRun_Panics(t *testing.T) {
 func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 	dc := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon: 999, Seed: 7,
-			KVCacheConfig: sim.KVCacheConfig{
-				TotalKVBlocks: 500, BlockSizeTokens: 32,
-				KVTransferBaseLatency: 42,
-			},
-			BatchConfig: sim.BatchConfig{
-				MaxRunningReqs: 128, MaxScheduledTokens: 4096,
-				LongPrefillTokenThreshold: 512,
-			},
-			LatencyCoeffs: sim.LatencyCoeffs{
-				BetaCoeffs: []float64{1, 2, 3}, AlphaCoeffs: []float64{4, 5, 6},
-			},
-			ModelHardwareConfig: sim.ModelHardwareConfig{
-				Model: "test-model", GPU: "H100", TP: 2, Roofline: true,
-			},
-			PolicyConfig: sim.PolicyConfig{
-				PriorityPolicy: "slo-based", Scheduler: "priority-fcfs",
-			},
+			Horizon:             999,
+			Seed:                7,
+			KVCacheConfig:       sim.NewKVCacheConfig(500, 32, 0, 0, 0, 42),
+			BatchConfig:         sim.NewBatchConfig(128, 4096, 512),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 2, true),
+			PolicyConfig:        sim.NewPolicyConfig("slo-based", "priority-fcfs"),
 		},
 		NumInstances:    3,
 		AdmissionPolicy: "token-bucket",
@@ -174,26 +150,12 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 		t.Run(tc.Model, func(t *testing.T) {
 			config := DeploymentConfig{
 				SimConfig: sim.SimConfig{
-					Horizon: math.MaxInt64,
-					Seed:    tc.Seed,
-					KVCacheConfig: sim.KVCacheConfig{
-						TotalKVBlocks:   tc.TotalKVBlocks,
-						BlockSizeTokens: tc.BlockSizeInTokens,
-					},
-					BatchConfig: sim.BatchConfig{
-						MaxRunningReqs:            tc.MaxNumRunningReqs,
-						MaxScheduledTokens:        tc.MaxNumScheduledTokens,
-						LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
-					},
-					LatencyCoeffs: sim.LatencyCoeffs{
-						BetaCoeffs:  tc.BetaCoeffs,
-						AlphaCoeffs: tc.AlphaCoeffs,
-					},
-					ModelHardwareConfig: sim.ModelHardwareConfig{
-						Model: tc.Model,
-						GPU:   tc.Hardware,
-						TP:    tc.TP,
-					},
+					Horizon:             math.MaxInt64,
+					Seed:                tc.Seed,
+					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
 				},
 				NumInstances: 1,
 			}
@@ -247,26 +209,12 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 		t.Run(tc.Model+"_invariants", func(t *testing.T) {
 			config := DeploymentConfig{
 				SimConfig: sim.SimConfig{
-					Horizon: math.MaxInt64,
-					Seed:    tc.Seed,
-					KVCacheConfig: sim.KVCacheConfig{
-						TotalKVBlocks:   tc.TotalKVBlocks,
-						BlockSizeTokens: tc.BlockSizeInTokens,
-					},
-					BatchConfig: sim.BatchConfig{
-						MaxRunningReqs:            tc.MaxNumRunningReqs,
-						MaxScheduledTokens:        tc.MaxNumScheduledTokens,
-						LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
-					},
-					LatencyCoeffs: sim.LatencyCoeffs{
-						BetaCoeffs:  tc.BetaCoeffs,
-						AlphaCoeffs: tc.AlphaCoeffs,
-					},
-					ModelHardwareConfig: sim.ModelHardwareConfig{
-						Model: tc.Model,
-						GPU:   tc.Hardware,
-						TP:    tc.TP,
-					},
+					Horizon:             math.MaxInt64,
+					Seed:                tc.Seed,
+					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
 				},
 				NumInstances: 1,
 			}
@@ -914,29 +862,13 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 
 			// Reference: sim.NewSimulator generates workload internally
 			refSim, err := sim.NewSimulator(sim.SimConfig{
-				Horizon: math.MaxInt64,
-				Seed:    tc.Seed,
-				KVCacheConfig: sim.KVCacheConfig{
-					TotalKVBlocks:   tc.TotalKVBlocks,
-					BlockSizeTokens: tc.BlockSizeInTokens,
-				},
-				BatchConfig: sim.BatchConfig{
-					MaxRunningReqs:            tc.MaxNumRunningReqs,
-					MaxScheduledTokens:        tc.MaxNumScheduledTokens,
-					LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
-				},
-				LatencyCoeffs: sim.LatencyCoeffs{
-					BetaCoeffs:  tc.BetaCoeffs,
-					AlphaCoeffs: tc.AlphaCoeffs,
-				},
-				ModelHardwareConfig: sim.ModelHardwareConfig{
-					Model: tc.Model,
-					GPU:   tc.Hardware,
-					TP:    tc.TP,
-				},
-				WorkloadConfig: sim.WorkloadConfig{
-					GuideLLMConfig: guideLLMConfig,
-				},
+				Horizon:             math.MaxInt64,
+				Seed:                tc.Seed,
+				KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+				BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+				LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
+				WorkloadConfig:      sim.NewWorkloadConfig(guideLLMConfig, ""),
 			})
 			if err != nil {
 				t.Fatalf("NewSimulator: %v", err)
@@ -945,26 +877,12 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 			// Cluster workload generation
 			config := DeploymentConfig{
 				SimConfig: sim.SimConfig{
-					Horizon: math.MaxInt64,
-					Seed:    tc.Seed,
-					KVCacheConfig: sim.KVCacheConfig{
-						TotalKVBlocks:   tc.TotalKVBlocks,
-						BlockSizeTokens: tc.BlockSizeInTokens,
-					},
-					BatchConfig: sim.BatchConfig{
-						MaxRunningReqs:            tc.MaxNumRunningReqs,
-						MaxScheduledTokens:        tc.MaxNumScheduledTokens,
-						LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
-					},
-					LatencyCoeffs: sim.LatencyCoeffs{
-						BetaCoeffs:  tc.BetaCoeffs,
-						AlphaCoeffs: tc.AlphaCoeffs,
-					},
-					ModelHardwareConfig: sim.ModelHardwareConfig{
-						Model: tc.Model,
-						GPU:   tc.Hardware,
-						TP:    tc.TP,
-					},
+					Horizon:             math.MaxInt64,
+					Seed:                tc.Seed,
+					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
 				},
 				NumInstances: 1,
 			}

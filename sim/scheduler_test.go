@@ -237,24 +237,12 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 	// priority-fcfs scheduler should schedule the older (higher-priority) request first.
 	// Uses MaxRunningReqs=1 to force sequential scheduling so step index proves ordering.
 	cfg := SimConfig{
-		Horizon: 10000000,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   1000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     1,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		PolicyConfig: PolicyConfig{
-			PriorityPolicy: "slo-based",
-			Scheduler:      "priority-fcfs",
-		},
+		Horizon:             10000000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(1, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		PolicyConfig:        NewPolicyConfig("slo-based", "priority-fcfs"),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -298,20 +286,11 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 	// BC-5: default config uses constant priority (all requests get same score)
 	// and FCFS scheduling (injection order preserved)
 	cfg := SimConfig{
-		Horizon: 10000000,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   1000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     1, // force sequential: only 1 at a time
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
+		Horizon:             10000000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(1, 2048, 0), // force sequential: only 1 at a time
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		// PriorityPolicy and Scheduler left empty (defaults)
 	}
 	s := mustNewSimulator(t, cfg)
@@ -376,23 +355,12 @@ func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 	// SJF sorts short before long; short request gets lower E2E latency
 	// because it has fewer prefill tokens to process.
 	cfg := SimConfig{
-		Horizon: 10000000,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   1000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{0, 0, 100}, // zero queueing delay so both queue at arrival time
-		},
-		PolicyConfig: PolicyConfig{
-			Scheduler: "sjf",
-		},
+		Horizon:       10000000,
+		Seed:          42,
+		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 100}), // zero queueing delay so both queue at arrival time
+		PolicyConfig:  NewPolicyConfig("", "sjf"),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -436,24 +404,12 @@ func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
 	// BC-7 + BC-5: SLO-based priority with priority-fcfs scheduler
 	// Older requests should get higher priority and schedule first
 	cfg := SimConfig{
-		Horizon: 10000000,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   1000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     1, // only 1 slot: forces sequential scheduling
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		PolicyConfig: PolicyConfig{
-			PriorityPolicy: "slo-based",
-			Scheduler:      "priority-fcfs",
-		},
+		Horizon:       10000000,
+		Seed:          42,
+		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(1, 2048, 0), // only 1 slot: forces sequential scheduling
+		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		PolicyConfig:  NewPolicyConfig("slo-based", "priority-fcfs"),
 	}
 	s := mustNewSimulator(t, cfg)
 

@@ -12,16 +12,11 @@ func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T)
 	// GIVEN a simulation with tracing enabled
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon: 5000000, Seed: 42,
-			KVCacheConfig: sim.KVCacheConfig{
-				TotalKVBlocks: 100, BlockSizeTokens: 16,
-			},
-			BatchConfig: sim.BatchConfig{
-				MaxRunningReqs: 10, MaxScheduledTokens: 2048,
-			},
-			LatencyCoeffs: sim.LatencyCoeffs{
-				BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
-			},
+			Horizon:       5000000,
+			Seed:          42,
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 		},
 		NumInstances:    2,
 		TraceLevel:      "decisions",

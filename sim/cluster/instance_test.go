@@ -11,53 +11,25 @@ import (
 // newTestSimConfigWithWorkload creates a SimConfig for instance tests with workload.
 func newTestSimConfigWithWorkload(guideLLMConfig *sim.GuideLLMConfig) sim.SimConfig {
 	return sim.SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    42,
-		KVCacheConfig: sim.KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: sim.BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: sim.LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: sim.ModelHardwareConfig{
-			Model: "test",
-			GPU:   "H100",
-			TP:    1,
-		},
-		WorkloadConfig: sim.WorkloadConfig{
-			GuideLLMConfig: guideLLMConfig,
-		},
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false),
+		WorkloadConfig:      sim.NewWorkloadConfig(guideLLMConfig, ""),
 	}
 }
 
 // newTestInstanceSimConfig creates a SimConfig without workload for instance tests.
 func newTestInstanceSimConfig() sim.SimConfig {
 	return sim.SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    42,
-		KVCacheConfig: sim.KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: sim.BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: sim.LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: sim.ModelHardwareConfig{
-			Model: "test",
-			GPU:   "H100",
-			TP:    1,
-		},
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false),
 	}
 }
 
@@ -88,41 +60,25 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 			instance := NewInstanceSimulator(
 				InstanceID("test-instance"),
 				sim.SimConfig{
-					Horizon: math.MaxInt64,
-					Seed:    tc.Seed,
-					KVCacheConfig: sim.KVCacheConfig{
-						TotalKVBlocks:   tc.TotalKVBlocks,
-						BlockSizeTokens: tc.BlockSizeInTokens,
-					},
-					BatchConfig: sim.BatchConfig{
-						MaxRunningReqs:            tc.MaxNumRunningReqs,
-						MaxScheduledTokens:        tc.MaxNumScheduledTokens,
-						LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
-					},
-					LatencyCoeffs: sim.LatencyCoeffs{
-						BetaCoeffs:  tc.BetaCoeffs,
-						AlphaCoeffs: tc.AlphaCoeffs,
-					},
-					ModelHardwareConfig: sim.ModelHardwareConfig{
-						Model: tc.Model,
-						GPU:   tc.Hardware,
-						TP:    tc.TP,
-					},
-					WorkloadConfig: sim.WorkloadConfig{
-						GuideLLMConfig: &sim.GuideLLMConfig{
-							Rate:               tc.Rate / 1e6,
-							NumRequests:         tc.NumRequests,
-							PrefixTokens:       tc.PrefixTokens,
-							PromptTokens:       tc.PromptTokens,
-							PromptTokensStdDev: tc.PromptTokensStdev,
-							PromptTokensMin:    tc.PromptTokensMin,
-							PromptTokensMax:    tc.PromptTokensMax,
-							OutputTokens:       tc.OutputTokens,
-							OutputTokensStdDev: tc.OutputTokensStdev,
-							OutputTokensMin:    tc.OutputTokensMin,
-							OutputTokensMax:    tc.OutputTokensMax,
-						},
-					},
+					Horizon:             math.MaxInt64,
+					Seed:                tc.Seed,
+					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
+					WorkloadConfig: sim.NewWorkloadConfig(&sim.GuideLLMConfig{
+						Rate:               tc.Rate / 1e6,
+						NumRequests:         tc.NumRequests,
+						PrefixTokens:       tc.PrefixTokens,
+						PromptTokens:       tc.PromptTokens,
+						PromptTokensStdDev: tc.PromptTokensStdev,
+						PromptTokensMin:    tc.PromptTokensMin,
+						PromptTokensMax:    tc.PromptTokensMax,
+						OutputTokens:       tc.OutputTokens,
+						OutputTokensStdDev: tc.OutputTokensStdev,
+						OutputTokensMin:    tc.OutputTokensMin,
+						OutputTokensMax:    tc.OutputTokensMax,
+					}, ""),
 				},
 			)
 
@@ -163,41 +119,25 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 			instance := NewInstanceSimulator(
 				InstanceID("test-instance"),
 				sim.SimConfig{
-					Horizon: math.MaxInt64,
-					Seed:    tc.Seed,
-					KVCacheConfig: sim.KVCacheConfig{
-						TotalKVBlocks:   tc.TotalKVBlocks,
-						BlockSizeTokens: tc.BlockSizeInTokens,
-					},
-					BatchConfig: sim.BatchConfig{
-						MaxRunningReqs:            tc.MaxNumRunningReqs,
-						MaxScheduledTokens:        tc.MaxNumScheduledTokens,
-						LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
-					},
-					LatencyCoeffs: sim.LatencyCoeffs{
-						BetaCoeffs:  tc.BetaCoeffs,
-						AlphaCoeffs: tc.AlphaCoeffs,
-					},
-					ModelHardwareConfig: sim.ModelHardwareConfig{
-						Model: tc.Model,
-						GPU:   tc.Hardware,
-						TP:    tc.TP,
-					},
-					WorkloadConfig: sim.WorkloadConfig{
-						GuideLLMConfig: &sim.GuideLLMConfig{
-							Rate:               tc.Rate / 1e6,
-							NumRequests:         tc.NumRequests,
-							PrefixTokens:       tc.PrefixTokens,
-							PromptTokens:       tc.PromptTokens,
-							PromptTokensStdDev: tc.PromptTokensStdev,
-							PromptTokensMin:    tc.PromptTokensMin,
-							PromptTokensMax:    tc.PromptTokensMax,
-							OutputTokens:       tc.OutputTokens,
-							OutputTokensStdDev: tc.OutputTokensStdev,
-							OutputTokensMin:    tc.OutputTokensMin,
-							OutputTokensMax:    tc.OutputTokensMax,
-						},
-					},
+					Horizon:             math.MaxInt64,
+					Seed:                tc.Seed,
+					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
+					WorkloadConfig: sim.NewWorkloadConfig(&sim.GuideLLMConfig{
+						Rate:               tc.Rate / 1e6,
+						NumRequests:         tc.NumRequests,
+						PrefixTokens:       tc.PrefixTokens,
+						PromptTokens:       tc.PromptTokens,
+						PromptTokensStdDev: tc.PromptTokensStdev,
+						PromptTokensMin:    tc.PromptTokensMin,
+						PromptTokensMax:    tc.PromptTokensMax,
+						OutputTokens:       tc.OutputTokens,
+						OutputTokensStdDev: tc.OutputTokensStdev,
+						OutputTokensMin:    tc.OutputTokensMin,
+						OutputTokensMax:    tc.OutputTokensMax,
+					}, ""),
 				},
 			)
 

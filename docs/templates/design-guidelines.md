@@ -232,7 +232,7 @@ BLIS models an extensible distributed inference platform — not any single syst
 | **Router** | Select target instance for admitted requests | `RoutingPolicy` (single method) | Implemented, frozen |
 | **Scheduler** | Order queued requests within an instance | `InstanceScheduler` (single method) | Implemented, frozen |
 | **Priority** | Compute request priority for scheduler | `PriorityPolicy` (single method) | Implemented, frozen |
-| **KV Cache Manager** | Allocate/release/cache KV blocks | `KVStore` (9 methods) | Implemented |
+| **KV Cache Manager** | Allocate/release/cache KV blocks | `KVStore` (11 methods) | Implemented |
 | **AutoScaler** | Add/remove instances based on load signals | `AutoScalePolicy` (planned) | Target — PR11 |
 | **Latency Model** | Estimate step execution time | `LatencyModel` (5 methods) | Implemented — `NewLatencyModel` factory |
 | **Batch Formation** | Select requests from queue for next step | `BatchFormation` (1 method: `FormBatch`) | Implemented — `NewBatchFormation` factory |
@@ -287,7 +287,7 @@ When a design doc introduces a new module boundary, it must specify the expected
 |---|---|---|
 | New policy template | ~3 files | 3 files (meets target) |
 | New KV cache tier | ~4 files | 4-5 files (acceptable) |
-| New config parameter | ~3 files | 5-6 files (exceeds — known friction) |
+| New config parameter | ~2 files | 2 files (meets target — post-#381) |
 | New observable metric | ~3 files | 6 files (exceeds — known friction) |
 | New latency model backend | ~2 files | 2 files (meets target) |
 | New batch formation strategy | ~2 files | 2 files (meets target) |
@@ -441,9 +441,9 @@ Every anti-pattern in this section traces to a real bug, a real friction point, 
 |---|---|---|
 | **Shotgun Surgery** | Adding `InstanceID` to per-request metrics (#181) required changes in 4 files. Three construction sites for `RequestMetrics` existed, and one was missed initially. | Use canonical constructors. Design docs for new types must specify whether a canonical constructor is needed. |
 | **Destructive Read** | `KVStore.PendingTransferLatency()` both queried and cleared the accumulated latency. Callers couldn't distinguish "no latency" from "already consumed." Identified as blocking LMCache integration. | Query methods must be pure. If a method needs to both query and clear state, provide separate `Get()` and `Consume()` methods. |
-| **Interface Leaking Implementation** | `KVStore` interface has 9 methods, several exposing block-level semantics. A distributed KV cache like LMCache doesn't think in blocks — it thinks in tokens and layers. The interface encodes vLLM's implementation model, not the abstract behavioral contract. | Design interfaces around the behavioral contract (allocate space, check cache, release space), not around one implementation's data model. |
-| **Monolith Method** | `Simulator.Step()` is 134 lines mixing scheduling, latency estimation, token generation, completion, and metrics. Impossible to swap the latency model without modifying this method. | Each module's logic should be callable through its interface. When a method contains logic for multiple modules, extract each into its module's interface method. |
-| **Config Mixing Concerns** | `SimConfig` combines hardware identity, model parameters, simulation parameters, and policy choices. Adding one autoscaling parameter requires understanding the entire struct. | Group configuration by module. Each module's config should be independently specifiable and validatable. |
+| **Interface Leaking Implementation** | `KVStore` interface has 11 methods, several exposing block-level semantics. A distributed KV cache like LMCache doesn't think in blocks — it thinks in tokens and layers. The interface encodes vLLM's implementation model, not the abstract behavioral contract. (#246) | Design interfaces around the behavioral contract (allocate space, check cache, release space), not around one implementation's data model. |
+| **Monolith Method** | `Simulator.Step()` was 152 lines mixing 4 concerns. Decomposed into named phase methods (`scheduleBatch`, `executeBatchStep`, `processCompletions`, `scheduleNextStep`). | Each module's logic should be callable through its interface. When a method contains logic for multiple modules, extract each into its module's interface method. |
+| **Config Mixing Concerns** | `SimConfig` combined 23 fields from 8 concerns. Decomposed into 6 embedded sub-configs with canonical constructors (`NewKVCacheConfig`, etc.). Adding a field now touches 2 files; the compiler catches all call sites. | Group configuration by module. Each module's config should be independently specifiable and validatable. |
 
 ### 6.3 DES-Specific Anti-Patterns
 

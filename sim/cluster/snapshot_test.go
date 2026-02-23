@@ -9,25 +9,12 @@ import (
 // newTestInstance creates a minimal InstanceSimulator for snapshot tests.
 func newTestInstance(id InstanceID, totalKVBlocks int64) *InstanceSimulator {
 	cfg := sim.SimConfig{
-		Horizon: 1000000,
-		Seed:    42,
-		KVCacheConfig: sim.KVCacheConfig{
-			TotalKVBlocks:   totalKVBlocks,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: sim.BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: sim.LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: sim.ModelHardwareConfig{
-			Model: "test",
-			GPU:   "H100",
-			TP:    1,
-		},
+		Horizon:             1000000,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(totalKVBlocks, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false),
 	}
 	return NewInstanceSimulator(id, cfg)
 }

@@ -35,41 +35,25 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 	for _, tc := range dataset.Tests {
 		t.Run(tc.Model, func(t *testing.T) {
 			sim := mustNewSimulator(t, SimConfig{
-				Horizon: math.MaxInt64,
-				Seed:    tc.Seed,
-				KVCacheConfig: KVCacheConfig{
-					TotalKVBlocks: tc.TotalKVBlocks,
-					BlockSizeTokens: tc.BlockSizeInTokens,
-				},
-				BatchConfig: BatchConfig{
-					MaxRunningReqs:            tc.MaxNumRunningReqs,
-					MaxScheduledTokens:        tc.MaxNumScheduledTokens,
-					LongPrefillTokenThreshold: tc.LongPrefillTokenThreshold,
-				},
-				LatencyCoeffs: LatencyCoeffs{
-					BetaCoeffs:  tc.BetaCoeffs,
-					AlphaCoeffs: tc.AlphaCoeffs,
-				},
-				ModelHardwareConfig: ModelHardwareConfig{
-					Model: tc.Model,
-					GPU:   tc.Hardware,
-					TP:    tc.TP,
-				},
-				WorkloadConfig: WorkloadConfig{
-					GuideLLMConfig: &GuideLLMConfig{
-						Rate:               tc.Rate / 1e6,
-						NumRequests:         tc.NumRequests,
-						PrefixTokens:       tc.PrefixTokens,
-						PromptTokens:       tc.PromptTokens,
-						PromptTokensStdDev: tc.PromptTokensStdev,
-						PromptTokensMin:    tc.PromptTokensMin,
-						PromptTokensMax:    tc.PromptTokensMax,
-						OutputTokens:       tc.OutputTokens,
-						OutputTokensStdDev: tc.OutputTokensStdev,
-						OutputTokensMin:    tc.OutputTokensMin,
-						OutputTokensMax:    tc.OutputTokensMax,
-					},
-				},
+				Horizon:             math.MaxInt64,
+				Seed:                tc.Seed,
+				KVCacheConfig:       NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+				BatchConfig:         NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
+				LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
+				WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
+					Rate:               tc.Rate / 1e6,
+					NumRequests:         tc.NumRequests,
+					PrefixTokens:       tc.PrefixTokens,
+					PromptTokens:       tc.PromptTokens,
+					PromptTokensStdDev: tc.PromptTokensStdev,
+					PromptTokensMin:    tc.PromptTokensMin,
+					PromptTokensMax:    tc.PromptTokensMax,
+					OutputTokens:       tc.OutputTokens,
+					OutputTokensStdDev: tc.OutputTokensStdev,
+					OutputTokensMin:    tc.OutputTokensMin,
+					OutputTokensMax:    tc.OutputTokensMax,
+				}, ""),
 			})
 
 			// Run simulation
@@ -169,32 +153,17 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 // TestSimulator_WorkloadRNG_NotNil verifies the WorkloadRNG accessor never returns nil
 func TestSimulator_WorkloadRNG_NotNil(t *testing.T) {
 	sim := mustNewSimulator(t, SimConfig{
-		Horizon: 1000000,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   1000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Model: "test-model",
-			GPU:   "H100",
-			TP:    1,
-		},
-		WorkloadConfig: WorkloadConfig{
-			GuideLLMConfig: &GuideLLMConfig{
-				Rate: 10.0 / 1e6, NumRequests: 10,
-				PromptTokens: 100, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 200,
-				OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-			},
-		},
+		Horizon:             1000000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, false),
+		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
+			Rate: 10.0 / 1e6, NumRequests: 10,
+			PromptTokens: 100, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 200,
+			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
+		}, ""),
 	})
 
 	rng := sim.WorkloadRNG()
@@ -211,32 +180,17 @@ func TestSimulator_WorkloadRNG_NotNil(t *testing.T) {
 // TestSimulator_DeterministicWorkload verifies same seed produces same workload
 func TestSimulator_DeterministicWorkload(t *testing.T) {
 	cfg := SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Model: "test",
-			GPU:   "H100",
-			TP:    1,
-		},
-		WorkloadConfig: WorkloadConfig{
-			GuideLLMConfig: &GuideLLMConfig{
-				Rate: 10.0 / 1e6, NumRequests: 50,
-				PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-				OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-			},
-		},
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, false),
+		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
+			Rate: 10.0 / 1e6, NumRequests: 50,
+			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
+			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
+		}, ""),
 	}
 
 	sim1 := mustNewSimulator(t, cfg)
@@ -262,25 +216,12 @@ func TestSimulator_DeterministicWorkload(t *testing.T) {
 // newTestSimConfig creates a SimConfig for tests that don't need workload generation.
 func newTestSimConfig() SimConfig {
 	return SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Model: "test-model",
-			GPU:   "H100",
-			TP:    1,
-		},
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, false),
 	}
 }
 
@@ -459,32 +400,17 @@ func TestStep_KVAllocFailAtCompletion_RequestNotSilentlyDropped(t *testing.T) {
 // THEN CompletedRequests == 50 AND WaitQ is empty AND RunningBatch is empty.
 func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *testing.T) {
 	cfg := SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    99,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Model: "test-conservation",
-			GPU:   "H100",
-			TP:    1,
-		},
-		WorkloadConfig: WorkloadConfig{
-			GuideLLMConfig: &GuideLLMConfig{
-				Rate: 10.0 / 1e6, NumRequests: 50,
-				PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-				OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-			},
-		},
+		Horizon:             math.MaxInt64,
+		Seed:                99,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation", "H100", 1, false),
+		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
+			Rate: 10.0 / 1e6, NumRequests: 50,
+			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
+			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
+		}, ""),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -533,25 +459,12 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 	// Early requests complete before the horizon. Late requests arrive before
 	// the horizon but are too large to finish processing.
 	cfg := SimConfig{
-		Horizon: 500_000, // 0.5 seconds in ticks
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Model: "test-conservation-finite",
-			GPU:   "H100",
-			TP:    1,
-		},
+		Horizon:             500_000, // 0.5 seconds in ticks
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation-finite", "H100", 1, false),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -611,32 +524,17 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 //   - All ITL values >= 0 (no negative inter-token latencies)
 func TestSimulator_Causality_FullChain_ArrivalToCompletion(t *testing.T) {
 	cfg := SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    77,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Model: "test-causality",
-			GPU:   "H100",
-			TP:    1,
-		},
-		WorkloadConfig: WorkloadConfig{
-			GuideLLMConfig: &GuideLLMConfig{
-				Rate: 5.0 / 1e6, NumRequests: 30,
-				PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-				OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-			},
-		},
+		Horizon:             math.MaxInt64,
+		Seed:                77,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-causality", "H100", 1, false),
+		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
+			Rate: 5.0 / 1e6, NumRequests: 30,
+			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
+			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
+		}, ""),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -684,32 +582,17 @@ func TestSimulator_Causality_FullChain_ArrivalToCompletion(t *testing.T) {
 //	for HasPendingEvents { ProcessNextEvent; if Clock > Horizon { break } } + Finalize()
 func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 	cfg := SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    55,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Model: "test-monotonicity",
-			GPU:   "H100",
-			TP:    1,
-		},
-		WorkloadConfig: WorkloadConfig{
-			GuideLLMConfig: &GuideLLMConfig{
-				Rate: 10.0 / 1e6, NumRequests: 20,
-				PromptTokens: 50, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 100,
-				OutputTokens: 20, OutputTokensStdDev: 5, OutputTokensMin: 5, OutputTokensMax: 40,
-			},
-		},
+		Horizon:             math.MaxInt64,
+		Seed:                55,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-monotonicity", "H100", 1, false),
+		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
+			Rate: 10.0 / 1e6, NumRequests: 20,
+			PromptTokens: 50, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 100,
+			OutputTokens: 20, OutputTokensStdDev: 5, OutputTokensMin: 5, OutputTokensMax: 40,
+		}, ""),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -744,32 +627,17 @@ func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 // THEN the output files are identical after stripping wall-clock timestamps.
 func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 	cfg := SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Model: "test-determinism",
-			GPU:   "H100",
-			TP:    1,
-		},
-		WorkloadConfig: WorkloadConfig{
-			GuideLLMConfig: &GuideLLMConfig{
-				Rate: 5.0 / 1e6, NumRequests: 20,
-				PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-				OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-			},
-		},
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-determinism", "H100", 1, false),
+		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
+			Rate: 5.0 / 1e6, NumRequests: 20,
+			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
+			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
+		}, ""),
 	}
 
 	// Run 1
@@ -834,35 +702,17 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := SimConfig{
-				Horizon: math.MaxInt64,
-				Seed:    42,
-				KVCacheConfig: KVCacheConfig{
-					TotalKVBlocks:       10000,
-					BlockSizeTokens:     16,
-					KVCPUBlocks:         tt.kvCPUBlocks,
-					KVOffloadThreshold:  0.8,
-					KVTransferBandwidth: 100.0,
-				},
-				BatchConfig: BatchConfig{
-					MaxRunningReqs:     256,
-					MaxScheduledTokens: 2048,
-				},
-				LatencyCoeffs: LatencyCoeffs{
-					BetaCoeffs:  []float64{1000, 10, 5},
-					AlphaCoeffs: []float64{100, 1, 100},
-				},
-				ModelHardwareConfig: ModelHardwareConfig{
-					Model: "test-kv-conservation",
-					GPU:   "H100",
-					TP:    1,
-				},
-				WorkloadConfig: WorkloadConfig{
-					GuideLLMConfig: &GuideLLMConfig{
-						Rate: 5.0 / 1e6, NumRequests: 20,
-						PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-						OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-					},
-				},
+				Horizon:             math.MaxInt64,
+				Seed:                42,
+				KVCacheConfig:       NewKVCacheConfig(10000, 16, tt.kvCPUBlocks, 0.8, 100.0, 0),
+				BatchConfig:         NewBatchConfig(256, 2048, 0),
+				LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-kv-conservation", "H100", 1, false),
+				WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
+					Rate: 5.0 / 1e6, NumRequests: 20,
+					PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
+					OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
+				}, ""),
 			}
 
 			sim := mustNewSimulator(t, cfg)
@@ -925,25 +775,12 @@ func TestSimulator_ObservationMethods_MatchDirectAccess(t *testing.T) {
 // QueuedEvent.
 func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 	cfg := SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   10000,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     1, // KEY: only one request can run at a time
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Model: "test-work-conserving",
-			GPU:   "H100",
-			TP:    1,
-		},
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(1, 2048, 0), // KEY: only one request can run at a time
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-work-conserving", "H100", 1, false),
 	}
 
 	s := mustNewSimulator(t, cfg)
@@ -1015,20 +852,11 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
 	// GIVEN a simulator with 10 KV blocks of 16 tokens each (160 token capacity)
 	cfg := SimConfig{
-		Horizon: 1_000_000,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   10,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 1, 1},
-			AlphaCoeffs: []float64{0, 0, 0},
-		},
+		Horizon:       1_000_000,
+		Seed:          42,
+		KVCacheConfig: NewKVCacheConfig(10, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
 	sim, err := NewSimulator(cfg)
 	if err != nil {
@@ -1072,20 +900,11 @@ func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
 func TestEnqueueRequest_NormalInput_Enqueued(t *testing.T) {
 	// GIVEN a simulator with 100 KV blocks of 16 tokens each
 	cfg := SimConfig{
-		Horizon: 1_000_000,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   100,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 1, 1},
-			AlphaCoeffs: []float64{0, 0, 0},
-		},
+		Horizon:       1_000_000,
+		Seed:          42,
+		KVCacheConfig: NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
 	sim, err := NewSimulator(cfg)
 	if err != nil {
@@ -1123,20 +942,11 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 	// GIVEN a simulator with very small KV cache (50 blocks × 16 tokens = 800 tokens)
 	// This is the exact reproduction case from issue #373
 	cfg := SimConfig{
-		Horizon: 10_000_000,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   50,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{6910, 17.67, 2.84},
-			AlphaCoeffs: []float64{0, 0, 0},
-		},
+		Horizon:       10_000_000,
+		Seed:          42,
+		KVCacheConfig: NewKVCacheConfig(50, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
 	}
 	sim, err := NewSimulator(cfg)
 	if err != nil {
@@ -1193,20 +1003,11 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
 	// GIVEN a simulator with tiny KV cache
 	cfg := SimConfig{
-		Horizon: 10_000_000,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   5,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     256,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 1, 1},
-			AlphaCoeffs: []float64{0, 0, 0},
-		},
+		Horizon:       10_000_000,
+		Seed:          42,
+		KVCacheConfig: NewKVCacheConfig(5, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
 	sim, err := NewSimulator(cfg)
 	if err != nil {
@@ -1246,20 +1047,11 @@ func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
 // THEN the request transitions through queued → running → completed.
 func TestRequestLifecycle_ValidTransitions(t *testing.T) {
 	sim := mustNewSimulator(t, SimConfig{
-		Horizon: math.MaxInt64,
-		Seed:    42,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   100,
-			BlockSizeTokens: 16,
-		},
-		BatchConfig: BatchConfig{
-			MaxRunningReqs:     1,
-			MaxScheduledTokens: 2048,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{100, 1, 1},
-			AlphaCoeffs: []float64{50, 0.1, 50},
-		},
+		Horizon:       math.MaxInt64,
+		Seed:          42,
+		KVCacheConfig: NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(1, 2048, 0),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{100, 1, 1}, []float64{50, 0.1, 50}),
 	})
 
 	req := &Request{
@@ -1297,5 +1089,62 @@ func TestRequestLifecycle_ValidTransitions(t *testing.T) {
 	// THEN: request MUST have been running at some point
 	if !sawRunning {
 		t.Error("request never entered StateRunning")
+	}
+}
+
+func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
+	// BC-5: TTFT must be recorded before E2E for zero-output-token requests.
+	// This tests the two-pass invariant: executeBatchStep (Phase 2) records TTFT,
+	// then processCompletions (Phase 3) records E2E.
+	cfg := SimConfig{
+		Horizon:       100_000_000,
+		KVCacheConfig: NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(100, 10000, 100),
+		LatencyCoeffs: NewLatencyCoeffs(
+			[]float64{1000, 10, 2},
+			[]float64{500, 1, 1000},
+		),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Create a request with zero output tokens
+	req := &Request{
+		ID:           "zero-output",
+		ArrivalTime:  0,
+		InputTokens:  make([]int, 10),
+		OutputTokens: []int{}, // zero output tokens
+		State:        StateQueued,
+	}
+	sim.InjectArrival(req)
+
+	// Run until completion
+	sim.Run()
+
+	// TTFT must be recorded
+	ttft, hasTTFT := sim.Metrics.RequestTTFTs[req.ID]
+	if !hasTTFT {
+		t.Fatal("TTFT must be recorded for zero-output request")
+	}
+	if ttft <= 0 {
+		t.Errorf("TTFT must be positive, got %f", ttft)
+	}
+
+	// E2E must be recorded
+	e2e, hasE2E := sim.Metrics.RequestE2Es[req.ID]
+	if !hasE2E {
+		t.Fatal("E2E must be recorded for zero-output request")
+	}
+	if e2e <= 0 {
+		t.Errorf("E2E must be positive, got %f", e2e)
+	}
+
+	// BC-5 ordering: TTFT must be <= E2E (TTFT recorded in Phase 2, E2E in Phase 3)
+	if e2e < ttft {
+		t.Errorf("BC-5 violated: E2E (%f) < TTFT (%f) — two-pass ordering broken", e2e, ttft)
+	}
+
+	// Request must have completed
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("expected 1 completed request, got %d", sim.Metrics.CompletedRequests)
 	}
 }
