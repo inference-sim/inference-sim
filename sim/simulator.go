@@ -94,32 +94,20 @@ func NewGuideLLMConfig(
 }
 
 // SimConfig holds all configuration for creating a Simulator.
+// Sub-configs are embedded so fields are accessible via promotion
+// (e.g., cfg.TotalKVBlocks resolves to cfg.KVCacheConfig.TotalKVBlocks).
 type SimConfig struct {
-	Horizon                   int64
-	Seed                      int64
-	TotalKVBlocks             int64
-	BlockSizeTokens           int64
-	MaxRunningReqs            int64
-	MaxScheduledTokens        int64
-	LongPrefillTokenThreshold int64
-	BetaCoeffs                []float64 // regression coefficients for step time (≥3 elements required)
-	AlphaCoeffs               []float64 // regression coefficients for queueing time (≥3 elements required)
-	ModelConfig               ModelConfig
-	HWConfig                  HardwareCalib
-	Model                     string
-	GPU                       string
-	TP                        int
-	Roofline                  bool
-	// Workload config (optional — nil/empty means no workload generation)
-	GuideLLMConfig         *GuideLLMConfig
-	TracesWorkloadFilePath string
-	PriorityPolicy         string // "constant" (default) or "slo-based"
-	Scheduler              string // "fcfs" (default), "priority-fcfs", "sjf"
-	// Tiered KV cache configuration (PR12)
-	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
-	KVOffloadThreshold    float64 // GPU utilization threshold for offload (default 0.9)
-	KVTransferBandwidth   float64 // blocks/tick transfer rate (default 100.0)
-	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
+	// Simulation control (no sub-config — no factory uses only these)
+	Horizon int64
+	Seed    int64
+
+	// Module-scoped sub-configs (R16)
+	KVCacheConfig
+	BatchConfig
+	LatencyCoeffs
+	ModelHardwareConfig
+	PolicyConfig
+	WorkloadConfig
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
