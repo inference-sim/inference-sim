@@ -170,105 +170,106 @@ Both InferSim and BLIS use nearest-neighbor MFU lookup without interpolation. GP
 
 </details>
 
-### H7: The simulator has no MoE-aware latency model, treating sparse expert layers as dense MLP
+### H7: The simulator dramatically mispredicts latency for MoE architectures
 
-> For Mixture-of-Experts models (Mixtral, DeepSeek-V3, Qwen3-MoE), the simulator computes MLP FLOPs as if all parameters are active every step. In reality, only `topK` of `numExperts` experts are routed per token, and the active experts execute as grouped GEMMs with different MFU characteristics than standard dense GEMMs. Additionally, expert weight loading can become the bottleneck (memory-bound), and shared experts (when present) execute in parallel with routed experts. Missing all of these produces large errors on MoE architectures.
+> For Mixture-of-Experts models, the simulator should overestimate MLP compute time (it assumes all parameters are active) while simultaneously underestimating total MoE layer time (it misses expert weight loading, grouped GEMM efficiency loss, and EP communication). These errors partially cancel but produce large net error that varies with batch size: at small batch sizes, the missing weight-loading bottleneck dominates; at large batch sizes, the FLOPs overestimate dominates.
 
-This hypothesis decomposes into five sub-hypotheses, each addressing a distinct MoE modeling gap.
+This hypothesis decomposes into five sub-hypotheses, each describing a distinct observable error pattern.
 
-#### H7a: Sparse FLOPs scaling and expert routing
+#### H7a: The simulator overestimates MLP FLOPs for MoE models by a factor proportional to `numExperts / topK`
 
-> The simulator should compute MLP FLOPs as `topK * expertIntermediateDim` per token instead of `fullIntermediateDim`. An explicit router GEMM (`[batchSize, hiddenDim] @ [hiddenDim, numExperts]`) should be added.
+> For an MoE model with `N` experts and top-`K` routing, the simulator computes `N/K` times too many MLP FLOPs because it treats the MLP as dense. This should produce a systematic overestimate of compute-bound step time. The overestimate ratio should be predictable from the architecture: Mixtral (8 experts, top-2) → 4× overestimate; DeepSeek-V3 (256 routed, top-8, plus 1 shared) → error depends on `moe_intermediate_size` vs. dense `intermediate_size`.
 
-**Implementation**: Detect MoE from HuggingFace config.json fields `num_local_experts` (or `num_routed_experts`) and `num_experts_per_tok`. When present:
-- Replace MLP GEMM dimensions: use `moe_intermediate_size` (or `intermediate_size` per expert) instead of the dense `intermediate_size`
-- Scale active FLOPs: `numActiveExperts = numSharedExperts + numExpertsPerTok`, per-token MLP FLOPs = `numActiveExperts * 3 * 2 * hiddenSize * expertIntermediateDim` (factor of 3: up + activation + down projections)
-- Add router GEMM: `computeGEMMTime(batchSize, hiddenDim, numExperts, ...)`
+**How to test**: Compute predicted MLP FLOPs for Mixtral-8x7b and DeepSeek-V3 under the current model and the corrected model. The ratio of current/corrected FLOPs should match `numExperts / topK` (within the MLP component). Compare predicted TPOT against InferSim's published predictions from the [technical report](https://github.com/user-attachments/files/23016438/infersim_tech_report.pdf).
 
-**InferSim reference**: [`flops/flops.py:get_moe_gflops()`](https://github.com/alibaba/InferSim/blob/main/flops/flops.py) computes `act = num_shared_experts + num_experts_per_tok; gflops = act * 3.0 * gemm_flops(1, hidden_size, intermediate_size)`. [`layers/moe.py:18-87`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L18) implements the full decode MoE calculation.
-
-#### H7b: Grouped GEMM MFU differs from standard GEMM MFU
-
-> MoE routed experts execute as grouped GEMMs, not independent dense GEMMs. Grouped GEMMs have lower MFU than standard GEMMs due to uneven token-to-expert distribution, synchronization overhead, and irregular SM occupancy. Using standard GEMM MFU for MoE expert computation overestimates throughput.
-
-**Implementation**: Two options:
-- *Option A (Tier 0)*: Apply a conservative MFU discount factor to standard GEMM MFU when computing routed expert time. InferSim's benchmarked grouped GEMM MFU is typically 0.15-0.18 vs. 0.35-0.6 for dense GEMM — a ~2-3× gap.
-- *Option B (Tier 2)*: Add grouped GEMM benchmark CSVs to the MFU database, keyed by `(num_routed_experts, num_gpus, topk, hidden_size, intermediate_size, batch_size)`, with separate up-projection and down-projection MFU values.
-
-**InferSim reference**: [`mfu/mfu.py:get_groupedgemm_decode_mfu()`](https://github.com/alibaba/InferSim/blob/main/mfu/mfu.py) and [`mfu/mfu.py:get_groupedgemm_prefill_mfu()`](https://github.com/alibaba/InferSim/blob/main/mfu/mfu.py) load from `bench_data/grouped_gemm/{decode,prefill}/{device_type}/data.csv` with columns: `num_experts, num_gpus, num_local_experts, topk, hidden_size, intermediate_size, batch_size_per_gpu, tokens_per_expert, up_proj_us, up_mfu, down_proj_us, down_mfu`. Floor-preferring lookup on `batch_size_per_gpu`.
-
-#### H7c: Expert weight loading can dominate MoE layer latency
-
-> MoE models have far more total MLP parameters than dense models (Mixtral: 8× expert weights; DeepSeek-V3: 256×), but only load `topK` experts' weights per step. The per-step expert weight loading time can exceed the grouped GEMM compute time, making MoE layers memory-bandwidth-bound. The correct model is `max(computeTime, loadTime)`, not just `computeTime`.
-
-**Implementation**: Compute expert weight bytes per GPU:
-```
-expertParamBytes = 3 * hiddenSize * expertIntermediateDim * bytesPerParam
-totalLoadBytes = expertParamBytes * numRoutedExperts / numGPUs
-loadTimeS = totalLoadBytes / effectiveBandwidthBytesPerS
-moeTimeS = max(routedExpertComputeS, loadTimeS) + sharedExpertTimeS
-```
-
-**InferSim reference**: [`params/params.py:get_expert_params_size()`](https://github.com/alibaba/InferSim/blob/main/params/params.py) computes `3 * hidden_size * intermediate_size * bytes_per_elem`. [`params/params.py:load_moe_weights_time()`](https://github.com/alibaba/InferSim/blob/main/params/params.py) divides by EP world size and GPU memory bandwidth. [`layers/moe.py:62`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L62) applies `max(routed_experts_latency, moe_load_time)`.
-
-#### H7d: Shared experts execute differently from routed experts
-
-> Models like DeepSeek-V3 (`num_shared_experts: 1`) and Qwen3-MoE have shared experts that run on every token as standard dense GEMMs, while routed experts use grouped GEMMs. The shared expert compute is additive (sequential) with the routed expert compute, and uses standard GEMM MFU — not grouped GEMM MFU.
-
-**Implementation**: When `numSharedExperts > 0`:
-```
-sharedExpertTimeS = computeGEMMTime(batchSize, hiddenDim, sharedExpertIntermediateDim, peakFlops, standardGEMM_MFU) * 3
-routedExpertTimeS = groupedGEMMTime(...)  // uses grouped GEMM MFU
-moeTimeS = max(routedExpertTimeS, loadTimeS) + sharedExpertTimeS
-```
-
-**InferSim reference**: [`layers/moe.py:70-82`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L70) computes shared experts via `get_gemm_mfu_and_latency()` (standard GEMM, not grouped), then adds sequentially: `t += shared_expert_time`.
-
-#### H7e: MoE communication uses all-to-all, not all-reduce
-
-> When Expert Parallelism (EP) is used, MoE layers require all-to-all dispatch (tokens → assigned experts) and combine (results → original GPUs) instead of all-reduce. All-to-all has different latency characteristics: it scales with `numTokens * topK * hiddenSize` and uses RDMA for inter-node + NVLink for intra-node, not the ring-reduce pattern of all-reduce.
-
-**Implementation**: When EP > 1, replace per-layer MoE communication:
-```
-if expertParallelism > 1:
-    dispatchBytes = batchSize * topK * hiddenDim * bytesPerParam
-    dispatchTimeS = dispatchBytes / rdmaBandwidth   // inter-node
-                  + dispatchBytes / nvlinkBandwidth  // intra-node
-    combineTimeS = dispatchTimeS  // symmetric
-    moeCommTimeS = dispatchTimeS + combineTimeS
-else:
-    moeCommTimeS = allReduceLatency * 2  // standard TP communication
-```
-
-**InferSim reference**: [`comm/comm.py:dispatch()`](https://github.com/alibaba/InferSim/blob/main/comm/comm.py) and [`comm/comm.py:combine()`](https://github.com/alibaba/InferSim/blob/main/comm/comm.py) implement DeepEP dispatch/combine with separate `normal` (prefill) and `low_latency` (decode) modes. Communication uses `size_bw_model()` which selects RDMA for inter-node and NVLink for intra-node.
-
----
-
-**How to test H7 (all sub-hypotheses)**: Two-part test.
-
-*Part A (simulator-internal, no ground truth needed)*: Implement H7a-e and compute predicted TPOT and TTFT for Mixtral-8x7b (`model_configs/mixtral-8x7b-v0.1/config.json`) and DeepSeek-V3 (config from InferSim: `InferSim/hf_configs/deepseek_v3_config.json`). Compare BLIS predictions against InferSim's published predictions from the [InferSim technical report](https://github.com/user-attachments/files/23016438/infersim_tech_report.pdf). For DeepSeek-V3 on H800, InferSim predicts decode TGS of 2675 vs. actual 2324 (~15% error) — BLIS should land within the same range.
-
-*Part B (aggregate accuracy, requires MoE ground truth)*: When MoE ground truth traces become available, run BLIS with H7 corrections against measured TTFT/TPOT. This is blocked until MoE experiments are added to `eval/ground_truth/`.
-
-**Data constraint**: No MoE models exist in the current 14 ground truth experiments. Part A validates against InferSim's published numbers as a cross-simulator sanity check. Part B requires new data collection.
-
-**Accept criterion**: Part A predictions within 20% of InferSim's published predictions for the same model/GPU configuration; Part B (when data available) achieves E2E MAPE < 20% on MoE models.
+**Accept criterion**: Corrected MLP FLOPs match InferSim's `get_moe_gflops()` output within 1% for Mixtral-8x7b and DeepSeek-V3.
 
 <details>
 <summary><b>Mechanism and evidence</b></summary>
 
-BLIS currently has zero MoE support. The `ModelConfig` struct (`sim/model_hardware_config.go:13-21`) does not parse `num_local_experts`, `num_experts_per_tok`, `moe_intermediate_size`, or `num_shared_experts`. The roofline computation (`sim/roofline_step_v2.go`) treats all MLP layers as dense with `intermediate_size` dimensions. For Mixtral-8x7b (8 experts, top-2), this means BLIS computes 4× too many MLP FLOPs (using full `intermediate_size=14336` instead of `topK/numExperts * intermediate_size = 2/8 * 14336 = 3584` equivalent). For DeepSeek-V3 (256 experts, top-8, `moe_intermediate_size=2048`), the error is even larger — BLIS would use `intermediate_size=18432` (dense) instead of the effective `9 * 2048 = 18432` (which happens to be similar for DeepSeek-V3, but with completely wrong MFU characteristics due to grouped GEMM).
+InferSim computes MoE FLOPs as `act * 3 * gemm_flops(1, hidden_size, intermediate_size)` where `act = num_shared_experts + num_experts_per_tok` — [`flops/flops.py:get_moe_gflops()`](https://github.com/alibaba/InferSim/blob/main/flops/flops.py). The full decode MoE calculation including router overhead is in [`layers/moe.py:18-87`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L18).
 
-- BLIS `ModelConfig`: no MoE fields — [`sim/model_hardware_config.go:13-21`](sim/model_hardware_config.go#L13)
-- BLIS MLP computation: uses dense `dFF` — [`sim/roofline_step_v2.go:73-82`](sim/roofline_step_v2.go#L73)
-- Mixtral config: `num_local_experts: 8`, `num_experts_per_tok: 2` — [`model_configs/mixtral-8x7b-v0.1/config.json`](model_configs/mixtral-8x7b-v0.1/config.json)
-- InferSim MoE layer: [`layers/moe.py`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py)
-- InferSim grouped GEMM MFU: [`mfu/mfu.py:96-130`](https://github.com/alibaba/InferSim/blob/main/mfu/mfu.py#L96)
-- InferSim expert weight loading: [`params/params.py`](https://github.com/alibaba/InferSim/blob/main/params/params.py)
-- InferSim EP communication: [`comm/comm.py`](https://github.com/alibaba/InferSim/blob/main/comm/comm.py)
-- InferSim DeepSeek-V3 accuracy: decode TGS predicted 2675 vs. actual 2324 (~15% error) — [InferSim technical report](https://github.com/user-attachments/files/23016438/infersim_tech_report.pdf)
+BLIS uses dense `intermediate_size` for all MLP layers — [`sim/roofline_step_v2.go:73-82`](sim/roofline_step_v2.go#L73). `ModelConfig` does not parse `num_local_experts`, `num_experts_per_tok`, `moe_intermediate_size`, or `num_shared_experts` — [`sim/model_hardware_config.go:13-21`](sim/model_hardware_config.go#L13). Mixtral config has `num_local_experts: 8`, `num_experts_per_tok: 2` — [`model_configs/mixtral-8x7b-v0.1/config.json`](model_configs/mixtral-8x7b-v0.1/config.json).
 
 </details>
+
+#### H7b: MoE routed expert throughput is 2-3× lower than dense GEMM throughput at the same FLOPs
+
+> Even after correcting FLOPs (H7a), the simulator should still underestimate MoE layer time because routed experts execute as grouped GEMMs with lower hardware utilization than equivalent dense GEMMs. Grouped GEMMs suffer from uneven token-to-expert distribution, synchronization across expert sub-problems, and irregular SM occupancy. The throughput gap should be observable by comparing grouped GEMM MFU (0.15-0.18 typical) against standard GEMM MFU (0.35-0.6) at the same total FLOPs.
+
+**How to test**: For Mixtral-8x7b and DeepSeek-V3, compute MoE layer time using (a) standard GEMM MFU and (b) InferSim's benchmarked grouped GEMM MFU from `bench_data/grouped_gemm/`. The ratio should be 2-3× (grouped is slower). If grouped GEMM benchmarks are unavailable, apply InferSim's default GPU MFU as a conservative floor and measure the sensitivity.
+
+**Accept criterion**: MoE layer time computed with grouped GEMM MFU is within 20% of InferSim's `decode_moe()` / `prefill_moe()` output for the same configuration.
+
+<details>
+<summary><b>Mechanism and evidence</b></summary>
+
+InferSim uses separate grouped GEMM MFU lookups: [`mfu/mfu.py:get_groupedgemm_decode_mfu()`](https://github.com/alibaba/InferSim/blob/main/mfu/mfu.py) and `get_groupedgemm_prefill_mfu()`, loaded from `bench_data/grouped_gemm/{decode,prefill}/{device_type}/data.csv`. CSV columns: `num_experts, num_gpus, num_local_experts, topk, hidden_size, intermediate_size, batch_size_per_gpu, tokens_per_expert, up_proj_us, up_mfu, down_proj_us, down_mfu`. Lookup uses floor-preferring interpolation on `batch_size_per_gpu`. Returns separate MFU for up-projection and down-projection.
+
+BLIS MFU database (`sim/mfu_database.go`) has no grouped GEMM entries — only standard GEMM and attention MFU.
+
+</details>
+
+#### H7c: MoE layer time is bounded by the maximum of compute and expert weight loading, not compute alone
+
+> For MoE models with many experts (especially DeepSeek-V3 with 256), the time to load expert weights from HBM can exceed the grouped GEMM compute time. The simulator should show a regime where increasing the number of experts (with fixed `topK`) increases predicted latency even though active FLOPs stay constant — because total expert parameter bytes grow linearly with `numExperts`. At small batch sizes, weight loading should dominate; at large batch sizes, compute should dominate.
+
+**How to test**: For DeepSeek-V3, compute expert weight loading time (`totalExpertBytes / memoryBandwidth`) and grouped GEMM compute time separately. Sweep batch size from 1 to 256. Plot both curves — they should cross, with loading dominant at small batch sizes. The correct model `max(compute, load)` should track the upper envelope. Compare against InferSim's `max(routed_experts_latency, moe_load_time)` at the same batch sizes.
+
+**Accept criterion**: The crossover batch size matches InferSim's crossover within 2×; total MoE layer time matches InferSim within 15% across the batch size sweep.
+
+<details>
+<summary><b>Mechanism and evidence</b></summary>
+
+InferSim computes expert weight loading via [`params/params.py:load_moe_weights_time()`](https://github.com/alibaba/InferSim/blob/main/params/params.py): `expertParamBytes = 3 * hidden_size * intermediate_size * bytes_per_elem`, divided by EP world size and `gpu.mem_bw`. The `max()` is applied at [`layers/moe.py:62`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L62): `t = max(routed_experts_latency, moe_load_time)`.
+
+DeepSeek-V3: 256 routed experts × `3 * 7168 * 2048 * 2` bytes ≈ 22.5 GB total expert weights. On H800 at 2744 GB/s effective bandwidth, loading takes ~8.2ms. This is significant relative to grouped GEMM compute at small batch sizes.
+
+</details>
+
+#### H7d: Models with shared experts show additive latency on top of routed expert time
+
+> For architectures with shared experts (DeepSeek-V3: 1 shared, Qwen3-MoE: varies), total MoE layer time should be strictly greater than routed-expert-only time. The shared expert contribution should scale like a standard dense GEMM (not grouped) and should be additive — not overlapped — with the routed expert path. Ignoring shared experts should produce a consistent underestimate whose magnitude scales with `numSharedExperts * expertFLOPs / totalMoEFLOPs`.
+
+**How to test**: For DeepSeek-V3 (1 shared expert out of 9 active), compute MoE layer time with and without shared expert contribution. The difference should be ~11% of total MoE time (1/9). Compare against InferSim's output with `num_shared_experts = 1` vs. `num_shared_experts = 0`.
+
+**Accept criterion**: Predicted MoE layer time with shared experts is within 10% of InferSim's prediction; the shared expert contribution is non-zero and additive.
+
+<details>
+<summary><b>Mechanism and evidence</b></summary>
+
+InferSim computes shared experts via standard GEMM (`get_gemm_mfu_and_latency()`, not grouped), then adds sequentially: `t += shared_expert_time` — [`layers/moe.py:70-82`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L70). DeepSeek-V3 config: `num_shared_experts: 1` — [`InferSim/hf_configs/deepseek_v3_config.json`](https://github.com/alibaba/InferSim/blob/main/hf_configs/deepseek_v3_config.json).
+
+</details>
+
+#### H7e: Expert Parallelism communication latency differs qualitatively from Tensor Parallelism all-reduce
+
+> When Expert Parallelism (EP) is used, the per-layer communication pattern changes from all-reduce (TP) to all-to-all dispatch/combine (EP). The simulator should show different communication scaling: all-reduce scales with `hiddenSize` and uses ring-reduce; all-to-all dispatch scales with `batchSize * topK * hiddenSize` and is bounded by inter-node RDMA bandwidth. For multi-node MoE deployments, using all-reduce latency in place of dispatch/combine should produce systematic communication time error that grows with EP world size.
+
+**How to test**: For DeepSeek-V3 on 8 GPUs with EP=8, compute per-layer communication time under (a) all-reduce (`2 * allReduceLatency`) and (b) dispatch/combine (inter-node RDMA + intra-node NVLink). The two should differ by more than 2× for batch sizes > 32. Compare against InferSim's `decode_comm()` / `prefill_comm()` with `enable_deepep=True`.
+
+**Accept criterion**: Communication time matches InferSim within 20% for both single-node (NVLink-only) and multi-node (RDMA + NVLink) EP configurations.
+
+<details>
+<summary><b>Mechanism and evidence</b></summary>
+
+InferSim implements DeepEP dispatch/combine in [`comm/comm.py:dispatch()`](https://github.com/alibaba/InferSim/blob/main/comm/comm.py) and `combine()`, with `normal` mode (prefill) and `low_latency` mode (decode). Communication uses `size_bw_model()`: RDMA for inter-node, NVLink for intra-node. GPU hardware parameters include `nvlink_bw` and `rdma_bw` — [`hardware/gpu.py`](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py).
+
+BLIS currently uses `numLayers * 2 * allReduceLatency` for all communication — [`sim/roofline_step_v2.go:308-312`](sim/roofline_step_v2.go#L308).
+
+</details>
+
+---
+
+**How to test H7 (integrated)**: Two-part test.
+
+*Part A (cross-simulator validation, no ground truth needed)*: After implementing all sub-hypotheses, compute predicted TPOT and TTFT for Mixtral-8x7b (`model_configs/mixtral-8x7b-v0.1/config.json`) and DeepSeek-V3 (`InferSim/hf_configs/deepseek_v3_config.json`). Compare BLIS predictions against InferSim's published predictions from the [InferSim technical report](https://github.com/user-attachments/files/23016438/infersim_tech_report.pdf). For DeepSeek-V3 on H800, InferSim predicts decode TGS of 2675 vs. actual 2324 (~15% error) — BLIS should land within the same range.
+
+*Part B (aggregate accuracy, requires MoE ground truth)*: When MoE ground truth traces become available, run BLIS with H7 corrections against measured TTFT/TPOT from `guidellm-results.json`. Blocked until MoE experiments are added to `eval/ground_truth/`.
+
+**Data constraint**: No MoE models exist in the current 14 ground truth experiments. Part A validates against InferSim's published numbers as a cross-simulator sanity check. Part B requires new data collection.
+
+**Accept criterion**: Part A predictions within 20% of InferSim's published predictions for the same model/GPU configuration; Part B (when data available) achieves E2E MAPE < 20% on MoE models.
 
 ---
 
