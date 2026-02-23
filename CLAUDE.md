@@ -43,7 +43,8 @@ go test -cover ./...
 
 The simulator uses a discrete-event architecture with a min-heap event queue:
 
-- **simulator.go**: `SimConfig` struct, `NewSimulator(SimConfig) (*Simulator, error)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (delegated to `BatchFormation` interface), step execution with phased metric recording (`recordQueueSnapshots`, `recordKVUsageMetrics`, `recordRequestCompletion`), observation methods (`QueueDepth()`, `BatchSize()`, `CurrentClock()`, `SimHorizon()`)
+- **config.go**: Module-scoped sub-config types (`KVCacheConfig`, `BatchConfig`, `LatencyCoeffs`, `ModelHardwareConfig`, `PolicyConfig`, `WorkloadConfig`) — composed into `SimConfig` via embedding (R16)
+- **simulator.go**: `SimConfig` struct (composed of 6 embedded sub-configs + Horizon/Seed), `NewSimulator(SimConfig) (*Simulator, error)` constructor, `Simulator` struct and event loop (`Run()`), batch formation (delegated to `BatchFormation` interface), step execution with phased metric recording (`recordQueueSnapshots`, `recordKVUsageMetrics`, `recordRequestCompletion`), observation methods (`QueueDepth()`, `BatchSize()`, `CurrentClock()`, `SimHorizon()`)
 - **admission.go**: `AdmissionPolicy` interface (accepts `*RouterState`), `AlwaysAdmit`, `TokenBucket`, `RejectAll`, `NewAdmissionPolicy` factory
 - **routing.go**: `RoutingPolicy` interface (accepts `*RouterState`), `RoutingSnapshot` (with `EffectiveLoad()` for canonical load calculation), `RoutingDecision` (with `Priority` hint), `RoundRobin`, `LeastLoaded`, `WeightedScoring` (composable scorer pipeline), `PrefixAffinity`, `AlwaysBusiest` templates, `NewRoutingPolicy` factory
 - **routing_scorers.go**: `ScorerConfig`, scorer implementations (queue-depth, kv-utilization, load-balance), `ParseScorerConfigs`, `IsValidScorer`, `DefaultScorerConfigs`, `newScorerWithObserver` factory
@@ -51,16 +52,16 @@ The simulator uses a discrete-event architecture with a min-heap event queue:
 - **prefix_cache_index.go**: `PrefixCacheIndex` — per-instance LRU cache of hierarchical block hashes for router-side prefix matching
 - **priority.go**: `PriorityPolicy` interface with `ConstantPriority`, `SLOBasedPriority`, and `InvertedSLO` templates, `NewPriorityPolicy` factory
 - **scheduler.go**: `InstanceScheduler` interface with `FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler`, and `ReversePriority` templates, `NewScheduler` factory
-- **latency_model.go**: `LatencyModel` interface (5 methods: StepTime, QueueingTime, OutputTokenProcessingTime, SchedulingProcessingTime, PreemptionProcessingTime), `BlackboxLatencyModel` (alpha/beta regression), `RooflineLatencyModel` (analytical FLOPs/bandwidth), `NewLatencyModel` factory
+- **latency_model.go**: `LatencyModel` interface (5 methods: StepTime, QueueingTime, OutputTokenProcessingTime, SchedulingProcessingTime, PreemptionProcessingTime), `BlackboxLatencyModel` (alpha/beta regression), `RooflineLatencyModel` (analytical FLOPs/bandwidth), `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)` factory
 - **router_state.go**: `RouterState` bridge type (Snapshots + Clock) for cluster-level policy interfaces
 - **bundle.go**: `PolicyBundle` struct with YAML loading (`LoadPolicyBundle`), validation (`Validate`)
 - **event.go**: Event types (`ArrivalEvent`, `QueuedEvent`, `StepEvent`, `ScheduledEvent`, `RequestLeftEvent`, `PreemptionEvent`)
 - **request.go**: `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`), Request lifecycle and state machine, `Priority` field for scheduler-aware ordering, `AssignedInstance` for cluster routing provenance (#181)
 - **kvcache.go**: Block-based KV cache with LRU eviction and prefix caching, `CacheHits`/`CacheMisses` counters, transactional `AllocateKVBlocks` with `rollbackAllocation` on mid-loop failure
-- **kv_store.go**: `KVStore` interface (11 methods: +`SetClock`, +`ConsumePendingTransferLatency`), `NewKVStore` factory with input validation (returns single-tier or tiered based on config)
+- **kv_store.go**: `KVStore` interface (11 methods: +`SetClock`, +`ConsumePendingTransferLatency`), `NewKVStore(KVCacheConfig)` factory with input validation (returns single-tier or tiered based on config)
 - **kvcache_tiered.go**: `TieredKVCache` (GPU+CPU composition), `cpuTier`, `offloadedBlock`, offload/reload/transfer latency, `PendingTransferLatency()` (pure query), `ConsumePendingTransferLatency()` (read-and-clear)
 - **batch.go**: Batch struct (group of requests processed in a single forward pass)
-- **batch_formation.go**: `BatchFormation` interface, `BatchContext`/`BatchResult` types, `VLLMBatchFormation` (FCFS + chunked-prefill + preemption), `NewBatchFormation` factory
+- **batch_formation.go**: `BatchFormation` interface, `BatchContext`/`BatchResult` types, `VLLMBatchFormation` (FCFS + chunked-prefill + preemption), `NewBatchFormation(LatencyModel)` factory
 - **queue.go**: FIFO wait queue for pending requests
 
 ### Cluster Simulation (`sim/cluster/`)
@@ -181,7 +182,7 @@ Full details: see [`docs/standards/principles.md`](docs/standards/principles.md)
 
 **Interface design:** Single-method interfaces. Pure query methods. Factory validation. Behavioral contracts, not implementation-specific (R13). Single-module methods (R14).
 
-**Configuration design:** Group by module (R16). Each module's config independently validatable.
+**Configuration design:** Group by module (R16). `SimConfig` composed of 6 embedded sub-configs. Factory signatures accept the narrowest sub-config: `NewKVStore(KVCacheConfig)`, `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`, `NewBatchFormation(LatencyModel)`. Each module's config independently validatable.
 
 **Canonical constructors:** Struct literals in exactly one place (R4). Grep for ALL construction sites before adding fields.
 
@@ -270,7 +271,8 @@ inference-sim/
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
-│   ├── simulator.go           # SimConfig struct, NewSimulator(SimConfig), event loop, batch formation, step execution
+│   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, etc.)
+│   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs), NewSimulator(SimConfig), event loop, batch formation, step execution
 │   ├── admission.go           # AdmissionPolicy interface, AlwaysAdmit, TokenBucket, NewAdmissionPolicy factory
 │   ├── routing.go             # RoutingPolicy interface, RoutingSnapshot, RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity
 │   ├── routing_scorers.go     # ScorerConfig, scorerFunc, stateless scorers, ParseScorerConfigs, newScorerWithObserver
