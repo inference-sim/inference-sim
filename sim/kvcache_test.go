@@ -341,3 +341,44 @@ func TestAllocateKVBlocks_FailedAllocation_CacheHitRateUnchanged(t *testing.T) {
 		t.Errorf("CacheHitRate changed from %f to %f after failed allocation (rollback should restore)", rateBefore, rateAfter)
 	}
 }
+
+func TestAllocateKVBlocks_ChunkedPrefill_NoPhantomBlocks(t *testing.T) {
+	// GIVEN a KV cache with BlockSize=4 and a request that already has a partial block (3 tokens)
+	kvc := NewKVCacheState(20, 4) // 20 blocks, size 4
+	req := &Request{
+		ID:            "phantom-test",
+		InputTokens:   []int{1, 2, 3, 4, 5, 6, 7, 8},
+		OutputTokens:  []int{100},
+		ProgressIndex: 0,
+	}
+
+	// First allocation: 3 tokens (leaves a partial block)
+	ok := kvc.AllocateKVBlocks(req, 0, 3, []int64{})
+	if !ok {
+		t.Fatal("first allocation should succeed")
+	}
+	blocksAfterFirst := kvc.UsedBlocks()
+
+	// WHEN allocating the next chunk of 5 tokens (should fill partial block + allocate 1 new block)
+	req.ProgressIndex = 3
+	ok = kvc.AllocateKVBlocks(req, 3, 8, []int64{})
+	if !ok {
+		t.Fatal("second allocation should succeed")
+	}
+
+	// THEN exactly 1 new block should be allocated (partial fill + 1 new block, not 2)
+	// Partial block: 3 tokens + 1 token = 4 (full). Remaining: 4 tokens = 1 new block.
+	blocksAfterSecond := kvc.UsedBlocks()
+	newBlocks := blocksAfterSecond - blocksAfterFirst
+	if newBlocks != 1 {
+		t.Errorf("expected 1 new block after partial fill, got %d", newBlocks)
+	}
+
+	// Verify no phantom blocks (all allocated blocks should have non-empty Tokens)
+	for _, blockID := range kvc.RequestMap[req.ID] {
+		blk := kvc.Blocks[blockID]
+		if len(blk.Tokens) == 0 {
+			t.Errorf("block %d has empty Tokens (phantom block)", blk.ID)
+		}
+	}
+}
