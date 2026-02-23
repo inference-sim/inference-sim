@@ -85,10 +85,10 @@ for SEED in "${SEEDS[@]}"; do
 done
 
 # -- Experiment 2: Sub-saturation control (rate=100, 500 reqs, 3 seeds) --------
-# ED-2: At ~0.29x utilization (4 inst), queues should not build up.
+# ED-2: At ~0.44x utilization (4 inst), queues should not build up.
 # Scaling effect should vanish (TTFT p99 should be similar across instance counts).
 echo ""
-echo "=== Experiment 2: Sub-saturation control at rate=100 (0.29x util at 4 inst) ==="
+echo "=== Experiment 2: Sub-saturation control at rate=100 (~0.44x util at 4 inst) ==="
 echo "    instances={2,4,8}, requests=500, rate=100"
 echo ""
 
