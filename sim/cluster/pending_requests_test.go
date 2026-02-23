@@ -13,16 +13,11 @@ import (
 func TestClusterSimulator_PendingRequests_DrainsToZeroAfterProcessing(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon: 10000000, Seed: 42,
-			KVCacheConfig: sim.KVCacheConfig{
-				TotalKVBlocks: 100, BlockSizeTokens: 16,
-			},
-			BatchConfig: sim.BatchConfig{
-				MaxRunningReqs: 10, MaxScheduledTokens: 2048,
-			},
-			LatencyCoeffs: sim.LatencyCoeffs{
-				BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
-			},
+			Horizon:       10000000,
+			Seed:          42,
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 		},
 		NumInstances:         2,
 		RoutingPolicy:        "weighted",
@@ -67,16 +62,11 @@ func TestClusterSimulator_PendingRequests_DrainsToZeroAfterProcessing(t *testing
 func TestClusterSimulator_PendingRequests_VisibleInRoutingState(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon: 10000000, Seed: 42,
-			KVCacheConfig: sim.KVCacheConfig{
-				TotalKVBlocks: 100, BlockSizeTokens: 16,
-			},
-			BatchConfig: sim.BatchConfig{
-				MaxRunningReqs: 10, MaxScheduledTokens: 2048,
-			},
-			LatencyCoeffs: sim.LatencyCoeffs{
-				BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
-			},
+			Horizon:       10000000,
+			Seed:          42,
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 		},
 		NumInstances:    1,
 		RoutingLatency:  100, // Creates window where pending is visible
@@ -150,16 +140,11 @@ func TestClusterSimulator_PendingRequests_VisibleInRoutingState(t *testing.T) {
 func TestClusterSimulator_PendingRequests_CausalDecrement(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon: 10000000, Seed: 42,
-			KVCacheConfig: sim.KVCacheConfig{
-				TotalKVBlocks: 100, BlockSizeTokens: 16,
-			},
-			BatchConfig: sim.BatchConfig{
-				MaxRunningReqs: 10, MaxScheduledTokens: 2048,
-			},
-			LatencyCoeffs: sim.LatencyCoeffs{
-				BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
-			},
+			Horizon:       10000000,
+			Seed:          42,
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 		},
 		NumInstances:    1,
 		RoutingLatency:  100, // Creates overlap window where pending is visible
@@ -228,16 +213,11 @@ func TestClusterSimulator_PendingRequests_CausalDecrement(t *testing.T) {
 func TestClusterSimulator_PendingRequests_CounterfactualIncludesPending(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon: 10000000, Seed: 42,
-			KVCacheConfig: sim.KVCacheConfig{
-				TotalKVBlocks: 100, BlockSizeTokens: 16,
-			},
-			BatchConfig: sim.BatchConfig{
-				MaxRunningReqs: 10, MaxScheduledTokens: 2048,
-			},
-			LatencyCoeffs: sim.LatencyCoeffs{
-				BetaCoeffs: []float64{1000, 10, 5}, AlphaCoeffs: []float64{100, 50, 25},
-			},
+			Horizon:       10000000,
+			Seed:          42,
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 		},
 		NumInstances:    1,
 		RoutingLatency:  100, // Creates pending state visible to routing
