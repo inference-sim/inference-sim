@@ -467,7 +467,7 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 // preempted request's ComputedTokens entry is deleted.
 func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 	// GIVEN a running request with a ComputedTokens entry
-	kv := NewKVStore(SimConfig{TotalKVBlocks: 4, BlockSizeTokens: 4})
+	kv := NewKVStore(KVCacheConfig{TotalKVBlocks: 4, BlockSizeTokens: 4})
 	victim := &Request{
 		ID:           "victim",
 		InputTokens:  []int{1, 2, 3, 4, 5, 6, 7, 8},

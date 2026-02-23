@@ -368,11 +368,11 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 
 // TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError verifies BC-4: NaN in alpha rejected.
 func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
-	cfg := SimConfig{
+	coeffs := LatencyCoeffs{
 		AlphaCoeffs: []float64{math.NaN(), 1.0, 100.0},
 		BetaCoeffs:  []float64{5000, 10, 5},
 	}
-	_, err := NewLatencyModel(cfg)
+	_, err := NewLatencyModel(coeffs, ModelHardwareConfig{})
 	if err == nil {
 		t.Fatal("expected error for NaN AlphaCoeffs, got nil")
 	}
@@ -380,11 +380,11 @@ func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
 
 // TestNewLatencyModel_InfBetaCoeffs_ReturnsError verifies BC-4: Inf in beta rejected.
 func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
-	cfg := SimConfig{
+	coeffs := LatencyCoeffs{
 		AlphaCoeffs: []float64{100, 1.0, 100.0},
 		BetaCoeffs:  []float64{math.Inf(1), 10, 5},
 	}
-	_, err := NewLatencyModel(cfg)
+	_, err := NewLatencyModel(coeffs, ModelHardwareConfig{})
 	if err == nil {
 		t.Fatal("expected error for Inf BetaCoeffs, got nil")
 	}
