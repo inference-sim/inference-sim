@@ -290,11 +290,14 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 
 	result := bf.FormBatch(ctx)
 
-	// THEN if preemption happened, no new requests should have been dequeued
-	if result.PreemptionHappened {
-		if len(result.NewlyScheduled) > 0 {
-			t.Errorf("expected 0 newly scheduled after preemption, got %d", len(result.NewlyScheduled))
-		}
+	// THEN preemption must have occurred (precondition for BC-5)
+	if !result.PreemptionHappened {
+		t.Fatal("expected preemption to occur — test precondition failed")
+	}
+
+	// AND no new requests should have been dequeued after preemption
+	if len(result.NewlyScheduled) > 0 {
+		t.Errorf("expected 0 newly scheduled after preemption, got %d", len(result.NewlyScheduled))
 	}
 }
 
