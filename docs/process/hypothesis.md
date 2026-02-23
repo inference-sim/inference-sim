@@ -13,7 +13,7 @@ This workflow uses the following Claude Code skills. Each has a manual alternati
 | Skill | Purpose | Used In | Manual Alternative |
 |-------|---------|---------|--------------------|
 | `superpowers:using-git-worktrees` | Create isolated workspace | Step 0 | `git worktree add .worktrees/h-<name> -b h-<name>` |
-| `pr-review-toolkit:code-reviewer` | Design Review, Code Review perspectives | Steps 2, 5 | Sequential manual checklists (one per perspective) |
+| `general-purpose` Task agents | Design Review, Code Review perspectives | Steps 2, 5 | Sequential manual checklists (one per perspective) |
 | `general-purpose` Task agents | FINDINGS Review perspectives | Step 8 | Submit FINDINGS.md via PR; maintainers run protocol |
 | `commit-commands:commit-push-pr` | Commit, push, create PR | Step 10 | Standard git commands (`git add`, `git commit`, `git push`, `gh pr create`) |
 
@@ -229,7 +229,7 @@ Create `hypotheses/<name>/run.sh` and `hypotheses/<name>/analyze.py`.
 
 **Every `run.sh` and `analyze.py` must be code-reviewed BEFORE running experiments.** This is non-negotiable. Three of four major bugs in PR #310 would have been caught by code review before a single experiment ran.
 
-**Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable, wrong operating point), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval.
+**Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable, wrong operating point), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. The experiment-wide limit of 2 cross-gate regressions applies (see [Step 8](#step-8-findings-review-10-perspectives) for the circuit breaker).
 
 Run the **5-perspective Code Review** using the [universal convergence protocol](#universal-convergence-protocol):
 
@@ -300,7 +300,7 @@ Execute experiments across required seeds:
 
 Run the **10-perspective FINDINGS Review** using the [universal convergence protocol](#universal-convergence-protocol).
 
-**Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable not identified in design), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. Maximum 2 cross-gate regressions per experiment — if the design still has fundamental issues after 2 regressions, suspend the experiment and escalate for a re-scoping decision.
+**Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable not identified in design), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. Maximum 2 cross-gate regressions per experiment (across all gates combined) — if the design still has fundamental issues after 2 regressions, suspend the experiment and escalate for a re-scoping decision.
 
 **How to run:** Launch all 10 as parallel Task agents. Each agent receives the FINDINGS.md path and its specific focus area. Collect results and assess convergence when all 10 complete.
 
@@ -566,6 +566,7 @@ See [Issue Taxonomy](#issue-taxonomy-after-convergence) for the complete filing 
 - [ ] Findings classified per the findings table (including resolution type)
 - [ ] Standards audit completed
 - [ ] Promotion assessment completed (see [Promotion of Confirmed Hypotheses](#promotion-of-confirmed-hypotheses))
+- [ ] `hypotheses/README.md` updated with new experiment row(s) and coverage changes
 - [ ] If code fixes involved: `go build`, `go test`, `golangci-lint` all pass
 
 ### Post-PR Gates (check after PR creation — Step 10)
@@ -573,7 +574,6 @@ See [Issue Taxonomy](#issue-taxonomy-after-convergence) for the complete filing 
 - [ ] Each issue has correct label (`bug`, `enhancement`, `hypothesis`, `design`, or `standards`)
 - [ ] Each issue references the PR number
 - [ ] No issues filed for "documented here" findings with no action needed
-- [ ] `hypotheses/README.md` updated with new experiment row(s) and coverage changes
 
 ---
 
