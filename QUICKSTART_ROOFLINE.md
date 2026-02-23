@@ -13,41 +13,39 @@ git branch --show-current
 go build -o simulation_worker main.go
 ```
 
-## Step 1: Verify Hardware Config
+## Step 1: Choose Hardware Config
 
-Check that `hardware_config.json` has complete calibration parameters:
+**Two config files are provided:**
 
+### `hardware_config_v2.json` - **For Roofline v2** (Recommended)
 ```bash
-# Should have ~18 fields per GPU (TFlopsPeak, BwPeakTBs, MfuPrefill, etc.)
+cat hardware_config_v2.json
+```
+Only 6 fields needed:
+- `TFlopsPeak`, `BwPeakTBs` (core specs)
+- `TOverheadMicros`, `PrefillOverheadMicros`, `MixedPrefillOverheadMicros`, `AllReduceLatency` (overheads)
+
+✅ **Use this if you have MFU benchmark data in `bench_data/`**
+
+### `hardware_config.json` - For Roofline v1 (Fallback)
+```bash
 cat hardware_config.json
 ```
+All 18 calibration fields:
+- Includes `MfuPrefill`, `MfuDecode`, `BwEffConstant`, etc.
+- Needed when no benchmark data available
 
-✅ **Fixed in commit `cba73b3`** - Config now includes all required fields.
+✅ **Use this if you DON'T have `bench_data/`**
 
-## Step 2: Run Roofline v1 (No Benchmark Data)
+## Step 2: Run Roofline v2 (Recommended)
 
-```bash
-./simulation_worker run \
-  --model meta-llama/llama-3.1-8b-instruct \
-  --model-config-folder model_configs/llama-3.1-8b-instruct \
-  --hardware-config hardware_config.json \
-  --hardware H100 \
-  --tp 1 \
-  --workload chatbot \
-  --rate 10
-```
-
-**Mode:** Roofline v1 (calibrated constants from `hardware_config.json`)
-
-## Step 3: Run Roofline v2 (With Benchmark Data)
-
-If you have MFU benchmark data in `bench_data/`:
+**With MFU benchmark data** (more accurate):
 
 ```bash
 ./simulation_worker run \
   --model meta-llama/llama-3.1-8b-instruct \
   --model-config-folder model_configs/llama-3.1-8b-instruct \
-  --hardware-config hardware_config.json \
+  --hardware-config hardware_config_v2.json \
   --bench-data-path bench_data \
   --hardware H100 \
   --tp 1 \
@@ -55,7 +53,26 @@ If you have MFU benchmark data in `bench_data/`:
   --rate 10
 ```
 
-**Mode:** Roofline v2 (per-GEMM MFU lookups, more accurate)
+**Mode:** Roofline v2 (per-GEMM MFU lookups)
+**Config:** Minimal - only 6 fields needed!
+
+## Step 3: Run Roofline v1 (Fallback)
+
+**Without benchmark data** (uses calibrated constants):
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --model-config-folder model_configs/llama-3.1-8b-instruct \
+  --hardware-config hardware_config.json \
+  --hardware H100 \
+  --tp 1 \
+  --workload chatbot \
+  --rate 10
+```
+
+**Mode:** Roofline v1 (calibrated)
+**Config:** Full - 18 calibration fields required
 
 ## Step 4: Run Evaluator (Optional)
 
@@ -71,23 +88,28 @@ python3 python_scripts/blis_evaluator.py \
 
 ## What Was Fixed
 
-### Issue: Hardware Config Error
+### Issue #1: Hardware Config Error (Original)
 ```
-panic: NewInstanceSimulator(instance_0): creating latency model: 
-latency model: invalid roofline config: HardwareCalib.BwEffConstant 
+panic: NewInstanceSimulator(instance_0): creating latency model:
+latency model: invalid roofline config: HardwareCalib.BwEffConstant
 must be a valid positive number, got 0
 ```
 
-### Root Cause
-`hardware_config.json` only had 2 fields (`TFlopsPeak`, `BwPeakTBs`) but roofline mode requires 18+ calibration fields.
+**Root Cause:** Missing calibration fields
+**Fix (commit `cba73b3`):** Added all 18 fields to `hardware_config.json`
 
-### Solution
-**Commit `cba73b3`**: Added complete calibration parameters:
-- Bandwidth efficiency (`BwEffConstant`: 0.72 for H100)
-- MFU values (`mfuPrefill`: 0.65, `mfuDecode`: 0.12)
-- TP scaling exponents (0.8 for prefill, 1.0 for decode)
-- Overhead parameters (step, layer, request-level)
-- 9 additional tuning parameters
+### Issue #2: Unnecessary Fields for Roofline v2 (User's Question!)
+```
+"Why do you need the other fields in hardware_config.json when
+roofline v2 only needs 2 fields?"
+```
+
+**Root Cause:** Validation didn't distinguish between v1 (needs MFU from config) and v2 (needs MFU from database)
+**Fix (commit `451379f`):**
+- Made validation conditional based on MFU database presence
+- Created `hardware_config_v2.json` with minimal fields (6 vs 18)
+- Roofline v2 now works with just: `TFlopsPeak`, `BwPeakTBs`, + optional overheads
+- Roofline v1 still requires full calibration
 
 ---
 
