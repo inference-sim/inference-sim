@@ -241,13 +241,8 @@ func TestRooflineLatencyModel_QueueingTime_Positive(t *testing.T) {
 // TestNewLatencyModel_BlackboxMode verifies BC-4 (blackbox path).
 func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 	cfg := SimConfig{
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1000, 10, 5},
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Roofline: false,
-		},
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false),
 	}
 
 	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -286,15 +281,8 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 // TestNewLatencyModel_RooflineMode verifies BC-4 (roofline path).
 func TestNewLatencyModel_RooflineMode(t *testing.T) {
 	cfg := SimConfig{
-		LatencyCoeffs: LatencyCoeffs{
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Roofline:    true,
-			ModelConfig: testModelConfig(),
-			HWConfig:    testHardwareCalib(),
-			TP:          2,
-		},
+		LatencyCoeffs:       NewLatencyCoeffs(nil, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, true),
 	}
 
 	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -320,12 +308,8 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 // TestNewLatencyModel_InvalidRoofline verifies BC-8.
 func TestNewLatencyModel_InvalidRoofline(t *testing.T) {
 	cfg := SimConfig{
-		LatencyCoeffs: LatencyCoeffs{
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Roofline: true,
-		},
+		LatencyCoeffs:       NewLatencyCoeffs(nil, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, true),
 	}
 
 	_, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -349,13 +333,8 @@ func TestNewLatencyModel_ShortAlphaCoeffs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			coeffs := LatencyCoeffs{
-				AlphaCoeffs: tc.alpha,
-				BetaCoeffs:  tc.beta,
-			}
-			hw := ModelHardwareConfig{
-				Roofline: tc.roofline,
-			}
+			coeffs := NewLatencyCoeffs(tc.beta, tc.alpha)
+			hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, tc.roofline)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for short AlphaCoeffs, got nil")
@@ -375,13 +354,8 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			coeffs := LatencyCoeffs{
-				AlphaCoeffs: []float64{100, 1, 100},
-				BetaCoeffs:  tc.beta,
-			}
-			hw := ModelHardwareConfig{
-				Roofline: false,
-			}
+			coeffs := NewLatencyCoeffs(tc.beta, []float64{100, 1, 100})
+			hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for short BetaCoeffs, got nil")
@@ -392,11 +366,8 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 
 // TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError verifies BC-4: NaN in alpha rejected.
 func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
-	coeffs := LatencyCoeffs{
-		AlphaCoeffs: []float64{math.NaN(), 1.0, 100.0},
-		BetaCoeffs:  []float64{5000, 10, 5},
-	}
-	_, err := NewLatencyModel(coeffs, ModelHardwareConfig{})
+	coeffs := NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{math.NaN(), 1.0, 100.0})
+	_, err := NewLatencyModel(coeffs, NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false))
 	if err == nil {
 		t.Fatal("expected error for NaN AlphaCoeffs, got nil")
 	}
@@ -404,11 +375,8 @@ func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
 
 // TestNewLatencyModel_InfBetaCoeffs_ReturnsError verifies BC-4: Inf in beta rejected.
 func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
-	coeffs := LatencyCoeffs{
-		AlphaCoeffs: []float64{100, 1.0, 100.0},
-		BetaCoeffs:  []float64{math.Inf(1), 10, 5},
-	}
-	_, err := NewLatencyModel(coeffs, ModelHardwareConfig{})
+	coeffs := NewLatencyCoeffs([]float64{math.Inf(1), 10, 5}, []float64{100, 1.0, 100.0})
+	_, err := NewLatencyModel(coeffs, NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false))
 	if err == nil {
 		t.Fatal("expected error for Inf BetaCoeffs, got nil")
 	}

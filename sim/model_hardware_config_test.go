@@ -209,20 +209,14 @@ func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	// GIVEN a SimConfig with Roofline=true and NumHeads=0
 	cfg := SimConfig{
-		Horizon: 100000,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   1000,
-			BlockSizeTokens: 16,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Roofline:    true,
-			ModelConfig: ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
-			HWConfig:    HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
-			TP:          1,
-		},
+		Horizon:       100000,
+		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		LatencyCoeffs: NewLatencyCoeffs(nil, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(
+			ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
+			HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+			"", "", 1, true,
+		),
 	}
 
 	// WHEN NewSimulator is called
@@ -240,20 +234,14 @@ func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 func TestNewSimulator_RooflineZeroTP_ReturnsError(t *testing.T) {
 	// GIVEN a SimConfig with Roofline=true and TP=0
 	cfg := SimConfig{
-		Horizon: 100000,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   1000,
-			BlockSizeTokens: 16,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			AlphaCoeffs: []float64{100, 1, 100},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Roofline:    true,
-			ModelConfig: ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
-			HWConfig:    HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
-			TP:          0,
-		},
+		Horizon:       100000,
+		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		LatencyCoeffs: NewLatencyCoeffs(nil, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(
+			ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
+			HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+			"", "", 0, true,
+		),
 	}
 
 	// WHEN NewSimulator is called
@@ -271,20 +259,10 @@ func TestNewSimulator_RooflineZeroTP_ReturnsError(t *testing.T) {
 func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 	// GIVEN a SimConfig with Roofline=false and NumHeads=0 (irrelevant)
 	cfg := SimConfig{
-		Horizon: 100000,
-		KVCacheConfig: KVCacheConfig{
-			TotalKVBlocks:   1000,
-			BlockSizeTokens: 16,
-		},
-		LatencyCoeffs: LatencyCoeffs{
-			BetaCoeffs:  []float64{1, 2, 3},
-			AlphaCoeffs: []float64{1, 2, 3},
-		},
-		ModelHardwareConfig: ModelHardwareConfig{
-			Roofline:    false,
-			ModelConfig: ModelConfig{NumHeads: 0},
-			HWConfig:    HardwareCalib{},
-		},
+		Horizon:             100000,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{NumHeads: 0}, HardwareCalib{}, "", "", 0, false),
 	}
 
 	// WHEN NewSimulator is called
