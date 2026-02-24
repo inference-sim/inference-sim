@@ -19,7 +19,8 @@ This document describes the process for writing a BLIS design document. For the 
 3. **Complete the DES checklist** (Section 2.6) — model scoping, event design, state/statistics, V&V, randomness
 4. **Write the design doc** per the template's required sections (Section 3.3): motivation, scope, modeling decisions, invariants, decisions with trade-offs, extension points, validation strategy
 5. **Apply the staleness test** (Section 3.1) — would this content mislead if the implementation changes?
-6. **Human review** — approve before macro/micro planning begins
+6. **Convergence review** — `/convergence-review design <design-doc-path>` dispatches 8 parallel perspectives and enforces convergence (see [hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol)). Manual alternative: review against the quality gates below.
+7. **Human review** — approve before macro/micro planning begins
 
 ## Quality Gates
 
@@ -28,6 +29,12 @@ This document describes the process for writing a BLIS design document. For the 
 - [ ] No prohibited content (Section 3.4): no Go structs, no method implementations, no file:line references
 - [ ] Every non-obvious decision has alternatives listed with rationale
 - [ ] Validation strategy specified (which invariants? against what real-system data?)
+
+## Prerequisites
+
+| Skill | Purpose | Manual Alternative |
+|-------|---------|--------------------|
+| `convergence-review` | Dispatch parallel review perspectives (Step 6) | Review against quality gates manually |
 
 ## References
 

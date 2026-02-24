@@ -88,5 +88,5 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | Hypothesis catalog and specifications | `docs/plans/research.md` | — |
 | Experiment status and coverage | `hypotheses/README.md` | — |
 | Experiment standards | `docs/standards/experiments.md` | — (note: review protocol subsection references `docs/process/hypothesis.md` as canonical) |
-| Hypothesis experiment workflow | `docs/process/hypothesis.md` | CONTRIBUTING.md (summary), hypotheses/README.md (step list) |
-| PR workflow | `docs/process/pr-workflow.md` | — |
+| Hypothesis experiment workflow | `docs/process/hypothesis.md` | CONTRIBUTING.md (summary), hypotheses/README.md (step list), `.claude/skills/hypothesis-experiment/SKILL.md` (workflow steps), `.claude/skills/hypothesis-experiment/review-prompts.md` (perspective prompts), `.claude/skills/convergence-review/SKILL.md` (convergence protocol copy) |
+| PR workflow | `docs/process/pr-workflow.md` | CONTRIBUTING.md (summary), `.claude/skills/convergence-review/pr-prompts.md` (perspective prompts) |
