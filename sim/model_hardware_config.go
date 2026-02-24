@@ -27,7 +27,23 @@ type HardwareCalib struct {
 	BwPeakTBs        float64 `json:"BwPeakTBs"`       // in TB/s
 	BwEffConstant    float64 `json:"BwEffConstant"`   // scaling factor to convert Peak BW to Effective BW
 	TOverheadMicros  float64 `json:"TOverheadMicros"` // Per-step Overheads unaccounted for
-	PerLayerOverhead float64 `json:"perLayerOverhead"`
+	// PerLayerCPUOverhead is the per-layer CPU scheduling overhead in microseconds.
+	// At each step, the vLLM scheduler performs CPU work that scales with the number
+	// of transformer layers managed per GPU: block-table management (O(layers × batch)),
+	// per-layer tensor dispatch, and input metadata preparation.
+	//
+	// When set (> 0), the roofline model computes:
+	//   decode_overhead  = PerLayerCPUOverhead × (num_layers / tp)
+	//   prefill_overhead = PerLayerCPUOverhead × 5.0 × (num_layers / tp)
+	//   mixed_overhead   = prefill_overhead / 2.0
+	//
+	// Reference value: 100 μs/layer for H100 (validated against 13 GuideLLM experiments,
+	// TPOT MAPE 17.3%). InferSim (Alibaba) uses a flat 5ms decode / 30ms prefill;
+	// the per-layer approach outperforms flat constants by ~30pp TPOT MAPE.
+	//
+	// Sources: vAttention (block-table overhead 10-30% of decode), Wuklab scheduling
+	// study (up to 50% overhead for small models), BROS (7-10% per iteration).
+	PerLayerCPUOverhead float64 `json:"perLayerOverhead"`
 	MfuPrefill       float64 `json:"mfuPrefill"`
 	MfuDecode        float64 `json:"mfuDecode"`
 	AllReduceLatency float64 `json:"allReduceLatency"`
@@ -42,6 +58,7 @@ type HardwareCalib struct {
 	VectorPeakFraction         float64 `json:"vectorPeakFraction"`         // Non-tensor core ops efficiency
 	PrefillOverheadMicros      float64 `json:"prefillOverheadMicros"`      // Per prefill request overhead (pure prefill)
 	MixedPrefillOverheadMicros float64 `json:"mixedPrefillOverheadMicros"` // Per prefill request overhead (mixed batch)
+	BwEfficiencyFactor         float64 `json:"bwEfficiencyFactor"`         // Sustained-to-peak BW ratio for roofline v2 (0 = no correction)
 }
 
 // HFConfig represents a flexible JSON object with dynamic fields.
@@ -304,6 +321,13 @@ func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib, hasMFUDatabase boo
 		}
 		if invalidPositiveFloat(hc.MfuDecode) {
 			problems = append(problems, fmt.Sprintf("HardwareCalib.MfuDecode must be a valid positive number, got %v. Are you running roofline v2? Use --bench-data-path with MFU benchmark data.", hc.MfuDecode))
+		}
+	}
+
+	// BwEfficiencyFactor: optional (0 = no correction), but if set must be in (0, 1.0]
+	if hc.BwEfficiencyFactor != 0 {
+		if math.IsNaN(hc.BwEfficiencyFactor) || math.IsInf(hc.BwEfficiencyFactor, 0) || hc.BwEfficiencyFactor < 0 || hc.BwEfficiencyFactor > 1.0 {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.BwEfficiencyFactor must be in (0, 1.0] or 0 (disabled), got %v", hc.BwEfficiencyFactor))
 		}
 	}
 

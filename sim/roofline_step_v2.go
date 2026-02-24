@@ -130,6 +130,9 @@ func rooflineStepTimeV2(
 
 	peakFlops := hwConfig.TFlopsPeak * 1e12
 	peakBW := hwConfig.BwPeakTBs * 1e12
+	if hwConfig.BwEfficiencyFactor != 0 {
+		peakBW *= hwConfig.BwEfficiencyFactor
+	}
 
 	var prefillComputeS, prefillMemoryS float64
 	var decodeComputeS, decodeMemoryS float64
@@ -311,11 +314,24 @@ func rooflineStepTimeV2(
 		commOverheadS = (float64(modelConfig.NumLayers) * 2 * hwConfig.AllReduceLatency) / 1e6
 	}
 
+	// Compute effective overheads.
+	// If PerLayerCPUOverhead is set, derive model-scaled overheads from num_layers / tp.
+	// Otherwise, use the explicit per-step values (TOverheadMicros, PrefillOverheadMicros, etc.).
+	decodeOverheadBase := hwConfig.TOverheadMicros
+	prefillOverheadBase := hwConfig.PrefillOverheadMicros
+	mixedPrefillOverheadBase := hwConfig.MixedPrefillOverheadMicros
+	if hwConfig.PerLayerCPUOverhead > 0 {
+		layersPerGPU := float64(modelConfig.NumLayers) / float64(tp)
+		decodeOverheadBase = hwConfig.PerLayerCPUOverhead * layersPerGPU
+		prefillOverheadBase = hwConfig.PerLayerCPUOverhead * 5.0 * layersPerGPU
+		mixedPrefillOverheadBase = prefillOverheadBase / 2.0
+	}
+
 	// Batch-size-aware overhead
 	numDecode := float64(len(stepConfig.DecodeRequests))
 	numPrefill := float64(len(stepConfig.PrefillRequests))
 	totalRequests := numDecode + numPrefill
-	scaledOverheadMicros := hwConfig.TOverheadMicros
+	scaledOverheadMicros := decodeOverheadBase
 	if totalRequests > 2 {
 		baseScale := 0.15 * math.Log2(totalRequests/2.0)
 		decodeRatio := numDecode / totalRequests
@@ -325,9 +341,9 @@ func rooflineStepTimeV2(
 	// Prefill overhead
 	var prefillOverheadMicros float64
 	if numPrefill > 0 && numDecode == 0 {
-		prefillOverheadMicros = numPrefill * hwConfig.PrefillOverheadMicros
+		prefillOverheadMicros = numPrefill * prefillOverheadBase
 	} else if numPrefill > 0 {
-		prefillOverheadMicros = numPrefill * hwConfig.MixedPrefillOverheadMicros
+		prefillOverheadMicros = numPrefill * mixedPrefillOverheadBase
 	}
 
 	// Total time

@@ -298,6 +298,42 @@ func TestNewSimulator_RooflineZeroTP_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestValidateRooflineConfig_BwEfficiencyFactor_Validation(t *testing.T) {
+	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+
+	tests := []struct {
+		name    string
+		factor  float64
+		wantErr bool
+	}{
+		{"zero (disabled)", 0, false},
+		{"valid 0.80", 0.80, false},
+		{"valid 1.0", 1.0, false},
+		{"valid 0.01", 0.01, false},
+		{"negative", -0.5, true},
+		{"greater than 1", 1.5, true},
+		{"NaN", math.NaN(), true},
+		{"positive Inf", math.Inf(1), true},
+		{"negative Inf", math.Inf(-1), true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEfficiencyFactor: tt.factor}
+			err := ValidateRooflineConfig(mc, hc, true) // v2 mode
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for BwEfficiencyFactor=%v, got nil", tt.factor)
+			}
+			if tt.wantErr && err != nil && !strings.Contains(err.Error(), "BwEfficiencyFactor") {
+				t.Errorf("error should mention BwEfficiencyFactor, got: %v", err)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error for BwEfficiencyFactor=%v: %v", tt.factor, err)
+			}
+		})
+	}
+}
+
 func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 	// GIVEN a SimConfig with Roofline=false and NumHeads=0 (irrelevant)
 	cfg := SimConfig{
