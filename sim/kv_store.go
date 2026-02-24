@@ -1,7 +1,7 @@
 package sim
 
 // KVStore abstracts KV cache operations for the simulator.
-// KVCacheState (single-tier GPU) and TieredKVCache (GPU+CPU) both implement this.
+// kv.KVCacheState (single-tier GPU) and kv.TieredKVCache (GPU+CPU) both implement this.
 type KVStore interface {
 	AllocateKVBlocks(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool
 	GetCachedBlocks(tokens []int) []int64
@@ -20,6 +20,18 @@ type KVStore interface {
 // Set by sim/kv package's init() via registration. This breaks the import cycle between
 // sim/ (which defines KVStore) and sim/kv/ (which implements it).
 //
-// Production callers should use kv.NewKVCacheState() directly.
+// Production callers should import sim/kv and use its constructors directly
+// (see cluster.NewInstanceSimulator for the pattern).
 // Test code in package sim uses this to avoid importing sim/kv (which would create a cycle).
+// Test files in package sim_test use kv_import_test.go (blank import) to trigger registration.
 var NewKVCacheStateFunc func(totalBlocks, blockSizeTokens int64) KVStore
+
+// MustNewKVCacheState calls NewKVCacheStateFunc with a nil guard. Panics with an
+// actionable message if the factory has not been registered (missing sim/kv import).
+func MustNewKVCacheState(totalBlocks, blockSizeTokens int64) KVStore {
+	if NewKVCacheStateFunc == nil {
+		panic("NewKVCacheStateFunc not registered: import sim/kv to register it " +
+			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")")
+	}
+	return NewKVCacheStateFunc(totalBlocks, blockSizeTokens)
+}

@@ -48,20 +48,9 @@ func NewPrefixCacheIndex(blockSize int, lruCapacity int) *PrefixCacheIndex {
 // Each block hash incorporates the previous block's hash, creating prefix-semantic
 // hashes: two requests sharing the first K blocks produce identical hashes for those K blocks.
 // Tokens shorter than one block produce an empty slice.
+// Delegates to hash.ComputeBlockHashes for the shared implementation (BC-3).
 func (idx *PrefixCacheIndex) ComputeBlockHashes(tokens []int) []string {
-	numBlocks := len(tokens) / idx.blockSize
-	if numBlocks == 0 {
-		return nil
-	}
-	hashes := make([]string, numBlocks)
-	prevHash := ""
-	for i := 0; i < numBlocks; i++ {
-		start := i * idx.blockSize
-		end := start + idx.blockSize
-		hashes[i] = hash.HashBlock(prevHash, tokens[start:end])
-		prevHash = hashes[i]
-	}
-	return hashes
+	return hash.ComputeBlockHashes(idx.blockSize, tokens)
 }
 
 // MatchLength returns the number of consecutive blocks (from the start) that

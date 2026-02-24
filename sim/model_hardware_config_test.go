@@ -266,7 +266,7 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 	}
 
 	// WHEN NewSimulator is called
-	kvStore := NewKVCacheStateFunc(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)

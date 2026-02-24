@@ -10,7 +10,7 @@ import (
 func TestNewKVCacheState_ZeroTotalBlocks_Panics(t *testing.T) {
 	// BC-8: NewKVCacheState validates TotalKVBlocks > 0
 	assert.PanicsWithValue(t,
-		"KVStore: TotalKVBlocks must be > 0, got 0",
+		"NewKVCacheState: TotalKVBlocks must be > 0, got 0",
 		func() {
 			NewKVCacheState(0, 16)
 		})
@@ -19,7 +19,7 @@ func TestNewKVCacheState_ZeroTotalBlocks_Panics(t *testing.T) {
 func TestNewKVCacheState_ZeroBlockSize_Panics(t *testing.T) {
 	// BC-8: NewKVCacheState validates BlockSizeTokens > 0
 	assert.PanicsWithValue(t,
-		"KVStore: BlockSizeTokens must be > 0, got 0",
+		"NewKVCacheState: BlockSizeTokens must be > 0, got 0",
 		func() {
 			NewKVCacheState(100, 0)
 		})

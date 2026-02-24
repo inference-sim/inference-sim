@@ -1,4 +1,7 @@
-// sim/kv/cache.go
+// Package kv implements block-based KV cache management for the BLIS simulator.
+// It provides single-tier GPU (KVCacheState) and two-tier GPU+CPU (TieredKVCache)
+// implementations of the sim.KVStore interface. Both support prefix caching with
+// SHA256-based block hashing, LRU eviction, and transactional allocation with rollback.
 package kv
 
 import (
@@ -46,10 +49,10 @@ type KVCacheState struct {
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
 func NewKVCacheState(totalBlocks int64, blockSizeTokens int64) *KVCacheState {
 	if totalBlocks <= 0 {
-		panic(fmt.Sprintf("KVStore: TotalKVBlocks must be > 0, got %d", totalBlocks))
+		panic(fmt.Sprintf("NewKVCacheState: TotalKVBlocks must be > 0, got %d", totalBlocks))
 	}
 	if blockSizeTokens <= 0 {
-		panic(fmt.Sprintf("KVStore: BlockSizeTokens must be > 0, got %d", blockSizeTokens))
+		panic(fmt.Sprintf("NewKVCacheState: BlockSizeTokens must be > 0, got %d", blockSizeTokens))
 	}
 	kvc := &KVCacheState{
 		TotalBlocks:     totalBlocks,
