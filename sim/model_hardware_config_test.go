@@ -219,8 +219,8 @@ func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 		),
 	}
 
-	// WHEN NewSimulator is called
-	_, err := NewSimulator(cfg)
+	// WHEN NewLatencyModel is called (roofline validation happens here)
+	_, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 
 	// THEN it returns a non-nil error mentioning NumHeads
 	if err == nil {
@@ -244,8 +244,8 @@ func TestNewSimulator_RooflineZeroTP_ReturnsError(t *testing.T) {
 		),
 	}
 
-	// WHEN NewSimulator is called
-	_, err := NewSimulator(cfg)
+	// WHEN NewLatencyModel is called (roofline validation happens here)
+	_, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 
 	// THEN it returns a non-nil error mentioning TP
 	if err == nil {
@@ -266,7 +266,12 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 	}
 
 	// WHEN NewSimulator is called
-	sim, err := NewSimulator(cfg)
+	kvStore := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("NewLatencyModel: %v", err)
+	}
+	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 
 	// THEN it succeeds (roofline validation not applied)
 	if err != nil {

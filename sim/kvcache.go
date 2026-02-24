@@ -2,6 +2,8 @@
 package sim
 
 import (
+	"fmt"
+
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim/internal/hash"
@@ -42,6 +44,12 @@ type KVCacheState struct {
 
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
 func NewKVCacheState(totalBlocks int64, blockSizeTokens int64) *KVCacheState {
+	if totalBlocks <= 0 {
+		panic(fmt.Sprintf("KVStore: TotalKVBlocks must be > 0, got %d", totalBlocks))
+	}
+	if blockSizeTokens <= 0 {
+		panic(fmt.Sprintf("KVStore: BlockSizeTokens must be > 0, got %d", blockSizeTokens))
+	}
 	kvc := &KVCacheState{
 		TotalBlocks:     totalBlocks,
 		BlockSizeTokens: blockSizeTokens,

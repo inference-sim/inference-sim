@@ -148,21 +148,17 @@ type Simulator struct {
 	requestRate            float64 // arrival rate for workload generation (moved from Metrics — DES state/statistics separation, #243)
 }
 
-// NewSimulator creates a Simulator from a SimConfig struct.
+// NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
 // Workload mode is determined by the config fields:
 //   - TracesWorkloadFilePath != "" → load workload from CSV traces
 //   - GuideLLMConfig != nil → generate workload from distribution
 //   - Both zero-valued → no workload (caller injects via InjectArrival)
-func NewSimulator(cfg SimConfig) (*Simulator, error) {
-	if cfg.TotalKVBlocks <= 0 {
-		panic(fmt.Sprintf("KVCacheConfig.TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
+func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*Simulator, error) {
+	if kvStore == nil {
+		return nil, fmt.Errorf("NewSimulator: kvStore must not be nil")
 	}
-	if cfg.BlockSizeTokens <= 0 {
-		panic(fmt.Sprintf("KVCacheConfig.BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
-	}
-	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		return nil, fmt.Errorf("creating latency model: %w", err)
+	if latencyModel == nil {
+		return nil, fmt.Errorf("NewSimulator: latencyModel must not be nil")
 	}
 	batchFormation := NewBatchFormation(latencyModel)
 
@@ -171,7 +167,7 @@ func NewSimulator(cfg SimConfig) (*Simulator, error) {
 		Horizon:                   cfg.Horizon,
 		eventQueue:                make(EventQueue, 0),
 		WaitQ:                     &WaitQueue{},
-		KVCache:                   NewKVStore(cfg.KVCacheConfig),
+		KVCache:                   kvStore,
 		RunningBatch:              &Batch{},
 		Metrics:                   NewMetrics(),
 		maxRunningReqs:            cfg.MaxRunningReqs,

@@ -861,7 +861,7 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 			}
 
 			// Reference: sim.NewSimulator generates workload internally
-			refSim, err := sim.NewSimulator(sim.SimConfig{
+			refCfg := sim.SimConfig{
 				Horizon:             math.MaxInt64,
 				Seed:                tc.Seed,
 				KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
@@ -869,7 +869,13 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 				LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
 				WorkloadConfig:      sim.NewWorkloadConfig(guideLLMConfig, ""),
-			})
+			}
+			refKV := sim.NewKVCacheState(refCfg.TotalKVBlocks, refCfg.BlockSizeTokens)
+			refLM, err := sim.NewLatencyModel(refCfg.LatencyCoeffs, refCfg.ModelHardwareConfig)
+			if err != nil {
+				t.Fatalf("NewLatencyModel: %v", err)
+			}
+			refSim, err := sim.NewSimulator(refCfg, refKV, refLM)
 			if err != nil {
 				t.Fatalf("NewSimulator: %v", err)
 			}

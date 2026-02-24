@@ -6,39 +6,40 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewKVStore_ZeroTotalBlocks_Panics(t *testing.T) {
-	// BC-8: NewKVStore validates TotalKVBlocks > 0
+func TestNewKVCacheState_ZeroTotalBlocks_Panics(t *testing.T) {
+	// BC-8: NewKVCacheState validates TotalKVBlocks > 0
 	assert.PanicsWithValue(t,
 		"KVStore: TotalKVBlocks must be > 0, got 0",
 		func() {
-			NewKVStore(NewKVCacheConfig(0, 16, 0, 0, 0, 0))
+			NewKVCacheState(0, 16)
 		})
 }
 
-func TestNewKVStore_ZeroBlockSize_Panics(t *testing.T) {
-	// BC-8: NewKVStore validates BlockSizeTokens > 0
+func TestNewKVCacheState_ZeroBlockSize_Panics(t *testing.T) {
+	// BC-8: NewKVCacheState validates BlockSizeTokens > 0
 	assert.PanicsWithValue(t,
 		"KVStore: BlockSizeTokens must be > 0, got 0",
 		func() {
-			NewKVStore(NewKVCacheConfig(100, 0, 0, 0, 0, 0))
+			NewKVCacheState(100, 0)
 		})
 }
 
-func TestNewKVStore_NegativeTotalBlocks_Panics(t *testing.T) {
+func TestNewKVCacheState_NegativeTotalBlocks_Panics(t *testing.T) {
 	assert.Panics(t, func() {
-		NewKVStore(NewKVCacheConfig(-1, 16, 0, 0, 0, 0))
+		NewKVCacheState(-1, 16)
 	})
 }
 
-func TestNewKVStore_ValidConfig_SingleTier_Succeeds(t *testing.T) {
+func TestNewKVCacheState_ValidConfig_SingleTier_Succeeds(t *testing.T) {
 	// BC-8: Valid config produces a working KVStore
-	store := NewKVStore(NewKVCacheConfig(100, 16, 0, 0, 0, 0))
+	store := NewKVCacheState(100, 16)
 	assert.Equal(t, int64(100), store.TotalCapacity())
 	assert.Equal(t, int64(0), store.UsedBlocks())
 }
 
-func TestNewKVStore_ValidConfig_Tiered_Succeeds(t *testing.T) {
-	store := NewKVStore(NewKVCacheConfig(100, 16, 50, 0.8, 1.0, 10))
+func TestNewTieredKVCache_ValidConfig_Succeeds(t *testing.T) {
+	gpu := NewKVCacheState(100, 16)
+	store := NewTieredKVCache(gpu, 50, 0.8, 1.0, 10)
 	assert.Equal(t, int64(100), store.TotalCapacity())
 }
 

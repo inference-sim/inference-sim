@@ -20,7 +20,7 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
 	bf := NewBatchFormation(lm)
-	kvCache := NewKVStore(config.KVCacheConfig)
+	kvCache := NewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
 
 	// AND the running batch is empty
 	// AND a request that needs far more blocks than available, in the wait queue
@@ -78,7 +78,7 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 		t.Fatalf("NewLatencyModel: %v", err)
 	}
 	bf := NewBatchFormation(lm)
-	kvCache := NewKVStore(config.KVCacheConfig)
+	kvCache := NewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
 
 	// AND one small request in the running batch with KV blocks allocated
 	existing := &Request{
