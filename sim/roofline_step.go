@@ -130,15 +130,23 @@ func computeGEMMTime(m, k, n int, peakFlops float64, mfuDB *MFUDatabase) float64
 	return flops / (peakFlops * mfu)
 }
 
-// computeTransformerGEMMTimes calculates total time for all GEMM projections in transformer
-// Includes: QKV projections, O projection, MLP Gate/Up/Down projections
-// tpScaling should be 1/tp to account for TP parallelization
+// computeTransformerGEMMTimes calculates total time for all GEMM projections in transformer.
+// Includes: QKV projections, O projection, MLP Gate/Up/Down projections.
+//
+// TP is handled by dimension-splitting: each GPU executes GEMMs with TP-adjusted
+// output dimensions (nHeads/tp, dFF/tp), matching the actual kernel shapes. This
+// ensures the MFU database returns values for the real GEMM executed on each GPU,
+// rather than looking up MFU for the full (larger) shape and scaling by 1/tp.
+//
+// fuseQKV controls whether Q/K/V are looked up as separate GEMMs (false) or as a
+// single fused QKV GEMM (true), matching vLLM's qkv_proj execution pattern.
 func computeTransformerGEMMTimes(
 	modelConfig ModelConfig,
 	batchSize int,
 	peakFlops float64,
 	mfuDB *MFUDatabase,
-	tpScaling float64,
+	tp int,
+	fuseQKV bool,
 ) float64 {
 	dModel := modelConfig.HiddenDim
 	nLayers := modelConfig.NumLayers
@@ -149,48 +157,67 @@ func computeTransformerGEMMTimes(
 	}
 
 	headDim := dModel / nHeads
-	dKV := nKVHeads * headDim
 
-	// MLP dimensions (SwiGLU)
+	// TP-adjusted dimensions: each GPU handles a shard of the heads/FFN
+	nHeadsPerGPU := nHeads / tp
+	nKVHeadsPerGPU := nKVHeads / tp
+	if nKVHeadsPerGPU == 0 {
+		nKVHeadsPerGPU = 1 // At least 1 KV head per GPU
+	}
+	dKVPerGPU := nKVHeadsPerGPU * headDim
+
+	// MLP dimensions (SwiGLU), TP-adjusted
 	dFF := 4 * dModel
 	if modelConfig.IntermediateDim > 0 {
 		dFF = modelConfig.IntermediateDim
 	}
+	dFFPerGPU := dFF / tp
 
 	totalTime := 0.0
 
 	for layer := 0; layer < nLayers; layer++ {
-		// === Attention GEMMs ===
+		// === Attention GEMMs (TP-adjusted output dimensions) ===
 
-		// Q projection: [batch_size, dModel] @ [dModel, dModel] = [batch_size, dModel]
-		qTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, mfuDB)
-		totalTime += qTime * tpScaling
+		if fuseQKV {
+			// Fused QKV projection per GPU:
+			// [batch_size, dModel] @ [dModel, (nHeadsPerGPU + 2*nKVHeadsPerGPU)*headDim]
+			dQKVPerGPU := (nHeadsPerGPU + 2*nKVHeadsPerGPU) * headDim
+			qkvTime := computeGEMMTime(batchSize, dModel, dQKVPerGPU, peakFlops, mfuDB)
+			totalTime += qkvTime
+		} else {
+			// Split Q/K/V projections per GPU:
+			// Q: [batch_size, dModel] @ [dModel, nHeadsPerGPU*headDim]
+			dQPerGPU := nHeadsPerGPU * headDim
+			qTime := computeGEMMTime(batchSize, dModel, dQPerGPU, peakFlops, mfuDB)
+			totalTime += qTime
 
-		// K projection: [batch_size, dModel] @ [dModel, dKV] = [batch_size, dKV]
-		kTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, mfuDB)
-		totalTime += kTime * tpScaling
+			// K: [batch_size, dModel] @ [dModel, dKVPerGPU]
+			kTime := computeGEMMTime(batchSize, dModel, dKVPerGPU, peakFlops, mfuDB)
+			totalTime += kTime
 
-		// V projection: [batch_size, dModel] @ [dModel, dKV] = [batch_size, dKV]
-		vTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, mfuDB)
-		totalTime += vTime * tpScaling
+			// V: [batch_size, dModel] @ [dModel, dKVPerGPU]
+			vTime := computeGEMMTime(batchSize, dModel, dKVPerGPU, peakFlops, mfuDB)
+			totalTime += vTime
+		}
 
-		// O projection: [batch_size, dModel] @ [dModel, dModel] = [batch_size, dModel]
-		oTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, mfuDB)
-		totalTime += oTime * tpScaling
+		// O projection per GPU: [batch_size, nHeadsPerGPU*headDim] @ [nHeadsPerGPU*headDim, dModel]
+		dOIn := nHeadsPerGPU * headDim
+		oTime := computeGEMMTime(batchSize, dOIn, dModel, peakFlops, mfuDB)
+		totalTime += oTime
 
-		// === MLP GEMMs (SwiGLU) ===
+		// === MLP GEMMs (SwiGLU, TP-adjusted) ===
 
-		// Gate projection: [batch_size, dModel] @ [dModel, dFF] = [batch_size, dFF]
-		gateTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, mfuDB)
-		totalTime += gateTime * tpScaling
+		// Gate projection per GPU: [batch_size, dModel] @ [dModel, dFFPerGPU]
+		gateTime := computeGEMMTime(batchSize, dModel, dFFPerGPU, peakFlops, mfuDB)
+		totalTime += gateTime
 
-		// Up projection: [batch_size, dModel] @ [dModel, dFF] = [batch_size, dFF]
-		upTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, mfuDB)
-		totalTime += upTime * tpScaling
+		// Up projection per GPU: [batch_size, dModel] @ [dModel, dFFPerGPU]
+		upTime := computeGEMMTime(batchSize, dModel, dFFPerGPU, peakFlops, mfuDB)
+		totalTime += upTime
 
-		// Down projection: [batch_size, dFF] @ [dFF, dModel] = [batch_size, dModel]
-		downTime := computeGEMMTime(batchSize, dFF, dModel, peakFlops, mfuDB)
-		totalTime += downTime * tpScaling
+		// Down projection per GPU: [batch_size, dFFPerGPU] @ [dFFPerGPU, dModel]
+		downTime := computeGEMMTime(batchSize, dFFPerGPU, dModel, peakFlops, mfuDB)
+		totalTime += downTime
 	}
 
 	return totalTime
@@ -198,8 +225,15 @@ func computeTransformerGEMMTimes(
 
 // --- Attention Core FLOPs Calculation ---
 
-// calculateAttentionCoreFLOPs computes FLOPs for attention core operations
-// Includes: QK^T matmul, softmax, attention-value matmul
+// calculateAttentionCoreFLOPs computes FLOPs for attention core operations.
+// Includes: QK^T matmul + attention-value matmul (excludes softmax).
+//
+// Softmax is excluded because the MFU benchmark data (bench_data/) computes
+// MFU as: mfu = attn_core_gflops / (peak_tflops * measured_time), where
+// attn_core_gflops only counts QK^T + AV matmuls (see InferSim's
+// flops/flops.py:get_mha_gflops and kernel_benchmark/flashinfer_mha_decode.py).
+// Including softmax FLOPs in the numerator while using MFU values computed
+// without softmax would systematically overestimate attention compute time.
 func calculateAttentionCoreFLOPs(
 	nHeads int,
 	nKVHeads int,
@@ -217,13 +251,10 @@ func calculateAttentionCoreFLOPs(
 	// QK^T matmul: 2 * nHeads * batchSize * effectiveCtx * headDim
 	qkMatMul := 2.0 * float64(nHeads) * float64(batchSize) * effectiveCtx * float64(headDim)
 
-	// Softmax: 4 ops per element (exp, sum, div, etc.)
-	softmaxOps := 4.0 * float64(nHeads) * float64(batchSize) * effectiveCtx
-
 	// Attention-Value matmul: 2 * nHeads * batchSize * effectiveCtx * headDim
 	avMatMul := 2.0 * float64(nHeads) * float64(batchSize) * effectiveCtx * float64(headDim)
 
-	return qkMatMul + softmaxOps + avMatMul
+	return qkMatMul + avMatMul
 }
 
 // --- Main Roofline Function ---
@@ -272,38 +303,90 @@ func rooflineStepTime(
 			totalBatchSize,
 			peakFlops,
 			mfuDB,
-			tpScaling,
+			tp,
+			hwConfig.FuseQKV,
 		)
 
 		// === Attention Core ===
-		// Calculate total attention core FLOPs across all layers
-		attnCoreFLOPs := calculateAttentionCoreFLOPs(
-			modelConfig.NumHeads,
-			modelConfig.NumKVHeads,
-			modelConfig.HiddenDim,
-			totalBatchSize,
-			maxKVLen,
-		) * float64(modelConfig.NumLayers)
+		if hwConfig.PerComponentRoofline {
+			// Per-component roofline: apply max(attn_compute, kv_memory) per layer,
+			// then sum across layers. This captures bottleneck transitions where
+			// attention is compute-bound at some KV lengths but memory-bound at others.
+			// The aggregate approach does max(totalCompute, totalMemory) once, which
+			// masks these per-layer crossovers.
+			nKVHeads := modelConfig.NumKVHeads
+			if nKVHeads == 0 {
+				nKVHeads = modelConfig.NumHeads
+			}
+			headDim := modelConfig.HiddenDim / modelConfig.NumHeads
 
-		// Lookup decode MFU
-		attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
+			// Attention core FLOPs for ONE layer (all decode requests)
+			attnCoreFLOPs1Layer := calculateAttentionCoreFLOPs(
+				modelConfig.NumHeads,
+				modelConfig.NumKVHeads,
+				modelConfig.HiddenDim,
+				totalBatchSize,
+				maxKVLen,
+			)
+			attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
+			attnComputePerLayerS := attnCoreFLOPs1Layer / (peakFlops * attnMFU) * tpScaling
 
-		// Formula: time = flops / (peakFlops * mfu)
-		attnCoreTimeS := attnCoreFLOPs / (peakFlops * attnMFU) * tpScaling
+			// Per-layer KV cache read bytes (decode: scattered access, 0.80 factor)
+			// Sum across all decode requests for per-layer KV bytes
+			var kvReadBytesPerLayer float64
+			for _, req := range stepConfig.DecodeRequests {
+				kvReadBytesPerLayer += 2 * float64(nKVHeads) * float64(headDim) *
+					modelConfig.BytesPerParam * float64(req.ProgressIndex) * 0.80
+			}
+			kvMemoryPerLayerS := kvReadBytesPerLayer * tpScaling / peakBW
 
-		decodeComputeS = gemmTimeS + attnCoreTimeS
+			// Per-layer roofline: max(attn_compute, kv_memory) per layer, summed
+			nLayers := float64(modelConfig.NumLayers)
+			perLayerTimeS := math.Max(attnComputePerLayerS, kvMemoryPerLayerS)
+			totalAttnTimeS := perLayerTimeS * nLayers
 
-		// === Memory Bandwidth ===
-		var dDynamicBytes float64
-		for _, req := range stepConfig.DecodeRequests {
-			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
-			dDynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
+			decodeComputeS = gemmTimeS + totalAttnTimeS
+		} else {
+			// Aggregate roofline (default): compute attention time across all layers
+			// as a single monolithic term.
+			attnCoreFLOPs := calculateAttentionCoreFLOPs(
+				modelConfig.NumHeads,
+				modelConfig.NumKVHeads,
+				modelConfig.HiddenDim,
+				totalBatchSize,
+				maxKVLen,
+			) * float64(modelConfig.NumLayers)
+
+			attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
+			attnCoreTimeS := attnCoreFLOPs / (peakFlops * attnMFU) * tpScaling
+
+			decodeComputeS = gemmTimeS + attnCoreTimeS
 		}
 
-		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-		dWeightBytes := baseMem["model_weights"] * tpScaling
+		// === Memory Bandwidth ===
+		if hwConfig.PerComponentRoofline {
+			// Per-component mode: memory path = weight loading only.
+			// KV cache access is already accounted for in the per-layer
+			// max(attn_compute, kv_memory) above, so including it here
+			// would double-count. This makes the per-component model less
+			// conservative than aggregate when KV access dominates.
+			baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+			dWeightBytes := baseMem["model_weights"] * tpScaling
+			decodeMemoryS = dWeightBytes / peakBW
+		} else {
+			// Aggregate mode: memory path = weights + all dynamic bytes
+			// (KV access, KV growth, activations).
+			var dDynamicBytes float64
+			for _, req := range stepConfig.DecodeRequests {
+				m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
+				dDynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
+			}
 
-		decodeMemoryS = (dWeightBytes + dDynamicBytes) / peakBW
+			baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+			dWeightBytes := baseMem["model_weights"] * tpScaling
+
+			decodeMemoryS = (dWeightBytes + dDynamicBytes) / peakBW
+		}
 	}
 
 	// ========================================
@@ -331,8 +414,16 @@ func rooflineStepTime(
 			bucketMap[bucket] = append(bucketMap[bucket], req)
 		}
 
+		// Sort bucket keys for deterministic iteration (R2)
+		bucketKeys := make([]int, 0, len(bucketMap))
+		for k := range bucketMap {
+			bucketKeys = append(bucketKeys, k)
+		}
+		sort.Ints(bucketKeys)
+
 		// Process each bucket independently
-		for bucketSeqLen, requests := range bucketMap {
+		for _, bucketSeqLen := range bucketKeys {
+			requests := bucketMap[bucketSeqLen]
 			batchSize := len(requests)
 
 			// === GEMM Projections ===
@@ -342,41 +433,81 @@ func rooflineStepTime(
 				batchSize,
 				peakFlops,
 				mfuDB,
-				tpScaling,
+				tp,
+				hwConfig.FuseQKV,
 			)
 
-			// === Attention Core ===
-			// Calculate attention core FLOPs for this bucket
-			attnCoreFLOPs := calculateAttentionCoreFLOPs(
-				modelConfig.NumHeads,
-				modelConfig.NumKVHeads,
-				modelConfig.HiddenDim,
-				batchSize,
-				int64(bucketSeqLen),
-			) * float64(modelConfig.NumLayers)
+			if hwConfig.PerComponentRoofline {
+				// Per-component roofline for prefill: per-layer attention roofline
+				nKVHeads := modelConfig.NumKVHeads
+				if nKVHeads == 0 {
+					nKVHeads = modelConfig.NumHeads
+				}
+				headDim := modelConfig.HiddenDim / modelConfig.NumHeads
 
-			// Lookup prefill MFU
-			attnMFU := mfuDB.GetAttnPrefillMFU(bucketSeqLen)
+				// Attention core FLOPs for ONE layer (this bucket)
+				attnCoreFLOPs1Layer := calculateAttentionCoreFLOPs(
+					modelConfig.NumHeads,
+					modelConfig.NumKVHeads,
+					modelConfig.HiddenDim,
+					batchSize,
+					int64(bucketSeqLen),
+				)
+				attnMFU := mfuDB.GetAttnPrefillMFU(bucketSeqLen)
+				attnComputePerLayerS := attnCoreFLOPs1Layer / 1.8 / (peakFlops * attnMFU) * tpScaling
 
-			// Formula: time = flops / 1.8 / (peakFlops * mfu)
-			// Note: /1.8 factor from InferSim (hardware-specific adjustment)
-			attnCoreTimeS := attnCoreFLOPs / 1.8 / (peakFlops * attnMFU) * tpScaling
+				// Per-layer KV cache read bytes (prefill: sequential access, 0.92 factor)
+				kvReadBytesPerLayer := 2 * float64(nKVHeads) * float64(headDim) *
+					modelConfig.BytesPerParam * float64(bucketSeqLen) * float64(batchSize) * 0.92
+				kvMemoryPerLayerS := kvReadBytesPerLayer * tpScaling / peakBW
 
-			prefillComputeS += gemmTimeS + attnCoreTimeS
+				// Per-layer roofline: max(attn_compute, kv_memory) per layer, summed
+				nLayers := float64(modelConfig.NumLayers)
+				perLayerTimeS := math.Max(attnComputePerLayerS, kvMemoryPerLayerS)
+				totalAttnTimeS := perLayerTimeS * nLayers
+
+				prefillComputeS += gemmTimeS + totalAttnTimeS
+
+			} else {
+				// Aggregate roofline (default)
+
+				// === Attention Core ===
+				attnCoreFLOPs := calculateAttentionCoreFLOPs(
+					modelConfig.NumHeads,
+					modelConfig.NumKVHeads,
+					modelConfig.HiddenDim,
+					batchSize,
+					int64(bucketSeqLen),
+				) * float64(modelConfig.NumLayers)
+
+				attnMFU := mfuDB.GetAttnPrefillMFU(bucketSeqLen)
+				attnCoreTimeS := attnCoreFLOPs / 1.8 / (peakFlops * attnMFU) * tpScaling
+
+				prefillComputeS += gemmTimeS + attnCoreTimeS
+			}
 		}
 
 		// === Memory Bandwidth ===
-		var pDynamicBytes float64
-		for _, req := range stepConfig.PrefillRequests {
-			numTokens := int64(req.NumNewPrefillTokens)
-			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
-			pDynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
+		if hwConfig.PerComponentRoofline {
+			// Per-component mode: memory path = weight loading only.
+			// KV cache access handled per-layer above (same reasoning as decode).
+			baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+			pWeightBytes := baseMem["model_weights"] * tpScaling
+			prefillMemoryS = pWeightBytes / peakBW
+		} else {
+			// Aggregate mode: memory path = weights + all dynamic bytes.
+			var pDynamicBytes float64
+			for _, req := range stepConfig.PrefillRequests {
+				numTokens := int64(req.NumNewPrefillTokens)
+				m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
+				pDynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
+			}
+
+			baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+			pWeightBytes := baseMem["model_weights"] * tpScaling
+
+			prefillMemoryS = (pWeightBytes + pDynamicBytes) / peakBW
 		}
-
-		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-		pWeightBytes := baseMem["model_weights"] * tpScaling
-
-		prefillMemoryS = (pWeightBytes + pDynamicBytes) / peakBW
 	}
 
 	// ========================================
@@ -393,15 +524,15 @@ func rooflineStepTime(
 			// (3) Single model weight load (not once per phase)
 			totalBatchSize := len(stepConfig.PrefillRequests) + len(stepConfig.DecodeRequests)
 			fusedGEMMTime := computeTransformerGEMMTimes(
-				modelConfig, totalBatchSize, peakFlops, mfuDB, tpScaling,
+				modelConfig, totalBatchSize, peakFlops, mfuDB, tp, hwConfig.FuseQKV,
 			)
 
 			// Attention times are already computed separately above
 			prefillAttnTime := prefillComputeS - computeTransformerGEMMTimes(
-				modelConfig, len(stepConfig.PrefillRequests), peakFlops, mfuDB, tpScaling,
+				modelConfig, len(stepConfig.PrefillRequests), peakFlops, mfuDB, tp, hwConfig.FuseQKV,
 			)
 			decodeAttnTime := decodeComputeS - computeTransformerGEMMTimes(
-				modelConfig, len(stepConfig.DecodeRequests), peakFlops, mfuDB, tpScaling,
+				modelConfig, len(stepConfig.DecodeRequests), peakFlops, mfuDB, tp, hwConfig.FuseQKV,
 			)
 			if prefillAttnTime < 0 {
 				prefillAttnTime = 0
