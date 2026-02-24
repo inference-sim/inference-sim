@@ -18,7 +18,12 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 
 ## Note on File Path References
 
-FINDINGS.md files in individual hypothesis directories may reference `sim/latency_model.go` and `sim/roofline_step.go`. These files were moved to `sim/latency/latency.go` and `sim/latency/roofline.go` respectively in PKG-2 (#406). The file paths in FINDINGS.md reflect the codebase state at the time each experiment was conducted.
+FINDINGS.md files in individual hypothesis directories may reference old file paths. These files were moved during package extraction and the FINDINGS.md paths reflect the codebase state at the time each experiment was conducted:
+
+- `sim/kvcache.go` → `sim/kv/cache.go` (PKG-1, #421)
+- `sim/kvcache_tiered.go` → `sim/kv/tiered.go` (PKG-1, #421)
+- `sim/latency_model.go` → `sim/latency/latency.go` (PKG-2, #424)
+- `sim/roofline_step.go` → `sim/latency/roofline.go` (PKG-2, #424)
 
 ## Validated Hypotheses
 
