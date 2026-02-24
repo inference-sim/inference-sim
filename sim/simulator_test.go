@@ -15,7 +15,7 @@ import (
 // mustNewSimulator is a test helper that calls NewSimulator and fails the test on error.
 func mustNewSimulator(t *testing.T, cfg SimConfig) *Simulator {
 	t.Helper()
-	kvStore := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	kvStore := NewKVCacheStateFunc(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
@@ -863,7 +863,7 @@ func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
-	kvStore := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	kvStore := NewKVCacheStateFunc(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
@@ -916,7 +916,7 @@ func TestEnqueueRequest_NormalInput_Enqueued(t *testing.T) {
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
-	kvStore := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	kvStore := NewKVCacheStateFunc(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
@@ -963,7 +963,7 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
 	}
-	kvStore := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	kvStore := NewKVCacheStateFunc(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
@@ -1029,7 +1029,7 @@ func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
-	kvStore := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	kvStore := NewKVCacheStateFunc(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)

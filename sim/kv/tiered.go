@@ -1,9 +1,11 @@
-package sim
+package kv
 
 import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // offloadedBlock represents a KV block offloaded from GPU to CPU tier.
@@ -59,7 +61,7 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 	}
 }
 
-func (t *TieredKVCache) AllocateKVBlocks(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
 	ok := t.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
 	if ok {
 		return true
@@ -146,7 +148,7 @@ func (t *TieredKVCache) GetCachedBlocks(tokens []int) []int64 {
 	return t.gpu.GetCachedBlocks(tokens)
 }
 
-func (t *TieredKVCache) ReleaseKVBlocks(req *Request) {
+func (t *TieredKVCache) ReleaseKVBlocks(req *sim.Request) {
 	t.gpu.ReleaseKVBlocks(req)
 	t.maybeOffload()
 }

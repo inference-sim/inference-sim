@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kv"
 )
 
 // InstanceID uniquely identifies a simulator instance within a cluster.
@@ -30,10 +31,10 @@ type InstanceSimulator struct {
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// Create KV store (single-tier or tiered based on config)
-	gpu := sim.NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	gpu := kv.NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	var kvStore sim.KVStore = gpu
 	if cfg.KVCPUBlocks > 0 {
-		kvStore = sim.NewTieredKVCache(gpu, cfg.KVCPUBlocks, cfg.KVOffloadThreshold, cfg.KVTransferBandwidth, cfg.KVTransferBaseLatency)
+		kvStore = kv.NewTieredKVCache(gpu, cfg.KVCPUBlocks, cfg.KVOffloadThreshold, cfg.KVTransferBandwidth, cfg.KVTransferBaseLatency)
 	}
 	latencyModel, err := sim.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {

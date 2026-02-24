@@ -1,11 +1,12 @@
-// sim/kvcache.go
-package sim
+// sim/kv/cache.go
+package kv
 
 import (
 	"fmt"
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/hash"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
@@ -139,7 +140,7 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
 // If the latest block is full, a new one is allocated. Otherwise push to latest allocated block.
 // start and endIndex are by original requests' index
 // endIndex is non-inclusive
-func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endIndex int64, cachedBlocks []int64) bool {
+func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, endIndex int64, cachedBlocks []int64) bool {
 	reqID := req.ID
 	logrus.Debugf("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d", req.ID, len(req.InputTokens), startIndex, endIndex)
 
@@ -341,7 +342,7 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 
 // ReleaseKVBlocks deallocates blocks used by a completed request.
 // Each block's refcount is decremented and may be returned to the free list.
-func (kvc *KVCacheState) ReleaseKVBlocks(req *Request) {
+func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 	ids := kvc.RequestMap[req.ID]
 	delete(kvc.RequestMap, req.ID)
 	// From https://docs.vllm.ai/en/v0.8.5/design/v1/prefix_caching.html

@@ -15,3 +15,11 @@ type KVStore interface {
 	KVThrashingRate() float64
 	SetClock(clock int64) // Synchronize clock for time-dependent operations. No-op for single-tier.
 }
+
+// NewKVCacheStateFunc is a factory function for creating single-tier KVStore implementations.
+// Set by sim/kv package's init() via registration. This breaks the import cycle between
+// sim/ (which defines KVStore) and sim/kv/ (which implements it).
+//
+// Production callers should use kv.NewKVCacheState() directly.
+// Test code in package sim uses this to avoid importing sim/kv (which would create a cycle).
+var NewKVCacheStateFunc func(totalBlocks, blockSizeTokens int64) KVStore
