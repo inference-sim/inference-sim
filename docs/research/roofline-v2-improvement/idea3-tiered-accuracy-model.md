@@ -14,7 +14,7 @@ Tier 0 requires zero fitted parameters — it corrects seven structural mismatch
 
 **Constraint**: No server-side traces or vLLM instrumentation. All corrections derive from client-side metrics, analytical modeling, or offline benchmarks.
 
-The seven error patterns addressed by Tier 0 are detailed in [Section 1](#1-seven-hypotheses-observable-error-patterns). Recommended execution order: H1 and H2 first (largest expected impact), then H3 and H5, then H4 and H6, then H7 (MoE — requires config parsing extension).
+The error patterns addressed by Tier 0 are detailed in [Section 1](#1-seven-hypotheses-observable-error-patterns). Recommended execution order: H1, H2, and H2b first (largest expected impact), then H3 and H5, then H4 and H6, then H7 (MoE — requires config parsing extension).
 
 ---
 
@@ -71,6 +71,50 @@ The model captures GPU kernel execution time but misses the CPU-side overhead of
 - BLIS overhead: `TOverheadMicros: 50.0` — [`hardware_config.json:6`](hardware_config.json#L6)
 - InferSim decode overhead: `tpot += 5` (5ms) — [`models/model.py:229`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L229)
 - InferSim prefill overhead: `ttft += 30` (30ms) — [`models/model.py:177`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L177)
+
+</details>
+
+### H2b: Per-step scheduling overhead scales with model architecture, not a fixed constant
+
+> Across different model sizes, the per-step scheduling residual (measured − predicted) should correlate with `num_hidden_layers / tp` — because the dominant CPU-side scheduler work per step is block-table management and per-layer tensor dispatch, both O(num_layers). A model-scaled overhead should produce uniform accuracy improvement across model sizes, unlike the fixed overhead (H2) which overshoots small models and undershoots large ones.
+
+**How to test**: Run BLIS against all 14 ground truth experiments with three configurations: (a) H1-only baseline (no overhead), (b) fixed InferSim overhead (H2: 5ms decode), and (c) model-scaled overhead where `decode_overhead_us = base_per_layer_us × num_hidden_layers / tp`. The `base_per_layer_us` constant is derived analytically from vLLM's scheduler code path — each layer requires block-table pointer updates and KV cache bookkeeping, estimated at 50–150μs per layer on a single GPU. Use 100μs as the initial value. Similarly, `prefill_overhead_us = prefill_base_per_layer_us × num_hidden_layers / tp` with a larger base (~500μs/layer) reflecting chunked-prefill planning overhead. All parameters come from `config.json` — no fitting to ground truth.
+
+**Data constraint**: Same as H2 — cannot observe per-step overhead from client data. The test validates whether model-scaled overhead improves aggregate prediction accuracy more uniformly than fixed overhead.
+
+**Accept criterion**: (1) Model-scaled overhead improves TPOT MAPE by ≥3pp vs H1-only baseline across all 13 experiments. (2) No single experiment worsens by >5pp vs H1-only. (3) Model-scaled overhead produces lower aggregate TPOT MAPE than fixed-5ms overhead (H2).
+
+<details>
+<summary><b>Mechanism and evidence</b></summary>
+
+The vLLM scheduler's per-step CPU work includes operations that scale with model architecture:
+
+1. **Block table management**: O(num_layers × batch_size) — each layer maintains separate KV cache block pointers per sequence. With TP, each GPU manages all `num_layers` block tables but with `num_kv_heads / tp` heads per table.
+2. **Per-layer tensor dispatch**: O(num_layers) — the runtime prepares per-layer input metadata (cache positions, slot mappings, block tables) for each step.
+3. **CUDA graph selection**: O(1) per step — but graph pools are larger for bigger models, marginally increasing lookup time.
+4. **Output logit processing**: O(vocab_size) — sampling from the logit distribution. Small relative to block management but non-negligible for large-vocabulary models (Qwen: 152K vs. Llama: 32K).
+
+Proposed decode formula: `decode_overhead_us = base_per_layer_us × num_hidden_layers / tp`
+
+Reference values (base_per_layer_us = 100):
+
+| Model | Layers | TP | Predicted overhead |
+|-------|--------|----|--------------------|
+| Llama2-7B | 32 | 1 | 3.2ms |
+| Llama2-7B | 32 | 2 | 1.6ms |
+| Llama2-7B | 32 | 4 | 0.8ms |
+| Qwen3-14B | 40 | 1 | 4.0ms |
+| Qwen3-14B | 40 | 2 | 2.0ms |
+| CodeLlama-34B | 48 | 2 | 2.4ms |
+| Llama2-70B | 80 | 4 | 2.0ms |
+
+This naturally avoids the H2 failure mode: 7B at TP=4 gets 0.8ms instead of 5ms (6× reduction), while 70B at TP=4 gets 2ms — closer to the observed residual scale.
+
+Prefill formula: `prefill_overhead_us = prefill_base_per_layer_us × num_hidden_layers / tp` with prefill_base ~500μs/layer (reflecting heavier prefill scheduling: chunked-prefill planning, prompt prefix matching, initial block allocation for all layers).
+
+- BLIS overhead application point: [`sim/roofline_step_v2.go:317-337`](sim/roofline_step_v2.go#L317) — `TOverheadMicros` applied per step, scaled by log(batch_size)
+- InferSim flat overhead: [`models/model.py:229`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L229) (5ms decode), [`models/model.py:177`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L177) (30ms prefill)
+- vLLM block table: each sequence maintains `num_layers` block table entries — [`vllm/core/block_manager.py`](https://github.com/vllm-project/vllm)
 
 </details>
 
@@ -285,13 +329,14 @@ Corrections derived entirely from hardware physics, execution semantics, or stan
 |------------|------------------------------|------------------|------------------------------|
 | H1 | Underestimates memory-bound step latency | TPOT MAPE ≥3pp better across 14 experiments; chatsweep (decode-heavy) > codesweep (prefill-heavy) | Aggregate only — cannot isolate memory-bound steps |
 | H2 | Missing per-step scheduling overhead | TPOT MAPE ≥3pp better on held-out experiments; TTFT not >1pp worse | Aggregate only — cannot observe per-step residuals |
+| H2b | Scheduling overhead scales with model architecture | TPOT MAPE ≥3pp better vs H1-only; outperforms fixed H2 overhead; no experiment >5pp worse | Aggregate only — compare fixed vs. scaled overhead |
 | H3 | MFU lookups use wrong GEMM shapes | E2E MAPE ≥2pp better on GQA models; GQA improvement > non-GQA | Strong — have both GQA and non-GQA models |
 | H4 | Aggregate roofline masks bottleneck transitions | Synthetic: ≥10% diff at crossover; Aggregate: E2E MAPE ≥1pp better | Mechanism via synthetic test; accuracy via aggregate |
 | H5 | Weighted-average mixed-batch model | Synthetic: ≥15% diff at 50/50; Aggregate: E2E MAPE ≥2pp better at high QPS | Weakest — no batch composition visibility; QPS as proxy |
 | H6 | MFU grid-boundary discontinuities | ≥80% fewer discontinuities; per-request variance decreases | Full — simulator-internal + aggregate |
 | H7 | No MoE-aware latency model | Part A: within 20% of InferSim predictions; Part B: E2E MAPE < 20% on MoE models | Part A via cross-simulator check; Part B blocked on MoE ground truth |
 
-**Overfitting risk**: None for H1, H3, H4, H5, H7a/c/d (zero fitted parameters — architecture-derived). H2 sweep requires held-out validation (train on 10, hold out 4). H6 is a standard numerical technique. H7b Option A uses a conservative discount factor; Option B uses benchmarked data.
+**Overfitting risk**: None for H1, H2b, H3, H4, H5, H7a/c/d (zero fitted parameters — architecture-derived). H2 sweep requires held-out validation (train on 10, hold out 4). H6 is a standard numerical technique. H7b Option A uses a conservative discount factor; Option B uses benchmarked data.
 
 ### Tier 1: One-Trace Calibration
 
@@ -329,7 +374,7 @@ InferSim's core insight: *"The accuracy of the MFU directly determines the accur
 
 ### 3.3 Compute vs. Scheduling
 
-A vLLM step consists of two sequential phases: GPU compute (GEMMs + attention) and CPU scheduling (Python-level batch formation, block allocation, detokenization). These are fundamentally different phenomena with different scaling. H2 addresses the missing scheduling component as a fixed additive correction. If the residual after H1 is roughly constant across configurations, a single overhead value suffices (Tier 0). If it varies with model size or batch size, a per-model fit is needed (Tier 1).
+A vLLM step consists of two sequential phases: GPU compute (GEMMs + attention) and CPU scheduling (Python-level batch formation, block allocation, detokenization). These are fundamentally different phenomena with different scaling. H2 addresses the missing scheduling component as a fixed additive correction. H2b refines this by observing that the dominant scheduler operations — block-table management and per-layer tensor dispatch — scale with `num_hidden_layers / tp`, making the overhead architecture-dependent rather than constant. Both remain Tier 0 (zero fitted parameters): H2 uses a single analytically-estimated constant, H2b derives the overhead from `config.json` architecture parameters.
 
 ### 3.4 MoE Sparsity and Grouped Execution
 
@@ -385,7 +430,7 @@ Tier 0: Fully deterministic. Tier 1: Deterministic given same trace + seed (INV-
 
 ## 5. Limitations and Open Questions
 
-1. **Client-side data confounds mechanism isolation**: All 14 ground truth experiments provide per-request TTFT, TPOT, and E2E from `guidellm-results.json` (client perspective). We have no per-step, per-batch, or per-component server-side data. This means we can measure whether a correction improves aggregate prediction accuracy, but we cannot scientifically distinguish whether the improvement comes from the hypothesized mechanism or from compensating for a different error. H1-H2-H4 are especially confounded — all three reduce underestimation of decode latency, so their individual contributions cannot be separated from client data alone. **Mitigation**: Apply corrections incrementally and measure marginal MAPE change. Use synthetic simulator-internal tests (H4 Part A, H5 Part A, H6 Part A) to validate mechanisms independently of ground truth.
+1. **Client-side data confounds mechanism isolation**: All 14 ground truth experiments provide per-request TTFT, TPOT, and E2E from `guidellm-results.json` (client perspective). We have no per-step, per-batch, or per-component server-side data. This means we can measure whether a correction improves aggregate prediction accuracy, but we cannot scientifically distinguish whether the improvement comes from the hypothesized mechanism or from compensating for a different error. H1-H2/H2b-H4 are especially confounded — all three reduce underestimation of decode latency, so their individual contributions cannot be separated from client data alone. **Mitigation**: Apply corrections incrementally and measure marginal MAPE change. Use synthetic simulator-internal tests (H4 Part A, H5 Part A, H6 Part A) to validate mechanisms independently of ground truth.
 
 2. **MFU database coverage**: Accuracy is bounded by MFU data quality. Missing entries near target shapes degrade both nearest-neighbor and interpolation.
 
@@ -393,7 +438,7 @@ Tier 0: Fully deterministic. Tier 1: Deterministic given same trace + seed (INV-
 
 4. **Mixed-batch validation**: H5 is a novel contribution (InferSim doesn't model mixed batches). The behavioral claim derives from vLLM's execution model but requires empirical validation. H5 has the weakest testability — we have no batch composition visibility, and the QPS-as-proxy approach conflates mixed batching with queuing/contention effects.
 
-5. **Overhead functional form**: H2 assumes scheduling overhead is roughly fixed per step. If the residual after H1 varies with model size or batch size, a constant overhead will be wrong for some configurations. InferSim's 5ms/30ms values may be calibrated to InferSim's own modeling gaps rather than true vLLM scheduling overhead. If a fixed overhead proves insufficient, scheduling calibration moves to Tier 1.
+5. **Overhead functional form**: H2 assumes scheduling overhead is roughly fixed per step; H2b assumes it scales with `num_hidden_layers / tp`. If the true overhead has additional dependencies (e.g., batch size, vocab size, KV cache fragmentation), neither Tier 0 formula will fully capture it and scheduling calibration moves to Tier 1. The H2b base constant (100μs/layer) is an analytical estimate — the true value depends on vLLM version, Python runtime, and CPU hardware.
 
 6. **Non-NVIDIA GPUs**: The bandwidth efficiency constant is validated only for NVIDIA HBM GPUs in InferSim. Tier 2 addresses other hardware through direct measurement.
 
