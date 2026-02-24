@@ -193,6 +193,7 @@ inference-sim/
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
 │   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16)
+│   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
 │   ├── simulator.go           # SimConfig struct (composed of 6 embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor, event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording (recordQueueSnapshots, recordKVUsageMetrics, recordRequestCompletion), observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon())
 │   ├── admission.go           # AdmissionPolicy interface (accepts *RouterState), AlwaysAdmit, TokenBucket, RejectAll, NewAdmissionPolicy factory
 │   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() for canonical load calculation), RoutingDecision (with Priority hint), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), PrefixAffinity, AlwaysBusiest templates, NewRoutingPolicy factory
@@ -206,9 +207,7 @@ inference-sim/
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
 │   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted), Request lifecycle and state machine, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.)
-│   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching, CacheHits/CacheMisses counters, transactional AllocateKVBlocks with rollbackAllocation on mid-loop failure
 │   ├── kv_store.go            # KVStore interface (11 methods: +SetClock, +ConsumePendingTransferLatency), NewKVStoreFromConfig registration variable, MustNewKVCacheState/MustNewKVStoreFromConfig nil-guarded wrappers
-│   ├── kvcache_tiered.go      # TieredKVCache (GPU+CPU composition), cpuTier, offloadedBlock, offload/reload/transfer latency, PendingTransferLatency() (pure query), ConsumePendingTransferLatency() (read-and-clear)
 │   ├── batch.go               # Batch struct
 │   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (FCFS + chunked-prefill + preemption), NewBatchFormation(LatencyModel) factory
 │   ├── queue.go               # FIFO wait queue

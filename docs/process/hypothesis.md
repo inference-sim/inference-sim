@@ -621,7 +621,7 @@ A good hypothesis is **behavioral** (about observable system behavior), **testab
 | **Behavioral** | "Burst smoothing should reduce tail latency" | "The token bucket decrements currentTokens correctly" |
 | **Testable** | "TTFT should decrease monotonically as prefix_length increases" | "The system should be fast" |
 | **Diagnostic** | "If this fails, it indicates the cache eviction path has a bug" | "If this fails, something is wrong" |
-| **Conceptual** | "Tiered storage should reduce preemptions" | "kvcache_tiered.go:224 should delete the hash" |
+| **Conceptual** | "Tiered storage should reduce preemptions" | "tiered.go:224 should delete the hash" |
 | **Intuitive** | "More instances should roughly halve latency under saturation" | "The event queue should process 2x events" |
 
 ### Anti-patterns in hypothesis generation

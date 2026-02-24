@@ -673,9 +673,7 @@ inference-sim/
 │   ├── router_state.go     # RouterState bridge type for cluster-level policies
 │   ├── bundle.go           # PolicyBundle YAML configuration
 │   ├── event.go            # Event types (Arrival, Queued, Step, Scheduled, Preemption)
-│   ├── kvcache.go          # KV cache modeling (single-tier, implements KVStore)
-│   ├── kv_store.go         # KVStore interface and NewKVStore factory
-│   ├── kvcache_tiered.go   # TieredKVCache: GPU+CPU offload/reload, transfer latency
+│   ├── kv_store.go         # KVStore interface and registration variables
 │   ├── batch.go            # Batch formation
 │   ├── queue.go            # FIFO wait queue
 │   ├── request.go          # Request lifecycle

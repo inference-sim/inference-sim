@@ -50,18 +50,18 @@ Examples:
 
 To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
 
-1. **Implement the `KVStore` interface** in `sim/kvcache_*.go` (11 methods: allocate, get cached, release, capacity queries, metrics, `SetClock`, `ConsumePendingTransferLatency`)
+1. **Implement the `KVStore` interface** in `sim/kv/` (11 methods: allocate, get cached, release, capacity queries, metrics, `SetClock`, `ConsumePendingTransferLatency`)
 2. **Compose existing tiers** — e.g., wrap `TieredKVCache` (GPU+CPU) with NVMe logic, following the same delegation pattern
-3. **Update `NewKVStore` factory** in `sim/kv_store.go` to instantiate your tier based on `KVCacheConfig` fields (add new fields to `KVCacheConfig` in `sim/config.go`)
+3. **Update `NewKVStore` factory** in `sim/kv/register.go` to instantiate your tier based on `KVCacheConfig` fields (add new fields to `KVCacheConfig` in `sim/config.go`)
 4. **Add CLI flags** in `cmd/root.go` for new parameters (e.g., `--kv-nvme-blocks`) and wire them into the `KVCacheConfig` sub-config
 5. **Aggregate metrics** — combine hit/miss/thrashing counters from all tiers; see `TieredKVCache.CacheHitRate()` for the 2-tier pattern
-6. **Add behavioral tests** in `sim/kvcache_*_test.go`
-7. **Preserve rollback semantics** — `KVCacheState.AllocateKVBlocks` is transactional: on mid-loop failure, `rollbackAllocation()` undoes all mutations (UsedBlockCnt, CacheMisses, CacheHits, RefCount, InUse, free list, HashToBlock, RequestMap). If your tier adds mutations beyond what delegation to `gpu.AllocateKVBlocks()` handles, you must roll those back too. See `cachedBlockMutation` and `newBlockMutation` types in `sim/kvcache.go`.
+6. **Add behavioral tests** in `sim/kv/*_test.go`
+7. **Preserve rollback semantics** — `KVCacheState.AllocateKVBlocks` is transactional: on mid-loop failure, `rollbackAllocation()` undoes all mutations (UsedBlockCnt, CacheMisses, CacheHits, RefCount, InUse, free list, HashToBlock, RequestMap). If your tier adds mutations beyond what delegation to `gpu.AllocateKVBlocks()` handles, you must roll those back too. See `cachedBlockMutation` and `newBlockMutation` types in `sim/kv/cache.go`.
 8. **`GetCachedBlocks` is a pure query** — it returns cached block IDs without side effects. `CacheHits` are counted by `AllocateKVBlocks` when cached blocks are committed to an allocation (and rolled back on failure). This was fixed in the Phase 3 hardening PR; the previous implementation incremented CacheHits in GetCachedBlocks, causing double-counting in tiered mode.
 
 Examples:
-- See `TieredKVCache` in `sim/kvcache_tiered.go` for 2-tier GPU+CPU composition
-- See `KVCacheState` in `sim/kvcache.go` for single-tier baseline (also implements `KVStore`)
+- See `TieredKVCache` in `sim/kv/tiered.go` for 2-tier GPU+CPU composition
+- See `KVCacheState` in `sim/kv/cache.go` for single-tier baseline (also implements `KVStore`)
 - See `docs/plans/archive/pr12-architectural-predesign.md` for the design decisions behind the tiered architecture
 
 ## Adding New Trace Record Types

@@ -265,7 +265,7 @@ A root cause analysis that says "the tiered cache increases total capacity" with
 - Does the claimed mechanism actually change the measured metric?
 - **Tracing depth**: The citation must trace to the code that *directly modifies the measured metric*, not just to the constructor or factory that creates the relevant object. Citing `NewKVStore` and claiming "this creates a tiered cache with more capacity" is insufficient — you must verify that the GPU block count actually changes in the created object.
 
-Evidence: H10 claimed "CPU tier increases total effective capacity" — but `NewKVStore` (`kv_store.go:31-36`) does not change GPU block count. The actual mechanism was `maybeOffload` preserving prefix hashes (`kvcache_tiered.go:214-224`).
+Evidence: H10 claimed "CPU tier increases total effective capacity" — but `NewKVStore` (`kv_store.go:31-36`) does not change GPU block count. The actual mechanism was `maybeOffload` preserving prefix hashes (`sim/kv/tiered.go`).
 
 ### RCV-2: Every "surprise" must have a first-principles calculation
 
