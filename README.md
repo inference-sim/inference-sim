@@ -4,6 +4,34 @@ A discrete-event simulator for LLM inference serving systems. BLIS models multi-
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across model/GPU/TP configurations without requiring real GPUs.
 
+## Table of Contents
+
+- [Features](#features)
+- [Supported Models](#supported-models)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+  - [Preset Workloads](#preset-workloads)
+  - [Custom GPU, TP, vLLM Versions](#custom-gpu-tp-vllm-versions)
+  - [Custom Workload Distribution](#custom-workload-distribution)
+  - [Custom vLLM Configs](#custom-vllm-configs)
+  - [Replay Workload Traces](#replay-workload-traces)
+  - [Multi-Instance Cluster Simulation](#multi-instance-cluster-simulation)
+  - [Tiered KV Cache](#tiered-kv-cache-gpu--cpu-offloading)
+  - [Priority and Scheduling Policies](#priority-and-scheduling-policies)
+  - [Fitness Evaluation and Anomaly Detection](#fitness-evaluation-and-anomaly-detection)
+  - [Policy Configuration Files (YAML)](#policy-configuration-files-yaml)
+  - [ServeGen-Informed Workload Generation](#servegen-informed-workload-generation)
+  - [Decision Tracing and Counterfactual Analysis](#decision-tracing-and-counterfactual-analysis)
+- [Latency Estimation Approaches](#latency-estimation-approaches)
+- [Example Output](#example-output)
+- [Debugging and Observability](#debugging-and-observability)
+- [Evolutionary Policy Optimization](#evolutionary-policy-optimization-in-progress)
+- [Project Structure](#project-structure)
+- [CLI Reference](#cli-reference)
+- [Contributing](#contributing)
+- [License](#license)
+
 ---
 
 ## Features
