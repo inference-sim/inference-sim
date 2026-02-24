@@ -4,6 +4,34 @@ A discrete-event simulator for LLM inference serving systems. BLIS models multi-
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across model/GPU/TP configurations without requiring real GPUs.
 
+## Table of Contents
+
+- [Features](#features)
+- [Supported Models](#supported-models)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+  - [Preset Workloads](#preset-workloads)
+  - [Custom GPU, TP, vLLM Versions](#custom-gpu-tp-vllm-versions)
+  - [Custom Workload Distribution](#custom-workload-distribution)
+  - [Custom vLLM Configs](#custom-vllm-configs)
+  - [Replay Workload Traces](#replay-workload-traces)
+  - [Multi-Instance Cluster Simulation](#multi-instance-cluster-simulation)
+  - [Tiered KV Cache](#tiered-kv-cache-gpu--cpu-offloading)
+  - [Priority and Scheduling Policies](#priority-and-scheduling-policies)
+  - [Fitness Evaluation and Anomaly Detection](#fitness-evaluation-and-anomaly-detection)
+  - [Policy Configuration Files (YAML)](#policy-configuration-files-yaml)
+  - [ServeGen-Informed Workload Generation](#servegen-informed-workload-generation)
+  - [Decision Tracing and Counterfactual Analysis](#decision-tracing-and-counterfactual-analysis)
+- [Latency Estimation Approaches](#latency-estimation-approaches)
+- [Example Output](#example-output)
+- [Debugging and Observability](#debugging-and-observability)
+- [Evolutionary Policy Optimization](#evolutionary-policy-optimization-in-progress)
+- [Project Structure](#project-structure)
+- [CLI Reference](#cli-reference)
+- [Contributing](#contributing)
+- [License](#license)
+
 ---
 
 ## Features
@@ -72,6 +100,20 @@ Run BLIS for `meta-llama/llama-3.1-8b-instruct` with default configs:
 ```bash
 ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct
 ```
+
+You should see JSON output like:
+
+```json
+{
+  "completed_requests": 100,
+  "tokens_per_sec": 492.02,
+  "ttft_mean_ms": 25.08,
+  "e2e_mean_ms": 4541.01,
+  ...
+}
+```
+
+**Key metrics:** TTFT (Time to First Token) measures how quickly the first output token arrives. E2E (End-to-End) is the total request latency. `tokens_per_sec` is output token throughput (decode tokens per simulated second). See [Example Output](#example-output) for the full schema.
 
 ---
 
@@ -768,7 +810,7 @@ inference-sim/
 
 ## Contributing
 
-Contributions are welcome! Please see the design documents in `docs/plans/` for ongoing work and architectural decisions.
+Contributions are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for the engineering standards, development workflow, and step-by-step guides for adding new components. For ongoing work and architectural decisions, see `docs/plans/`.
 
 ---
 

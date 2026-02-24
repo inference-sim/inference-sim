@@ -2,6 +2,29 @@
 
 **Status:** Active (v3.0 - updated 2026-02-23)
 
+## Table of Contents
+
+- [Current Template Versions](#current-template-versions)
+- [Prerequisites](#prerequisites)
+- [Overview](#overview)
+- [Quick Reference: Simplified Invocations](#quick-reference-simplified-invocations)
+- [Step-by-Step Process](#step-by-step-process)
+  - [Step 1: Create Isolated Worktree](#step-1-create-isolated-worktree-using-using-git-worktrees-skill)
+  - [Step 2: Create Implementation Plan](#step-2-create-implementation-plan-using-writing-plans-skill)
+  - [Step 2.5: Multi-Perspective Plan Review](#step-25-multi-perspective-plan-review-rounds)
+  - [Step 3: Human Review of Plan](#step-3-human-review-of-plan)
+  - [Step 4: Execute Plan](#step-4-execute-plan-using-executing-plans-skill)
+  - [Step 4.5: Multi-Perspective Code Review](#step-45-multi-perspective-code-review-rounds)
+  - [Step 4.75: Pre-Commit Self-Audit](#step-475-pre-commit-self-audit-no-agent--deliberate-thinking)
+  - [Step 5: Commit, Push, and Create PR](#step-5-commit-push-and-create-pr-using-commit-commandscommit-push-pr)
+- [Workflow Variants](#workflow-variants)
+- [Skill Reference Quick Guide](#skill-reference-quick-guide)
+- [Example A: Macro Plan PR](#example-a-macro-plan-pr-workflow-same-session-with-worktrees)
+- [Example B: Issue/Design-Doc PR](#example-b-issuedesign-doc-pr-workflow)
+- [Tips for Success](#tips-for-success)
+- [Common Issues and Solutions](#common-issues-and-solutions)
+- [Appendix: Workflow Evolution](#appendix-workflow-evolution)
+
 This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request.
 
 ## Current Template Versions

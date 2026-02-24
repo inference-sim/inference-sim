@@ -7,6 +7,18 @@ Every rule traces to a real bug, design failure, or hypothesis finding. Rules ar
 
 For the full process, see [docs/process/pr-workflow.md](../process/pr-workflow.md).
 
+## Priority Tiers
+
+New contributors: focus on **Critical** rules first. These protect correctness — violating them produces wrong results or crashes. **Important** rules protect code quality and maintainability. **Hygiene** rules keep the codebase clean over time.
+
+| Tier | Rules | Why |
+|------|-------|-----|
+| **Critical** (correctness) | R1, R4, R5, R6, R11, R19 | Violations produce silent data loss, panics, conservation invariant breaks, or infinite loops |
+| **Important** (quality) | R2, R3, R7, R8, R9, R10, R13, R14, R17, R18, R20 | Violations produce non-determinism, validation gaps, silent misconfig, interface debt, or undetected anomalies |
+| **Hygiene** (maintenance) | R12, R15, R16 | Violations produce stale references, config sprawl, or misleading test baselines |
+
+All 20 rules apply to every PR. The tiers help you prioritize during review — check Critical rules first.
+
 ## Rules
 
 ### R1: No silent data loss

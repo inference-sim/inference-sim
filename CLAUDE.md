@@ -73,21 +73,9 @@ Diligently follow the workflow in docs/process/pr-workflow.md. Before I approve 
 
 For new features that introduce module boundaries or modify the architecture, a design doc (per the design guidelines) should exist before micro-planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), a design doc is optional — proceed directly to micro-planning.
 
-### Context Management
-
-When running multi-agent PR reviews, keep individual agent scopes narrow and summarize results concisely. Never try to synthesize all parallel agent outputs into one massive prompt. If hitting context limits, deliver incremental summaries per agent rather than a consolidated report.
-
-### Task Agent Guidelines
-
-When using Task agents: 1) Do NOT poll TaskList repeatedly — check at reasonable intervals (every 30-60 seconds, not continuously). 2) If a sub-agent goes idle or fails, fall back to doing the work directly rather than retrying indefinitely. 3) Keep sub-agent scopes focused to avoid context overflow.
-
 ### Code Review Standards
 
 During PR reviews, check all Antipattern Prevention rules (1-20) below. Pay special attention to rules 8-10 (exported mutable maps, YAML pointer types, strict YAML parsing) which are easy to miss in new code. Always run `go test ./...` and lint after fixes.
-
-### Macro Plan Updates
-
-When asked to update the macro implementation plan, directly edit the document. Do NOT spend time re-reading all source documents or dispatching sub-agents to gather information you already have in context. Start writing immediately.
 
 ### Key Invariants to Maintain
 
@@ -174,6 +162,22 @@ GitHub Actions CI runs on all PRs to main (`.github/workflows/ci.yml`):
 - `go test ./...` - Test suite
 
 Run lint locally before pushing: `golangci-lint run ./...`
+
+## Agent Behavioral Instructions
+
+The following instructions are for Claude Code and other AI assistants working on this codebase. Human contributors can skip this section.
+
+### Context Management
+
+When running multi-agent PR reviews, keep individual agent scopes narrow and summarize results concisely. Never try to synthesize all parallel agent outputs into one massive prompt. If hitting context limits, deliver incremental summaries per agent rather than a consolidated report.
+
+### Task Agent Guidelines
+
+When using Task agents: 1) Do NOT poll TaskList repeatedly — check at reasonable intervals (every 30-60 seconds, not continuously). 2) If a sub-agent goes idle or fails, fall back to doing the work directly rather than retrying indefinitely. 3) Keep sub-agent scopes focused to avoid context overflow.
+
+### Macro Plan Updates
+
+When asked to update the macro implementation plan, directly edit the document. Do NOT spend time re-reading all source documents or dispatching sub-agents to gather information you already have in context. Start writing immediately.
 
 ## File Organization
 
