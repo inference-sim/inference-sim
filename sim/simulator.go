@@ -7,6 +7,8 @@ import (
 	"math/rand"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
 const MaxTokenID = 128000 // Max token ID in request input/output
@@ -146,21 +148,17 @@ type Simulator struct {
 	requestRate            float64 // arrival rate for workload generation (moved from Metrics — DES state/statistics separation, #243)
 }
 
-// NewSimulator creates a Simulator from a SimConfig struct.
+// NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
 // Workload mode is determined by the config fields:
 //   - TracesWorkloadFilePath != "" → load workload from CSV traces
 //   - GuideLLMConfig != nil → generate workload from distribution
 //   - Both zero-valued → no workload (caller injects via InjectArrival)
-func NewSimulator(cfg SimConfig) (*Simulator, error) {
-	if cfg.TotalKVBlocks <= 0 {
-		panic(fmt.Sprintf("KVCacheConfig.TotalKVBlocks must be > 0, got %d", cfg.TotalKVBlocks))
+func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*Simulator, error) {
+	if kvStore == nil {
+		return nil, fmt.Errorf("NewSimulator: kvStore must not be nil")
 	}
-	if cfg.BlockSizeTokens <= 0 {
-		panic(fmt.Sprintf("KVCacheConfig.BlockSizeTokens must be > 0, got %d", cfg.BlockSizeTokens))
-	}
-	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		return nil, fmt.Errorf("creating latency model: %w", err)
+	if latencyModel == nil {
+		return nil, fmt.Errorf("NewSimulator: latencyModel must not be nil")
 	}
 	batchFormation := NewBatchFormation(latencyModel)
 
@@ -169,7 +167,7 @@ func NewSimulator(cfg SimConfig) (*Simulator, error) {
 		Horizon:                   cfg.Horizon,
 		eventQueue:                make(EventQueue, 0),
 		WaitQ:                     &WaitQueue{},
-		KVCache:                   NewKVStore(cfg.KVCacheConfig),
+		KVCache:                   kvStore,
 		RunningBatch:              &Batch{},
 		Metrics:                   NewMetrics(),
 		maxRunningReqs:            cfg.MaxRunningReqs,
@@ -439,7 +437,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// Note: TotalOutputTokens++ and TTFT metrics are recorded inline (not extracted to helpers)
 	// because they are tightly coupled to the prefill/decode state transitions in this loop.
 	for _, req := range sim.RunningBatch.Requests {
-		if req.ProgressIndex < Len64(req.InputTokens) {
+		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
@@ -449,7 +447,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			sim.Metrics.TotalOutputTokens++
 			req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 		}
-		if req.ProgressIndex == Len64(req.InputTokens) { // prefill complete, first token is generated
+		if req.ProgressIndex == util.Len64(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime // in microsec
@@ -477,7 +475,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
-		if req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1 {
+		if req.ProgressIndex == util.Len64(req.InputTokens)+max(util.Len64(req.OutputTokens), 1)-1 {
 			// State transitions
 			req.State = StateCompleted
 			req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())

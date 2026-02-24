@@ -13,9 +13,15 @@ import (
 )
 
 // mustNewSimulator is a test helper that calls NewSimulator and fails the test on error.
+// Honors KVCPUBlocks for tiered KV cache construction via MustNewKVStoreFromConfig.
 func mustNewSimulator(t *testing.T, cfg SimConfig) *Simulator {
 	t.Helper()
-	s, err := NewSimulator(cfg)
+	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("NewLatencyModel: %v", err)
+	}
+	s, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
 	}
@@ -222,6 +228,57 @@ func newTestSimConfig() SimConfig {
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, false),
+	}
+}
+
+func TestNewSimulator_NilKVStore_ReturnsError(t *testing.T) {
+	cfg := newTestSimConfig()
+	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("NewLatencyModel: %v", err)
+	}
+	_, err = NewSimulator(cfg, nil, latencyModel)
+	if err == nil {
+		t.Fatal("expected error for nil kvStore")
+	}
+	if err.Error() != "NewSimulator: kvStore must not be nil" {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestMustNewKVCacheState_NilFunc_Panics(t *testing.T) {
+	// Save and restore the registered function
+	saved := NewKVCacheStateFunc
+	defer func() { NewKVCacheStateFunc = saved }()
+	NewKVCacheStateFunc = nil
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for nil NewKVCacheStateFunc")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T: %v", r, r)
+		}
+		expected := "NewKVCacheStateFunc not registered: import sim/kv to register it " +
+			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")"
+		if msg != expected {
+			t.Errorf("panic message:\n  got:  %q\n  want: %q", msg, expected)
+		}
+	}()
+	MustNewKVCacheState(100, 16)
+}
+
+func TestNewSimulator_NilLatencyModel_ReturnsError(t *testing.T) {
+	cfg := newTestSimConfig()
+	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	_, err := NewSimulator(cfg, kvStore, nil)
+	if err == nil {
+		t.Fatal("expected error for nil latencyModel")
+	}
+	if err.Error() != "NewSimulator: latencyModel must not be nil" {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
@@ -858,7 +915,12 @@ func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
-	sim, err := NewSimulator(cfg)
+	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("NewLatencyModel: %v", err)
+	}
+	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
 	}
@@ -906,7 +968,12 @@ func TestEnqueueRequest_NormalInput_Enqueued(t *testing.T) {
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
-	sim, err := NewSimulator(cfg)
+	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("NewLatencyModel: %v", err)
+	}
+	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
 	}
@@ -948,7 +1015,12 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
 	}
-	sim, err := NewSimulator(cfg)
+	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("NewLatencyModel: %v", err)
+	}
+	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
 	}
@@ -1009,7 +1081,12 @@ func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
-	sim, err := NewSimulator(cfg)
+	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("NewLatencyModel: %v", err)
+	}
+	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
 	}

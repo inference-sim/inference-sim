@@ -1,6 +1,10 @@
 package sim
 
-import "github.com/sirupsen/logrus"
+import (
+	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim/internal/util"
+)
 
 // BatchFormation encapsulates the batch composition strategy for a simulation step.
 // Implementations handle KV allocation and preemption decisions internally
@@ -74,7 +78,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			logrus.Warnf("[tick %07d] token budget exhausted, deferring remaining requests to next step", ctx.Now)
 			break
 		}
-		numNewTokens := Len64(req.InputTokens) - req.ProgressIndex
+		numNewTokens := util.Len64(req.InputTokens) - req.ProgressIndex
 		// Chunked prefill for running requests
 		if numNewTokens > 0 {
 			if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
@@ -91,7 +95,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			ctx.ComputedTokens[req.ID] += numNewTokens
 		}
 		// Decode phase: allocate 1 token
-		if req.ProgressIndex >= Len64(req.InputTokens) && len(req.OutputTokens) > 0 {
+		if req.ProgressIndex >= util.Len64(req.InputTokens) && len(req.OutputTokens) > 0 {
 			decodeTokens := int64(1)
 			if canSchedule := v.preemptForTokens(req, decodeTokens, &result, ctx); !canSchedule {
 				break
@@ -107,13 +111,13 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		next := ctx.WaitQ.Peek()
 
 		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.InputTokens)
-		numNewTokens := Len64(next.InputTokens) - Len64(cachedBlocks)*ctx.KVCache.BlockSize()
+		numNewTokens := util.Len64(next.InputTokens) - util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
 
 		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
 			numNewTokens = ctx.PrefillTokenThreshold
 		}
 		numNewTokens = min(numNewTokens, tokenBudget)
-		startIndex := Len64(cachedBlocks) * ctx.KVCache.BlockSize()
+		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
 		endIndex := startIndex + numNewTokens
 
 		if ok := ctx.KVCache.AllocateKVBlocks(next, startIndex, endIndex, cachedBlocks); !ok {
@@ -133,7 +137,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		tokenBudget -= numNewTokens
 		next.State = StateRunning
 		next.NumNewTokens = int(numNewTokens)
-		ctx.ComputedTokens[next.ID] = numNewTokens + Len64(cachedBlocks)*ctx.KVCache.BlockSize()
+		ctx.ComputedTokens[next.ID] = numNewTokens + util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
 	}
 
 	return result

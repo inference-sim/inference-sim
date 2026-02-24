@@ -1,8 +1,11 @@
-package sim
+package kv
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // assertBlockConservation verifies the KV block conservation invariant (INV-4)
@@ -27,7 +30,7 @@ func assertBlockConservation(t *testing.T, kvc *KVCacheState) {
 func TestAllocateKVBlocks_PartialBlockFill_AdvancesByActualTokenCount(t *testing.T) {
 	// GIVEN a KV cache with BlockSize=4 and a request that already has a partial block (2 of 4 tokens)
 	kvc := NewKVCacheState(10, 4)
-	req := &Request{
+	req := &sim.Request{
 		ID:          "r1",
 		InputTokens: []int{10, 20, 30, 40, 50, 60},
 	}
@@ -67,7 +70,7 @@ func TestAllocateKVBlocks_PartialBlockFill_AdvancesByActualTokenCount(t *testing
 func TestAllocateKVBlocks_ChunkedPrefill_PrefixHashUsesAbsoluteOffset(t *testing.T) {
 	// GIVEN a request with 8 tokens and BlockSize=4
 	kvc := NewKVCacheState(10, 4)
-	req := &Request{
+	req := &sim.Request{
 		ID:          "r1",
 		InputTokens: []int{10, 20, 30, 40, 50, 60, 70, 80},
 	}
@@ -79,7 +82,7 @@ func TestAllocateKVBlocks_ChunkedPrefill_PrefixHashUsesAbsoluteOffset(t *testing
 	}
 
 	// Verify first block has correct hash
-	expectedHash1 := hashTokens([]int{10, 20, 30, 40})
+	expectedHash1 := hash.HashTokens([]int{10, 20, 30, 40})
 	ids1 := kvc.RequestMap["r1"]
 	blk1 := kvc.Blocks[ids1[0]]
 	if blk1.Hash != expectedHash1 {
@@ -99,8 +102,8 @@ func TestAllocateKVBlocks_ChunkedPrefill_PrefixHashUsesAbsoluteOffset(t *testing
 		t.Fatalf("expected at least 2 blocks, got %d", len(ids2))
 	}
 	blk2 := kvc.Blocks[ids2[1]]
-	expectedHash2 := hashTokens([]int{10, 20, 30, 40, 50, 60, 70, 80})
-	wrongHash := hashTokens([]int{10, 20, 30, 40}) // This is what the buggy code produces
+	expectedHash2 := hash.HashTokens([]int{10, 20, 30, 40, 50, 60, 70, 80})
+	wrongHash := hash.HashTokens([]int{10, 20, 30, 40}) // This is what the buggy code produces
 	if blk2.Hash == wrongHash {
 		t.Errorf("second block has WRONG hash (newTokens-relative instead of absolute)")
 	}
@@ -113,14 +116,14 @@ func TestAllocateKVBlocks_MidLoopFailure_RollsBackNewBlocks(t *testing.T) {
 	// GIVEN a KV cache with only 2 free blocks but a request needing 3 new blocks
 	kvc := NewKVCacheState(5, 2) // 5 total blocks, 2 tokens per block
 	// Consume 3 blocks with a dummy request, leaving 2 free
-	dummy := &Request{ID: "dummy", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	dummy := &sim.Request{ID: "dummy", InputTokens: []int{1, 2, 3, 4, 5, 6}}
 	kvc.AllocateKVBlocks(dummy, 0, 6, []int64{})
 
 	usedBefore := kvc.UsedBlocks()
 	freeBefore := kvc.TotalCapacity() - usedBefore
 
 	// WHEN we try to allocate 3 blocks (6 tokens / 2 per block) but only 2 are free
-	req := &Request{ID: "r_fail", InputTokens: []int{10, 20, 30, 40, 50, 60}}
+	req := &sim.Request{ID: "r_fail", InputTokens: []int{10, 20, 30, 40, 50, 60}}
 	ok := kvc.AllocateKVBlocks(req, 0, 6, []int64{})
 
 	// THEN allocation fails and block conservation is maintained
@@ -150,13 +153,13 @@ func TestAllocateKVBlocks_CachedBlockRollback_OnNewBlockFailure(t *testing.T) {
 	kvc := NewKVCacheState(4, 2)
 
 	// Step 1: Create and release a request to populate prefix cache
-	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
 	kvc.ReleaseKVBlocks(req1)
 	// Now: 4 free blocks, 2 with hashes for prefix [1,2,3,4]
 
 	// Step 2: Consume 1 free block with a filler, leaving 3 free
-	filler := &Request{ID: "filler", InputTokens: []int{90, 91}}
+	filler := &sim.Request{ID: "filler", InputTokens: []int{90, 91}}
 	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
 	// Now: 1 used (filler), 3 free (2 with cached hashes)
 
@@ -165,7 +168,7 @@ func TestAllocateKVBlocks_CachedBlockRollback_OnNewBlockFailure(t *testing.T) {
 
 	// Step 3: Try to allocate with cached prefix + new tokens
 	// Request needs [1,2,3,4,5,6,7,8]: 2 cached blocks + 2 new blocks
-	req2 := &Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
 	cached := kvc.GetCachedBlocks(req2.InputTokens)
 	if len(cached) != 2 {
 		t.Fatalf("expected 2 cached blocks, got %d", len(cached))
@@ -204,7 +207,7 @@ func TestAllocateKVBlocks_BlockConservation_AfterAllocateReleaseCycles(t *testin
 
 	// Allocate and release several requests
 	for i := 0; i < 5; i++ {
-		req := &Request{
+		req := &sim.Request{
 			ID:          fmt.Sprintf("r%d", i),
 			InputTokens: []int{i*10 + 1, i*10 + 2, i*10 + 3, i*10 + 4},
 		}
@@ -216,7 +219,7 @@ func TestAllocateKVBlocks_BlockConservation_AfterAllocateReleaseCycles(t *testin
 
 	// Release first 3
 	for i := 0; i < 3; i++ {
-		req := &Request{ID: fmt.Sprintf("r%d", i)}
+		req := &sim.Request{ID: fmt.Sprintf("r%d", i)}
 		kvc.ReleaseKVBlocks(req)
 	}
 
@@ -232,7 +235,7 @@ func TestAllocateKVBlocks_BlockConservation_AfterAllocateReleaseCycles(t *testin
 func TestAllocateKVBlocks_DecodeWithBlockSize1_NoPrefixHashPanic(t *testing.T) {
 	// GIVEN BlockSizeTokens=1 (edge case where a single decode token fills a full block)
 	kvc := NewKVCacheState(20, 1)
-	req := &Request{
+	req := &sim.Request{
 		ID:           "r1",
 		InputTokens:  []int{10, 20, 30, 40},
 		OutputTokens: []int{100, 200},
@@ -263,7 +266,7 @@ func TestAllocateKVBlocks_DecodeWithBlockSize1_NoPrefixHashPanic(t *testing.T) {
 func TestGetCachedBlocks_IsPureQuery_DoesNotAffectCacheHitRate(t *testing.T) {
 	// GIVEN a KV cache with cached prefix blocks after one allocation cycle
 	kvc := NewKVCacheState(4, 2)
-	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	kvc.AllocateKVBlocks(req, 0, 4, []int64{})
 	kvc.ReleaseKVBlocks(req)
 	// After allocate+release: CacheHitRate is 0 (all misses, no hits)
@@ -288,7 +291,7 @@ func TestGetCachedBlocks_IsPureQuery_DoesNotAffectCacheHitRate(t *testing.T) {
 func TestAllocateKVBlocks_CachedPrefixReuse_IncreasesHitRate(t *testing.T) {
 	// GIVEN a KV cache with 2 cached prefix blocks from a prior allocation
 	kvc := NewKVCacheState(8, 2)
-	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
 	kvc.ReleaseKVBlocks(req1)
 	// After r1: 2 misses, 0 hits → CacheHitRate = 0
@@ -298,7 +301,7 @@ func TestAllocateKVBlocks_CachedPrefixReuse_IncreasesHitRate(t *testing.T) {
 	if len(cached) != 2 {
 		t.Fatalf("expected 2 cached blocks, got %d", len(cached))
 	}
-	req2 := &Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6}}
 	ok := kvc.AllocateKVBlocks(req2, 4, 6, cached)
 	if !ok {
 		t.Fatal("allocation should succeed")
@@ -317,18 +320,18 @@ func TestAllocateKVBlocks_CachedPrefixReuse_IncreasesHitRate(t *testing.T) {
 func TestAllocateKVBlocks_FailedAllocation_CacheHitRateUnchanged(t *testing.T) {
 	// GIVEN a KV cache with 2 cached prefix blocks and tight free-block budget
 	kvc := NewKVCacheState(4, 2)
-	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
 	kvc.ReleaseKVBlocks(req1)
 
 	// Consume 1 block to make the next allocation fail
-	filler := &Request{ID: "filler", InputTokens: []int{90, 91}}
+	filler := &sim.Request{ID: "filler", InputTokens: []int{90, 91}}
 	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
 
 	rateBefore := kvc.CacheHitRate()
 
 	// WHEN allocating with cached prefix + new tokens that exceed capacity (BC-5)
-	req2 := &Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
 	cached := kvc.GetCachedBlocks(req2.InputTokens)
 	ok := kvc.AllocateKVBlocks(req2, 4, 8, cached)
 
@@ -349,13 +352,13 @@ func TestAllocateKVBlocks_Rollback_PreservesFreeListOrder(t *testing.T) {
 	kvc := NewKVCacheState(4, 2)
 
 	// Create and release to populate prefix cache
-	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
 	kvc.ReleaseKVBlocks(req1)
 	// 4 free blocks, 2 with cached hashes
 
 	// Consume 1 with filler → 3 free
-	filler := &Request{ID: "filler", InputTokens: []int{90, 91}}
+	filler := &sim.Request{ID: "filler", InputTokens: []int{90, 91}}
 	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
 
 	// Record free list order before the failed allocation
@@ -363,7 +366,7 @@ func TestAllocateKVBlocks_Rollback_PreservesFreeListOrder(t *testing.T) {
 	secondFreeBlockBefore := kvc.FreeHead.NextFree.ID
 
 	// WHEN mid-loop allocation fails (cached blocks consume free budget)
-	req2 := &Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
 	cached := kvc.GetCachedBlocks(req2.InputTokens)
 	ok := kvc.AllocateKVBlocks(req2, 4, 8, cached)
 	if ok {
@@ -393,7 +396,7 @@ func TestAllocateKVBlocks_Rollback_PreservesFreeListOrder(t *testing.T) {
 func TestAllocateKVBlocks_ChunkedPrefill_NoPhantomBlocks(t *testing.T) {
 	// GIVEN a KV cache with BlockSize=4 and a request that already has a partial block (3 tokens)
 	kvc := NewKVCacheState(20, 4) // 20 blocks, size 4
-	req := &Request{
+	req := &sim.Request{
 		ID:            "phantom-test",
 		InputTokens:   []int{1, 2, 3, 4, 5, 6, 7, 8},
 		OutputTokens:  []int{100},

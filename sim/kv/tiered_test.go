@@ -1,8 +1,10 @@
-package sim
+package kv
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 func TestTieredKVCache_OffloadTriggered_WhenGPUExceedsThreshold(t *testing.T) {
@@ -11,7 +13,7 @@ func TestTieredKVCache_OffloadTriggered_WhenGPUExceedsThreshold(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 10, 0.5, 100.0, 0)
 
 	// WHEN we allocate blocks filling >50% GPU, then release
-	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}} // 6 blocks
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}} // 6 blocks
 	if !tiered.AllocateKVBlocks(req, 0, 12, []int64{}) {
 		t.Fatal("allocation should succeed")
 	}
@@ -29,7 +31,7 @@ func TestTieredKVCache_CPUFull_OffloadStopsGracefully(t *testing.T) {
 	tiered := NewTieredKVCache(NewKVCacheState(10, 2), 2, 0.3, 100.0, 0)
 
 	// WHEN we allocate many blocks and release (offload should be limited by CPU capacity)
-	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}}
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}}
 	if !tiered.AllocateKVBlocks(req, 0, 16, []int64{}) {
 		t.Fatal("allocation should succeed")
 	}
@@ -47,7 +49,7 @@ func TestTieredKVCache_Conservation_AllocateReleaseCycle(t *testing.T) {
 
 	// WHEN we run multiple allocate-release cycles
 	for i := 0; i < 5; i++ {
-		req := &Request{ID: fmt.Sprintf("r%d", i), InputTokens: []int{i*2 + 1, i*2 + 2, i*2 + 3, i*2 + 4}}
+		req := &sim.Request{ID: fmt.Sprintf("r%d", i), InputTokens: []int{i*2 + 1, i*2 + 2, i*2 + 3, i*2 + 4}}
 		if !tiered.AllocateKVBlocks(req, 0, 4, []int64{}) {
 			t.Fatalf("allocation %d failed", i)
 		}
@@ -71,10 +73,10 @@ func TestTieredKVCache_TransferLatency_ConsumeClearsAccumulated(t *testing.T) {
 	tiered.SetClock(100)
 
 	// Fill GPU to 80% (4 requests × 2 blocks = 8 used, 2 free)
-	target := &Request{ID: "target", InputTokens: []int{1, 2, 3, 4}}
+	target := &sim.Request{ID: "target", InputTokens: []int{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(target, 0, 4, []int64{})
 	for i := 0; i < 3; i++ {
-		other := &Request{ID: fmt.Sprintf("o%d", i), InputTokens: []int{i*4 + 10, i*4 + 11, i*4 + 12, i*4 + 13}}
+		other := &sim.Request{ID: fmt.Sprintf("o%d", i), InputTokens: []int{i*4 + 10, i*4 + 11, i*4 + 12, i*4 + 13}}
 		tiered.AllocateKVBlocks(other, 0, 4, []int64{})
 	}
 
@@ -87,12 +89,12 @@ func TestTieredKVCache_TransferLatency_ConsumeClearsAccumulated(t *testing.T) {
 	// Fill GPU so only 1 free block remains (6 used + 3 fillers = 9 used, 1 free)
 	tiered.SetClock(2000)
 	for i := 0; i < 3; i++ {
-		filler := &Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 100, i*2 + 101}}
+		filler := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 100, i*2 + 101}}
 		tiered.AllocateKVBlocks(filler, 0, 2, []int64{})
 	}
 
 	// WHEN requesting the same prefix triggers CPU-to-GPU reload
-	sameReq := &Request{ID: "retry", InputTokens: []int{1, 2, 3, 4}}
+	sameReq := &sim.Request{ID: "retry", InputTokens: []int{1, 2, 3, 4}}
 	cached := tiered.GetCachedBlocks([]int{1, 2, 3, 4})
 	start := int64(len(cached)) * tiered.BlockSize()
 	tiered.AllocateKVBlocks(sameReq, start, 4, cached)
@@ -129,11 +131,11 @@ func TestTieredKVCache_ThrashingDetected_WhenReloadWithinWindow(t *testing.T) {
 	tiered.SetClock(100)
 
 	// Step 1: Allocate target prefix [1,2,3,4] (2 blocks) + 6 other blocks to fill GPU
-	target := &Request{ID: "target", InputTokens: []int{1, 2, 3, 4}}
+	target := &sim.Request{ID: "target", InputTokens: []int{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(target, 0, 4, []int64{})
-	others := make([]*Request, 3)
+	others := make([]*sim.Request, 3)
 	for i := 0; i < 3; i++ {
-		others[i] = &Request{ID: fmt.Sprintf("o%d", i), InputTokens: []int{i*4 + 10, i*4 + 11, i*4 + 12, i*4 + 13}}
+		others[i] = &sim.Request{ID: fmt.Sprintf("o%d", i), InputTokens: []int{i*4 + 10, i*4 + 11, i*4 + 12, i*4 + 13}}
 		tiered.AllocateKVBlocks(others[i], 0, 4, []int64{})
 	}
 	// GPU: 8 used (80%), 2 free (blocks 8,9 — never allocated, no hash)
@@ -154,13 +156,13 @@ func TestTieredKVCache_ThrashingDetected_WhenReloadWithinWindow(t *testing.T) {
 	// Step 4: Fill GPU so target prefix can't be allocated fresh
 	// GPU has 6 used + 4 free (2 from target release + 2 original). Fill 3 more.
 	for i := 0; i < 3; i++ {
-		filler := &Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 100, i*2 + 101}}
+		filler := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 100, i*2 + 101}}
 		tiered.AllocateKVBlocks(filler, 0, 2, []int64{})
 	}
 	// GPU: 9 used, 1 free. Target prefix [1,2,3,4] needs 2 blocks but only 1 free.
 
 	// Step 5: Re-request the SAME prefix — GPU fails, triggers CPU reload
-	sameReq := &Request{ID: "retry", InputTokens: []int{1, 2, 3, 4}}
+	sameReq := &sim.Request{ID: "retry", InputTokens: []int{1, 2, 3, 4}}
 	cached := tiered.GetCachedBlocks([]int{1, 2, 3, 4})
 	start := int64(len(cached)) * tiered.BlockSize()
 	tiered.AllocateKVBlocks(sameReq, start, 4, cached)
@@ -178,7 +180,7 @@ func TestTieredKVCache_GetCachedBlocks_DoesNotAffectHitRate(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 10, 0.5, 1.0, 100)
 
 	// Populate prefix cache
-	req1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(req1, 0, 4, []int64{})
 	tiered.ReleaseKVBlocks(req1)
 

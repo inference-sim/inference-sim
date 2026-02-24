@@ -1,44 +1,54 @@
-package sim
+package kv
 
 import (
 	"testing"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewKVStore_ZeroTotalBlocks_Panics(t *testing.T) {
-	// BC-8: NewKVStore validates TotalKVBlocks > 0
+func TestNewKVCacheState_ZeroTotalBlocks_Panics(t *testing.T) {
+	// BC-8: NewKVCacheState validates TotalKVBlocks > 0
 	assert.PanicsWithValue(t,
-		"KVStore: TotalKVBlocks must be > 0, got 0",
+		"NewKVCacheState: TotalKVBlocks must be > 0, got 0",
 		func() {
-			NewKVStore(NewKVCacheConfig(0, 16, 0, 0, 0, 0))
+			NewKVCacheState(0, 16)
 		})
 }
 
-func TestNewKVStore_ZeroBlockSize_Panics(t *testing.T) {
-	// BC-8: NewKVStore validates BlockSizeTokens > 0
+func TestNewKVCacheState_ZeroBlockSize_Panics(t *testing.T) {
+	// BC-8: NewKVCacheState validates BlockSizeTokens > 0
 	assert.PanicsWithValue(t,
-		"KVStore: BlockSizeTokens must be > 0, got 0",
+		"NewKVCacheState: BlockSizeTokens must be > 0, got 0",
 		func() {
-			NewKVStore(NewKVCacheConfig(100, 0, 0, 0, 0, 0))
+			NewKVCacheState(100, 0)
 		})
 }
 
-func TestNewKVStore_NegativeTotalBlocks_Panics(t *testing.T) {
+func TestNewKVCacheState_NegativeTotalBlocks_Panics(t *testing.T) {
 	assert.Panics(t, func() {
-		NewKVStore(NewKVCacheConfig(-1, 16, 0, 0, 0, 0))
+		NewKVCacheState(-1, 16)
 	})
 }
 
-func TestNewKVStore_ValidConfig_SingleTier_Succeeds(t *testing.T) {
+func TestNewKVCacheState_ValidConfig_SingleTier_Succeeds(t *testing.T) {
 	// BC-8: Valid config produces a working KVStore
-	store := NewKVStore(NewKVCacheConfig(100, 16, 0, 0, 0, 0))
+	store := NewKVCacheState(100, 16)
 	assert.Equal(t, int64(100), store.TotalCapacity())
 	assert.Equal(t, int64(0), store.UsedBlocks())
 }
 
-func TestNewKVStore_ValidConfig_Tiered_Succeeds(t *testing.T) {
-	store := NewKVStore(NewKVCacheConfig(100, 16, 50, 0.8, 1.0, 10))
+func TestNewTieredKVCache_NilGPU_Panics(t *testing.T) {
+	assert.PanicsWithValue(t,
+		"NewTieredKVCache: gpu must not be nil",
+		func() {
+			NewTieredKVCache(nil, 10, 0.5, 1.0, 0)
+		})
+}
+
+func TestNewTieredKVCache_ValidConfig_Succeeds(t *testing.T) {
+	gpu := NewKVCacheState(100, 16)
+	store := NewTieredKVCache(gpu, 50, 0.8, 1.0, 10)
 	assert.Equal(t, int64(100), store.TotalCapacity())
 }
 
@@ -51,7 +61,7 @@ func TestKVCacheState_SetClock_IsNoOp(t *testing.T) {
 
 func TestKVStore_SetClock_InterfaceSatisfied(t *testing.T) {
 	// BC-5: Both implementations satisfy KVStore interface including SetClock
-	var store KVStore
+	var store sim.KVStore
 	store = NewKVCacheState(100, 16)
 	store.SetClock(0) // compiles and runs
 
@@ -70,9 +80,9 @@ func setupTieredWithLatency(t *testing.T) *TieredKVCache {
 	tiered := NewTieredKVCache(gpu, 10, 0.3, 1.0, 10)
 
 	// Step 1: Allocate r1 (2 blocks) and r2 (2 blocks) => 4 used, 1 free. util=0.8.
-	r1 := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	r1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	assert.True(t, tiered.AllocateKVBlocks(r1, 0, 4, []int64{}), "r1 alloc")
-	r2 := &Request{ID: "r2", InputTokens: []int{10, 20, 30, 40}}
+	r2 := &sim.Request{ID: "r2", InputTokens: []int{10, 20, 30, 40}}
 	assert.True(t, tiered.AllocateKVBlocks(r2, 0, 4, []int64{}), "r2 alloc")
 
 	// Step 2: Release r1. util drops to 2/5=0.4 > 0.3 => maybeOffload triggers.
@@ -81,13 +91,13 @@ func setupTieredWithLatency(t *testing.T) *TieredKVCache {
 	// GPU: 2 used (r2), 3 free (all empty). CPU: 2 blocks with r1's hashes.
 
 	// Step 3: Fill GPU free blocks to force next allocation to fail => triggers reload.
-	r3 := &Request{ID: "r3", InputTokens: []int{50, 60}}
+	r3 := &sim.Request{ID: "r3", InputTokens: []int{50, 60}}
 	assert.True(t, tiered.AllocateKVBlocks(r3, 0, 2, []int64{}), "r3 alloc")
 	// GPU: 3 used, 2 free.
-	r4 := &Request{ID: "r4", InputTokens: []int{70, 80}}
+	r4 := &sim.Request{ID: "r4", InputTokens: []int{70, 80}}
 	assert.True(t, tiered.AllocateKVBlocks(r4, 0, 2, []int64{}), "r4 alloc")
 	// GPU: 4 used, 1 free.
-	r5 := &Request{ID: "r5", InputTokens: []int{90, 91}}
+	r5 := &sim.Request{ID: "r5", InputTokens: []int{90, 91}}
 	assert.True(t, tiered.AllocateKVBlocks(r5, 0, 2, []int64{}), "r5 alloc")
 	// GPU: 5 used, 0 free.
 
@@ -114,7 +124,7 @@ func setupTieredWithLatency(t *testing.T) *TieredKVCache {
 	// RefCount=0, in free list). popFreeBlock would pop it... but that would destroy the
 	// cache entry. Hmm, this is getting complicated. Let's just check if latency accumulated.
 
-	req6 := &Request{ID: "r6", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	req6 := &sim.Request{ID: "r6", InputTokens: []int{1, 2, 3, 4, 5, 6}}
 	tiered.AllocateKVBlocks(req6, 0, 6, []int64{}) // may or may not succeed
 
 	latency := tiered.PendingTransferLatency()

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kv"
 )
 
 // InstanceID uniquely identifies a simulator instance within a cluster.
@@ -29,7 +30,13 @@ type InstanceSimulator struct {
 // Thread-safety: NOT thread-safe. Must be called from single goroutine.
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
-	s, err := sim.NewSimulator(cfg)
+	// Create KV store (single-tier or tiered based on config)
+	kvStore := kv.NewKVStore(cfg.KVCacheConfig)
+	latencyModel, err := sim.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
+	}
+	s, err := sim.NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
 	}

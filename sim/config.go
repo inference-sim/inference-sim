@@ -1,6 +1,6 @@
 package sim
 
-// KVCacheConfig groups KV cache parameters for NewKVStore.
+// KVCacheConfig groups KV cache parameters for KV store construction.
 type KVCacheConfig struct {
 	TotalKVBlocks         int64   // GPU tier capacity in blocks (must be > 0)
 	BlockSizeTokens       int64   // tokens per block (must be > 0)
