@@ -36,11 +36,11 @@ Each hypothesis is a testable claim about what the simulator gets wrong. The pro
 
 > Decode-heavy workloads should show consistent negative prediction bias. The magnitude of the bias should be proportional to the fraction of step time spent memory-bound. Correcting for achievable (not theoretical) memory bandwidth should reduce this bias.
 
-**How to test**: Run BLIS against all 14 ground truth experiments (`eval/ground_truth/`) with and without the bandwidth efficiency correction (`peakBW *= 0.80`). Compare predicted vs. measured TPOT from `guidellm-results.json` per-request data. The correction should reduce TPOT prediction bias (predicted < measured) across workloads. Codesweep workloads (longer decode sequences, more memory-bound) should show larger improvement than chatsweep (shorter sequences, more compute-mixed). Compare low-QPS sweep points (minimal queuing) for the cleanest signal.
+**How to test**: Run BLIS against all 14 ground truth experiments (`eval/ground_truth/`) with and without the bandwidth efficiency correction (`peakBW *= 0.80`). Compare predicted vs. measured TPOT from `guidellm-results.json` per-request data. The correction should reduce TPOT prediction bias (predicted < measured) across workloads. Chatsweep workloads (output=215 tokens, decode-heavy, more memory-bound) should show larger TPOT improvement than codesweep (output=28 tokens, prefill-heavy, more compute-mixed). Compare low-QPS sweep points (minimal queuing) for the cleanest signal.
 
 **Data constraint**: Client-side TPOT includes scheduling overhead and contention effects — we cannot isolate pure decode step time. The test measures aggregate TPOT improvement, not the mechanism (memory-boundedness) directly.
 
-**Accept criterion**: TPOT MAPE improves by ≥3pp across all 14 experiments; codesweep experiments improve more than chatsweep (directional evidence for memory-bound mechanism).
+**Accept criterion**: TPOT MAPE improves by ≥3pp across all 14 experiments; chatsweep (decode-heavy) experiments improve more than codesweep (prefill-heavy) in TPOT (directional evidence for memory-bound mechanism).
 
 <details>
 <summary><b>Mechanism and evidence</b></summary>
@@ -103,7 +103,7 @@ vLLM fuses Q, K, V projections into a single `qkv_proj` GEMM with output dimensi
 
 *Part A (simulator-internal, no ground truth needed)*: Construct synthetic step configurations that sweep KV cache length from 128 to 8192 at fixed batch size. Compute step time under both aggregate `max(totalCompute, totalMemory)` and per-component `Σ_layers max(attnCompute, attnMemory) + max(mlpCompute, mlpMemory)`. Plot both curves. The aggregate curve should show artificial smoothness across the bottleneck transition; the per-component curve should show a clean knee.
 
-*Part B (aggregate accuracy)*: Run BLIS against all 14 ground truth experiments with aggregate vs. per-component roofline. Compare E2E MAPE. Workloads with longer output sequences (codesweep) generate larger KV caches and are more likely to cross bottleneck boundaries, so they should benefit more.
+*Part B (aggregate accuracy)*: Run BLIS against all 14 ground truth experiments with aggregate vs. per-component roofline. Compare E2E MAPE. Workloads with longer output sequences (chatsweep: output=215 tokens) generate larger KV caches during decode and are more likely to cross bottleneck boundaries, so they should benefit more. Codesweep (output=28 tokens) is prefill-dominated with shorter decode sequences.
 
 **Data constraint**: We cannot observe per-step bottleneck transitions from client-side data. Part A validates the mechanism synthetically; Part B validates the aggregate accuracy impact.
 
@@ -283,7 +283,7 @@ Corrections derived entirely from hardware physics, execution semantics, or stan
 
 | Hypothesis | What the simulator gets wrong | Accept criterion | Testability with client data |
 |------------|------------------------------|------------------|------------------------------|
-| H1 | Underestimates memory-bound step latency | TPOT MAPE ≥3pp better across 14 experiments; codesweep > chatsweep | Aggregate only — cannot isolate memory-bound steps |
+| H1 | Underestimates memory-bound step latency | TPOT MAPE ≥3pp better across 14 experiments; chatsweep (decode-heavy) > codesweep (prefill-heavy) | Aggregate only — cannot isolate memory-bound steps |
 | H2 | Missing per-step scheduling overhead | TPOT MAPE ≥3pp better on held-out experiments; TTFT not >1pp worse | Aggregate only — cannot observe per-step residuals |
 | H3 | MFU lookups use wrong GEMM shapes | E2E MAPE ≥2pp better on GQA models; GQA improvement > non-GQA | Strong — have both GQA and non-GQA models |
 | H4 | Aggregate roofline masks bottleneck transitions | Synthetic: ≥10% diff at crossover; Aggregate: E2E MAPE ≥1pp better | Mechanism via synthetic test; accuracy via aggregate |
