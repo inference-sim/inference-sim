@@ -293,7 +293,7 @@ func TestMustNewLatencyModel_NilFunc_Panics(t *testing.T) {
 	}()
 	coeffs := NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3})
 	hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false)
-	MustNewLatencyModel(coeffs, hw)
+	_, _ = MustNewLatencyModel(coeffs, hw) //nolint:errcheck // expected to panic before returning
 }
 
 func TestNewSimulator_NilLatencyModel_ReturnsError(t *testing.T) {

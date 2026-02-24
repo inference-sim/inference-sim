@@ -16,6 +16,10 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 9. **Self-audit** — 6 dimensions: logic, determinism, consistency, contradictions, guidance, issues
 10. **Commit and PR** — verification gate (if code fixes), then `commit-push-pr` skill
 
+## Note on File Path References
+
+FINDINGS.md files in individual hypothesis directories may reference `sim/latency_model.go` and `sim/roofline_step.go`. These files were moved to `sim/latency/latency.go` and `sim/latency/roofline.go` respectively in PKG-2 (#406). The file paths in FINDINGS.md reflect the codebase state at the time each experiment was conducted.
+
 ## Validated Hypotheses
 
 | ID | Family | Hypothesis | Status | Key Finding |

@@ -681,9 +681,17 @@ inference-sim/
 │   ├── request.go          # Request lifecycle
 │   ├── metrics.go          # TTFT, TPOT, E2E collection
 │   ├── rng.go              # PartitionedRNG for deterministic simulation
-│   ├── roofline_step.go    # Analytical FLOPs/bandwidth latency estimation
-│   ├── workload_config.go  # CSV trace loading and distribution-based workload
-│   └── model_hardware_config.go  # HuggingFace/hardware config
+│   ├── model_hardware_config.go  # ModelConfig, HardwareCalib structs
+│   └── workload_config.go  # CSV trace loading and distribution-based workload
+├── sim/kv/                 # KV cache implementations
+│   ├── cache.go            # KVCacheState (single-tier GPU)
+│   ├── tiered.go           # TieredKVCache (GPU+CPU)
+│   └── register.go         # NewKVStore factory + init()-based registration into sim/
+├── sim/latency/            # Latency model implementations
+│   ├── latency.go          # BlackboxLatencyModel, RooflineLatencyModel, NewLatencyModel factory
+│   ├── roofline.go         # Analytical FLOPs/bandwidth latency estimation
+│   ├── config.go           # HFConfig, GetHWConfig, GetModelConfig, ValidateRooflineConfig
+│   └── register.go         # init()-based registration into sim/
 ├── sim/cluster/            # Multi-replica cluster simulation
 │   ├── cluster.go          # Shared-clock event loop, online routing
 │   ├── instance.go         # Per-instance simulator wrapper
