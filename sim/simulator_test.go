@@ -245,6 +245,30 @@ func TestNewSimulator_NilKVStore_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestMustNewKVCacheState_NilFunc_Panics(t *testing.T) {
+	// Save and restore the registered function
+	saved := NewKVCacheStateFunc
+	defer func() { NewKVCacheStateFunc = saved }()
+	NewKVCacheStateFunc = nil
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for nil NewKVCacheStateFunc")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T: %v", r, r)
+		}
+		expected := "NewKVCacheStateFunc not registered: import sim/kv to register it " +
+			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")"
+		if msg != expected {
+			t.Errorf("panic message:\n  got:  %q\n  want: %q", msg, expected)
+		}
+	}()
+	MustNewKVCacheState(100, 16)
+}
+
 func TestNewSimulator_NilLatencyModel_ReturnsError(t *testing.T) {
 	cfg := newTestSimConfig()
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)

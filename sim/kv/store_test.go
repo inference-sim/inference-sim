@@ -38,6 +38,14 @@ func TestNewKVCacheState_ValidConfig_SingleTier_Succeeds(t *testing.T) {
 	assert.Equal(t, int64(0), store.UsedBlocks())
 }
 
+func TestNewTieredKVCache_NilGPU_Panics(t *testing.T) {
+	assert.PanicsWithValue(t,
+		"NewTieredKVCache: gpu must not be nil",
+		func() {
+			NewTieredKVCache(nil, 10, 0.5, 1.0, 0)
+		})
+}
+
 func TestNewTieredKVCache_ValidConfig_Succeeds(t *testing.T) {
 	gpu := NewKVCacheState(100, 16)
 	store := NewTieredKVCache(gpu, 50, 0.8, 1.0, 10)
