@@ -31,11 +31,7 @@ type InstanceSimulator struct {
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// Create KV store (single-tier or tiered based on config)
-	gpu := kv.NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	var kvStore sim.KVStore = gpu
-	if cfg.KVCPUBlocks > 0 {
-		kvStore = kv.NewTieredKVCache(gpu, cfg.KVCPUBlocks, cfg.KVOffloadThreshold, cfg.KVTransferBandwidth, cfg.KVTransferBaseLatency)
-	}
+	kvStore := kv.NewKVStore(cfg.KVCacheConfig)
 	latencyModel, err := sim.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
