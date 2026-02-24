@@ -15,6 +15,7 @@ import (
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -179,12 +180,12 @@ var runCmd = &cobra.Command{
 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
 				roofline = true
 				hfPath := filepath.Join(modelConfigFolder, "config.json")
-				mc, err := sim.GetModelConfig(hfPath)
+				mc, err := latency.GetModelConfig(hfPath)
 				if err != nil {
 					logrus.Fatalf("Failed to load model config: %v", err)
 				}
 				modelConfig = *mc
-				hc, err := sim.GetHWConfig(hwConfigPath, gpu)
+				hc, err := latency.GetHWConfig(hwConfigPath, gpu)
 				if err != nil {
 					logrus.Fatalf("Failed to load hardware config: %v", err)
 				}

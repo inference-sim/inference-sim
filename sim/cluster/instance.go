@@ -9,6 +9,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kv"
+	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // InstanceID uniquely identifies a simulator instance within a cluster.
@@ -32,7 +33,7 @@ type InstanceSimulator struct {
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// Create KV store (single-tier or tiered based on config)
 	kvStore := kv.NewKVStore(cfg.KVCacheConfig)
-	latencyModel, err := sim.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
 	}

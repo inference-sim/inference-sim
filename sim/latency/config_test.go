@@ -1,4 +1,4 @@
-package sim
+package latency_test
 
 import (
 	"math"
@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 func TestGetHWConfig_MalformedJSON(t *testing.T) {
@@ -16,7 +19,7 @@ func TestGetHWConfig_MalformedJSON(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	_, err := GetHWConfig(badFile, "H100")
+	_, err := latency.GetHWConfig(badFile, "H100")
 	if err == nil {
 		t.Error("expected error for malformed JSON, got nil")
 	}
@@ -31,7 +34,7 @@ func TestGetHWConfig_UnknownGPU(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	_, err := GetHWConfig(validFile, "H200")
+	_, err := latency.GetHWConfig(validFile, "H200")
 	if err == nil {
 		t.Error("expected error for unknown GPU, got nil")
 	}
@@ -48,7 +51,7 @@ func TestGetHWConfig_ValidConfig(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	cfg, err := GetHWConfig(validFile, "H100")
+	cfg, err := latency.GetHWConfig(validFile, "H100")
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -64,7 +67,7 @@ func TestGetModelConfig_MalformedJSON(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	_, err := GetModelConfig(badFile)
+	_, err := latency.GetModelConfig(badFile)
 	if err == nil {
 		t.Error("expected error for malformed JSON, got nil")
 	}
@@ -79,7 +82,7 @@ func TestGetModelConfig_MissingTorchDtype(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	cfg, err := GetModelConfig(configFile)
+	cfg, err := latency.GetModelConfig(configFile)
 	if err != nil {
 		t.Errorf("should not error for missing torch_dtype (default to 0): %v", err)
 	}
@@ -104,7 +107,7 @@ func TestGetModelConfig_ValidConfig(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	cfg, err := GetModelConfig(configFile)
+	cfg, err := latency.GetModelConfig(configFile)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -117,23 +120,23 @@ func TestGetModelConfig_ValidConfig(t *testing.T) {
 }
 
 func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
-	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
 
 	tests := []struct {
 		name  string
-		mc    ModelConfig
+		mc    sim.ModelConfig
 		field string
 	}{
-		{"zero NumHeads", ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}, "NumHeads"},
-		{"zero NumLayers", ModelConfig{NumHeads: 32, NumLayers: 0, HiddenDim: 4096, BytesPerParam: 2}, "NumLayers"},
-		{"zero HiddenDim", ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 0, BytesPerParam: 2}, "HiddenDim"},
-		{"zero BytesPerParam", ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 0}, "BytesPerParam"},
+		{"zero NumHeads", sim.ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}, "NumHeads"},
+		{"zero NumLayers", sim.ModelConfig{NumHeads: 32, NumLayers: 0, HiddenDim: 4096, BytesPerParam: 2}, "NumLayers"},
+		{"zero HiddenDim", sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 0, BytesPerParam: 2}, "HiddenDim"},
+		{"zero BytesPerParam", sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 0}, "BytesPerParam"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// WHEN ValidateRooflineConfig is called
-			err := ValidateRooflineConfig(tt.mc, hc)
+			err := latency.ValidateRooflineConfig(tt.mc, hc)
 
 			// THEN it returns an error mentioning the zero field
 			if err == nil {
@@ -148,11 +151,11 @@ func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
 
 func TestValidateRooflineConfig_ZeroHardwareFields_ReturnsAllErrors(t *testing.T) {
 	// GIVEN a HardwareCalib with all critical fields zero (model config is valid)
-	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := HardwareCalib{} // all zero
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{} // all zero
 
 	// WHEN ValidateRooflineConfig is called
-	err := ValidateRooflineConfig(mc, hc)
+	err := latency.ValidateRooflineConfig(mc, hc)
 
 	// THEN it returns an error mentioning every zero field
 	if err == nil {
@@ -168,8 +171,8 @@ func TestValidateRooflineConfig_ZeroHardwareFields_ReturnsAllErrors(t *testing.T
 
 func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 	// GIVEN a HardwareCalib with NaN and Inf fields (bypass <= 0 check)
-	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096}
-	hc := HardwareCalib{
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096}
+	hc := sim.HardwareCalib{
 		TFlopsPeak:    math.NaN(),
 		BwPeakTBs:     math.Inf(1),
 		BwEffConstant: 0.7,
@@ -178,7 +181,7 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 	}
 
 	// WHEN ValidateRooflineConfig is called
-	err := ValidateRooflineConfig(mc, hc)
+	err := latency.ValidateRooflineConfig(mc, hc)
 
 	// THEN it returns an error mentioning the invalid fields
 	if err == nil {
@@ -194,11 +197,11 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 
 func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	// GIVEN valid ModelConfig and HardwareCalib
-	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
 
 	// WHEN ValidateRooflineConfig is called
-	err := ValidateRooflineConfig(mc, hc)
+	err := latency.ValidateRooflineConfig(mc, hc)
 
 	// THEN it returns nil
 	if err != nil {
@@ -206,21 +209,17 @@ func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	}
 }
 
-func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
-	// GIVEN a SimConfig with Roofline=true and NumHeads=0
-	cfg := SimConfig{
-		Horizon:       100000,
-		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		LatencyCoeffs: NewLatencyCoeffs(nil, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(
-			ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
-			HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
-			"", "", 1, true,
-		),
-	}
+// TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError verifies roofline rejects zero NumHeads.
+func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
+	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
+	hw := sim.NewModelHardwareConfig(
+		sim.ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		"", "", 1, true,
+	)
 
 	// WHEN NewLatencyModel is called (roofline validation happens here)
-	_, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	_, err := latency.NewLatencyModel(coeffs, hw)
 
 	// THEN it returns a non-nil error mentioning NumHeads
 	if err == nil {
@@ -231,21 +230,17 @@ func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestNewSimulator_RooflineZeroTP_ReturnsError(t *testing.T) {
-	// GIVEN a SimConfig with Roofline=true and TP=0
-	cfg := SimConfig{
-		Horizon:       100000,
-		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		LatencyCoeffs: NewLatencyCoeffs(nil, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(
-			ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
-			HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
-			"", "", 0, true,
-		),
-	}
+// TestNewLatencyModel_RooflineZeroTP_ReturnsError verifies roofline rejects zero TP.
+func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
+	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
+	hw := sim.NewModelHardwareConfig(
+		sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		"", "", 0, true,
+	)
 
 	// WHEN NewLatencyModel is called (roofline validation happens here)
-	_, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	_, err := latency.NewLatencyModel(coeffs, hw)
 
 	// THEN it returns a non-nil error mentioning TP
 	if err == nil {
@@ -253,31 +248,5 @@ func TestNewSimulator_RooflineZeroTP_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "TP") {
 		t.Errorf("error should mention TP, got: %v", err)
-	}
-}
-
-func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
-	// GIVEN a SimConfig with Roofline=false and NumHeads=0 (irrelevant)
-	cfg := SimConfig{
-		Horizon:             100000,
-		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{NumHeads: 0}, HardwareCalib{}, "", "", 0, false),
-	}
-
-	// WHEN NewSimulator is called
-	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("NewLatencyModel: %v", err)
-	}
-	sim, err := NewSimulator(cfg, kvStore, latencyModel)
-
-	// THEN it succeeds (roofline validation not applied)
-	if err != nil {
-		t.Fatalf("unexpected error for non-roofline mode: %v", err)
-	}
-	if sim == nil {
-		t.Error("expected non-nil simulator")
 	}
 }

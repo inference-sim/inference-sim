@@ -1,8 +1,10 @@
-package sim
+package latency
 
 import (
 	"math"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // TestBlackboxLatencyModel_StepTime_MixedBatch_Positive verifies:
@@ -15,7 +17,7 @@ func TestBlackboxLatencyModel_StepTime_MixedBatch_Positive(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	batch := []*Request{
+	batch := []*sim.Request{
 		{
 			InputTokens:   make([]int, 100),
 			ProgressIndex: 50,
@@ -30,7 +32,7 @@ func TestBlackboxLatencyModel_StepTime_MixedBatch_Positive(t *testing.T) {
 	}
 
 	result := model.StepTime(batch)
-	emptyResult := model.StepTime([]*Request{})
+	emptyResult := model.StepTime([]*sim.Request{})
 
 	// THEN result must be positive
 	if result <= 0 {
@@ -52,7 +54,7 @@ func TestBlackboxLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	result := model.StepTime([]*Request{})
+	result := model.StepTime([]*sim.Request{})
 
 	// THEN overhead-only baseline is non-negative
 	if result < 0 {
@@ -70,7 +72,7 @@ func TestBlackboxLatencyModel_QueueingTime_Positive(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	req := &Request{InputTokens: make([]int, 50)}
+	req := &sim.Request{InputTokens: make([]int, 50)}
 	result := model.QueueingTime(req)
 
 	if result <= 0 {
@@ -118,8 +120,8 @@ func TestBlackboxLatencyModel_StepTime_Monotonic(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	small := []*Request{{InputTokens: make([]int, 50), ProgressIndex: 0, NumNewTokens: 10}}
-	large := []*Request{{InputTokens: make([]int, 200), ProgressIndex: 0, NumNewTokens: 100}}
+	small := []*sim.Request{{InputTokens: make([]int, 50), ProgressIndex: 0, NumNewTokens: 10}}
+	large := []*sim.Request{{InputTokens: make([]int, 200), ProgressIndex: 0, NumNewTokens: 100}}
 
 	if model.StepTime(large) <= model.StepTime(small) {
 		t.Errorf("monotonicity violated: StepTime(100 tokens) = %d <= StepTime(10 tokens) = %d",
@@ -135,8 +137,8 @@ func TestBlackboxLatencyModel_QueueingTime_Monotonic(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	short := &Request{InputTokens: make([]int, 10)}
-	long := &Request{InputTokens: make([]int, 500)}
+	short := &sim.Request{InputTokens: make([]int, 10)}
+	long := &sim.Request{InputTokens: make([]int, 500)}
 
 	if model.QueueingTime(long) <= model.QueueingTime(short) {
 		t.Errorf("monotonicity violated: QueueingTime(500 tokens) = %d <= QueueingTime(10 tokens) = %d",
@@ -154,14 +156,14 @@ func TestRooflineLatencyModel_StepTime_PositiveAndMonotonic(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	smallBatch := []*Request{
+	smallBatch := []*sim.Request{
 		{
 			InputTokens:   make([]int, 100),
 			ProgressIndex: 0,
 			NumNewTokens:  100,
 		},
 	}
-	largeBatch := []*Request{
+	largeBatch := []*sim.Request{
 		{
 			InputTokens:   make([]int, 1000),
 			ProgressIndex: 0,
@@ -196,7 +198,7 @@ func TestRooflineLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	emptyResult := model.StepTime([]*Request{})
+	emptyResult := model.StepTime([]*sim.Request{})
 
 	// THEN empty batch result must be non-negative (overhead only)
 	if emptyResult < 0 {
@@ -204,7 +206,7 @@ func TestRooflineLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 	}
 
 	// AND a non-empty batch must produce a longer step time
-	nonEmptyBatch := []*Request{
+	nonEmptyBatch := []*sim.Request{
 		{
 			InputTokens:   make([]int, 100),
 			ProgressIndex: 0,
@@ -230,7 +232,7 @@ func TestRooflineLatencyModel_QueueingTime_Positive(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	req := &Request{InputTokens: make([]int, 50)}
+	req := &sim.Request{InputTokens: make([]int, 50)}
 	result := model.QueueingTime(req)
 
 	if result <= 0 {
@@ -240,9 +242,9 @@ func TestRooflineLatencyModel_QueueingTime_Positive(t *testing.T) {
 
 // TestNewLatencyModel_BlackboxMode verifies BC-4 (blackbox path).
 func TestNewLatencyModel_BlackboxMode(t *testing.T) {
-	cfg := SimConfig{
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false),
+	cfg := sim.SimConfig{
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, false),
 	}
 
 	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -250,7 +252,7 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 		t.Fatalf("NewLatencyModel returned error: %v", err)
 	}
 
-	batch := []*Request{
+	batch := []*sim.Request{
 		{
 			InputTokens:   make([]int, 100),
 			ProgressIndex: 50,
@@ -265,7 +267,7 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 	}
 
 	// QueueingTime regression anchor (alpha0 + alpha1 * inputLen)
-	req := &Request{InputTokens: make([]int, 50)}
+	req := &sim.Request{InputTokens: make([]int, 50)}
 	qt := model.QueueingTime(req)
 	if qt != 150 {
 		t.Errorf("QueueingTime = %d, want 150 (regression anchor: alpha0 + alpha1*50)", qt)
@@ -280,9 +282,9 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 
 // TestNewLatencyModel_RooflineMode verifies BC-4 (roofline path).
 func TestNewLatencyModel_RooflineMode(t *testing.T) {
-	cfg := SimConfig{
-		LatencyCoeffs:       NewLatencyCoeffs(nil, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, true),
+	cfg := sim.SimConfig{
+		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, true),
 	}
 
 	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -292,7 +294,7 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 
 	// THEN the model must produce different results than blackbox for the same batch
 	// (roofline uses FLOPs/bandwidth, blackbox uses beta regression — distinct formulas)
-	batch := []*Request{
+	batch := []*sim.Request{
 		{
 			InputTokens:   make([]int, 100),
 			ProgressIndex: 0,
@@ -307,9 +309,9 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 
 // TestNewLatencyModel_InvalidRoofline verifies BC-8.
 func TestNewLatencyModel_InvalidRoofline(t *testing.T) {
-	cfg := SimConfig{
-		LatencyCoeffs:       NewLatencyCoeffs(nil, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, true),
+	cfg := sim.SimConfig{
+		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, true),
 	}
 
 	_, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -333,8 +335,8 @@ func TestNewLatencyModel_ShortAlphaCoeffs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			coeffs := NewLatencyCoeffs(tc.beta, tc.alpha)
-			hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, tc.roofline)
+			coeffs := sim.NewLatencyCoeffs(tc.beta, tc.alpha)
+			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, tc.roofline)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for short AlphaCoeffs, got nil")
@@ -354,8 +356,8 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			coeffs := NewLatencyCoeffs(tc.beta, []float64{100, 1, 100})
-			hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false)
+			coeffs := sim.NewLatencyCoeffs(tc.beta, []float64{100, 1, 100})
+			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, false)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for short BetaCoeffs, got nil")
@@ -366,8 +368,8 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 
 // TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError verifies BC-4: NaN in alpha rejected.
 func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
-	coeffs := NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{math.NaN(), 1.0, 100.0})
-	_, err := NewLatencyModel(coeffs, NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false))
+	coeffs := sim.NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{math.NaN(), 1.0, 100.0})
+	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, false))
 	if err == nil {
 		t.Fatal("expected error for NaN AlphaCoeffs, got nil")
 	}
@@ -375,8 +377,8 @@ func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
 
 // TestNewLatencyModel_InfBetaCoeffs_ReturnsError verifies BC-4: Inf in beta rejected.
 func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
-	coeffs := NewLatencyCoeffs([]float64{math.Inf(1), 10, 5}, []float64{100, 1.0, 100.0})
-	_, err := NewLatencyModel(coeffs, NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false))
+	coeffs := sim.NewLatencyCoeffs([]float64{math.Inf(1), 10, 5}, []float64{100, 1.0, 100.0})
+	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, false))
 	if err == nil {
 		t.Fatal("expected error for Inf BetaCoeffs, got nil")
 	}
@@ -386,13 +388,13 @@ func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
 // Both models handle requests past prefill with 0 output tokens consistently.
 func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T) {
 	// GIVEN a request past prefill with 0 output tokens (edge case)
-	req := &Request{
+	req := &sim.Request{
 		InputTokens:   []int{1, 2, 3},
 		OutputTokens:  []int{},
 		ProgressIndex: 3,
 		NumNewTokens:  0,
 	}
-	batch := []*Request{req}
+	batch := []*sim.Request{req}
 
 	blackbox := &BlackboxLatencyModel{
 		betaCoeffs:  []float64{5000, 10, 5},
@@ -406,7 +408,7 @@ func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T
 	}
 
 	// WHEN both models compute step time with and without the zero-output request
-	emptyBatch := []*Request{}
+	emptyBatch := []*sim.Request{}
 	blackboxEmpty := blackbox.StepTime(emptyBatch)
 	rooflineEmpty := roofline.StepTime(emptyBatch)
 	blackboxWith := blackbox.StepTime(batch)
