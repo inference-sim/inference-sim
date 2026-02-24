@@ -270,6 +270,32 @@ func TestMustNewKVCacheState_NilFunc_Panics(t *testing.T) {
 	MustNewKVCacheState(100, 16)
 }
 
+func TestMustNewLatencyModel_NilFunc_Panics(t *testing.T) {
+	// Save and restore the registered function
+	saved := NewLatencyModelFunc
+	defer func() { NewLatencyModelFunc = saved }()
+	NewLatencyModelFunc = nil
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for nil NewLatencyModelFunc")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T: %v", r, r)
+		}
+		expected := "NewLatencyModelFunc not registered: import sim/latency to register it " +
+			"(add: import _ \"github.com/inference-sim/inference-sim/sim/latency\")"
+		if msg != expected {
+			t.Errorf("panic message:\n  got:  %q\n  want: %q", msg, expected)
+		}
+	}()
+	coeffs := NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3})
+	hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false)
+	MustNewLatencyModel(coeffs, hw)
+}
+
 func TestNewSimulator_NilLatencyModel_ReturnsError(t *testing.T) {
 	cfg := newTestSimConfig()
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
