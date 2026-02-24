@@ -44,13 +44,16 @@ type TieredKVCache struct {
 }
 
 // NewTieredKVCache creates a TieredKVCache.
-// Panics if gpu is nil or bandwidth is zero or negative.
+// Panics if gpu is nil, bandwidth is non-positive/NaN/Inf, or threshold is NaN/Inf.
 func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth float64, baseLat int64) *TieredKVCache {
 	if gpu == nil {
 		panic("NewTieredKVCache: gpu must not be nil")
 	}
-	if bandwidth <= 0 {
-		panic(fmt.Sprintf("NewTieredKVCache: KVTransferBandwidth must be > 0, got %v", bandwidth))
+	if bandwidth <= 0 || math.IsNaN(bandwidth) || math.IsInf(bandwidth, 0) {
+		panic(fmt.Sprintf("NewTieredKVCache: KVTransferBandwidth must be finite and > 0, got %v", bandwidth))
+	}
+	if math.IsNaN(threshold) || math.IsInf(threshold, 0) {
+		panic(fmt.Sprintf("NewTieredKVCache: KVOffloadThreshold must be finite, got %v", threshold))
 	}
 	return &TieredKVCache{
 		gpu: gpu,

@@ -37,5 +37,16 @@ func MustNewKVCacheState(totalBlocks, blockSizeTokens int64) KVStore {
 }
 
 // NewKVStoreFromConfig constructs the appropriate KVStore (single-tier or tiered) based on config.
-// Registered by sim/kv package's init(). Used by test code in package sim.
+// Registered by sim/kv package's init(). Used by test code in package sim that cannot
+// import sim/kv directly (import cycle). Production code uses kv.NewKVStore() directly.
 var NewKVStoreFromConfig func(cfg KVCacheConfig) KVStore
+
+// MustNewKVStoreFromConfig calls NewKVStoreFromConfig with a nil guard. Panics with an
+// actionable message if the factory has not been registered (missing sim/kv import).
+func MustNewKVStoreFromConfig(cfg KVCacheConfig) KVStore {
+	if NewKVStoreFromConfig == nil {
+		panic("NewKVStoreFromConfig not registered: import sim/kv to register it " +
+			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")")
+	}
+	return NewKVStoreFromConfig(cfg)
+}
