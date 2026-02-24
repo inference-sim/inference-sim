@@ -20,6 +20,113 @@ golangci-lint run ./...
 
 All three must pass before submitting a PR. CI uses golangci-lint v2.9.0 (see `.github/workflows/ci.yml`).
 
+## Your First Contribution
+
+This walkthrough adds a trivial admission policy — the lightest extension type (~3 files). Follow it step-by-step to learn the patterns, then apply them to your own contribution.
+
+**What we'll build:** A `CountingAdmit` admission policy that admits the first N requests and rejects the rest.
+
+### Step 1: Create a branch
+
+```bash
+git checkout -b feature/counting-admit
+```
+
+### Step 2: Write the failing test
+
+Add a test to `sim/admission_test.go`:
+
+```go
+func TestCountingAdmit_RejectsAfterLimit(t *testing.T) {
+	// GIVEN a CountingAdmit policy with limit=2
+	policy := &CountingAdmit{Limit: 2}
+	req := &Request{ID: "test", InputTokens: make([]int, 3)}
+	state := &RouterState{Clock: 0}
+
+	// WHEN 3 requests arrive
+	r1, _ := policy.Admit(req, state)
+	r2, _ := policy.Admit(req, state)
+	r3, reason := policy.Admit(req, state)
+
+	// THEN the first 2 are admitted and the 3rd is rejected
+	if !r1 {
+		t.Error("first request should be admitted")
+	}
+	if !r2 {
+		t.Error("second request should be admitted")
+	}
+	if r3 {
+		t.Errorf("third request should be rejected, got reason: %s", reason)
+	}
+}
+```
+
+Run: `go test ./sim/... -run TestCountingAdmit -v`
+Expected: **FAIL** (type `CountingAdmit` does not exist yet)
+
+### Step 3: Implement the policy
+
+In `sim/admission.go`, add after the existing policies:
+
+```go
+// CountingAdmit admits the first Limit requests, then rejects all subsequent ones.
+type CountingAdmit struct {
+	Limit int
+	count int
+}
+
+func (c *CountingAdmit) Admit(_ *Request, _ *RouterState) (bool, string) {
+	c.count++
+	if c.count <= c.Limit {
+		return true, ""
+	}
+	return false, "counting-admit limit exceeded"
+}
+```
+
+### Step 4: Register in the factory
+
+Two files need changes:
+
+In `sim/bundle.go`, add `"counting-admit"` to the `validAdmissionPolicies` map:
+
+```go
+validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "counting-admit": true}
+```
+
+In `sim/admission.go`, add a case to the `NewAdmissionPolicy` factory switch:
+
+```go
+case "counting-admit":
+    return &CountingAdmit{Limit: 100} // hardcoded for tutorial simplicity
+```
+
+> **Note:** In a real policy, you would wire the limit through the factory parameters (e.g., `Limit: int(capacity)`) or via `PolicyBundle` YAML config. Hardcoded defaults would fail code review — see how `token-bucket` uses `capacity` and `refillRate`.
+
+### Step 5: Verify tests pass
+
+```bash
+go test ./sim/... -run TestCountingAdmit -v   # Your new test
+go test ./...                                    # All tests still pass
+golangci-lint run ./...                          # No lint issues
+```
+
+### Step 6: Commit and open a PR
+
+```bash
+git add sim/admission.go sim/admission_test.go sim/bundle.go
+git commit -m "feat(sim): add counting-admit admission policy
+
+- Admits first N requests, rejects the rest
+- Registered in factory with default limit=100"
+git push -u origin feature/counting-admit
+gh pr create --title "feat: add counting-admit admission policy" --body "My first BLIS contribution!"
+```
+
+**That's it!** You've added a complete, tested, registered policy. Real contributions follow the same pattern — just with more contracts and a formal implementation plan.
+
+> **Important:** This example is for learning only. Do **not** submit this as a real PR — `CountingAdmit` is a toy policy with no practical use. For your actual first contribution, check [open issues](https://github.com/inference-sim/inference-sim/issues) for tasks labeled `good first issue`.
+
 ## Development Workflow
 
 Follow `docs/process/pr-workflow.md` for the complete PR lifecycle. The workflow applies to all PRs regardless of source (macro plan, issues, design docs, feature requests):
