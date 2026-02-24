@@ -201,13 +201,13 @@ inference-sim/
 │   ├── prefix_cache_index.go  # PrefixCacheIndex: per-instance LRU of hierarchical block hashes
 │   ├── priority.go            # PriorityPolicy interface with ConstantPriority, SLOBasedPriority, and InvertedSLO templates, NewPriorityPolicy factory
 │   ├── scheduler.go           # InstanceScheduler interface with FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, and ReversePriority templates, NewScheduler factory
-│   ├── latency_model.go       # LatencyModel interface (5 methods: StepTime, QueueingTime, OutputTokenProcessingTime, SchedulingProcessingTime, PreemptionProcessingTime), BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── latency_model.go       # LatencyModel interface (5 methods), NewLatencyModelFunc registration variable, MustNewLatencyModel nil-guarded wrapper
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
 │   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted), Request lifecycle and state machine, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.)
 │   ├── kvcache.go             # Block-based KV cache with LRU eviction and prefix caching, CacheHits/CacheMisses counters, transactional AllocateKVBlocks with rollbackAllocation on mid-loop failure
-│   ├── kv_store.go            # KVStore interface (11 methods: +SetClock, +ConsumePendingTransferLatency), NewKVStore(KVCacheConfig) factory with input validation (returns single-tier or tiered based on config)
+│   ├── kv_store.go            # KVStore interface (11 methods: +SetClock, +ConsumePendingTransferLatency), NewKVStoreFromConfig registration variable, MustNewKVCacheState/MustNewKVStoreFromConfig nil-guarded wrappers
 │   ├── kvcache_tiered.go      # TieredKVCache (GPU+CPU composition), cpuTier, offloadedBlock, offload/reload/transfer latency, PendingTransferLatency() (pure query), ConsumePendingTransferLatency() (read-and-clear)
 │   ├── batch.go               # Batch struct
 │   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (FCFS + chunked-prefill + preemption), NewBatchFormation(LatencyModel) factory
@@ -215,10 +215,18 @@ inference-sim/
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
-│   ├── roofline_step.go       # Analytical FLOPs/bandwidth latency estimation
-│   ├── model_hardware_config.go # HFConfig, ModelConfig, HardwareCalib, ValidateRooflineConfig
+│   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/)
 │   ├── workload_config.go     # CSV trace loading and distribution-based workload generation
 │   └── internal/testutil/     # Shared test infrastructure (golden dataset loading)
+├── sim/kv/                    # KV cache implementations (PKG-1)
+│   ├── cache.go               # KVCacheState (single-tier GPU)
+│   ├── tiered.go              # TieredKVCache (GPU+CPU offload/reload)
+│   └── register.go            # NewKVStore factory + init()-based registration into sim/
+├── sim/latency/               # Latency model implementations (PKG-2)
+│   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
+│   ├── config.go              # HFConfig, GetHWConfig(), GetModelConfig(), ValidateRooflineConfig(), parseHWConfig(), parseHFConfig()
+│   └── register.go            # init()-based registration of NewLatencyModelFunc into sim/
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
 │   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; Run() returns error
@@ -266,13 +274,13 @@ inference-sim/
 
 ### Latency Estimation
 
-Two modes, selected by `NewLatencyModel()` factory based on `--model-config-folder` presence:
+Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--model-config-folder` presence:
 
 1. **Blackbox mode** (default): Uses trained alpha/beta coefficients from `defaults.yaml`
    - Alpha coefficients: queueing time estimation
    - Beta coefficients: step time estimation based on batch features
 
-2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `roofline_step.go`
+2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `sim/latency/roofline.go`
    - Requires HuggingFace `config.json` in `model_configs/`
    - Requires `hardware_config.json` with GPU specs
 

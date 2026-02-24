@@ -371,9 +371,9 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Predicted outcome:** Same policy ranking in both modes (e.g., if weighted > least-loaded > round-robin in blackbox mode, same ordering in roofline mode). Absolute TTFT values will differ.
 
-**Precondition:** Verify whether roofline mode's step time computation accounts for `cachedBlocks` (i.e., do cache hits reduce roofline step time?). Check `roofline_step.go` for use of `numNewTokens` vs total tokens. If roofline doesn't model cache hit latency reduction, use non-prefix workloads for the cross-mode comparison to avoid confounding.
+**Precondition:** Verify whether roofline mode's step time computation accounts for `cachedBlocks` (i.e., do cache hits reduce roofline step time?). Check `sim/latency/roofline.go` for use of `numNewTokens` vs total tokens. If roofline doesn't model cache hit latency reduction, use non-prefix workloads for the cross-mode comparison to avoid confounding.
 
-**If hypothesis fails:** May indicate (a) roofline step time estimation has a fundamentally different sensitivity to batch features than blackbox, (b) roofline mode has a bug in prefill/decode step computation (check `roofline_step.go`), or (c) the policy advantage depends on specific latency model characteristics (e.g., prefix caching benefit disappears in roofline mode because it doesn't model cache hit latency reduction — this is a known limitation, not a bug).
+**If hypothesis fails:** May indicate (a) roofline step time estimation has a fundamentally different sensitivity to batch features than blackbox, (b) roofline mode has a bug in prefill/decode step computation (check `sim/latency/roofline.go`), or (c) the policy advantage depends on specific latency model characteristics (e.g., prefix caching benefit disappears in roofline mode because it doesn't model cache hit latency reduction — this is a known limitation, not a bug).
 
 **Coverage:** Latency model comparison, model abstraction validity, roofline vs blackbox
 

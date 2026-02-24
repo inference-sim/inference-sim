@@ -1,9 +1,11 @@
-package sim
+package latency
 
 import (
 	"math"
 	"sort"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
@@ -48,8 +50,8 @@ func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
 }
 
 // testModelConfig returns a Llama-3.1-8B-like config for roofline tests.
-func testModelConfig() ModelConfig {
-	return ModelConfig{
+func testModelConfig() sim.ModelConfig {
+	return sim.ModelConfig{
 		NumLayers:       32,
 		HiddenDim:       4096,
 		NumHeads:        32,
@@ -177,8 +179,8 @@ func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *t
 }
 
 // testHardwareCalib returns an H100-like hardware config for roofline tests.
-func testHardwareCalib() HardwareCalib {
-	return HardwareCalib{
+func testHardwareCalib() sim.HardwareCalib {
+	return sim.HardwareCalib{
 		TFlopsPeak:       989.0,
 		BwPeakTBs:        3.35,
 		BwEffConstant:    0.7,

@@ -32,21 +32,6 @@ func (eq *EventQueue) Pop() any {
 	return item
 }
 
-type PrefillRequestConfig struct {
-	ProgressIndex       int64 `json:"progress_index"`
-	NumNewPrefillTokens int   `json:"num_new_prefill_tokens"`
-}
-
-type DecodeRequestConfig struct {
-	ProgressIndex      int64 `json:"progress_index"`
-	NumNewDecodeTokens int   `json:"num_new_decode_tokens"`
-}
-
-type StepConfig struct {
-	PrefillRequests []PrefillRequestConfig `json:"prefill_requests"`
-	DecodeRequests  []DecodeRequestConfig  `json:"decode_requests"`
-}
-
 // GuideLLMConfig supports GuideLLM style request generation
 type GuideLLMConfig struct {
 	Rate               float64 // Requests per second

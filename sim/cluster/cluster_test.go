@@ -11,6 +11,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 	"github.com/inference-sim/inference-sim/sim/kv"
+	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // newTestDeploymentConfig creates a DeploymentConfig suitable for testing.
@@ -872,7 +873,7 @@ func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
 				WorkloadConfig:      sim.NewWorkloadConfig(guideLLMConfig, ""),
 			}
 			refKV := kv.NewKVCacheState(refCfg.TotalKVBlocks, refCfg.BlockSizeTokens)
-			refLM, err := sim.NewLatencyModel(refCfg.LatencyCoeffs, refCfg.ModelHardwareConfig)
+			refLM, err := latency.NewLatencyModel(refCfg.LatencyCoeffs, refCfg.ModelHardwareConfig)
 			if err != nil {
 				t.Fatalf("NewLatencyModel: %v", err)
 			}

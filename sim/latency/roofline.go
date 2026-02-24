@@ -1,12 +1,32 @@
-package sim
+package latency
 
 import (
 	"math"
 	"sort"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
+// PrefillRequestConfig describes a single prefill request in a batch step.
+type PrefillRequestConfig struct {
+	ProgressIndex       int64 `json:"progress_index"`
+	NumNewPrefillTokens int   `json:"num_new_prefill_tokens"`
+}
+
+// DecodeRequestConfig describes a single decode request in a batch step.
+type DecodeRequestConfig struct {
+	ProgressIndex      int64 `json:"progress_index"`
+	NumNewDecodeTokens int   `json:"num_new_decode_tokens"`
+}
+
+// StepConfig describes the requests in a single batch step for roofline estimation.
+type StepConfig struct {
+	PrefillRequests []PrefillRequestConfig `json:"prefill_requests"`
+	DecodeRequests  []DecodeRequestConfig  `json:"decode_requests"`
+}
+
 // --- Bento FLOPS Logic ---
-func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) map[string]float64 {
+func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) map[string]float64 {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
 	nHeads := float64(config.NumHeads)
@@ -63,7 +83,7 @@ func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newToke
 }
 
 func calculateMemoryAccessBytes(
-	config ModelConfig,
+	config sim.ModelConfig,
 	sequenceLength int64,
 	newTokens int64,
 	includeKVCache bool,
@@ -128,7 +148,7 @@ func calculateMemoryAccessBytes(
 // rooflineStepTime computes step latency using the roofline model.
 // Precondition: ValidateRooflineConfig(modelConfig, hwConfig) must return nil
 // and tp must be > 0. Callers must validate before first call.
-func rooflineStepTime(modelConfig ModelConfig, hwConfig HardwareCalib, stepConfig StepConfig, tp int) int64 {
+func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, stepConfig StepConfig, tp int) int64 {
 
 	tpFactor := float64(tp)
 	peakFlops := hwConfig.TFlopsPeak * 1e12

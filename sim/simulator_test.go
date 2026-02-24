@@ -17,9 +17,9 @@ import (
 func mustNewSimulator(t *testing.T, cfg SimConfig) *Simulator {
 	t.Helper()
 	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
-	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
-		t.Fatalf("NewLatencyModel: %v", err)
+		t.Fatalf("MustNewLatencyModel: %v", err)
 	}
 	s, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
@@ -233,9 +233,9 @@ func newTestSimConfig() SimConfig {
 
 func TestNewSimulator_NilKVStore_ReturnsError(t *testing.T) {
 	cfg := newTestSimConfig()
-	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
-		t.Fatalf("NewLatencyModel: %v", err)
+		t.Fatalf("MustNewLatencyModel: %v", err)
 	}
 	_, err = NewSimulator(cfg, nil, latencyModel)
 	if err == nil {
@@ -268,6 +268,32 @@ func TestMustNewKVCacheState_NilFunc_Panics(t *testing.T) {
 		}
 	}()
 	MustNewKVCacheState(100, 16)
+}
+
+func TestMustNewLatencyModel_NilFunc_Panics(t *testing.T) {
+	// Save and restore the registered function
+	saved := NewLatencyModelFunc
+	defer func() { NewLatencyModelFunc = saved }()
+	NewLatencyModelFunc = nil
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for nil NewLatencyModelFunc")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T: %v", r, r)
+		}
+		expected := "NewLatencyModelFunc not registered: import sim/latency to register it " +
+			"(add: import _ \"github.com/inference-sim/inference-sim/sim/latency\")"
+		if msg != expected {
+			t.Errorf("panic message:\n  got:  %q\n  want: %q", msg, expected)
+		}
+	}()
+	coeffs := NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3})
+	hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false)
+	_, _ = MustNewLatencyModel(coeffs, hw) //nolint:errcheck // expected to panic before returning
 }
 
 func TestNewSimulator_NilLatencyModel_ReturnsError(t *testing.T) {
@@ -916,9 +942,9 @@ func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
-		t.Fatalf("NewLatencyModel: %v", err)
+		t.Fatalf("MustNewLatencyModel: %v", err)
 	}
 	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
@@ -969,9 +995,9 @@ func TestEnqueueRequest_NormalInput_Enqueued(t *testing.T) {
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
-		t.Fatalf("NewLatencyModel: %v", err)
+		t.Fatalf("MustNewLatencyModel: %v", err)
 	}
 	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
@@ -1016,9 +1042,9 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 		LatencyCoeffs: NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
-		t.Fatalf("NewLatencyModel: %v", err)
+		t.Fatalf("MustNewLatencyModel: %v", err)
 	}
 	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
@@ -1082,9 +1108,9 @@ func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
-		t.Fatalf("NewLatencyModel: %v", err)
+		t.Fatalf("MustNewLatencyModel: %v", err)
 	}
 	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
@@ -1223,5 +1249,34 @@ func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
 	// Request must have completed
 	if sim.Metrics.CompletedRequests != 1 {
 		t.Errorf("expected 1 completed request, got %d", sim.Metrics.CompletedRequests)
+	}
+}
+
+// TestNewSimulator_NonRooflineZeroNumHeads_Succeeds verifies that non-roofline mode
+// does not validate model config fields (NumHeads=0 is irrelevant for blackbox mode).
+// Moved from model_hardware_config_test.go during PKG-2 extraction.
+func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
+	// GIVEN a SimConfig with Roofline=false and NumHeads=0 (irrelevant)
+	cfg := SimConfig{
+		Horizon:             100000,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{NumHeads: 0}, HardwareCalib{}, "", "", 0, false),
+	}
+
+	// WHEN NewSimulator is called
+	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("MustNewLatencyModel: %v", err)
+	}
+	sim, err := NewSimulator(cfg, kvStore, latencyModel)
+
+	// THEN it succeeds (roofline validation not applied)
+	if err != nil {
+		t.Fatalf("unexpected error for non-roofline mode: %v", err)
+	}
+	if sim == nil {
+		t.Error("expected non-nil simulator")
 	}
 }
