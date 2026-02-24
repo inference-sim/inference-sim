@@ -27,45 +27,59 @@ This document lifts that constraint. We now have access to an [instrumented vLLM
 
 ---
 
-## Instrumentation Setup
+## HG1: perLayerOverhead Calibration via Grid Search with Train/Test Split
 
-### Trace Collection Protocol
+**Motivation:** H2b established `perLayerOverhead=100μs/layer` from analytical reasoning (vLLM block-table management, per-layer tensor dispatch). This value achieved 17.0% TPOT MAPE across 13 experiments, but H2b's criterion 2 failed — one experiment worsened by 7.7pp. A data-driven grid search can find the value that minimizes aggregate error, and a train/test split guards against overfitting.
 
-All experiments in this document require the following vLLM launch configuration:
+**Why this belongs in idea4 (not idea3):** idea3's constraint is "zero fitted parameters." A grid search that selects the best-fitting value from ground truth data is, by definition, a fitted parameter — even if it's a single scalar. This places it at the boundary between Tier 0 (analytical) and Tier 1 (calibrated). By using a train/test split, we ensure the selected value generalizes beyond the training set.
 
-```bash
-python -m vllm.entrypoints.openai.api_server \
-    --model <model> \
-    --enable-journey-tracing \
-    --step-tracing-sample-rate 1.0 \
-    --step-tracing-rich-subsample-rate 0.1 \
-    --otlp-traces-endpoint http://localhost:4317 \
-    --journey-tracing-sample-rate 1.0
-```
+### Experiment Design
 
-**Critical settings:**
-- `--step-tracing-sample-rate 1.0` — capture every step (not the default 1%). This is essential for per-step hypothesis testing. Can reduce to 0.1 for production-scale runs after methodology validation.
-- `--journey-tracing-sample-rate 1.0` — capture every request lifecycle.
-- `--step-tracing-rich-subsample-rate 0.1` — 10% of steps get per-request snapshots (GPU blocks, prefix hits). Can increase for targeted experiments.
+**Train/test split:** Stratify the 13 experiments by model family (5 families) and workload type (3 types). Assign ~70% to train, ~30% to test, ensuring each model family appears in both splits:
 
-### Trace Storage
+| Split | Experiments | Rationale |
+|-------|------------|-----------|
+| **Train (9)** | llama2-7b-tp1-chatsweep, llama2-7b-tp2-codesweep, llama2-7b-tp4-chatsweep, codellama-34b-tp2-chatsweep, codellama-34b-tp2-codesweep, llama2-70b-tp4-chatsweep, qwen3-14b-tp1-codesweep, qwen3-14b-tp2-chatsweep, qwen2.5-7b-summarization | All 5 families represented; mix of chat/code/summarization |
+| **Test (4)** | llama2-7b-tp1-codesweep, llama2-7b-tp2-chatsweep, llama2-7b-tp4-codesweep, llama2-70b-tp4-codesweep | llama2-7b at all 3 TP levels + llama2-70b; unseen workload-TP combos |
 
-OTEL traces exported to a local collector (Jaeger or OTLP file exporter). For analysis, export to JSON or Parquet. The analysis scripts should join journey and step traces via the `scheduler.step` attribute (present in both journey events and step batch summaries).
+**Grid search procedure:**
 
-### Joining Client and Server Data
+*Phase 1 (coarse):* Sweep `perLayerOverhead` from 0 to 500μs in 25μs steps. For each value, run BLIS against the 9 train experiments with `bwEfficiencyFactor=0.82` (H1). Compute train-set TPOT MAPE. Identify the coarse optimum.
 
-Each GuideLLM request can be matched to its journey trace via request ID. The join protocol:
+*Phase 2 (fine):* Sweep ±25μs around the coarse optimum in 5μs steps. Run against train experiments only. Identify the fine-grained optimum.
 
-1. GuideLLM records `request_id`, client-side TTFT, TPOT, E2E
-2. Journey trace records the same `request_id` with server-side timestamps
-3. Step traces provide the batch context for each scheduler step
-4. Join: `request → journey events → step numbers → step batch summaries`
+*Validation:* Run the fine-grained optimum against the 4 test experiments. Compare test-set TPOT MAPE against: (a) H2b default (100μs), (b) no overhead (0μs baseline).
 
-This join enables computing **per-request server-side decomposition**:
-- `queue_time = journey.SCHEDULED.ts - journey.QUEUED.ts`
-- `prefill_time = journey.FIRST_TOKEN.ts - journey.SCHEDULED.ts`
-- `decode_time = journey.FINISHED.ts - journey.FIRST_TOKEN.ts`
-- `network_time = client_E2E - (journey.DEPARTED.ts - journey.ARRIVED.ts)`
+### Analysis
+
+1. **Sweep curve:** Plot TPOT MAPE vs. `perLayerOverhead` for train and test sets separately. If the curves have similar shape and minimum location, the parameter generalizes. If the test-set minimum diverges from the train-set minimum by >30μs, the parameter is model-family-dependent and a single global value is insufficient.
+
+2. **Per-model-family optima:** For each of the 5 model families, find the value that minimizes family-specific TPOT MAPE on train data. If family optima span a >2× range (e.g., 7B wants 60μs, 70B wants 150μs), this motivates per-family `perLayerOverhead` values in `hardware_config_roofline_valid.json`.
+
+3. **Sensitivity:** Measure the width of the "flat region" where TPOT MAPE is within 1pp of the minimum. A wide flat region (≥50μs) means the exact value doesn't matter — use the analytical 100μs. A narrow region (<20μs) means the parameter is sensitive and calibration matters.
+
+4. **Signed error analysis:** At the optimum, check whether TPOT prediction is balanced (mean signed error near zero) or systematically biased. If the optimum trades underprediction for overprediction rather than centering predictions, it may be compensating for other modeling errors (H3-H5).
+
+### Accept Criteria
+
+1. **Generalization:** Test-set TPOT MAPE at the optimum is within 3pp of train-set TPOT MAPE (no overfitting).
+2. **Improvement:** Test-set TPOT MAPE at the optimum is < 20% (Tier 0 target from idea3).
+3. **Stability:** The train-set optimum and test-set optimum (independently computed) differ by ≤ 30μs.
+
+**Overfitting guard:** If test-set MAPE exceeds train-set MAPE by >5pp, reject the grid-search value and fall back to H2b's analytical 100μs/layer.
+
+### Relation to Other Hypotheses
+
+- **Input:** Requires H1 (BwEfficiencyFactor=0.82) as baseline — all grid search runs include H1 correction.
+- **Output:** The selected `perLayerOverhead` value becomes the default for all subsequent hypothesis experiments (H3-H7).
+- **Supersedes:** H2b's analytical estimate (100μs) if the grid search finds a significantly better value that generalizes. Otherwise, confirms H2b.
+
+### Implementation
+
+Experiment scripts: [`hypotheses/h-roofline/h2c-overhead-grid-search/`](hypotheses/h-roofline/h2c-overhead-grid-search/)
+
+- `run.sh`: Two-phase grid search with train/test split
+- `analyze.py`: Sweep curves, per-family optima, sensitivity analysis, overfitting check
 
 ---
 
