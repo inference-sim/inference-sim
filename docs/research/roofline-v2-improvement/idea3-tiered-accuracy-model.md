@@ -47,7 +47,7 @@ Each hypothesis is a testable claim about what the simulator gets wrong. The pro
 
 The model assumes GPUs sustain their datasheet peak HBM bandwidth. In practice, DRAM refresh cycles, bank conflicts, ECC overhead, and memory controller scheduling reduce sustained bandwidth to ~80% of theoretical peak. This is a well-known hardware property — NVIDIA STREAM benchmarks on H100 show 2650-2750 GB/s sustained against 3350 GB/s peak.
 
-- BLIS uses raw peak: `3.35e12` bytes/s — [`sim/roofline_step_v2.go:132`](sim/roofline_step_v2.go#L132)
+- BLIS applies `BwEfficiencyFactor` from `hardware_config_roofline_valid.json` (0.82 for H100) — [`sim/roofline_step.go:244-246`](sim/roofline_step.go#L244)
 - InferSim applies 0.80 efficiency on every GPU it supports: H20 ([line 23](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py#L23)), H800 ([line 36](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py#L36)), H200 ([line 49](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py#L49)), GB200 ([line 59](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py#L59))
 - Impact: 22% underestimate on memory-bound steps (`3350/2744 = 1.221`)
 
@@ -66,9 +66,11 @@ The model assumes GPUs sustain their datasheet peak HBM bandwidth. In practice, 
 <details>
 <summary><b>Mechanism and evidence</b></summary>
 
-The model captures GPU kernel execution time but misses the CPU-side overhead of the vLLM scheduler loop: Python-level batch formation, block table allocation, CUDA graph selection, input tensor preparation, output detokenization, and scheduler state updates. These are Python operations that take 3-30ms per step — 100-600× larger than the 50μs kernel launch latency BLIS currently models.
+The model captures GPU kernel execution time but misses the CPU-side overhead of the vLLM scheduler loop: Python-level batch formation, block table allocation, CUDA graph selection, input tensor preparation, output detokenization, and scheduler state updates. These are Python operations that take 3-30ms per step.
 
-- BLIS overhead: `TOverheadMicros: 50.0` — [`hardware_config.json:6`](hardware_config.json#L6)
+**Status**: H2 (fixed overhead) was superseded by H2b (model-scaled overhead). BLIS now uses `PerLayerCPUOverhead × num_layers / tp` — see H2b.
+
+- BLIS overhead: `perLayerOverhead: 100` (μs/layer) — [`hardware_config_roofline_valid.json:6`](hardware_config_roofline_valid.json#L6), applied at [`sim/roofline_step.go:422-426`](sim/roofline_step.go#L422)
 - InferSim decode overhead: `tpot += 5` (5ms) — [`models/model.py:229`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L229)
 - InferSim prefill overhead: `ttft += 30` (30ms) — [`models/model.py:177`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L177)
 
@@ -112,7 +114,7 @@ This naturally avoids the H2 failure mode: 7B at TP=4 gets 0.8ms instead of 5ms 
 
 Prefill formula: `prefill_overhead_us = prefill_base_per_layer_us × num_hidden_layers / tp` with prefill_base ~500μs/layer (reflecting heavier prefill scheduling: chunked-prefill planning, prompt prefix matching, initial block allocation for all layers).
 
-- BLIS overhead application point: [`sim/roofline_step_v2.go:317-337`](sim/roofline_step_v2.go#L317) — `TOverheadMicros` applied per step, scaled by log(batch_size)
+- BLIS overhead application point: [`sim/roofline_step.go:422-426`](sim/roofline_step.go#L422) — `PerLayerCPUOverhead × num_layers / tp`, no batch-size scaling
 - InferSim flat overhead: [`models/model.py:229`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L229) (5ms decode), [`models/model.py:177`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L177) (30ms prefill)
 - vLLM block table: each sequence maintains `num_layers` block table entries — [`vllm/core/block_manager.py`](https://github.com/vllm-project/vllm)
 
@@ -133,7 +135,7 @@ Prefill formula: `prefill_overhead_us = prefill_base_per_layer_us × num_hidden_
 
 vLLM fuses Q, K, V projections into a single `qkv_proj` GEMM with output dimension `(num_heads + 2 * num_kv_heads) * head_dim`. The MFU database was benchmarked with these fused shapes. BLIS queries the database with three separate shapes (Q, K, V individually), which don't match any benchmarked entry and which have different MFU characteristics — smaller GEMMs achieve lower MFU due to insufficient SM parallelism.
 
-- BLIS: 4 separate lookups per layer (Q, K, V, O) — [`sim/roofline_step_v2.go:54-68`](sim/roofline_step_v2.go#L54)
+- BLIS: 4 separate lookups per layer (Q, K, V, O) — [`sim/roofline_step.go:162-194`](sim/roofline_step.go#L162)
 - InferSim: 2 lookups per layer (fused QKV, O) — [`flops/flops.py:9-20`](https://github.com/alibaba/InferSim/blob/main/flops/flops.py#L9)
 - For Llama-3.1-8B: fused shape `(bs, 4096, 6144)` vs. split K/V shapes `(bs, 4096, 1024)`
 
@@ -159,7 +161,7 @@ vLLM fuses Q, K, V projections into a single `qkv_proj` GEMM with output dimensi
 The roofline model `T = max(W/P, Q/B)` assumes a single operational intensity. BLIS applies this globally — total FLOPs and total bytes across all components, then one `max`. InferSim applies it per-component within each layer (attention compute vs. KV load), then sums across layers. The aggregate approach averages away per-component bottleneck transitions.
 
 - InferSim: per-component roofline [`layers/attn.py:25-38`](https://github.com/alibaba/InferSim/blob/main/layers/attn.py#L25), per-layer sum [`models/model.py:175`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L175)
-- BLIS: aggregate `math.Max` at [`sim/roofline_step_v2.go:275-276, 299`](sim/roofline_step_v2.go#L275)
+- BLIS: aggregate `math.Max` at [`sim/roofline_step.go:389-390, 413-415`](sim/roofline_step.go#L389)
 - Theory: Williams et al., "Roofline: An Insightful Visual Performance Model", CACM 2009
 
 </details>
@@ -183,7 +185,7 @@ The roofline model `T = max(W/P, Q/B)` assumes a single operational intensity. B
 
 In vLLM with chunked prefill, a mixed step executes as: (1) one fused GEMM over the concatenated prefill+decode batch for all linear projections, (2) separate FlashAttention kernels for prefill and decode tokens. The correct time model is additive: `GEMM(totalBatch) + PrefillAttn + DecodeAttn`. BLIS instead uses a weighted average of independent prefill and decode predictions with uncited magic constants.
 
-- BLIS: `0.75*prefillTime + 0.25*decodeTime` (prefill-dominated), `0.35*prefillTime + 0.65*decodeTime` (decode-dominated) — [`sim/roofline_step_v2.go:288-291`](sim/roofline_step_v2.go#L288)
+- BLIS: `0.75*prefillTime + 0.25*decodeTime` (prefill-dominated), `0.35*prefillTime + 0.65*decodeTime` (decode-dominated) — [`sim/roofline_step.go:400-411`](sim/roofline_step.go#L400)
 - These weights have no citation in InferSim, published literature, or vLLM documentation
 - InferSim does not model mixed batches — this is a novel correction
 
@@ -233,7 +235,7 @@ This hypothesis decomposes into five sub-hypotheses, each describing a distinct 
 
 InferSim computes MoE FLOPs as `act * 3 * gemm_flops(1, hidden_size, intermediate_size)` where `act = num_shared_experts + num_experts_per_tok` — [`flops/flops.py:get_moe_gflops()`](https://github.com/alibaba/InferSim/blob/main/flops/flops.py). The full decode MoE calculation including router overhead is in [`layers/moe.py:18-87`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py#L18).
 
-BLIS uses dense `intermediate_size` for all MLP layers — [`sim/roofline_step_v2.go:73-82`](sim/roofline_step_v2.go#L73). `ModelConfig` does not parse `num_local_experts`, `num_experts_per_tok`, `moe_intermediate_size`, or `num_shared_experts` — [`sim/model_hardware_config.go:13-21`](sim/model_hardware_config.go#L13). Mixtral config has `num_local_experts: 8`, `num_experts_per_tok: 2` — [`model_configs/mixtral-8x7b-v0.1/config.json`](model_configs/mixtral-8x7b-v0.1/config.json).
+BLIS uses dense `intermediate_size` for all MLP layers — [`sim/roofline_step.go:48-50`](sim/roofline_step.go#L48). `ModelConfig` does not parse `num_local_experts`, `num_experts_per_tok`, `moe_intermediate_size`, or `num_shared_experts` — [`sim/model_hardware_config.go:13-21`](sim/model_hardware_config.go#L13). Mixtral config has `num_local_experts: 8`, `num_experts_per_tok: 2` — [`model_configs/mixtral-8x7b-v0.1/config.json`](model_configs/mixtral-8x7b-v0.1/config.json).
 
 </details>
 
@@ -299,7 +301,7 @@ InferSim computes shared experts via standard GEMM (`get_gemm_mfu_and_latency()`
 
 InferSim implements DeepEP dispatch/combine in [`comm/comm.py:dispatch()`](https://github.com/alibaba/InferSim/blob/main/comm/comm.py) and `combine()`, with `normal` mode (prefill) and `low_latency` mode (decode). Communication uses `size_bw_model()`: RDMA for inter-node, NVLink for intra-node. GPU hardware parameters include `nvlink_bw` and `rdma_bw` — [`hardware/gpu.py`](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py).
 
-BLIS currently uses `numLayers * 2 * allReduceLatency` for all communication — [`sim/roofline_step_v2.go:308-312`](sim/roofline_step_v2.go#L308).
+BLIS does not currently model inter-GPU communication overhead — `AllReduceLatency` was removed during the roofline simplification.
 
 </details>
 
@@ -460,11 +462,12 @@ Tier 0: Fully deterministic. Tier 1: Deterministic given same trace + seed (INV-
 | InferSim MFU lookup | [`mfu/mfu.py:30-52,76-84`](https://github.com/alibaba/InferSim/blob/main/mfu/mfu.py#L30) |
 | InferSim per-layer sum | [`models/model.py:175`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L175) |
 | InferSim causal mask | [`layers/attn.py:86`](https://github.com/alibaba/InferSim/blob/main/layers/attn.py#L86) — `/1.8` factor |
-| BLIS v2 step time | [`sim/roofline_step_v2.go`](sim/roofline_step_v2.go) |
-| BLIS v2 peak BW | [`sim/roofline_step_v2.go:132`](sim/roofline_step_v2.go#L132) |
-| BLIS v2 Q/K/V/O GEMMs | [`sim/roofline_step_v2.go:54-68`](sim/roofline_step_v2.go#L54) |
-| BLIS v2 mixed weights | [`sim/roofline_step_v2.go:288-291`](sim/roofline_step_v2.go#L288) |
-| BLIS hardware config | [`hardware_config.json:6,18-19`](hardware_config.json#L6) |
+| BLIS roofline step time | [`sim/roofline_step.go`](sim/roofline_step.go) |
+| BLIS BW efficiency | [`sim/roofline_step.go:244-246`](sim/roofline_step.go#L244) |
+| BLIS Q/K/V/O GEMMs | [`sim/roofline_step.go:162-194`](sim/roofline_step.go#L162) |
+| BLIS mixed-batch weights | [`sim/roofline_step.go:400-411`](sim/roofline_step.go#L400) |
+| BLIS CPU overhead | [`sim/roofline_step.go:422-426`](sim/roofline_step.go#L422) |
+| BLIS hardware config | [`hardware_config_roofline_valid.json`](hardware_config_roofline_valid.json) |
 | BLIS calibration | [`sim/workload/calibrate.go`](sim/workload/calibrate.go) |
 | BLIS Mixtral config | [`model_configs/mixtral-8x7b-v0.1/config.json`](model_configs/mixtral-8x7b-v0.1/config.json) |
 | InferSim MoE layer | [`layers/moe.py`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py) |

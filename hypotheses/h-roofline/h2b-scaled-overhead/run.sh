@@ -6,11 +6,11 @@
 #   decode_overhead_us  = 100 × num_hidden_layers / tp
 #   prefill_overhead_us = 500 × num_hidden_layers / tp
 #
-# Tests: Run BLIS roofline v2 against all 13 ground truth experiments in
+# Tests: Run BLIS roofline against all 13 ground truth experiments in
 # three configurations:
 #   Baseline:     H1 BW correction only (bwEfficiencyFactor=0.82)
-#   Fixed (H2):   H1 + fixed InferSim overheads (5000/30000/15000)
-#   Scaled (H2b): H1 + model-scaled overheads (100*layers/tp decode, 500*layers/tp prefill)
+#   Fixed (H2):   H1 + fixed 5ms overhead (perLayerOverhead tuned per-experiment)
+#   Scaled (H2b): H1 + model-scaled overhead (perLayerOverhead=100μs/layer)
 #
 # Reference: hypotheses/h-roofline/h2-scheduling-overhead/run.sh (H2 fixed overhead config)
 #
@@ -35,10 +35,10 @@ for prereq in "$GT_DIR" "$MODEL_CONFIGS" "$BENCH_DATA"; do
 done
 
 # --- Constants ---
-BASE_PER_LAYER_DECODE_US=100    # μs per layer per GPU for decode overhead
-BASE_PER_LAYER_PREFILL_US=500   # μs per layer per GPU for prefill overhead
+BASE_PER_LAYER_US=100           # μs per layer per GPU (decode + prefill, single field)
+FIXED_DECODE_OVERHEAD_US=5000   # InferSim: 5ms decode (for H2 fixed comparison arm)
 
-# --- Hardware configs: baseline (H1 only) and fixed (H2) ---
+# --- Hardware configs: baseline (H1 only) and scaled (H2b) ---
 cat > "$RESULTS_DIR/hw_baseline.json" << 'EOF'
 {
     "H100": {
@@ -49,16 +49,15 @@ cat > "$RESULTS_DIR/hw_baseline.json" << 'EOF'
 }
 EOF
 
-# Fixed H2 config for direct comparison
-cat > "$RESULTS_DIR/hw_fixed.json" << 'EOF'
+# Scaled H2b config: perLayerOverhead=100μs/layer
+# Engine applies: perLayerOverhead × num_layers / tp
+cat > "$RESULTS_DIR/hw_scaled.json" << 'EOF'
 {
     "H100": {
         "TFlopsPeak": 989.5,
         "BwPeakTBs": 3.35,
         "bwEfficiencyFactor": 0.82,
-        "TOverheadMicros": 5000,
-        "prefillOverheadMicros": 30000,
-        "mixedPrefillOverheadMicros": 15000
+        "perLayerOverhead": 100
     }
 }
 EOF
@@ -95,16 +94,15 @@ print(cfg.get('num_hidden_layers', 0))
 "
 }
 
-# --- Helper: generate per-experiment scaled hardware config ---
-generate_scaled_hw_config() {
+# --- Helper: generate per-experiment fixed-overhead config (H2 comparison arm) ---
+# Engine formula: overhead = perLayerOverhead × num_layers / tp
+# To get fixed 5ms: perLayerOverhead = 5000 * tp / num_layers
+generate_fixed_overhead_hw_config() {
     local num_layers="$1"
     local tp="$2"
     local output_path="$3"
 
-    local decode_overhead_us=$(python3 -c "print(int($BASE_PER_LAYER_DECODE_US * $num_layers / $tp))")
-    local prefill_overhead_us=$(python3 -c "print(int($BASE_PER_LAYER_PREFILL_US * $num_layers / $tp))")
-    # Mixed prefill = half of pure prefill (same ratio as InferSim: 15000/30000)
-    local mixed_prefill_overhead_us=$(python3 -c "print(int($prefill_overhead_us / 2))")
+    local per_layer_us=$(python3 -c "print(round($FIXED_DECODE_OVERHEAD_US * $tp / $num_layers, 1))")
 
     cat > "$output_path" << EOFHW
 {
@@ -112,13 +110,11 @@ generate_scaled_hw_config() {
         "TFlopsPeak": 989.5,
         "BwPeakTBs": 3.35,
         "bwEfficiencyFactor": 0.82,
-        "TOverheadMicros": $decode_overhead_us,
-        "prefillOverheadMicros": $prefill_overhead_us,
-        "mixedPrefillOverheadMicros": $mixed_prefill_overhead_us
+        "perLayerOverhead": $per_layer_us
     }
 }
 EOFHW
-    echo "  Scaled overheads: decode=${decode_overhead_us}μs, prefill=${prefill_overhead_us}μs, mixed=${mixed_prefill_overhead_us}μs"
+    echo "  Fixed 5ms equivalent: perLayerOverhead=${per_layer_us}μs (${num_layers} layers, TP=${tp})"
 }
 
 # --- Helper: extract workload params from profile.yaml via Python ---
@@ -168,7 +164,7 @@ echo "=========================================="
 echo ""
 echo "Baseline:     H1 BW correction only (bwEfficiencyFactor=0.82)"
 echo "Fixed (H2):   H1 + fixed overheads (decode=5ms, prefill=30ms, mixed=15ms)"
-echo "Scaled (H2b): H1 + model-scaled (decode=${BASE_PER_LAYER_DECODE_US}μs/layer/tp, prefill=${BASE_PER_LAYER_PREFILL_US}μs/layer/tp)"
+echo "Scaled (H2b): H1 + perLayerOverhead=${BASE_PER_LAYER_US}μs/layer (engine applies × layers / tp)"
 echo "Ground truth:  synchronous benchmark from GuideLLM"
 echo ""
 
@@ -205,9 +201,9 @@ for entry in "${EXPERIMENTS[@]}"; do
     num_layers=$(extract_num_layers "$model_config_json")
     echo "  num_hidden_layers=$num_layers, tp=$tp"
 
-    # Generate per-experiment scaled hardware config
-    scaled_hw_config="$RESULTS_DIR/hw_scaled_${exp_name}.json"
-    generate_scaled_hw_config "$num_layers" "$tp" "$scaled_hw_config"
+    # Generate per-experiment fixed-overhead config (H2 comparison arm)
+    fixed_hw_config="$RESULTS_DIR/hw_fixed_${exp_name}.json"
+    generate_fixed_overhead_hw_config "$num_layers" "$tp" "$fixed_hw_config"
 
     # Extract workload parameters
     params_json=$(extract_profile "$profile_path")
@@ -254,20 +250,20 @@ for entry in "${EXPERIMENTS[@]}"; do
         --hardware-config "$RESULTS_DIR/hw_baseline.json" \
         "${common_flags[@]}" "$baseline_results" || true
 
-    # Run fixed overhead (H2: 5ms decode, 30ms prefill)
+    # Run fixed overhead (H2: 5ms equivalent via per-experiment perLayerOverhead)
     fixed_results="$RESULTS_DIR/${exp_name}_fixed.json"
     fixed_out="$RESULTS_DIR/${exp_name}_fixed.txt"
-    echo "  Running fixed overhead (H2: 5ms/30ms)..."
+    echo "  Running fixed overhead (H2: 5ms equivalent)..."
     blis_run "$TIMEOUT_STANDARD" "$fixed_out" \
-        --hardware-config "$RESULTS_DIR/hw_fixed.json" \
+        --hardware-config "$fixed_hw_config" \
         "${common_flags[@]}" "$fixed_results" || true
 
-    # Run model-scaled overhead (H2b)
+    # Run model-scaled overhead (H2b: perLayerOverhead=100μs/layer)
     scaled_results="$RESULTS_DIR/${exp_name}_scaled.json"
     scaled_out="$RESULTS_DIR/${exp_name}_scaled.txt"
-    echo "  Running model-scaled overhead (H2b)..."
+    echo "  Running model-scaled overhead (H2b: 100μs/layer)..."
     blis_run "$TIMEOUT_STANDARD" "$scaled_out" \
-        --hardware-config "$scaled_hw_config" \
+        --hardware-config "$RESULTS_DIR/hw_scaled.json" \
         "${common_flags[@]}" "$scaled_results" || true
 
     if [[ -f "$baseline_results" ]] && [[ -f "$fixed_results" ]] && [[ -f "$scaled_results" ]]; then

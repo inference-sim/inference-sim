@@ -44,22 +44,13 @@ cat > "$RESULTS_DIR/hw_baseline.json" << 'EOF'
 }
 EOF
 
-# Treatment: H1 + InferSim-scale scheduling overhead
-# TOverheadMicros=5000 (5ms decode overhead, per InferSim models/model.py:229)
-# PrefillOverheadMicros=30000 (30ms prefill overhead, per InferSim models/model.py:177)
-# MixedPrefillOverheadMicros=15000 (half of pure prefill for mixed batches)
-cat > "$RESULTS_DIR/hw_treatment.json" << 'EOF'
-{
-    "H100": {
-        "TFlopsPeak": 989.5,
-        "BwPeakTBs": 3.35,
-        "bwEfficiencyFactor": 0.82,
-        "TOverheadMicros": 5000,
-        "prefillOverheadMicros": 30000,
-        "mixedPrefillOverheadMicros": 15000
-    }
-}
-EOF
+# Treatment: H1 + InferSim-equivalent fixed 5ms decode overhead.
+# The engine applies: perLayerOverhead × num_layers / tp.
+# To produce a fixed 5ms overhead regardless of model, we generate
+# per-experiment configs where perLayerOverhead = 5000 / (num_layers / tp).
+# This preserves the H2 hypothesis: "fixed additive overhead independent of compute."
+
+FIXED_DECODE_OVERHEAD_US=5000  # InferSim: 5ms decode (models/model.py:229)
 
 # --- Experiment matrix ---
 # Format: experiment_name|model_config_folder|tp
@@ -120,12 +111,48 @@ else:
 "
 }
 
+# --- Helper: extract num_hidden_layers from model config.json ---
+extract_num_layers() {
+    local config_path="$1"
+    python3 -c "
+import json, sys
+with open('$config_path') as f:
+    cfg = json.load(f)
+if 'text_config' in cfg:
+    cfg = cfg['text_config']
+print(cfg.get('num_hidden_layers', 0))
+"
+}
+
+# --- Helper: generate treatment config with fixed-equivalent overhead ---
+# Engine formula: overhead = perLayerOverhead × num_layers / tp
+# To get fixed 5ms: perLayerOverhead = 5000 / (num_layers / tp) = 5000 * tp / num_layers
+generate_fixed_overhead_hw_config() {
+    local num_layers="$1"
+    local tp="$2"
+    local output_path="$3"
+
+    local per_layer_us=$(python3 -c "print(round($FIXED_DECODE_OVERHEAD_US * $tp / $num_layers, 1))")
+
+    cat > "$output_path" << EOFHW
+{
+    "H100": {
+        "TFlopsPeak": 989.5,
+        "BwPeakTBs": 3.35,
+        "bwEfficiencyFactor": 0.82,
+        "perLayerOverhead": $per_layer_us
+    }
+}
+EOFHW
+    echo "  Fixed 5ms equivalent: perLayerOverhead=${per_layer_us}μs (${num_layers} layers, TP=${tp})"
+}
+
 echo "=========================================="
 echo "  H2: Scheduling Overhead Validation"
 echo "=========================================="
 echo ""
 echo "Baseline: H1 BW correction only (bwEfficiencyFactor=0.82)"
-echo "Treatment: H1 + InferSim overheads (decode=5ms, prefill=30ms, mixed=15ms)"
+echo "Treatment: H1 + fixed 5ms overhead (via per-experiment perLayerOverhead)"
 echo "Ground truth: synchronous benchmark from GuideLLM"
 echo ""
 
@@ -151,6 +178,19 @@ for entry in "${EXPERIMENTS[@]}"; do
         FAIL_COUNT=$((FAIL_COUNT + 1))
         continue
     fi
+
+    # Extract num_hidden_layers from model config
+    model_config_json="$MODEL_CONFIGS/$config_folder/config.json"
+    if [[ ! -f "$model_config_json" ]]; then
+        echo "  SKIP: missing model config: $model_config_json" >&2
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        continue
+    fi
+    num_layers=$(extract_num_layers "$model_config_json")
+
+    # Generate per-experiment treatment config (fixed 5ms equivalent)
+    treatment_hw_config="$RESULTS_DIR/hw_treatment_${exp_name}.json"
+    generate_fixed_overhead_hw_config "$num_layers" "$tp" "$treatment_hw_config"
 
     params_json=$(extract_profile "$profile_path")
     num_requests=$(echo "$params_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['num_requests'])")
@@ -196,12 +236,12 @@ for entry in "${EXPERIMENTS[@]}"; do
         --hardware-config "$RESULTS_DIR/hw_baseline.json" \
         "${common_flags[@]}" "$baseline_results" || true
 
-    # Run treatment (H1 + H2 overheads)
+    # Run treatment (H1 + H2 fixed 5ms overhead)
     treatment_results="$RESULTS_DIR/${exp_name}_treatment.json"
     treatment_out="$RESULTS_DIR/${exp_name}_treatment.txt"
-    echo "  Running treatment (H1 + H2 overheads)..."
+    echo "  Running treatment (H1 + fixed 5ms)..."
     blis_run "$TIMEOUT_STANDARD" "$treatment_out" \
-        --hardware-config "$RESULTS_DIR/hw_treatment.json" \
+        --hardware-config "$treatment_hw_config" \
         "${common_flags[@]}" "$treatment_results" || true
 
     if [[ -f "$baseline_results" ]] && [[ -f "$treatment_results" ]]; then
