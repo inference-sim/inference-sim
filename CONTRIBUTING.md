@@ -11,11 +11,14 @@ go build -o simulation_worker main.go
 # Test
 go test ./...
 
+# Install linter (one-time setup)
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
+
 # Lint
 golangci-lint run ./...
 ```
 
-All three must pass before submitting a PR.
+All three must pass before submitting a PR. CI uses golangci-lint v2.9.0 (see `.github/workflows/ci.yml`).
 
 ## Development Workflow
 
