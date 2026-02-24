@@ -2,12 +2,10 @@
 package sim
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"strconv"
-	"strings"
-
 	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
+	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
 // ToDo: Multi-modality is not yet supported
@@ -40,10 +38,6 @@ type KVCacheState struct {
 	UsedBlockCnt    int64              // Total number of used blocks (tracked incrementally)
 	CacheHits       int64              // blocks found via prefix cache (PR12)
 	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
-}
-
-func Len64[T any](v []T) int64 {
-	return int64(len(v))
 }
 
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
@@ -115,34 +109,15 @@ func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
 	block.PrevFree = nil
 }
 
-// hashTokens returns a SHA256 hash of the joined token sequence.
-func hashTokens(tokens []int) string {
-	h := sha256.New()
-
-	// string version of token ids to be joined
-	var tokenStrings strings.Builder
-
-	for i, token := range tokens {
-		if i > 0 {
-			// Add a | delimiter before all tokens except the first
-			tokenStrings.WriteString("|")
-		}
-		tokenStrings.WriteString(strconv.Itoa(token))
-	}
-
-	h.Write([]byte(tokenStrings.String()))
-	return hex.EncodeToString(h.Sum(nil))
-}
-
 // GetCachedBlocks attempts to reuse previously cached full blocks.
 // It returns block IDs for the longest contiguous cached prefix.
 // This is a pure query — it does not modify any state.
 // CacheHits are counted by AllocateKVBlocks when cached blocks are committed.
 func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
-	n := Len64(tokens) / kvc.BlockSizeTokens
+	n := util.Len64(tokens) / kvc.BlockSizeTokens
 	for i := int64(0); i < n; i++ {
 		chunk := tokens[:(i+1)*kvc.BlockSizeTokens]
-		h := hashTokens(chunk)
+		h := hash.HashTokens(chunk)
 		blockId, ok := kvc.HashToBlock[h]
 		if !ok {
 			break
@@ -162,11 +137,11 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 
 	var newTokens []int
 	var numNewBlocks int64
-	if req.ProgressIndex < Len64(req.InputTokens) {
+	if req.ProgressIndex < util.Len64(req.InputTokens) {
 		// request is in prefill (could be chunked)
 		newTokens = req.InputTokens[startIndex:endIndex]
 		// check if enough memory for tokens to be cached
-		numNewBlocks = (Len64(newTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
+		numNewBlocks = (util.Len64(newTokens) + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
 
 		// Cannot allocate enough KV cache blocks
 		if numNewBlocks > kvc.countFreeBlocks() {
@@ -175,14 +150,14 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 		}
 	} else {
 		// request is in decode
-		newTokens = append(newTokens, req.OutputTokens[startIndex-Len64(req.InputTokens)])
+		newTokens = append(newTokens, req.OutputTokens[startIndex-util.Len64(req.InputTokens)])
 	}
 	// Rollback tracking: if allocation fails mid-way, undo all mutations
 	var cachedMutations []cachedBlockMutation
 	var newlyAllocated []newBlockMutation
 
 	newTokenProgressIndex := int64(0)
-	for newTokenProgressIndex < Len64(newTokens) { // non-inclusive endIndex
+	for newTokenProgressIndex < util.Len64(newTokens) { // non-inclusive endIndex
 		ids, ok := kvc.RequestMap[reqID]
 		latestBlk := &KVBlock{}
 		if ok {
@@ -205,24 +180,24 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 				}
 				cachedMutations = append(cachedMutations, cachedBlockMutation{block: blk, wasInUse: wasInUse})
 				kvc.CacheHits++
-				logrus.Debugf("Hit KV Cache for req: %s of length: %d", req.ID, Len64(cachedBlocks)*kvc.BlockSizeTokens)
+				logrus.Debugf("Hit KV Cache for req: %s of length: %d", req.ID, util.Len64(cachedBlocks)*kvc.BlockSizeTokens)
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
 			}
 		}
-		if len(latestBlk.Tokens) > 0 && Len64(latestBlk.Tokens) < kvc.BlockSizeTokens {
+		if len(latestBlk.Tokens) > 0 && util.Len64(latestBlk.Tokens) < kvc.BlockSizeTokens {
 			// latest block is not full yet, append tokens to the latest block
-			remaining := kvc.BlockSizeTokens - Len64(latestBlk.Tokens)
-			toksToAppend := newTokens[newTokenProgressIndex:min(newTokenProgressIndex+remaining, Len64(newTokens))]
+			remaining := kvc.BlockSizeTokens - util.Len64(latestBlk.Tokens)
+			toksToAppend := newTokens[newTokenProgressIndex:min(newTokenProgressIndex+remaining, util.Len64(newTokens))]
 			latestBlk.Tokens = append(latestBlk.Tokens, toksToAppend...)
-			newTokenProgressIndex += Len64(toksToAppend)
-			logrus.Debugf("Appending to latest blk: req: %s, newTokenProgressIndex = %d, appended=%d tokens", req.ID, newTokenProgressIndex, Len64(toksToAppend))
-			if Len64(latestBlk.Tokens) == kvc.BlockSizeTokens {
+			newTokenProgressIndex += util.Len64(toksToAppend)
+			logrus.Debugf("Appending to latest blk: req: %s, newTokenProgressIndex = %d, appended=%d tokens", req.ID, newTokenProgressIndex, util.Len64(toksToAppend))
+			if util.Len64(latestBlk.Tokens) == kvc.BlockSizeTokens {
 				// latesBlk is full
 				fullTokens := []int{}
 				for _, blockId := range ids {
 					fullTokens = append(fullTokens, kvc.Blocks[blockId].Tokens...)
 				}
-				h := hashTokens(fullTokens)
+				h := hash.HashTokens(fullTokens)
 				latestBlk.Hash = h
 				kvc.HashToBlock[h] = latestBlk.ID
 			}
@@ -230,7 +205,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 			// latest block is full or request is coming in for the first time.
 			// allocate new block(s) for the request.
 			// Recompute blocks needed from remaining tokens (after partial fill consumed some).
-			remainingTokens := Len64(newTokens) - newTokenProgressIndex
+			remainingTokens := util.Len64(newTokens) - newTokenProgressIndex
 			if remainingTokens <= 0 {
 				break
 			}
@@ -251,8 +226,8 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 				start := newTokenProgressIndex
 				end := newTokenProgressIndex + kvc.BlockSizeTokens
 				logrus.Debugf("Assigning new blocks: req = %s, newTokenProgressIndex = %d, ogStartIdx= %d, ogEndIdx = %d, startBlk=%d, endBlk=%d", req.ID, newTokenProgressIndex, startIndex, endIndex, start, end)
-				if end > Len64(newTokens) {
-					end = Len64(newTokens)
+				if end > util.Len64(newTokens) {
+					end = util.Len64(newTokens)
 				}
 				tok := newTokens[start:end]
 				blk.Tokens = append([]int{}, tok...) // copy tokens
@@ -261,13 +236,13 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *Request, startIndex int64, endInd
 				kvc.UsedBlockCnt++
 				kvc.CacheMisses++
 
-				if Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < Len64(req.InputTokens) {
+				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < util.Len64(req.InputTokens) {
 					// Only compute prefix hash during prefill (not decode).
 					// During decode, startIndex >= len(InputTokens) and absoluteEnd
 					// would be out of range for req.InputTokens.
 					absoluteEnd := startIndex + end
 					fullPrefix := req.InputTokens[:absoluteEnd]
-					h := hashTokens(fullPrefix)
+					h := hash.HashTokens(fullPrefix)
 					blk.Hash = h
 					kvc.HashToBlock[h] = blk.ID
 				}

@@ -3,6 +3,8 @@ package sim
 import (
 	"fmt"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // assertBlockConservation verifies the KV block conservation invariant (INV-4)
@@ -79,7 +81,7 @@ func TestAllocateKVBlocks_ChunkedPrefill_PrefixHashUsesAbsoluteOffset(t *testing
 	}
 
 	// Verify first block has correct hash
-	expectedHash1 := hashTokens([]int{10, 20, 30, 40})
+	expectedHash1 := hash.HashTokens([]int{10, 20, 30, 40})
 	ids1 := kvc.RequestMap["r1"]
 	blk1 := kvc.Blocks[ids1[0]]
 	if blk1.Hash != expectedHash1 {
@@ -99,8 +101,8 @@ func TestAllocateKVBlocks_ChunkedPrefill_PrefixHashUsesAbsoluteOffset(t *testing
 		t.Fatalf("expected at least 2 blocks, got %d", len(ids2))
 	}
 	blk2 := kvc.Blocks[ids2[1]]
-	expectedHash2 := hashTokens([]int{10, 20, 30, 40, 50, 60, 70, 80})
-	wrongHash := hashTokens([]int{10, 20, 30, 40}) // This is what the buggy code produces
+	expectedHash2 := hash.HashTokens([]int{10, 20, 30, 40, 50, 60, 70, 80})
+	wrongHash := hash.HashTokens([]int{10, 20, 30, 40}) // This is what the buggy code produces
 	if blk2.Hash == wrongHash {
 		t.Errorf("second block has WRONG hash (newTokens-relative instead of absolute)")
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // TestRoutingPolicy_Interface_Contract verifies the RoutingPolicy interface contract (BC-1).
@@ -460,14 +462,14 @@ func TestPrefixAffinity_DifferentPrefixes(t *testing.T) {
 
 // TestPrefixAffinity_HashMatchesKVCache verifies hash format consistency.
 func TestPrefixAffinity_HashMatchesKVCache(t *testing.T) {
-	hash1 := hashTokens([]int{1, 2, 3})
-	hash2 := hashTokens([]int{3, 2, 1})
+	hash1 := hash.HashTokens([]int{1, 2, 3})
+	hash2 := hash.HashTokens([]int{3, 2, 1})
 	if hash1 == hash2 {
 		t.Errorf("Expected different hashes for [1,2,3] and [3,2,1], got same: %s", hash1)
 	}
 
 	// Deterministic
-	hash3 := hashTokens([]int{1, 2, 3})
+	hash3 := hash.HashTokens([]int{1, 2, 3})
 	if hash1 != hash3 {
 		t.Errorf("Expected identical hash for same tokens, got %q and %q", hash1, hash3)
 	}

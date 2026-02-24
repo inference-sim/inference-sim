@@ -7,6 +7,8 @@ import (
 	"math/rand"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
 const MaxTokenID = 128000 // Max token ID in request input/output
@@ -439,7 +441,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// Note: TotalOutputTokens++ and TTFT metrics are recorded inline (not extracted to helpers)
 	// because they are tightly coupled to the prefill/decode state transitions in this loop.
 	for _, req := range sim.RunningBatch.Requests {
-		if req.ProgressIndex < Len64(req.InputTokens) {
+		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
@@ -449,7 +451,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			sim.Metrics.TotalOutputTokens++
 			req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 		}
-		if req.ProgressIndex == Len64(req.InputTokens) { // prefill complete, first token is generated
+		if req.ProgressIndex == util.Len64(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.TTFTSum += req.FirstTokenTime // in microsec
@@ -477,7 +479,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
-		if req.ProgressIndex == Len64(req.InputTokens)+max(Len64(req.OutputTokens), 1)-1 {
+		if req.ProgressIndex == util.Len64(req.InputTokens)+max(util.Len64(req.OutputTokens), 1)-1 {
 			// State transitions
 			req.State = StateCompleted
 			req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())

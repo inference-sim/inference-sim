@@ -3,6 +3,8 @@ package sim
 import (
 	"fmt"
 	"math"
+
+	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
 // LatencyModel estimates execution times for the DES step loop.
@@ -38,7 +40,7 @@ type BlackboxLatencyModel struct {
 func (m *BlackboxLatencyModel) StepTime(batch []*Request) int64 {
 	var totalCacheMissTokens, totalDecodeTokens int64
 	for _, req := range batch {
-		if req.ProgressIndex < Len64(req.InputTokens) {
+		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			// Prefill phase: NumNewTokens are cache-miss tokens
 			totalCacheMissTokens += int64(req.NumNewTokens)
 		} else if len(req.OutputTokens) > 0 {
@@ -87,7 +89,7 @@ func (m *RooflineLatencyModel) StepTime(batch []*Request) int64 {
 		DecodeRequests:  make([]DecodeRequestConfig, 0, len(batch)),
 	}
 	for _, req := range batch {
-		if req.ProgressIndex < Len64(req.InputTokens) {
+		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			stepConfig.PrefillRequests = append(stepConfig.PrefillRequests, PrefillRequestConfig{
 				ProgressIndex:       req.ProgressIndex,
 				NumNewPrefillTokens: req.NumNewTokens,

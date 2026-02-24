@@ -1,11 +1,10 @@
 package sim
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"math"
-	"strconv"
+
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // PrefixCacheIndex maintains a router-side approximate prefix cache,
@@ -59,21 +58,10 @@ func (idx *PrefixCacheIndex) ComputeBlockHashes(tokens []int) []string {
 	for i := 0; i < numBlocks; i++ {
 		start := i * idx.blockSize
 		end := start + idx.blockSize
-		hashes[i] = hashBlock(prevHash, tokens[start:end])
+		hashes[i] = hash.HashBlock(prevHash, tokens[start:end])
 		prevHash = hashes[i]
 	}
 	return hashes
-}
-
-// hashBlock computes a SHA256 hash of a token block chained with the previous block's hash.
-func hashBlock(prevHash string, tokens []int) string {
-	h := sha256.New()
-	h.Write([]byte(prevHash))
-	for _, t := range tokens {
-		h.Write([]byte(strconv.Itoa(t)))
-		h.Write([]byte("|"))
-	}
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 // MatchLength returns the number of consecutive blocks (from the start) that
