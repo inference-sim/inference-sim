@@ -25,7 +25,8 @@ This workflow requires the following Claude Code skills to be available:
 | `commit-commands:clean_gone` | Clean up stale branches before worktree creation | Step 1 (pre-cleanup) |
 | `superpowers:using-git-worktrees` | Create isolated workspace for PR work | Step 1 |
 | `superpowers:writing-plans` | Generate implementation plan from templates | Step 2 |
-| `pr-review-toolkit:review-pr` | Multi-perspective internal review | Step 2.5, Step 4.5 |
+| `pr-review-toolkit:review-pr` | Holistic cross-cutting review (pre-pass) | Step 2.5, Step 4.5 |
+| `convergence-review` | Dispatch parallel perspectives and enforce convergence | Step 2.5, Step 4.5 |
 | `superpowers:executing-plans` | Execute plan tasks continuously | Step 4 |
 | `superpowers:systematic-debugging` | Structured root-cause analysis on failure | Step 4 (on failure) |
 | `superpowers:verification-before-completion` | Enforced verification gate before commit | Step 4.5 (after passes) |
@@ -67,7 +68,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 2.5: plan review   │ (10 perspectives per round — see checklist)
+│ Step 2.5: plan review   │ (review-pr pre-pass → convergence-review)
 └──────────┬──────────────┘
            │
            ▼
@@ -82,7 +83,7 @@ If skills are unavailable, you can implement each step manually:
            │
            ▼
 ┌─────────────────────────┐
-│ Step 4.5: code review   │ (10 perspectives per round — see checklist)
+│ Step 4.5: code review   │ (review-pr pre-pass → convergence-review)
 └──────────┬──────────────┘
            │
            ▼
@@ -103,9 +104,9 @@ If skills are unavailable, you can implement each step manually:
    - Enables parallel work on multiple PRs
 
 2. **Three-stage quality assurance:**
-   - **Plan Review** (Step 2.5) - round of 10 parallel perspectives: substance, cross-doc, architecture, codebase, structural, DES expert, vLLM/SGLang expert, distributed platform, performance, security
+   - **Plan Review** (Step 2.5) - two-stage: holistic `review-pr` pre-pass, then `convergence-review` with 10 targeted perspectives
      - Catches design issues before implementation
-   - **Code Review** (Step 4.5) - round of 10 parallel perspectives: substance, code quality, test quality, getting-started, automated reviewer, DES expert, vLLM/SGLang expert, distributed platform, performance, security
+   - **Code Review** (Step 4.5) - two-stage: holistic `review-pr` pre-pass, then `convergence-review` with 10 targeted perspectives
      - Catches implementation issues before PR creation
    - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 9 dimensions
      - Catches substance bugs that pattern-matching agents miss
@@ -120,10 +121,10 @@ If skills are unavailable, you can implement each step manually:
 |------|---------|
 | **1. Create worktree** | `/superpowers:using-git-worktrees pr<N>-<name>` |
 | **2. Create plan** | `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/templates/micro-plan.md and @<source-document>` |
-| **2.5. Review plan** | Round of 10 parallel perspectives (see Step 2.5 for full list) |
+| **2.5. Review plan** | `/pr-review-toolkit:review-pr` then `/convergence-review pr-plan docs/plans/pr<N>-<name>-plan.md` |
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
-| **4.5. Review code** | Round of 10 parallel perspectives (see Step 4.5 for full list) |
+| **4.5. Review code** | `/pr-review-toolkit:review-pr` then `/convergence-review pr-code` |
 | **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
@@ -139,8 +140,9 @@ If skills are unavailable, you can implement each step manually:
 # Step 2: Create plan
 /superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
-# Step 2.5: Review plan
+# Step 2.5: Review plan (two-stage)
 /pr-review-toolkit:review-pr
+/convergence-review pr-plan docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
 # Step 3: Human review
 # [Read plan, verify contracts and tasks, approve to proceed]
@@ -148,8 +150,9 @@ If skills are unavailable, you can implement each step manually:
 # Step 4: Execute implementation
 /superpowers:executing-plans @docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
-# Step 4.5: Review code
+# Step 4.5: Review code (two-stage)
 /pr-review-toolkit:review-pr
+/convergence-review pr-code
 
 # Step 5: Commit, push, and create PR
 /commit-commands:commit-push-pr
@@ -273,7 +276,24 @@ The `<source-document>` can be any of:
 
 **Context:** Worktree (same or new session)
 
-> **For Claude:** When the user asks you to execute Step 2.5, run all 10 perspectives below
+**Two-stage review (Claude Code):**
+
+**Stage 1 — Holistic pre-pass:** Run a single deep review to catch cross-cutting issues before the formal convergence protocol.
+```
+/pr-review-toolkit:review-pr
+```
+Fix any issues found, then proceed to Stage 2.
+
+**Stage 2 — Formal convergence:** Dispatch 10 targeted perspectives in parallel with convergence enforcement.
+```
+/convergence-review pr-plan docs/plans/pr<N>-<name>-plan.md
+```
+
+The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol) for the protocol rules.
+
+**Why two stages?** `review-pr` does a holistic sweep that catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed.
+
+> **For Claude (manual alternative):** When running without the skill, run all 10 perspectives below
 > **in parallel** as a single round. Use `/pr-review-toolkit:review-pr` with the **exact
 > prompt text** shown for Perspectives 1-4 and 6-10. Perform Perspective 5 directly (no agent).
 > Collect all findings, then report the full round results to the user.
@@ -285,9 +305,7 @@ The `<source-document>` can be any of:
 
 **Why rounds with multiple perspectives?** Generic "review everything" misses issues that targeted perspectives catch. Different lenses find different bugs: cross-doc consistency catches stale references, architecture catches boundary violations, substance catches design bugs. Running them in parallel maximizes coverage per round. The hypothesis process proved this model: 3 parallel reviewers with different foci caught issues that sequential single-reviewer rounds missed.
 
-**Convergence definition:** A round **converges** when all perspectives complete and report 0 CRITICAL and 0 IMPORTANT findings. Convergence means the review was clean from the start — not that issues were found and fixed. If you had to fix issues, the subsequent re-run is what converges (or not).
-
-**Hard gate — NO EXCEPTIONS:** If any CRITICAL or IMPORTANT finding was reported in a round, you MUST re-run the entire round after fixing. You may NOT skip the re-run, propose alternative steps, or rationalize that fixes were "small enough." The re-run is the only way to verify that fixes didn't introduce new issues. This is non-negotiable — the same discipline as the hypothesis convergence protocol.
+For convergence rules (max rounds, re-run requirements, severity definitions), see [Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol).
 
 ---
 
@@ -521,14 +539,31 @@ This skill provides structured root-cause analysis: reproduce → isolate → hy
 
 **Context:** Worktree (after implementation complete)
 
-> **For Claude:** When the user asks you to execute Step 4.5, run all 10 perspectives below
+**Two-stage review (Claude Code):**
+
+**Stage 1 — Holistic pre-pass:** Run a single deep review to catch cross-cutting issues before the formal convergence protocol.
+```
+/pr-review-toolkit:review-pr
+```
+Fix any issues found, then proceed to Stage 2.
+
+**Stage 2 — Formal convergence:** Dispatch 10 targeted perspectives in parallel with convergence enforcement.
+```
+/convergence-review pr-code
+```
+
+The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol) for the protocol rules.
+
+**Why two stages?** `review-pr` does a holistic sweep that catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds.
+
+> **For Claude (manual alternative):** When running without the skill, run all 10 perspectives below
 > **in parallel** as a single round. Use `/pr-review-toolkit:review-pr` with the **exact
 > prompt text** shown for each perspective. Collect all findings, then report the full round.
 >
 > **If 0 CRITICAL and 0 IMPORTANT findings:** The round converged. Run verification gate.
 >
 > **If any CRITICAL or IMPORTANT findings:** Fix all issues, then re-run the entire round
-> from scratch. Repeat until convergence (see Convergence Protocol below).
+> from scratch. Repeat until convergence (see [Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol)).
 
 **Why 10 perspectives in parallel?** Each catches issues the others miss. In the standards-audit-hardening PR, Perspective 1 (substance) found a runtime-breaking regression, Perspective 3 (tests) found weakened coverage, Perspective 7 (vLLM expert) confirmed CLI validation matches real server semantics, and Perspective 10 (security) found pre-existing factory validation gaps. Domain-specific perspectives (DES, vLLM, distributed platform) catch issues that generic code-quality reviewers miss.
 
@@ -679,11 +714,11 @@ gh issue create --title "Bug: <concise description>" --body "<location, impact, 
 
 #### Convergence Protocol
 
-Run all 10 code review perspectives as a parallel round. **Convergence** means the round completes with 0 CRITICAL and 0 IMPORTANT findings — the reviews were clean from the start.
+**Canonical source:** [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol). The same protocol applies to all review gates (PR plan, PR code, hypothesis design/code/FINDINGS).
 
-If any CRITICAL or IMPORTANT findings are reported: fix all issues, then re-run the entire round from scratch. The re-run is what converges (or triggers another fix-and-rerun cycle). Repeat until a full round produces 0 CRITICAL and 0 IMPORTANT.
+In summary: run all perspectives as a parallel round. If zero CRITICAL and zero IMPORTANT across all reviewers, the round converged. If any CRITICAL or IMPORTANT from any reviewer, fix all issues and re-run the **entire** round. Max 10 rounds per gate. Hard gate — no exceptions.
 
-**Hard gate — NO EXCEPTIONS:** You MUST re-run after fixes. You may NOT skip the re-run, propose alternative steps (e.g., "proceed to self-audit instead"), or rationalize that fixes were trivial. The re-run is the only evidence of convergence. This is non-negotiable.
+**Executable implementation:** `/convergence-review pr-code` (or `pr-plan`) automates dispatch, tallying, and re-run enforcement.
 
 ---
 
@@ -825,11 +860,12 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 | `commit-commands:clean_gone` | **Step 1** - Pre-cleanup of stale branches | None | Removed stale branches |
 | `using-git-worktrees` | **Step 1** - Create isolated workspace FIRST | Branch name | Worktree directory path |
 | `writing-plans` | **Step 2** - Create implementation plan from source document | Source document (macro plan/design doc/issues) + `docs/templates/micro-plan.md` | Plan file with contracts + tasks |
-| `pr-review-toolkit:review-pr` | **Step 2.5** - 10 parallel perspectives per round | Targeted prompts (see checklist) | Critical/important issues per perspective |
+| `pr-review-toolkit:review-pr` | **Step 2.5/4.5** - Holistic cross-cutting pre-pass | Plan file or current diff | Issues list with severity |
+| `convergence-review` | **Step 2.5** - Dispatch 10 parallel perspectives + enforce convergence | Gate type + plan file path | Converged/not-converged with findings |
 | `executing-plans` | **Step 4** - Execute plan tasks continuously | Plan file path | Implemented code + commits |
 | `systematic-debugging` | **Step 4 (on failure)** - Structured root-cause analysis | Failing test/error context | Root cause + fix |
 | `subagent-driven-development` | **Step 4 (alt)** - Execute plan in-session | Plan file path | Implemented code + commits |
-| `pr-review-toolkit:review-pr` | **Step 4.5** - 10 parallel perspectives per round | Targeted prompts (see checklist) | Critical/important issues per perspective |
+| `convergence-review` | **Step 4.5** - Dispatch 10 parallel perspectives + enforce convergence | Gate type | Converged/not-converged with findings |
 | `verification-before-completion` | **Step 4.5 (gate)** - Enforced build/test/lint verification | None | Evidence-based pass/fail |
 | `commit-commands:commit-push-pr` | **Step 5** - Commit, push, create PR (all in one) | Current branch state | Commit + push + PR URL |
 
@@ -852,14 +888,12 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 # Output: Plan created at docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
-# Step 2.5: Multi-perspective plan review (run as parallel round)
-# All 5 perspectives run in parallel — substance, cross-doc, architecture, codebase, structural
-/pr-review-toolkit:review-pr [substance review prompt] @docs/plans/pr8-plan.md
-/pr-review-toolkit:review-pr [cross-doc consistency prompt] @docs/plans/pr8-plan.md
-/pr-review-toolkit:review-pr [architecture boundary prompt] @docs/plans/pr8-plan.md
-/pr-review-toolkit:review-pr [codebase readiness prompt] @docs/plans/pr8-plan.md
-# Perspective 5: Structural validation (done directly, no agent)
-# If 0 CRITICAL/IMPORTANT: converged. If issues: fix and re-run entire round.
+# Step 2.5: Plan review (two-stage)
+# Stage 1: Holistic pre-pass
+/pr-review-toolkit:review-pr
+# Fix any issues found, then:
+# Stage 2: Formal convergence
+/convergence-review pr-plan docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
 # Step 3: Human review plan
 # [Read plan, verify contracts and tasks, approve to proceed]
@@ -869,13 +903,12 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 # Output: Tasks execute continuously → done (stops on failure)
 
-# Step 4.5: Multi-perspective code review (run as parallel round)
-# All 4 perspectives run in parallel — code quality, test quality, getting-started, reviewer sim
-/pr-review-toolkit:review-pr [code quality prompt]
-/pr-review-toolkit:review-pr [test behavioral quality prompt]
-/pr-review-toolkit:review-pr [getting-started prompt]
-/pr-review-toolkit:review-pr [automated reviewer sim prompt]
-# If 0 CRITICAL/IMPORTANT: converged. If issues: fix and re-run entire round.
+# Step 4.5: Code review (two-stage)
+# Stage 1: Holistic pre-pass
+/pr-review-toolkit:review-pr
+# Fix any issues found, then:
+# Stage 2: Formal convergence
+/convergence-review pr-code
 # Enforced verification gate
 /superpowers:verification-before-completion
 
@@ -907,8 +940,9 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 # Step 2: Create plan (source = design document, not macro plan)
 /superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
 
-# Step 2.5: Multi-perspective plan review (parallel round — same as Example A)
-# All 5 perspectives in parallel, source doc = design doc instead of macro plan
+# Step 2.5: Plan review (two-stage, same as Example A)
+/pr-review-toolkit:review-pr
+/convergence-review pr-plan docs/plans/hardening-plan.md
 
 # Steps 3-5: Identical to Example A
 ```

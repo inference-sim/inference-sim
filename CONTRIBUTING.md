@@ -25,11 +25,12 @@ Follow `docs/process/pr-workflow.md` for the complete PR lifecycle. The workflow
 1. **Create worktree** — isolate your work from the main branch
 2. **Write design doc** (if needed) — for new modules or architecture changes, write a design doc per the guidelines before planning. Four species: decision record, specification, problem analysis, system overview. Not needed for bug fixes or new policy templates behind existing interfaces.
 3. **Write implementation plan** — behavioral contracts + TDD tasks using `docs/templates/micro-plan.md`
-4. **Review plan** — 5 focused passes (external review, cross-doc, architecture, codebase, structural)
-5. **Implement** — test-first, one contract at a time
-6. **Review code** — 4 focused passes (quality, test quality, getting-started, automated reviewer)
-7. **Self-audit** — 9 dimensions of deliberate critical thinking (no automation)
-8. **Commit, push, PR**
+4. **Review plan** — two-stage: holistic `review-pr` pre-pass, then `convergence-review` with 10 targeted perspectives
+5. **Human review** — approve plan before implementation (hard gate)
+6. **Implement** — test-first, one contract at a time
+7. **Review code** — two-stage: holistic `review-pr` pre-pass, then `convergence-review` with 10 targeted perspectives
+8. **Self-audit** — 9 dimensions of deliberate critical thinking (no automation)
+9. **Commit, push, PR**
 
 ## Engineering Principles
 

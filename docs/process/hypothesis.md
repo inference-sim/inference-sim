@@ -13,8 +13,7 @@ This workflow uses the following Claude Code skills. Each has a manual alternati
 | Skill | Purpose | Used In | Manual Alternative |
 |-------|---------|---------|--------------------|
 | `superpowers:using-git-worktrees` | Create isolated workspace | Step 0 | `git worktree add .worktrees/h-<name> -b h-<name>` |
-| `general-purpose` Task agents | Design Review, Code Review perspectives | Steps 2, 5 | Sequential manual checklists (one per perspective) |
-| `general-purpose` Task agents | FINDINGS Review perspectives | Step 8 | Submit FINDINGS.md via PR; maintainers run protocol |
+| `convergence-review` | Dispatch parallel perspectives and enforce convergence | Steps 2, 5, 8 | Sequential manual checklists (one per perspective) using the checklist sections below |
 | `commit-commands:commit-push-pr` | Commit, push, create PR | Step 10 | Standard git commands (`git add`, `git commit`, `git push`, `gh pr create`) |
 
 **For external contributors without AI review infrastructure:** Submit your experiment artifacts via PR. Maintainers will run the review protocols on your behalf. You can also conduct reviews manually by having people review with the perspective checklists documented in each gate.
@@ -151,7 +150,14 @@ The family determines design rules; the VV&UQ category determines evidence requi
 - ED-5: Reproducibility (everything from `run.sh` alone)
 - ED-6: Config diff against referenced experiments
 
-Then run the **5-perspective Design Review** using the [universal convergence protocol](#universal-convergence-protocol):
+Then run the **5-perspective Design Review** using the [universal convergence protocol](#universal-convergence-protocol).
+
+**Primary mechanism (Claude Code):**
+```
+/convergence-review h-design
+```
+
+**Manual alternative:** Launch all 5 perspectives as parallel Task agents (or review sequentially with each checklist below), then apply the convergence protocol.
 
 #### Design Review Perspectives
 
@@ -183,8 +189,6 @@ Then run the **5-perspective Design Review** using the [universal convergence pr
 - Will the experiment create the conditions needed for the hypothesis to be testable?
 - Are there DES-specific subtleties (event ordering, clock granularity, alpha overhead) that could confound results?
 - Is the experiment duration sufficient? Is the warmup period adequate?
-
-**How to run:** Launch all 5 perspectives as parallel Task agents, or review sequentially with each checklist. Apply the [universal convergence protocol](#universal-convergence-protocol). If any CRITICAL or IMPORTANT item is found, fix and re-run the full round.
 
 **Cross-gate regression:** If a later gate (Code Review, FINDINGS Review) discovers a design-level flaw (e.g., confounding variable, wrong operating point), the workflow loops back to Step 2 for re-design, re-convergence, and re-approval.
 
@@ -231,7 +235,14 @@ Create `hypotheses/<name>/run.sh` and `hypotheses/<name>/analyze.py`.
 
 **Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable, wrong operating point), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. The experiment-wide limit of 2 cross-gate regressions applies (see [Step 8](#step-8-findings-review-10-perspectives) for the circuit breaker).
 
-Run the **5-perspective Code Review** using the [universal convergence protocol](#universal-convergence-protocol):
+Run the **5-perspective Code Review** using the [universal convergence protocol](#universal-convergence-protocol).
+
+**Primary mechanism (Claude Code):**
+```
+/convergence-review h-code hypotheses/<name>/
+```
+
+**Manual alternative:** Launch all 5 perspectives as parallel Task agents (or review sequentially with each checklist below), then apply the convergence protocol.
 
 #### Code Review Perspectives
 
@@ -300,18 +311,14 @@ Execute experiments across required seeds:
 
 Run the **10-perspective FINDINGS Review** using the [universal convergence protocol](#universal-convergence-protocol).
 
+**Primary mechanism (Claude Code):**
+```
+/convergence-review h-findings hypotheses/<name>/FINDINGS.md
+```
+
+**Manual alternative:** Launch all 10 as parallel Task agents (each receives the FINDINGS.md path and its specific focus area), then apply the convergence protocol.
+
 **Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable not identified in design), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. Maximum 2 cross-gate regressions per experiment (across all gates combined) — if the design still has fundamental issues after 2 regressions, suspend the experiment and escalate for a re-scoping decision.
-
-**How to run:** Launch all 10 as parallel Task agents. Each agent receives the FINDINGS.md path and its specific focus area. Collect results and assess convergence when all 10 complete.
-
-```
-# Launch all 10 in parallel (one Task tool call per reviewer):
-Task(subagent_type="general-purpose", run_in_background=True,
-     prompt="You are Reviewer N (<role>). Read FINDINGS.md at <path>.
-             <reviewer-specific checklist from below>
-             Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-             Report: (1) list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.")
-```
 
 #### FINDINGS Review Perspectives
 
@@ -440,6 +447,8 @@ The PR description should include:
 ## Universal Convergence Protocol
 
 All three review gates (Design Review, Code Review, FINDINGS Review) use this same protocol. It is defined here once and referenced from each gate.
+
+> **Executable implementation:** The `convergence-review` skill automates this protocol — dispatching perspectives, tallying findings independently, and enforcing the re-run gate. Invoke with `/convergence-review <gate-type> [artifact-path]`.
 
 ### The Protocol
 
