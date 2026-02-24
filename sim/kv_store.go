@@ -35,3 +35,7 @@ func MustNewKVCacheState(totalBlocks, blockSizeTokens int64) KVStore {
 	}
 	return NewKVCacheStateFunc(totalBlocks, blockSizeTokens)
 }
+
+// NewKVStoreFromConfig constructs the appropriate KVStore (single-tier or tiered) based on config.
+// Registered by sim/kv package's init(). Used by test code in package sim.
+var NewKVStoreFromConfig func(cfg KVCacheConfig) KVStore

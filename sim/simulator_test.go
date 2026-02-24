@@ -13,9 +13,13 @@ import (
 )
 
 // mustNewSimulator is a test helper that calls NewSimulator and fails the test on error.
+// Honors KVCPUBlocks for tiered KV cache construction via NewKVStoreFromConfig.
 func mustNewSimulator(t *testing.T, cfg SimConfig) *Simulator {
 	t.Helper()
-	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	if NewKVStoreFromConfig == nil {
+		t.Fatal("NewKVStoreFromConfig not registered: import sim/kv to register it")
+	}
+	kvStore := NewKVStoreFromConfig(cfg.KVCacheConfig)
 	latencyModel, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
