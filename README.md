@@ -73,6 +73,20 @@ Run BLIS for `meta-llama/llama-3.1-8b-instruct` with default configs:
 ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct
 ```
 
+You should see JSON output like:
+
+```json
+{
+  "completed_requests": 100,
+  "tokens_per_sec": 492.02,
+  "ttft_mean_ms": 25.08,
+  "e2e_mean_ms": 4541.01,
+  ...
+}
+```
+
+**Key metrics:** TTFT (Time to First Token) measures how quickly the first output token arrives. E2E (End-to-End) is the total request latency. `tokens_per_sec` is output token throughput (decode tokens per simulated second). See [Example Output](#example-output) for the full schema.
+
 ---
 
 ## Usage
@@ -768,7 +782,7 @@ inference-sim/
 
 ## Contributing
 
-Contributions are welcome! Please see the design documents in `docs/plans/` for ongoing work and architectural decisions.
+Contributions are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for the engineering standards, development workflow, and step-by-step guides for adding new components. For ongoing work and architectural decisions, see `docs/plans/`.
 
 ---
 
