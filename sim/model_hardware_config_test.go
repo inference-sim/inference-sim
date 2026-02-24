@@ -117,7 +117,7 @@ func TestGetModelConfig_ValidConfig(t *testing.T) {
 }
 
 func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
-	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35}
 
 	tests := []struct {
 		name  string
@@ -133,7 +133,7 @@ func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// WHEN ValidateRooflineConfig is called (roofline v1 mode)
-			err := ValidateRooflineConfig(tt.mc, hc, false)
+			err := ValidateRooflineConfig(tt.mc, hc)
 
 			// THEN it returns an error mentioning the zero field
 			if err == nil {
@@ -151,15 +151,13 @@ func TestValidateRooflineConfig_ZeroHardwareFields_ReturnsAllErrors(t *testing.T
 	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
 	hc := HardwareCalib{} // all zero
 
-	// WHEN ValidateRooflineConfig is called (roofline v1 mode)
-	err := ValidateRooflineConfig(mc, hc, false)
+	err := ValidateRooflineConfig(mc, hc)
 
-	// THEN it returns an error mentioning every zero field
 	if err == nil {
 		t.Fatal("expected error for zero hardware fields, got nil")
 	}
 	errMsg := err.Error()
-	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "BwEffConstant", "MfuPrefill", "MfuDecode"} {
+	for _, field := range []string{"TFlopsPeak", "BwPeakTBs"} {
 		if !strings.Contains(errMsg, field) {
 			t.Errorf("error should mention %s, got: %v", field, errMsg)
 		}
@@ -170,22 +168,17 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 	// GIVEN a HardwareCalib with NaN and Inf fields (bypass <= 0 check)
 	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
 	hc := HardwareCalib{
-		TFlopsPeak:    math.NaN(),
-		BwPeakTBs:     math.Inf(1),
-		BwEffConstant: 0.7,
-		MfuPrefill:    0.5,
-		MfuDecode:     math.NaN(),
+		TFlopsPeak: math.NaN(),
+		BwPeakTBs:  math.Inf(1),
 	}
 
-	// WHEN ValidateRooflineConfig is called (roofline v1 mode)
-	err := ValidateRooflineConfig(mc, hc, false)
+	err := ValidateRooflineConfig(mc, hc)
 
-	// THEN it returns an error mentioning the invalid fields
 	if err == nil {
 		t.Fatal("expected error for NaN/Inf hardware fields, got nil")
 	}
 	errMsg := err.Error()
-	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "MfuDecode"} {
+	for _, field := range []string{"TFlopsPeak", "BwPeakTBs"} {
 		if !strings.Contains(errMsg, field) {
 			t.Errorf("error should mention %s, got: %v", field, errMsg)
 		}
@@ -195,10 +188,10 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	// GIVEN valid ModelConfig and HardwareCalib
 	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35}
 
 	// WHEN ValidateRooflineConfig is called (roofline v1 mode)
-	err := ValidateRooflineConfig(mc, hc, false)
+	err := ValidateRooflineConfig(mc, hc)
 
 	// THEN it returns nil
 	if err != nil {
@@ -206,44 +199,30 @@ func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	}
 }
 
-func TestValidateRooflineConfig_V2MinimalConfig_ReturnsNil(t *testing.T) {
-	// GIVEN valid ModelConfig and minimal HardwareCalib (only core fields for roofline v2)
+func TestValidateRooflineConfig_MinimalConfig_ReturnsNil(t *testing.T) {
 	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
 	hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35}
-	// Note: BwEffConstant, MfuPrefill, MfuDecode are all zero
 
-	// WHEN ValidateRooflineConfig is called (roofline v2 mode with MFU database)
-	err := ValidateRooflineConfig(mc, hc, true)
+	err := ValidateRooflineConfig(mc, hc)
 
-	// THEN it returns nil (calibration fields not required when hasMFUDatabase=true)
 	if err != nil {
-		t.Errorf("expected nil error for roofline v2 minimal config, got: %v", err)
+		t.Errorf("expected nil error for minimal config, got: %v", err)
 	}
 }
 
-func TestValidateRooflineConfig_V2MissingCoreFields_ReturnsError(t *testing.T) {
-	// GIVEN HardwareCalib missing core fields (TFlopsPeak, BwPeakTBs)
+func TestValidateRooflineConfig_MissingCoreFields_ReturnsError(t *testing.T) {
 	mc := ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
 	hc := HardwareCalib{} // all zero
 
-	// WHEN ValidateRooflineConfig is called (roofline v2 mode)
-	err := ValidateRooflineConfig(mc, hc, true)
+	err := ValidateRooflineConfig(mc, hc)
 
-	// THEN it returns an error mentioning only the core fields (not calibration fields)
 	if err == nil {
-		t.Fatal("expected error for missing core fields in roofline v2, got nil")
+		t.Fatal("expected error for missing core fields, got nil")
 	}
 	errMsg := err.Error()
-	// Should mention core fields
 	for _, field := range []string{"TFlopsPeak", "BwPeakTBs"} {
 		if !strings.Contains(errMsg, field) {
 			t.Errorf("error should mention %s, got: %v", field, errMsg)
-		}
-	}
-	// Should NOT mention calibration fields (they're optional in v2)
-	for _, field := range []string{"BwEffConstant", "MfuPrefill", "MfuDecode"} {
-		if strings.Contains(errMsg, field) {
-			t.Errorf("error should NOT mention %s in roofline v2 mode, got: %v", field, errMsg)
 		}
 	}
 }
@@ -256,7 +235,7 @@ func TestNewSimulator_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 		LatencyCoeffs: NewLatencyCoeffs(nil, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(
 			ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
-			HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+			HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35},
 			"", "", 1, true,
 		),
 	}
@@ -281,7 +260,7 @@ func TestNewSimulator_RooflineZeroTP_ReturnsError(t *testing.T) {
 		LatencyCoeffs: NewLatencyCoeffs(nil, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(
 			ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
-			HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+			HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35},
 			"", "", 0, true,
 		),
 	}
@@ -320,7 +299,7 @@ func TestValidateRooflineConfig_BwEfficiencyFactor_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			hc := HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEfficiencyFactor: tt.factor}
-			err := ValidateRooflineConfig(mc, hc, true) // v2 mode
+			err := ValidateRooflineConfig(mc, hc) // v2 mode
 			if tt.wantErr && err == nil {
 				t.Errorf("expected error for BwEfficiencyFactor=%v, got nil", tt.factor)
 			}

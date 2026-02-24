@@ -22,43 +22,29 @@ type ModelConfig struct {
 
 // --- Hardware Data Structures ---
 
+// HardwareCalib contains GPU specifications for the roofline latency model.
+// All fields map to hardware_config_roofline_valid.json.
 type HardwareCalib struct {
-	TFlopsPeak       float64 `json:"TFlopsPeak"`      // Tera (10^12) FLOP/s
-	BwPeakTBs        float64 `json:"BwPeakTBs"`       // in TB/s
-	BwEffConstant    float64 `json:"BwEffConstant"`   // scaling factor to convert Peak BW to Effective BW
-	TOverheadMicros  float64 `json:"TOverheadMicros"` // Per-step Overheads unaccounted for
-	// PerLayerCPUOverhead is the per-layer CPU scheduling overhead in microseconds.
-	// At each step, the vLLM scheduler performs CPU work that scales with the number
-	// of transformer layers managed per GPU: block-table management (O(layers × batch)),
-	// per-layer tensor dispatch, and input metadata preparation.
-	//
-	// When set (> 0), the roofline model computes:
-	//   decode_overhead  = PerLayerCPUOverhead × (num_layers / tp)
-	//   prefill_overhead = PerLayerCPUOverhead × 5.0 × (num_layers / tp)
-	//   mixed_overhead   = prefill_overhead / 2.0
-	//
-	// Reference value: 100 μs/layer for H100 (validated against 13 GuideLLM experiments,
-	// TPOT MAPE 17.3%). InferSim (Alibaba) uses a flat 5ms decode / 30ms prefill;
-	// the per-layer approach outperforms flat constants by ~30pp TPOT MAPE.
-	//
-	// Sources: vAttention (block-table overhead 10-30% of decode), Wuklab scheduling
-	// study (up to 50% overhead for small models), BROS (7-10% per iteration).
-	PerLayerCPUOverhead float64 `json:"perLayerOverhead"`
-	MfuPrefill       float64 `json:"mfuPrefill"`
-	MfuDecode        float64 `json:"mfuDecode"`
-	AllReduceLatency float64 `json:"allReduceLatency"`
+	TFlopsPeak float64 `json:"TFlopsPeak"` // Peak FP16 TFLOP/s (e.g. 989.5 for H100 SXM)
+	BwPeakTBs  float64 `json:"BwPeakTBs"`  // Peak HBM bandwidth in TB/s (e.g. 3.35 for H100 SXM)
 
-	// Roofline calibration factors
-	TpScalingExponent          float64 `json:"tpScalingExponent"`          // Exponent for sublinear TP scaling (prefill compute)
-	DecodeTpScalingExponent    float64 `json:"decodeTpScalingExponent"`    // Exponent for TP scaling (decode memory-bound)
-	MfuPrefillMultiplier       float64 `json:"mfuPrefillMultiplier"`       // Multiplier on base MFU for prefill
-	MfuDecodeMultiplier        float64 `json:"mfuDecodeMultiplier"`        // Multiplier on base MFU for decode
-	PrefillBwFactor            float64 `json:"prefillBwFactor"`            // Bandwidth reduction factor for prefill
-	DecodeBwFactor             float64 `json:"decodeBwFactor"`             // Bandwidth reduction factor for decode
-	VectorPeakFraction         float64 `json:"vectorPeakFraction"`         // Non-tensor core ops efficiency
-	PrefillOverheadMicros      float64 `json:"prefillOverheadMicros"`      // Per prefill request overhead (pure prefill)
-	MixedPrefillOverheadMicros float64 `json:"mixedPrefillOverheadMicros"` // Per prefill request overhead (mixed batch)
-	BwEfficiencyFactor         float64 `json:"bwEfficiencyFactor"`         // Sustained-to-peak BW ratio for roofline v2 (0 = no correction)
+	// BwEfficiencyFactor is the sustained-to-peak HBM bandwidth ratio.
+	// Accounts for the gap between datasheet peak and achievable sustained BW
+	// (measured via STREAM or similar). 0 means disabled (use raw peak).
+	// Reference: 0.82 for H100 SXM (H1 hypothesis), 0.80 for A100 SXM.
+	BwEfficiencyFactor float64 `json:"bwEfficiencyFactor"`
+
+	// PerLayerCPUOverhead is the per-layer CPU scheduling overhead in microseconds.
+	// Per-step overhead = PerLayerCPUOverhead × (num_layers / tp).
+	//
+	// Models vLLM scheduler CPU work that scales with transformer layers per GPU:
+	// block-table management (O(layers × batch)), per-layer tensor dispatch,
+	// and input metadata preparation.
+	//
+	// Reference: 100 μs/layer for H100 (H2b hypothesis, TPOT MAPE 17.3%).
+	// Sources: vAttention (block-table 10-30% of decode), Wuklab (up to 50%
+	// overhead for small models), BROS (7-10% per iteration).
+	PerLayerCPUOverhead float64 `json:"perLayerOverhead"`
 }
 
 // HFConfig represents a flexible JSON object with dynamic fields.
@@ -283,13 +269,9 @@ func invalidPositiveFloat(v float64) bool {
 
 // ValidateRooflineConfig checks that all fields required by the roofline latency
 // model are valid positive values. Returns an error listing all invalid fields, or nil if valid.
-// ValidateRooflineConfig validates roofline configuration.
-// Set hasMFUDatabase=true for roofline v2 (MFU-based), which only requires TFlopsPeak and BwPeakTBs.
-// Set hasMFUDatabase=false for roofline v1 (calibrated), which requires all calibration fields.
-func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib, hasMFUDatabase bool) error {
+func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib) error {
 	var problems []string
 
-	// Model config validation (required for both v1 and v2)
 	if mc.NumHeads <= 0 {
 		problems = append(problems, fmt.Sprintf("ModelConfig.NumHeads must be > 0, got %d", mc.NumHeads))
 	}
@@ -303,25 +285,11 @@ func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib, hasMFUDatabase boo
 		problems = append(problems, fmt.Sprintf("ModelConfig.BytesPerParam must be a valid positive number, got %v", mc.BytesPerParam))
 	}
 
-	// Core hardware specs (required for both v1 and v2)
 	if invalidPositiveFloat(hc.TFlopsPeak) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.TFlopsPeak must be a valid positive number, got %v", hc.TFlopsPeak))
 	}
 	if invalidPositiveFloat(hc.BwPeakTBs) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.BwPeakTBs must be a valid positive number, got %v", hc.BwPeakTBs))
-	}
-
-	// Roofline v1-specific fields (only required when no MFU database)
-	if !hasMFUDatabase {
-		if invalidPositiveFloat(hc.BwEffConstant) {
-			problems = append(problems, fmt.Sprintf("HardwareCalib.BwEffConstant must be a valid positive number, got %v. Are you running roofline v2? Use --bench-data-path with MFU benchmark data.", hc.BwEffConstant))
-		}
-		if invalidPositiveFloat(hc.MfuPrefill) {
-			problems = append(problems, fmt.Sprintf("HardwareCalib.MfuPrefill must be a valid positive number, got %v. Are you running roofline v2? Use --bench-data-path with MFU benchmark data.", hc.MfuPrefill))
-		}
-		if invalidPositiveFloat(hc.MfuDecode) {
-			problems = append(problems, fmt.Sprintf("HardwareCalib.MfuDecode must be a valid positive number, got %v. Are you running roofline v2? Use --bench-data-path with MFU benchmark data.", hc.MfuDecode))
-		}
 	}
 
 	// BwEfficiencyFactor: optional (0 = no correction), but if set must be in (0, 1.0]

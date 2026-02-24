@@ -147,10 +147,12 @@ func TestBlackboxLatencyModel_QueueingTime_Monotonic(t *testing.T) {
 // TestRooflineLatencyModel_StepTime_PositiveAndMonotonic verifies BC-2:
 // StepTime produces positive results and more tokens yield longer step time.
 func TestRooflineLatencyModel_StepTime_PositiveAndMonotonic(t *testing.T) {
+	mfuDB := loadTestMFUDatabase(t)
 	model := &RooflineLatencyModel{
 		modelConfig: testModelConfig(),
 		hwConfig:    testHardwareCalib(),
 		tp:          2,
+		mfuDB:       mfuDB,
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
@@ -189,10 +191,12 @@ func TestRooflineLatencyModel_StepTime_PositiveAndMonotonic(t *testing.T) {
 
 // TestRooflineLatencyModel_StepTime_EmptyBatch verifies roofline handles empty batch.
 func TestRooflineLatencyModel_StepTime_EmptyBatch(t *testing.T) {
+	mfuDB := loadTestMFUDatabase(t)
 	model := &RooflineLatencyModel{
 		modelConfig: testModelConfig(),
 		hwConfig:    testHardwareCalib(),
 		tp:          2,
+		mfuDB:       mfuDB,
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
@@ -223,10 +227,12 @@ func TestRooflineLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 // WHEN QueueingTime is called with non-empty input
 // THEN the result MUST be positive.
 func TestRooflineLatencyModel_QueueingTime_Positive(t *testing.T) {
+	mfuDB := loadTestMFUDatabase(t)
 	model := &RooflineLatencyModel{
 		modelConfig: testModelConfig(),
 		hwConfig:    testHardwareCalib(),
 		tp:          2,
+		mfuDB:       mfuDB,
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
@@ -280,9 +286,12 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 
 // TestNewLatencyModel_RooflineMode verifies BC-4 (roofline path).
 func TestNewLatencyModel_RooflineMode(t *testing.T) {
+	mfuDB := loadTestMFUDatabase(t)
+	hw := NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, true)
+	hw.MFUDatabase = mfuDB
 	cfg := SimConfig{
 		LatencyCoeffs:       NewLatencyCoeffs(nil, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, true),
+		ModelHardwareConfig: hw,
 	}
 
 	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -290,8 +299,6 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 		t.Fatalf("NewLatencyModel returned error: %v", err)
 	}
 
-	// THEN the model must produce different results than blackbox for the same batch
-	// (roofline uses FLOPs/bandwidth, blackbox uses beta regression — distinct formulas)
 	batch := []*Request{
 		{
 			InputTokens:   make([]int, 100),
@@ -398,10 +405,12 @@ func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T
 		betaCoeffs:  []float64{5000, 10, 5},
 		alphaCoeffs: []float64{100, 1, 100},
 	}
+	mfuDB := loadTestMFUDatabase(t)
 	roofline := &RooflineLatencyModel{
 		modelConfig: testModelConfig(),
 		hwConfig:    testHardwareCalib(),
 		tp:          2,
+		mfuDB:       mfuDB,
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 

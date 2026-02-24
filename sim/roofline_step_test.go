@@ -179,113 +179,10 @@ func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *t
 // testHardwareCalib returns an H100-like hardware config for roofline tests.
 func testHardwareCalib() HardwareCalib {
 	return HardwareCalib{
-		TFlopsPeak:       989.0,
-		BwPeakTBs:        3.35,
-		BwEffConstant:    0.7,
-		TOverheadMicros:  50.0,
-		PerLayerCPUOverhead: 5.0,
-		MfuPrefill:       0.55,
-		MfuDecode:        0.30,
-		AllReduceLatency: 10.0,
-		// Roofline calibration factors (reasonable defaults for tests)
-		TpScalingExponent:          0.8,   // Sublinear TP scaling
-		DecodeTpScalingExponent:    1.0,   // Linear for decode
-		MfuPrefillMultiplier:       1.0,   // No adjustment
-		MfuDecodeMultiplier:        1.0,   // No adjustment
-		PrefillBwFactor:            1.0,   // No reduction
-		DecodeBwFactor:             1.0,   // No reduction
-		VectorPeakFraction:         0.1,   // 10% for non-tensor ops
-		PrefillOverheadMicros:      100.0, // Per request overhead
-		MixedPrefillOverheadMicros: 50.0,  // Lower overhead in mixed batch
-		BwEfficiencyFactor:         0.82,  // H100 sustained-to-peak HBM3 BW ratio (STREAM benchmark: ~2750/3350)
-	}
-}
-
-func TestRooflineStepTime_TPScaling_TP2LessThanTP1(t *testing.T) {
-	// BC-3: TP=2 MUST produce strictly less latency than TP=1
-	mc := testModelConfig()
-	hc := testHardwareCalib()
-
-	step := StepConfig{
-		PrefillRequests: []PrefillRequestConfig{
-			{ProgressIndex: 0, NumNewPrefillTokens: 128},
-		},
-		DecodeRequests: []DecodeRequestConfig{
-			{ProgressIndex: 256, NumNewDecodeTokens: 1},
-		},
-	}
-
-	tp1 := rooflineStepTime("", mc, hc, step, 1)
-	tp2 := rooflineStepTime("", mc, hc, step, 2)
-
-	if tp2 >= tp1 {
-		t.Errorf("TP=2 latency (%d µs) should be less than TP=1 (%d µs)", tp2, tp1)
-	}
-	if tp2 <= 0 {
-		t.Errorf("TP=2 latency should be positive, got %d", tp2)
-	}
-}
-
-func TestRooflineStepTime_Smoke_ValidInputsProducePositiveFiniteResult(t *testing.T) {
-	// BC-4: valid inputs MUST produce > 0, finite result
-	mc := testModelConfig()
-	hc := testHardwareCalib()
-
-	tests := []struct {
-		name string
-		step StepConfig
-	}{
-		{
-			"prefill only",
-			StepConfig{
-				PrefillRequests: []PrefillRequestConfig{
-					{ProgressIndex: 0, NumNewPrefillTokens: 256},
-				},
-			},
-		},
-		{
-			"decode only",
-			StepConfig{
-				DecodeRequests: []DecodeRequestConfig{
-					{ProgressIndex: 512, NumNewDecodeTokens: 1},
-				},
-			},
-		},
-		{
-			"mixed prefill+decode",
-			StepConfig{
-				PrefillRequests: []PrefillRequestConfig{
-					{ProgressIndex: 0, NumNewPrefillTokens: 64},
-				},
-				DecodeRequests: []DecodeRequestConfig{
-					{ProgressIndex: 128, NumNewDecodeTokens: 1},
-					{ProgressIndex: 256, NumNewDecodeTokens: 1},
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := rooflineStepTime("", mc, hc, tt.step, 1)
-			if result <= 0 {
-				t.Errorf("expected positive latency, got %d µs", result)
-			}
-		})
-	}
-}
-
-func TestRooflineStepTime_EmptyStep_ReturnsOverheadOnly(t *testing.T) {
-	// Edge case: no requests should still return overhead (non-zero due to TOverheadMicros)
-	mc := testModelConfig()
-	hc := testHardwareCalib()
-
-	step := StepConfig{} // empty
-	result := rooflineStepTime("", mc, hc, step, 1)
-
-	// Should be approximately TOverheadMicros (50) + layer overhead
-	if result <= 0 {
-		t.Errorf("empty step should still have overhead latency, got %d µs", result)
+		TFlopsPeak:          989.0,
+		BwPeakTBs:           3.35,
+		BwEfficiencyFactor:  0.82,
+		PerLayerCPUOverhead: 100.0,
 	}
 }
 
@@ -302,7 +199,7 @@ func loadTestMFUDatabase(t *testing.T) *MFUDatabase {
 	return db
 }
 
-func TestRooflineStepTimeV2_BwEfficiency_DecodeBoundHigherLatency(t *testing.T) {
+func TestRooflineStepTime_BwEfficiency_DecodeBoundHigherLatency(t *testing.T) {
 	// BwEfficiencyFactor=0.80 MUST produce higher latency than BwEfficiencyFactor=0
 	// for a decode-only (memory-bound) step, because effective bandwidth is reduced.
 	mc := testModelConfig()
@@ -322,8 +219,8 @@ func TestRooflineStepTimeV2_BwEfficiency_DecodeBoundHigherLatency(t *testing.T) 
 		},
 	}
 
-	baseline := rooflineStepTimeV2("", mc, hcBaseline, step, 1, mfuDB)
-	withEff := rooflineStepTimeV2("", mc, hcWithEff, step, 1, mfuDB)
+	baseline := rooflineStepTime("", mc, hcBaseline, step, 1, mfuDB)
+	withEff := rooflineStepTime("", mc, hcWithEff, step, 1, mfuDB)
 
 	if withEff <= baseline {
 		t.Errorf("BwEfficiencyFactor=0.80 latency (%d µs) should exceed baseline (%d µs)", withEff, baseline)
@@ -333,7 +230,7 @@ func TestRooflineStepTimeV2_BwEfficiency_DecodeBoundHigherLatency(t *testing.T) 
 	}
 }
 
-func TestRooflineStepTimeV2_BwEfficiency_ZeroAndOneIdentical(t *testing.T) {
+func TestRooflineStepTime_BwEfficiency_ZeroAndOneIdentical(t *testing.T) {
 	// BwEfficiencyFactor=0 (disabled) and BwEfficiencyFactor=1.0 (100% efficiency)
 	// MUST produce identical results, since both mean "use raw peak BW".
 	mc := testModelConfig()
@@ -353,8 +250,8 @@ func TestRooflineStepTimeV2_BwEfficiency_ZeroAndOneIdentical(t *testing.T) {
 		},
 	}
 
-	resultZero := rooflineStepTimeV2("", mc, hcZero, step, 1, mfuDB)
-	resultOne := rooflineStepTimeV2("", mc, hcOne, step, 1, mfuDB)
+	resultZero := rooflineStepTime("", mc, hcZero, step, 1, mfuDB)
+	resultOne := rooflineStepTime("", mc, hcOne, step, 1, mfuDB)
 
 	if resultZero != resultOne {
 		t.Errorf("BwEfficiencyFactor=0 (%d µs) and BwEfficiencyFactor=1.0 (%d µs) should be identical",
@@ -362,7 +259,7 @@ func TestRooflineStepTimeV2_BwEfficiency_ZeroAndOneIdentical(t *testing.T) {
 	}
 }
 
-func TestRooflineStepTimeV2_BwEfficiency_PrefillAlsoAffected(t *testing.T) {
+func TestRooflineStepTime_BwEfficiency_PrefillAlsoAffected(t *testing.T) {
 	// Prefill-only step should also show higher latency with BwEfficiencyFactor < 1.
 	mc := testModelConfig()
 	mfuDB := loadTestMFUDatabase(t)
@@ -378,8 +275,8 @@ func TestRooflineStepTimeV2_BwEfficiency_PrefillAlsoAffected(t *testing.T) {
 		},
 	}
 
-	baseline := rooflineStepTimeV2("", mc, hcBaseline, step, 1, mfuDB)
-	withEff := rooflineStepTimeV2("", mc, hcWithEff, step, 1, mfuDB)
+	baseline := rooflineStepTime("", mc, hcBaseline, step, 1, mfuDB)
+	withEff := rooflineStepTime("", mc, hcWithEff, step, 1, mfuDB)
 
 	// Prefill may be compute-bound, so the effect might be zero if compute dominates.
 	// At minimum, withEff should be >= baseline (BW reduction can only increase or not change latency).
@@ -388,7 +285,7 @@ func TestRooflineStepTimeV2_BwEfficiency_PrefillAlsoAffected(t *testing.T) {
 	}
 }
 
-func TestRooflineStepTimeV2_PerLayerCPUOverhead_ScalesWithLayersAndTP(t *testing.T) {
+func TestRooflineStepTime_PerLayerCPUOverhead_ScalesWithLayersAndTP(t *testing.T) {
 	// PerLayerCPUOverhead MUST produce overhead proportional to num_layers / tp.
 	// A model with 2x layers at the same TP should have higher overhead.
 	// The same model at 2x TP should have lower overhead.
@@ -411,22 +308,23 @@ func TestRooflineStepTimeV2_PerLayerCPUOverhead_ScalesWithLayersAndTP(t *testing
 	mc64.NumLayers = 64
 
 	// More layers → higher latency (at same TP)
-	result32 := rooflineStepTimeV2("", mc32, hc, step, 1, mfuDB)
-	result64 := rooflineStepTimeV2("", mc64, hc, step, 1, mfuDB)
+	result32 := rooflineStepTime("", mc32, hc, step, 1, mfuDB)
+	result64 := rooflineStepTime("", mc64, hc, step, 1, mfuDB)
 	if result64 <= result32 {
 		t.Errorf("64 layers (%d µs) should exceed 32 layers (%d µs) at TP=1", result64, result32)
 	}
 
 	// Higher TP → lower latency (same model)
-	resultTP1 := rooflineStepTimeV2("", mc32, hc, step, 1, mfuDB)
-	resultTP2 := rooflineStepTimeV2("", mc32, hc, step, 2, mfuDB)
+	resultTP1 := rooflineStepTime("", mc32, hc, step, 1, mfuDB)
+	resultTP2 := rooflineStepTime("", mc32, hc, step, 2, mfuDB)
 	if resultTP2 >= resultTP1 {
 		t.Errorf("TP=2 (%d µs) should be less than TP=1 (%d µs) for same model", resultTP2, resultTP1)
 	}
 }
 
-func TestRooflineStepTimeV2_PerLayerCPUOverhead_ZeroFallsBackToTOverhead(t *testing.T) {
-	// When PerLayerCPUOverhead=0, the code should use TOverheadMicros (backward compat).
+func TestRooflineStepTime_PerLayerCPUOverhead_ZeroMeansNoOverhead(t *testing.T) {
+	// When PerLayerCPUOverhead=0, no CPU overhead is added.
+	// The result should equal pure hardware time (compute/memory).
 	mfuDB := loadTestMFUDatabase(t)
 	mc := testModelConfig()
 
@@ -436,25 +334,21 @@ func TestRooflineStepTimeV2_PerLayerCPUOverhead_ZeroFallsBackToTOverhead(t *test
 		},
 	}
 
-	// Config with explicit TOverheadMicros, no PerLayerCPUOverhead
-	hcFixed := HardwareCalib{
-		TFlopsPeak:      989.5,
-		BwPeakTBs:       3.35,
-		TOverheadMicros: 5000.0,
+	hcZero := HardwareCalib{
+		TFlopsPeak: 989.5,
+		BwPeakTBs:  3.35,
 	}
 
-	// Config with PerLayerCPUOverhead=0 and same TOverheadMicros
-	hcZeroPL := HardwareCalib{
+	hcWithOverhead := HardwareCalib{
 		TFlopsPeak:          989.5,
 		BwPeakTBs:           3.35,
-		TOverheadMicros:     5000.0,
-		PerLayerCPUOverhead: 0,
+		PerLayerCPUOverhead: 100.0,
 	}
 
-	resultFixed := rooflineStepTimeV2("", mc, hcFixed, step, 1, mfuDB)
-	resultZeroPL := rooflineStepTimeV2("", mc, hcZeroPL, step, 1, mfuDB)
+	resultZero := rooflineStepTime("", mc, hcZero, step, 1, mfuDB)
+	resultWith := rooflineStepTime("", mc, hcWithOverhead, step, 1, mfuDB)
 
-	if resultFixed != resultZeroPL {
-		t.Errorf("PerLayerCPUOverhead=0 (%d µs) should match TOverheadMicros fallback (%d µs)", resultZeroPL, resultFixed)
+	if resultWith <= resultZero {
+		t.Errorf("PerLayerCPUOverhead=100 (%d µs) should exceed zero-overhead (%d µs)", resultWith, resultZero)
 	}
 }

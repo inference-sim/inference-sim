@@ -5,7 +5,8 @@ import (
 	"sort"
 )
 
-// --- Bento FLOPS Logic ---
+// --- Transformer FLOPs and Memory Access ---
+
 func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) map[string]float64 {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
@@ -16,7 +17,6 @@ func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newToke
 	}
 	dHead := dModel / nHeads
 
-	// Qwen2.5 uses specific intermediate dims for SwiGLU
 	dFF := 4.0 * dModel
 	if config.IntermediateDim > 0 {
 		dFF = float64(config.IntermediateDim)
@@ -29,37 +29,23 @@ func calculateTransformerFlops(config ModelConfig, sequenceLength int64, newToke
 	if includeAttention {
 		dKV := nKVHeads * dHead
 
-		// Attention QKV projection GEMMs
 		qkvFlops := 2 * newT * (dModel*dModel + 2*dModel*dKV)
-		// Attention output projection GEMM
 		projFlops := 2 * newT * dModel * dModel
 		flops["gemm_ops"] = (qkvFlops + projFlops) * nLayers
 
-		// FlashAttention: Compute-efficient attention with paged blocks
-		// Per vllm.md: processes in 512-token partitions in two stages
 		effectiveCtx := seqLen
 		if newT > 1 {
-			// Prefill: self-attention within batch, reduced effective context
 			effectiveCtx = seqLen + (newT-1)/2.0
 		}
 
-		// QK^T multiplication (matrix ops): 2 * newT * effectiveCtx * dHead per head
 		qkMatMul := 2 * nHeads * newT * effectiveCtx * dHead
-
-		// Softmax: exp + sum + div (reduced from 5 to 4 ops per element)
-		// Vector ops run on scalar units at lower efficiency
 		softmaxOps := 4 * nHeads * newT * effectiveCtx
-
-		// Value projection (matrix ops): 2 * newT * effectiveCtx * dHead per head
 		avMatMul := 2 * nHeads * newT * effectiveCtx * dHead
-
-		// Total attention math, run on vector/scalar units (10% efficiency)
 		attnMath := qkMatMul + softmaxOps + avMatMul
 		flops["sram_ops"] = attnMath * nLayers
 	}
 
 	if includeMLP {
-		// SwiGLU Gating: Gate, Up, and Down (3 matrices)
 		flops["gemm_ops"] += 2 * newT * (3 * dModel * dFF) * nLayers
 	}
 
@@ -92,49 +78,30 @@ func calculateMemoryAccessBytes(
 
 	mem := make(map[string]float64)
 
-	// Weights: Loaded exactly once. (Static)
 	dKV := nKVHeads * dHead
 	weightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel) + (3 * dModel * dFF)
 	mem["model_weights"] = weightsPerLayer * nLayers * config.BytesPerParam
 
 	if includeKVCache {
-		// KV Growth: Writing new tokens to HBM.
 		kvWritePerNewToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
 		mem["kv_cache_growth"] = kvWritePerNewToken * newT
 
-		// KV Access: Paged attention with 512-token partitions (per vllm.md)
-		// CRITICAL: In prefill, new tokens process within partitions in SRAM
-		// Most intermediate KV stays in cache, doesn't go to HBM
 		kvReadPerToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
-
-		// For decode (newT==1): scattered KV access over full historical sequence
-		// Each decode reads ALL historical KV (expensive!)
 		if newT == 1 {
-			// Decode: scattered KV access via paged attention over full sequence
 			mem["kv_cache_access"] = kvReadPerToken * seq * 0.80
 		} else {
-			// Prefill: sequential KV reads with cache reuse
 			mem["kv_cache_access"] = kvReadPerToken * seq * 0.92
 		}
 	}
 
-	// Token activations: Based on vllm.md paged attention and locality
-	// Decode has some SRAM reuse, prefill has batching benefits
 	var activationBytes float64
 	if newT == 1 {
-		// Decode: some activations in SRAM, most hit HBM
 		activationBytes = nLayers * dModel * config.BytesPerParam * newT * 0.75
 	} else {
-		// Prefill: better batching locality and reuse
 		activationBytes = nLayers * dModel * config.BytesPerParam * newT * 0.85
 	}
 	mem["activations_tokens"] = activationBytes
 
-	// LOGICAL FIX: Remove attention map bytes entirely.
-	// FlashAttention fuses this; it never hits HBM.
-
-	// Sort keys before accumulation for deterministic float summation
-	// (Go map iteration order is non-deterministic — antipattern #2)
 	keys := make([]string, 0, len(mem))
 	for k := range mem {
 		keys = append(keys, k)
@@ -148,94 +115,277 @@ func calculateMemoryAccessBytes(
 	return mem
 }
 
-func rooflineStepTime(_ string, modelConfig ModelConfig, hwConfig HardwareCalib, stepConfig StepConfig, tp int) int64 {
+// --- Helper Functions for GEMM Time Computation ---
 
+// computeGEMMTime calculates time for a single GEMM operation using MFU lookup
+// Formula: time = flops / (peakFlops * mfu)
+func computeGEMMTime(m, k, n int, peakFlops float64, mfuDB *MFUDatabase) float64 {
+	// GEMM FLOPs: 2 * m * k * n (multiply-add)
+	flops := 2.0 * float64(m) * float64(k) * float64(n)
+
+	// Lookup MFU for this GEMM shape
+	mfu := mfuDB.GetGEMMmfu(m, k, n)
+
+	// Compute time in seconds
+	return flops / (peakFlops * mfu)
+}
+
+// computeTransformerGEMMTimes calculates total time for all GEMM projections in transformer
+// Includes: QKV projections, O projection, MLP Gate/Up/Down projections
+// tpScaling should be 1/tp to account for TP parallelization
+func computeTransformerGEMMTimes(
+	modelConfig ModelConfig,
+	batchSize int,
+	peakFlops float64,
+	mfuDB *MFUDatabase,
+	tpScaling float64,
+) float64 {
+	dModel := modelConfig.HiddenDim
+	nLayers := modelConfig.NumLayers
+	nHeads := modelConfig.NumHeads
+	nKVHeads := modelConfig.NumKVHeads
+	if nKVHeads == 0 {
+		nKVHeads = nHeads
+	}
+
+	headDim := dModel / nHeads
+	dKV := nKVHeads * headDim
+
+	// MLP dimensions (SwiGLU)
+	dFF := 4 * dModel
+	if modelConfig.IntermediateDim > 0 {
+		dFF = modelConfig.IntermediateDim
+	}
+
+	totalTime := 0.0
+
+	for layer := 0; layer < nLayers; layer++ {
+		// === Attention GEMMs ===
+
+		// Q projection: [batch_size, dModel] @ [dModel, dModel] = [batch_size, dModel]
+		qTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, mfuDB)
+		totalTime += qTime * tpScaling
+
+		// K projection: [batch_size, dModel] @ [dModel, dKV] = [batch_size, dKV]
+		kTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, mfuDB)
+		totalTime += kTime * tpScaling
+
+		// V projection: [batch_size, dModel] @ [dModel, dKV] = [batch_size, dKV]
+		vTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, mfuDB)
+		totalTime += vTime * tpScaling
+
+		// O projection: [batch_size, dModel] @ [dModel, dModel] = [batch_size, dModel]
+		oTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, mfuDB)
+		totalTime += oTime * tpScaling
+
+		// === MLP GEMMs (SwiGLU) ===
+
+		// Gate projection: [batch_size, dModel] @ [dModel, dFF] = [batch_size, dFF]
+		gateTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, mfuDB)
+		totalTime += gateTime * tpScaling
+
+		// Up projection: [batch_size, dModel] @ [dModel, dFF] = [batch_size, dFF]
+		upTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, mfuDB)
+		totalTime += upTime * tpScaling
+
+		// Down projection: [batch_size, dFF] @ [dFF, dModel] = [batch_size, dModel]
+		downTime := computeGEMMTime(batchSize, dFF, dModel, peakFlops, mfuDB)
+		totalTime += downTime * tpScaling
+	}
+
+	return totalTime
+}
+
+// --- Attention Core FLOPs Calculation ---
+
+// calculateAttentionCoreFLOPs computes FLOPs for attention core operations
+// Includes: QK^T matmul, softmax, attention-value matmul
+func calculateAttentionCoreFLOPs(
+	nHeads int,
+	nKVHeads int,
+	dModel int,
+	batchSize int,
+	seqLen int64,
+) float64 {
+	if nKVHeads == 0 {
+		nKVHeads = nHeads
+	}
+
+	headDim := dModel / nHeads
+	effectiveCtx := float64(seqLen)
+
+	// QK^T matmul: 2 * nHeads * batchSize * effectiveCtx * headDim
+	qkMatMul := 2.0 * float64(nHeads) * float64(batchSize) * effectiveCtx * float64(headDim)
+
+	// Softmax: 4 ops per element (exp, sum, div, etc.)
+	softmaxOps := 4.0 * float64(nHeads) * float64(batchSize) * effectiveCtx
+
+	// Attention-Value matmul: 2 * nHeads * batchSize * effectiveCtx * headDim
+	avMatMul := 2.0 * float64(nHeads) * float64(batchSize) * effectiveCtx * float64(headDim)
+
+	return qkMatMul + softmaxOps + avMatMul
+}
+
+// --- Main Roofline Function ---
+
+func rooflineStepTime(
+	_ string,
+	modelConfig ModelConfig,
+	hwConfig HardwareCalib,
+	stepConfig StepConfig,
+	tp int,
+	mfuDB *MFUDatabase,
+) int64 {
 	tpFactor := float64(tp)
+	tpScaling := 1.0 / tpFactor
+
 	peakFlops := hwConfig.TFlopsPeak * 1e12
 	peakBW := hwConfig.BwPeakTBs * 1e12
-	effBW := peakBW * hwConfig.BwEffConstant
-	vectorPeak := peakFlops * hwConfig.VectorPeakFraction // Non-tensor core ops
-
-	// TP scaling efficiency - actual speedup is sublinear due to communication overhead
-	// Empirical: TP=2 gives 1.36x speedup, TP=4 gives 1.84x speedup (compute-bound prefill)
-	effectiveTpPrefill := math.Pow(tpFactor, hwConfig.TpScalingExponent)
-	// Decode TP scaling - memory-bound but with communication overhead at higher TP
-	decodeTpExp := hwConfig.DecodeTpScalingExponent
-	if decodeTpExp == 0 {
-		decodeTpExp = 1.0 // Default to linear scaling if not set
+	if hwConfig.BwEfficiencyFactor != 0 {
+		peakBW *= hwConfig.BwEfficiencyFactor
 	}
-	effectiveTpDecode := math.Pow(tpFactor, decodeTpExp)
 
 	var prefillComputeS, prefillMemoryS float64
 	var decodeComputeS, decodeMemoryS float64
 	var hasPrefill, hasDecode bool
 
-	// 1. PREFILL PHASE
-	if len(stepConfig.PrefillRequests) > 0 {
-		hasPrefill = true
-		var pGemmFlops, pVectorFlops, pDynamicBytes float64
-
-		for _, req := range stepConfig.PrefillRequests {
-			numTokens := int64(req.NumNewPrefillTokens)
-
-			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
-			// Use sublinear TP scaling for compute (prefill is compute-bound)
-			pGemmFlops += f["gemm_ops"] / effectiveTpPrefill
-			pVectorFlops += f["sram_ops"] / effectiveTpPrefill
-
-			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
-			// Memory still scales linearly with TP (each GPU has 1/tp of weights)
-			pDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
-		}
-
-		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-		pWeightBytes := baseMem["model_weights"] / tpFactor
-
-		// Prefill MFU - calibrated to match vLLM measured performance
-		adjustedPrefillMFU := hwConfig.MfuPrefill * hwConfig.MfuPrefillMultiplier
-
-		// Reduce effective bandwidth for prefill (memory contention during KV cache operations)
-		prefillEffBW := effBW * hwConfig.PrefillBwFactor
-
-		prefillComputeS = (pGemmFlops / (peakFlops * adjustedPrefillMFU)) + (pVectorFlops / vectorPeak)
-		prefillMemoryS = (pWeightBytes + pDynamicBytes) / prefillEffBW
-	}
-
-	// 2. DECODE PHASE
+	// ========================================
+	// 1. DECODE PHASE (Aggregate All Requests)
+	// ========================================
 	if len(stepConfig.DecodeRequests) > 0 {
 		hasDecode = true
-		var dGemmFlops, dVectorFlops, dDynamicBytes float64
+
+		// Aggregate batch size and find max kv_len
+		totalBatchSize := len(stepConfig.DecodeRequests)
+		maxKVLen := int64(0)
 
 		for _, req := range stepConfig.DecodeRequests {
-			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
-			// Decode TP scaling - applies to both compute and memory
-			dGemmFlops += f["gemm_ops"] / effectiveTpDecode
-			dVectorFlops += f["sram_ops"] / effectiveTpDecode
+			if req.ProgressIndex > maxKVLen {
+				maxKVLen = req.ProgressIndex
+			}
+		}
 
+		// === GEMM Projections ===
+		// Single aggregated lookup for all decode requests
+		gemmTimeS := computeTransformerGEMMTimes(
+			modelConfig,
+			totalBatchSize,
+			peakFlops,
+			mfuDB,
+			tpScaling,
+		)
+
+		// === Attention Core ===
+		// Calculate total attention core FLOPs across all layers
+		attnCoreFLOPs := calculateAttentionCoreFLOPs(
+			modelConfig.NumHeads,
+			modelConfig.NumKVHeads,
+			modelConfig.HiddenDim,
+			totalBatchSize,
+			maxKVLen,
+		) * float64(modelConfig.NumLayers)
+
+		// Lookup decode MFU
+		attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
+
+		// Formula: time = flops / (peakFlops * mfu)
+		attnCoreTimeS := attnCoreFLOPs / (peakFlops * attnMFU) * tpScaling
+
+		decodeComputeS = gemmTimeS + attnCoreTimeS
+
+		// === Memory Bandwidth ===
+		var dDynamicBytes float64
+		for _, req := range stepConfig.DecodeRequests {
 			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
-			dDynamicBytes += (m["total"] - m["model_weights"]) / effectiveTpDecode
+			dDynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
 		}
 
 		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-		dWeightBytes := baseMem["model_weights"] / effectiveTpDecode
+		dWeightBytes := baseMem["model_weights"] * tpScaling
 
-		// Unified MFU for decode across all batch sizes
-		adjustedDecodeMFU := hwConfig.MfuDecode * hwConfig.MfuDecodeMultiplier
-
-		// Reduce effective bandwidth for decode (scattered KV cache access)
-		decodeEffBW := effBW * hwConfig.DecodeBwFactor
-
-		decodeComputeS = (dGemmFlops / (peakFlops * adjustedDecodeMFU)) + (dVectorFlops / vectorPeak)
-		decodeMemoryS = (dWeightBytes + dDynamicBytes) / decodeEffBW
+		decodeMemoryS = (dWeightBytes + dDynamicBytes) / peakBW
 	}
 
+	// ========================================
+	// 2. PREFILL PHASE (Bucket by seq_len)
+	// ========================================
+	if len(stepConfig.PrefillRequests) > 0 {
+		hasPrefill = true
+
+		// Group prefill requests by seq_len bucket
+		// Use power-of-2 buckets: 512, 1024, 2048, 4096, 8192, etc.
+		bucketMap := make(map[int][]PrefillRequestConfig)
+
+		for _, req := range stepConfig.PrefillRequests {
+			seqLen := int(req.ProgressIndex + int64(req.NumNewPrefillTokens))
+
+			// Find next power-of-2 bucket
+			bucket := 512
+			for bucket < seqLen && bucket < 65536 {
+				bucket *= 2
+			}
+			if bucket > 65536 {
+				bucket = 65536 // Cap at max bucket
+			}
+
+			bucketMap[bucket] = append(bucketMap[bucket], req)
+		}
+
+		// Process each bucket independently
+		for bucketSeqLen, requests := range bucketMap {
+			batchSize := len(requests)
+
+			// === GEMM Projections ===
+			// Use bucket batch size for GEMM lookups
+			gemmTimeS := computeTransformerGEMMTimes(
+				modelConfig,
+				batchSize,
+				peakFlops,
+				mfuDB,
+				tpScaling,
+			)
+
+			// === Attention Core ===
+			// Calculate attention core FLOPs for this bucket
+			attnCoreFLOPs := calculateAttentionCoreFLOPs(
+				modelConfig.NumHeads,
+				modelConfig.NumKVHeads,
+				modelConfig.HiddenDim,
+				batchSize,
+				int64(bucketSeqLen),
+			) * float64(modelConfig.NumLayers)
+
+			// Lookup prefill MFU
+			attnMFU := mfuDB.GetAttnPrefillMFU(bucketSeqLen)
+
+			// Formula: time = flops / 1.8 / (peakFlops * mfu)
+			// Note: /1.8 factor from InferSim (hardware-specific adjustment)
+			attnCoreTimeS := attnCoreFLOPs / 1.8 / (peakFlops * attnMFU) * tpScaling
+
+			prefillComputeS += gemmTimeS + attnCoreTimeS
+		}
+
+		// === Memory Bandwidth ===
+		var pDynamicBytes float64
+		for _, req := range stepConfig.PrefillRequests {
+			numTokens := int64(req.NumNewPrefillTokens)
+			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
+			pDynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
+		}
+
+		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+		pWeightBytes := baseMem["model_weights"] * tpScaling
+
+		prefillMemoryS = (pWeightBytes + pDynamicBytes) / peakBW
+	}
+
+	// ========================================
 	// 3. COMBINE PHASES
-	// Model prefill and decode as partially overlappable execution
-	// In a mixed batch, requests can interleave but they also compete for resources
+	// ========================================
 	var stepHardwareS float64
 
 	if hasPrefill && hasDecode {
-		// Mixed batch: use weighted average based on token count and bottleneck characteristics
+		// Mixed batch: use weighted average based on token count
 		prefillTimeS := math.Max(prefillComputeS, prefillMemoryS)
 		decodeTimeS := math.Max(decodeComputeS, decodeMemoryS)
 
@@ -246,17 +396,15 @@ func rooflineStepTime(_ string, modelConfig ModelConfig, hwConfig HardwareCalib,
 		decodeTokens := float64(len(stepConfig.DecodeRequests))
 		totalTokens := prefillTokens + decodeTokens
 
-		// Adaptive weighting based on token distribution and expected interleaving
-		// In vLLM, prefill and decode can be partially pipelined when both present
+		// Adaptive weighting based on token distribution
 		if prefillTokens > decodeTokens*4 && prefillTokens > 100 {
-			// Strongly prefill-dominated with significant tokens: apply blending
-			// Model some compute overlap between prefill and decode layers
+			// Prefill-dominated: apply blending
 			stepHardwareS = 0.75*prefillTimeS + 0.25*decodeTimeS
 		} else if decodeTokens > prefillTokens*2 && decodeTokens > 50 {
-			// Decode-dominated: weight towards decode with some prefill overlap
+			// Decode-dominated: weight towards decode
 			stepHardwareS = 0.35*prefillTimeS + 0.65*decodeTimeS
 		} else {
-			// Balanced mix: average to account for parallelization benefits
+			// Balanced mix: weighted average
 			prefillWeight := prefillTokens / totalTokens
 			decodeWeight := decodeTokens / totalTokens
 			stepHardwareS = prefillWeight*prefillTimeS + decodeWeight*decodeTimeS
@@ -267,38 +415,15 @@ func rooflineStepTime(_ string, modelConfig ModelConfig, hwConfig HardwareCalib,
 		stepHardwareS = math.Max(decodeComputeS, decodeMemoryS)
 	}
 
-	// Communication overhead - all-reduce per layer
-	commOverheadS := 0.0
-	if tp > 1 {
-		commOverheadS = (float64(modelConfig.NumLayers) * 2 * hwConfig.AllReduceLatency) / 1e6
-	}
+	// ========================================
+	// 4. CPU SCHEDULING OVERHEAD
+	// ========================================
 
-	// Batch-size-aware overhead: decode-heavy batches have more scheduling overhead
-	// Decode steps are more sensitive to scheduling latency per-token
-	numDecode := float64(len(stepConfig.DecodeRequests))
-	numPrefill := float64(len(stepConfig.PrefillRequests))
-	totalRequests := numDecode + numPrefill
-	scaledOverheadMicros := hwConfig.TOverheadMicros
-	if totalRequests > 2 {
-		// Base scaling with batch size
-		baseScale := 0.15 * math.Log2(totalRequests/2.0)
-		// Decode-heavy batches get more overhead (ITL is per-token)
-		decodeRatio := numDecode / totalRequests
-		scaledOverheadMicros *= 1.0 + baseScale*(0.3+2.0*decodeRatio)
-	}
-
-	// Add overhead for prefill steps (KV cache allocation, scheduling)
-	var prefillOverheadMicros float64
-	if numPrefill > 0 && numDecode == 0 {
-		// Pure prefill step: add fixed overhead per prefill request
-		prefillOverheadMicros = numPrefill * hwConfig.PrefillOverheadMicros
-	} else if numPrefill > 0 {
-		// Mixed batch: smaller overhead
-		prefillOverheadMicros = numPrefill * hwConfig.MixedPrefillOverheadMicros
-	}
+	// Per-step CPU overhead: perLayerOverhead × (num_layers / tp)
+	overheadMicros := hwConfig.PerLayerCPUOverhead * float64(modelConfig.NumLayers) / tpFactor
 
 	// Total time
-	totalS := stepHardwareS + commOverheadS + (scaledOverheadMicros / 1e6) + (prefillOverheadMicros / 1e6)
+	totalS := stepHardwareS + (overheadMicros / 1e6)
 	totalMicros := totalS * 1e6
 
 	return int64(math.Round(totalMicros))
