@@ -35,6 +35,18 @@ Follow `docs/process/pr-workflow.md` for the complete PR lifecycle. The workflow
 8. **Self-audit** — 9 dimensions of deliberate critical thinking (no automation)
 9. **Commit, push, PR**
 
+## Human Contributor Quick Path
+
+If you are not using Claude Code, here is the simplified workflow:
+
+1. **Branch** — `git checkout -b feature/my-change`
+2. **Plan** — write an implementation plan following `docs/templates/micro-plan.md`. Include behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post the plan as a PR draft or issue comment for review.
+3. **Implement** — follow TDD: write a failing test, implement the minimal code to pass it, run `go test ./...`, run `golangci-lint run ./...`, commit. Repeat for each contract.
+4. **Self-review** — check the [Antipattern Checklist](#antipattern-checklist) below. Run `go build ./... && go test ./... && golangci-lint run ./...` one final time.
+5. **PR** — push your branch and open a PR. Maintainers will run the automated review protocols (convergence-review with 10 perspectives).
+
+The automated review tools (convergence-review, pr-review-toolkit) are run by maintainers — you do not need Claude Code installed. Your PR will go through the same quality gates regardless of tooling.
+
 ## Engineering Principles
 
 See [`docs/standards/principles.md`](docs/standards/principles.md) for the full principles guide covering: separation of concerns, interface design, configuration design, canonical constructors, output channel separation, error handling boundaries, and BDD/TDD development.
