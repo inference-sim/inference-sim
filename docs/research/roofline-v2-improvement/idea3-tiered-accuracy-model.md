@@ -14,7 +14,7 @@ Tier 0 requires zero fitted parameters — it corrects seven structural mismatch
 
 **Constraint**: No server-side traces or vLLM instrumentation. All corrections derive from client-side metrics, analytical modeling, or offline benchmarks.
 
-The seven error patterns addressed by Tier 0 are detailed in [Section 1](#1-seven-hypotheses-observable-error-patterns). **H1 confirmed** (+11.6pp TPOT improvement). **H2 refuted** at InferSim values (overhead is not constant-additive; deferred to Tier 1). Recommended execution order for remaining hypotheses: H3 and H5 next, then H4 and H6, then H7 (MoE — requires config parsing extension).
+The seven error patterns addressed by Tier 0 are detailed in [Section 1](#1-seven-hypotheses-observable-error-patterns). Recommended execution order: H1 and H2 first (largest expected impact), then H3 and H5, then H4 and H6, then H7 (MoE — requires config parsing extension).
 
 ---
 
@@ -55,17 +55,9 @@ The model assumes GPUs sustain their datasheet peak HBM bandwidth. In practice, 
 
 ### H2: The simulator underestimates step time by a fixed additive amount independent of compute workload
 
-> **Status: Refuted at InferSim values.** The residual error after H1 is not constant-additive — it scales with model size. See `hypotheses/h-roofline/h2-scheduling-overhead/FINDINGS.md`.
-
 > Across all workloads, there should be a constant positive residual (measured - predicted) per step. This residual should be roughly the same magnitude regardless of model size, batch size, or prefill/decode mix. It represents time spent outside GPU compute — scheduling, tensor preparation, output processing.
 
-**Experiment result**: InferSim's fixed overheads (5ms decode, 30ms prefill) applied on top of the H1 BW correction **worsened** TPOT MAPE from 36.1% to 47.6% (-11.5pp) and E2E MAPE from 28.8% to 70.9% (-42.1pp). The overhead overshoots for small/fast models (7B at TP=4: 5ms added to ~1ms step = 5x overshoot) while being approximately correct for large models (70B: 5ms added to ~13ms step). The one positive: TTFT improved by +8pp, confirming the prefill overhead *direction* is correct even though the magnitude is wrong.
-
-**Why it failed**: InferSim's overhead values are calibrated to InferSim's own modeling gaps — they absorb MFU estimation errors, memory model differences, and other discrepancies specific to InferSim. BLIS's roofline v2 with MFU database already captures some of what InferSim lumps into "overhead." The residual after H1 shows a gap of ~2ms for 7B models but ~3ms for 70B models — not constant, suggesting the remaining error is multiplicative (pointing to H3 GEMM shapes or H4 per-component roofline) rather than additive.
-
-**Revised recommendation**: H2 as a fixed-additive Tier 0 correction is not viable. Scheduling overhead calibration should be deferred to **Tier 1** (one-trace calibration) where a per-model residual fit can capture the model-dependent scaling. Alternatively, a much smaller fixed overhead (~1-2ms) could be explored via sweep with train/holdout validation, but the expected improvement is modest and risks overfitting.
-
-**Original test design** (retained for reference): Run BLIS against all 14 ground truth experiments with the current overhead (~50μs) and with InferSim-scale overhead (5ms decode, 30ms prefill). Use the lowest-QPS sweep point per experiment where queuing effects are negligible. The overhead constant should be swept in 1ms increments; select the value that minimizes TPOT MAPE on a 70/30 train/holdout split across experiments (train on 10 experiments, hold out 4).
+**How to test**: Run BLIS against all 14 ground truth experiments with the current overhead (~50μs) and with InferSim-scale overhead (5ms decode, 30ms prefill). Use the lowest-QPS sweep point per experiment where queuing effects are negligible. The overhead constant should be swept in 1ms increments; select the value that minimizes TPOT MAPE on a 70/30 train/holdout split across experiments (train on 10 experiments, hold out 4).
 
 **Data constraint**: We cannot observe individual step times or decompose per-request latency into "GPU compute" vs. "scheduler overhead" — that would require server-side OTEL traces. The test validates that adding a fixed overhead improves aggregate prediction accuracy, but cannot confirm the overhead is truly constant (independent of batch size). Tier 1 calibration captures any batch-size dependence.
 
@@ -79,7 +71,6 @@ The model captures GPU kernel execution time but misses the CPU-side overhead of
 - BLIS overhead: `TOverheadMicros: 50.0` — [`hardware_config.json:6`](hardware_config.json#L6)
 - InferSim decode overhead: `tpot += 5` (5ms) — [`models/model.py:229`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L229)
 - InferSim prefill overhead: `ttft += 30` (30ms) — [`models/model.py:177`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L177)
-- **H2 experiment result**: InferSim values overshoot for BLIS — see [`hypotheses/h-roofline/h2-scheduling-overhead/FINDINGS.md`](../../hypotheses/h-roofline/h2-scheduling-overhead/FINDINGS.md)
 
 </details>
 
@@ -293,14 +284,14 @@ Corrections derived entirely from hardware physics, execution semantics, or stan
 | Hypothesis | What the simulator gets wrong | Accept criterion | Testability with client data |
 |------------|------------------------------|------------------|------------------------------|
 | H1 | Underestimates memory-bound step latency | TPOT MAPE ≥3pp better across 14 experiments; chatsweep (decode-heavy) > codesweep (prefill-heavy) | Aggregate only — cannot isolate memory-bound steps |
-| H2 | Missing per-step scheduling overhead | **Refuted at InferSim values** (-11.5pp TPOT, worsened). Residual is not constant-additive; scales with model size. Defer to Tier 1. | Aggregate only — cannot observe per-step residuals |
+| H2 | Missing per-step scheduling overhead | TPOT MAPE ≥3pp better on held-out experiments; TTFT not >1pp worse | Aggregate only — cannot observe per-step residuals |
 | H3 | MFU lookups use wrong GEMM shapes | E2E MAPE ≥2pp better on GQA models; GQA improvement > non-GQA | Strong — have both GQA and non-GQA models |
 | H4 | Aggregate roofline masks bottleneck transitions | Synthetic: ≥10% diff at crossover; Aggregate: E2E MAPE ≥1pp better | Mechanism via synthetic test; accuracy via aggregate |
 | H5 | Weighted-average mixed-batch model | Synthetic: ≥15% diff at 50/50; Aggregate: E2E MAPE ≥2pp better at high QPS | Weakest — no batch composition visibility; QPS as proxy |
 | H6 | MFU grid-boundary discontinuities | ≥80% fewer discontinuities; per-request variance decreases | Full — simulator-internal + aggregate |
 | H7 | No MoE-aware latency model | Part A: within 20% of InferSim predictions; Part B: E2E MAPE < 20% on MoE models | Part A via cross-simulator check; Part B blocked on MoE ground truth |
 
-**Overfitting risk**: None for H1, H3, H4, H5, H7a/c/d (zero fitted parameters — architecture-derived). H2 is refuted as a Tier 0 fixed correction; if revisited as a sweep, would need held-out validation. H6 is a standard numerical technique. H7b Option A uses a conservative discount factor; Option B uses benchmarked data.
+**Overfitting risk**: None for H1, H3, H4, H5, H7a/c/d (zero fitted parameters — architecture-derived). H2 sweep requires held-out validation (train on 10, hold out 4). H6 is a standard numerical technique. H7b Option A uses a conservative discount factor; Option B uses benchmarked data.
 
 ### Tier 1: One-Trace Calibration
 
@@ -338,7 +329,7 @@ InferSim's core insight: *"The accuracy of the MFU directly determines the accur
 
 ### 3.3 Compute vs. Scheduling
 
-A vLLM step consists of two sequential phases: GPU compute (GEMMs + attention) and CPU scheduling (Python-level batch formation, block allocation, detokenization). These are fundamentally different phenomena with different scaling. H2 proposed addressing the missing scheduling component as a fixed additive correction. **Experiment showed** the residual is not constant — it scales with model size, suggesting the remaining error after H1 is better explained by multiplicative factors (H3 GEMM shapes, H4 per-component roofline) rather than a fixed overhead. Scheduling overhead calibration is deferred to Tier 1.
+A vLLM step consists of two sequential phases: GPU compute (GEMMs + attention) and CPU scheduling (Python-level batch formation, block allocation, detokenization). These are fundamentally different phenomena with different scaling. H2 addresses the missing scheduling component as a fixed additive correction. If the residual after H1 is roughly constant across configurations, a single overhead value suffices (Tier 0). If it varies with model size or batch size, a per-model fit is needed (Tier 1).
 
 ### 3.4 MoE Sparsity and Grouped Execution
 
@@ -402,7 +393,7 @@ Tier 0: Fully deterministic. Tier 1: Deterministic given same trace + seed (INV-
 
 4. **Mixed-batch validation**: H5 is a novel contribution (InferSim doesn't model mixed batches). The behavioral claim derives from vLLM's execution model but requires empirical validation. H5 has the weakest testability — we have no batch composition visibility, and the QPS-as-proxy approach conflates mixed batching with queuing/contention effects.
 
-5. **Overhead functional form**: H2 assumed scheduling overhead is roughly fixed per step. **Experiment refuted this**: the residual after H1 scales with model size (~2ms for 7B, ~3ms for 70B), not constant. InferSim's 5ms/30ms values are calibrated to InferSim's own modeling gaps and overshoot for BLIS. Scheduling overhead calibration is deferred to Tier 1 where a per-model residual fit can capture the model-dependent scaling.
+5. **Overhead functional form**: H2 assumes scheduling overhead is roughly fixed per step. If the residual after H1 varies with model size or batch size, a constant overhead will be wrong for some configurations. InferSim's 5ms/30ms values may be calibrated to InferSim's own modeling gaps rather than true vLLM scheduling overhead. If a fixed overhead proves insufficient, scheduling calibration moves to Tier 1.
 
 6. **Non-NVIDIA GPUs**: The bandwidth efficiency constant is validated only for NVIDIA HBM GPUs in InferSim. Tier 2 addresses other hardware through direct measurement.
 
