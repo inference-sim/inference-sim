@@ -45,6 +45,17 @@ type HardwareCalib struct {
 	// Sources: vAttention (block-table 10-30% of decode), Wuklab (up to 50%
 	// overhead for small models), BROS (7-10% per iteration).
 	PerLayerCPUOverhead float64 `json:"perLayerOverhead"`
+
+	// MixedBatchMode selects how prefill+decode mixed batches combine their latency.
+	//   "" or "weighted-average" (default): current branching weighted average
+	//   "additive": GEMM(totalBatch) + PrefillAttn + DecodeAttn (vLLM chunked-prefill physics)
+	//   "smooth-wa": token-proportional weighted average without branch thresholds
+	//
+	// Reference: H5 hypothesis — the weighted-average model uses uncited magic
+	// constants (0.75/0.25, 0.35/0.65) that create discontinuities at branch
+	// boundaries. The additive model matches vLLM's execution: one fused GEMM
+	// over the concatenated batch, separate FlashAttention kernels per phase.
+	MixedBatchMode string `json:"mixedBatchMode"`
 }
 
 // HFConfig represents a flexible JSON object with dynamic fields.
@@ -297,6 +308,12 @@ func ValidateRooflineConfig(mc ModelConfig, hc HardwareCalib) error {
 		if math.IsNaN(hc.BwEfficiencyFactor) || math.IsInf(hc.BwEfficiencyFactor, 0) || hc.BwEfficiencyFactor < 0 || hc.BwEfficiencyFactor > 1.0 {
 			problems = append(problems, fmt.Sprintf("HardwareCalib.BwEfficiencyFactor must be in (0, 1.0] or 0 (disabled), got %v", hc.BwEfficiencyFactor))
 		}
+	}
+
+	// MixedBatchMode: optional, but if set must be a recognized value
+	validModes := map[string]bool{"": true, "weighted-average": true, "additive": true, "smooth-wa": true}
+	if !validModes[hc.MixedBatchMode] {
+		problems = append(problems, fmt.Sprintf("HardwareCalib.MixedBatchMode must be one of {weighted-average, additive, smooth-wa} or empty (default), got %q", hc.MixedBatchMode))
 	}
 
 	if len(problems) > 0 {

@@ -385,29 +385,93 @@ func rooflineStepTime(
 	var stepHardwareS float64
 
 	if hasPrefill && hasDecode {
-		// Mixed batch: use weighted average based on token count
-		prefillTimeS := math.Max(prefillComputeS, prefillMemoryS)
-		decodeTimeS := math.Max(decodeComputeS, decodeMemoryS)
+		switch hwConfig.MixedBatchMode {
+		case "additive":
+			// Additive model: matches vLLM chunked-prefill execution.
+			// (1) One fused GEMM over the concatenated prefill+decode batch
+			// (2) Separate FlashAttention kernels for prefill and decode
+			// (3) Single model weight load (not once per phase)
+			totalBatchSize := len(stepConfig.PrefillRequests) + len(stepConfig.DecodeRequests)
+			fusedGEMMTime := computeTransformerGEMMTimes(
+				modelConfig, totalBatchSize, peakFlops, mfuDB, tpScaling,
+			)
 
-		prefillTokens := 0.0
-		for _, req := range stepConfig.PrefillRequests {
-			prefillTokens += float64(req.NumNewPrefillTokens)
-		}
-		decodeTokens := float64(len(stepConfig.DecodeRequests))
-		totalTokens := prefillTokens + decodeTokens
+			// Attention times are already computed separately above
+			prefillAttnTime := prefillComputeS - computeTransformerGEMMTimes(
+				modelConfig, len(stepConfig.PrefillRequests), peakFlops, mfuDB, tpScaling,
+			)
+			decodeAttnTime := decodeComputeS - computeTransformerGEMMTimes(
+				modelConfig, len(stepConfig.DecodeRequests), peakFlops, mfuDB, tpScaling,
+			)
+			if prefillAttnTime < 0 {
+				prefillAttnTime = 0
+			}
+			if decodeAttnTime < 0 {
+				decodeAttnTime = 0
+			}
 
-		// Adaptive weighting based on token distribution
-		if prefillTokens > decodeTokens*4 && prefillTokens > 100 {
-			// Prefill-dominated: apply blending
-			stepHardwareS = 0.75*prefillTimeS + 0.25*decodeTimeS
-		} else if decodeTokens > prefillTokens*2 && decodeTokens > 50 {
-			// Decode-dominated: weight towards decode
-			stepHardwareS = 0.35*prefillTimeS + 0.65*decodeTimeS
-		} else {
-			// Balanced mix: weighted average
+			computeS := fusedGEMMTime + prefillAttnTime + decodeAttnTime
+
+			// Memory: single weight load + combined dynamic access
+			baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+			weightBytes := baseMem["model_weights"] * tpScaling
+
+			var dynamicBytes float64
+			for _, req := range stepConfig.PrefillRequests {
+				numTokens := int64(req.NumNewPrefillTokens)
+				m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
+				dynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
+			}
+			for _, req := range stepConfig.DecodeRequests {
+				m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
+				dynamicBytes += (m["total"] - m["model_weights"]) * tpScaling
+			}
+
+			memoryS := (weightBytes + dynamicBytes) / peakBW
+			stepHardwareS = math.Max(computeS, memoryS)
+
+		case "smooth-wa":
+			// Smooth weighted-average: token-proportional without branch thresholds.
+			// Isolates branch removal from the additive structural change.
+			prefillTimeS := math.Max(prefillComputeS, prefillMemoryS)
+			decodeTimeS := math.Max(decodeComputeS, decodeMemoryS)
+
+			prefillTokens := 0.0
+			for _, req := range stepConfig.PrefillRequests {
+				prefillTokens += float64(req.NumNewPrefillTokens)
+			}
+			decodeTokens := float64(len(stepConfig.DecodeRequests))
+			totalTokens := prefillTokens + decodeTokens
+
 			prefillWeight := prefillTokens / totalTokens
 			decodeWeight := decodeTokens / totalTokens
 			stepHardwareS = prefillWeight*prefillTimeS + decodeWeight*decodeTimeS
+
+		default:
+			// Default: current branching weighted average (baseline)
+			prefillTimeS := math.Max(prefillComputeS, prefillMemoryS)
+			decodeTimeS := math.Max(decodeComputeS, decodeMemoryS)
+
+			prefillTokens := 0.0
+			for _, req := range stepConfig.PrefillRequests {
+				prefillTokens += float64(req.NumNewPrefillTokens)
+			}
+			decodeTokens := float64(len(stepConfig.DecodeRequests))
+			totalTokens := prefillTokens + decodeTokens
+
+			// Adaptive weighting based on token distribution
+			if prefillTokens > decodeTokens*4 && prefillTokens > 100 {
+				// Prefill-dominated: apply blending
+				stepHardwareS = 0.75*prefillTimeS + 0.25*decodeTimeS
+			} else if decodeTokens > prefillTokens*2 && decodeTokens > 50 {
+				// Decode-dominated: weight towards decode
+				stepHardwareS = 0.35*prefillTimeS + 0.65*decodeTimeS
+			} else {
+				// Balanced mix: weighted average
+				prefillWeight := prefillTokens / totalTokens
+				decodeWeight := decodeTokens / totalTokens
+				stepHardwareS = prefillWeight*prefillTimeS + decodeWeight*decodeTimeS
+			}
 		}
 	} else if hasPrefill {
 		stepHardwareS = math.Max(prefillComputeS, prefillMemoryS)
