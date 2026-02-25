@@ -28,7 +28,7 @@ A BLIS cluster consists of N independent inference instances orchestrated by a s
                     └─────────────┘
 ```
 
-See the [Cluster Data Flow diagram](diagrams/cluster-data-flow.excalidraw) for the full pipeline.
+![Cluster Data Flow](diagrams/clusterdataflow.png)
 
 ## Shared-Clock Event Loop
 
@@ -86,7 +86,7 @@ The routing decision follows this pipeline:
 
 Default weights: `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity).
 
-See the [Scoring Pipeline diagram](diagrams/scoring-pipeline.excalidraw) for a visual representation.
+![Scoring Pipeline](diagrams/scoringpipeline.png)
 
 ## Scorer Composition
 

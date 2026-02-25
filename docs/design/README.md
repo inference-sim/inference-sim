@@ -30,14 +30,12 @@ This directory contains the public-facing design documentation for BLIS (Blackbo
 
 ## Diagrams
 
-Architecture diagrams are provided in [Excalidraw](https://excalidraw.com/) format. Open the `.excalidraw` files in the Excalidraw editor to view and export them.
-
 | Diagram | Description |
 |---------|-------------|
-| [Cluster Data Flow](diagrams/cluster-data-flow.excalidraw) | End-to-end cluster pipeline: request arrival through metrics output |
-| [Request Lifecycle](diagrams/request-lifecycle.excalidraw) | Request state machine: states, transitions, and metric recording points |
-| [Event Processing](diagrams/event-processing.excalidraw) | DES event loop: min-heap queue, clock advancement, Step() decomposition |
-| [Scoring Pipeline](diagrams/scoring-pipeline.excalidraw) | Weighted scorer composition: per-scorer normalization, weight multiplication, argmax selection |
+| ![Cluster Data Flow](diagrams/clusterdataflow.png) | End-to-end cluster pipeline: request arrival through metrics output |
+| ![Request Lifecycle](diagrams/requestlifecycle.png) | Request state machine: states, transitions, and metric recording points |
+| ![Event Processing](diagrams/eventprocessingloop.png) | DES event loop: min-heap queue, clock advancement, Step() decomposition |
+| ![Scoring Pipeline](diagrams/scoringpipeline.png) | Weighted scorer composition: per-scorer normalization, weight multiplication, argmax selection |
 
 ## Reading Order
 

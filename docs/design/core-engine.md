@@ -32,7 +32,7 @@ The event queue is a min-heap ordered by event timestamp. Events represent state
 
 **Work-conserving (INV-8):** After every step completion, if the wait queue is non-empty, a `StepEvent` must exist in the event queue. The simulator never idles while work is waiting.
 
-See the [Event Processing diagram](diagrams/event-processing.excalidraw) for a visual representation.
+![Event Processing Loop](diagrams/eventprocessingloop.png)
 
 ## Step Phases
 
@@ -84,7 +84,7 @@ Requests follow a linear state machine with one exception (preemption):
              (input too large for KV cache)
 ```
 
-See the [Request Lifecycle diagram](diagrams/request-lifecycle.excalidraw) for the full state machine.
+![Request Lifecycle](diagrams/requestlifecycle.png)
 
 ### States
 
