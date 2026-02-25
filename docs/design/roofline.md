@@ -61,9 +61,8 @@ The simplest way to run roofline mode is with the `--roofline` flag, which auto-
 ```
 
 The flag automatically:
-1. Checks the local cache at `~/.blis/model_configs/`
-2. Fetches `config.json` from HuggingFace if not cached (supports `HF_TOKEN` for gated models)
-3. Falls back to bundled `model_configs/` directory
+1. Checks `model_configs/` for an existing `config.json` (bundled or previously fetched)
+2. Fetches from HuggingFace on miss and writes into `model_configs/` (supports `HF_TOKEN` for gated models)
 
 For models not in `defaults.yaml`, add an `hf_repo` entry mapping the BLIS model name to the case-sensitive HuggingFace repo path.
 

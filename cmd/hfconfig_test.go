@@ -20,44 +20,57 @@ func TestResolveModelConfig_ExplicitOverrideTakesPrecedence(t *testing.T) {
 	}
 }
 
-func TestResolveModelConfig_CacheHit(t *testing.T) {
-	// Create a temporary cache directory with valid JSON config.json
+func TestResolveModelConfig_LocalHit(t *testing.T) {
+	// Create a temporary model_configs directory with valid JSON config.json
 	tmpDir := t.TempDir()
-	cacheModelID := "test-org-test-model"
-	cacheDir := filepath.Join(tmpDir, blisCacheDir, modelConfigsDir, cacheModelID)
-	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cacheDir, hfConfigFile), []byte(`{"valid": true}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(localDir, hfConfigFile), []byte(`{"valid": true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Override home dir for the test
-	t.Setenv("HOME", tmpDir)
+	// Chdir so relative model_configs/ resolves inside tmpDir
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
 	dir, err := resolveModelConfig("test-org/test-model", "", "nonexistent-defaults.yaml")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if dir != cacheDir {
-		t.Errorf("expected cache dir %s, got %s", cacheDir, dir)
+	expected := filepath.Join(modelConfigsDir, "test-model")
+	if dir != expected {
+		t.Errorf("expected %s, got %s", expected, dir)
 	}
 }
 
-func TestResolveModelConfig_CacheCorrupted_FallsThrough(t *testing.T) {
-	// Note: Cannot use t.Parallel() — mutates package-level fetchHFConfigFunc.
-	// Create a cache directory with invalid JSON — should be removed and fall through
+func TestResolveModelConfig_CorruptedLocal_FallsThrough(t *testing.T) {
+	// Create a model_configs directory with invalid JSON — should be removed and fall through
 	tmpDir := t.TempDir()
-	cacheModelID := "test-org-test-model"
-	cacheDir := filepath.Join(tmpDir, blisCacheDir, modelConfigsDir, cacheModelID)
-	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cacheDir, hfConfigFile), []byte(`<html>not json</html>`), 0o600); err != nil {
+	corruptedPath := filepath.Join(localDir, hfConfigFile)
+	if err := os.WriteFile(corruptedPath, []byte(`<html>not json</html>`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Setenv("HOME", tmpDir)
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
 	// Mock HF fetch to fail so we fall all the way through to error
 	old := fetchHFConfigFunc
@@ -66,45 +79,21 @@ func TestResolveModelConfig_CacheCorrupted_FallsThrough(t *testing.T) {
 	}
 	t.Cleanup(func() { fetchHFConfigFunc = old })
 
-	_, err := resolveModelConfig("test-org/test-model", "", "nonexistent-defaults.yaml")
+	_, err = resolveModelConfig("test-org/test-model", "", "nonexistent-defaults.yaml")
 	if err == nil {
-		t.Fatal("expected error when cache is corrupted and no fallbacks exist")
+		t.Fatal("expected error when local config is corrupted and no fallbacks exist")
 	}
 
-	// Verify the corrupted cache file was removed
-	cachePath := filepath.Join(cacheDir, hfConfigFile)
-	if _, err := os.Stat(cachePath); err == nil {
-		t.Error("corrupted cache file should have been removed")
+	// Verify the corrupted file was removed
+	if _, err := os.Stat(corruptedPath); err == nil {
+		t.Error("corrupted config file should have been removed")
 	}
 }
 
-func TestResolveModelConfig_BundledFallback(t *testing.T) {
-	// Create a temporary directory with bundled model_configs
+func TestResolveModelConfig_FetchWritesToModelConfigs(t *testing.T) {
+	// Verify that a successful HF fetch writes into model_configs/<short-name>/
 	tmpDir := t.TempDir()
-	bundledDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
-	if err := os.MkdirAll(bundledDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bundledDir, hfConfigFile), []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
-	// Use nonexistent HOME so cache misses
-	t.Setenv("HOME", filepath.Join(tmpDir, "no-home"))
-
-	// Mock HF fetch to fail so we reach bundled fallback without real HTTP
-	old := fetchHFConfigFunc
-	fetchHFConfigFunc = func(_, _ string) (string, error) {
-		return "", fmt.Errorf("simulated HF failure")
-	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
-
-	// Temporarily override bundledModelConfigDir's base to tmpDir
-	// by constructing the expected path and verifying resolution succeeds.
-	// Note: resolveModelConfig calls bundledModelConfigDir with empty baseDir,
-	// which produces relative paths. We test this by changing to tmpDir.
-	// Since bundledModelConfigDir now accepts baseDir, we can test it directly
-	// in TestBundledModelConfigDir. Here we verify the full resolution chain.
 	origDir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -112,43 +101,54 @@ func TestResolveModelConfig_BundledFallback(t *testing.T) {
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := os.Chdir(origDir); err != nil {
-			t.Logf("warning: could not restore working directory: %v", err)
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	expectedDir := filepath.Join(modelConfigsDir, "test-model")
+
+	// Mock HF fetch to write a real file
+	old := fetchHFConfigFunc
+	fetchHFConfigFunc = func(_, targetDir string) (string, error) {
+		if targetDir != expectedDir {
+			return "", fmt.Errorf("fetch target should be %s, got %s", expectedDir, targetDir)
 		}
-	})
+		if err := os.MkdirAll(targetDir, 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(targetDir, hfConfigFile), []byte(`{"num_hidden_layers":32}`), 0o644); err != nil {
+			return "", err
+		}
+		return targetDir, nil
+	}
+	t.Cleanup(func() { fetchHFConfigFunc = old })
 
 	dir, err := resolveModelConfig("org/test-model", "", "nonexistent-defaults.yaml")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expectedRelative := filepath.Join(modelConfigsDir, "test-model")
-	if dir != expectedRelative {
-		t.Errorf("expected bundled dir %s, got %s", expectedRelative, dir)
+	if dir != expectedDir {
+		t.Errorf("expected %s, got %s", expectedDir, dir)
+	}
+
+	// Verify the file actually exists
+	data, err := os.ReadFile(filepath.Join(dir, hfConfigFile))
+	if err != nil {
+		t.Fatalf("config.json not found after fetch: %v", err)
+	}
+	if !strings.Contains(string(data), "num_hidden_layers") {
+		t.Errorf("unexpected content: %s", string(data))
 	}
 }
 
 func TestResolveModelConfig_AllMiss_ReturnsError(t *testing.T) {
-	// Set HOME to a temp dir with no cache
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-
-	// Mock HF fetch to fail without real HTTP
-	old := fetchHFConfigFunc
-	fetchHFConfigFunc = func(_, _ string) (string, error) {
-		return "", fmt.Errorf("simulated HF failure")
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Cleanup(func() { fetchHFConfigFunc = old })
-
-	_, err := resolveModelConfig("nonexistent/model", "", "nonexistent-defaults.yaml")
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestResolveModelConfig_AllMiss_IncludesDefaultsError(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
 	// Mock HF fetch to fail
 	old := fetchHFConfigFunc
@@ -157,7 +157,31 @@ func TestResolveModelConfig_AllMiss_IncludesDefaultsError(t *testing.T) {
 	}
 	t.Cleanup(func() { fetchHFConfigFunc = old })
 
-	_, err := resolveModelConfig("nonexistent/model", "", "nonexistent-defaults.yaml")
+	_, err = resolveModelConfig("nonexistent/model", "", "nonexistent-defaults.yaml")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestResolveModelConfig_AllMiss_IncludesDefaultsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	// Mock HF fetch to fail
+	old := fetchHFConfigFunc
+	fetchHFConfigFunc = func(_, _ string) (string, error) {
+		return "", fmt.Errorf("simulated HF failure")
+	}
+	t.Cleanup(func() { fetchHFConfigFunc = old })
+
+	_, err = resolveModelConfig("nonexistent/model", "", "nonexistent-defaults.yaml")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -215,21 +239,24 @@ func TestFetchHFConfig_Success(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
 
-	dir, err := fetchHFConfigFromURL(server.URL+"/test-org/test-model/resolve/main/config.json", "test-org-test-model")
+	dir, err := fetchHFConfigFromURL(server.URL+"/test-org/test-model/resolve/main/config.json", targetDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify cached file exists
-	cachedPath := filepath.Join(dir, hfConfigFile)
-	data, err := os.ReadFile(cachedPath)
+	// Verify file exists in model_configs/
+	writtenPath := filepath.Join(dir, hfConfigFile)
+	data, err := os.ReadFile(writtenPath)
 	if err != nil {
-		t.Fatalf("cache file not found: %v", err)
+		t.Fatalf("config file not found: %v", err)
 	}
 	if string(data) != `{"num_hidden_layers": 32}` {
-		t.Errorf("unexpected cached content: %s", string(data))
+		t.Errorf("unexpected content: %s", string(data))
+	}
+	if dir != targetDir {
+		t.Errorf("expected dir %s, got %s", targetDir, dir)
 	}
 }
 
@@ -240,9 +267,9 @@ func TestFetchHFConfig_404(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	targetDir := filepath.Join(tmpDir, modelConfigsDir, "nonexistent-model")
 
-	_, err := fetchHFConfigFromURL(server.URL+"/nonexistent/model/resolve/main/config.json", "nonexistent-model")
+	_, err := fetchHFConfigFromURL(server.URL+"/nonexistent/model/resolve/main/config.json", targetDir)
 	if err == nil {
 		t.Fatal("expected error for 404, got nil")
 	}
@@ -255,9 +282,9 @@ func TestFetchHFConfig_401(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	targetDir := filepath.Join(tmpDir, modelConfigsDir, "gated-model")
 
-	_, err := fetchHFConfigFromURL(server.URL+"/gated/model/resolve/main/config.json", "gated-model")
+	_, err := fetchHFConfigFromURL(server.URL+"/gated/model/resolve/main/config.json", targetDir)
 	if err == nil {
 		t.Fatal("expected error for 401, got nil")
 	}
@@ -273,10 +300,10 @@ func TestFetchHFConfig_HFTokenHeader(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
 	t.Setenv("HF_TOKEN", "test-token-123")
 
-	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", "test-model")
+	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -295,10 +322,10 @@ func TestFetchHFConfig_NoAuthHeaderWithoutToken(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model-noauth")
 	t.Setenv("HF_TOKEN", "")
 
-	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", "test-model-noauth")
+	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -315,9 +342,9 @@ func TestFetchHFConfig_InvalidJSON(t *testing.T) {
 	defer server.Close()
 
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	targetDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
 
-	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", "test-model")
+	_, err := fetchHFConfigFromURL(server.URL+"/test/model/resolve/main/config.json", targetDir)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON response, got nil")
 	}
@@ -353,27 +380,6 @@ func TestBundledModelConfigDir(t *testing.T) {
 		if got != tt.expected {
 			t.Errorf("bundledModelConfigDir(%q, %q) = %q, want %q", tt.model, tt.baseDir, got, tt.expected)
 		}
-	}
-}
-
-func TestHfCacheDir_NoHome(t *testing.T) {
-	// When HOME is unset, hfCacheDir should either return an error or return
-	// an absolute path (i.e., it must NOT fall back to a CWD-relative path).
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
-
-	dir, err := hfCacheDir("test-model")
-	if err != nil {
-		// Error is the expected path when HOME is truly unresolvable — test passes
-		return
-	}
-	// If it succeeded (some OS may resolve home via other means), verify the path
-	// is absolute and not a CWD-relative fallback
-	if !filepath.IsAbs(dir) {
-		t.Errorf("hfCacheDir returned relative path %q when HOME is unset — must be absolute or error", dir)
-	}
-	if !strings.Contains(dir, "test-model") {
-		t.Errorf("hfCacheDir result %q does not contain the model ID", dir)
 	}
 }
 
@@ -475,9 +481,8 @@ func TestGetHFRepo_MalformedYAML(t *testing.T) {
 }
 
 // TestResolveModelConfig_PrecedenceInvariant verifies the documented resolution
-// order: explicit flag > cache > HF fetch > bundled fallback.
+// order: explicit flag > model_configs/ > HF fetch (into model_configs/).
 func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
-	// Note: Cannot use t.Parallel() — mutates package-level fetchHFConfigFunc.
 	tmpDir := t.TempDir()
 
 	// Set up all resolution sources
@@ -486,16 +491,23 @@ func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cacheModelID := "test-org-precedence-model"
-	cacheDir := filepath.Join(tmpDir, blisCacheDir, modelConfigsDir, cacheModelID)
-	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+	// Set up local model_configs/ with a valid config
+	localDir := filepath.Join(tmpDir, modelConfigsDir, "precedence-model")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cacheDir, hfConfigFile), []byte(`{"source":"cache"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(localDir, hfConfigFile), []byte(`{"source":"local"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Setenv("HOME", tmpDir)
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
 	// Mock HF fetch to succeed
 	old := fetchHFConfigFunc
@@ -517,17 +529,18 @@ func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 		t.Errorf("explicit override: expected %s, got %s", explicitDir, dir)
 	}
 
-	// Precedence 2: Cache wins over HF fetch and bundled
+	// Precedence 2: Local model_configs/ wins over HF fetch
+	expectedLocal := filepath.Join(modelConfigsDir, "precedence-model")
 	dir, err = resolveModelConfig("test-org/precedence-model", "", "nonexistent-defaults.yaml")
 	if err != nil {
-		t.Fatalf("cache hit failed: %v", err)
+		t.Fatalf("local hit failed: %v", err)
 	}
-	if dir != cacheDir {
-		t.Errorf("cache precedence: expected %s, got %s", cacheDir, dir)
+	if dir != expectedLocal {
+		t.Errorf("local precedence: expected %s, got %s", expectedLocal, dir)
 	}
 
-	// Precedence 3: HF fetch wins over bundled (remove cache first)
-	if err := os.Remove(filepath.Join(cacheDir, hfConfigFile)); err != nil {
+	// Precedence 3: HF fetch when local is missing
+	if err := os.Remove(filepath.Join(localDir, hfConfigFile)); err != nil {
 		t.Fatal(err)
 	}
 	dir, err = resolveModelConfig("test-org/precedence-model", "", "nonexistent-defaults.yaml")
@@ -535,7 +548,7 @@ func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 		t.Fatalf("HF fetch failed: %v", err)
 	}
 	if dir != hfDir {
-		t.Errorf("HF fetch precedence: expected %s, got %s", hfDir, dir)
+		t.Errorf("HF fetch: expected %s, got %s", hfDir, dir)
 	}
 }
 
@@ -543,9 +556,15 @@ func TestResolveModelConfig_PrecedenceInvariant(t *testing.T) {
 // completeness law: resolveModelConfig never returns ("", nil). It must always
 // return either a non-empty directory path or a non-nil error (R7: invariant test).
 func TestResolveModelConfig_CompletenessInvariant(t *testing.T) {
-	// Note: Cannot use t.Parallel() — mutates package-level fetchHFConfigFunc.
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
 	old := fetchHFConfigFunc
 	fetchHFConfigFunc = func(_, _ string) (string, error) {
@@ -553,8 +572,7 @@ func TestResolveModelConfig_CompletenessInvariant(t *testing.T) {
 	}
 	t.Cleanup(func() { fetchHFConfigFunc = old })
 
-	// Table of inputs covering edge cases: empty model, org/model, simple name,
-	// nonexistent defaults, explicit override.
+	// Table of inputs covering edge cases
 	tests := []struct {
 		name            string
 		model           string

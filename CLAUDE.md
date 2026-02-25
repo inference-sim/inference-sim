@@ -293,7 +293,7 @@ Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) b
 2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `sim/latency/roofline.go`
    - Requires HuggingFace `config.json` in `model_configs/`
    - Requires `hardware_config.json` with GPU specs
-   - **`--roofline` flag**: Auto-resolves both configs — fetches `config.json` from HuggingFace (with caching at `~/.blis/model_configs/`) and uses bundled `hardware_config.json`. Simplifies usage to: `./simulation_worker run --model <name> --roofline --hardware <GPU> --tp <N>`
+   - **`--roofline` flag**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (writing into `model_configs/`), and uses bundled `hardware_config.json`. Simplifies usage to: `./simulation_worker run --model <name> --roofline --hardware <GPU> --tp <N>`
 
 ### Key Data Flow
 

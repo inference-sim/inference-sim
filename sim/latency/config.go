@@ -106,9 +106,12 @@ func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
 		"nf4":      1,
 	}
 
-	// Safely extract torch_dtype - defaults to 0 bytes if missing or invalid
+	// Safely extract torch_dtype - defaults to 0 bytes if missing or invalid.
+	// Some models (e.g. GLM-5) use "dtype" instead of "torch_dtype".
 	var bytesPerParam int
 	if dtype, ok := hf.Raw["torch_dtype"].(string); ok {
+		bytesPerParam = precisionToBytesPerParam[dtype]
+	} else if dtype, ok := hf.Raw["dtype"].(string); ok {
 		bytesPerParam = precisionToBytesPerParam[dtype]
 	}
 

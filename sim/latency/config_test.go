@@ -76,7 +76,7 @@ func TestGetModelConfig_MalformedJSON(t *testing.T) {
 func TestGetModelConfig_MissingTorchDtype(t *testing.T) {
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.json")
-	// Valid JSON but missing torch_dtype
+	// Valid JSON but missing both torch_dtype and dtype
 	content := `{"num_hidden_layers": 32, "hidden_size": 4096}`
 	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
@@ -87,7 +87,69 @@ func TestGetModelConfig_MissingTorchDtype(t *testing.T) {
 		t.Errorf("should not error for missing torch_dtype (default to 0): %v", err)
 	}
 	if cfg == nil {
-		t.Error("expected non-nil config")
+		t.Fatal("expected non-nil config")
+	}
+	if cfg.BytesPerParam != 0 {
+		t.Errorf("expected BytesPerParam=0 when both torch_dtype and dtype are missing, got %v", cfg.BytesPerParam)
+	}
+}
+
+func TestGetModelConfig_DtypeFallback(t *testing.T) {
+	// GIVEN a config.json with "dtype" instead of "torch_dtype" (e.g. GLM-5)
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 40,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 151552,
+		"intermediate_size": 13696,
+		"dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// WHEN GetModelConfig parses the config
+	cfg, err := latency.GetModelConfig(configFile)
+
+	// THEN BytesPerParam is resolved from the "dtype" field
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.BytesPerParam != 2 {
+		t.Errorf("expected BytesPerParam=2 for bfloat16 via dtype fallback, got %v", cfg.BytesPerParam)
+	}
+	if cfg.NumLayers != 40 {
+		t.Errorf("expected NumLayers=40, got %v", cfg.NumLayers)
+	}
+}
+
+func TestGetModelConfig_TorchDtypeTakesPrecedenceOverDtype(t *testing.T) {
+	// GIVEN a config.json with both "torch_dtype" and "dtype"
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"torch_dtype": "float32",
+		"dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// WHEN GetModelConfig parses the config
+	cfg, err := latency.GetModelConfig(configFile)
+
+	// THEN torch_dtype wins (float32 = 4 bytes, not bfloat16 = 2 bytes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.BytesPerParam != 4 {
+		t.Errorf("expected BytesPerParam=4 (torch_dtype=float32 takes precedence), got %v", cfg.BytesPerParam)
 	}
 }
 

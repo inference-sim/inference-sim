@@ -436,9 +436,8 @@ BLIS uses two estimation techniques. Choose based on your model support:
 
 The `--roofline` flag automatically resolves the model's HuggingFace `config.json` using this resolution chain:
 1. **Explicit `--model-config-folder`** (if provided)
-2. **Local cache** (`~/.blis/model_configs/`)
-3. **HuggingFace fetch** (downloads and caches `config.json`)
-4. **Bundled fallback** (`model_configs/` in the repo)
+2. **Local `model_configs/`** (bundled or previously fetched)
+3. **HuggingFace fetch** (downloads into `model_configs/`)
 
 For gated models (e.g., Llama), set the `HF_TOKEN` environment variable:
 
@@ -684,7 +683,7 @@ inference-sim/
 ├── cmd/                    # CLI commands
 │   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, --roofline, etc.)
 │   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
-│   ├── hfconfig.go         # HuggingFace config resolution (--roofline auto-fetch, caching at ~/.blis/)
+│   ├── hfconfig.go         # HuggingFace config resolution (--roofline auto-fetch into model_configs/)
 │   └── default_config.go   # defaults.yaml loading (includes GetHFRepo for HF repo mapping)
 ├── sim/                    # Core simulation engine
 │   ├── config.go           # Module-scoped sub-config types (R16)
@@ -779,7 +778,7 @@ inference-sim/
 | `--results-path` | (none) | Save JSON results to file |
 | `--log` | warn | Log level: trace, debug, info, warn, error, fatal, panic |
 | `--defaults-filepath` | defaults.yaml | Path to trained coefficients file |
-| `--roofline` | false | Enable roofline mode with auto-fetch of HuggingFace `config.json` and bundled hardware config. Requires `--hardware` and `--tp`. Fetched configs are cached at `~/.blis/model_configs/`. Set `HF_TOKEN` for gated models. |
+| `--roofline` | false | Enable roofline mode with auto-fetch of HuggingFace `config.json` and bundled hardware config. Requires `--hardware` and `--tp`. Fetched configs are saved to `model_configs/`. Set `HF_TOKEN` for gated models. |
 | `--model-config-folder` | (none) | Path to folder with HuggingFace `config.json` (enables roofline mode). Overrides `--roofline` auto-resolution. |
 | `--hardware-config` | (none) | Path to GPU hardware specifications file (for roofline mode). Overrides `--roofline` auto-resolution. |
 

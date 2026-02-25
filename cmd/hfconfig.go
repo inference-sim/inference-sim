@@ -16,7 +16,6 @@ import (
 const (
 	hfBaseURL       = "https://huggingface.co"
 	hfConfigFile    = "config.json"
-	blisCacheDir    = ".blis"
 	modelConfigsDir = "model_configs"
 	httpTimeout     = 30 * time.Second
 	// maxResponseBytes caps HF config.json reads to 10 MB — real config.json files
@@ -26,7 +25,7 @@ const (
 )
 
 // resolveModelConfig finds a HuggingFace config.json for the given model.
-// Resolution order: explicit flag > cache > HF fetch > bundled fallback.
+// Resolution order: explicit flag > model_configs/ > HF fetch (into model_configs/).
 // Returns the path to a directory containing config.json.
 func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, error) {
 	// 1. Explicit override takes precedence
@@ -34,7 +33,26 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 		return explicitFolder, nil
 	}
 
-	// Derive HF repo name from defaults.yaml mapping, fall back to model name
+	// Derive the local model_configs/<short-name>/ path
+	localDir, err := bundledModelConfigDir(model, "")
+	if err != nil {
+		return "", fmt.Errorf("--roofline: invalid model name %q: %w", model, err)
+	}
+
+	// 2. Check model_configs/ for an existing config.json (bundled or previously fetched)
+	localPath := filepath.Join(localDir, hfConfigFile)
+	if data, err := os.ReadFile(localPath); err == nil {
+		if json.Valid(data) {
+			logrus.Infof("--roofline: using config from %s", localDir)
+			return localDir, nil
+		}
+		logrus.Warnf("--roofline: config at %s is not valid JSON, removing", localPath)
+		if removeErr := os.Remove(localPath); removeErr != nil {
+			logrus.Warnf("--roofline: failed to remove corrupted config %s: %v", localPath, removeErr)
+		}
+	}
+
+	// 3. Fetch from HuggingFace and write into model_configs/<short-name>/
 	var defaultsErr error
 	hfRepo, err := GetHFRepo(model, defaultsFile)
 	if err != nil {
@@ -45,51 +63,18 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 		hfRepo = model
 	}
 
-	// Sanitize model name for filesystem paths (replace / with -)
-	cacheModelID := strings.ReplaceAll(model, "/", "-")
-
-	// 2. Check local cache (validate JSON integrity to detect corrupted cache)
-	cacheDir, err := hfCacheDir(cacheModelID)
-	if err != nil {
-		logrus.Warnf("--roofline: cannot determine cache directory: %v", err)
-	} else {
-		cachePath := filepath.Join(cacheDir, hfConfigFile)
-		if data, err := os.ReadFile(cachePath); err == nil {
-			if json.Valid(data) {
-				logrus.Infof("--roofline: using cached config from %s", cacheDir)
-				return cacheDir, nil
-			}
-			logrus.Warnf("--roofline: cached config at %s is not valid JSON, removing", cachePath)
-			if removeErr := os.Remove(cachePath); removeErr != nil {
-				logrus.Warnf("--roofline: failed to remove corrupted cache file %s: %v", cachePath, removeErr)
-			}
-		}
-	}
-
-	// 3. Try HF fetch (uses fetchHFConfigFunc for testability)
-	fetchedDir, err := fetchHFConfigFunc(hfRepo, cacheModelID)
+	fetchedDir, err := fetchHFConfigFunc(hfRepo, localDir)
 	if err == nil {
-		logrus.Infof("--roofline: fetched and cached config for %s", model)
+		logrus.Infof("--roofline: fetched config for %s into %s", model, fetchedDir)
 		return fetchedDir, nil
 	}
 	logrus.Warnf("--roofline: HF fetch failed for %s: %v", model, err)
 
-	// 4. Bundled fallback - try model_configs/<short-name>/
-	bundledDir, err := bundledModelConfigDir(model, "")
-	if err != nil {
-		return "", fmt.Errorf("--roofline: invalid model name %q: %w", model, err)
-	}
-	bundledPath := filepath.Join(bundledDir, hfConfigFile)
-	if _, err := os.Stat(bundledPath); err == nil {
-		logrus.Infof("--roofline: using bundled config from %s", bundledDir)
-		return bundledDir, nil
-	}
-
 	errMsg := fmt.Sprintf(
 		"--roofline: could not find config.json for model %q.\n"+
-			"  Tried: cache, HuggingFace (%s/%s), bundled (%s).\n"+
+			"  Tried: %s, HuggingFace (%s/%s).\n"+
 			"  Provide --model-config-folder explicitly",
-		model, hfBaseURL, hfRepo, bundledDir,
+		model, localDir, hfBaseURL, hfRepo,
 	)
 	if defaultsErr != nil {
 		errMsg += fmt.Sprintf("\n  Note: defaults.yaml read failed: %v", defaultsErr)
@@ -120,18 +105,19 @@ func resolveHardwareConfig(explicitPath, defaultsFile string) (string, error) {
 
 // fetchHFConfigFunc is the function used to fetch HF configs. Package-level
 // variable allows tests to inject a mock without hitting real HuggingFace.
+// Second parameter is the target directory to write config.json into.
 var fetchHFConfigFunc = fetchHFConfig
 
-// fetchHFConfig downloads config.json from HuggingFace and caches it locally.
+// fetchHFConfig downloads config.json from HuggingFace and writes it to targetDir.
 // Supports HF_TOKEN env var for gated models.
-func fetchHFConfig(hfRepo, cacheModelID string) (string, error) {
+func fetchHFConfig(hfRepo, targetDir string) (string, error) {
 	url := fmt.Sprintf("%s/%s/resolve/main/%s", hfBaseURL, hfRepo, hfConfigFile)
-	return fetchHFConfigFromURL(url, cacheModelID)
+	return fetchHFConfigFromURL(url, targetDir)
 }
 
-// fetchHFConfigFromURL fetches config.json from the given URL and caches it.
+// fetchHFConfigFromURL fetches config.json from the given URL and writes it to targetDir.
 // Extracted for testability (allows injecting test server URLs).
-func fetchHFConfigFromURL(url, cacheModelID string) (string, error) {
+func fetchHFConfigFromURL(url, targetDir string) (string, error) {
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -178,7 +164,7 @@ func fetchHFConfigFromURL(url, cacheModelID string) (string, error) {
 		return "", fmt.Errorf("response body exceeds %d bytes limit — likely not a config.json", maxResponseBytes)
 	}
 
-	// Validate that the response is valid JSON before caching — prevents caching
+	// Validate that the response is valid JSON before writing — prevents writing
 	// HTML error pages or other non-JSON responses
 	if !json.Valid(body) {
 		return "", fmt.Errorf("response from %s is not valid JSON", url)
@@ -193,35 +179,17 @@ func fetchHFConfigFromURL(url, cacheModelID string) (string, error) {
 			"The model may not exist or the response is an error page", url)
 	}
 
-	// Write to cache — if cache write fails, fall back to a temp directory
-	// so that successfully fetched data is never lost (I-4: decouple fetch/cache).
-	cacheDir, err := hfCacheDir(cacheModelID)
-	if err != nil {
-		logrus.Warnf("--roofline: cannot determine cache directory: %v; using temp dir", err)
-		return writeToTempDir(cacheModelID, body)
-	}
-	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
-		logrus.Warnf("--roofline: cannot create cache dir %s: %v; using temp dir", cacheDir, err)
-		return writeToTempDir(cacheModelID, body)
+	// Write to target directory
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		return "", fmt.Errorf("create directory %s: %w", targetDir, err)
 	}
 
-	cachePath := filepath.Join(cacheDir, hfConfigFile)
-	if err := os.WriteFile(cachePath, body, 0o600); err != nil {
-		logrus.Warnf("--roofline: cannot write cache file %s: %v; using temp dir", cachePath, err)
-		return writeToTempDir(cacheModelID, body)
+	targetPath := filepath.Join(targetDir, hfConfigFile)
+	if err := os.WriteFile(targetPath, body, 0o644); err != nil {
+		return "", fmt.Errorf("write config file %s: %w", targetPath, err)
 	}
 
-	return cacheDir, nil
-}
-
-// hfCacheDir returns the cache directory for a given model.
-// Returns an error if the user's home directory cannot be determined.
-func hfCacheDir(cacheModelID string) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %w", err)
-	}
-	return filepath.Join(home, blisCacheDir, modelConfigsDir, cacheModelID), nil
+	return targetDir, nil
 }
 
 // isHFConfig checks whether JSON bytes contain at least one expected
@@ -236,20 +204,6 @@ func isHFConfig(data []byte) bool {
 	_, hasLayers := m["num_hidden_layers"]
 	_, hasHidden := m["hidden_size"]
 	return hasLayers || hasHidden
-}
-
-// writeToTempDir writes config.json to a temporary directory as a fallback
-// when the normal cache directory is unavailable.
-func writeToTempDir(cacheModelID string, body []byte) (string, error) {
-	tmpDir := filepath.Join(os.TempDir(), "blis-hfconfig-"+cacheModelID)
-	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
-		return "", fmt.Errorf("create temp dir: %w", err)
-	}
-	tmpPath := filepath.Join(tmpDir, hfConfigFile)
-	if err := os.WriteFile(tmpPath, body, 0o600); err != nil {
-		return "", fmt.Errorf("write temp config file: %w", err)
-	}
-	return tmpDir, nil
 }
 
 // bundledModelConfigDir returns the expected path for bundled model configs.
