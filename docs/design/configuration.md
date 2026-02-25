@@ -92,7 +92,7 @@ Roofline mode activates automatically when all coefficients are zero and all fou
 The latency model mode is selected automatically based on available configuration:
 
 1. **Blackbox mode** (default): If coefficients are provided via CLI flags or loaded from `defaults.yaml`
-2. **Roofline mode**: If all coefficients are zero and both `--model-config-folder` and `--hardware-config` are provided
+2. **Roofline mode**: If all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided
 3. **Error**: If no coefficients can be resolved and roofline inputs are incomplete
 
 ## Cluster Configuration
@@ -209,8 +209,6 @@ clients:
       type: "exponential"
       params:
         mean: 128
-        min: 2
-        max: 2048
 
   - id: "batch"
     rate_fraction: 0.4
@@ -291,7 +289,7 @@ See [Cluster Architecture: Counterfactual Regret](architecture.md#counterfactual
 |------|------|---------|-------------|
 | `--fitness-weights` | string | "" | Fitness function weights. Format: `metric:weight,metric:weight,...` |
 
-When configured, BLIS computes a single fitness score from aggregated metrics using `1/(1+x/1000)` normalization. Useful for automated policy comparison across multiple simulation runs.
+When configured, BLIS computes a single fitness score from aggregated metrics. Latency metrics are normalized via `1/(1 + value/1000)` (lower is better); throughput metrics via `value/(value + reference)` (higher is better). Useful for automated policy comparison across multiple simulation runs.
 
 ## defaults.yaml
 

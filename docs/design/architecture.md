@@ -162,8 +162,9 @@ After simulation completes, per-instance metrics are aggregated into a unified c
 
 When `--fitness-weights` are configured, BLIS computes a single fitness score from the aggregated metrics. This enables automated policy comparison:
 
-- Each metric is normalized via `1/(1 + x/1000)` to compress large absolute differences
-- Metrics are multiplied by their configured weights and summed
+- Latency metrics (TTFT, E2E) are normalized via `1/(1 + value/1000)` (lower latency = higher score)
+- Throughput metrics are normalized via `value/(value + reference)` (higher throughput = higher score)
+- Normalized scores are multiplied by their configured weights and summed
 - Higher fitness = better performance
 
 Note: the normalization compresses raw metric differences significantly. A 38% TTFT improvement might map to only an 8% fitness score difference. Always examine raw metrics alongside fitness scores.

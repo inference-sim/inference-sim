@@ -46,7 +46,7 @@ A simulation paradigm where the system state changes only at discrete event time
 
 ### E2E (End-to-End Latency)
 
-Total time from request arrival to final token completion, including all prefill steps, decode steps, and alpha overhead. `E2E = alpha_overhead + sum(all_step_times) - arrival_time`. See [Core Engine: Metrics](core-engine.md#metrics).
+Total time from request arrival to final token completion. Computed as `TTFT + sum(ITLs)`, where each ITL includes step time plus output processing overhead (alpha2). See [Core Engine: Metrics](core-engine.md#metrics).
 
 ### Effective Load
 
@@ -54,7 +54,7 @@ A routing signal computed as `QueueDepth + BatchSize + PendingRequests`. Represe
 
 ### Fitness Score
 
-A single numeric value summarizing multi-objective simulation performance. Computed as a weighted combination of configurable metrics (TTFT percentiles, E2E percentiles, throughput). Uses `1/(1+x/1000)` normalization. See [Configuration Reference](configuration.md#fitness-evaluation).
+A single numeric value summarizing multi-objective simulation performance. Computed as a weighted combination of configurable metrics (TTFT percentiles, E2E percentiles, throughput). Latency metrics normalized via `1/(1 + value/1000)`; throughput metrics via `value/(value + reference)`. See [Configuration Reference](configuration.md#fitness-evaluation).
 
 ### Horizon
 
