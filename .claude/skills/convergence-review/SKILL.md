@@ -60,7 +60,7 @@ For diff-based gates (`pr-code`, `h-code`), the branch name is used — the diff
   "gate": "pr-code",
   "artifact_id": "feature/scorer-framework",
   "round": 2,
-  "max_rounds": 5,
+  "max_rounds": 10,
   "history": [
     {"round": 1, "critical": 2, "important": 5, "suggestions": 3, "status": "fixed"}
   ],
@@ -99,7 +99,7 @@ Phase A dispatches all perspectives, collects results, tallies findings, and pro
 ```
 1. Determine round number:
    - If state file exists and status is "awaiting-rerun": round = state.round + 1
-   - Otherwise: round = 1, create state file with max_rounds = 5
+   - Otherwise: round = 1, create state file with max_rounds = 10
 
 2. Dispatch ALL perspectives in parallel (background Task agents, model=haiku)
 3. Wait for all to complete (5 min timeout per agent)
@@ -150,7 +150,7 @@ Phase B is only entered from Phase A outcome (b). It applies all CRITICAL and IM
 4. **Independent tallying.** Read each agent's output file. Count findings yourself. Agents have fabricated "0 CRITICAL, 0 IMPORTANT" when actual output contained 3 CRITICAL + 18 IMPORTANT (#390).
 5. **No partial re-runs.** Re-run ALL perspectives, not just the ones that found issues. Fixes can introduce new issues in other perspectives.
 6. **Agent timeout = 5 minutes.** If an agent exceeds this, check its output and restart. If it fails, perform that review directly.
-7. **Max 5 rounds per gate (default).** If still not converged, enter stall protocol (AskUserQuestion). This is a safety net (R19 — circuit breaker), not an expected outcome.
+7. **Max 10 rounds per gate (default).** If still not converged, enter stall protocol (AskUserQuestion). This is a safety net (R19 — circuit breaker), not an expected outcome.
 
 ### Severity Classification
 

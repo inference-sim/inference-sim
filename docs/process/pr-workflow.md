@@ -739,7 +739,7 @@ gh issue create --title "Bug: <concise description>" --body "<location, impact, 
 
 **Canonical source:** [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol). The same protocol applies to all review gates (PR plan, PR code, hypothesis design/code/FINDINGS).
 
-In summary: run all perspectives as a parallel round. If zero CRITICAL and zero IMPORTANT across all reviewers, the round converged. If any CRITICAL or IMPORTANT from any reviewer, fix all issues and re-run the **entire** round. Max 5 rounds per gate (default, with stall protocol if exceeded). Hard gate — no exceptions.
+In summary: run all perspectives as a parallel round. If zero CRITICAL and zero IMPORTANT across all reviewers, the round converged. If any CRITICAL or IMPORTANT from any reviewer, fix all issues and re-run the **entire** round. Max 10 rounds per gate. Hard gate — no exceptions.
 
 **Executable implementation:** `/convergence-review pr-code` (or `pr-plan`) automates dispatch, tallying, and re-run enforcement.
 

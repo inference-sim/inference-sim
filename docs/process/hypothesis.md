@@ -460,7 +460,7 @@ All three review gates (Design Review, Code Review, FINDINGS Review) use this sa
 
 ### Rules
 
-- **Max 5 rounds per gate (default).** Each gate has its own independent round counter. If a gate fails to converge within 5 rounds, the convergence-review skill enters a stall protocol: it presents the remaining issues and asks the user whether to (a) increase the limit and continue, (b) accept remaining issues and proceed, or (c) abort. This is a safety net (R19 — circuit breaker), not an expected outcome.
+- **Max 10 rounds per gate.** Each gate has its own independent round counter. If a gate fails to converge within 10 rounds, suspend the experiment: document the remaining issues as future work.
 - **No minimum round count.** Convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item.
 - **Hard gate — NO EXCEPTIONS.** You MUST re-run after fixes. You may NOT skip the re-run, propose alternative steps, or rationalize that fixes were "trivial enough." The re-run is the only evidence of convergence. This is non-negotiable.
 - **SUGGESTION-level items** (documentation nits, cosmetic fixes, off-by-one line citations) do not block convergence.
