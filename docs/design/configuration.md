@@ -85,7 +85,7 @@ For analytical step time estimation without trained coefficients.
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. |
 
-Roofline mode activates automatically when all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided. See [Roofline Estimation](../roofline.md).
+Roofline mode activates automatically when all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided. See [Roofline Estimation](roofline.md).
 
 ### Latency Mode Selection
 
@@ -332,6 +332,20 @@ When BLIS starts:
    - Enable roofline mode
 3. If coefficients were explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
+
+## Coefficient Calibration
+
+BLIS uses a data-driven calibration strategy to ensure simulation accuracy. This process runs once per environment configuration (model, GPU, TP degree, vLLM version):
+
+1. **Initialization**: Define baseline estimates for alpha and beta coefficients as starting points for optimization
+2. **Profiling**: Execute training workloads on a live vLLM instance to collect ground-truth mean and P90 metrics for TTFT, ITL, and E2E
+3. **Optimization**: Run BLIS iteratively using Blackbox Bayesian Optimization to minimize the multi-objective loss:
+
+   $$\text{Loss} = \sum_{m \in \{\text{TTFT, ITL, E2E}\}} \left( |GT_{\text{mean},m} - Sim_{\text{mean},m}| + |GT_{\text{p90},m} - Sim_{\text{p90},m}| \right)$$
+
+4. **Artifact generation**: Optimal alpha/beta coefficients are stored in `defaults.yaml` for production use
+
+For environments where live profiling is not feasible, the [Roofline model](roofline.md) provides analytical step time estimation without any training data.
 
 ## CLI Flag Summary by Sub-Config
 

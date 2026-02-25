@@ -271,6 +271,7 @@ inference-sim/
 │   │   ├── core-engine.md     # Core DES engine
 │   │   ├── concepts.md        # Concepts glossary
 │   │   ├── configuration.md   # Configuration reference
+│   │   ├── roofline.md        # Roofline step time estimation
 │   │   └── diagrams/          # Architecture diagrams (PNG + Excalidraw source)
 │   ├── plans/                 # Active implementation plans
 │   │   └── archive/           # Completed design docs (architectural reference)

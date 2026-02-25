@@ -12,13 +12,7 @@ This directory contains the public-facing design documentation for BLIS (Blackbo
 | [Core Engine](core-engine.md) | Single-instance DES engine: event queue, Step() phases, request lifecycle, batch formation, KV cache, latency models |
 | [Concepts & Glossary](concepts.md) | Definitions of BLIS-specific terminology |
 | [Configuration Reference](configuration.md) | All CLI flags, sub-config types, defaults.yaml behavior, workload modes |
-
-### Foundational Documents
-
-| Page | Description |
-|------|-------------|
-| [Simulation Approach](../approach.md) | Research-oriented overview: DES methodology, latency model mathematics, calibration process |
-| [Roofline Estimation](../roofline.md) | Analytical GPU step time estimation without training data |
+| [Roofline Estimation](roofline.md) | Analytical GPU step time estimation without training data |
 
 ### For Contributors
 
@@ -41,9 +35,8 @@ This directory contains the public-facing design documentation for BLIS (Blackbo
 
 For newcomers to BLIS:
 
-1. Start with **[Simulation Approach](../approach.md)** for the research motivation and latency model math
-2. Read **[Concepts & Glossary](concepts.md)** to learn BLIS-specific terminology
-3. Read **[Core Engine](core-engine.md)** to understand single-instance simulation
-4. Read **[Cluster Architecture](architecture.md)** to understand multi-instance orchestration
-5. Consult **[Configuration Reference](configuration.md)** when running experiments
-6. See **[Extension Recipes](../extension-recipes.md)** when adding new policies or features
+1. Start with **[Concepts & Glossary](concepts.md)** to learn BLIS-specific terminology
+2. Read **[Core Engine](core-engine.md)** to understand the DES architecture and single-instance simulation
+3. Read **[Cluster Architecture](architecture.md)** to understand multi-instance orchestration
+4. Consult **[Configuration Reference](configuration.md)** when running experiments
+5. See **[Extension Recipes](../extension-recipes.md)** when adding new policies or features

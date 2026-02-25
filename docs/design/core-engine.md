@@ -202,7 +202,7 @@ OutputTokenProcessingTime = alpha2
 - Coefficients are trained offline via Bayesian optimization against real vLLM measurements
 - Pre-trained coefficients for common model/GPU combinations are shipped in `defaults.yaml`
 
-See [Simulation Approach](../approach.md) for the mathematical foundations.
+See [Configuration Reference: Coefficient Calibration](configuration.md#coefficient-calibration) for the training process.
 
 ### Roofline Model (Analytical)
 
@@ -218,7 +218,7 @@ Step Time  = Prefill Phase Time + Decode Phase Time
 - Accounts for Tensor Parallelism, All-Reduce latency, and per-layer overheads
 - No training data needed — works for any supported model immediately
 
-See [Roofline Estimation](../roofline.md) for implementation details.
+See [Roofline Estimation](roofline.md) for implementation details.
 
 ### Alpha Overhead
 

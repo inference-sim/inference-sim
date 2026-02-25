@@ -10,7 +10,7 @@ A cluster-level gate that decides whether an incoming request enters the routing
 
 ### Alpha Coefficients
 
-Three regression coefficients `[alpha0, alpha1, alpha2]` that model non-GPU overhead per request. `alpha0 + alpha1 * input_length` estimates queueing delay (tokenization, API serialization); `alpha2` estimates output token processing time. These overheads are added to per-request metrics but do not block the simulation clock. See [Simulation Approach](../approach.md).
+Three regression coefficients `[alpha0, alpha1, alpha2]` that model non-GPU overhead per request. `alpha0 + alpha1 * input_length` estimates queueing delay (tokenization, API serialization); `alpha2` estimates output token processing time. These overheads are added to per-request metrics but do not block the simulation clock. See [Core Engine: Latency Models](core-engine.md#latency-models).
 
 ### Batch Formation
 
@@ -18,7 +18,7 @@ The process of selecting which requests from the wait queue join the running bat
 
 ### Beta Coefficients
 
-Three regression coefficients `[beta0, beta1, beta2]` that predict GPU step time: `beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens`. Trained offline via Bayesian optimization against real vLLM measurements. See [Simulation Approach](../approach.md).
+Three regression coefficients `[beta0, beta1, beta2]` that predict GPU step time: `beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens`. Trained offline via Bayesian optimization against real vLLM measurements. See [Core Engine: Latency Models](core-engine.md#latency-models).
 
 ### Block (KV Block)
 
@@ -70,7 +70,7 @@ GPU memory organized as blocks that store key-value tensors computed during atte
 
 ### Latency Model
 
-The component that predicts GPU execution time for a batch step. Two modes: *Blackbox* (trained regression coefficients) and *Roofline* (analytical FLOPs/bandwidth estimation). See [Core Engine: Latency Models](core-engine.md#latency-models) and [Roofline Estimation](../roofline.md).
+The component that predicts GPU execution time for a batch step. Two modes: *Blackbox* (trained regression coefficients) and *Roofline* (analytical FLOPs/bandwidth estimation). See [Core Engine: Latency Models](core-engine.md#latency-models) and [Roofline Estimation](roofline.md).
 
 ### Pending Requests
 
@@ -102,7 +102,7 @@ A per-instance policy that assigns a numeric priority score to each request befo
 
 ### Roofline Model
 
-An analytical latency estimation technique that predicts step time as `max(FLOPs / peak_compute, bytes / peak_bandwidth)`. Requires only the model's HuggingFace `config.json` and GPU hardware specs. No training data needed. See [Roofline Estimation](../roofline.md).
+An analytical latency estimation technique that predicts step time as `max(FLOPs / peak_compute, bytes / peak_bandwidth)`. Requires only the model's HuggingFace `config.json` and GPU hardware specs. No training data needed. See [Roofline Estimation](roofline.md).
 
 ### Routing Policy
 
