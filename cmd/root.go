@@ -91,10 +91,10 @@ var (
 	workloadSpecPath string // Path to YAML workload specification file
 
 	// Tiered KV cache config (PR12)
-	kvCPUBlocks           int64
-	kvOffloadThreshold    float64
-	kvTransferBandwidth   float64
-	kvTransferBaseLatency    int64
+	kvCPUBlocks             int64
+	kvOffloadThreshold      float64
+	kvTransferBandwidth     float64
+	kvTransferBaseLatency   int64
 	snapshotRefreshInterval int64
 
 	// results file path
@@ -155,10 +155,12 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("--roofline requires --tp > 0")
 			}
 
-			// Warn if user also provided explicit coefficients — roofline overrides them
-			if !AllZeros(alphaCoeffs) || !AllZeros(betaCoeffs) {
-				logrus.Warnf("--roofline overrides --alpha-coeffs and --beta-coeffs; " +
-					"trained coefficients will be ignored in favor of analytical roofline estimation")
+			// Warn if user also provided explicit beta coefficients — roofline replaces
+			// step time estimation. Alpha coefficients are still used for queueing time
+			// and output token processing time.
+			if !AllZeros(betaCoeffs) {
+				logrus.Warnf("--roofline replaces --beta-coeffs with analytical step time estimation. " +
+					"Alpha coefficients are still used for queueing time and output token processing")
 			}
 
 			// Log when explicit overrides interact with --roofline
@@ -186,6 +188,34 @@ var runCmd = &cobra.Command{
 			// Explicitly activate roofline mode (design doc step 4).
 			// Do NOT rely on downstream "all coefficients zero" heuristic.
 			roofline = true
+
+			// Load alpha coefficients and totalKVBlocks from defaults.yaml.
+			// Roofline replaces beta (step time) but still needs alpha
+			// (queueing time, output token processing) and KV cache capacity.
+			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
+				if vllmVersion == "" {
+					_, _, ver := GetDefaultSpecs(model)
+					if len(ver) > 0 {
+						vllmVersion = ver
+					}
+				}
+				defAlpha, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
+				if AllZeros(alphaCoeffs) && !AllZeros(defAlpha) {
+					alphaCoeffs = defAlpha
+					logrus.Infof("--roofline: loaded alpha coefficients from defaults.yaml for queueing time estimation")
+				}
+				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
+					totalKVBlocks = kvBlocks
+					logrus.Infof("--roofline: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
+				} else if !cmd.Flags().Changed("total-kv-blocks") {
+					logrus.Warnf("--roofline: no trained total-kv-blocks found for model=%s, GPU=%s, TP=%d; "+
+						"using default %d. Consider setting --total-kv-blocks explicitly for accurate KV cache simulation",
+						model, gpu, tensorParallelism, totalKVBlocks)
+				}
+			} else {
+				logrus.Warnf("--roofline: defaults file %s not found; alpha coefficients and total-kv-blocks not loaded. "+
+					"Queueing time estimation will use zero alpha coefficients", defaultsFilePath)
+			}
 		}
 
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
@@ -244,6 +274,20 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Failed to load hardware config: %v", err)
 			}
 			hwConfig = hc
+
+			// Warn about known roofline estimation limitations
+			if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
+				logrus.Warnf("--roofline: model reports %.0f byte(s)/param (possible quantization). "+
+					"Roofline step time estimates may be inaccurate for quantized models",
+					modelConfig.BytesPerParam)
+			}
+			// Check for MoE model indicators in the raw HF config
+			if hfRawBytes, readErr := os.ReadFile(hfPath); readErr == nil {
+				if strings.Contains(string(hfRawBytes), `"num_local_experts"`) {
+					logrus.Warnf("--roofline: model appears to be MoE (Mixture-of-Experts). " +
+						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
+				}
+			}
 		}
 
 		// Workload configuration

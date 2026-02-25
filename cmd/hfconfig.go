@@ -60,7 +60,9 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 				return cacheDir, nil
 			}
 			logrus.Warnf("--roofline: cached config at %s is not valid JSON, removing", cachePath)
-			_ = os.Remove(cachePath)
+			if removeErr := os.Remove(cachePath); removeErr != nil {
+				logrus.Warnf("--roofline: failed to remove corrupted cache file %s: %v", cachePath, removeErr)
+			}
 		}
 	}
 
@@ -141,7 +143,15 @@ func fetchHFConfigFromURL(url, cacheModelID string) (string, error) {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	client := &http.Client{Timeout: httpTimeout}
+	client := &http.Client{
+		Timeout: httpTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return fmt.Errorf("too many redirects (max 3)")
+			}
+			return nil
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetch %s: %w", url, err)
@@ -174,18 +184,31 @@ func fetchHFConfigFromURL(url, cacheModelID string) (string, error) {
 		return "", fmt.Errorf("response from %s is not valid JSON", url)
 	}
 
-	// Write to cache
+	// Semantic validation: verify the JSON contains at least one expected
+	// HuggingFace config field. Catches empty objects {}, HF error responses
+	// like {"error": "..."}, and non-config JSON that passes json.Valid.
+	if !isHFConfig(body) {
+		return "", fmt.Errorf("response from %s is valid JSON but does not contain expected "+
+			"HuggingFace config fields (num_hidden_layers, hidden_size). "+
+			"The model may not exist or the response is an error page", url)
+	}
+
+	// Write to cache — if cache write fails, fall back to a temp directory
+	// so that successfully fetched data is never lost (I-4: decouple fetch/cache).
 	cacheDir, err := hfCacheDir(cacheModelID)
 	if err != nil {
-		return "", fmt.Errorf("determine cache directory: %w", err)
+		logrus.Warnf("--roofline: cannot determine cache directory: %v; using temp dir", err)
+		return writeToTempDir(cacheModelID, body)
 	}
 	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
-		return "", fmt.Errorf("create cache dir %s: %w", cacheDir, err)
+		logrus.Warnf("--roofline: cannot create cache dir %s: %v; using temp dir", cacheDir, err)
+		return writeToTempDir(cacheModelID, body)
 	}
 
 	cachePath := filepath.Join(cacheDir, hfConfigFile)
 	if err := os.WriteFile(cachePath, body, 0o600); err != nil {
-		return "", fmt.Errorf("write cache file %s: %w", cachePath, err)
+		logrus.Warnf("--roofline: cannot write cache file %s: %v; using temp dir", cachePath, err)
+		return writeToTempDir(cacheModelID, body)
 	}
 
 	return cacheDir, nil
@@ -201,9 +224,39 @@ func hfCacheDir(cacheModelID string) (string, error) {
 	return filepath.Join(home, blisCacheDir, modelConfigsDir, cacheModelID), nil
 }
 
+// isHFConfig checks whether JSON bytes contain at least one expected
+// HuggingFace transformer config field. This prevents caching empty JSON {},
+// error responses, or non-config JSON.
+func isHFConfig(data []byte) bool {
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return false
+	}
+	// Check for fields present in every HuggingFace transformer config.json
+	_, hasLayers := m["num_hidden_layers"]
+	_, hasHidden := m["hidden_size"]
+	return hasLayers || hasHidden
+}
+
+// writeToTempDir writes config.json to a temporary directory as a fallback
+// when the normal cache directory is unavailable.
+func writeToTempDir(cacheModelID string, body []byte) (string, error) {
+	tmpDir := filepath.Join(os.TempDir(), "blis-hfconfig-"+cacheModelID)
+	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
+		return "", fmt.Errorf("create temp dir: %w", err)
+	}
+	tmpPath := filepath.Join(tmpDir, hfConfigFile)
+	if err := os.WriteFile(tmpPath, body, 0o600); err != nil {
+		return "", fmt.Errorf("write temp config file: %w", err)
+	}
+	return tmpDir, nil
+}
+
 // bundledModelConfigDir returns the expected path for bundled model configs.
 // Model names like "meta-llama/llama-3.1-8b-instruct" map to "<baseDir>/model_configs/llama-3.1-8b-instruct/".
-// When baseDir is empty, uses a relative path. Returns an error if the model name contains path traversal sequences.
+// When baseDir is empty, returns a relative path (resolved relative to the process's
+// working directory — callers must ensure CWD is the repo root).
+// Returns an error if the model name contains path traversal sequences.
 func bundledModelConfigDir(model, baseDir string) (string, error) {
 	// Use the part after the org prefix (after the /)
 	parts := strings.SplitN(model, "/", 2)
@@ -212,7 +265,8 @@ func bundledModelConfigDir(model, baseDir string) (string, error) {
 		shortName = parts[1]
 	}
 
-	// Reject path traversal attempts
+	// Reject path traversal attempts (Clean first to normalize sequences like "a/./b")
+	shortName = filepath.Clean(shortName)
 	if strings.Contains(shortName, "..") || filepath.IsAbs(shortName) {
 		return "", fmt.Errorf("model name %q contains invalid path components", model)
 	}
