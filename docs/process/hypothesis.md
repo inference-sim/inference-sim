@@ -448,7 +448,7 @@ The PR description should include:
 
 All three review gates (Design Review, Code Review, FINDINGS Review) use this same protocol. It is defined here once and referenced from each gate.
 
-> **Executable implementation:** The `convergence-review` skill automates this protocol — dispatching perspectives, tallying findings independently, and enforcing the re-run gate. Invoke with `/convergence-review <gate-type> [artifact-path]`.
+> **Executable implementation:** The `convergence-review` skill automates this protocol — dispatching perspectives, tallying findings independently, and enforcing the re-run gate. Invoke with `/convergence-review <gate-type> [artifact-path] [--model opus|sonnet|haiku]` (default: `haiku`).
 
 ### The Protocol
 

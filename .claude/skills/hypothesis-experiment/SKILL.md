@@ -93,7 +93,7 @@ Alternatively, dispatch manually. See [review-prompts.md](review-prompts.md) Sec
 **Perspectives**: (1) Hypothesis Quality, (2) ED Rigor, (3) Parameter Calibration, (4) Control Completeness, (5) DES/Domain Fit
 
 The convergence-review skill enforces the protocol automatically. If dispatching manually, apply the **convergence protocol**:
-1. Launch all 5 in parallel as background Task agents (subagent_type="general-purpose", model="haiku")
+1. Launch all 5 in parallel as background Task agents (subagent_type="general-purpose", model=REVIEW_MODEL from `--model` flag, default "haiku")
 2. Collect all findings classified as CRITICAL / IMPORTANT / SUGGESTION
 3. **Zero CRITICAL + zero IMPORTANT = converged** -> proceed to Step 3
 4. **Any CRITICAL or IMPORTANT** -> fix all, re-run ENTIRE round (not just failed perspectives)
@@ -272,4 +272,4 @@ PR description must include:
 | **Agent timeout** | 5 min per reviewer; if exceeded, check output and restart |
 | **Agent failure** | Fall back to performing that review directly |
 | **Severity doubtful?** | If fixing it would change a conclusion → IMPORTANT. If only readability → SUGGESTION |
-| **Model for reviewers** | Use haiku for speed (~2-3 min, thorough reviews) |
+| **Model for reviewers** | Default: haiku (~2-3 min, thorough reviews). Override via `/convergence-review <gate> --model sonnet\|opus` |

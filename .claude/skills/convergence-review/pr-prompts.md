@@ -6,9 +6,10 @@ Reference file for the convergence-review skill. Contains exact prompts for the 
 
 **Dispatch pattern:** Launch each perspective as a parallel Task agent:
 ```
-Task(subagent_type="general-purpose", model="haiku", run_in_background=True,
+Task(subagent_type="general-purpose", model=REVIEW_MODEL, run_in_background=True,
      prompt="<prompt from below>\n\n<artifact content>")
 ```
+Model selection is controlled by the `--model` flag in the convergence-review skill (default: `haiku`).
 
 ---
 
