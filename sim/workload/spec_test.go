@@ -390,6 +390,23 @@ func TestValidate_UnknownSLOTier_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestValidate_ConstantArrival_NoError(t *testing.T) {
+	// BC-7: Constant arrival process validates successfully
+	cv := 2.0 // should be ignored for constant
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant", CV: &cv},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	if err := spec.Validate(); err != nil {
+		t.Errorf("unexpected error for constant arrival: %v", err)
+	}
+}
+
 func TestUpgradeV1ToV2_EmptyVersion_SetsV2(t *testing.T) {
 	spec := &WorkloadSpec{Version: ""}
 	UpgradeV1ToV2(spec)

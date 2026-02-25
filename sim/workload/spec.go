@@ -129,7 +129,7 @@ type ServeGenDataSpec struct {
 // Valid value registries.
 var (
 	validArrivalProcesses = map[string]bool{
-		"poisson": true, "gamma": true, "weibull": true,
+		"poisson": true, "gamma": true, "weibull": true, "constant": true,
 	}
 	validDistTypes = map[string]bool{
 		"gaussian": true, "exponential": true, "pareto_lognormal": true, "empirical": true, "constant": true,

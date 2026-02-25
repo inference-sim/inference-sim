@@ -102,6 +102,16 @@ func (s *WeibullSampler) SampleIAT(rng *rand.Rand) int64 {
 	return iat
 }
 
+// ConstantArrivalSampler produces fixed inter-arrival times (zero variance).
+// Used for deterministic legacy parity where requests arrive at exact intervals.
+type ConstantArrivalSampler struct {
+	iatMicros int64 // fixed inter-arrival time in microseconds
+}
+
+func (s *ConstantArrivalSampler) SampleIAT(_ *rand.Rand) int64 {
+	return s.iatMicros
+}
+
 // NewArrivalSampler creates an ArrivalSampler from a spec and rate.
 // ratePerMicrosecond is the client's request rate in requests/microsecond.
 func NewArrivalSampler(spec ArrivalSpec, ratePerMicrosecond float64) ArrivalSampler {
@@ -110,6 +120,13 @@ func NewArrivalSampler(spec ArrivalSpec, ratePerMicrosecond float64) ArrivalSamp
 		ratePerMicrosecond = 1e-15
 	}
 	switch spec.Process {
+	case "constant":
+		iat := int64(1.0 / ratePerMicrosecond)
+		if iat < 1 {
+			iat = 1
+		}
+		return &ConstantArrivalSampler{iatMicros: iat}
+
 	case "poisson":
 		return &PoissonSampler{rateMicros: ratePerMicrosecond}
 
