@@ -6,8 +6,32 @@ import (
 	"math"
 	"os"
 
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
+
+// v1ToV2SLOClasses maps deprecated v1 SLO class names to v2 equivalents.
+var v1ToV2SLOClasses = map[string]string{
+	"realtime":    "critical",
+	"interactive": "standard",
+}
+
+// UpgradeV1ToV2 auto-upgrades a v1 WorkloadSpec to v2 format in-place.
+// Maps deprecated SLO class names (realtime→critical, interactive→standard)
+// and sets the version field to "2". Idempotent — calling on a v2 spec is safe.
+// Emits logrus.Warn deprecation notices for mapped tier names.
+func UpgradeV1ToV2(spec *WorkloadSpec) {
+	if spec.Version == "" || spec.Version == "1" {
+		spec.Version = "2"
+	}
+	for i := range spec.Clients {
+		if newName, ok := v1ToV2SLOClasses[spec.Clients[i].SLOClass]; ok {
+			logrus.Warnf("deprecated SLO class %q auto-mapped to %q; update your spec to use v2 tier names",
+				spec.Clients[i].SLOClass, newName)
+			spec.Clients[i].SLOClass = newName
+		}
+	}
+}
 
 // WorkloadSpec is the top-level workload configuration.
 // Loaded from YAML via LoadWorkloadSpec(path).
@@ -131,6 +155,7 @@ func LoadWorkloadSpec(path string) (*WorkloadSpec, error) {
 	if err := decoder.Decode(&spec); err != nil {
 		return nil, fmt.Errorf("parsing workload spec: %w", err)
 	}
+	UpgradeV1ToV2(&spec)
 	return &spec, nil
 }
 

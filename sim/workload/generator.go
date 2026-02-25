@@ -42,6 +42,8 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		}
 	}
 
+	UpgradeV1ToV2(spec)
+
 	if err := spec.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid workload spec: %w", err)
 	}
