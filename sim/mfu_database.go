@@ -6,10 +6,35 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 
 	"github.com/sirupsen/logrus"
 )
+
+// lerp performs linear interpolation between a and b at parameter t in [0,1].
+func lerp(a, b, t float64) float64 {
+	return a + (b-a)*t
+}
+
+// bracketIndex returns the indices of the floor and ceiling values in a sorted
+// slice that bracket target. If target is at or below the minimum, both indices
+// point to 0. If at or above the maximum, both point to len-1.
+func bracketIndex(sorted []int, target int) (lo, hi int) {
+	n := len(sorted)
+	if target <= sorted[0] {
+		return 0, 0
+	}
+	if target >= sorted[n-1] {
+		return n - 1, n - 1
+	}
+	// Binary search for insertion point
+	hi = sort.SearchInts(sorted, target)
+	if hi < n && sorted[hi] == target {
+		return hi, hi // exact match
+	}
+	return hi - 1, hi
+}
 
 // MHAPrefillRow represents one row from prefill CSV: dtype,seq_len,latency_us,mfu
 type MHAPrefillRow struct {
@@ -359,54 +384,47 @@ func NewMFUDatabase(modelConfig ModelConfig, benchDataPath string, gpu string) (
 	}, nil
 }
 
-// GetAttnPrefillMFU returns MFU for prefill attention at given seq_len
-// Uses nearest neighbor: prefers floor (largest seq_len <= target), falls back to ceiling
+// GetAttnPrefillMFU returns MFU for prefill attention at given seq_len.
+// Linearly interpolates between the floor and ceiling seq_len grid points
+// that bracket the target, producing smooth MFU transitions instead of
+// step-function jumps at grid boundaries.
 func (db *MFUDatabase) GetAttnPrefillMFU(seqLen int) float64 {
 	rows := db.prefillData[db.attentionConfig]
 	if len(rows) == 0 {
 		logrus.Fatalf("No prefill MFU data for config %s - database corrupted", db.attentionConfig)
 	}
 
-	// Find nearest neighbor, preferring floor values
-	var bestRow *MHAPrefillRow
-	minDist := math.MaxFloat64
-	isFloor := false
+	// Build sorted seq_len → MFU mapping
+	type seqPoint struct {
+		seqLen int
+		mfu    float64
+	}
+	pts := make([]seqPoint, len(rows))
+	for i, r := range rows {
+		pts[i] = seqPoint{r.SeqLen, r.MFU}
+	}
+	sort.Slice(pts, func(i, j int) bool { return pts[i].seqLen < pts[j].seqLen })
 
-	for i := range rows {
-		row := &rows[i]
-
-		// Check if this is a floor match (seq_len <= target)
-		rowIsFloor := row.SeqLen <= seqLen
-
-		// Compute distance
-		dist := math.Abs(float64(row.SeqLen - seqLen))
-
-		// Prefer floor matches over ceiling matches
-		if !isFloor && rowIsFloor {
-			// First floor match found, switch to it
-			bestRow = row
-			minDist = dist
-			isFloor = true
-		} else if isFloor && !rowIsFloor {
-			// We have a floor match, don't switch to ceiling
-			continue
-		} else if dist < minDist {
-			// Both are floor or both are ceiling, pick closest
-			bestRow = row
-			minDist = dist
+	// Interpolate
+	var mfu float64
+	if seqLen <= pts[0].seqLen {
+		mfu = pts[0].mfu
+	} else if seqLen >= pts[len(pts)-1].seqLen {
+		mfu = pts[len(pts)-1].mfu
+	} else {
+		for i := 0; i < len(pts)-1; i++ {
+			if pts[i].seqLen <= seqLen && seqLen < pts[i+1].seqLen {
+				t := float64(seqLen-pts[i].seqLen) / float64(pts[i+1].seqLen-pts[i].seqLen)
+				mfu = lerp(pts[i].mfu, pts[i+1].mfu, t)
+				break
+			}
 		}
 	}
 
-	if bestRow == nil {
-		logrus.Fatalf("No prefill MFU data available for config %s - database empty", db.attentionConfig)
-	}
-
-	// Handle zero or near-zero MFU (division by zero protection)
-	if bestRow.MFU < 0.0001 {
-		// Find nearest non-zero MFU by distance
+	// Zero-MFU protection: find nearest non-zero value as fallback
+	if mfu < 0.0001 {
 		var fallbackRow *MHAPrefillRow
 		minFallbackDist := math.MaxFloat64
-
 		for i := range rows {
 			if rows[i].MFU >= 0.0001 {
 				dist := math.Abs(float64(rows[i].SeqLen - seqLen))
@@ -416,27 +434,20 @@ func (db *MFUDatabase) GetAttnPrefillMFU(seqLen int) float64 {
 				}
 			}
 		}
-
 		if fallbackRow != nil {
-			logrus.Warnf("Prefill MFU=%.4f too small for seq_len=%d, using nearest non-zero seq_len=%d with MFU=%.4f (distance=%.0f)",
-				bestRow.MFU, seqLen, fallbackRow.SeqLen, fallbackRow.MFU, minFallbackDist)
+			logrus.Warnf("Prefill MFU=%.4f too small for seq_len=%d, using nearest non-zero seq_len=%d with MFU=%.4f",
+				mfu, seqLen, fallbackRow.SeqLen, fallbackRow.MFU)
 			return fallbackRow.MFU
 		}
-
 		logrus.Fatalf("All prefill MFU values are zero for config %s - invalid benchmark data", db.attentionConfig)
 	}
 
-	// Log if we're using approximation (not exact match)
-	if bestRow.SeqLen != seqLen {
-		logrus.Debugf("Prefill MFU lookup: requested seq_len=%d, using nearest seq_len=%d",
-			seqLen, bestRow.SeqLen)
-	}
-
-	return bestRow.MFU
+	return mfu
 }
 
-// GetAttnDecodeMFU returns MFU for decode attention
-// Uses nearest neighbor with Euclidean distance on (batch_size, kv_len)
+// GetAttnDecodeMFU returns MFU for decode attention.
+// Bilinearly interpolates on the (batch_size, kv_len) grid, producing smooth
+// MFU transitions instead of step-function jumps at grid boundaries.
 func (db *MFUDatabase) GetAttnDecodeMFU(batchSize, kvLen, tp int) float64 {
 	configKey := fmt.Sprintf("%s-tp%d", db.attentionConfig, tp)
 	rows := db.decodeData[configKey]
@@ -450,78 +461,86 @@ func (db *MFUDatabase) GetAttnDecodeMFU(batchSize, kvLen, tp int) float64 {
 		logrus.Infof("Using TP=1 decode data as fallback for TP=%d", tp)
 	}
 
-	// Find nearest neighbor using Euclidean distance
-	// Prefer rows where bs <= target_bs AND kv <= target_kv (floor in both dimensions)
-	var bestRow *MHADecodeRow
-	minDist := math.MaxFloat64
-	isFloor := false
+	// Build 2D grid: collect unique batch_size and kv_len values
+	type gridKey struct{ bs, kv int }
+	grid := make(map[gridKey]float64)
+	bsSet := make(map[int]bool)
+	kvSet := make(map[int]bool)
 
-	for i := range rows {
-		row := &rows[i]
-
-		// Check if this is a floor match (bs <= target AND kv <= target)
-		rowIsFloor := row.BatchSize <= batchSize && row.KVLen <= kvLen
-
-		// Compute Euclidean distance
-		dbs := float64(row.BatchSize - batchSize)
-		dkv := float64(row.KVLen - kvLen)
-		dist := math.Sqrt(dbs*dbs + dkv*dkv)
-
-		// Prefer floor matches over ceiling matches
-		if !isFloor && rowIsFloor {
-			// First floor match found, switch to it
-			bestRow = row
-			minDist = dist
-			isFloor = true
-		} else if isFloor && !rowIsFloor {
-			// We have a floor match, don't switch to ceiling
-			continue
-		} else if dist < minDist {
-			// Both are floor or both are ceiling, pick closest
-			bestRow = row
-			minDist = dist
-		}
+	for _, r := range rows {
+		grid[gridKey{r.BatchSize, r.KVLen}] = r.MFU
+		bsSet[r.BatchSize] = true
+		kvSet[r.KVLen] = true
 	}
 
-	if bestRow == nil {
-		logrus.Fatalf("No decode MFU data available for config %s - database empty", db.attentionConfig)
+	bsVals := make([]int, 0, len(bsSet))
+	for v := range bsSet {
+		bsVals = append(bsVals, v)
+	}
+	sort.Ints(bsVals)
+
+	kvVals := make([]int, 0, len(kvSet))
+	for v := range kvSet {
+		kvVals = append(kvVals, v)
+	}
+	sort.Ints(kvVals)
+
+	// Find floor/ceiling indices in each dimension
+	bsLo, bsHi := bracketIndex(bsVals, batchSize)
+	kvLo, kvHi := bracketIndex(kvVals, kvLen)
+
+	bs0, bs1 := bsVals[bsLo], bsVals[bsHi]
+	kv0, kv1 := kvVals[kvLo], kvVals[kvHi]
+
+	// Look up the four corner MFU values
+	q00 := grid[gridKey{bs0, kv0}]
+	q10 := grid[gridKey{bs1, kv0}]
+	q01 := grid[gridKey{bs0, kv1}]
+	q11 := grid[gridKey{bs1, kv1}]
+
+	// Bilinear interpolation
+	var mfu float64
+	if bs0 == bs1 && kv0 == kv1 {
+		mfu = q00
+	} else if bs0 == bs1 {
+		t := float64(kvLen-kv0) / float64(kv1-kv0)
+		mfu = lerp(q00, q01, t)
+	} else if kv0 == kv1 {
+		t := float64(batchSize-bs0) / float64(bs1-bs0)
+		mfu = lerp(q00, q10, t)
+	} else {
+		tBS := float64(batchSize-bs0) / float64(bs1-bs0)
+		tKV := float64(kvLen-kv0) / float64(kv1-kv0)
+		top := lerp(q00, q10, tBS)
+		bot := lerp(q01, q11, tBS)
+		mfu = lerp(top, bot, tKV)
 	}
 
-	// Handle zero or near-zero MFU (division by zero protection)
-	if bestRow.MFU < 0.0001 {
-		// Find nearest non-zero MFU by 2D Euclidean distance
+	// Zero-MFU protection: if interpolated value is still near zero,
+	// find nearest non-zero value as fallback
+	if mfu < 0.0001 {
 		var fallbackRow *MHADecodeRow
 		minFallbackDist := math.MaxFloat64
-
 		for i := range rows {
 			if rows[i].MFU >= 0.0001 {
 				dbs := float64(rows[i].BatchSize - batchSize)
 				dkv := float64(rows[i].KVLen - kvLen)
 				dist := math.Sqrt(dbs*dbs + dkv*dkv)
-
 				if dist < minFallbackDist {
 					minFallbackDist = dist
 					fallbackRow = &rows[i]
 				}
 			}
 		}
-
 		if fallbackRow != nil {
-			logrus.Warnf("Decode MFU=%.4f too small for (bs=%d, kv=%d), using nearest non-zero (bs=%d, kv=%d) with MFU=%.4f (distance=%.0f)",
-				bestRow.MFU, batchSize, kvLen, fallbackRow.BatchSize, fallbackRow.KVLen, fallbackRow.MFU, minFallbackDist)
+			logrus.Warnf("Decode MFU=%.4f too small for (bs=%d, kv=%d), using nearest non-zero (bs=%d, kv=%d) with MFU=%.4f",
+				mfu, batchSize, kvLen, fallbackRow.BatchSize, fallbackRow.KVLen, fallbackRow.MFU)
 			return fallbackRow.MFU
 		}
-
 		logrus.Fatalf("All decode MFU values are zero for config %s - invalid benchmark data", db.attentionConfig)
 	}
 
-	// Log if we're using approximation (not exact floor match)
-	if bestRow.BatchSize != batchSize || bestRow.KVLen != kvLen {
-		logrus.Debugf("Decode MFU lookup: requested (bs=%d, kv=%d), using nearest (bs=%d, kv=%d)",
-			batchSize, kvLen, bestRow.BatchSize, bestRow.KVLen)
-	}
-
-	return bestRow.MFU
+	return mfu
 }
 
 // GetGEMMmfu returns MFU for GEMM operation (m, k, n)
@@ -557,29 +576,35 @@ func (db *MFUDatabase) GetGEMMmfu(m, k, n int) float64 {
 		targetN = db.gemmData[len(db.gemmData)-1].N
 	}
 
-	// Stage 2: Within (targetK, targetN), find largest m <= target_m
-	mfu := 0.0
-	foundExact := false
+	// Stage 2: Collect all M values for (targetK, targetN) and interpolate
+	type mPoint struct {
+		m   int
+		mfu float64
+	}
+	var mPoints []mPoint
 	for _, row := range db.gemmData {
-		if row.K == targetK && row.N == targetN && row.M <= m {
-			mfu = row.MFU
-			foundExact = true
+		if row.K == targetK && row.N == targetN {
+			mPoints = append(mPoints, mPoint{row.M, row.MFU})
 		}
 	}
+	if len(mPoints) == 0 {
+		logrus.Fatalf("No GEMM data found for (k=%d, n=%d) - database corrupted", targetK, targetN)
+	}
+	sort.Slice(mPoints, func(i, j int) bool { return mPoints[i].m < mPoints[j].m })
 
-	if !foundExact {
-		// Nearest neighbor fallback: use smallest m available for this (k, n)
-		minM := math.MaxInt32
-		for _, row := range db.gemmData {
-			if row.K == targetK && row.N == targetN && row.M < minM {
-				minM = row.M
-				mfu = row.MFU
+	// Linear interpolation in M dimension
+	var mfu float64
+	if m <= mPoints[0].m {
+		mfu = mPoints[0].mfu
+	} else if m >= mPoints[len(mPoints)-1].m {
+		mfu = mPoints[len(mPoints)-1].mfu
+	} else {
+		for i := 0; i < len(mPoints)-1; i++ {
+			if mPoints[i].m <= m && m < mPoints[i+1].m {
+				t := float64(m-mPoints[i].m) / float64(mPoints[i+1].m-mPoints[i].m)
+				mfu = lerp(mPoints[i].mfu, mPoints[i+1].mfu, t)
+				break
 			}
-		}
-		if minM != math.MaxInt32 {
-			logrus.Infof("No GEMM with m<=%d for (k=%d, n=%d), using nearest m=%d", m, targetK, targetN, minM)
-		} else {
-			logrus.Fatalf("No GEMM data found for (k=%d, n=%d) - database corrupted", targetK, targetN)
 		}
 	}
 
