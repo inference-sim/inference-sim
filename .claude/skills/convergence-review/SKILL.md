@@ -22,45 +22,135 @@ Dispatch parallel review perspectives for gate **$0** and enforce convergence.
 
 ---
 
-## Convergence Protocol (non-negotiable)
+## Convergence State Management
+
+### State Directory
+
+State files live in `.claude/convergence-state/`, keyed by gate type and artifact identity. This supports concurrent sessions (different terminals reviewing different artifacts) and sequential sessions without collision.
+
+**State directory layout:**
+
+```
+.claude/convergence-state/
+  pr-code--feature-scorer-framework.json
+  design--docs-plans-archive-kv-tiered-design.md.json
+  pr-plan--docs-plans-pr19-scorer-plan.md.json
+```
+
+**Filename:** `{gate}--{artifact-id-with-slashes-replaced-by-dashes}.json`
+
+**Artifact identity by gate type:**
+
+| Gate type | Artifact ID | Example |
+|-----------|------------|---------|
+| `pr-code` | Branch name | `feature/scorer-framework` |
+| `pr-plan` | Micro-plan file path | `docs/plans/pr19-scorer-plan.md` |
+| `macro-plan` | Macro-plan file path | `docs/plans/weighted-scoring-macro-plan.md` |
+| `design` | Design doc file path | `docs/plans/archive/kv-tiered-design.md` |
+| `h-design` | Hypothesis doc file path | `hypotheses/h-cross-model/HYPOTHESIS.md` |
+| `h-code` | Branch name | `hypothesis/h-cross-model` |
+| `h-findings` | FINDINGS.md file path | `hypotheses/h-cross-model/FINDINGS.md` |
+
+For diff-based gates (`pr-code`, `h-code`), the branch name is used — the diff content changes between rounds but the branch is stable.
+
+**State file schema:**
+
+```json
+{
+  "gate": "pr-code",
+  "artifact_id": "feature/scorer-framework",
+  "round": 2,
+  "max_rounds": 5,
+  "history": [
+    {"round": 1, "critical": 2, "important": 5, "suggestions": 3, "status": "fixed"}
+  ],
+  "status": "awaiting-rerun",
+  "updated_at": "2026-02-25T14:30:00Z"
+}
+```
+
+**Status values:** `"awaiting-rerun"` | `"converged"` | `"stalled"`
+
+### State File Operations
+
+On invocation, determine the artifact ID from the gate type:
+- `pr-code` / `h-code`: Run `git branch --show-current` to get the branch name
+- All other gates: Use the `$1` argument (artifact file path)
+
+Then derive the state file path:
+```
+.claude/convergence-state/{gate}--{artifact_id with / replaced by -}.json
+```
+
+Read the state file. If it does not exist or `status` is `"converged"` or `"stalled"`, enter **Phase A**. If `status` is `"awaiting-rerun"`, enter **Phase B**.
+
+---
+
+## Two-Phase Convergence Protocol (non-negotiable)
 
 > **Canonical source:** [docs/process/hypothesis.md — Universal Convergence Protocol](../../../docs/process/hypothesis.md#universal-convergence-protocol). The rules below are a self-contained copy for skill execution; hypothesis.md is authoritative if they diverge.
 
-These rules are identical across all gates. No exceptions. No shortcuts.
+The convergence loop is **automatic and self-driven**. The user invokes `/convergence-review <gate> [artifact]` once. The skill manages the loop internally via state files. There is no manual re-invocation between rounds.
 
-### The Algorithm
+### Phase A: Review
+
+Phase A dispatches all perspectives, collects results, tallies findings, and produces exactly one of three outcomes. **Phase A never applies fixes.**
 
 ```
-round = 1
-while round <= 10:
-    1. Dispatch ALL perspectives in parallel (background Task agents, model=haiku)
-    2. Wait for all to complete (5 min timeout per agent)
-    3. Read each agent's output INDEPENDENTLY
-    4. Tally CRITICAL and IMPORTANT counts YOURSELF (do NOT trust agent totals)
-    5. Report round results to user
+1. Determine round number:
+   - If state file exists and status is "awaiting-rerun": round = state.round + 1
+   - Otherwise: round = 1, create state file with max_rounds = 5
 
-    if total_critical == 0 AND total_important == 0:
-        CONVERGED — report success, proceed to next workflow step
-        break
-    else:
-        Report all findings with severity
-        Fix all CRITICAL and IMPORTANT items
-        round += 1
-        RE-RUN ENTIRE ROUND (go to step 1)
+2. Dispatch ALL perspectives in parallel (background Task agents, model=haiku)
+3. Wait for all to complete (5 min timeout per agent)
+4. Read each agent's output INDEPENDENTLY
+5. Tally CRITICAL and IMPORTANT counts YOURSELF (do NOT trust agent totals)
 
-if round > 10:
-    SUSPEND — document remaining issues as future work
+6. Determine outcome:
+   a. CONVERGED (total_critical == 0 AND total_important == 0):
+      - Update state file: status = "converged"
+      - Delete state file (cleanup)
+      - Emit CONVERGED status banner
+      - Proceed to next workflow step
+
+   b. NOT CONVERGED, rounds remaining (round < max_rounds):
+      - Update state file: round = current, status = "awaiting-rerun",
+        append round to history with counts and status = "pending-fix"
+      - Emit NOT CONVERGED status banner
+      - Enter Phase B immediately
+
+   c. NOT CONVERGED, round limit reached (round >= max_rounds):
+      - Update state file: status = "stalled",
+        append round to history with counts
+      - Emit STALLED status banner with remaining issues
+      - Use AskUserQuestion with options:
+        (a) Increase limit and continue
+        (b) Accept remaining issues and proceed
+        (c) Abort
 ```
+
+### Phase B: Fix-and-Rerun
+
+Phase B is only entered from Phase A outcome (b). It applies all CRITICAL and IMPORTANT fixes, then immediately re-enters Phase A. **Phase B has no exit path other than invoking Phase A.**
+
+```
+1. Fix all CRITICAL items first, then all IMPORTANT items
+2. Run tests/verification as appropriate for the gate type
+3. Update state file: mark current round's history entry status = "fixed"
+4. Re-enter Phase A (next round)
+```
+
+**Why this works:** Each phase is short enough that its exit instruction is never far from the current position in context. Phase A cannot skip re-dispatch because it never fixes anything. Phase B cannot skip re-review because its only exit is invoking Phase A. The state file is the structural enforcement — a concrete artifact on disk that determines behavior, not a prose instruction buried in context.
 
 ### Hard Rules
 
 1. **Zero means zero.** One CRITICAL from one reviewer = not converged.
-2. **Re-run is mandatory.** After fixing issues, you MUST re-run the entire round. You may NOT skip, propose alternatives, or rationalize fixes were trivial.
+2. **Re-run is mandatory and automatic.** After fixing issues, Phase B MUST re-enter Phase A. There is no manual re-invocation. There is no "fixes were trivial, skip re-review."
 3. **SUGGESTION items do not block.** Only CRITICAL and IMPORTANT count.
 4. **Independent tallying.** Read each agent's output file. Count findings yourself. Agents have fabricated "0 CRITICAL, 0 IMPORTANT" when actual output contained 3 CRITICAL + 18 IMPORTANT (#390).
 5. **No partial re-runs.** Re-run ALL perspectives, not just the ones that found issues. Fixes can introduce new issues in other perspectives.
 6. **Agent timeout = 5 minutes.** If an agent exceeds this, check its output and restart. If it fails, perform that review directly.
-7. **Max 10 rounds per gate.** If still not converged, suspend the experiment/PR.
+7. **Max 5 rounds per gate (default).** If still not converged, enter stall protocol (AskUserQuestion). This is a safety net (R19 — circuit breaker), not an expected outcome.
 
 ### Severity Classification
 
@@ -73,6 +163,55 @@ When reviewing agent output, verify severity assignments:
 | **SUGGESTION** | Cosmetic. Off-by-one line citation, style consistency, terminology nit. Fixing only improves readability. | No |
 
 **When in doubt:** If fixing it would change any conclusion → IMPORTANT. If only readability → SUGGESTION.
+
+---
+
+## Round-Boundary Status Banners
+
+After every Phase A verdict, emit a visible status banner. This ensures the user sees the round status and expects the next round (or knows the review is complete).
+
+### Converged Banner
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  CONVERGED — Round N/M — Gate: <gate-type>                  ║
+║  0 CRITICAL | 0 IMPORTANT | K SUGGESTION                   ║
+╠══════════════════════════════════════════════════════════════╣
+║  Round History:                                             ║
+║    Round 1: 2 CRITICAL, 5 IMPORTANT — fixed                ║
+║    Round 2: 0 CRITICAL, 1 IMPORTANT — fixed                ║
+║    Round 3: 0 CRITICAL, 0 IMPORTANT — CONVERGED            ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+### Not Converged Banner (continuing to Phase B)
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  NOT CONVERGED — Round N/M — Gate: <gate-type>              ║
+║  X CRITICAL | Y IMPORTANT | Z SUGGESTION                   ║
+║  Entering Phase B: fixing issues, then re-reviewing...      ║
+╠══════════════════════════════════════════════════════════════╣
+║  Round History:                                             ║
+║    Round 1: X CRITICAL, Y IMPORTANT — fixing now            ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+### Stalled Banner (round limit reached)
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  STALLED — Round N/M (limit reached) — Gate: <gate-type>   ║
+║  X CRITICAL | Y IMPORTANT remaining                        ║
+║  Human decision required.                                   ║
+╠══════════════════════════════════════════════════════════════╣
+║  Round History:                                             ║
+║    Round 1: 3 CRITICAL, 7 IMPORTANT — fixed                ║
+║    Round 2: 1 CRITICAL, 2 IMPORTANT — fixed                ║
+║    ...                                                      ║
+║    Round 5: X CRITICAL, Y IMPORTANT — stalled              ║
+╚══════════════════════════════════════════════════════════════╝
+```
 
 ---
 
@@ -130,9 +269,9 @@ After all agents complete:
 3. **Independently verify** the counts match the findings listed
 4. **Aggregate** across all perspectives
 
-### Step 5: Report
+### Step 5: Report and Transition
 
-Present results in this format:
+Present results in this format, then follow the Phase A outcome rules:
 
 ```
 ## Round N Results — Gate: <gate-type>
@@ -143,33 +282,12 @@ Present results in this format:
 | P2: <name>  | 0        | 0         | 1          |
 | ...         | ...      | ...       | ...        |
 | **TOTAL**   | **0**    | **1**     | **3**      |
-
-### Convergence: NOT CONVERGED (1 IMPORTANT remaining)
-
-### Findings requiring action:
-1. [IMPORTANT] P1: <finding description>
 ```
 
-If converged:
-```
-### Convergence: CONVERGED in Round N
-
-All perspectives report 0 CRITICAL and 0 IMPORTANT findings.
-Proceed to the next workflow step.
-```
-
----
-
-## Round Tracking
-
-Track rounds across invocations. If this is a re-run after fixes:
-
-```
-## Round History
-- Round 1: 2 CRITICAL, 5 IMPORTANT — fixed
-- Round 2: 0 CRITICAL, 1 IMPORTANT — fixed
-- Round 3: 0 CRITICAL, 0 IMPORTANT — CONVERGED
-```
+Then emit the appropriate status banner and follow Phase A's outcome logic:
+- If converged → clean up state file, report success, proceed
+- If not converged, rounds remaining → enter Phase B immediately
+- If stalled → AskUserQuestion for human decision
 
 ---
 
@@ -200,10 +318,4 @@ The hypothesis-experiment skill calls this skill at Steps 2, 5, and 8:
 /convergence-review h-design
 /convergence-review h-code hypotheses/h-<name>/
 /convergence-review h-findings hypotheses/h-<name>/FINDINGS.md
-```
-
-### After fixes
-Re-invoke with the same arguments to start the next round:
-```
-/convergence-review pr-code  (Round 2 after fixes)
 ```
