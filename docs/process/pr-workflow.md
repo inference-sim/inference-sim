@@ -165,7 +165,7 @@ If skills are unavailable, you can implement each step manually:
 
 # Step 2.5: Review plan (two-stage)
 /pr-review-toolkit:review-pr
-/convergence-review pr-plan docs/plans/pr8-routing-state-and-policy-bundle-plan.md
+/convergence-review pr-plan docs/plans/pr8-routing-state-and-policy-bundle-plan.md  # [--model opus|sonnet|haiku]
 
 # Step 3: Human review
 # [Read plan, verify contracts and tasks, approve to proceed]
@@ -175,7 +175,7 @@ If skills are unavailable, you can implement each step manually:
 
 # Step 4.5: Review code (two-stage)
 /pr-review-toolkit:review-pr
-/convergence-review pr-code
+/convergence-review pr-code  # [--model opus|sonnet|haiku]
 
 # Step 5: Commit, push, and create PR
 /commit-commands:commit-push-pr

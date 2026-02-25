@@ -13,14 +13,18 @@ Dispatch parallel review perspectives for gate **$0** and enforce convergence.
 The `--model` flag controls which model runs the perspective agents:
 
 ```
-/convergence-review pr-code                    # uses opus (default)
+/convergence-review pr-code                    # uses haiku (default)
 /convergence-review pr-plan plan.md --model sonnet
-/convergence-review h-findings FINDINGS.md --model haiku
+/convergence-review h-findings FINDINGS.md --model opus
 ```
 
-Parse `$ARGS` for `--model <value>`. Valid values: `opus`, `sonnet`, `haiku`. Default: **`opus`**.
+**Parsing order:** Strip `--model <value>` from `$ARGS` first, then parse remaining tokens as `$0` (gate type) and `$1` (artifact path).
 
-**`opus` must resolve to Opus 4.6 (`claude-opus-4-6`).** When passing `model = "opus"` to the Task tool, this is the model that runs.
+**Validation:** If `--model` value is not one of `opus`, `sonnet`, `haiku`, report the error to the user and stop. If `--model` is present but has no value, report the error and stop.
+
+Valid values: `opus`, `sonnet`, `haiku`. Default: **`haiku`**.
+
+`REVIEW_MODEL` stores the short name (`opus`, `sonnet`, or `haiku`). The Task tool resolves these to the appropriate model version (e.g., `opus` → `claude-opus-4-6`). No explicit model-ID mapping is needed in this skill.
 
 Store the resolved model in a variable `REVIEW_MODEL` and use it in all Task dispatches.
 
@@ -124,13 +128,13 @@ Launch all N perspectives simultaneously as background Task agents:
 For each perspective P in the gate's perspective set:
     Task(
         subagent_type = "general-purpose",
-        model = REVIEW_MODEL,       # from --model flag, default "opus"
+        model = REVIEW_MODEL,       # from --model flag, default "haiku"
         run_in_background = True,
         prompt = "<perspective prompt from prompts file>\n\n<artifact content>"
     )
 ```
 
-**Default model: opus.** Provides the highest review quality. Use `--model sonnet` for a faster/cheaper alternative, or `--model haiku` for maximum speed when iterating on early drafts.
+**Default model: haiku.** Fast (~2-3 min per agent), thorough reviews with accurate severity classification. Haiku produces consistent CRITICAL/IMPORTANT/SUGGESTION output and has been validated across 10+ PRs. Use `--model sonnet` for higher review quality, or `--model opus` for maximum depth (note: opus costs ~15x more per agent; for 10 parallel reviewers this adds up quickly).
 
 **Exception — Perspective 5 in PR plan reviews (Structural Validation):** Perform this check directly (no agent). It requires structural validation of the plan (task dependencies, template completeness) that benefits from your full conversation context.
 

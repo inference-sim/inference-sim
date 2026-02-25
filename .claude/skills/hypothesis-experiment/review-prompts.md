@@ -6,9 +6,10 @@ Reference file for the hypothesis-experiment skill. Contains exact prompts for a
 
 **Usage**: Launch each perspective as a parallel Task agent:
 ```
-Task(subagent_type="general-purpose", model="haiku", run_in_background=True,
+Task(subagent_type="general-purpose", model=REVIEW_MODEL, run_in_background=True,
      prompt="<prompt from below>")
 ```
+Model selection is controlled by the `--model` flag in the convergence-review skill (default: `haiku`).
 
 **After all agents complete**: Read each output file independently. Count CRITICAL and IMPORTANT findings yourself. Do NOT trust agent-reported totals.
 
