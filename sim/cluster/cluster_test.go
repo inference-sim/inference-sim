@@ -1190,6 +1190,19 @@ func sortedRequestMetrics(m map[string]sim.RequestMetrics) []sim.RequestMetrics 
 	return result
 }
 
+// meanMapValues computes the arithmetic mean of all values in a map.
+// Panics on empty map (test infrastructure — should never be empty).
+func meanMapValues(m map[string]float64) float64 {
+	if len(m) == 0 {
+		panic("meanMapValues: empty map")
+	}
+	sum := 0.0
+	for _, v := range m {
+		sum += v
+	}
+	return sum / float64(len(m))
+}
+
 // TestClusterSimulator_Conservation_PolicyMatrix verifies INV-1 at cluster level
 // across 10 policy combinations (promoted from H12 hypothesis experiment):
 // GIVEN each policy combination with infinite horizon and ample resources
@@ -1521,4 +1534,254 @@ func TestClusterSimulator_SchedulerLiveness(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestClusterSimulator_AdmissionLatency_ExactOffset verifies that admission
+// latency creates an exact additive offset in TTFT and E2E
+// (promoted from H26 experiment, PR #372, issue #378):
+// GIVEN constant token lengths, low rate (no queuing), and deterministic seed
+// WHEN the cluster runs with AdmissionLatency=0, 10000 (10ms), and 50000 (50ms)
+// THEN TTFT and E2E deltas MUST match the admission latency exactly (within 0.1ms)
+// AND the linearity ratio (50ms/10ms) MUST equal 5.0 (within 0.01).
+func TestClusterSimulator_AdmissionLatency_ExactOffset(t *testing.T) {
+	const (
+		numRequests  = 50
+		numInstances = 4
+		rateReqPerS  = 10.0
+		inputTokens  = 128
+		outputTokens = 32
+	)
+
+	// Constant tokens (zero stddev) eliminates variance.
+	mkWorkload := func() *sim.GuideLLMConfig {
+		return &sim.GuideLLMConfig{
+			Rate:               rateReqPerS / 1e6,
+			NumRequests:        numRequests,
+			PrefixTokens:       0,
+			PromptTokens:       inputTokens,
+			PromptTokensStdDev: 0,
+			PromptTokensMin:    inputTokens,
+			PromptTokensMax:    inputTokens,
+			OutputTokens:       outputTokens,
+			OutputTokensStdDev: 0,
+			OutputTokensMin:    outputTokens,
+			OutputTokensMax:    outputTokens,
+		}
+	}
+
+	runWithLatency := func(latencyUS int64) *sim.Metrics {
+		config := newTestDeploymentConfig(numInstances)
+		config.RoutingPolicy = "least-loaded"
+		config.AdmissionLatency = latencyUS
+		cs := NewClusterSimulator(config, mkWorkload(), "")
+		mustRun(t, cs)
+		return cs.AggregatedMetrics()
+	}
+
+	mA := runWithLatency(0)      // baseline
+	mB := runWithLatency(10000)  // 10ms
+	mC := runWithLatency(50000)  // 50ms
+
+	// Compute mean TTFT and E2E (in ticks/microseconds), convert to ms
+	ttftA := meanMapValues(mA.RequestTTFTs) / 1000.0
+	ttftB := meanMapValues(mB.RequestTTFTs) / 1000.0
+	ttftC := meanMapValues(mC.RequestTTFTs) / 1000.0
+
+	e2eA := meanMapValues(mA.RequestE2Es) / 1000.0
+	e2eB := meanMapValues(mB.RequestE2Es) / 1000.0
+	e2eC := meanMapValues(mC.RequestE2Es) / 1000.0
+
+	// BC-1: TTFT and E2E deltas must match admission latency (within 0.1ms)
+	const tol = 0.1 // ms
+
+	ttftDeltaB := ttftB - ttftA
+	e2eDeltaB := e2eB - e2eA
+	if math.Abs(ttftDeltaB-10.0) > tol {
+		t.Errorf("BC-1 TTFT delta (10ms latency): got %.4f ms, want 10.0 ± %.1f ms", ttftDeltaB, tol)
+	}
+	if math.Abs(e2eDeltaB-10.0) > tol {
+		t.Errorf("BC-1 E2E delta (10ms latency): got %.4f ms, want 10.0 ± %.1f ms", e2eDeltaB, tol)
+	}
+
+	ttftDeltaC := ttftC - ttftA
+	e2eDeltaC := e2eC - e2eA
+	if math.Abs(ttftDeltaC-50.0) > tol {
+		t.Errorf("BC-1 TTFT delta (50ms latency): got %.4f ms, want 50.0 ± %.1f ms", ttftDeltaC, tol)
+	}
+	if math.Abs(e2eDeltaC-50.0) > tol {
+		t.Errorf("BC-1 E2E delta (50ms latency): got %.4f ms, want 50.0 ± %.1f ms", e2eDeltaC, tol)
+	}
+
+	// BC-2: Linearity check — 50ms/10ms ratio must be 5.0
+	if e2eDeltaB > 0 {
+		ratio := e2eDeltaC / e2eDeltaB
+		if math.Abs(ratio-5.0) > 0.01 {
+			t.Errorf("BC-2 linearity: E2E delta ratio (50ms/10ms) = %.4f, want 5.0 ± 0.01", ratio)
+		}
+	} else {
+		t.Error("BC-2: E2E delta for 10ms config is <= 0, cannot check linearity")
+	}
+
+	// Sanity: all requests completed in all configs
+	if mA.CompletedRequests != numRequests {
+		t.Errorf("baseline: completed %d, want %d", mA.CompletedRequests, numRequests)
+	}
+	if mB.CompletedRequests != numRequests {
+		t.Errorf("10ms config: completed %d, want %d", mB.CompletedRequests, numRequests)
+	}
+	if mC.CompletedRequests != numRequests {
+		t.Errorf("50ms config: completed %d, want %d", mC.CompletedRequests, numRequests)
+	}
+}
+
+// TestClusterSimulator_FullStackConservation verifies INV-1 conservation
+// across the full policy stack: weighted routing + admission control +
+// priority scheduling (promoted from H25 experiment, PR #372, issue #379):
+// GIVEN weighted routing (prefix-affinity:3,queue-depth:2,kv-utilization:2),
+//
+//	priority-FCFS scheduling, and multiple admission/KV configurations
+//
+// WHEN the simulation completes
+// THEN conservation holds: completed + still_queued + still_running == len(Requests)
+// AND preemptions are triggered in the constrained-KV config (stress path exercised)
+// AND pipeline conservation holds for token-bucket: len(Requests) + rejected == total.
+func TestClusterSimulator_FullStackConservation(t *testing.T) {
+	const (
+		numRequests  = 50
+		numInstances = 4
+		rateReqPerS  = 200.0
+	)
+
+	mkWorkload := func() *sim.GuideLLMConfig {
+		return &sim.GuideLLMConfig{
+			Rate:               rateReqPerS / 1e6,
+			NumRequests:        numRequests,
+			PrefixTokens:       32,
+			PromptTokens:       128,
+			PromptTokensStdDev: 32,
+			PromptTokensMin:    32,
+			PromptTokensMax:    256,
+			OutputTokens:       64,
+			OutputTokensStdDev: 16,
+			OutputTokensMin:    16,
+			OutputTokensMax:    128,
+		}
+	}
+
+	mkFullStackConfig := func() DeploymentConfig {
+		config := newTestDeploymentConfig(numInstances)
+		config.RoutingPolicy = "weighted"
+		config.RoutingScorerConfigs = sim.DefaultScorerConfigs()
+		config.Scheduler = "priority-fcfs"
+		config.PriorityPolicy = "slo-based"
+		config.AdmissionPolicy = "always-admit"
+		return config
+	}
+
+	t.Run("always-admit/ample-kv", func(t *testing.T) {
+		// BC-3: Happy path — all modules active, ample resources
+		config := mkFullStackConfig()
+		cs := NewClusterSimulator(config, mkWorkload(), "")
+		mustRun(t, cs)
+
+		agg := cs.AggregatedMetrics()
+		injected := len(agg.Requests)
+
+		// INV-1 conservation (map-based three-term)
+		conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
+		if conservation != injected {
+			t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
+				agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
+		}
+
+		// All requests complete under infinite horizon with ample resources
+		if agg.CompletedRequests != numRequests {
+			t.Errorf("expected all %d requests to complete, got %d", numRequests, agg.CompletedRequests)
+		}
+
+		// No requests dropped as unservable (ample KV)
+		if agg.DroppedUnservable != 0 {
+			t.Errorf("expected 0 DroppedUnservable with ample KV, got %d", agg.DroppedUnservable)
+		}
+	})
+
+	t.Run("always-admit/constrained-kv", func(t *testing.T) {
+		// BC-4: Stress path — constrained KV blocks force preemptions.
+		// Uses high rate (2000/s) with finite horizon to keep many requests in-flight.
+		// TotalKVBlocks=50 per instance with 10 blocks/request means only ~5 concurrent
+		// requests can hold KV. With high arrival rate, batch formation tries to schedule
+		// more, triggering preemptions. MaxRunningReqs=256 (default) allows large batches.
+		// 50 >= 10 (max single request input blocks: ceil((32+128)/16)) so no DroppedUnservable.
+		config := mkFullStackConfig()
+		config.TotalKVBlocks = 50
+		config.BlockSizeTokens = 16
+		config.Horizon = 500000 // 0.5 seconds — many requests still in-flight at end
+		constWorkload := &sim.GuideLLMConfig{
+			Rate:               2000.0 / 1e6, // High rate to saturate
+			NumRequests:        numRequests,
+			PrefixTokens:       32,
+			PromptTokens:       128,
+			PromptTokensStdDev: 0,
+			PromptTokensMin:    128,
+			PromptTokensMax:    128,
+			OutputTokens:       64,
+			OutputTokensStdDev: 0,
+			OutputTokensMin:    64,
+			OutputTokensMax:    64,
+		}
+		cs := NewClusterSimulator(config, constWorkload, "")
+		mustRun(t, cs)
+
+		agg := cs.AggregatedMetrics()
+		injected := len(agg.Requests)
+
+		// INV-1 conservation (map-based three-term)
+		conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
+		if conservation != injected {
+			t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
+				agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
+		}
+
+		// Verify stress path is actually exercised: preemptions must occur
+		if agg.PreemptionCount == 0 {
+			t.Error("expected preemptions with constrained batch+KV (50 blocks per instance) at rate=2000, got 0 — test is not exercising the stress path")
+		}
+
+		// Verify no requests dropped as unservable (max input = ceil((32+128)/16) = 10 blocks ≤ 50)
+		if agg.DroppedUnservable != 0 {
+			t.Errorf("expected 0 DroppedUnservable with 50 blocks per instance (max request needs 10 blocks), got %d", agg.DroppedUnservable)
+		}
+	})
+
+	t.Run("token-bucket", func(t *testing.T) {
+		// BC-5: Pipeline conservation with admission rejections
+		config := mkFullStackConfig()
+		config.AdmissionPolicy = "token-bucket"
+		config.TokenBucketCapacity = 500
+		config.TokenBucketRefillRate = 300
+		cs := NewClusterSimulator(config, mkWorkload(), "")
+		mustRun(t, cs)
+
+		agg := cs.AggregatedMetrics()
+		injected := len(agg.Requests)
+		rejected := cs.RejectedRequests()
+
+		// INV-1 conservation (map-based three-term)
+		conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning
+		if conservation != injected {
+			t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) = %d, want %d (injected)",
+				agg.CompletedRequests, agg.StillQueued, agg.StillRunning, conservation, injected)
+		}
+
+		// Pipeline conservation: injected + rejected == total generated
+		if injected+rejected != numRequests {
+			t.Errorf("pipeline conservation: injected(%d) + rejected(%d) = %d, want %d",
+				injected, rejected, injected+rejected, numRequests)
+		}
+
+		// Sanity: token-bucket should reject some requests (not all admitted)
+		if rejected == 0 {
+			t.Error("expected some rejections with token-bucket(cap=500,refill=300) at rate=200, got 0")
+		}
+	})
 }
