@@ -55,7 +55,7 @@ The `Step()` function is a 4-line orchestrator that delegates to four phases:
    - If in prefill phase: advance the progress index through input tokens (respecting chunked prefill limits)
    - If in decode phase: advance the progress index by one output token
    - Record TTFT at the prefill-to-decode boundary
-3. Compute the step time (used by Phase 4 to schedule the next `StepEvent`; the clock itself advances only at the event-loop level when the next event is popped)
+3. Return the computed step time to Phase 4 for scheduling the next `StepEvent` (the clock itself advances only at the event-loop level when the next event is popped)
 
 ### Phase 3: Process Completions (`processCompletions`)
 
