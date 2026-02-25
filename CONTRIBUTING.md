@@ -357,6 +357,7 @@ Follow `docs/process/hypothesis.md` for the full process (Steps 0-10). Key phase
 | `docs/standards/invariants.md` | 8 system invariants (INV-1 through INV-8) with verification strategies | When touching request lifecycle, KV cache, or metrics |
 | `docs/standards/experiments.md` | Experiment taxonomy, rigor requirements, findings classification | When running hypothesis experiments |
 | `docs/process/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
+| `docs/design/` | System architecture, core engine, concepts glossary, configuration reference | When learning how BLIS works before contributing |
 | `docs/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |
 | `docs/templates/micro-plan.md` | Template for single-PR implementation plans | When creating any PR implementation plan |
 | `docs/templates/macro-plan.md` | Template for multi-PR feature expansions | When planning a large feature with multiple PRs |

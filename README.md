@@ -416,13 +416,13 @@ BLIS uses two estimation techniques. Choose based on your model support:
 - **Alpha coefficients**: model queueing time as a function of batch state
 - **Beta coefficients**: model step execution time from batch features (running requests, new tokens, cached tokens)
 - Automatically selected when `defaults.yaml` contains coefficients for the requested (model, GPU, TP, vLLM version) combination
-- See [Blackbox Approach](./docs/approach.md)
+- See [Core Engine: Latency Models](./docs/design/core-engine.md#latency-models)
 
 ### Roofline Approach (Analytical)
 - No pre-training required — estimates latency from FLOPs and memory bandwidth
 - Requires a HuggingFace `config.json` for the model (architecture parameters) and `hardware_config.json` (GPU specifications)
 - Automatically activated when `--model-config-folder` is provided and no matching coefficients exist
-- See [Roofline Approach](./docs/roofline.md)
+- See [Roofline Estimation](./docs/design/roofline.md)
 
 ### Using Roofline Mode
 
@@ -648,7 +648,7 @@ Upcoming:
 - **Framework adapters** for OpenEvolve and GEPA policy evolution (PR15)
 - **Integration tests** (PR16)
 
-See [design documentation](./docs/plans/) for details.
+See [implementation plans](./docs/plans/) for details. For system architecture and design, see [design documentation](./docs/design/).
 
 ---
 
