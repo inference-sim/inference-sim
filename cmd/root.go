@@ -50,6 +50,7 @@ var (
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
 	roofline                  bool      // Whether to use roofline stepTime or not
+	rooflineFlag              bool      // CLI --roofline flag: auto-fetch HF config and resolve hardware config
 
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
@@ -140,6 +141,30 @@ var runCmd = &cobra.Command{
 
 		var modelConfig = sim.ModelConfig{}
 		var hwConfig = sim.HardwareCalib{}
+
+		// --roofline flag: auto-resolve model config and hardware config
+		if rooflineFlag {
+			if gpu == "" {
+				logrus.Fatalf("--roofline requires --hardware (GPU type)")
+			}
+			if tensorParallelism <= 0 {
+				logrus.Fatalf("--roofline requires --tp > 0")
+			}
+
+			// Resolve model config folder (cache → HF fetch → bundled fallback)
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			modelConfigFolder = resolved
+
+			// Resolve hardware config (explicit → bundled default)
+			resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			hwConfigPath = resolvedHW
+		}
 
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
 			// convert model name to lowercase
@@ -613,6 +638,7 @@ func init() {
 	runCmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
+	runCmd.Flags().BoolVar(&rooflineFlag, "roofline", false, "Enable roofline mode with auto-fetch of HuggingFace config.json and bundled hardware config")
 
 	// GuideLLM-style distribution-based workload generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")

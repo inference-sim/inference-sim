@@ -3,42 +3,52 @@ defaults:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: ibm-granite/granite-3.1-8b-instruct
   meta-llama/llama-3.1-8b-instruct:
     GPU: H100
     tensor_parallelism: 2
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: meta-llama/Llama-3.1-8B-Instruct
   meta-llama/llama-3.3-70b-instruct:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: meta-llama/Llama-3.3-70B-Instruct
   meta-llama/llama-4-maverick-17b-128e-instruct-fp8:
     GPU: H100
     tensor_parallelism: 8
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
   codellama/codellama-34b-instruct-hf:
     GPU: H100
     tensor_parallelism: 1
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: codellama/CodeLlama-34b-Instruct-hf
   meta-llama/llama-4-scout-17b-16e-instruct:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: meta-llama/Llama-4-Scout-17B-16E-Instruct
   microsoft/phi-4:
     GPU: H100
     tensor_parallelism: 2
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: microsoft/phi-4
   mistralai/mistral-small-24b-instruct-2501:
     GPU: H100
     tensor_parallelism: 2
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: mistralai/Mistral-Small-24B-Instruct-2501
   mistralai/mistral-small-3.1-24b-instruct-2503:
     GPU: H100
     tensor_parallelism: 8
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: mistralai/Mistral-Small-3.1-24B-Instruct-2503
   nvidia/llama-3.1-nemotron-70b-instruct-hf:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: nvidia/Llama-3.1-Nemotron-70B-Instruct-HF
   openai/gpt-oss-120b:
     GPU: H100
     tensor_parallelism: 2
@@ -51,6 +61,7 @@ defaults:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: Qwen/Qwen2.5-7B-Instruct
   redhatai/llama-3.1-nemotron-70b-instruct-hf-fp8-dynamic:
     GPU: H100
     tensor_parallelism: 2
