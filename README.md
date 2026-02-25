@@ -664,6 +664,8 @@ inference-sim/
 │   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
 │   └── default_config.go   # defaults.yaml loading
 ├── sim/                    # Core simulation engine
+│   ├── config.go           # Module-scoped sub-config types (R16)
+│   ├── doc.go              # Package reading guide
 │   ├── simulator.go        # Discrete-event simulation loop
 │   ├── admission.go        # Admission policy interface and templates
 │   ├── routing.go          # Routing policy interface and templates
@@ -672,14 +674,17 @@ inference-sim/
 │   ├── prefix_cache_index.go # PrefixCacheIndex: per-instance LRU of block hashes
 │   ├── priority.go         # Priority policy interface and templates
 │   ├── scheduler.go        # Instance scheduler interface and templates
+│   ├── latency_model.go    # LatencyModel interface and registration
 │   ├── router_state.go     # RouterState bridge type for cluster-level policies
 │   ├── bundle.go           # PolicyBundle YAML configuration
-│   ├── event.go            # Event types (Arrival, Queued, Step, Scheduled, Preemption)
+│   ├── event.go            # Event types (Arrival, Queued, Step, Scheduled, Preemption, RequestLeft)
 │   ├── kv_store.go         # KVStore interface and registration variables
-│   ├── batch.go            # Batch formation
+│   ├── batch.go            # Batch struct
+│   ├── batch_formation.go  # BatchFormation interface, VLLMBatchFormation
 │   ├── queue.go            # FIFO wait queue
 │   ├── request.go          # Request lifecycle
 │   ├── metrics.go          # TTFT, TPOT, E2E collection
+│   ├── metrics_utils.go    # MetricsOutput JSON struct, percentile calculations
 │   ├── rng.go              # PartitionedRNG for deterministic simulation
 │   ├── model_hardware_config.go  # ModelConfig, HardwareCalib structs
 │   └── workload_config.go  # CSV trace loading and distribution-based workload
@@ -699,12 +704,13 @@ inference-sim/
 │   ├── snapshot.go         # Instance observability snapshots
 │   ├── metrics.go          # RawMetrics, FitnessResult, anomaly detection, per-SLO-class metrics
 │   ├── counterfactual.go   # Top-k candidate ranking and regret computation
+│   ├── deployment.go       # DeploymentConfig (embeds SimConfig + cluster fields)
 │   ├── evaluation.go       # EvaluationResult wrapper (metrics + trace + summary)
 │   └── workload.go         # Centralized request generation for cluster dispatch
 ├── sim/workload/           # ServeGen-informed workload generation
 │   ├── spec.go             # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
 │   ├── arrival.go          # ArrivalSampler: Poisson, Gamma, Weibull
-│   ├── distribution.go     # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF
+│   ├── distribution.go     # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF, Constant
 │   ├── client.go           # Rate normalization, prefix group management
 │   ├── generator.go        # GenerateRequests pipeline with client decomposition
 │   ├── servegen.go         # Native ServeGen data file loading
@@ -714,6 +720,7 @@ inference-sim/
 │   ├── multimodal.go       # Multimodal token generation (text+image+audio+video)
 │   ├── reasoning.go        # Reasoning multi-turn with context accumulation
 │   ├── network.go          # Client-perspective latency (RTT + bandwidth)
+│   ├── inference_perf.go   # inference-perf format loading and validation
 │   └── scenarios.go        # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 ├── sim/trace/              # Decision trace recording
 │   ├── trace.go            # TraceLevel, TraceConfig, SimulationTrace
