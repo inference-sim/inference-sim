@@ -49,7 +49,7 @@ var (
 	outputTokensStdev         int       // Stdev Output Token Count
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
-	roofline                  bool      // Whether to use roofline stepTime or not
+	rooflineActive            bool      // Runtime state: whether roofline step time is active (set by --roofline flag OR implicit detection)
 	rooflineFlag              bool      // CLI --roofline flag: auto-fetch HF config and resolve hardware config
 
 	// CLI flags for model, GPU, TP, vllm version
@@ -137,13 +137,17 @@ var runCmd = &cobra.Command{
 		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
 
 		// Default: Do not use Roofline estimates for step time
-		roofline = false
+		rooflineActive = false
 
 		var modelConfig = sim.ModelConfig{}
 		var hwConfig = sim.HardwareCalib{}
 
-		// Normalize model name to lowercase for consistent lookups (defaults.yaml
-		// keys, cache directories, and bundled model_configs/ are all lowercase).
+		// Normalize model name to lowercase for consistent lookups. All defaults.yaml
+		// keys, hf_repo lookups, bundled model_configs/ directories, and coefficient
+		// matching use lowercase names. This runs unconditionally (even with explicit
+		// --alpha-coeffs/--beta-coeffs) to ensure output metadata and logs use a
+		// canonical form. Note: HuggingFace repo names are case-sensitive, so the
+		// hf_repo mapping in defaults.yaml preserves the original casing for API calls.
 		model = strings.ToLower(model)
 
 		// --roofline flag: auto-resolve model config and hardware config
@@ -187,7 +191,11 @@ var runCmd = &cobra.Command{
 
 			// Explicitly activate roofline mode (design doc step 4).
 			// Do NOT rely on downstream "all coefficients zero" heuristic.
-			roofline = true
+			// Note (I10): When --roofline is set with explicit --alpha-coeffs/--beta-coeffs,
+			// SimConfig will contain both non-zero coefficients and roofline=true. This is
+			// intentional: rooflineActive controls the latency model factory, and the
+			// AllZeros() check at the implicit-detection block is guarded by !rooflineActive.
+			rooflineActive = true
 
 			// Load alpha coefficients and totalKVBlocks from defaults.yaml.
 			// Roofline replaces beta (step time) but still needs alpha
@@ -252,17 +260,17 @@ var runCmd = &cobra.Command{
 		// Load roofline model/hardware configs when roofline mode is active.
 		// Two activation paths: (1) explicit --roofline flag, (2) implicit detection
 		// when trained coefficients are all-zero and config paths are provided.
-		if !roofline && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+		if !rooflineActive && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
 			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
-				roofline = true
+				rooflineActive = true
 			} else if len(modelConfigFolder) == 0 {
 				logrus.Fatalf("Please provide model config folder containing config.json for model=%v\n", model)
 			} else if len(hwConfigPath) == 0 {
 				logrus.Fatalf("Please provide hardware config path (e.g. hardware_config.json)\n")
 			}
 		}
-		if roofline {
+		if rooflineActive {
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
 			mc, err := latency.GetModelConfig(hfPath)
 			if err != nil {
@@ -530,7 +538,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, roofline),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, rooflineActive),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,

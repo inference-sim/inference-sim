@@ -49,6 +49,8 @@ defaults:
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
     hf_repo: nvidia/Llama-3.1-Nemotron-70B-Instruct-HF
+  # openai/gpt-oss-* are synthetic benchmark models without real HuggingFace repos.
+  # --roofline requires --model-config-folder for these models.
   openai/gpt-oss-120b:
     GPU: H100
     tensor_parallelism: 2

@@ -7,11 +7,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
+
+// validHFRepoPattern matches valid HuggingFace repo paths (e.g., "meta-llama/Llama-3.1-8B-Instruct").
+// Rejects URL-special characters (?, #, @, spaces) that could alter URL semantics (I14).
+var validHFRepoPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$`)
 
 const (
 	hfBaseURL       = "https://huggingface.co"
@@ -27,14 +32,17 @@ const (
 // resolveModelConfig finds a HuggingFace config.json for the given model.
 // Resolution order: explicit flag > model_configs/ > HF fetch (into model_configs/).
 // Returns the path to a directory containing config.json.
+// Paths are resolved relative to defaultsFile's directory (consistent with resolveHardwareConfig).
 func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, error) {
 	// 1. Explicit override takes precedence
 	if explicitFolder != "" {
 		return explicitFolder, nil
 	}
 
-	// Derive the local model_configs/<short-name>/ path
-	localDir, err := bundledModelConfigDir(model, "")
+	// Derive the local model_configs/<short-name>/ path relative to defaults.yaml location
+	// (consistent with resolveHardwareConfig using filepath.Dir(defaultsFile))
+	baseDir := filepath.Dir(defaultsFile)
+	localDir, err := bundledModelConfigDir(model, baseDir)
 	if err != nil {
 		return "", fmt.Errorf("--roofline: invalid model name %q: %w", model, err)
 	}
@@ -110,9 +118,13 @@ var fetchHFConfigFunc = fetchHFConfig
 
 // fetchHFConfig downloads config.json from HuggingFace and writes it to targetDir.
 // Supports HF_TOKEN env var for gated models.
+// Validates hfRepo format to prevent URL injection (I14).
 func fetchHFConfig(hfRepo, targetDir string) (string, error) {
-	url := fmt.Sprintf("%s/%s/resolve/main/%s", hfBaseURL, hfRepo, hfConfigFile)
-	return fetchHFConfigFromURL(url, targetDir)
+	if !validHFRepoPattern.MatchString(hfRepo) {
+		return "", fmt.Errorf("invalid HuggingFace repo name %q: must match org/model pattern with alphanumeric, '.', '-', '_' characters", hfRepo)
+	}
+	fetchURL := fmt.Sprintf("%s/%s/resolve/main/%s", hfBaseURL, hfRepo, hfConfigFile)
+	return fetchHFConfigFromURL(fetchURL, targetDir)
 }
 
 // fetchHFConfigFromURL fetches config.json from the given URL and writes it to targetDir.
@@ -134,6 +146,12 @@ func fetchHFConfigFromURL(url, targetDir string) (string, error) {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 3 {
 				return fmt.Errorf("too many redirects (max 3)")
+			}
+			// I11: Validate redirect targets stay on HuggingFace domains.
+			// HF uses CDN redirects (e.g., cdn-lfs.huggingface.co) which are legitimate.
+			host := req.URL.Hostname()
+			if host != "huggingface.co" && !strings.HasSuffix(host, ".huggingface.co") {
+				return fmt.Errorf("redirect to non-HuggingFace host %q blocked", host)
 			}
 			return nil
 		},
@@ -208,9 +226,13 @@ func isHFConfig(data []byte) bool {
 
 // bundledModelConfigDir returns the expected path for bundled model configs.
 // Model names like "meta-llama/llama-3.1-8b-instruct" map to "<baseDir>/model_configs/llama-3.1-8b-instruct/".
-// When baseDir is empty, returns a relative path (resolved relative to the process's
-// working directory — callers must ensure CWD is the repo root).
+// When baseDir is empty, returns a relative path (resolved relative to CWD).
 // Returns an error if the model name contains path traversal sequences.
+//
+// Note (I12): The org prefix is stripped, so different orgs with identical model names
+// (e.g., "org-a/llama" and "org-b/llama") would share the same directory. This matches
+// the existing model_configs/ convention and is acceptable because HuggingFace model
+// names are unique within orgs, and BLIS uses hf_repo for case-sensitive HF API calls.
 func bundledModelConfigDir(model, baseDir string) (string, error) {
 	// Use the part after the org prefix (after the /)
 	parts := strings.SplitN(model, "/", 2)
