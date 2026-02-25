@@ -1711,7 +1711,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		// TotalKVBlocks=50 per instance with 10 blocks/request means only ~5 concurrent
 		// requests can hold KV. With high arrival rate, batch formation tries to schedule
 		// more, triggering preemptions. MaxRunningReqs=256 (default) allows large batches.
-		// 50 >= 18 (max single request input blocks) so no DroppedUnservable.
+		// 50 >= 10 (max single request input blocks: ceil((32+128)/16)) so no DroppedUnservable.
 		config := mkFullStackConfig()
 		config.TotalKVBlocks = 50
 		config.BlockSizeTokens = 16
@@ -1747,9 +1747,9 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 			t.Error("expected preemptions with constrained batch+KV (50 blocks per instance) at rate=2000, got 0 — test is not exercising the stress path")
 		}
 
-		// Verify no requests dropped as unservable (max input = ceil((32+256)/16) = 18 blocks ≤ 300)
+		// Verify no requests dropped as unservable (max input = ceil((32+128)/16) = 10 blocks ≤ 50)
 		if agg.DroppedUnservable != 0 {
-			t.Errorf("expected 0 DroppedUnservable with 50 blocks per instance (max request needs 18 blocks), got %d", agg.DroppedUnservable)
+			t.Errorf("expected 0 DroppedUnservable with 50 blocks per instance (max request needs 10 blocks), got %d", agg.DroppedUnservable)
 		}
 	})
 
@@ -1781,7 +1781,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 
 		// Sanity: token-bucket should reject some requests (not all admitted)
 		if rejected == 0 {
-			t.Error("expected some rejections with token-bucket(cap=500,refill=300) at rate=2000, got 0")
+			t.Error("expected some rejections with token-bucket(cap=500,refill=300) at rate=200, got 0")
 		}
 	})
 }
