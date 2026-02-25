@@ -40,8 +40,7 @@ __pycache__/*
 # data files
 *.json
 !testdata/goldendataset.json
-!hardware_config_roofline_valid.json
-!hardware_config_optroofline.json
+!hardware_config.json
 data/
 *.txt
 

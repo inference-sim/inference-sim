@@ -78,7 +78,7 @@ class BLISEvaluator:
             #  - If bench_data/ exists with MFU CSVs -> roofline v2 (per-GEMM MFU lookups)
             #  - Otherwise -> roofline v1 (calibrated constants from hardware_config.json)
             "--model-config-folder", model_config_folder,
-            "--hardware-config", "hardware_config_roofline_valid.json",  # Roofline v2: minimal config (TFlopsPeak + BwPeakTBs only)
+            "--hardware-config", "hardware_config.json",  # Roofline v2: minimal config (TFlopsPeak + BwPeakTBs only)
             "--bench-data-path", "bench_data",
             # Cluster config (v0.6.1)
             "--num-instances", "1",  # Single instance for evaluation
@@ -486,6 +486,16 @@ def main():
         action="store_true",
         help="Enable verbose output for debugging"
     )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Generate evaluation plots after running"
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="eval/roofline_v2_results",
+        help="Directory for output plots (only used with --plot, default: eval/roofline_v2_results)"
+    )
 
     args = parser.parse_args()
 
@@ -498,6 +508,13 @@ def main():
         evaluator.save_results(results, args.output)
     else:
         evaluator.print_results(results)
+
+    # Generate plots if requested
+    if args.plot:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from plot_benchmark_results import plot_from_results
+        plot_from_results(results, args.output_dir)
 
 
 if __name__ == "__main__":

@@ -38,6 +38,10 @@ func TestH34_GEMMTimeScalingAcrossBatchSizes(t *testing.T) {
 	mfuDB := loadTestMFUDatabase(t)
 	hwCalib := testHardwareCalib()
 	peakFlops := hwCalib.TFlopsPeak * 1e12
+	peakBW := hwCalib.BwPeakTBs * 1e12
+	if hwCalib.BwEfficiencyFactor != 0 {
+		peakBW *= hwCalib.BwEfficiencyFactor
+	}
 
 	batchSizes := []int{1, 2, 4, 8, 16, 32}
 	tpScaling := 1.0
@@ -56,7 +60,7 @@ func TestH34_GEMMTimeScalingAcrossBatchSizes(t *testing.T) {
 		// Collect GEMM times
 		gemmTimes := make(map[int]float64)
 		for _, bs := range batchSizes {
-			gemmTime := computeTransformerGEMMTimes(mc, bs, peakFlops, mfuDB, tpScaling)
+			gemmTime := computeTransformerGEMMTimes(mc, bs, peakFlops, peakBW, mfuDB, tpScaling)
 			gemmTimes[bs] = gemmTime
 		}
 
@@ -79,22 +83,24 @@ func TestH34_GEMMTimeScalingAcrossBatchSizes(t *testing.T) {
 		}
 
 		// === Key check: ratio at bs=1 vs bs=8 ===
+		// After the H34 fix (memory-bandwidth floor), bs=1 GEMM time is bounded
+		// by weight-load time, so the ratio should be much closer to 1.0 than the
+		// old linear expectation of 0.125. The memory floor dominates at small M.
 		ratio1 := gemmTimes[1] / bs8Time
 		fmt.Printf("\n  KEY RATIO: gemmTime(bs=1) / gemmTime(bs=8) = %.6f\n", ratio1)
-		fmt.Printf("  LINEAR EXPECTATION: 1/8 = 0.125000\n")
-		fmt.Printf("  REFUTATION THRESHOLD: > 0.25 (underestimate < 4x)\n")
+		fmt.Printf("  POST-FIX EXPECTATION: > 0.5 (memory floor dominates at bs=1)\n")
 
-		if ratio1 > 0.25 {
-			fmt.Printf("  VERDICT: REFUTED for %s (ratio %.4f > 0.25)\n", ms.Name, ratio1)
+		if ratio1 > 0.5 {
+			fmt.Printf("  VERDICT: FIXED for %s (ratio %.4f > 0.5, memory floor active)\n", ms.Name, ratio1)
 		} else {
-			fmt.Printf("  VERDICT: CONFIRMED for %s (ratio %.4f <= 0.25, ~%.1fx underestimate at bs=1)\n",
-				ms.Name, ratio1, 1.0/ratio1)
+			fmt.Printf("  VERDICT: UNEXPECTED for %s (ratio %.4f <= 0.5, memory floor may not dominate)\n",
+				ms.Name, ratio1)
 		}
 		fmt.Println()
 
 		// Emit structured output for analyze.py
-		fmt.Printf("H34_KEY_RATIO model=%s ratio_bs1_vs_bs8=%.6f refuted=%t\n",
-			ms.Name, ratio1, ratio1 > 0.25)
+		fmt.Printf("H34_KEY_RATIO model=%s ratio_bs1_vs_bs8=%.6f mem_floor_active=%t\n",
+			ms.Name, ratio1, ratio1 > 0.5)
 	}
 }
 
@@ -104,6 +110,10 @@ func TestH34_GEMMTimeScaling_Llama8B(t *testing.T) {
 	mfuDB := loadTestMFUDatabase(t)
 	hwCalib := testHardwareCalib()
 	peakFlops := hwCalib.TFlopsPeak * 1e12
+	peakBW := hwCalib.BwPeakTBs * 1e12
+	if hwCalib.BwEfficiencyFactor != 0 {
+		peakBW *= hwCalib.BwEfficiencyFactor
+	}
 
 	mc := testModelConfig() // Llama-3.1-8B
 	batchSizes := []int{1, 2, 4, 8, 16, 32}
@@ -116,7 +126,7 @@ func TestH34_GEMMTimeScaling_Llama8B(t *testing.T) {
 
 	gemmTimes := make(map[int]float64)
 	for _, bs := range batchSizes {
-		gemmTimes[bs] = computeTransformerGEMMTimes(mc, bs, peakFlops, mfuDB, tpScaling)
+		gemmTimes[bs] = computeTransformerGEMMTimes(mc, bs, peakFlops, peakBW, mfuDB, tpScaling)
 	}
 
 	bs8Time := gemmTimes[8]
@@ -136,13 +146,14 @@ func TestH34_GEMMTimeScaling_Llama8B(t *testing.T) {
 			bs, gemmTimes[bs]*1e6, ratio, expected, deltaPct)
 	}
 
-	// Refutation check
+	// Post-fix check: with memory-bandwidth floor, bs=1 ratio should be
+	// significantly above the old linear expectation of 0.125.
 	ratio1 := gemmTimes[1] / bs8Time
-	fmt.Printf("\nH34_REFUTATION_CHECK: ratio_bs1_vs_bs8=%.6f threshold=0.25 refuted=%t\n",
-		ratio1, ratio1 > 0.25)
+	fmt.Printf("\nH34_POST_FIX_CHECK: ratio_bs1_vs_bs8=%.6f mem_floor_active=%t\n",
+		ratio1, ratio1 > 0.5)
 
-	if math.Abs(ratio1-0.125) < 0.01 {
-		t.Logf("CONFIRMED: bs=1 GEMM time is ~1/8 of bs=8 (ratio=%.4f), confirming linear proportionality", ratio1)
+	if ratio1 > 0.5 {
+		t.Logf("FIXED: bs=1 GEMM time ratio=%.4f (memory floor active, no longer 1/8 of bs=8)", ratio1)
 	}
 }
 
@@ -153,6 +164,10 @@ func TestH34_PerGEMMBreakdown(t *testing.T) {
 	mfuDB := loadTestMFUDatabase(t)
 	hwCalib := testHardwareCalib()
 	peakFlops := hwCalib.TFlopsPeak * 1e12
+	peakBW := hwCalib.BwPeakTBs * 1e12
+	if hwCalib.BwEfficiencyFactor != 0 {
+		peakBW *= hwCalib.BwEfficiencyFactor
+	}
 
 	mc := testModelConfig() // Llama-3.1-8B
 	batchSizes := []int{1, 2, 4, 8, 16, 32}
@@ -202,7 +217,7 @@ func TestH34_PerGEMMBreakdown(t *testing.T) {
 
 		times := make(map[int]float64)
 		for _, bs := range batchSizes {
-			gTime := computeGEMMTime(bs, g.k, g.n, peakFlops, mfuDB)
+			gTime := computeGEMMTime(bs, g.k, g.n, peakFlops, peakBW, mc.BytesPerParam, mfuDB)
 			times[bs] = gTime
 			fmt.Printf(" %10.3f", gTime*1e6)
 		}
@@ -339,7 +354,7 @@ func TestH34_RegimeAnalysis(t *testing.T) {
 
 	for _, bs := range batchSizes {
 		// GEMM compute time
-		gemmTimeS := computeTransformerGEMMTimes(mc, bs, peakFlops, mfuDB, tpScaling)
+		gemmTimeS := computeTransformerGEMMTimes(mc, bs, peakFlops, peakBW, mfuDB, tpScaling)
 
 		// Attention compute time
 		decodeReqs := make([]DecodeRequestConfig, bs)
@@ -397,7 +412,7 @@ func TestH34_RegimeAnalysis(t *testing.T) {
 		"BatchSize", "Current(us)", "Floor(us)", "Delta(us)", "Increase%")
 	fmt.Println("--------------------------------------------------------")
 
-	gemmTimeBS8 := computeTransformerGEMMTimes(mc, 8, peakFlops, mfuDB, tpScaling)
+	gemmTimeBS8 := computeTransformerGEMMTimes(mc, 8, peakFlops, peakBW, mfuDB, tpScaling)
 
 	for _, bs := range []int{1, 2, 4} {
 		decodeReqs := make([]DecodeRequestConfig, bs)
@@ -412,7 +427,7 @@ func TestH34_RegimeAnalysis(t *testing.T) {
 		currentUS := rooflineStepTime("", mc, hwCalib, step, tp, mfuDB)
 
 		// Compute what step time would be with GEMM floor = bs=8 GEMM time
-		gemmTimeCurrent := computeTransformerGEMMTimes(mc, bs, peakFlops, mfuDB, tpScaling)
+		gemmTimeCurrent := computeTransformerGEMMTimes(mc, bs, peakFlops, peakBW, mfuDB, tpScaling)
 		gemmDelta := gemmTimeBS8 - gemmTimeCurrent // additional GEMM time if we had floor
 
 		// Recompute: add gemmDelta to compute time
@@ -464,56 +479,55 @@ func TestH34_MultiModelSummary(t *testing.T) {
 	mfuDB := loadTestMFUDatabase(t)
 	hwCalib := testHardwareCalib()
 	peakFlops := hwCalib.TFlopsPeak * 1e12
+	peakBW := hwCalib.BwPeakTBs * 1e12
+	if hwCalib.BwEfficiencyFactor != 0 {
+		peakBW *= hwCalib.BwEfficiencyFactor
+	}
 	tpScaling := 1.0
 
-	fmt.Println("=== H34: Multi-Model bs=1/bs=8 GEMM Time Ratio Summary ===")
+	fmt.Println("=== H34: Multi-Model bs=1/bs=8 GEMM Time Ratio Summary (Post-Fix) ===")
 	fmt.Println()
-	fmt.Printf("%-18s %14s %14s %10s %12s %10s\n",
-		"Model", "GEMM_bs1(us)", "GEMM_bs8(us)", "Ratio", "Underest_X", "Verdict")
+	fmt.Printf("%-18s %14s %14s %10s %10s\n",
+		"Model", "GEMM_bs1(us)", "GEMM_bs8(us)", "Ratio", "Verdict")
 	fmt.Println("------------------------------------------------------------------------------------")
 
 	fmt.Println("H34_SUMMARY_START")
 
-	var confirmedCount, refutedCount int
+	var fixedCount, unexpectedCount int
 
 	for _, ms := range evalSuiteModels() {
 		mc := ms.toModelConfig()
 
-		gemmBS1 := computeTransformerGEMMTimes(mc, 1, peakFlops, mfuDB, tpScaling)
-		gemmBS8 := computeTransformerGEMMTimes(mc, 8, peakFlops, mfuDB, tpScaling)
+		gemmBS1 := computeTransformerGEMMTimes(mc, 1, peakFlops, peakBW, mfuDB, tpScaling)
+		gemmBS8 := computeTransformerGEMMTimes(mc, 8, peakFlops, peakBW, mfuDB, tpScaling)
 
 		ratio := 0.0
-		underest := 0.0
 		if gemmBS8 > 0 {
 			ratio = gemmBS1 / gemmBS8
-			underest = 1.0 / ratio
 		}
 
-		verdict := "CONFIRMED"
-		if ratio > 0.25 {
-			verdict = "REFUTED"
-			refutedCount++
+		verdict := "FIXED"
+		if ratio > 0.5 {
+			fixedCount++
 		} else {
-			confirmedCount++
+			verdict = "UNEXPECTED"
+			unexpectedCount++
 		}
 
-		fmt.Printf("%-18s %14.1f %14.1f %10.4f %12.1f %10s\n",
-			ms.Name, gemmBS1*1e6, gemmBS8*1e6, ratio, underest, verdict)
+		fmt.Printf("%-18s %14.1f %14.1f %10.4f %10s\n",
+			ms.Name, gemmBS1*1e6, gemmBS8*1e6, ratio, verdict)
 	}
 
 	fmt.Println("H34_SUMMARY_END")
 	fmt.Println()
-	fmt.Printf("H34_OVERALL: confirmed=%d refuted=%d total=%d\n",
-		confirmedCount, refutedCount, confirmedCount+refutedCount)
+	fmt.Printf("H34_OVERALL: fixed=%d unexpected=%d total=%d\n",
+		fixedCount, unexpectedCount, fixedCount+unexpectedCount)
 
-	if confirmedCount > 0 && refutedCount == 0 {
-		fmt.Println("H34_VERDICT=CONFIRMED")
-		t.Logf("HYPOTHESIS CONFIRMED: All %d models show GEMM time ratio bs1/bs8 <= 0.25", confirmedCount)
-	} else if refutedCount > 0 && confirmedCount == 0 {
-		fmt.Println("H34_VERDICT=REFUTED")
-		t.Logf("HYPOTHESIS REFUTED: All %d models show GEMM time ratio bs1/bs8 > 0.25", refutedCount)
-	} else {
-		fmt.Println("H34_VERDICT=MIXED")
-		t.Logf("MIXED: %d confirmed, %d refuted", confirmedCount, refutedCount)
+	if fixedCount > 0 && unexpectedCount == 0 {
+		fmt.Println("H34_VERDICT=FIXED")
+		t.Logf("FIX VERIFIED: All %d models show GEMM time ratio bs1/bs8 > 0.5 (memory floor active)", fixedCount)
+	} else if unexpectedCount > 0 {
+		fmt.Println("H34_VERDICT=UNEXPECTED")
+		t.Logf("UNEXPECTED: %d models show ratio <= 0.5 despite memory floor fix", unexpectedCount)
 	}
 }

@@ -48,6 +48,9 @@ This directory contains validated hypothesis experiments for BLIS. Each hypothes
 | H-Phase-Structure | Structural model | TTFT linear in input tokens, decode time linear in output tokens | **Confirmed** | R² = 1.000000 (adjusted); slopes match α/β predictions within <0.01% |
 | H-Reasoning-KV | Performance-regime | Multi-turn reasoning triggers preemption cliff proportional to peak demand | **Refuted** | Mean demand drives cliff (1.09x shift), not peak; surprise 63.8% prefix cache hit rate from context accumulation |
 | H-Step-Quantum | Structural model | Reducing step-time quantum proportionally reduces DES-to-M/M/1 divergence | **Refuted** | Divergence caused by alpha/beta split, not step quantization; reducing beta worsens divergence 47%→99% |
+| H27 | Structural model | Weighted-average mixed-batch combination underpredicts vs max(P,D) | **Confirmed** | 100% of 30 test cases underpredict; avg 12.2% below max(); up to 23.2% for prefill-dominated at TP=1 |
+| H28 | Structural model | Decode attention uses maxKVLen for all requests, overestimating heterogeneous batches | **Confirmed** | Overestimation = maxKVLen/meanKVLen exactly; 12.96x at bs=16 (anchor=4096, short=64); 30.5% step time excess |
+| H29 | Structural model | Prefill bucketing (min=512) overestimates short-sequence attention FLOPs | **Confirmed** | 2.75x overestimate at seqLen=100; 26x at seqLen=10; compute-bound regime so bucketing directly inflates latency |
 
 ## Running Experiments
 

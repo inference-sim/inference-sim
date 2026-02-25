@@ -343,7 +343,7 @@ func TestH33_StepTimeImpact(t *testing.T) {
 		// Recompute attention time with per-request MFU, keeping everything else the same.
 
 		// GEMM time (same for both methods)
-		gemmTimeS := computeTransformerGEMMTimes(mc, bs, peakFlops, mfuDB, tpScaling)
+		gemmTimeS := computeTransformerGEMMTimes(mc, bs, peakFlops, peakBW, mfuDB, tpScaling)
 
 		// Per-request attention time with individual MFU lookups
 		var adjustedAttnTimeS float64

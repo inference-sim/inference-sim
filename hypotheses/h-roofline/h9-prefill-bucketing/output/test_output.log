@@ -1,0 +1,37 @@
+=== RUN   TestH29_PrefillBucketingSweep
+--- PASS: TestH29_PrefillBucketingSweep (0.01s)
+=== RUN   TestH29_BucketBoundaryComparison
+--- PASS: TestH29_BucketBoundaryComparison (0.00s)
+=== RUN   TestH29_AttentionVsGEMM_Decomposition
+    h29_bucketing_experiment_test.go:294: seqLen=1 / seqLen=512 ratio: 0.3041 (1.0 = full bucketing dominance)
+    h29_bucketing_experiment_test.go:295: seqLen=1 step time: 4167 us, seqLen=512 step time: 13701 us
+    h29_bucketing_experiment_test.go:302: INFO: seqLen=1 is <50% of seqLen=512 — GEMM/memory dominate over attention bucketing
+--- PASS: TestH29_AttentionVsGEMM_Decomposition (0.00s)
+=== RUN   TestH29_OverestimationRatio
+    h29_bucketing_experiment_test.go:377: Reference time at seqLen=512: 13701 us
+    h29_bucketing_experiment_test.go:378: Overestimation ratio > 2x for 4/8 tested seqLen values
+    h29_bucketing_experiment_test.go:391: seqLen=100: stepTime=7365 us, linearExpected=2676 us, overestimation=2.75x
+    h29_bucketing_experiment_test.go:397: CONFIRMED threshold: seqLen=100 overestimation (2.75x) exceeds 2x
+    h29_bucketing_experiment_test.go:391: seqLen=50: stepTime=6928 us, linearExpected=1338 us, overestimation=5.18x
+--- PASS: TestH29_OverestimationRatio (0.00s)
+=== RUN   TestH29_ComputeVsMemoryBound
+    h29_bucketing_experiment_test.go:459: seqLen=1: compute=880 us, memory=4167 us, ratio=0.21 (memory-bound)
+    h29_bucketing_experiment_test.go:459: seqLen=10: compute=6979 us, memory=4168 us, ratio=1.67 (compute-bound)
+    h29_bucketing_experiment_test.go:459: seqLen=50: compute=6928 us, memory=4172 us, ratio=1.66 (compute-bound)
+    h29_bucketing_experiment_test.go:459: seqLen=100: compute=7365 us, memory=4177 us, ratio=1.76 (compute-bound)
+    h29_bucketing_experiment_test.go:459: seqLen=256: compute=8350 us, memory=4194 us, ratio=1.99 (compute-bound)
+    h29_bucketing_experiment_test.go:459: seqLen=512: compute=13701 us, memory=4221 us, ratio=3.25 (compute-bound)
+    h29_bucketing_experiment_test.go:459: seqLen=1024: compute=26308 us, memory=4275 us, ratio=6.15 (compute-bound)
+--- PASS: TestH29_ComputeVsMemoryBound (0.00s)
+PASS
+ok  	github.com/inference-sim/inference-sim/sim	0.181s
+testing: warning: no tests to run
+PASS
+ok  	github.com/inference-sim/inference-sim/sim/cluster	0.274s [no tests to run]
+?   	github.com/inference-sim/inference-sim/sim/internal/testutil	[no test files]
+testing: warning: no tests to run
+PASS
+ok  	github.com/inference-sim/inference-sim/sim/trace	0.404s [no tests to run]
+testing: warning: no tests to run
+PASS
+ok  	github.com/inference-sim/inference-sim/sim/workload	0.512s [no tests to run]

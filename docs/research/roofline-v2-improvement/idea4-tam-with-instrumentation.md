@@ -54,7 +54,7 @@ This document lifts that constraint. We now have access to an [instrumented vLLM
 
 1. **Sweep curve:** Plot TPOT MAPE vs. `perLayerOverhead` for train and test sets separately. If the curves have similar shape and minimum location, the parameter generalizes. If the test-set minimum diverges from the train-set minimum by >30μs, the parameter is model-family-dependent and a single global value is insufficient.
 
-2. **Per-model-family optima:** For each of the 5 model families, find the value that minimizes family-specific TPOT MAPE on train data. If family optima span a >2× range (e.g., 7B wants 60μs, 70B wants 150μs), this motivates per-family `perLayerOverhead` values in `hardware_config_roofline_valid.json`.
+2. **Per-model-family optima:** For each of the 5 model families, find the value that minimizes family-specific TPOT MAPE on train data. If family optima span a >2× range (e.g., 7B wants 60μs, 70B wants 150μs), this motivates per-family `perLayerOverhead` values in `hardware_config.json`.
 
 3. **Sensitivity:** Measure the width of the "flat region" where TPOT MAPE is within 1pp of the minimum. A wide flat region (≥50μs) means the exact value doesn't matter — use the analytical 100μs. A narrow region (<20μs) means the parameter is sensitive and calibration matters.
 

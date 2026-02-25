@@ -256,7 +256,7 @@ The formula produces the wrong sign for 7B TP=1 (overpredicts instead of underpr
 
 ## Implications for Users
 
-1. **Model-scaled overhead is the recommended Tier 0 approach.** Set `perLayerOverhead: 100` in `hardware_config_roofline_valid.json`. The engine automatically computes the effective overhead as `100 × num_hidden_layers / tp` per step. A single hardware config works across all models — no per-model configs needed.
+1. **Model-scaled overhead is the recommended Tier 0 approach.** Set `perLayerOverhead: 100` in `hardware_config.json`. The engine automatically computes the effective overhead as `100 × num_hidden_layers / tp` per step. A single hardware config works across all models — no per-model configs needed.
 
 2. **Overall accuracy after H1+H2b:** TPOT MAPE drops from the raw baseline of ~47.7% to **17.3%** — within striking distance of the Tier 0 target (<20%).
 

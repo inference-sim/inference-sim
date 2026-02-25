@@ -23,7 +23,7 @@ type ModelConfig struct {
 // --- Hardware Data Structures ---
 
 // HardwareCalib contains GPU specifications for the roofline latency model.
-// All fields map to hardware_config_roofline_valid.json.
+// All fields map to hardware_config.json.
 type HardwareCalib struct {
 	TFlopsPeak float64 `json:"TFlopsPeak"` // Peak FP16 TFLOP/s (e.g. 989.5 for H100 SXM)
 	BwPeakTBs  float64 `json:"BwPeakTBs"`  // Peak HBM bandwidth in TB/s (e.g. 3.35 for H100 SXM)

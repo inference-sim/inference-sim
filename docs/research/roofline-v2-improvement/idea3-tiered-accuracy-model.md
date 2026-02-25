@@ -47,7 +47,7 @@ Each hypothesis is a testable claim about what the simulator gets wrong. The pro
 
 The model assumes GPUs sustain their datasheet peak HBM bandwidth. In practice, DRAM refresh cycles, bank conflicts, ECC overhead, and memory controller scheduling reduce sustained bandwidth to ~80% of theoretical peak. This is a well-known hardware property — NVIDIA STREAM benchmarks on H100 show 2650-2750 GB/s sustained against 3350 GB/s peak.
 
-- BLIS applies `BwEfficiencyFactor` from `hardware_config_roofline_valid.json` (0.82 for H100) — [`sim/roofline_step.go:244-246`](sim/roofline_step.go#L244)
+- BLIS applies `BwEfficiencyFactor` from `hardware_config.json` (0.82 for H100) — [`sim/roofline_step.go:244-246`](sim/roofline_step.go#L244)
 - InferSim applies 0.80 efficiency on every GPU it supports: H20 ([line 23](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py#L23)), H800 ([line 36](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py#L36)), H200 ([line 49](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py#L49)), GB200 ([line 59](https://github.com/alibaba/InferSim/blob/main/hardware/gpu.py#L59))
 - Impact: 22% underestimate on memory-bound steps (`3350/2744 = 1.221`)
 
@@ -70,7 +70,7 @@ The model captures GPU kernel execution time but misses the CPU-side overhead of
 
 **Status**: H2 (fixed overhead) was superseded by H2b (model-scaled overhead). BLIS now uses `PerLayerCPUOverhead × num_layers / tp` — see H2b.
 
-- BLIS overhead: `perLayerOverhead: 100` (μs/layer) — [`hardware_config_roofline_valid.json:6`](hardware_config_roofline_valid.json#L6), applied at [`sim/roofline_step.go:422-426`](sim/roofline_step.go#L422)
+- BLIS overhead: `perLayerOverhead: 100` (μs/layer) — [`hardware_config.json:6`](hardware_config.json#L6), applied at [`sim/roofline_step.go:422-426`](sim/roofline_step.go#L422)
 - InferSim decode overhead: `tpot += 5` (5ms) — [`models/model.py:229`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L229)
 - InferSim prefill overhead: `ttft += 30` (30ms) — [`models/model.py:177`](https://github.com/alibaba/InferSim/blob/main/models/model.py#L177)
 
@@ -467,7 +467,7 @@ Tier 0: Fully deterministic. Tier 1: Deterministic given same trace + seed (INV-
 | BLIS Q/K/V/O GEMMs | [`sim/roofline_step.go:162-194`](sim/roofline_step.go#L162) |
 | BLIS mixed-batch weights | [`sim/roofline_step.go:400-411`](sim/roofline_step.go#L400) |
 | BLIS CPU overhead | [`sim/roofline_step.go:422-426`](sim/roofline_step.go#L422) |
-| BLIS hardware config | [`hardware_config_roofline_valid.json`](hardware_config_roofline_valid.json) |
+| BLIS hardware config | [`hardware_config.json`](hardware_config.json) |
 | BLIS calibration | [`sim/workload/calibrate.go`](sim/workload/calibrate.go) |
 | BLIS Mixtral config | [`model_configs/mixtral-8x7b-v0.1/config.json`](model_configs/mixtral-8x7b-v0.1/config.json) |
 | InferSim MoE layer | [`layers/moe.py`](https://github.com/alibaba/InferSim/blob/main/layers/moe.py) |

@@ -1,0 +1,8 @@
+seq_len,compute_time_us,memory_time_us,compute_to_memory_ratio,regime
+1,880,4167,0.2112,memory-bound
+10,6979,4168,1.6744,compute-bound
+50,6928,4172,1.6606,compute-bound
+100,7365,4177,1.7632,compute-bound
+256,8350,4194,1.9909,compute-bound
+512,13701,4221,3.2459,compute-bound
+1024,26308,4275,6.1539,compute-bound

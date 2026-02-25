@@ -118,8 +118,14 @@ func calculateMemoryAccessBytes(
 // --- Helper Functions for GEMM Time Computation ---
 
 // computeGEMMTime calculates time for a single GEMM operation using MFU lookup
-// Formula: time = flops / (peakFlops * mfu)
-func computeGEMMTime(m, k, n int, peakFlops float64, mfuDB *MFUDatabase) float64 {
+// with a memory-bandwidth floor.
+//
+// At small M (batch size), the compute time shrinks linearly with M while
+// the weight matrix [K×N] must still be fully loaded from HBM. The memory
+// floor ensures that GEMM time never drops below weight-load time:
+//
+//	time = max(flops / (peakFlops * mfu), weightBytes / peakBW)
+func computeGEMMTime(m, k, n int, peakFlops, peakBW, bytesPerParam float64, mfuDB *MFUDatabase) float64 {
 	// GEMM FLOPs: 2 * m * k * n (multiply-add)
 	flops := 2.0 * float64(m) * float64(k) * float64(n)
 
@@ -127,7 +133,14 @@ func computeGEMMTime(m, k, n int, peakFlops float64, mfuDB *MFUDatabase) float64
 	mfu := mfuDB.GetGEMMmfu(m, k, n)
 
 	// Compute time in seconds
-	return flops / (peakFlops * mfu)
+	computeTime := flops / (peakFlops * mfu)
+
+	// Memory-bandwidth floor: weight matrix [k × n] must be loaded from HBM.
+	// At small M, loading weights takes longer than the FLOPs computation.
+	weightBytes := float64(k) * float64(n) * bytesPerParam
+	memFloor := weightBytes / peakBW
+
+	return math.Max(computeTime, memFloor)
 }
 
 // computeTransformerGEMMTimes calculates total time for all GEMM projections in transformer
@@ -137,6 +150,7 @@ func computeTransformerGEMMTimes(
 	modelConfig ModelConfig,
 	batchSize int,
 	peakFlops float64,
+	peakBW float64,
 	mfuDB *MFUDatabase,
 	tpScaling float64,
 ) float64 {
@@ -150,6 +164,7 @@ func computeTransformerGEMMTimes(
 
 	headDim := dModel / nHeads
 	dKV := nKVHeads * headDim
+	bytesPerParam := modelConfig.BytesPerParam
 
 	// MLP dimensions (SwiGLU)
 	dFF := 4 * dModel
@@ -163,33 +178,33 @@ func computeTransformerGEMMTimes(
 		// === Attention GEMMs ===
 
 		// Q projection: [batch_size, dModel] @ [dModel, dModel] = [batch_size, dModel]
-		qTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, mfuDB)
+		qTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, peakBW, bytesPerParam, mfuDB)
 		totalTime += qTime * tpScaling
 
 		// K projection: [batch_size, dModel] @ [dModel, dKV] = [batch_size, dKV]
-		kTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, mfuDB)
+		kTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, peakBW, bytesPerParam, mfuDB)
 		totalTime += kTime * tpScaling
 
 		// V projection: [batch_size, dModel] @ [dModel, dKV] = [batch_size, dKV]
-		vTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, mfuDB)
+		vTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, peakBW, bytesPerParam, mfuDB)
 		totalTime += vTime * tpScaling
 
 		// O projection: [batch_size, dModel] @ [dModel, dModel] = [batch_size, dModel]
-		oTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, mfuDB)
+		oTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, peakBW, bytesPerParam, mfuDB)
 		totalTime += oTime * tpScaling
 
 		// === MLP GEMMs (SwiGLU) ===
 
 		// Gate projection: [batch_size, dModel] @ [dModel, dFF] = [batch_size, dFF]
-		gateTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, mfuDB)
+		gateTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, peakBW, bytesPerParam, mfuDB)
 		totalTime += gateTime * tpScaling
 
 		// Up projection: [batch_size, dModel] @ [dModel, dFF] = [batch_size, dFF]
-		upTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, mfuDB)
+		upTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, peakBW, bytesPerParam, mfuDB)
 		totalTime += upTime * tpScaling
 
 		// Down projection: [batch_size, dFF] @ [dFF, dModel] = [batch_size, dModel]
-		downTime := computeGEMMTime(batchSize, dFF, dModel, peakFlops, mfuDB)
+		downTime := computeGEMMTime(batchSize, dFF, dModel, peakFlops, peakBW, bytesPerParam, mfuDB)
 		totalTime += downTime * tpScaling
 	}
 
@@ -259,15 +274,8 @@ func rooflineStepTime(
 	if len(stepConfig.DecodeRequests) > 0 {
 		hasDecode = true
 
-		// Aggregate batch size and find max kv_len
+		// Aggregate batch size
 		totalBatchSize := len(stepConfig.DecodeRequests)
-		maxKVLen := int64(0)
-
-		for _, req := range stepConfig.DecodeRequests {
-			if req.ProgressIndex > maxKVLen {
-				maxKVLen = req.ProgressIndex
-			}
-		}
 
 		// === GEMM Projections ===
 		// Single aggregated lookup for all decode requests
@@ -275,25 +283,39 @@ func rooflineStepTime(
 			modelConfig,
 			totalBatchSize,
 			peakFlops,
+			peakBW,
 			mfuDB,
 			tpScaling,
 		)
 
 		// === Attention Core ===
-		// Calculate total attention core FLOPs across all layers
-		attnCoreFLOPs := calculateAttentionCoreFLOPs(
-			modelConfig.NumHeads,
-			modelConfig.NumKVHeads,
-			modelConfig.HiddenDim,
-			totalBatchSize,
-			maxKVLen,
-		) * float64(modelConfig.NumLayers)
+		// Sum per-request attention FLOPs with actual KV lengths, using
+		// FLOPs-weighted MFU to account for heterogeneous KV lengths.
+		//
+		// Each request's MFU is looked up at (totalBatchSize, req.kvLen):
+		// the batch dimension stays at the actual dispatch size (affects
+		// kernel launch overhead), while the KV dimension varies per-request
+		// (shorter KV → lower arithmetic intensity → lower MFU).
+		//
+		// effectiveMFU = sum(reqFLOPs_i * MFU(totalBS, kvLen_i)) / sum(reqFLOPs_i)
+		var attnCoreFLOPs float64
+		var weightedMFUSum float64
+		for _, req := range stepConfig.DecodeRequests {
+			reqFLOPs := calculateAttentionCoreFLOPs(
+				modelConfig.NumHeads,
+				modelConfig.NumKVHeads,
+				modelConfig.HiddenDim,
+				1,
+				req.ProgressIndex,
+			) * float64(modelConfig.NumLayers)
+			attnCoreFLOPs += reqFLOPs
+			reqMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(req.ProgressIndex), tp)
+			weightedMFUSum += reqFLOPs * reqMFU
+		}
+		effectiveMFU := weightedMFUSum / attnCoreFLOPs
 
-		// Lookup decode MFU
-		attnMFU := mfuDB.GetAttnDecodeMFU(totalBatchSize, int(maxKVLen), tp)
-
-		// Formula: time = flops / (peakFlops * mfu)
-		attnCoreTimeS := attnCoreFLOPs / (peakFlops * attnMFU) * tpScaling
+		// Formula: time = flops / (peakFlops * effectiveMFU)
+		attnCoreTimeS := attnCoreFLOPs / (peakFlops * effectiveMFU) * tpScaling
 
 		decodeComputeS = gemmTimeS + attnCoreTimeS
 
@@ -361,25 +383,49 @@ func rooflineStepTime(
 				modelConfig,
 				totalPrefillTokens,
 				peakFlops,
+				peakBW,
 				mfuDB,
 				tpScaling,
 			)
 
 			// === Attention Core ===
-			// Calculate attention core FLOPs for this bucket
-			attnCoreFLOPs := calculateAttentionCoreFLOPs(
-				modelConfig.NumHeads,
-				modelConfig.NumKVHeads,
-				modelConfig.HiddenDim,
-				totalPrefillTokens,
-				int64(bucketSeqLen),
-			) * float64(modelConfig.NumLayers)
+			// Sum per-request attention FLOPs with actual sequence lengths.
+			// Attention kernels compute over actual seqLen, not padded bucket values.
+			// Bucketing affects kernel dispatch/tiling selection (hence MFU) but not FLOPs.
+			var attnCoreFLOPs float64
+			for _, req := range requests {
+				actualSeqLen := req.ProgressIndex + int64(req.NumNewPrefillTokens)
+				attnCoreFLOPs += calculateAttentionCoreFLOPs(
+					modelConfig.NumHeads,
+					modelConfig.NumKVHeads,
+					modelConfig.HiddenDim,
+					req.NumNewPrefillTokens,
+					actualSeqLen,
+				) * float64(modelConfig.NumLayers)
+			}
 
 			// Lookup prefill MFU
 			attnMFU := mfuDB.GetAttnPrefillMFU(bucketSeqLen)
 
 			// Formula: time = flops / 1.8 / (peakFlops * mfu)
-			// Note: /1.8 factor from InferSim (hardware-specific adjustment)
+			//
+			// The /1.8 factor corrects for causal attention masking. calculateAttentionCoreFLOPs
+			// computes FLOPs for the full (non-causal) attention matrix (Q·K^T and A·V over
+			// the entire seqLen context). With a causal mask, each token attends to only
+			// preceding tokens on average, so the theoretical FLOPs are ~half (÷2.0).
+			// However, FlashAttention's tiling strategy doesn't perfectly skip masked
+			// regions — tile boundaries cause some wasted computation — so the empirical
+			// savings factor is ÷1.8 rather than ÷2.0.
+			//
+			// This matches InferSim's prefill_attn_core (InferSim/layers/attn.py:86),
+			// where the prefill MFU benchmark (fa3_mha_prefill.py:134) uses seqLen/2
+			// (causal halving) in its FLOPs numerator. The /1.8 here and /2 in the
+			// benchmark are consistent: both account for causal masking, with /1.8
+			// calibrated against measured kernel timings.
+			//
+			// Note: decode attention does NOT have this factor because decode computes
+			// attention over the full KV cache (no causal mask savings — one new token
+			// attends to all prior tokens).
 			attnCoreTimeS := attnCoreFLOPs / 1.8 / (peakFlops * attnMFU) * tpScaling
 
 			prefillComputeS += gemmTimeS + attnCoreTimeS
@@ -405,29 +451,12 @@ func rooflineStepTime(
 	var stepHardwareS float64
 
 	if hasPrefill && hasDecode {
+		// GPU executes both phases; step time is bounded by the slower phase.
+		// Any convex combination w*P + (1-w)*D < max(P,D) when P ≠ D,
+		// systematically underestimating. Use max() consistently with pure-phase branches.
 		prefillTimeS := math.Max(prefillComputeS, prefillMemoryS)
 		decodeTimeS := math.Max(decodeComputeS, decodeMemoryS)
-
-		prefillTokens := 0.0
-		for _, req := range stepConfig.PrefillRequests {
-			prefillTokens += float64(req.NumNewPrefillTokens)
-		}
-		decodeTokens := float64(len(stepConfig.DecodeRequests))
-		totalTokens := prefillTokens + decodeTokens
-
-		// Adaptive weighting based on token distribution
-		if prefillTokens > decodeTokens*4 && prefillTokens > 100 {
-			// Prefill-dominated: apply blending
-			stepHardwareS = 0.75*prefillTimeS + 0.25*decodeTimeS
-		} else if decodeTokens > prefillTokens*2 && decodeTokens > 50 {
-			// Decode-dominated: weight towards decode
-			stepHardwareS = 0.35*prefillTimeS + 0.65*decodeTimeS
-		} else {
-			// Balanced mix: weighted average
-			prefillWeight := prefillTokens / totalTokens
-			decodeWeight := decodeTokens / totalTokens
-			stepHardwareS = prefillWeight*prefillTimeS + decodeWeight*decodeTimeS
-		}
+		stepHardwareS = math.Max(prefillTimeS, decodeTimeS)
 	} else if hasPrefill {
 		stepHardwareS = math.Max(prefillComputeS, prefillMemoryS)
 	} else if hasDecode {

@@ -1,40 +1,14 @@
 {
     "H100": {
-        "TFlopsPeak": 989.5,
-        "BwPeakTBs": 3.35,
-        "BwEffConstant": 0.72,
-        "TOverheadMicros": 50.0,
-        "perLayerOverhead": 5.0,
-        "mfuPrefill": 0.65,
-        "mfuDecode": 0.12,
-        "allReduceLatency": 20.0,
-        "tpScalingExponent": 0.8,
-        "decodeTpScalingExponent": 1.0,
-        "mfuPrefillMultiplier": 1.0,
-        "mfuDecodeMultiplier": 1.0,
-        "prefillBwFactor": 1.0,
-        "decodeBwFactor": 1.0,
-        "vectorPeakFraction": 0.1,
-        "prefillOverheadMicros": 100.0,
-        "mixedPrefillOverheadMicros": 50.0
-    },
-    "A100-SXM": {
-        "TFlopsPeak": 312.0,
-        "BwPeakTBs": 2.039,
-        "BwEffConstant": 0.70,
-        "TOverheadMicros": 60.0,
-        "perLayerOverhead": 6.0,
-        "mfuPrefill": 0.60,
-        "mfuDecode": 0.10,
-        "allReduceLatency": 25.0,
-        "tpScalingExponent": 0.75,
-        "decodeTpScalingExponent": 1.0,
-        "mfuPrefillMultiplier": 1.0,
-        "mfuDecodeMultiplier": 1.0,
-        "prefillBwFactor": 1.0,
-        "decodeBwFactor": 1.0,
-        "vectorPeakFraction": 0.1,
-        "prefillOverheadMicros": 120.0,
-        "mixedPrefillOverheadMicros": 60.0
-    }
+		"TFlopsPeak":        989.5,
+		"BwPeakTBs":         3.35,
+		"bwEfficiencyFactor": 0.82,
+		"perLayerOverhead":   100
+	},
+	"A100-SXM": {
+		"TFlopsPeak":        312,
+		"BwPeakTBs":         2.039,
+		"bwEfficiencyFactor": 0.80,
+		"perLayerOverhead":   100
+	}
 }

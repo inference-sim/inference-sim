@@ -21,6 +21,11 @@ This directory contains scripts for evaluating InferSim against other LLM infere
   - Compares predicted vs actual metrics
   - Reports mean percentage errors
 
+- **`plot_benchmark_results.py`** - Plots evaluation results
+  - Reads evaluation results JSON (from `blis_evaluator.py --save`)
+  - Generates per-workload E2E bar charts, cross-workload comparisons, and all-metrics heatmap
+  - Can be used standalone or called automatically via `blis_evaluator.py --plot`
+
 ### Vidur Simulator
 
 To use `vidur_evaluator.py`, you need to clone and set up the Vidur simulator:
@@ -50,12 +55,32 @@ python aggregate_ground_truth.py
 ### 2. Evaluate BLIS
 
 ```bash
+# Print results to terminal
 python blis_evaluator.py \
     --ground-truth eval/combined_ground_truth.json \
     --blis-binary path/to/simulation_worker
+
+# Evaluate and generate plots in one step
+python blis_evaluator.py \
+    --ground-truth eval/combined_ground_truth.json \
+    --blis-binary path/to/simulation_worker \
+    --plot
+
+# Save results JSON and generate plots
+python blis_evaluator.py \
+    --ground-truth eval/combined_ground_truth.json \
+    --blis-binary path/to/simulation_worker \
+    --save --plot --output-dir eval/roofline_v2_results
 ```
 
-### 3. Evaluate Vidur
+### 3. Plot from saved results (standalone)
+
+```bash
+python plot_benchmark_results.py eval/evaluation_results.json \
+    --output-dir eval/roofline_v2_results
+```
+
+### 4. Evaluate Vidur
 
 ```bash
 python vidur_evaluator.py \
