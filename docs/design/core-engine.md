@@ -1,0 +1,286 @@
+# Core Engine
+
+This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see [Cluster Architecture](architecture.md).
+
+## Overview
+
+Each BLIS instance is a self-contained discrete event simulator. The engine maintains an event queue (min-heap), processes events in timestamp order, and advances a simulation clock. The core loop is:
+
+```
+while events remain and clock < horizon:
+    event = pop earliest event from queue
+    advance clock to event.timestamp
+    execute event (may produce new events)
+```
+
+The engine models the full vLLM inference pipeline: request arrival, queueing, batch formation, step execution, KV cache management, and latency estimation — all without real GPU hardware.
+
+## Event Queue
+
+The event queue is a min-heap ordered by event timestamp. Events represent state transitions in the simulation:
+
+| Event Type | Trigger | Effect |
+|------------|---------|--------|
+| `ArrivalEvent` | Request enters system | Computes queueing delay (alpha overhead), schedules `QueuedEvent` |
+| `QueuedEvent` | Request enters wait queue | Adds request to wait queue; if no `StepEvent` exists, schedules one (work-conserving) |
+| `StepEvent` | Batch ready for execution | Runs the 4-phase Step() cycle (see below) |
+| `ScheduledEvent` | Request moves to running batch | Records scheduling timestamp for metrics |
+| `PreemptionEvent` | KV cache eviction | Records preemption for metrics and tracing |
+| `RequestLeftEvent` | Request completes | Records final E2E metrics |
+
+**Clock monotonicity (INV-3):** The simulation clock never decreases. Events are processed in strictly non-decreasing timestamp order.
+
+**Work-conserving (INV-8):** After every step completion, if the wait queue is non-empty, a `StepEvent` must exist in the event queue. The simulator never idles while work is waiting.
+
+See the [Event Processing diagram](diagrams/event-processing.excalidraw) for a visual representation.
+
+## Step Phases
+
+The `Step()` function is a 4-line orchestrator that delegates to four phases:
+
+### Phase 1: Schedule Batch (`scheduleBatch`)
+
+1. Assign priority scores to all queued requests via the priority policy
+2. Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-based)
+3. Invoke batch formation to select which requests enter the running batch
+4. Schedule `PreemptionEvent` for any evicted requests
+5. Schedule `ScheduledEvent` for any newly admitted requests
+
+### Phase 2: Execute Batch Step (`executeBatchStep`)
+
+1. Compute step time via the latency model based on batch composition
+2. For each request in the batch:
+   - If in prefill phase: advance the progress index through input tokens (respecting chunked prefill limits)
+   - If in decode phase: advance the progress index by one output token
+   - Record TTFT at the prefill-to-decode boundary
+3. Advance the simulation clock by the computed step time
+
+### Phase 3: Process Completions (`processCompletions`)
+
+1. **First pass:** Record TTFT for any requests that just finished prefill (two-pass design ensures TTFT is recorded before E2E)
+2. **Second pass:** Identify completed requests (all output tokens generated), release their KV blocks, record E2E metrics, and schedule `RequestLeftEvent`
+
+### Phase 4: Schedule Next Step (`scheduleNextStep`)
+
+1. If the running batch still has requests, schedule an immediate `StepEvent`
+2. If the running batch is empty but the wait queue has requests, schedule an immediate `StepEvent` (work-conserving)
+3. If both are empty, do nothing (next event will be a future arrival)
+
+## Request Lifecycle
+
+Requests follow a linear state machine with one exception (preemption):
+
+```
+                      ┌─────────────────────────────────┐
+                      │         Preemption               │
+                      │    (re-enqueue at front)         │
+                      ▼                                  │
+  Arrival ──▶ Queued ──▶ Running ──▶ Completed
+               │                        │
+               │                        ▼
+               │                   RequestLeft
+               │
+  Arrival ──▶ DroppedUnservable
+             (input too large for KV cache)
+```
+
+See the [Request Lifecycle diagram](diagrams/request-lifecycle.excalidraw) for the full state machine.
+
+### States
+
+| State | Description |
+|-------|-------------|
+| **Queued** | In wait queue, not yet in running batch. Ordered by scheduling policy. |
+| **Running** | In running batch, actively being processed. Progressing through prefill or decode. |
+| **Completed** | All output tokens generated. KV blocks released. Metrics recorded. |
+
+### Key Timestamps
+
+| Timestamp | When Set | Used For |
+|-----------|----------|----------|
+| `ArrivalTime` | Request creation | E2E calculation baseline |
+| `EnqueueTime` | After alpha queueing delay | Scheduling delay = ScheduleTime - EnqueueTime |
+| `FirstTokenTime` | End of prefill phase | TTFT = FirstTokenTime - ArrivalTime |
+| `CompletionTime` | All tokens generated | E2E = CompletionTime - ArrivalTime |
+
+**Causality invariant (INV-5):** `ArrivalTime <= EnqueueTime <= ScheduleTime <= CompletionTime`
+
+### Preemption
+
+When KV cache pressure forces eviction, running requests are preempted:
+1. Request is removed from the running batch (tail-first eviction)
+2. Its KV blocks are freed
+3. It is re-enqueued at the front of the wait queue (not the back)
+4. A `PreemptionEvent` is recorded for tracing
+
+Preempted requests retain their progress — when re-scheduled, their previously computed prefix blocks may be found in the KV cache, reducing recomputation.
+
+### Dropped Requests
+
+Requests whose input tokens require more KV blocks than the total cache capacity are dropped at enqueue time with a `DroppedUnservable` counter increment. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.
+
+## Batch Formation
+
+BLIS models vLLM's continuous batching algorithm through the `VLLMBatchFormation` implementation.
+
+### Two-Phase Algorithm
+
+**Phase 1: Continuing Requests**
+Process requests already in the running batch:
+- Apply chunked prefill limits (`--long-prefill-token-threshold`)
+- Allocate token budget for decode tokens
+- If KV allocation fails for a continuing request, preempt requests from the batch tail to free blocks
+
+**Phase 2: New Requests**
+Dequeue requests from the wait queue:
+- Compute cached prefix blocks (prefix caching reduces allocation needs)
+- Allocate KV blocks for uncached prefix plus maximum token requirements
+- Stop dequeuing when allocation fails (cache full) or token budget exhausted
+
+### Constraints
+
+| Constraint | Flag | Effect |
+|------------|------|--------|
+| Max batch size | `--max-num-running-reqs` | Limits number of concurrent requests in the running batch |
+| Token budget | `--max-num-scheduled-tokens` | Limits total new tokens across all running requests per step |
+| Chunked prefill | `--long-prefill-token-threshold` | Splits long prefills across multiple steps |
+
+### Preemption Strategy
+
+When KV allocation fails for a continuing request:
+1. Evict requests from the batch tail (reverse order of admission)
+2. Free their KV blocks
+3. Re-enqueue evicted requests at the front of the wait queue
+4. Retry allocation for the original request
+5. **Circuit breaker:** Stop if allocation still fails after exhausting the batch, or if the request itself is unservable
+
+## KV Cache Management
+
+The KV cache simulates GPU memory organized as fixed-size blocks. Each block holds `--block-size-in-tokens` tokens (default: 16).
+
+### Single-Tier Cache
+
+The default KV cache operates entirely in GPU memory:
+
+- **Block allocation:** Requests are allocated blocks proportional to their token count
+- **Prefix caching:** Hierarchical block hashing enables prefix sharing across requests. Each block's hash chains with the prior block's hash, creating semantic prefix signatures. When a new request shares a prefix with an existing request, the cached blocks are reused rather than reallocated.
+- **LRU eviction:** Free blocks are managed via a doubly-linked list with LRU ordering
+- **Reference counting:** Shared blocks (prefix caching) are reference-counted and exempt from eviction while any request references them
+- **Transactional allocation:** Multi-block allocations are rolled back on failure (no partial allocation)
+
+**Conservation invariant (INV-4):** `allocated_blocks + free_blocks = total_blocks` at all times.
+
+### Tiered Cache (GPU + CPU)
+
+When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache:
+
+- **GPU tier:** Full KV cache with prefix caching and LRU eviction
+- **CPU tier:** Simple capacity store for offloaded blocks
+- **Offload trigger:** When GPU utilization exceeds `--kv-offload-threshold` (default: 0.9), blocks are offloaded to CPU
+- **Reload:** On GPU allocation failure, blocks are reloaded from CPU with a transfer latency penalty
+- **Transfer latency:** `base_latency + num_blocks / bandwidth` (non-blocking, added to step time)
+- **Thrashing detection:** Blocks offloaded and reloaded in the same clock tick increment a thrashing counter
+
+## Latency Models
+
+BLIS predicts GPU step time through one of two latency model backends. The choice is made automatically based on available configuration.
+
+### Blackbox Model (Default)
+
+Uses trained regression coefficients to predict step time:
+
+```
+StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
+QueueingTime = alpha0 + alpha1 * input_length
+OutputTokenProcessingTime = alpha2
+```
+
+- **Beta coefficients** model GPU execution time as a linear function of batch composition
+- **Alpha coefficients** model non-GPU overhead (tokenization, API serialization, output processing)
+- Coefficients are trained offline via Bayesian optimization against real vLLM measurements
+- Pre-trained coefficients for common model/GPU combinations are shipped in `defaults.yaml`
+
+See [Simulation Approach](../approach.md) for the mathematical foundations.
+
+### Roofline Model (Analytical)
+
+Uses analytical FLOPs/bandwidth estimation when no trained coefficients are available:
+
+```
+Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
+Step Time  = Prefill Phase Time + Decode Phase Time
+```
+
+- Requires HuggingFace `config.json` (model architecture: layers, heads, hidden dim)
+- Requires `hardware_config.json` (GPU specs: peak TFLOPS, peak bandwidth, MFU)
+- Accounts for Tensor Parallelism, All-Reduce latency, and per-layer overheads
+- No training data needed — works for any supported model immediately
+
+See [Roofline Estimation](../roofline.md) for implementation details.
+
+### Alpha Overhead
+
+Alpha overhead models non-GPU processing time:
+- **Queueing time** (`alpha0 + alpha1 * input_length`): Delays request enqueue but does not block the server. The simulation clock is not advanced by this overhead.
+- **Output token processing time** (`alpha2`): Added to per-request ITL/TTFT metrics but does not block the next step.
+
+This is architecturally correct for vLLM, where CPU post-processing (tokenization, output serialization) runs concurrently with GPU execution.
+
+## Scheduling Policies
+
+Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance.
+
+| Policy | Ordering Rule | Use Case |
+|--------|---------------|----------|
+| `fcfs` | No reordering (arrival order) | Default, fair |
+| `priority-fcfs` | Priority descending, then arrival ascending | SLO-aware scheduling |
+| `sjf` | Input token count ascending, then arrival ascending | Shortest-job-first for TTFT optimization |
+| `reverse-priority` | Priority ascending (starves high-priority) | Pathological testing only |
+
+### Priority Policies
+
+Priority policies assign a numeric score to each request before scheduling:
+
+| Policy | Score Computation | Behavior |
+|--------|-------------------|----------|
+| `constant` | Fixed score for all requests | No differentiation (default) |
+| `slo-based` | `base + age_weight * (clock - arrival)` | Favors older requests, prevents starvation |
+| `inverted-slo` | `base - age_weight * age` | Starves older requests (pathological) |
+
+## Metrics
+
+BLIS records per-request and aggregate metrics throughout the simulation.
+
+### Per-Request Metrics
+
+| Metric | Definition |
+|--------|------------|
+| **TTFT** | `alpha_queueing + sum(prefill_step_times) - arrival_time` |
+| **E2E** | `alpha_overhead + sum(all_step_times) - arrival_time` |
+| **ITL** | Observed time between consecutive decode steps |
+| **Scheduling Delay** | `schedule_time - enqueue_time` |
+
+### Aggregate Metrics
+
+| Metric | Aggregation |
+|--------|-------------|
+| TTFT, E2E, ITL distributions | Mean, p50, p95, p99, min, max |
+| Throughput | Output tokens per second, requests per second |
+| Preemption count | Total KV cache evictions |
+| KV allocation failures | Failed block allocations |
+| Dropped unservable | Requests too large for cache |
+
+### Conservation Invariant (INV-1)
+
+At simulation end: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable`
+
+This is the fundamental accounting invariant that ensures no requests are silently lost.
+
+## Determinism
+
+BLIS guarantees deterministic output: the same seed produces byte-identical stdout across runs (INV-6).
+
+Key mechanisms:
+- **Partitioned RNG:** Each subsystem (workload generation, scheduling, etc.) uses an independent random stream derived from the seed, so adding randomness to one subsystem doesn't perturb others
+- **Sorted map iteration:** Where map iteration order affects output, keys are sorted first
+- **Stdout/stderr separation:** Deterministic results go to stdout; wall-clock timing and diagnostics go to stderr via logrus
