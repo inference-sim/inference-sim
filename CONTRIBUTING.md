@@ -24,7 +24,7 @@ All three must pass before submitting a PR. CI uses golangci-lint v2.9.0 (see `.
 
 This walkthrough adds a trivial admission policy — the lightest extension type (~3 files). Follow it step-by-step to learn the patterns, then apply them to your own contribution.
 
-**What we'll build:** A `CountingAdmit` admission policy that admits the first N requests and rejects the rest.
+**What we'll build:** A `CountingAdmit` admission policy that admits the first N requests and rejects the rest. We'll use test-driven development, starting with a test for the feature we want to implement.
 
 ### Step 1: Create a branch
 
