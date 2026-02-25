@@ -84,6 +84,8 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | System invariants (INV-1–INV-8) | `docs/standards/invariants.md` | CLAUDE.md (summary) |
 | Engineering principles | `docs/standards/principles.md` | CLAUDE.md (summary) |
 | Extension recipes (policies, scorers, KV tiers) | `docs/extension-recipes.md` | — |
+| Design process | `docs/process/design.md` | CONTRIBUTING.md (summary) |
+| Macro-plan process | `docs/process/macro-plan.md` | CONTRIBUTING.md (summary) |
 | File organization and architecture | CLAUDE.md (File Organization tree) | README.md (Project Structure tree) |
 | Hypothesis catalog and specifications | `docs/plans/research.md` | — |
 | Experiment status and coverage | `hypotheses/README.md` | — |

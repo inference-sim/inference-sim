@@ -127,22 +127,75 @@ gh pr create --title "feat: add counting-admit admission policy" --body "My firs
 
 > **Important:** This example is for learning only. Do **not** submit this as a real PR — `CountingAdmit` is a toy policy with no practical use. For your actual first contribution, check [open issues](https://github.com/inference-sim/inference-sim/issues) for tasks labeled `good first issue`.
 
-## Development Workflow
+## Contributing with Claude Code
 
-Follow `docs/process/pr-workflow.md` for the complete PR lifecycle. The workflow applies to all PRs regardless of source (macro plan, issues, design docs, feature requests):
+> **Canonical source:** [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md). If this section diverges, pr-workflow.md is authoritative.
 
-0. **Read design guidelines** — `docs/templates/design-guidelines.md` covers module architecture, extension types, and DES foundations. Read this before your first contribution.
-1. **Create worktree** — isolate your work from the main branch
-2. **Write design doc** (if needed) — for new modules or architecture changes, write a design doc per the guidelines before planning. Four species: decision record, specification, problem analysis, system overview. Not needed for bug fixes or new policy templates behind existing interfaces.
-3. **Write implementation plan** — behavioral contracts + TDD tasks using `docs/templates/micro-plan.md`
-4. **Review plan** — two-stage: holistic `review-pr` pre-pass, then `convergence-review` with 10 targeted perspectives
-5. **Human review** — approve plan before implementation (hard gate)
-6. **Implement** — test-first, one contract at a time
-7. **Review code** — two-stage: holistic `review-pr` pre-pass, then `convergence-review` with 10 targeted perspectives
-8. **Self-audit** — 9 dimensions of deliberate critical thinking (no automation)
-9. **Commit, push, PR**
+BLIS development workflows are orchestrated through [Claude Code](https://claude.ai/code) skills — structured sequences that handle worktree creation, plan generation, multi-perspective review with convergence enforcement, and PR creation. Contributors with Claude Code get the full automated pipeline. Contributors without it follow the manual path below and still go through the same quality gates (maintainers run the automated reviews on submitted PRs).
 
-## Human Contributor Quick Path
+**Prerequisites:** Claude Code installed with project skills available (`convergence-review`, `hypothesis-experiment`) and general Claude Code skills (`writing-plans`, `executing-plans`, `commit-push-pr`). See [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md) for the full skill table. Before your first contribution, read [`docs/templates/design-guidelines.md`](docs/templates/design-guidelines.md) — it covers module architecture, extension types, and DES foundations.
+
+### Choosing Your Journey
+
+| You want to... | Journey | Starts with |
+|---|---|---|
+| Fix a bug or make a small change | [Bug Fix / Small Change](#bug-fix--small-change) | A GitHub issue or observed bug |
+| Add a new policy, scorer, or extension | [New Policy or Extension](#new-policy-or-extension) | An existing interface to implement |
+| Build a new feature or subsystem | [New Feature (Idea to PR)](#new-feature-idea-to-pr) | An idea or requirement |
+| Validate simulator behavior | [Hypothesis Experiment](#running-or-contributing-hypothesis-experiments) | A behavioral prediction |
+
+For hypothesis experiments, see [Running or Contributing Hypothesis Experiments](#running-or-contributing-hypothesis-experiments) below. With Claude Code, the `hypothesis-experiment` skill orchestrates the full Steps 0–10 workflow.
+
+### Bug Fix / Small Change
+
+The lightest path. For bug fixes, docs updates, and single-PR changes that don't introduce new module boundaries.
+
+1. **Create worktree** — `/superpowers:using-git-worktrees fix-<name>`
+2. **Write micro plan** — `/superpowers:writing-plans` using `@docs/templates/micro-plan.md`
+3. **Review plan** — `/pr-review-toolkit:review-pr` then `/convergence-review pr-plan <plan-path>`
+4. **Human approval** — review contracts and tasks, approve to proceed
+5. **Implement** — `/superpowers:executing-plans @<plan-path>`
+6. **Review code** — `/pr-review-toolkit:review-pr` then `/convergence-review pr-code`
+7. **Self-audit + commit** — deliberate critical thinking, then `/commit-commands:commit-push-pr`
+
+Full process: [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md)
+
+### New Policy or Extension
+
+For adding a routing policy, admission policy, scorer, scheduler, priority policy, or tier composition — anything behind an existing interface.
+
+1. **Identify extension type** — see [Adding New Components](#adding-new-components) below
+2. **Create worktree** — `/superpowers:using-git-worktrees <extension-name>`
+3. **Write micro plan** — `/superpowers:writing-plans` using `@docs/templates/micro-plan.md` and `@docs/extension-recipes.md`
+4. **Follow steps 3–7 from Bug Fix** (review → approve → implement → review → commit)
+
+No design doc needed for policy templates. For tier compositions, a design doc is recommended — see the extension type table in [Adding New Components](#adding-new-components). Full process: [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md)
+
+### New Feature (Idea to PR)
+
+The full pipeline for features that introduce new module boundaries, new interfaces, or span multiple PRs.
+
+**Phase 1 — Idea to Design:**
+1. **Explore approaches** — discuss design options with Claude, settle on an approach
+2. **Write design doc** — following [`docs/templates/design-guidelines.md`](docs/templates/design-guidelines.md)
+3. **Review design** — `/convergence-review design <path>` (8 perspectives)
+4. **Human approval** — review design doc before planning begins
+
+Full process: [`docs/process/design.md`](docs/process/design.md)
+
+**Phase 2 — Design to Macro Plan** (skip if single-PR):
+5. **Write macro plan** — decompose into PRs following [`docs/templates/macro-plan.md`](docs/templates/macro-plan.md)
+6. **Review macro plan** — `/convergence-review macro-plan <path>` (8 perspectives)
+7. **Human approval** — review PR decomposition and module contracts
+
+Full process: [`docs/process/macro-plan.md`](docs/process/macro-plan.md)
+
+**Phase 3 — Plan to PR** (repeat for each PR):
+8. **Follow the Bug Fix journey** (steps 1–7) using the macro plan section or design doc as the source document
+
+Each phase produces an artifact that feeds the next. Human approval gates between phases prevent wasted work.
+
+### Without Claude Code
 
 If you are not using Claude Code, here is the simplified workflow:
 
@@ -153,6 +206,10 @@ If you are not using Claude Code, here is the simplified workflow:
 5. **PR** — push your branch and open a PR. Maintainers will run the automated review protocols (convergence-review with 10 perspectives).
 
 The automated review tools (convergence-review, pr-review-toolkit) are run by maintainers — you do not need Claude Code installed. Your PR will go through the same quality gates regardless of tooling.
+
+For design docs and macro plans: follow the same templates ([`docs/templates/design-guidelines.md`](docs/templates/design-guidelines.md), [`docs/templates/macro-plan.md`](docs/templates/macro-plan.md)) and submit for review. Maintainers will run convergence review.
+
+Full process: [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md) (the same workflow applies regardless of tooling)
 
 ## Engineering Principles
 
