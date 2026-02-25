@@ -114,7 +114,7 @@ var (
 		"": true, "language": true, "multimodal": true, "reasoning": true,
 	}
 	validSLOClasses = map[string]bool{
-		"": true, "realtime": true, "interactive": true, "batch": true,
+		"": true, "critical": true, "standard": true, "sheddable": true, "batch": true, "background": true,
 	}
 )
 
@@ -156,7 +156,7 @@ func (s *WorkloadSpec) Validate() error {
 func validateClient(c *ClientSpec, idx int) error {
 	prefix := fmt.Sprintf("client[%d]", idx)
 	if !validSLOClasses[c.SLOClass] {
-		return fmt.Errorf("%s: unknown slo_class %q; valid: realtime, interactive, batch", prefix, c.SLOClass)
+		return fmt.Errorf("%s: unknown slo_class %q; valid: critical, standard, sheddable, batch, background, or empty", prefix, c.SLOClass)
 	}
 	if c.RateFraction <= 0 {
 		return fmt.Errorf("%s: rate_fraction must be positive, got %f", prefix, c.RateFraction)
@@ -197,6 +197,12 @@ func validateDistSpec(prefix string, d *DistSpec) error {
 		}
 	}
 	return nil
+}
+
+// IsValidSLOClass reports whether name is a valid v2 SLO class.
+// Valid classes: "", "critical", "standard", "sheddable", "batch", "background".
+func IsValidSLOClass(name string) bool {
+	return validSLOClasses[name]
 }
 
 func validateFinitePositive(name string, val float64) error {

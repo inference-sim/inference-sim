@@ -328,6 +328,68 @@ func nanVal() float64 {
 	return math.NaN()
 }
 
+func TestIsValidSLOClass_V2Tiers_ReturnsTrue(t *testing.T) {
+	// BC-6: IsValidSLOClass returns true for all v2 tier names
+	validTiers := []string{"", "critical", "standard", "sheddable", "batch", "background"}
+	for _, tier := range validTiers {
+		if !IsValidSLOClass(tier) {
+			t.Errorf("IsValidSLOClass(%q) = false, want true", tier)
+		}
+	}
+}
+
+func TestIsValidSLOClass_Invalid_ReturnsFalse(t *testing.T) {
+	// BC-6: IsValidSLOClass returns false for non-v2 names
+	invalidTiers := []string{"premium", "realtime", "interactive", "urgent", "low"}
+	for _, tier := range invalidTiers {
+		if IsValidSLOClass(tier) {
+			t.Errorf("IsValidSLOClass(%q) = true, want false", tier)
+		}
+	}
+}
+
+func TestValidate_V2SLOTiers_NoError(t *testing.T) {
+	// BC-2: v2 spec validates with all v2 tier names
+	tiers := []string{"", "critical", "standard", "sheddable", "batch", "background"}
+	for _, tier := range tiers {
+		spec := &WorkloadSpec{
+			AggregateRate: 100.0,
+			Clients: []ClientSpec{{
+				ID: "c1", RateFraction: 1.0, SLOClass: tier,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+			}},
+		}
+		if err := spec.Validate(); err != nil {
+			t.Errorf("Validate() with SLOClass=%q: unexpected error: %v", tier, err)
+		}
+	}
+}
+
+func TestValidate_UnknownSLOTier_ReturnsError(t *testing.T) {
+	// BC-10: Unknown SLO class rejected with descriptive error
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0, SLOClass: "premium",
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for unknown SLO class")
+	}
+	if !strings.Contains(err.Error(), "premium") {
+		t.Errorf("error should mention the invalid class: %v", err)
+	}
+	if !strings.Contains(err.Error(), "critical") {
+		t.Errorf("error should list valid classes: %v", err)
+	}
+}
+
 func TestWorkloadSpec_Validate_WeibullCVOutOfRange_ReturnsError(t *testing.T) {
 	cv := 20.0 // > 10.4, outside Weibull convergence range
 	spec := &WorkloadSpec{
