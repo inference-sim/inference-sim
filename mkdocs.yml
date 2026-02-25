@@ -1,0 +1,78 @@
+site_name: BLIS — Blackbox Inference Simulator
+site_description: A discrete-event simulator for LLM inference serving systems
+repo_url: https://github.com/inference-sim/inference-sim
+repo_name: inference-sim/inference-sim
+
+# Override MkDocs default exclusion of templates/ directory.
+# MkDocs assumes templates/ contains Jinja2 overrides, but BLIS uses
+# docs/templates/ for plan and design templates that should be served.
+# The negation pattern (!) reverses the hardcoded /templates/ exclusion.
+exclude_docs: |
+  !/templates/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Design:
+      - Overview: design/README.md
+      - Cluster Architecture: design/architecture.md
+      - Core Engine: design/core-engine.md
+      - Concepts & Glossary: design/concepts.md
+      - Configuration Reference: design/configuration.md
+      - Roofline Estimation: design/roofline.md
+  - Standards:
+      - Antipattern Rules (R1-R20): standards/rules.md
+      - System Invariants (INV-1-8): standards/invariants.md
+      - Engineering Principles: standards/principles.md
+      - Experiment Standards: standards/experiments.md
+  - Process:
+      - PR Workflow: process/pr-workflow.md
+      - Design Documents: process/design.md
+      - Macro Planning: process/macro-plan.md
+      - Hypothesis Experiments: process/hypothesis.md
+  - Templates:
+      - Design Guidelines: templates/design-guidelines.md
+      - Macro Plan: templates/macro-plan.md
+      - Micro Plan: templates/micro-plan.md
+      - Hypothesis: templates/hypothesis.md
+  - Extension Recipes: extension-recipes.md
+  - Contributing: contributing.md
