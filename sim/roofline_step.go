@@ -345,13 +345,21 @@ func rooflineStepTime(
 		// Process each bucket independently
 		for _, bucketSeqLen := range bucketKeys {
 			requests := bucketMap[bucketSeqLen]
-			batchSize := len(requests)
+
+			// Total new prefill tokens across all requests in this bucket.
+			// Unlike decode (1 new token per request), each prefill request
+			// contributes NumNewPrefillTokens tokens. GEMM projections and
+			// attention core both operate on all tokens, so the M-dimension
+			// of every kernel is totalPrefillTokens, not len(requests).
+			totalPrefillTokens := 0
+			for _, req := range requests {
+				totalPrefillTokens += req.NumNewPrefillTokens
+			}
 
 			// === GEMM Projections ===
-			// Use bucket batch size for GEMM lookups
 			gemmTimeS := computeTransformerGEMMTimes(
 				modelConfig,
-				batchSize,
+				totalPrefillTokens,
 				peakFlops,
 				mfuDB,
 				tpScaling,
@@ -363,7 +371,7 @@ func rooflineStepTime(
 				modelConfig.NumHeads,
 				modelConfig.NumKVHeads,
 				modelConfig.HiddenDim,
-				batchSize,
+				totalPrefillTokens,
 				int64(bucketSeqLen),
 			) * float64(modelConfig.NumLayers)
 
