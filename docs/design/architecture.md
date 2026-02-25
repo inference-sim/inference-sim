@@ -2,6 +2,8 @@
 
 This page describes how BLIS simulates multi-instance inference serving clusters. For single-instance simulation internals, see [Core Engine](core-engine.md).
 
+> **Canonical sources:** Signal freshness (INV-7) is defined in [`docs/standards/invariants.md`](../standards/invariants.md). If signal freshness descriptions here diverge, `invariants.md` is authoritative.
+
 ## Overview
 
 A BLIS cluster consists of N independent inference instances orchestrated by a shared-clock event loop. Each incoming request passes through a three-stage pipeline — admission, routing, and per-instance processing — before metrics are aggregated across all instances.
@@ -152,7 +154,7 @@ After simulation completes, per-instance metrics are aggregated into a unified c
 
 | Metric Category | Aggregation |
 |-----------------|-------------|
-| TTFT, E2E, ITL | Combined across all instances, reported as mean + percentiles (p50, p95, p99) + min, max |
+| TTFT, E2E | Combined across all instances. JSON output: mean, p90, p95, p99. Internal `Distribution`: also p50, min, max (used by fitness evaluation). ITL: mean, p90, p95, p99 in JSON output. |
 | Throughput | Total output tokens / simulation time; total requests / simulation time |
 | Request counts | Sum of completed, queued, running, preempted, dropped across instances |
 | Per-SLO-class | Separate distributions per SLO class (for multi-tenant analysis) |
@@ -162,8 +164,8 @@ After simulation completes, per-instance metrics are aggregated into a unified c
 
 When `--fitness-weights` are configured, BLIS computes a single fitness score from the aggregated metrics. This enables automated policy comparison:
 
-- Latency metrics (TTFT, E2E) are normalized via `1/(1 + value/1000)` (lower latency = higher score)
-- Throughput metrics are normalized via `value/(value + reference)` (higher throughput = higher score)
+- Latency metrics (TTFT, E2E) are normalized via `1/(1 + value/1000)` where `value` is in ticks (microseconds) and 1000 ticks = 1ms is the reference point (lower latency = higher score). For example, TTFT of 50,000 ticks (50ms) maps to `1/(1+50) = 0.0196`.
+- Throughput metrics are normalized via `value/(value + reference)` where `referenceRPS = 100.0` and `referenceTPS = 10000.0` (higher throughput = higher score)
 - Normalized scores are multiplied by their configured weights and summed
 - Higher fitness = better performance
 

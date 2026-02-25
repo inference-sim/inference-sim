@@ -289,7 +289,7 @@ See [Cluster Architecture: Counterfactual Regret](architecture.md#counterfactual
 |------|------|---------|-------------|
 | `--fitness-weights` | string | "" | Fitness function weights. Format: `metric:weight,metric:weight,...` |
 
-When configured, BLIS computes a single fitness score from aggregated metrics. Latency metrics are normalized via `1/(1 + value/1000)` (lower is better); throughput metrics via `value/(value + reference)` (higher is better). Useful for automated policy comparison across multiple simulation runs.
+When configured, BLIS computes a single fitness score from aggregated metrics. Latency metrics are normalized via `1/(1 + value/1000)` where `value` is in ticks (microseconds) and 1000 = 1ms reference (lower is better); throughput metrics via `value/(value + reference)` where `referenceRPS = 100.0` and `referenceTPS = 10000.0` (higher is better). Useful for automated policy comparison across multiple simulation runs.
 
 ## defaults.yaml
 

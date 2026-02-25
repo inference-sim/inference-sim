@@ -2,6 +2,8 @@
 
 This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see [Cluster Architecture](architecture.md).
 
+> **Canonical sources:** System invariants (INV-1 through INV-8) are defined in [`docs/standards/invariants.md`](../standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
+
 ## Overview
 
 Each BLIS instance is a self-contained discrete event simulator. The engine maintains an event queue (min-heap), processes events in timestamp order, and advances a simulation clock. The core loop is:
@@ -24,9 +26,9 @@ The event queue is a min-heap ordered by event timestamp. Events represent state
 | `ArrivalEvent` | Request enters system | Computes queueing delay (alpha overhead), schedules `QueuedEvent` |
 | `QueuedEvent` | Request enters wait queue | Adds request to wait queue; if no `StepEvent` exists, schedules one (work-conserving) |
 | `StepEvent` | Batch ready for execution | Runs the 4-phase Step() cycle (see below) |
-| `ScheduledEvent` | Request moves to running batch | Records scheduling timestamp for metrics |
-| `PreemptionEvent` | KV cache eviction | Records preemption for metrics and tracing |
-| `RequestLeftEvent` | Request completes | Records final E2E metrics |
+| `ScheduledEvent` | Request moves to running batch | Timeline marker for tracing (scheduling delay recorded in `scheduleBatch`) |
+| `PreemptionEvent` | KV cache eviction | Timeline marker for tracing (preemption count recorded in `scheduleBatch`) |
+| `RequestLeftEvent` | Request completes | Timeline marker for tracing (E2E metrics recorded in `processCompletions`) |
 
 **Clock monotonicity (INV-3):** The simulation clock never decreases. Events are processed in strictly non-decreasing timestamp order.
 
@@ -53,7 +55,7 @@ The `Step()` function is a 4-line orchestrator that delegates to four phases:
    - If in prefill phase: advance the progress index through input tokens (respecting chunked prefill limits)
    - If in decode phase: advance the progress index by one output token
    - Record TTFT at the prefill-to-decode boundary
-3. Advance the simulation clock by the computed step time
+3. Compute the step time (used by Phase 4 to schedule the next `StepEvent`; the clock itself advances only at the event-loop level when the next event is popped)
 
 ### Phase 3: Process Completions (`processCompletions`)
 
@@ -61,8 +63,8 @@ Identify completed requests (all output tokens generated), release their KV bloc
 
 ### Phase 4: Schedule Next Step (`scheduleNextStep`)
 
-1. If the running batch still has requests, schedule an immediate `StepEvent`
-2. If the running batch is empty but the wait queue has requests, schedule an immediate `StepEvent` (work-conserving)
+1. If the running batch still has requests, schedule the next `StepEvent` at `now + stepTime`
+2. If the running batch is empty but the wait queue has requests, schedule the next `StepEvent` at `now + stepTime` (work-conserving)
 3. If both are empty, do nothing (next event will be a future arrival)
 
 ## Request Lifecycle
@@ -115,7 +117,7 @@ When KV cache pressure forces eviction, running requests are preempted:
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A `PreemptionEvent` is recorded for tracing
 
-Preempted requests retain their progress — when re-scheduled, their previously computed prefix blocks may be found in the KV cache, reducing recomputation.
+Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and their KV blocks are freed. However, the freed blocks' prefix hashes are preserved in the KV cache's free list — when the request is re-scheduled, prefix caching may find these blocks (if not yet evicted by LRU), reducing recomputation. This matches vLLM's "recompute" preemption mode.
 
 ### Dropped Requests
 
@@ -136,8 +138,8 @@ Process requests already in the running batch:
 **Phase 2: New Requests**
 Dequeue requests from the wait queue:
 - Compute cached prefix blocks (prefix caching reduces allocation needs)
-- Allocate KV blocks for uncached prefix plus maximum token requirements
-- Stop dequeuing when allocation fails (cache full) or token budget exhausted
+- Allocate KV blocks for uncached prefix tokens being processed this step (bounded by chunked prefill threshold and remaining token budget)
+- Stop dequeuing when: max batch size reached (`--max-num-running-reqs`), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1
 
 ### Constraints
 
@@ -260,13 +262,13 @@ BLIS records per-request and aggregate metrics throughout the simulation.
 | **TTFT** | Time from arrival to first token: includes queueing delay, prefill step times, and output processing overhead (alpha2) |
 | **E2E** | `FirstTokenTime + sum(ITLs)`, where each ITL includes step time + alpha2 |
 | **ITL** | Observed time between consecutive decode steps (includes alpha2 per token) |
-| **Scheduling Delay** | Time spent in the wait queue before entering the running batch |
+| **Scheduling Delay** | Time from request arrival to entering the running batch (includes alpha queueing overhead + wait queue residence) |
 
 ### Aggregate Metrics
 
 | Metric | Aggregation |
 |--------|-------------|
-| TTFT, E2E, ITL distributions | Mean, p90, p95, p99 (single-instance); mean, p50, p95, p99, min, max (cluster) |
+| TTFT, E2E, ITL distributions | Mean, p90, p95, p99 in JSON output. Cluster-internal `Distribution` type also computes p50, min, max for fitness evaluation. |
 | Throughput | Output tokens per second, requests per second |
 | Preemption count | Total KV cache evictions |
 | KV allocation failures | Failed block allocations |
