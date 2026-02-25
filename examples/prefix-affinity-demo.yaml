@@ -38,7 +38,7 @@
 # onto fewer instances (visible in Target Distribution). Load-only spreads
 # them uniformly. The default profile balances both signals.
 
-version: "1"
+version: "2"
 seed: 42
 category: language
 aggregate_rate: 500.0  # 500 requests/second
@@ -48,7 +48,7 @@ clients:
   # 80% of traffic: shared long system prompt (multi-turn chat pattern)
   - id: "chat-with-system-prompt"
     tenant_id: "tenant-A"
-    slo_class: "interactive"
+    slo_class: "standard"
     rate_fraction: 0.8
     streaming: true
     prefix_group: "long-system-prompt"

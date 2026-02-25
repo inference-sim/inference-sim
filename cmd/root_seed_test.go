@@ -9,9 +9,9 @@ import (
 // makeTestSpec returns a minimal WorkloadSpec for seed tests.
 func makeTestSpec(seed int64) *workload.WorkloadSpec {
 	return &workload.WorkloadSpec{
-		Version: "1", Seed: seed, Category: "language", AggregateRate: 10.0,
+		Version: "2", Seed: seed, Category: "language", AggregateRate: 10.0,
 		Clients: []workload.ClientSpec{{
-			ID: "c1", TenantID: "t1", RateFraction: 1.0, SLOClass: "interactive",
+			ID: "c1", TenantID: "t1", RateFraction: 1.0, SLOClass: "standard",
 			Arrival:    workload.ArrivalSpec{Process: "poisson"},
 			InputDist:  workload.DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
 			OutputDist: workload.DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},

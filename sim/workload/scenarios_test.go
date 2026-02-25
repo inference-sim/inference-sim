@@ -27,10 +27,6 @@ func TestScenarios_ValidateUnderV2Rules(t *testing.T) {
 
 func TestScenarios_UseV2TierNames(t *testing.T) {
 	// Verify scenarios use v2 tier names directly (no upgrade needed)
-	validV2Tiers := map[string]bool{
-		"": true, "critical": true, "standard": true, "sheddable": true, "batch": true, "background": true,
-	}
-
 	scenarios := []*WorkloadSpec{
 		ScenarioBurstyTraffic(42, 10.0),
 		ScenarioUnfairTenants(42, 10.0),
@@ -39,7 +35,7 @@ func TestScenarios_UseV2TierNames(t *testing.T) {
 	}
 	for _, spec := range scenarios {
 		for _, c := range spec.Clients {
-			if !validV2Tiers[c.SLOClass] {
+			if !IsValidSLOClass(c.SLOClass) {
 				t.Errorf("client %q uses non-v2 SLO class %q", c.ID, c.SLOClass)
 			}
 		}

@@ -1,4 +1,4 @@
-version: "1"
+version: "2"
 seed: 42
 category: language
 aggregate_rate: 100.0  # 100 requests/second total
@@ -32,7 +32,7 @@ clients:
 
   - id: "realtime-chat"
     tenant_id: "tenant-B"
-    slo_class: "realtime"
+    slo_class: "critical"
     rate_fraction: 0.3          # 30% of traffic
     streaming: true
     arrival:

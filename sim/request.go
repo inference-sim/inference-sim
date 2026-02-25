@@ -47,7 +47,7 @@ type Request struct {
 
 	// Workload metadata (PR10). All fields are zero-value safe for backward compatibility.
 	TenantID        string  // Client/tenant identifier (empty for legacy workloads)
-	SLOClass        string  // "realtime", "interactive", "batch" (empty for legacy)
+	SLOClass        string  // "critical", "standard", "sheddable", "batch", "background" (empty = default)
 	Streaming       bool    // Whether this request uses streaming response mode
 	SessionID       string  // Multi-turn session link (empty for single-turn)
 	RoundIndex      int     // Round within session (0-based)

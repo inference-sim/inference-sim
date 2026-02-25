@@ -148,7 +148,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 	}
 
 	return &WorkloadSpec{
-		Version:       "1",
+		Version:       "2",
 		Seed:          seed,
 		Category:      category,
 		AggregateRate: aggregateRate,

@@ -21,14 +21,17 @@ var v1ToV2SLOClasses = map[string]string{
 // and sets the version field to "2". Idempotent — calling on a v2 spec is safe.
 // Emits logrus.Warn deprecation notices for mapped tier names.
 func UpgradeV1ToV2(spec *WorkloadSpec) {
+	if spec == nil {
+		return
+	}
 	if spec.Version == "" || spec.Version == "1" {
 		spec.Version = "2"
-	}
-	for i := range spec.Clients {
-		if newName, ok := v1ToV2SLOClasses[spec.Clients[i].SLOClass]; ok {
-			logrus.Warnf("deprecated SLO class %q auto-mapped to %q; update your spec to use v2 tier names",
-				spec.Clients[i].SLOClass, newName)
-			spec.Clients[i].SLOClass = newName
+		for i := range spec.Clients {
+			if newName, ok := v1ToV2SLOClasses[spec.Clients[i].SLOClass]; ok {
+				logrus.Warnf("deprecated SLO class %q auto-mapped to %q; update your spec to use v2 tier names",
+					spec.Clients[i].SLOClass, newName)
+				spec.Clients[i].SLOClass = newName
+			}
 		}
 	}
 }
@@ -188,7 +191,7 @@ func validateClient(c *ClientSpec, idx int) error {
 		return fmt.Errorf("%s: rate_fraction must be positive, got %f", prefix, c.RateFraction)
 	}
 	if !validArrivalProcesses[c.Arrival.Process] {
-		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull", prefix, c.Arrival.Process)
+		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 	}
 	if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
 		cv := *c.Arrival.CV

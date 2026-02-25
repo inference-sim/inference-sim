@@ -51,7 +51,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Instance schedulers**: fcfs, priority-fcfs, sjf (batch formation policies)
 - **Admission control**: always-admit or token-bucket rate limiting
 - **YAML policy configuration**: define all policies in a single config file (`--policy-config`)
-- **ServeGen-informed workload generation**: multi-client specs with Poisson/Gamma/Weibull arrivals (`--workload-spec`)
+- **ServeGen-informed workload generation**: multi-client specs with Poisson/Gamma/Weibull/Constant arrivals (`--workload-spec`)
 - **Decision tracing and counterfactual analysis**: record routing decisions and evaluate alternative choices (`--trace-level`, `--counterfactual-k`)
 - **Fitness evaluation**: weighted multi-objective scoring with configurable metric weights (`--fitness-weights`)
 - **Real-mode HTTP client**: observe-predict-calibrate loop against live inference endpoints (library in `cmd/observe.go`; CLI subcommand planned)
@@ -379,7 +379,7 @@ Generate realistic workloads from a ServeGen-style YAML specification with multi
   --workload-spec examples/servegen-language.yaml
 ```
 
-See `examples/servegen-language.yaml` for the full specification format including client decomposition, arrival processes (Poisson, Gamma, Weibull), and length distributions (Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF).
+See `examples/servegen-language.yaml` for the full specification format including client decomposition, arrival processes (Poisson, Gamma, Weibull, Constant), and length distributions (Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF).
 
 The workload generation module is informed by the ServeGen characterization framework:
 
@@ -500,6 +500,7 @@ When using `--results-path`, the JSON output also includes a `requests` array wi
 | `handled_by` | Instance ID that processed this request (meaningful when `--num-instances` > 1) |
 | `slo_class` | SLO class label (if workload-spec provides one) |
 | `tenant_id` | Tenant identifier (if workload-spec provides one) |
+| `model` | Model tag (if workload-spec provides one; omitted when empty) |
 
 ---
 
@@ -609,7 +610,7 @@ KV Thrashing Rate: 0.0000
   batch:
     TTFT: mean=45.20 p99=231.33 (n=350)
     E2E:  mean=3200.50 p99=12351.62 (n=350)
-  realtime:
+  critical:
     TTFT: mean=42.10 p99=138.01 (n=150)
     E2E:  mean=3083.47 p99=12813.41 (n=150)
 ```
@@ -709,7 +710,7 @@ inference-sim/
 │   └── workload.go         # Centralized request generation for cluster dispatch
 ├── sim/workload/           # ServeGen-informed workload generation
 │   ├── spec.go             # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
-│   ├── arrival.go          # ArrivalSampler: Poisson, Gamma, Weibull
+│   ├── arrival.go          # ArrivalSampler: Poisson, Gamma, Weibull, Constant
 │   ├── distribution.go     # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF, Constant
 │   ├── client.go           # Rate normalization, prefix group management
 │   ├── generator.go        # GenerateRequests pipeline with client decomposition

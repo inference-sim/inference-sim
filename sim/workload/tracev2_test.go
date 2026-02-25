@@ -16,7 +16,7 @@ func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 		{RequestID: 0, ClientID: "c1", TenantID: "t1", SLOClass: "batch",
 			InputTokens: 512, OutputTokens: 128, ArrivalTimeUs: 0,
 			Status: "ok"},
-		{RequestID: 1, ClientID: "c2", TenantID: "t2", SLOClass: "realtime",
+		{RequestID: 1, ClientID: "c2", TenantID: "t2", SLOClass: "critical",
 			InputTokens: 256, OutputTokens: 64, ArrivalTimeUs: 100000,
 			SendTimeUs: 100010, FirstChunkTimeUs: 100800, LastChunkTimeUs: 101500,
 			NumChunks: 5, Streaming: true, Status: "ok"},

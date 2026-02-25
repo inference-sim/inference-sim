@@ -12,7 +12,7 @@ func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
 		ArrivalTime:     2000000, // 2 seconds in ticks
 		InputTokens:     make([]int, 128),
 		OutputTokens:    make([]int, 64),
-		SLOClass:        "realtime",
+		SLOClass:        "critical",
 		TenantID:        "tenant_alpha",
 		AssignedInstance: "instance_3",
 		Model:           "llama-3.1-8b",
@@ -35,8 +35,8 @@ func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
 	if rm.NumDecodeTokens != 64 {
 		t.Errorf("NumDecodeTokens: got %d, want 64", rm.NumDecodeTokens)
 	}
-	if rm.SLOClass != "realtime" {
-		t.Errorf("SLOClass: got %q, want %q", rm.SLOClass, "realtime")
+	if rm.SLOClass != "critical" {
+		t.Errorf("SLOClass: got %q, want %q", rm.SLOClass, "critical")
 	}
 	if rm.TenantID != "tenant_alpha" {
 		t.Errorf("TenantID: got %q, want %q", rm.TenantID, "tenant_alpha")

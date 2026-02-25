@@ -59,6 +59,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			AudioTokenCount:  rec.AudioTokens,
 			VideoTokenCount:  rec.VideoTokens,
 			ReasonRatio:      rec.ReasonRatio,
+			// Model: omitted — TraceRecord predates Model field; zero-value = default model (BC-5)
 		}
 		requests = append(requests, req)
 	}

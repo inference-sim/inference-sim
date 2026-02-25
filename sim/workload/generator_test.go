@@ -371,7 +371,7 @@ func TestGenerateRequests_MaxRequests_ReasoningClientNotStarved(t *testing.T) {
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
-			{ID: "reasoning", TenantID: "rsn", SLOClass: "realtime", RateFraction: 0.3,
+			{ID: "reasoning", TenantID: "rsn", SLOClass: "critical", RateFraction: 0.3,
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
@@ -411,7 +411,7 @@ func TestRequestNewFields_ZeroValueDefault(t *testing.T) {
 	}
 }
 
-func TestRNGSubsystemConsistencyAcrossLegacyPaths(t *testing.T) {
+func TestGenerateRequests_SameSeed_ProducesIdenticalRequests(t *testing.T) {
 	// Blocking prerequisite: Verify GenerateRequests is deterministic
 	// (same seed = identical output). Validates INV-6 through sim/workload/ path.
 	spec1 := &WorkloadSpec{

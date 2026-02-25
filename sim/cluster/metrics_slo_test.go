@@ -13,7 +13,7 @@ func TestComputePerSLODistributions_SegregatesCorrectly(t *testing.T) {
 	// Add requests with different SLO classes
 	for i := 0; i < 50; i++ {
 		id := fmt.Sprintf("rt_%d", i)
-		m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: "realtime"}
+		m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: "critical"}
 		m.RequestTTFTs[id] = float64(100 + i)
 		m.RequestE2Es[id] = float64(500 + i)
 	}
@@ -26,14 +26,14 @@ func TestComputePerSLODistributions_SegregatesCorrectly(t *testing.T) {
 
 	sloDistributions := ComputePerSLODistributions(m)
 
-	if sloDistributions["realtime"] == nil {
-		t.Fatal("expected realtime class")
+	if sloDistributions["critical"] == nil {
+		t.Fatal("expected critical class")
 	}
 	if sloDistributions["batch"] == nil {
 		t.Fatal("expected batch class")
 	}
-	if sloDistributions["realtime"].TTFT.Count != 50 {
-		t.Errorf("realtime TTFT count = %d, want 50", sloDistributions["realtime"].TTFT.Count)
+	if sloDistributions["critical"].TTFT.Count != 50 {
+		t.Errorf("critical TTFT count = %d, want 50", sloDistributions["critical"].TTFT.Count)
 	}
 	if sloDistributions["batch"].TTFT.Count != 150 {
 		t.Errorf("batch TTFT count = %d, want 150", sloDistributions["batch"].TTFT.Count)
@@ -83,14 +83,14 @@ func TestSLOAttainment_SomeMiss_FractionalResult(t *testing.T) {
 	m := sim.NewMetrics()
 	for i := 0; i < 10; i++ {
 		id := fmt.Sprintf("req_%d", i)
-		m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: "realtime"}
+		m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: "critical"}
 		if i < 7 {
 			m.RequestE2Es[id] = 100 // meets 200 target
 		} else {
 			m.RequestE2Es[id] = 300 // exceeds 200 target
 		}
 	}
-	targets := map[string]float64{"realtime": 200}
+	targets := map[string]float64{"critical": 200}
 	attainment := SLOAttainment(m, targets)
 	if math.Abs(attainment-0.7) > 0.01 {
 		t.Errorf("attainment = %f, want 0.7 (7/10 meet SLO)", attainment)
