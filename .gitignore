@@ -40,8 +40,12 @@ __pycache__/*
 # data files
 *.json
 !testdata/goldendataset.json
+!hardware_config.json
 data/
 *.txt
+
+# auto-fetched HuggingFace model configs (downloaded by --roofline)
+model_configs/
 
 # binaries
 simulation_worker

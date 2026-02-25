@@ -436,7 +436,7 @@ BLIS uses two estimation techniques. Choose based on your model support:
 
 The `--roofline` flag automatically resolves the model's HuggingFace `config.json` using this resolution chain:
 1. **Explicit `--model-config-folder`** (if provided)
-2. **Local `model_configs/`** (bundled or previously fetched)
+2. **Local `model_configs/`** (previously fetched)
 3. **HuggingFace fetch** (downloads into `model_configs/`)
 
 For gated models (e.g., Llama), set the `HF_TOKEN` environment variable:
@@ -458,7 +458,7 @@ export HF_TOKEN=hf_your_token_here
   --hardware-config hardware_config.json
 ```
 
-This requires the HuggingFace `config.json` for the model saved under the `model-config-folder` path. Pre-configured configs for common models are provided in `model_configs/`.
+This requires the HuggingFace `config.json` for the model saved under the `model-config-folder` path.
 
 > **Note:** Currently supports H100 and A100-80 GPUs. Roofline estimation assumes dense transformer architecture — MoE models may show overestimated latency.
 
@@ -755,7 +755,7 @@ inference-sim/
 │   ├── servegen-language.yaml # ServeGen workload spec example
 │   ├── prefix-affinity-demo.yaml # Prefix-affinity routing demo (long shared prefix)
 │   └── multiturn-chat-demo.yaml  # Multi-turn chat session demo
-├── model_configs/          # HuggingFace config.json files
+├── model_configs/          # Auto-fetched HuggingFace config.json files (gitignored)
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
 ├── hardware_config.json    # GPU hardware specifications
 └── docs/                   # Documentation and design plans

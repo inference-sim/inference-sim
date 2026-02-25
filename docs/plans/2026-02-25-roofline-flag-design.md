@@ -39,7 +39,7 @@ Explicit overrides always win. The `--roofline` flag only activates the auto-res
 
 When `--roofline` is set and `--model-config-folder` is NOT provided, resolve `config.json` via (first success wins):
 
-1. **Local `model_configs/`:** `model_configs/<model-short-name>/config.json` (bundled or previously fetched)
+1. **Local `model_configs/`:** `model_configs/<model-short-name>/config.json` (previously fetched)
 2. **HF HTTP fetch:** `GET https://huggingface.co/<hf_repo>/resolve/main/config.json`
    - Supports `HF_TOKEN` env var for gated models (`Authorization: Bearer <token>`)
    - On success, writes into `model_configs/<model-short-name>/` for future use

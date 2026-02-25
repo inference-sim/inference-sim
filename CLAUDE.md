@@ -258,7 +258,7 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-├── model_configs/             # HuggingFace config.json files
+├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files
@@ -293,7 +293,7 @@ Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) b
 2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `sim/latency/roofline.go`
    - Requires HuggingFace `config.json` in `model_configs/`
    - Requires `hardware_config.json` with GPU specs
-   - **`--roofline` flag**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (writing into `model_configs/`), and uses bundled `hardware_config.json`. Simplifies usage to: `./simulation_worker run --model <name> --roofline --hardware <GPU> --tp <N>`
+   - **`--roofline` flag**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./simulation_worker run --model <name> --roofline --hardware <GPU> --tp <N>`
 
 ### Key Data Flow
 
