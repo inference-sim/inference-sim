@@ -180,8 +180,8 @@ When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache
 - **CPU tier:** Simple capacity store for offloaded blocks
 - **Offload trigger:** When GPU utilization exceeds `--kv-offload-threshold` (default: 0.9), blocks are offloaded to CPU
 - **Reload:** On GPU allocation failure, blocks are reloaded from CPU with a transfer latency penalty
-- **Transfer latency:** `base_latency + num_blocks / bandwidth` (non-blocking, added to step time)
-- **Thrashing detection:** Blocks offloaded and reloaded in the same clock tick increment a thrashing counter
+- **Transfer latency:** Per reloaded block: `base_latency + ceil(block_size_tokens / bandwidth)`. Accumulated across all reloaded blocks. Non-blocking (added to step time).
+- **Thrashing detection:** Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter
 
 ## Latency Models
 
