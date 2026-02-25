@@ -11,6 +11,14 @@ exclude_docs: |
   !/templates/
   plans/
 
+# CONTRIBUTING.md and process/hypothesis.md contain links that are valid for
+# GitHub rendering (e.g. docs/process/pr-workflow.md, ../../hypotheses/) but
+# unresolvable inside MkDocs. Downgrade broken-link warnings to info so
+# --strict still catches missing nav targets without failing on cross-context links.
+validation:
+  links:
+    not_found: info
+
 theme:
   name: material
   palette:
