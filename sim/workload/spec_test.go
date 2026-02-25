@@ -390,6 +390,43 @@ func TestValidate_UnknownSLOTier_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestLoadWorkloadSpec_ModelField_Parsed(t *testing.T) {
+	// BC-4: model field parsed from YAML
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.yaml")
+	yamlContent := `
+version: "2"
+seed: 42
+category: language
+aggregate_rate: 100.0
+clients:
+  - id: "c1"
+    model: "llama-3.1-8b"
+    slo_class: "standard"
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 100
+    output_distribution:
+      type: exponential
+      params:
+        mean: 50
+`
+	if err := os.WriteFile(path, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := LoadWorkloadSpec(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Clients[0].Model != "llama-3.1-8b" {
+		t.Errorf("Model = %q, want %q", spec.Clients[0].Model, "llama-3.1-8b")
+	}
+}
+
 func TestValidate_ConstantArrival_NoError(t *testing.T) {
 	// BC-7: Constant arrival process validates successfully
 	cv := 2.0 // should be ignored for constant

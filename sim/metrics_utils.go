@@ -28,6 +28,7 @@ type RequestMetrics struct {
 	SLOClass         string  `json:"slo_class,omitempty"`   // PR10: for per-SLO-class metrics
 	TenantID         string  `json:"tenant_id,omitempty"`  // PR10: for per-tenant fairness
 	HandledBy        string  `json:"handled_by,omitempty"` // #181: instance that processed this request
+	Model            string  `json:"model,omitempty"`      // W0-1: model tag for per-model metrics
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
@@ -42,6 +43,7 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		SLOClass:         req.SLOClass,
 		TenantID:         req.TenantID,
 		HandledBy:        req.AssignedInstance,
+		Model:            req.Model,
 	}
 }
 

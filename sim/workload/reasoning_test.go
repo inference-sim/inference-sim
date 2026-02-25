@@ -17,7 +17,7 @@ func TestGenerateReasoningRequests_MultiTurn_SequentialRounds(t *testing.T) {
 	inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 50, "max": 200}})
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}})
 
-	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch")
+	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestGenerateReasoningRequests_ContextAccumulate_GrowingInput(t *testing.T) 
 	inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 5, "min": 90, "max": 110}})
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 40, "max": 60}})
 
-	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch")
+	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestGenerateReasoningRequests_ReasonRatio_InRange(t *testing.T) {
 	inputSampler, _ := NewLengthSampler(DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}})
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}})
 
-	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch")
+	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestGenerateReasoningRequests_Accumulate_SharesPrefixTokens(t *testing.T) {
 	inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 5, "min": 90, "max": 110}})
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 40, "max": 60}})
 
-	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch")
+	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestGenerateReasoningRequests_Accumulate_SharesPrefixTokens(t *testing.T) {
 
 func TestGenerateReasoningRequests_NilSpec_ReturnsNil(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
-	requests, err := GenerateReasoningRequests(rng, nil, nil, nil, 0, "", "", "")
+	requests, err := GenerateReasoningRequests(rng, nil, nil, nil, 0, "", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -52,6 +52,7 @@ type ClientSpec struct {
 	ID           string        `yaml:"id"`
 	TenantID     string        `yaml:"tenant_id"`
 	SLOClass     string        `yaml:"slo_class"`
+	Model        string        `yaml:"model,omitempty"`
 	RateFraction float64       `yaml:"rate_fraction"`
 	Arrival      ArrivalSpec   `yaml:"arrival"`
 	InputDist    DistSpec      `yaml:"input_distribution"`

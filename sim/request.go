@@ -60,6 +60,10 @@ type Request struct {
 	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
 	// Request is used outside the cluster routing pipeline (e.g., direct sim.Simulator tests).
 	AssignedInstance string // Instance ID this request was routed to
+
+	// Model tag for multi-model routing (empty = default model).
+	// Phase 0: carried through the pipeline but not read by any routing policy.
+	Model string
 }
 
 // This method returns a human-readable string representation of a Request.

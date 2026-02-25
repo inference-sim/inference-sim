@@ -410,3 +410,50 @@ func TestRequestNewFields_ZeroValueDefault(t *testing.T) {
 		t.Error("new bool/int/float fields should have zero-value defaults")
 	}
 }
+
+func TestGenerateRequests_ModelFieldPropagated(t *testing.T) {
+	// BC-4: Model field flows from ClientSpec to Request
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "c1", Model: "llama-3.1-8b", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	reqs, err := GenerateRequests(spec, 1_000_000, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqs) == 0 {
+		t.Fatal("expected at least 1 request")
+	}
+	for i, req := range reqs {
+		if req.Model != "llama-3.1-8b" {
+			t.Errorf("request[%d].Model = %q, want %q", i, req.Model, "llama-3.1-8b")
+		}
+	}
+}
+
+func TestGenerateRequests_EmptyModel_DefaultsToEmpty(t *testing.T) {
+	// BC-5: Empty model field preserved as empty string
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	reqs, err := GenerateRequests(spec, 1_000_000, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i, req := range reqs {
+		if req.Model != "" {
+			t.Errorf("request[%d].Model = %q, want empty string", i, req.Model)
+		}
+	}
+}

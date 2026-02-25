@@ -116,7 +116,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					clientRNG, client.Reasoning,
 					inputSampler, outputSampler,
 					currentTime,
-					client.ID, client.TenantID, client.SLOClass,
+					client.ID, client.TenantID, client.SLOClass, client.Model,
 				)
 				if err != nil {
 					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
@@ -184,6 +184,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				FinishedStepIdx:  0,
 				TenantID:         client.TenantID,
 				SLOClass:         client.SLOClass,
+				Model:            client.Model,
 				Streaming:        client.Streaming,
 				TextTokenCount:   textCount,
 				ImageTokenCount:  imageCount,
