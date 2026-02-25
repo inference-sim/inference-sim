@@ -470,7 +470,9 @@ This requires the HuggingFace `config.json` for the model saved under the `model
   "itl_p90_ms": 8.73,
   "itl_p95_ms": 8.73,
   "itl_p99_ms": 8.73,
-  "scheduling_delay_p99_ms": 11.27
+  "scheduling_delay_p99_ms": 11.27,
+  "preemption_count": 0,
+  "dropped_unservable": 0
 }
 ```
 
@@ -481,7 +483,7 @@ This requires the HuggingFace `config.json` for the model saved under the `model
 - **Scheduling Delay**: Time spent waiting in queue before batch formation
 - **Tokens/sec**: Aggregate throughput across all completed requests
 - `_p90`, `_p95`, `_p99` suffixes indicate percentile values
-- **Conservation fields**: `still_queued`, `still_running`, and `injected_requests` verify request conservation (`injected == completed + still_queued + still_running`)
+- **Conservation fields**: `still_queued`, `still_running`, `dropped_unservable`, and `injected_requests` verify request conservation (`injected == completed + still_queued + still_running + dropped_unservable`). See [INV-1](docs/standards/invariants.md).
 
 When using `--results-path`, the JSON output also includes a `requests` array with per-request details:
 
