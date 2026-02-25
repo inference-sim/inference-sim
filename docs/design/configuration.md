@@ -85,7 +85,7 @@ For analytical step time estimation without trained coefficients.
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. |
 
-Roofline mode activates automatically when all coefficients are zero and both `--model-config-folder` and `--hardware-config` are provided. See [Roofline Estimation](../roofline.md).
+Roofline mode activates automatically when all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided. See [Roofline Estimation](../roofline.md).
 
 ### Latency Mode Selection
 
@@ -97,9 +97,11 @@ The latency model mode is selected automatically based on available configuratio
 
 ## Cluster Configuration
 
+With `--num-instances 1` (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no admission or routing layer. With `--num-instances N` (N > 1), the cluster simulation activates: requests pass through the admission and routing pipeline before reaching per-instance wait queues. See [Cluster Architecture](architecture.md) for the multi-instance pipeline and [Core Engine](core-engine.md) for single-instance internals.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--num-instances` | int | 1 | Number of inference instances in the cluster. |
+| `--num-instances` | int | 1 | Number of inference instances. 1 = single-instance mode; > 1 = cluster mode with admission and routing. |
 
 ## Admission Policy
 
@@ -152,7 +154,7 @@ See [Core Engine: Scheduling](core-engine.md#scheduling-policies) for policy det
 
 ### Workload Modes
 
-BLIS supports three workload specification modes, in order of precedence:
+BLIS supports four workload specification modes, in order of precedence:
 
 | Mode | Trigger | Description |
 |------|---------|-------------|

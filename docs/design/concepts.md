@@ -54,7 +54,7 @@ A routing signal computed as `QueueDepth + BatchSize + PendingRequests`. Represe
 
 ### Fitness Score
 
-A single numeric value summarizing multi-objective simulation performance. Computed as a weighted combination of TTFT, E2E, TPOT percentiles, throughput, and fairness. Uses `1/(1+x/1000)` normalization. See [Configuration Reference](configuration.md#fitness-evaluation).
+A single numeric value summarizing multi-objective simulation performance. Computed as a weighted combination of configurable metrics (TTFT percentiles, E2E percentiles, throughput). Uses `1/(1+x/1000)` normalization. See [Configuration Reference](configuration.md#fitness-evaluation).
 
 ### Horizon
 
@@ -134,7 +134,7 @@ An extension of the KV cache with GPU and CPU tiers. When GPU utilization exceed
 
 ### TTFT (Time To First Token)
 
-Time from request arrival to completion of the prefill phase (first output token ready). `TTFT = alpha_queueing + sum(prefill_step_times) - arrival_time`. A key latency SLO metric for interactive applications. See [Core Engine: Metrics](core-engine.md#metrics).
+Time from request arrival to completion of the prefill phase (first output token ready). Includes queueing delay, prefill step times, and output processing overhead (alpha2). A key latency SLO metric for interactive applications. See [Core Engine: Metrics](core-engine.md#metrics).
 
 ### Workload Specification
 

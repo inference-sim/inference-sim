@@ -53,9 +53,9 @@ Admission is the first gate in the online routing pipeline. Every incoming reque
 | `token-bucket` | Rate-limiting via a token bucket with configurable capacity and refill rate |
 | `reject-all` | Reject all requests (for pathological testing) |
 
-**Token bucket** operates as a leaky bucket: each request consumes tokens equal to its input token count, tokens refill at a constant rate, and requests are rejected when the bucket has insufficient tokens. Capacity and refill rate are configured via `--token-bucket-capacity` and `--token-bucket-refill-rate`.
+**Token bucket** rate-limits by consuming tokens proportional to input length: each request consumes tokens equal to its input token count, tokens refill at a constant rate, and requests are rejected when the bucket has insufficient tokens. Capacity and refill rate are configured via `--token-bucket-capacity` and `--token-bucket-refill-rate`.
 
-Rejected requests are counted in the output metrics (`rejected_requests`) but do not enter the routing pipeline. See [Configuration Reference](configuration.md#admission-policy) for flag details.
+Rejected requests are counted in the output metrics but do not enter the routing pipeline. To add a new admission policy, see [Extension Recipes](../extension-recipes.md). See [Configuration Reference](configuration.md#admission-policy) for flag details.
 
 ## Routing Pipeline
 
@@ -84,7 +84,7 @@ The routing decision follows this pipeline:
 4. **Sum:** Weighted scores are summed across scorers for each instance
 5. **Select:** The instance with the highest total score is chosen (argmax)
 
-Default weights: `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity).
+Default weights: `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity). Note: weights are normalized to sum to 1.0 before scoring, so only weight ratios matter — `prefix-affinity:3,queue-depth:2` is identical to `prefix-affinity:30,queue-depth:20`. To add a new scorer, see [Extension Recipes](../extension-recipes.md).
 
 ![Scoring Pipeline](diagrams/scoringpipeline.png)
 
@@ -152,11 +152,11 @@ After simulation completes, per-instance metrics are aggregated into a unified c
 
 | Metric Category | Aggregation |
 |-----------------|-------------|
-| TTFT, E2E, ITL | Combined across all instances, reported as mean + percentiles (p50, p95, p99) |
+| TTFT, E2E, ITL | Combined across all instances, reported as mean + percentiles (p50, p95, p99) + min, max |
 | Throughput | Total output tokens / simulation time; total requests / simulation time |
 | Request counts | Sum of completed, queued, running, preempted, dropped across instances |
 | Per-SLO-class | Separate distributions per SLO class (for multi-tenant analysis) |
-| Fairness | Jain Fairness Index across instances |
+| Fairness | Jain Fairness Index across tenant throughputs |
 
 ### Fitness Evaluation
 

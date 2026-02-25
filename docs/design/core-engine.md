@@ -57,8 +57,7 @@ The `Step()` function is a 4-line orchestrator that delegates to four phases:
 
 ### Phase 3: Process Completions (`processCompletions`)
 
-1. **First pass:** Record TTFT for any requests that just finished prefill (two-pass design ensures TTFT is recorded before E2E)
-2. **Second pass:** Identify completed requests (all output tokens generated), release their KV blocks, record E2E metrics, and schedule `RequestLeftEvent`
+Identify completed requests (all output tokens generated), release their KV blocks, record E2E metrics, and schedule `RequestLeftEvent`. Note: TTFT is already recorded in Phase 2 at the prefill-to-decode boundary, so Phase 3 only handles E2E and completion bookkeeping. This separation (TTFT in Phase 2, E2E in Phase 3) is the "two-pass" design that ensures TTFT is recorded before E2E.
 
 ### Phase 4: Schedule Next Step (`scheduleNextStep`)
 
@@ -96,14 +95,17 @@ Requests follow a linear state machine with one exception (preemption):
 
 ### Key Timestamps
 
-| Timestamp | When Set | Used For |
-|-----------|----------|----------|
-| `ArrivalTime` | Request creation | E2E calculation baseline |
-| `EnqueueTime` | After alpha queueing delay | Scheduling delay = ScheduleTime - EnqueueTime |
-| `FirstTokenTime` | End of prefill phase | TTFT = FirstTokenTime - ArrivalTime |
-| `CompletionTime` | All tokens generated | E2E = CompletionTime - ArrivalTime |
+These are the conceptual timestamps in a request's lifecycle. Some are stored as struct fields (e.g., `ArrivalTime`, `FirstTokenTime`), while others are computed at metric recording time.
 
-**Causality invariant (INV-5):** `ArrivalTime <= EnqueueTime <= ScheduleTime <= CompletionTime`
+| Timestamp | When Recorded | Used For |
+|-----------|---------------|----------|
+| Arrival time | Request creation | E2E and scheduling delay baseline |
+| Enqueue time | After alpha queueing delay | Conceptual start of wait queue residence |
+| Schedule time | Batch formation selects request | Scheduling delay = time in wait queue |
+| First token time | End of prefill phase | TTFT = FirstTokenTime (stored on Request) |
+| Completion time | All tokens generated | E2E = FirstTokenTime + sum(ITLs) |
+
+**Causality invariant (INV-5):** `arrival_time <= enqueue_time <= schedule_time <= completion_time`
 
 ### Preemption
 
@@ -228,7 +230,7 @@ This is architecturally correct for vLLM, where CPU post-processing (tokenizatio
 
 ## Scheduling Policies
 
-Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance.
+Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance. To add a new scheduling policy, see [Extension Recipes](../extension-recipes.md).
 
 | Policy | Ordering Rule | Use Case |
 |--------|---------------|----------|
@@ -255,16 +257,16 @@ BLIS records per-request and aggregate metrics throughout the simulation.
 
 | Metric | Definition |
 |--------|------------|
-| **TTFT** | `alpha_queueing + sum(prefill_step_times) - arrival_time` |
-| **E2E** | `alpha_overhead + sum(all_step_times) - arrival_time` |
-| **ITL** | Observed time between consecutive decode steps |
-| **Scheduling Delay** | `schedule_time - enqueue_time` |
+| **TTFT** | Time from arrival to first token: includes queueing delay, prefill step times, and output processing overhead (alpha2) |
+| **E2E** | `FirstTokenTime + sum(ITLs)`, where each ITL includes step time + alpha2 |
+| **ITL** | Observed time between consecutive decode steps (includes alpha2 per token) |
+| **Scheduling Delay** | Time spent in the wait queue before entering the running batch |
 
 ### Aggregate Metrics
 
 | Metric | Aggregation |
 |--------|-------------|
-| TTFT, E2E, ITL distributions | Mean, p50, p95, p99, min, max |
+| TTFT, E2E, ITL distributions | Mean, p90, p95, p99 (single-instance); mean, p50, p95, p99, min, max (cluster) |
 | Throughput | Output tokens per second, requests per second |
 | Preemption count | Total KV cache evictions |
 | KV allocation failures | Failed block allocations |
