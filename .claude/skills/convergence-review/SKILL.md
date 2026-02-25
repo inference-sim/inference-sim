@@ -1,12 +1,28 @@
 ---
 name: convergence-review
 description: Dispatch parallel review perspectives and enforce convergence (zero CRITICAL + zero IMPORTANT). Supports 7 gate types — design doc (8), macro plan (8), PR plan (10), PR code (10), hypothesis design (5), hypothesis code (5), hypothesis FINDINGS (10).
-argument-hint: <gate-type> [artifact-path]
+argument-hint: <gate-type> [artifact-path] [--model opus|sonnet|haiku]
 ---
 
 # Convergence Review Dispatcher
 
 Dispatch parallel review perspectives for gate **$0** and enforce convergence.
+
+## Model Selection
+
+The `--model` flag controls which model runs the perspective agents:
+
+```
+/convergence-review pr-code                    # uses opus (default)
+/convergence-review pr-plan plan.md --model sonnet
+/convergence-review h-findings FINDINGS.md --model haiku
+```
+
+Parse `$ARGS` for `--model <value>`. Valid values: `opus`, `sonnet`, `haiku`. Default: **`opus`**.
+
+**`opus` must resolve to Opus 4.6 (`claude-opus-4-6`).** When passing `model = "opus"` to the Task tool, this is the model that runs.
+
+Store the resolved model in a variable `REVIEW_MODEL` and use it in all Task dispatches.
 
 ## Gate Types
 
@@ -33,7 +49,7 @@ These rules are identical across all gates. No exceptions. No shortcuts.
 ```
 round = 1
 while round <= 10:
-    1. Dispatch ALL perspectives in parallel (background Task agents, model=haiku)
+    1. Dispatch ALL perspectives in parallel (background Task agents, model=REVIEW_MODEL)
     2. Wait for all to complete (5 min timeout per agent)
     3. Read each agent's output INDEPENDENTLY
     4. Tally CRITICAL and IMPORTANT counts YOURSELF (do NOT trust agent totals)
@@ -108,13 +124,13 @@ Launch all N perspectives simultaneously as background Task agents:
 For each perspective P in the gate's perspective set:
     Task(
         subagent_type = "general-purpose",
-        model = "haiku",
+        model = REVIEW_MODEL,       # from --model flag, default "opus"
         run_in_background = True,
         prompt = "<perspective prompt from prompts file>\n\n<artifact content>"
     )
 ```
 
-**Why haiku?** Fast (~2-3 min), thorough reviews with accurate severity classification. Haiku produces consistent CRITICAL/IMPORTANT/SUGGESTION output. Using opus/sonnet for 10 parallel reviewers is unnecessarily expensive.
+**Default model: opus.** Provides the highest review quality. Use `--model sonnet` for a faster/cheaper alternative, or `--model haiku` for maximum speed when iterating on early drafts.
 
 **Exception — Perspective 5 in PR plan reviews (Structural Validation):** Perform this check directly (no agent). It requires structural validation of the plan (task dependencies, template completeness) that benefits from your full conversation context.
 
