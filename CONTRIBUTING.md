@@ -184,6 +184,7 @@ The full pipeline for features that introduce new module boundaries, new interfa
 Full process: [`docs/process/design.md`](docs/process/design.md)
 
 **Phase 2 — Design to Macro Plan** (skip if single-PR):
+
 5. **Write macro plan** — decompose into PRs following [`docs/templates/macro-plan.md`](docs/templates/macro-plan.md)
 6. **Review macro plan** — `/convergence-review macro-plan <path>` (8 perspectives)
 7. **Human approval** — review PR decomposition and module contracts
@@ -191,6 +192,7 @@ Full process: [`docs/process/design.md`](docs/process/design.md)
 Full process: [`docs/process/macro-plan.md`](docs/process/macro-plan.md)
 
 **Phase 3 — Plan to PR** (repeat for each PR):
+
 8. **Follow the Bug Fix journey** (steps 1–7) using the macro plan section or design doc as the source document
 
 Each phase produces an artifact that feeds the next. Human approval gates between phases prevent wasted work.
