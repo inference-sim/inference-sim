@@ -31,7 +31,7 @@
 # Expected: prefix-affinity produces lower TTFT because later rounds in each
 # session reuse the prior rounds' KV cache (fewer prefill tokens needed).
 
-version: "1"
+version: "2"
 seed: 42
 category: reasoning
 aggregate_rate: 500.0     # Sessions start at 500/sec (each produces 5 rounds)
@@ -40,7 +40,7 @@ num_requests: 500         # ~100 sessions × 5 rounds
 clients:
   - id: "multi-turn-chat"
     tenant_id: "chat-users"
-    slo_class: "interactive"
+    slo_class: "standard"
     rate_fraction: 1.0
     streaming: true
     arrival:

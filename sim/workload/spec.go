@@ -6,8 +6,35 @@ import (
 	"math"
 	"os"
 
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
+
+// v1ToV2SLOClasses maps deprecated v1 SLO class names to v2 equivalents.
+var v1ToV2SLOClasses = map[string]string{
+	"realtime":    "critical",
+	"interactive": "standard",
+}
+
+// UpgradeV1ToV2 auto-upgrades a v1 WorkloadSpec to v2 format in-place.
+// Maps deprecated SLO class names (realtime→critical, interactive→standard)
+// and sets the version field to "2". Idempotent — calling on a v2 spec is safe.
+// Emits logrus.Warn deprecation notices for mapped tier names.
+func UpgradeV1ToV2(spec *WorkloadSpec) {
+	if spec == nil {
+		return
+	}
+	if spec.Version == "" || spec.Version == "1" {
+		spec.Version = "2"
+		for i := range spec.Clients {
+			if newName, ok := v1ToV2SLOClasses[spec.Clients[i].SLOClass]; ok {
+				logrus.Warnf("deprecated SLO class %q auto-mapped to %q; update your spec to use v2 tier names",
+					spec.Clients[i].SLOClass, newName)
+				spec.Clients[i].SLOClass = newName
+			}
+		}
+	}
+}
 
 // WorkloadSpec is the top-level workload configuration.
 // Loaded from YAML via LoadWorkloadSpec(path).
@@ -28,6 +55,7 @@ type ClientSpec struct {
 	ID           string        `yaml:"id"`
 	TenantID     string        `yaml:"tenant_id"`
 	SLOClass     string        `yaml:"slo_class"`
+	Model        string        `yaml:"model,omitempty"`
 	RateFraction float64       `yaml:"rate_fraction"`
 	Arrival      ArrivalSpec   `yaml:"arrival"`
 	InputDist    DistSpec      `yaml:"input_distribution"`
@@ -105,7 +133,7 @@ type ServeGenDataSpec struct {
 // Valid value registries.
 var (
 	validArrivalProcesses = map[string]bool{
-		"poisson": true, "gamma": true, "weibull": true,
+		"poisson": true, "gamma": true, "weibull": true, "constant": true,
 	}
 	validDistTypes = map[string]bool{
 		"gaussian": true, "exponential": true, "pareto_lognormal": true, "empirical": true, "constant": true,
@@ -114,7 +142,7 @@ var (
 		"": true, "language": true, "multimodal": true, "reasoning": true,
 	}
 	validSLOClasses = map[string]bool{
-		"": true, "realtime": true, "interactive": true, "batch": true,
+		"": true, "critical": true, "standard": true, "sheddable": true, "batch": true, "background": true,
 	}
 )
 
@@ -131,6 +159,7 @@ func LoadWorkloadSpec(path string) (*WorkloadSpec, error) {
 	if err := decoder.Decode(&spec); err != nil {
 		return nil, fmt.Errorf("parsing workload spec: %w", err)
 	}
+	UpgradeV1ToV2(&spec)
 	return &spec, nil
 }
 
@@ -156,13 +185,13 @@ func (s *WorkloadSpec) Validate() error {
 func validateClient(c *ClientSpec, idx int) error {
 	prefix := fmt.Sprintf("client[%d]", idx)
 	if !validSLOClasses[c.SLOClass] {
-		return fmt.Errorf("%s: unknown slo_class %q; valid: realtime, interactive, batch", prefix, c.SLOClass)
+		return fmt.Errorf("%s: unknown slo_class %q; valid: critical, standard, sheddable, batch, background, or empty", prefix, c.SLOClass)
 	}
 	if c.RateFraction <= 0 {
 		return fmt.Errorf("%s: rate_fraction must be positive, got %f", prefix, c.RateFraction)
 	}
 	if !validArrivalProcesses[c.Arrival.Process] {
-		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull", prefix, c.Arrival.Process)
+		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 	}
 	if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
 		cv := *c.Arrival.CV
@@ -197,6 +226,12 @@ func validateDistSpec(prefix string, d *DistSpec) error {
 		}
 	}
 	return nil
+}
+
+// IsValidSLOClass reports whether name is a valid v2 SLO class.
+// Valid classes: "", "critical", "standard", "sheddable", "batch", "background".
+func IsValidSLOClass(name string) bool {
+	return validSLOClasses[name]
 }
 
 func validateFinitePositive(name string, val float64) error {

@@ -143,3 +143,47 @@ func TestWeibullSampler_ZeroUniform_NoOverflow(t *testing.T) {
 		t.Error("sample should be positive")
 	}
 }
+
+func TestConstantArrivalSampler_ExactIntervals(t *testing.T) {
+	// BC-3: Constant sampler produces exact 1/rate intervals
+	rate := 10.0 / 1e6 // 10 req/s = 10/1e6 req/µs
+	sampler := NewArrivalSampler(ArrivalSpec{Process: "constant"}, rate)
+
+	expectedIAT := int64(1.0 / rate) // 100000 µs
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 100; i++ {
+		iat := sampler.SampleIAT(rng)
+		if iat != expectedIAT {
+			t.Fatalf("iteration %d: SampleIAT = %d, want %d", i, iat, expectedIAT)
+		}
+	}
+}
+
+func TestConstantArrivalSampler_DifferentSeeds_SameResult(t *testing.T) {
+	// BC-3: Constant sampler is deterministic regardless of RNG state
+	rate := 5.0 / 1e6
+	sampler := NewArrivalSampler(ArrivalSpec{Process: "constant"}, rate)
+
+	rng1 := rand.New(rand.NewSource(1))
+	rng2 := rand.New(rand.NewSource(999))
+
+	for i := 0; i < 50; i++ {
+		iat1 := sampler.SampleIAT(rng1)
+		iat2 := sampler.SampleIAT(rng2)
+		if iat1 != iat2 {
+			t.Fatalf("iteration %d: different seeds produced different IATs: %d vs %d", i, iat1, iat2)
+		}
+	}
+}
+
+func TestConstantArrivalSampler_MinimumOneUs(t *testing.T) {
+	// BC-3: Floor of 1 microsecond for very high rates
+	rate := 1.0 // 1 req/µs (extremely high)
+	sampler := NewArrivalSampler(ArrivalSpec{Process: "constant"}, rate)
+
+	rng := rand.New(rand.NewSource(42))
+	iat := sampler.SampleIAT(rng)
+	if iat < 1 {
+		t.Errorf("SampleIAT = %d, want >= 1", iat)
+	}
+}

@@ -12,7 +12,7 @@ func TestLoadTraceV2Requests_CorrectTokenCounts(t *testing.T) {
 		{RequestID: 0, InputTokens: 100, OutputTokens: 50,
 			ArrivalTimeUs: 0, TenantID: "t1", SLOClass: "batch", Status: "ok"},
 		{RequestID: 1, InputTokens: 200, OutputTokens: 75,
-			ArrivalTimeUs: 100000, TenantID: "t2", SLOClass: "realtime", Status: "ok"},
+			ArrivalTimeUs: 100000, TenantID: "t2", SLOClass: "critical", Status: "ok"},
 	}
 
 	dir := t.TempDir()

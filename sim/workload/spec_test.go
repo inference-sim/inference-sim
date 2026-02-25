@@ -47,8 +47,8 @@ clients:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if spec.Version != "1" {
-		t.Errorf("version = %q, want %q", spec.Version, "1")
+	if spec.Version != "2" {
+		t.Errorf("version = %q, want %q (auto-upgraded from v1)", spec.Version, "2")
 	}
 	if spec.Seed != 42 {
 		t.Errorf("seed = %d, want 42", spec.Seed)
@@ -216,7 +216,7 @@ func TestWorkloadSpec_Validate_ValidSpec_NoError(t *testing.T) {
 			},
 			{
 				ID:           "c2",
-				SLOClass:     "realtime",
+				SLOClass:     "critical",
 				RateFraction: 0.3,
 				Arrival:      ArrivalSpec{Process: "poisson"},
 				InputDist:    DistSpec{Type: "exponential", Params: map[string]float64{"mean": 128}},
@@ -326,6 +326,249 @@ clients:
 
 func nanVal() float64 {
 	return math.NaN()
+}
+
+func TestIsValidSLOClass_V2Tiers_ReturnsTrue(t *testing.T) {
+	// BC-6: IsValidSLOClass returns true for all v2 tier names
+	validTiers := []string{"", "critical", "standard", "sheddable", "batch", "background"}
+	for _, tier := range validTiers {
+		if !IsValidSLOClass(tier) {
+			t.Errorf("IsValidSLOClass(%q) = false, want true", tier)
+		}
+	}
+}
+
+func TestIsValidSLOClass_Invalid_ReturnsFalse(t *testing.T) {
+	// BC-6: IsValidSLOClass returns false for non-v2 names
+	invalidTiers := []string{"premium", "realtime", "interactive", "urgent", "low"}
+	for _, tier := range invalidTiers {
+		if IsValidSLOClass(tier) {
+			t.Errorf("IsValidSLOClass(%q) = true, want false", tier)
+		}
+	}
+}
+
+func TestValidate_V2SLOTiers_NoError(t *testing.T) {
+	// BC-2: v2 spec validates with all v2 tier names
+	tiers := []string{"", "critical", "standard", "sheddable", "batch", "background"}
+	for _, tier := range tiers {
+		spec := &WorkloadSpec{
+			AggregateRate: 100.0,
+			Clients: []ClientSpec{{
+				ID: "c1", RateFraction: 1.0, SLOClass: tier,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+			}},
+		}
+		if err := spec.Validate(); err != nil {
+			t.Errorf("Validate() with SLOClass=%q: unexpected error: %v", tier, err)
+		}
+	}
+}
+
+func TestValidate_UnknownSLOTier_ReturnsError(t *testing.T) {
+	// BC-10: Unknown SLO class rejected with descriptive error
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0, SLOClass: "premium",
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for unknown SLO class")
+	}
+	if !strings.Contains(err.Error(), "premium") {
+		t.Errorf("error should mention the invalid class: %v", err)
+	}
+	if !strings.Contains(err.Error(), "critical") {
+		t.Errorf("error should list valid classes: %v", err)
+	}
+}
+
+func TestLoadWorkloadSpec_ModelField_Parsed(t *testing.T) {
+	// BC-4: model field parsed from YAML
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.yaml")
+	yamlContent := `
+version: "2"
+seed: 42
+category: language
+aggregate_rate: 100.0
+clients:
+  - id: "c1"
+    model: "llama-3.1-8b"
+    slo_class: "standard"
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 100
+    output_distribution:
+      type: exponential
+      params:
+        mean: 50
+`
+	if err := os.WriteFile(path, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := LoadWorkloadSpec(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Clients[0].Model != "llama-3.1-8b" {
+		t.Errorf("Model = %q, want %q", spec.Clients[0].Model, "llama-3.1-8b")
+	}
+}
+
+func TestValidate_ConstantArrival_NoError(t *testing.T) {
+	// BC-7: Constant arrival process validates successfully
+	cv := 2.0 // should be ignored for constant
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant", CV: &cv},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	if err := spec.Validate(); err != nil {
+		t.Errorf("unexpected error for constant arrival: %v", err)
+	}
+}
+
+func TestUpgradeV1ToV2_EmptyVersion_SetsV2(t *testing.T) {
+	spec := &WorkloadSpec{Version: ""}
+	UpgradeV1ToV2(spec)
+	if spec.Version != "2" {
+		t.Errorf("Version = %q, want %q", spec.Version, "2")
+	}
+}
+
+func TestUpgradeV1ToV2_V1Version_SetsV2(t *testing.T) {
+	spec := &WorkloadSpec{Version: "1"}
+	UpgradeV1ToV2(spec)
+	if spec.Version != "2" {
+		t.Errorf("Version = %q, want %q", spec.Version, "2")
+	}
+}
+
+func TestUpgradeV1ToV2_V2Version_NoChange(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2",
+		Clients: []ClientSpec{{SLOClass: "critical"}},
+	}
+	UpgradeV1ToV2(spec)
+	if spec.Version != "2" {
+		t.Errorf("Version = %q, want %q", spec.Version, "2")
+	}
+	if spec.Clients[0].SLOClass != "critical" {
+		t.Errorf("SLOClass changed unexpectedly to %q", spec.Clients[0].SLOClass)
+	}
+}
+
+func TestUpgradeV1ToV2_RealtimeMappedToCritical(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "1",
+		Clients: []ClientSpec{{SLOClass: "realtime"}},
+	}
+	UpgradeV1ToV2(spec)
+	if spec.Clients[0].SLOClass != "critical" {
+		t.Errorf("SLOClass = %q, want %q", spec.Clients[0].SLOClass, "critical")
+	}
+}
+
+func TestUpgradeV1ToV2_InteractiveMappedToStandard(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "1",
+		Clients: []ClientSpec{{SLOClass: "interactive"}},
+	}
+	UpgradeV1ToV2(spec)
+	if spec.Clients[0].SLOClass != "standard" {
+		t.Errorf("SLOClass = %q, want %q", spec.Clients[0].SLOClass, "standard")
+	}
+}
+
+func TestUpgradeV1ToV2_EmptySLOClassUnchanged(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "1",
+		Clients: []ClientSpec{{SLOClass: ""}},
+	}
+	UpgradeV1ToV2(spec)
+	if spec.Clients[0].SLOClass != "" {
+		t.Errorf("SLOClass = %q, want empty string", spec.Clients[0].SLOClass)
+	}
+}
+
+func TestUpgradeV1ToV2_BatchUnchanged(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "1",
+		Clients: []ClientSpec{{SLOClass: "batch"}},
+	}
+	UpgradeV1ToV2(spec)
+	if spec.Clients[0].SLOClass != "batch" {
+		t.Errorf("SLOClass = %q, want %q", spec.Clients[0].SLOClass, "batch")
+	}
+}
+
+func TestUpgradeV1ToV2_Idempotent(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "1",
+		Clients: []ClientSpec{{SLOClass: "realtime"}, {SLOClass: "interactive"}},
+	}
+	UpgradeV1ToV2(spec)
+	UpgradeV1ToV2(spec)
+	if spec.Clients[0].SLOClass != "critical" {
+		t.Errorf("SLOClass[0] = %q, want %q", spec.Clients[0].SLOClass, "critical")
+	}
+	if spec.Clients[1].SLOClass != "standard" {
+		t.Errorf("SLOClass[1] = %q, want %q", spec.Clients[1].SLOClass, "standard")
+	}
+}
+
+func TestLoadWorkloadSpec_V1File_AutoUpgradedToV2(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v1.yaml")
+	yamlContent := `
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 100.0
+clients:
+  - id: "c1"
+    slo_class: "realtime"
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 100
+    output_distribution:
+      type: exponential
+      params:
+        mean: 50
+`
+	if err := os.WriteFile(path, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := LoadWorkloadSpec(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Version != "2" {
+		t.Errorf("Version = %q, want %q", spec.Version, "2")
+	}
+	if spec.Clients[0].SLOClass != "critical" {
+		t.Errorf("SLOClass = %q, want %q", spec.Clients[0].SLOClass, "critical")
+	}
 }
 
 func TestWorkloadSpec_Validate_WeibullCVOutOfRange_ReturnsError(t *testing.T) {

@@ -57,6 +57,7 @@ func (c *ClusterSimulator) generateRequestsFromDistribution() []*sim.Request {
 			State:            sim.StateQueued,
 			ScheduledStepIdx: 0,
 			FinishedStepIdx:  0,
+			// Model: omitted — legacy GuideLLM path predates Model field; zero-value = default model (BC-5)
 		}
 		requests = append(requests, req)
 
@@ -120,6 +121,7 @@ func (c *ClusterSimulator) generateRequestsFromCSV() ([]*sim.Request, error) {
 			State:            sim.StateQueued,
 			ScheduledStepIdx: 0,
 			FinishedStepIdx:  0,
+			// Model: omitted — legacy CSV path predates Model field; zero-value = default model (BC-5)
 		})
 		reqIdx++
 	}

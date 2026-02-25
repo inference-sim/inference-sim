@@ -318,7 +318,7 @@ func TestGenerateRequests_MaxRequests_PreservesClientProportions(t *testing.T) {
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
-			{ID: "realtime", TenantID: "tenant-B", SLOClass: "realtime", RateFraction: 0.3,
+			{ID: "realtime", TenantID: "tenant-B", SLOClass: "critical", RateFraction: 0.3,
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
@@ -337,18 +337,18 @@ func TestGenerateRequests_MaxRequests_PreservesClientProportions(t *testing.T) {
 
 	// BC-3: both SLO classes must appear
 	countBatch := 0
-	countRealtime := 0
+	countCritical := 0
 	for _, r := range requests {
 		switch r.SLOClass {
 		case "batch":
 			countBatch++
-		case "realtime":
-			countRealtime++
+		case "critical":
+			countCritical++
 		}
 	}
 
-	if countRealtime == 0 {
-		t.Fatal("realtime client produced 0 requests — starvation bug (#278)")
+	if countCritical == 0 {
+		t.Fatal("critical client produced 0 requests — starvation bug (#278)")
 	}
 
 	// Check proportions are approximately 70/30 (within ±10%)
@@ -371,7 +371,7 @@ func TestGenerateRequests_MaxRequests_ReasoningClientNotStarved(t *testing.T) {
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
-			{ID: "reasoning", TenantID: "rsn", SLOClass: "realtime", RateFraction: 0.3,
+			{ID: "reasoning", TenantID: "rsn", SLOClass: "critical", RateFraction: 0.3,
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
@@ -408,5 +408,224 @@ func TestRequestNewFields_ZeroValueDefault(t *testing.T) {
 	}
 	if req.Streaming || req.RoundIndex != 0 || req.ReasonRatio != 0 {
 		t.Error("new bool/int/float fields should have zero-value defaults")
+	}
+}
+
+func TestGenerateRequests_SameSeed_ProducesIdenticalRequests(t *testing.T) {
+	// Blocking prerequisite: Verify GenerateRequests is deterministic
+	// (same seed = identical output). Validates INV-6 through sim/workload/ path.
+	spec1 := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+
+	reqs1, err := GenerateRequests(spec1, 1_000_000, 10)
+	if err != nil {
+		t.Fatalf("first generation: %v", err)
+	}
+
+	spec2 := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+
+	reqs2, err := GenerateRequests(spec2, 1_000_000, 10)
+	if err != nil {
+		t.Fatalf("second generation: %v", err)
+	}
+
+	// INV-6: Same seed must produce identical requests
+	if len(reqs1) != len(reqs2) {
+		t.Fatalf("request count mismatch: %d vs %d", len(reqs1), len(reqs2))
+	}
+	for i := range reqs1 {
+		if reqs1[i].ArrivalTime != reqs2[i].ArrivalTime {
+			t.Errorf("request[%d] arrival time mismatch: %d vs %d", i, reqs1[i].ArrivalTime, reqs2[i].ArrivalTime)
+		}
+		if len(reqs1[i].InputTokens) != len(reqs2[i].InputTokens) {
+			t.Errorf("request[%d] input token count mismatch: %d vs %d", i, len(reqs1[i].InputTokens), len(reqs2[i].InputTokens))
+		}
+		if len(reqs1[i].OutputTokens) != len(reqs2[i].OutputTokens) {
+			t.Errorf("request[%d] output token count mismatch: %d vs %d", i, len(reqs1[i].OutputTokens), len(reqs2[i].OutputTokens))
+		}
+	}
+}
+
+func TestGenerateRequests_V1SpecAutoUpgrade_EndToEnd(t *testing.T) {
+	// BC-1 end-to-end: v1 spec with deprecated tier names auto-upgrades and generates
+	spec := &WorkloadSpec{
+		Version: "1", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{
+			{
+				ID: "realtime-client", RateFraction: 0.5, SLOClass: "realtime",
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+			},
+			{
+				ID: "interactive-client", RateFraction: 0.5, SLOClass: "interactive",
+				Model: "llama-3.1-8b",
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 200}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			},
+		},
+	}
+
+	reqs, err := GenerateRequests(spec, 1_000_000, 20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqs) == 0 {
+		t.Fatal("expected requests to be generated")
+	}
+
+	// Verify SLO classes were upgraded
+	hasCritical, hasStandard := false, false
+	for _, req := range reqs {
+		switch req.SLOClass {
+		case "critical":
+			hasCritical = true
+		case "standard":
+			hasStandard = true
+		case "realtime", "interactive":
+			t.Errorf("found deprecated SLO class %q — should have been upgraded", req.SLOClass)
+		}
+	}
+	if !hasCritical {
+		t.Error("expected at least one request with SLOClass 'critical'")
+	}
+	if !hasStandard {
+		t.Error("expected at least one request with SLOClass 'standard'")
+	}
+
+	// Verify model propagation
+	hasModel := false
+	for _, req := range reqs {
+		if req.Model == "llama-3.1-8b" {
+			hasModel = true
+			break
+		}
+	}
+	if !hasModel {
+		t.Error("expected at least one request with Model 'llama-3.1-8b'")
+	}
+
+	// Verify spec was upgraded
+	if spec.Version != "2" {
+		t.Errorf("spec.Version = %q, want %q", spec.Version, "2")
+	}
+}
+
+func TestGenerateRequests_ConstantArrival_EvenSpacing(t *testing.T) {
+	// BC-3 integration: Constant sampler produces evenly-spaced requests
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0, // 10 req/s
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+		}},
+	}
+
+	reqs, err := GenerateRequests(spec, 1_000_000, 5) // 1 second, 5 requests max
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqs) < 2 {
+		t.Fatalf("expected at least 2 requests, got %d", len(reqs))
+	}
+
+	// Verify even spacing: all IATs should be identical
+	expectedIAT := reqs[1].ArrivalTime - reqs[0].ArrivalTime
+	for i := 2; i < len(reqs); i++ {
+		iat := reqs[i].ArrivalTime - reqs[i-1].ArrivalTime
+		if iat != expectedIAT {
+			t.Errorf("request[%d] IAT = %d, want %d (constant spacing)", i, iat, expectedIAT)
+		}
+	}
+}
+
+func TestGenerateRequests_V2NewSLOTiers_Generate(t *testing.T) {
+	// BC-2: New v2 SLO tiers generate successfully
+	tiers := []string{"critical", "standard", "sheddable", "batch", "background"}
+	for _, tier := range tiers {
+		spec := &WorkloadSpec{
+			Version: "2", Seed: 42, AggregateRate: 10.0,
+			Clients: []ClientSpec{{
+				ID: "c1", RateFraction: 1.0, SLOClass: tier,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+			}},
+		}
+		reqs, err := GenerateRequests(spec, 1_000_000, 5)
+		if err != nil {
+			t.Errorf("SLO tier %q: unexpected error: %v", tier, err)
+			continue
+		}
+		for _, req := range reqs {
+			if req.SLOClass != tier {
+				t.Errorf("SLO tier %q: request has SLOClass %q", tier, req.SLOClass)
+			}
+		}
+	}
+}
+
+func TestGenerateRequests_ModelFieldPropagated(t *testing.T) {
+	// BC-4: Model field flows from ClientSpec to Request
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "c1", Model: "llama-3.1-8b", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	reqs, err := GenerateRequests(spec, 1_000_000, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqs) == 0 {
+		t.Fatal("expected at least 1 request")
+	}
+	for i, req := range reqs {
+		if req.Model != "llama-3.1-8b" {
+			t.Errorf("request[%d].Model = %q, want %q", i, req.Model, "llama-3.1-8b")
+		}
+	}
+}
+
+func TestGenerateRequests_EmptyModel_DefaultsToEmpty(t *testing.T) {
+	// BC-5: Empty model field preserved as empty string
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	reqs, err := GenerateRequests(spec, 1_000_000, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i, req := range reqs {
+		if req.Model != "" {
+			t.Errorf("request[%d].Model = %q, want empty string", i, req.Model)
+		}
 	}
 }

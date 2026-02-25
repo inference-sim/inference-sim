@@ -431,10 +431,10 @@ func TestDetectPriorityInversions_MissingE2E_WarnsAndCountsMatched(t *testing.T)
 func TestDetectPriorityInversions_MixedSLO_NoFalsePositives(t *testing.T) {
 	// GIVEN requests from two SLO classes with naturally different E2E
 	m := sim.NewMetrics()
-	// Realtime requests: fast (low E2E)
-	m.Requests["rt1"] = sim.RequestMetrics{ID: "rt1", ArrivedAt: 100, SLOClass: "realtime"}
+	// Critical requests: fast (low E2E)
+	m.Requests["rt1"] = sim.RequestMetrics{ID: "rt1", ArrivedAt: 100, SLOClass: "critical"}
 	m.RequestE2Es["rt1"] = 5000.0
-	m.Requests["rt2"] = sim.RequestMetrics{ID: "rt2", ArrivedAt: 300, SLOClass: "realtime"}
+	m.Requests["rt2"] = sim.RequestMetrics{ID: "rt2", ArrivedAt: 300, SLOClass: "critical"}
 	m.RequestE2Es["rt2"] = 4500.0
 	// Batch requests: slow (high E2E) — this is expected, not an inversion
 	m.Requests["b1"] = sim.RequestMetrics{ID: "b1", ArrivedAt: 200, SLOClass: "batch"}
@@ -455,10 +455,10 @@ func TestDetectPriorityInversions_MixedSLO_NoFalsePositives(t *testing.T) {
 // Inversions within a single SLO class must still be detected.
 func TestDetectPriorityInversions_WithinSLOClass_StillDetected(t *testing.T) {
 	m := sim.NewMetrics()
-	// Two realtime requests where earlier one has much worse E2E
-	m.Requests["rt1"] = sim.RequestMetrics{ID: "rt1", ArrivedAt: 100, SLOClass: "realtime"}
+	// Two critical requests where earlier one has much worse E2E
+	m.Requests["rt1"] = sim.RequestMetrics{ID: "rt1", ArrivedAt: 100, SLOClass: "critical"}
 	m.RequestE2Es["rt1"] = 50000.0 // 10× worse than rt2
-	m.Requests["rt2"] = sim.RequestMetrics{ID: "rt2", ArrivedAt: 200, SLOClass: "realtime"}
+	m.Requests["rt2"] = sim.RequestMetrics{ID: "rt2", ArrivedAt: 200, SLOClass: "critical"}
 	m.RequestE2Es["rt2"] = 5000.0
 
 	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
