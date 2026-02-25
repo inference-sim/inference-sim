@@ -142,6 +142,10 @@ var runCmd = &cobra.Command{
 		var modelConfig = sim.ModelConfig{}
 		var hwConfig = sim.HardwareCalib{}
 
+		// Normalize model name to lowercase for consistent lookups (defaults.yaml
+		// keys, cache directories, and bundled model_configs/ are all lowercase).
+		model = strings.ToLower(model)
+
 		// --roofline flag: auto-resolve model config and hardware config
 		if rooflineFlag {
 			if gpu == "" {
@@ -149,6 +153,20 @@ var runCmd = &cobra.Command{
 			}
 			if tensorParallelism <= 0 {
 				logrus.Fatalf("--roofline requires --tp > 0")
+			}
+
+			// Warn if user also provided explicit coefficients — roofline overrides them
+			if !AllZeros(alphaCoeffs) || !AllZeros(betaCoeffs) {
+				logrus.Warnf("--roofline overrides --alpha-coeffs and --beta-coeffs; " +
+					"trained coefficients will be ignored in favor of analytical roofline estimation")
+			}
+
+			// Log when explicit overrides interact with --roofline
+			if modelConfigFolder != "" {
+				logrus.Infof("--roofline: explicit --model-config-folder takes precedence over auto-resolution")
+			}
+			if hwConfigPath != "" {
+				logrus.Infof("--roofline: explicit --hardware-config takes precedence over auto-resolution")
 			}
 
 			// Resolve model config folder (cache → HF fetch → bundled fallback)
@@ -164,12 +182,13 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("%v", err)
 			}
 			hwConfigPath = resolvedHW
+
+			// Explicitly activate roofline mode (design doc step 4).
+			// Do NOT rely on downstream "all coefficients zero" heuristic.
+			roofline = true
 		}
 
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
-			// convert model name to lowercase
-			model = strings.ToLower(model)
-
 			// GPU, TP, vLLM version configuration
 			hardware, tp, version := GetDefaultSpecs(model) // pick default config for tp, GPU, vllmVersion
 
@@ -200,26 +219,31 @@ var runCmd = &cobra.Command{
 				totalKVBlocks = kvBlocks
 			}
 		}
-		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+		// Load roofline model/hardware configs when roofline mode is active.
+		// Two activation paths: (1) explicit --roofline flag, (2) implicit detection
+		// when trained coefficients are all-zero and config paths are provided.
+		if !roofline && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
 			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
 				roofline = true
-				hfPath := filepath.Join(modelConfigFolder, "config.json")
-				mc, err := latency.GetModelConfig(hfPath)
-				if err != nil {
-					logrus.Fatalf("Failed to load model config: %v", err)
-				}
-				modelConfig = *mc
-				hc, err := latency.GetHWConfig(hwConfigPath, gpu)
-				if err != nil {
-					logrus.Fatalf("Failed to load hardware config: %v", err)
-				}
-				hwConfig = hc
 			} else if len(modelConfigFolder) == 0 {
 				logrus.Fatalf("Please provide model config folder containing config.json for model=%v\n", model)
 			} else if len(hwConfigPath) == 0 {
 				logrus.Fatalf("Please provide hardware config path (e.g. hardware_config.json)\n")
 			}
+		}
+		if roofline {
+			hfPath := filepath.Join(modelConfigFolder, "config.json")
+			mc, err := latency.GetModelConfig(hfPath)
+			if err != nil {
+				logrus.Fatalf("Failed to load model config: %v", err)
+			}
+			modelConfig = *mc
+			hc, err := latency.GetHWConfig(hwConfigPath, gpu)
+			if err != nil {
+				logrus.Fatalf("Failed to load hardware config: %v", err)
+			}
+			hwConfig = hc
 		}
 
 		// Workload configuration

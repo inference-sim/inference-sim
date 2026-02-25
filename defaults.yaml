@@ -66,62 +66,77 @@ defaults:
     GPU: H100
     tensor_parallelism: 2
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Llama-3.1-Nemotron-70B-Instruct-HF-FP8-dynamic
   redhatai/llama-3.3-70b-instruct-quantized.w4a16:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Llama-3.3-70B-Instruct-quantized.w4a16
   redhatai/llama-3.3-70b-instruct-quantized.w8a8:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Llama-3.3-70B-Instruct-quantized.w8a8
   redhatai/llama-4-scout-17b-16e-instruct-fp8-dynamic:
     GPU: H100
     tensor_parallelism: 8
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic
   redhatai/llama-4-scout-17b-16e-instruct-quantized.w4a16:
     GPU: H100
     tensor_parallelism: 8
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Llama-4-Scout-17B-16E-Instruct-quantized.w4a16
   redhatai/mistral-small-3.1-24b-instruct-2503-fp8-dynamic:
     GPU: H100
     tensor_parallelism: 8
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-FP8-dynamic
   redhatai/mistral-small-3.1-24b-instruct-2503-quantized.w4a16:
     GPU: H100
     tensor_parallelism: 8
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
   redhatai/mistral-small-3.1-24b-instruct-2503-quantized.w8a8:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w8a8
   redhatai/phi-4-fp8-dynamic:
     GPU: H100
     tensor_parallelism: 2
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/phi-4-FP8-dynamic
   redhatai/phi-4-quantized.w4a16:
     GPU: H100
     tensor_parallelism: 1
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/phi-4-quantized.w4a16
   redhatai/phi-4-quantized.w8a8:
     GPU: H100
     tensor_parallelism: 2
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/phi-4-quantized.w8a8
   redhatai/qwen2.5-7b-instruct-fp8-dynamic:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Qwen2.5-7B-Instruct-FP8-dynamic
   redhatai/qwen2.5-7b-instruct-quantized.w4a16:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Qwen2.5-7B-Instruct-quantized.w4a16
   redhatai/qwen2.5-7b-instruct-quantized.w8a8:
     GPU: H100
     tensor_parallelism: 4
     vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: RedHatAI/Qwen2.5-7B-Instruct-quantized.w8a8
   redhatai/smollm3-3b-fp8-dynamic:
     GPU: H100
     tensor_parallelism: 1
     vllm_version: vllm/vllm-openai:v0.10.1.1
+    hf_repo: RedHatAI/SmolLM3-3B-FP8-dynamic
 workloads:
   chatbot:
     prefix_tokens: 0
