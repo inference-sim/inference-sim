@@ -318,7 +318,7 @@ func TestGenerateRequests_MaxRequests_PreservesClientProportions(t *testing.T) {
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
-			{ID: "realtime", TenantID: "tenant-B", SLOClass: "realtime", RateFraction: 0.3,
+			{ID: "realtime", TenantID: "tenant-B", SLOClass: "critical", RateFraction: 0.3,
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
@@ -337,18 +337,18 @@ func TestGenerateRequests_MaxRequests_PreservesClientProportions(t *testing.T) {
 
 	// BC-3: both SLO classes must appear
 	countBatch := 0
-	countRealtime := 0
+	countCritical := 0
 	for _, r := range requests {
 		switch r.SLOClass {
 		case "batch":
 			countBatch++
-		case "realtime":
-			countRealtime++
+		case "critical":
+			countCritical++
 		}
 	}
 
-	if countRealtime == 0 {
-		t.Fatal("realtime client produced 0 requests — starvation bug (#278)")
+	if countCritical == 0 {
+		t.Fatal("critical client produced 0 requests — starvation bug (#278)")
 	}
 
 	// Check proportions are approximately 70/30 (within ±10%)

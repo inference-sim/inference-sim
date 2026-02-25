@@ -47,8 +47,8 @@ clients:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if spec.Version != "1" {
-		t.Errorf("version = %q, want %q", spec.Version, "1")
+	if spec.Version != "2" {
+		t.Errorf("version = %q, want %q (auto-upgraded from v1)", spec.Version, "2")
 	}
 	if spec.Seed != 42 {
 		t.Errorf("seed = %d, want 42", spec.Seed)
@@ -216,7 +216,7 @@ func TestWorkloadSpec_Validate_ValidSpec_NoError(t *testing.T) {
 			},
 			{
 				ID:           "c2",
-				SLOClass:     "realtime",
+				SLOClass:     "critical",
 				RateFraction: 0.3,
 				Arrival:      ArrivalSpec{Process: "poisson"},
 				InputDist:    DistSpec{Type: "exponential", Params: map[string]float64{"mean": 128}},
