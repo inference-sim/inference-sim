@@ -37,6 +37,9 @@ go.work.sum
 __pycache__/*
 */__pycache__/*
 
+# convergence review state files
+.claude/convergence-state/
+
 # data files
 *.json
 !testdata/goldendataset.json

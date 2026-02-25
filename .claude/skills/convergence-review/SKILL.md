@@ -73,22 +73,32 @@ For diff-based gates (`pr-code`, `h-code`), the branch name is used — the diff
 
 ### State File Operations
 
-On invocation, determine the artifact ID from the gate type:
-- `pr-code` / `h-code`: Run `git branch --show-current` to get the branch name
-- All other gates: Use the `$1` argument (artifact file path)
+On invocation:
 
-Then derive the state file path:
-```
-.claude/convergence-state/{gate}--{artifact_id with / replaced by -}.json
-```
+1. **Ensure the state directory exists:** `mkdir -p .claude/convergence-state`
 
-Read the state file. If it does not exist or `status` is `"converged"` or `"stalled"`, enter **Phase A**. If `status` is `"awaiting-rerun"`, enter **Phase B**.
+2. **Determine the artifact ID** from the gate type:
+   - `pr-code` / `h-code`: Run `git branch --show-current` to get the branch name
+   - All other gates: Use the `$1` argument (artifact file path)
+
+3. **Derive the state file path:**
+   ```
+   .claude/convergence-state/{gate}--{artifact_id with / replaced by -}.json
+   ```
+
+4. **Read the state file and determine phase:**
+   - File does not exist → **Phase A** (fresh review, round 1)
+   - `status` is `"converged"` or `"stalled"` → **Phase A** (fresh review, round 1)
+   - `status` is `"awaiting-rerun"` **and** `updated_at` is less than 24 hours old → **Phase B** (continue review)
+   - `status` is `"awaiting-rerun"` **but** `updated_at` is more than 24 hours old → **stale state file.** Use AskUserQuestion: *(a) Resume the previous review at round N+1, (b) Start fresh (delete state file and begin round 1).* This prevents a crashed session from silently hijacking the next invocation.
 
 ---
 
 ## Two-Phase Convergence Protocol (non-negotiable)
 
 > **Canonical source:** [docs/process/hypothesis.md — Universal Convergence Protocol](../../../docs/process/hypothesis.md#universal-convergence-protocol). The rules below are a self-contained copy for skill execution; hypothesis.md is authoritative if they diverge.
+>
+> **Intentional skill-level override:** The stall protocol below uses `AskUserQuestion` with three interactive options (increase limit / accept / abort). This differs from hypothesis.md's "suspend the experiment" directive. Rationale: interactive stall handling gives the user control over the outcome rather than silently suspending, which is better UX in a Claude Code session where the user is present. If hypothesis.md is updated to match, this note can be removed.
 
 The convergence loop is **automatic and self-driven**. The user invokes `/convergence-review <gate> [artifact]` once. The skill manages the loop internally via state files. There is no manual re-invocation between rounds.
 
@@ -131,21 +141,38 @@ Phase A dispatches all perspectives, collects results, tallies findings, and pro
 
 ### Phase B: Fix-and-Rerun
 
-Phase B is only entered from Phase A outcome (b). It applies all CRITICAL and IMPORTANT fixes, then immediately re-enters Phase A. **Phase B has no exit path other than invoking Phase A.**
+Phase B is only entered from Phase A outcome (b). It applies all CRITICAL and IMPORTANT fixes, then re-invokes the skill to start Phase A. **Phase B's only exit is a Skill tool re-invocation.**
 
 ```
-1. Fix all CRITICAL items first, then all IMPORTANT items
-2. Run tests/verification as appropriate for the gate type
-3. Update state file: mark current round's history entry status = "fixed"
-4. Re-enter Phase A (next round)
+1. Let M = total number of CRITICAL + IMPORTANT findings.
+
+2. For each finding (CRITICAL items first, then IMPORTANT), in order:
+   a. Fix the issue
+   b. Emit progress: "Fixed N/M — K remaining"
+
+3. After ALL fixes applied:
+   a. Run tests/verification as appropriate for the gate type
+   b. Update state file: mark current round's history entry status = "fixed"
+   c. Emit the re-entry banner:
+
+   ╔═══════════════════════════════════════════════════════════╗
+   ║  ALL FIXES APPLIED — RE-INVOKING PHASE A (Round N+1)     ║
+   ║  /convergence-review <gate> [artifact]                    ║
+   ╚═══════════════════════════════════════════════════════════╝
+
+   d. Invoke the Skill tool with the SAME arguments used to start this review:
+      /convergence-review $0 $1
+      The state file (status: "awaiting-rerun") will route this invocation
+      to Phase A at the correct round. Do NOT proceed to any other step.
+      The ONLY thing you do after fixing is invoke the Skill tool.
 ```
 
-**Why this works:** Each phase is short enough that its exit instruction is never far from the current position in context. Phase A cannot skip re-dispatch because it never fixes anything. Phase B cannot skip re-review because its only exit is invoking Phase A. The state file is the structural enforcement — a concrete artifact on disk that determines behavior, not a prose instruction buried in context.
+**Why this works:** The Skill tool re-invocation reloads the entire skill text fresh, solving context dilution — the Phase A instructions are proximate to the decision point, not buried under pages of fix diffs and test output. The state file routes the fresh invocation to Phase A at the correct round. The countdown progress ("Fixed 3/8, 5 remaining") keeps the LLM in task-oriented mode rather than "wrapping up" mode. This makes skipping the re-review unlikely, though not structurally impossible — see the manual recovery fallback below.
 
 ### Hard Rules
 
 1. **Zero means zero.** One CRITICAL from one reviewer = not converged.
-2. **Re-run is mandatory and automatic.** After fixing issues, Phase B MUST re-enter Phase A. There is no manual re-invocation. There is no "fixes were trivial, skip re-review."
+2. **Re-run is mandatory and automatic.** After fixing issues, Phase B MUST re-invoke the Skill tool to re-enter Phase A. There is no "fixes were trivial, skip re-review." If the automatic re-invocation fails, the user can manually re-invoke (see recovery fallback).
 3. **SUGGESTION items do not block.** Only CRITICAL and IMPORTANT count.
 4. **Independent tallying.** Read each agent's output file. Count findings yourself. Agents have fabricated "0 CRITICAL, 0 IMPORTANT" when actual output contained 3 CRITICAL + 18 IMPORTANT (#390).
 5. **No partial re-runs.** Re-run ALL perspectives, not just the ones that found issues. Fixes can introduce new issues in other perspectives.
@@ -318,4 +345,11 @@ The hypothesis-experiment skill calls this skill at Steps 2, 5, and 8:
 /convergence-review h-design
 /convergence-review h-code hypotheses/h-<name>/
 /convergence-review h-findings hypotheses/h-<name>/FINDINGS.md
+```
+
+### Manual recovery fallback
+If the automatic loop is interrupted (session crash, terminal closed, context limit reached), re-invoke with the same arguments to resume from the current round. The state file tracks progress and will route the invocation to the correct phase automatically:
+```
+/convergence-review pr-code                    (resumes from state file)
+/convergence-review pr-plan docs/plans/...     (resumes from state file)
 ```
