@@ -10,7 +10,7 @@ The simulator is CPU-only, deterministic, and designed for **capacity planning**
 
 ```bash
 # Build
-git clone git@github.com:inference-sim/inference-sim.git
+git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o simulation_worker main.go
 
@@ -23,7 +23,9 @@ go build -o simulation_worker main.go
 ## Key Features
 
 - **Discrete-event simulation** for prefill, decode, and request scheduling
-- **KV-cache modeling** with prefix caching, chunked prefill, and tiered GPU+CPU offload
+- **Deterministic execution** — same seed produces byte-identical output across runs (INV-6)
+- **KV-cache modeling** with prefix caching and tiered GPU+CPU offload
+- **Chunked prefill and preemption-aware batch formation**
 - **Two latency estimation modes**: blackbox (data-driven) and roofline (analytical)
 - **Multi-instance cluster simulation** with shared-clock event loop
 - **Pluggable routing policies**: round-robin, least-loaded, weighted-scoring, prefix-affinity
@@ -41,6 +43,8 @@ Request Arrival → Admission → Routing → WaitQueue → Batch Formation → 
                                             ↓              ↓
                                       KV Allocation   Latency Estimation
 ```
+
+Admission and Routing apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
 
 For detailed architecture documentation, see [Cluster Architecture](design/architecture.md) and [Core Engine](design/core-engine.md).
 
@@ -69,17 +73,39 @@ For detailed architecture documentation, see [Cluster Architecture](design/archi
 
 ## Supported Models
 
+All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for blackbox mode. Models with a HuggingFace `config.json` in `model_configs/` additionally support roofline mode.
+
 ### Dense Models
-- LLaMA 3.x (8B, 70B variants)
-- Qwen 2.5 (1.5B - 72B)
-- Mistral (7B, Small 24B)
-- Phi-4, CodeLlama, Granite
+
+| Model | Sizes |
+|-------|-------|
+| Meta LLaMA 3.1 | 8B |
+| Meta LLaMA 3.3 | 70B |
+| IBM Granite 3.1 | 8B |
+| CodeLlama | 34B |
+| Microsoft Phi-4 | 14B |
+| Mistral Small (2501) | 24B |
+| Mistral Small 3.1 (2503) | 24B |
+| NVIDIA LLaMA 3.1 Nemotron | 70B |
+| OpenAI GPT-OSS | 20B, 120B |
+| Qwen 2.5 | 7B |
+| SmolLM3 | 3B |
 
 ### MoE Models
-- Mixtral 8x7B
-- Additional MoE models supported via HuggingFace config.json
 
-See [`defaults.yaml`](https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml) for the full list of pre-trained model configurations.
+| Model | Architecture |
+|-------|-------------|
+| LLaMA 4 Maverick | 17B, 128 experts |
+| LLaMA 4 Scout | 17B, 16 experts |
+| Mixtral | 8x7B |
+
+### Quantized Variants
+
+Red Hat AI (`redhatai/`) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, and Qwen 2.5. See [`defaults.yaml`](https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml) for the full list.
+
+### Roofline-Only Models
+
+Any model with a HuggingFace `config.json` can use roofline mode via `--model-config-folder`. Pre-packaged configs exist for additional architectures (Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B) in `model_configs/`.
 
 ---
 

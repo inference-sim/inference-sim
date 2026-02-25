@@ -9,6 +9,7 @@ repo_name: inference-sim/inference-sim
 # The negation pattern (!) reverses the hardcoded /templates/ exclusion.
 exclude_docs: |
   !/templates/
+  plans/
 
 theme:
   name: material

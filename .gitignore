@@ -60,8 +60,10 @@ largesweep/
 *.yaml
 !examples/*.yaml
 !defaults.yaml
-!mkdocs.yml
 !hypotheses/**/*.yaml
+
+# MkDocs symlink (created at build time, not committed — see C3 in PR #440)
+docs/contributing.md
 
 # uv files
 .python-version
