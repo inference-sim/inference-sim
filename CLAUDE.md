@@ -267,6 +267,14 @@ inference-sim/
 │   ├── standards/             # Canonical rules, invariants, principles, experiment standards
 │   ├── process/               # Activity workflows (PR, design, macro-plan, hypothesis)
 │   ├── templates/             # Artifact templates (micro-plan, macro-plan, design-guidelines, hypothesis)
+│   ├── design/                # Public-facing design documentation
+│   │   ├── README.md          # Documentation index
+│   │   ├── architecture.md    # Cluster architecture
+│   │   ├── core-engine.md     # Core DES engine
+│   │   ├── concepts.md        # Concepts glossary
+│   │   ├── configuration.md   # Configuration reference
+│   │   ├── roofline.md        # Roofline step time estimation
+│   │   └── diagrams/          # Architecture diagrams (PNG + Excalidraw source)
 │   ├── plans/                 # Active implementation plans
 │   │   └── archive/           # Completed design docs (architectural reference)
 │   └── extension-recipes.md   # Step-by-step extension guides

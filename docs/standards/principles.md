@@ -81,7 +81,7 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | Content | Canonical Source | Working Copies |
 |---------|-----------------|----------------|
 | Antipattern rules (R1-R20) | `docs/standards/rules.md` | CLAUDE.md (table), CONTRIBUTING.md (checklist) |
-| System invariants (INV-1–INV-8) | `docs/standards/invariants.md` | CLAUDE.md (summary) |
+| System invariants (INV-1–INV-8) | `docs/standards/invariants.md` | CLAUDE.md (summary), `docs/design/core-engine.md` (formulas), `docs/design/architecture.md` (signal freshness) |
 | Engineering principles | `docs/standards/principles.md` | CLAUDE.md (summary) |
 | Extension recipes (policies, scorers, KV tiers) | `docs/extension-recipes.md` | — |
 | Design process | `docs/process/design.md` | CONTRIBUTING.md (summary) |
