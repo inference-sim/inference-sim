@@ -64,6 +64,9 @@ FINDINGS.md files in individual hypothesis directories may reference old file pa
 | H15 | Cross-policy | Fitness evaluation ranks prefix-affinity higher than load-only for prefix-heavy workloads | **Confirmed with nuance** | Fitness correctly ranks prefix-aware higher (+4.4% TTFT-heavy, +0.7% throughput-heavy); control (no prefix) produces byte-identical results; 1/(1+x) normalization compresses raw 14-38% TTFT p99 improvement |
 | H20 | Workload/arrival | Heavy-tailed (ParetoLogNormal) input distributions produce more preemptions and HOL blocking than Gaussian | **Refuted** | ParetoLogNormal produces FEWER preemptions (0.71x avg); distribution MEDIAN drives KV pressure, not mean or tail |
 | H23 | Cross-policy | All routing policies produce equivalent TTFT at near-zero load | **Confirmed with nuance** | All 4 policies within 4.40% at rate=1; surprise: high-load control also equivalent with uniform workloads — differentiation requires workload heterogeneity, not just high load |
+| H27 | Performance-regime | Chunked prefill (threshold=256) reduces short-request TTFT p99 by >=30% in bimodal workloads | **Confirmed** | 46-58% TTFT p99 reduction (avg 51.9%); chunking splits 2048-token prefills into 8 steps of ~11ms vs one ~43ms step; tradeoff: 60-69% TTFT increase for long requests |
+| H28 | Performance-regime | Chunked prefill (threshold=512) improves mean ITL by >15% for concurrent decode requests | **Refuted** | ITL improvement is effectively zero (-0.5%); decode-dominated step count (~255 steps) drowns out the rare prefill-co-batched steps; unexpected -13.3% short-request TTFT improvement |
+| H29 | Structural model | Stale routing snapshots (100ms vs 1ms) degrade TTFT p99 by >=20% for kv-utilization scorer | **Confirmed** | +242% to +548% TTFT p99 degradation; queue-depth negative control shows 0.0% change (Immediate mode); composite scorer mitigates ~99% of effect; dose-response monotonic with safe zone <5ms |
 
 ## Running Experiments
 
@@ -83,9 +86,9 @@ Scripts are self-contained — they build the binary, run all experiment variant
 | Family | Done | Pending | Gaps |
 |--------|------|---------|------|
 | **Scheduler invariants** | H12, H13, H-Liveness, H25 | — | Family complete |
-| **Structural model** | H3, H9, H10, H-Phase, H-MMK, H26, H-Step-Quantum, H19, H-Cross-Model | — | Family complete |
+| **Structural model** | H3, H9, H10, H-Phase, H-MMK, H26, H-Step-Quantum, H19, H-Cross-Model, H29 | — | Family complete |
 | **Robustness/failure-mode** | H5, H14, H-Overload, H-Overload-KV, H21, H22, H24 | — | Family complete |
-| **Performance-regime** | H7, H8, H11, H-Reasoning-KV | — | Family complete |
+| **Performance-regime** | H7, H8, H11, H-Reasoning-KV, H27, H28 | — | Family complete |
 | **Workload/arrival** | H-Arrival, H16, H20 | — | Family complete |
 | **Cross-policy comparative** | Prefix-Affinity, H1-SJF, H2, H4, H6, H15, H17, H23 | H18 | 1 remaining |
 
