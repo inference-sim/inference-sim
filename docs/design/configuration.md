@@ -184,7 +184,7 @@ Used when `--workload distribution` (the default) and no `--workload-spec` is se
 The `--workload-spec` flag loads a YAML file defining multi-client workloads:
 
 ```yaml
-aggregate_rate: 500000    # Total arrival rate in requests/second
+aggregate_rate: 100       # Total arrival rate in requests/second
 num_requests: 1000
 seed: 42
 horizon: 1000000000       # Ticks (microseconds)
@@ -214,8 +214,7 @@ clients:
     rate_fraction: 0.4
     arrival:
       process: "gamma"
-      params:
-        shape: 2.0
+      cv: 2.0
     input_distribution:
       type: "gaussian"
       params:
@@ -232,9 +231,9 @@ clients:
         max: 7000
 ```
 
-**Supported arrival processes:** `poisson`, `gamma` (with shape parameter), `weibull` (with shape parameter).
+**Supported arrival processes:** `poisson`, `gamma` (with `cv` parameter), `weibull` (with `cv` parameter).
 
-**Supported token distributions:** `gaussian`, `exponential`, `pareto-lognormal`, `constant`, `empirical-pdf`.
+**Supported token distributions:** `gaussian`, `exponential`, `pareto_lognormal`, `constant`, `empirical`.
 
 When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` still override the YAML values if explicitly provided.
 

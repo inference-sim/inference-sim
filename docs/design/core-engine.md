@@ -244,7 +244,7 @@ Priority policies assign a numeric score to each request before scheduling:
 | Policy | Score Computation | Behavior |
 |--------|-------------------|----------|
 | `constant` | Fixed score for all requests | No differentiation (default) |
-| `slo-based` | `base + age_weight * (clock - arrival)` | Favors older requests, prevents starvation |
+| `slo-based` | `base + age_weight * (clock - arrival)` | Favors older requests, prevents starvation. Note: despite the name, does not currently use per-request SLO metadata. |
 | `inverted-slo` | `base - age_weight * age` | Starves older requests (pathological) |
 
 ## Metrics

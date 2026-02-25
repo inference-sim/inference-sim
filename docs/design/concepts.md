@@ -98,7 +98,7 @@ A routing scorer that directs requests to instances likely to have their prefix 
 
 ### Priority Policy
 
-A per-instance policy that assigns a numeric priority score to each request before batch formation. Used by priority-aware schedulers to reorder the wait queue. Built-in policies: `constant`, `slo-based` (age-weighted), `inverted-slo` (testing only). See [Core Engine: Scheduling](core-engine.md#scheduling-policies).
+A per-instance policy that assigns a numeric priority score to each request before batch formation. Used by priority-aware schedulers to reorder the wait queue. Built-in policies: `constant`, `slo-based`, `inverted-slo` (testing only). Note: despite its name, `slo-based` currently uses only request age (favoring older requests), not per-request SLO metadata. See [Core Engine: Scheduling](core-engine.md#scheduling-policies).
 
 ### Roofline Model
 
@@ -138,7 +138,7 @@ Time from request arrival to completion of the prefill phase (first output token
 
 ### Workload Specification
 
-A YAML file (`--workload-spec`) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports Poisson, Gamma, and Weibull arrival processes and Gaussian, Exponential, ParetoLogNormal, and Constant token distributions. See [Configuration Reference](configuration.md#workload-modes).
+A YAML file (`--workload-spec`) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports `poisson`, `gamma`, and `weibull` arrival processes and `gaussian`, `exponential`, `pareto_lognormal`, `constant`, and `empirical` token distributions. See [Configuration Reference](configuration.md#workload-modes).
 
 ### Work-Conserving
 

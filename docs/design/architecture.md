@@ -53,7 +53,7 @@ Admission is the first gate in the online routing pipeline. Every incoming reque
 | `token-bucket` | Rate-limiting via a token bucket with configurable capacity and refill rate |
 | `reject-all` | Reject all requests (for pathological testing) |
 
-**Token bucket** operates as a standard leaky bucket: each request consumes one token, tokens refill at a constant rate, and requests are rejected when the bucket is empty. Capacity and refill rate are configured via `--token-bucket-capacity` and `--token-bucket-refill-rate`.
+**Token bucket** operates as a leaky bucket: each request consumes tokens equal to its input token count, tokens refill at a constant rate, and requests are rejected when the bucket has insufficient tokens. Capacity and refill rate are configured via `--token-bucket-capacity` and `--token-bucket-refill-rate`.
 
 Rejected requests are counted in the output metrics (`rejected_requests`) but do not enter the routing pipeline. See [Configuration Reference](configuration.md#admission-policy) for flag details.
 
