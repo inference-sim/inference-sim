@@ -44,7 +44,7 @@ func TestResolveModelConfig_LocalHit(t *testing.T) {
 }
 
 func TestResolveModelConfig_CorruptedLocal_FallsThrough(t *testing.T) {
-	// Create a model_configs directory with invalid JSON — should be removed and fall through
+	// Create a model_configs directory with invalid JSON — should skip and fall through
 	tmpDir := t.TempDir()
 	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
@@ -68,15 +68,16 @@ func TestResolveModelConfig_CorruptedLocal_FallsThrough(t *testing.T) {
 		t.Fatal("expected error when local config is corrupted and no fallbacks exist")
 	}
 
-	// Verify the corrupted file was removed
-	if _, err := os.Stat(corruptedPath); err == nil {
-		t.Error("corrupted config file should have been removed")
+	// Verify the corrupted file is preserved (not deleted — may be user-provided)
+	if _, statErr := os.Stat(corruptedPath); statErr != nil {
+		t.Error("corrupted config file should be preserved, not deleted")
 	}
 }
 
 func TestResolveModelConfig_NonHFConfig_FallsThrough(t *testing.T) {
-	// Valid JSON that is not a HuggingFace config should be treated as invalid
-	// and removed, then fall through to HF fetch (I-1: cache validation parity).
+	// Valid JSON that is not a HuggingFace config should be skipped,
+	// then fall through to HF fetch (I-1: cache validation parity).
+	// File is preserved — may be a user-provided config with non-standard fields.
 	tmpDir := t.TempDir()
 	localDir := filepath.Join(tmpDir, modelConfigsDir, "test-model")
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
@@ -99,9 +100,9 @@ func TestResolveModelConfig_NonHFConfig_FallsThrough(t *testing.T) {
 		t.Fatal("expected error when local config is valid JSON but not an HF config")
 	}
 
-	// Verify the non-HF config file was removed
-	if _, err := os.Stat(nonHFPath); err == nil {
-		t.Error("non-HF config file should have been removed")
+	// Verify the non-HF config file is preserved (not deleted)
+	if _, statErr := os.Stat(nonHFPath); statErr != nil {
+		t.Error("non-HF config file should be preserved, not deleted")
 	}
 }
 

@@ -36,8 +36,8 @@ RATE=500
 SEEDS=(42 123 456)
 POLICIES=("round-robin" "least-loaded" "weighted")
 
-# Model config paths for roofline mode
-MODEL_CONFIG_DIR="$REPO_ROOT/model_configs/llama-3.1-8b-instruct"
+# Hardware config path for roofline mode.
+# Model config is auto-fetched by --roofline into model_configs/ on first run.
 HW_CONFIG="$REPO_ROOT/hardware_config.json"
 
 # Beta coefficients from defaults.yaml for llama-3.1-8b, H100, TP=2
@@ -107,7 +107,7 @@ for seed in "${SEEDS[@]}"; do
       fail_count=$((fail_count + 1))
     fi
 
-    # --- Roofline mode (--model-config-folder triggers roofline fallback) ---
+    # --- Roofline mode (--roofline auto-fetches HF config.json on first run) ---
     outfile="$RESULTS_DIR/roofline_${policy}_s${seed}.txt"
     errfile="$RESULTS_DIR/roofline_${policy}_s${seed}_stderr.txt"
     echo "Running roofline / ${policy} / seed=${seed}..." >&2
@@ -117,7 +117,7 @@ for seed in "${SEEDS[@]}"; do
       --routing-policy "$policy" \
       --workload-spec "$WORKLOAD_YAML" \
       --seed "$seed" \
-      --model-config-folder "$MODEL_CONFIG_DIR" \
+      --roofline \
       --hardware-config "$HW_CONFIG" \
       --hardware "H100" \
       --tp 2 \

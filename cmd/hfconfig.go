@@ -54,10 +54,9 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 			logrus.Infof("--roofline: using config from %s", localDir)
 			return localDir, nil
 		}
-		logrus.Warnf("--roofline: config at %s is not a valid HuggingFace config, removing", localPath)
-		if removeErr := os.Remove(localPath); removeErr != nil {
-			logrus.Warnf("--roofline: failed to remove corrupted config %s: %v", localPath, removeErr)
-		}
+		// Don't delete — the file may be a user-provided config with non-standard
+		// field names. Fall through to HF fetch, which will overwrite if successful.
+		logrus.Warnf("--roofline: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size); trying HuggingFace fetch", localPath)
 	}
 
 	// 3. Fetch from HuggingFace and write into model_configs/<short-name>/
@@ -114,6 +113,9 @@ func resolveHardwareConfig(explicitPath, defaultsFile string) (string, error) {
 // fetchHFConfigFunc is the function used to fetch HF configs. Package-level
 // variable allows tests to inject a mock without hitting real HuggingFace.
 // Second parameter is the target directory to write config.json into.
+//
+// WARNING: NOT safe for t.Parallel() — tests that swap this variable must
+// run sequentially within the cmd package. See t.Cleanup() restore pattern.
 var fetchHFConfigFunc = fetchHFConfig
 
 // fetchHFConfig downloads config.json from HuggingFace and writes it to targetDir.

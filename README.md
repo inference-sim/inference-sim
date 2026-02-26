@@ -454,11 +454,14 @@ export HF_TOKEN=hf_your_token_here
   --hardware H100 \
   --tp 1 \
   --vllm-version vllm/vllm-openai:v0.8.4 \
-  --model-config-folder model_configs/llama-3.1-8b-instruct \
+  --model-config-folder /path/to/your/model-config \
   --hardware-config hardware_config.json
 ```
 
-This requires the HuggingFace `config.json` for the model saved under the `model-config-folder` path.
+This requires a HuggingFace `config.json` for the model saved under the `--model-config-folder` path.
+You can obtain one by downloading it from HuggingFace (e.g., `wget https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/resolve/main/config.json`), or by running `--roofline` once (which auto-fetches into `model_configs/`).
+
+> **Note:** The first `--roofline` run requires network access to fetch the model's `config.json` from HuggingFace. Subsequent runs use the cached copy in `model_configs/`. For offline/air-gapped environments, pre-fetch configs using `--model-config-folder` or copy a previously cached `model_configs/` directory.
 
 > **Note:** Currently supports H100 and A100-80 GPUs. Roofline estimation assumes dense transformer architecture — MoE models may show overestimated latency.
 
