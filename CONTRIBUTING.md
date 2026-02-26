@@ -351,7 +351,8 @@ Follow `docs/process/hypothesis.md` for the full process (Steps 0-10). Key phase
 | Document | Purpose |
 |---|---|
 | `hypotheses/README.md` | Existing experiments, coverage gaps |
-| `docs/process/hypothesis.md` | Full process (Steps 0-10, review gates, convergence protocol) |
+| `docs/process/hypothesis.md` | Full process (Steps 0-10, three review gates) |
+| `docs/process/convergence.md` | Universal Convergence Protocol (used by all review gates) |
 | `docs/standards/experiments.md` | Rigor requirements (families, types, VV&UQ, RCV rules) |
 | `docs/templates/hypothesis.md` | FINDINGS.md template |
 

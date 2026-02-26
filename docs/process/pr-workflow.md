@@ -882,7 +882,7 @@ Not all PRs need the same level of review. Use these objective criteria to selec
 
 | Tier | Criteria | Plan Review (Step 2.5) | Code Review (Step 4.5) | Self-Audit (Step 4.75) |
 |------|----------|----------------------|----------------------|----------------------|
-| **Small** | Docs-only, OR ≤3 files changed AND no new interfaces/types AND no new CLI flags | Skip convergence review; single `review-pr` pre-pass sufficient | Skip convergence review; single `review-pr` pre-pass sufficient | Full (all 10 dimensions) |
+| **Small** | Docs-only, OR ≤3 files changed AND only mechanical changes (renames, formatting, comment updates) AND no behavioral logic changes AND no new interfaces/types AND no new CLI flags | Skip convergence review; single `review-pr` pre-pass sufficient | Skip convergence review; single `review-pr` pre-pass sufficient | Full (all 10 dimensions) |
 | **Medium** | 4-10 files changed, OR new policy template behind existing interface | Full two-stage (pre-pass + convergence) | Full two-stage (pre-pass + convergence) | Full (all 10 dimensions) |
 | **Large** | >10 files, OR new interfaces/modules, OR architecture changes | Full two-stage (pre-pass + convergence) | Full two-stage (pre-pass + convergence) | Full (all 10 dimensions) |
 

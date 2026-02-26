@@ -24,13 +24,13 @@ This document describes the process for writing a BLIS design document. For the 
 
 ## Design Review Perspectives (8)
 
-For each perspective, check every item. Classify findings as CRITICAL / IMPORTANT / SUGGESTION per the [convergence protocol](convergence.md).
+For each perspective, check every item. Classify findings as CRITICAL / IMPORTANT / SUGGESTION per the [convergence protocol](convergence.md). Section references below refer to [design-guidelines.md](../templates/design-guidelines.md) unless otherwise noted.
 
 **Perspective 1 — Motivation & Scoping:**
 - Are the analysis questions clear and specific?
 - Is the modeling decisions table complete (modeled / simplified / omitted)?
 - Does every "simplified" entry state what real-system behavior is lost?
-- Has each component been evaluated against the six model scoping criteria (Section 2.1)?
+- Has each component been evaluated against the six model scoping criteria (design-guidelines Section 2.1)?
 
 **Perspective 2 — DES Foundations:**
 - Is the DES design review checklist (Section 2.6) completed with all 10 questions answered?

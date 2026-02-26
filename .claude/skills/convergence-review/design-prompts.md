@@ -2,7 +2,7 @@
 
 Reference file for the convergence-review skill. Contains exact prompts for design document review (8 perspectives) and macro plan review (8 perspectives).
 
-**Note:** Unlike PR and hypothesis prompts (which have canonical sources in their process docs), these design and macro-plan perspective prompts are defined here as the primary source — `docs/process/design.md` and `docs/process/macro-plan.md` are lightweight stubs that reference this skill.
+**Canonical sources:** `docs/process/design.md` (Design Review Perspectives section) and `docs/process/macro-plan.md` (Macro Plan Review Perspectives section). The perspective names and checklist items below are expanded versions of the process doc checklists, with full prompt context for agent dispatch. If perspective names diverge, the process docs are authoritative.
 
 **Related documents:**
 - Design doc process: `docs/process/design.md`

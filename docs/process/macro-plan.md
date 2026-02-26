@@ -25,7 +25,7 @@ This document describes the process for creating a macro-level implementation pl
 
 ## Macro Plan Review Perspectives (8)
 
-For each perspective, check every item. Classify findings as CRITICAL / IMPORTANT / SUGGESTION per the [convergence protocol](convergence.md).
+For each perspective, check every item. Classify findings as CRITICAL / IMPORTANT / SUGGESTION per the [convergence protocol](convergence.md). Section references below refer to [design-guidelines.md](../templates/design-guidelines.md) and [macro-plan template](../templates/macro-plan.md) unless otherwise noted.
 
 **Perspective 1 — Objective Clarity:**
 - Are 3-7 crisp objectives defined?

@@ -22,7 +22,7 @@ This document defines the convergence protocol used by all review gates across B
 
 ## Rules
 
-- **Max 10 rounds per gate.** Each gate has its own independent round counter. If a gate fails to converge within 10 rounds, suspend the experiment: document the remaining issues as future work.
+- **Max 10 rounds per gate.** Each gate has its own independent round counter. If a gate fails to converge within 10 rounds, suspend the work: document the remaining issues as future work.
 - **No minimum round count.** Convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item.
 - **Hard gate — NO EXCEPTIONS.** You MUST re-run after fixes. You may NOT skip the re-run, propose alternative steps, or rationalize that fixes were "trivial enough." The re-run is the only evidence of convergence. This is non-negotiable.
 - **SUGGESTION-level items** (documentation nits, cosmetic fixes, off-by-one line citations) do not block convergence.
@@ -46,12 +46,12 @@ Each reviewer must classify every finding:
 ## Expected Convergence Rates
 
 Gates with more perspectives (FINDINGS Review: 10) will naturally converge more slowly than gates with fewer (Design Review: 5). This is correct behavior — more eyes = higher quality bar. Typical expectations:
-- Design Review (5 perspectives): 1-2 rounds
-- Code Review (5 perspectives): 1-3 rounds
-- Design Doc Review (8 perspectives): 1-2 rounds
-- Macro Plan Review (8 perspectives): 1-2 rounds
-- PR Plan/Code Review (10 perspectives): 1-3 rounds
-- FINDINGS Review (10 perspectives): 1-5 rounds
+- Hypothesis Design Review (5 perspectives): 1-2 rounds *(empirical, from PR #310-#433)*
+- Hypothesis Code Review (5 perspectives): 1-3 rounds *(empirical)*
+- Design Doc Review (8 perspectives): 1-2 rounds *(estimated — no empirical data yet)*
+- Macro Plan Review (8 perspectives): 1-2 rounds *(estimated)*
+- PR Plan/Code Review (10 perspectives): 1-3 rounds *(empirical, from PR #381-#433)*
+- FINDINGS Review (10 perspectives): 1-5 rounds *(empirical)*
 
 ## References
 

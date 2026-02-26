@@ -60,7 +60,7 @@ Never use `continue` in an error path without propagating, counting, or document
 
 **Required assertion patterns** (behavioral — survive refactor):
 - Observable output: `assert.Equal(policy.Compute(req, clock), 0.0)`
-- Invariant verification: `assert.Equal(completed+queued+running, injected)`
+- Invariant verification: `assert.Equal(completed+queued+running+dropped, injected)`
 - Ordering/ranking: `assert.True(scoreA > scoreB)`
 
 ## Test Suite Performance
