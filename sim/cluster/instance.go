@@ -142,6 +142,18 @@ func (i *InstanceSimulator) CacheHitRate() float64 {
 	return i.sim.KVCache.CacheHitRate()
 }
 
+// PendingTransferLatency returns the accumulated CPU→GPU transfer latency (ticks).
+// Non-zero when tiered KV cache has pending reloads. Zero for single-tier.
+func (i *InstanceSimulator) PendingTransferLatency() int64 {
+	return i.sim.KVCache.PendingTransferLatency()
+}
+
+// KVThrashingRate returns the fraction of CPU→GPU reloads that were thrashing
+// (block was offloaded and reloaded within a short interval).
+func (i *InstanceSimulator) KVThrashingRate() float64 {
+	return i.sim.KVCache.KVThrashingRate()
+}
+
 // InjectRequestOnline injects a request during the event loop (online routing mode).
 // Unlike InjectRequest, this does NOT check hasRun, allowing injection during simulation.
 func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int64) {

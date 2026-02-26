@@ -13,7 +13,19 @@ import (
 )
 
 // BlackboxLatencyModel estimates latency using trained alpha/beta regression coefficients.
-// Beta coefficients estimate step time: beta0 + beta1*cacheMissTokens + beta2*decodeTokens.
+//
+// Step time formula:
+//
+//	stepTime = beta0 + beta1*cacheMissTokens + beta2*decodeTokens + beta3*attentionProduct
+//
+// Where attentionProduct = Σ(newTokens_i × contextLength_i) summed over prefill requests.
+// This models the O(n²) attention cost: each new token attends to the full KV context
+// (cached + new tokens). When beta3 > 0, cache hits become dramatically more valuable
+// because they reduce both the newTokens dimension AND avoid the quadratic cross-attention.
+//
+// Beta3 is optional: if BetaCoeffs has only 3 elements, the quadratic term is zero
+// (backward compatible with existing coefficient sets).
+//
 // Alpha coefficients estimate overheads: alpha0 + alpha1*inputLen (queueing), alpha2 (output processing).
 type BlackboxLatencyModel struct {
 	betaCoeffs  []float64
@@ -21,11 +33,17 @@ type BlackboxLatencyModel struct {
 }
 
 func (m *BlackboxLatencyModel) StepTime(batch []*sim.Request) int64 {
-	var totalCacheMissTokens, totalDecodeTokens int64
+	var totalCacheMissTokens, totalDecodeTokens, totalAttentionProduct int64
 	for _, req := range batch {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			// Prefill phase: NumNewTokens are cache-miss tokens
-			totalCacheMissTokens += int64(req.NumNewTokens)
+			newTokens := int64(req.NumNewTokens)
+			totalCacheMissTokens += newTokens
+			// Quadratic attention: each new token attends to the full context
+			// (ProgressIndex = already-cached tokens, newTokens = computing now).
+			// Context length = ProgressIndex + newTokens.
+			contextLen := req.ProgressIndex + newTokens
+			totalAttentionProduct += newTokens * contextLen
 		} else if len(req.OutputTokens) > 0 {
 			// Decode phase: NumNewTokens is 1 (set by FormBatch)
 			totalDecodeTokens += int64(req.NumNewTokens)
@@ -35,6 +53,10 @@ func (m *BlackboxLatencyModel) StepTime(batch []*sim.Request) int64 {
 	totalStepTime += m.betaCoeffs[0]
 	totalStepTime += m.betaCoeffs[1] * float64(totalCacheMissTokens)
 	totalStepTime += m.betaCoeffs[2] * float64(totalDecodeTokens)
+	// Quadratic attention term (beta3, optional — zero if BetaCoeffs has only 3 elements)
+	if len(m.betaCoeffs) > 3 {
+		totalStepTime += m.betaCoeffs[3] * float64(totalAttentionProduct)
+	}
 	return int64(totalStepTime)
 }
 

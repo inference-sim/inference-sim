@@ -16,12 +16,8 @@ type AdaptiveConfig struct {
 	// the best-cached instance and the least-loaded instance that still permits
 	// exploit mode. If the cached instance exceeds the least-loaded by more than
 	// this margin, fall back to explore mode to prevent queue concentration.
-	// Range: [0, inf). Default: 5.
+	// Range: [0, inf). Default: 2.
 	LoadHeadroom int
-
-	// ExploreWeights are the scorer weights used in explore mode (load-balanced).
-	// If nil, defaults to queue-depth:3,kv-utilization:2 (no prefix-affinity).
-	ExploreWeights []ScorerConfig
 
 	// ExploitWeights are the scorer weights used in exploit mode (cache-heavy).
 	// If nil, defaults to prefix-affinity:5,queue-depth:1,kv-utilization:1.
@@ -32,7 +28,7 @@ type AdaptiveConfig struct {
 func DefaultAdaptiveConfig() AdaptiveConfig {
 	return AdaptiveConfig{
 		ExploitThreshold: 0.3,
-		LoadHeadroom:     0,
+		LoadHeadroom:     5,
 	}
 }
 
@@ -57,23 +53,24 @@ func defaultExploitWeights() []ScorerConfig {
 	}
 }
 
-// AdaptiveWeightedScoring routes requests using an exploit/explore strategy.
+// AdaptiveWeightedScoring routes requests using an exploit/explore strategy with
+// temporal workload tracking.
 //
-// The core insight (from E2/CacheGen and BLIS experiment evidence H17, H23, H-Cross-Model):
-// optimal routing weights depend on whether the current request can benefit from
-// prefix caching. Rather than continuously adjusting weights, this policy makes
-// a binary per-request decision:
+// The design addresses three adaptation axes:
 //
-//   - EXPLOIT: When a strong prefix cache hit exists on a specific instance AND
-//     that instance isn't overloaded, route directly to that instance.
-//   - EXPLORE: When no good cache hit exists or the cached instance is overloaded,
-//     use round-robin distribution for perfect load uniformity.
+//  1. Per-request: each request is classified as exploit or explore based on its
+//     prefix cache match and the target instance's load.
+//  2. Over time: an EMA (exponential moving average) of recent cache hit rates
+//     tracks whether the current workload phase benefits from cache-aware routing.
+//     When the EMA is low (independent workload), exploit decisions are suppressed.
+//  3. Over workloads: the EMA automatically adapts to workload transitions —
+//     when traffic shifts from prefix-heavy to independent (or vice versa),
+//     the EMA tracks the change within ~50 requests (alpha=0.02).
 //
-// The key experimental finding motivating the explore=round-robin choice:
-// round-robin consistently beats all score-based policies at moderate-to-high
-// load because perfect distribution uniformity avoids the queue concentration
-// that score-based routing introduces. Score-based explore (queue-depth, kv-util)
-// introduces asymmetry that worsens TTFT.
+// The exploit/explore decision:
+//   - EXPLOIT: Strong prefix cache hit + instance not overloaded + recent workload
+//     shows cache benefit (EMA above threshold). Routes directly to cached instance.
+//   - EXPLORE: Otherwise, uses round-robin for perfect distribution uniformity.
 //
 // The LoadHeadroom parameter prevents the degenerate cascade (H21): even with
 // a cache hit, if the target instance has substantially more load than the lightest
@@ -85,6 +82,14 @@ type AdaptiveWeightedScoring struct {
 
 	// Explore mode: round-robin counter for uniform distribution
 	rrCounter int
+
+	// Temporal tracking: EMA of recent cache hit ratios.
+	// Tracks whether the current workload phase benefits from cache-aware routing.
+	// Updated after every request. When low (<ExploitThreshold), exploit is suppressed
+	// even for individual requests with cache hits, because the workload is in an
+	// independent/non-prefix phase where concentration hurts.
+	cacheHitEMA float64
+	emaAlpha    float64 // EMA smoothing factor (default: 0.02 ≈ 50-request window)
 
 	// Shared observers (called regardless of mode)
 	observers []observerFunc
@@ -100,8 +105,11 @@ func (aws *AdaptiveWeightedScoring) Route(req *Request, state *RouterState) Rout
 		panic("AdaptiveWeightedScoring.Route: empty snapshots")
 	}
 
-	// Determine exploit vs explore mode
+	// Determine exploit vs explore mode (per-request + temporal)
 	mode, cacheRatio, bestCacheInst := aws.classifyRequest(req, snapshots)
+
+	// Update temporal EMA with this request's cache opportunity
+	aws.cacheHitEMA = aws.emaAlpha*cacheRatio + (1-aws.emaAlpha)*aws.cacheHitEMA
 
 	var bestIdx int
 	var scores map[string]float64
@@ -168,6 +176,14 @@ func (aws *AdaptiveWeightedScoring) classifyRequest(
 		return "explore", cacheRatio, bestInst
 	}
 
+	// Temporal check: suppress exploit if recent workload doesn't benefit from caching.
+	// This adapts to workload shifts — when traffic transitions from prefix-heavy
+	// to independent, the EMA drops and exploit is suppressed, avoiding the
+	// concentration overhead of cache-affinity routing during non-prefix phases.
+	if aws.cacheHitEMA < aws.config.ExploitThreshold {
+		return "explore", cacheRatio, bestInst
+	}
+
 	// Check load headroom: is the cached instance too overloaded?
 	// Find the least-loaded instance for comparison
 	minLoad := math.MaxInt
@@ -184,6 +200,19 @@ func (aws *AdaptiveWeightedScoring) classifyRequest(
 
 	if cachedLoad-minLoad > aws.config.LoadHeadroom {
 		return "explore", cacheRatio, bestInst
+	}
+
+	// Check offloading pressure: avoid instances with high pending transfer latency
+	// or KV thrashing. When a tiered KV cache is reloading blocks from CPU→GPU,
+	// routing more requests there amplifies the reload penalty. Fall back to explore
+	// if the cached instance has significant pending transfers.
+	for _, snap := range snapshots {
+		if snap.ID == bestInst {
+			if snap.PendingTransferLatency > 0 || snap.KVThrashingRate > 0.1 {
+				return "explore", cacheRatio, bestInst
+			}
+			break
+		}
 	}
 
 	return "exploit", cacheRatio, bestInst

@@ -19,6 +19,9 @@ type RoutingSnapshot struct {
 	FreeKVBlocks    int64
 	CacheHitRate    float64
 	PendingRequests int // Requests routed to this instance but not yet in queue
+	// Tiered KV cache state (zero for single-tier GPU-only configurations)
+	PendingTransferLatency int64   // Accumulated CPU→GPU reload latency (ticks)
+	KVThrashingRate        float64 // Fraction of reloads that are thrashing (offload→reload < 1000 ticks)
 }
 
 // EffectiveLoad returns the total effective load on this instance:
@@ -340,6 +343,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 			observers:      observers,
 			config:         cfg,
 			prefixIdx:      prefixIdx,
+			emaAlpha:       0.02, // ~50-request window
 		}
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string), blockSize: blockSize}

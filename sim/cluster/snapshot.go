@@ -110,6 +110,8 @@ func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.Routin
 		snap.KVUtilization = inst.KVUtilization()
 		snap.FreeKVBlocks = inst.FreeKVBlocks()
 		snap.CacheHitRate = inst.CacheHitRate()
+		snap.PendingTransferLatency = inst.PendingTransferLatency()
+		snap.KVThrashingRate = inst.KVThrashingRate()
 		lr.KVUtilization = clock
 	}
 
@@ -127,6 +129,8 @@ func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 		snap.KVUtilization = inst.KVUtilization()
 		snap.FreeKVBlocks = inst.FreeKVBlocks()
 		snap.CacheHitRate = inst.CacheHitRate()
+		snap.PendingTransferLatency = inst.PendingTransferLatency()
+		snap.KVThrashingRate = inst.KVThrashingRate()
 		p.cache[id] = snap
 		p.lastRefresh[id] = fieldTimestamps{
 			QueueDepth:    clock,
