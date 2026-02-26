@@ -1,22 +1,54 @@
-# Step-Time Prediction for LLM Inference Simulation
+# Latency Model Fidelity for LLM Inference Simulation
 
 ## Problem
 
-BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It predicts per-step execution time for transformer inference batches. The current blackbox latency model uses a 3-coefficient linear regression:
+BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. The **ultimate metric is workload-level E2E mean error < 10%** — the accuracy of end-to-end request latency predicted by the simulator compared to ground truth.
+
+E2E latency in BLIS is the sum of **6 delay components**, each contributed by the `LatencyModel` interface or emergent from simulation dynamics:
 
 ```
-step_time = beta0 + beta1 * prefill_tokens + beta2 * decode_tokens
+E2E(request) = QueueingTime(req)              [1] arrival-to-queue delay
+             + (time waiting in WaitQ)         [2] emergent from simulation dynamics
+             + SchedulingProcessingTime()      [3] per-request scheduling overhead
+             + Σ StepTime(batch)               [4] GPU execution per batch step
+             + Σ OutputTokenProcessingTime()   [5] per-token post-processing
+             + KV transfer latency             [6] CPU↔GPU offload/reload
+             + PreemptionProcessingTime()      [7] if preempted and re-queued
 ```
 
-This model has fundamental structural limitations:
-- **Only 2 features**: It reduces the entire batch to two scalar sums (total prefill tokens, total decode tokens)
-- **No KV cache awareness**: A batch with one long-context request (KV length 4096) and one short-context request (KV length 128) produces identical predictions to two medium-context requests (KV length 2112 each), despite dramatically different attention FLOPs
-- **No architecture awareness**: The same formula is used for dense (Llama) and MoE (Mixtral) models, despite fundamentally different compute patterns (Mixtral activates only ~25% of parameters per token via top-2 expert routing)
-- **No batch composition detail**: Number of prefill vs decode requests, mixed-batch interactions, and request count are all ignored
+### Current Model State
 
-**The goal is to replace this blackbox model with a data-driven alternative achieving <10% workload-level E2E mean error across all 16 experiments, while the winning model must integrate back into BLIS as a Go LatencyModel implementation.**
+The current `LatencyModel` implementations (blackbox and roofline) have these limitations:
 
-The simulator's existing roofline model (analytical FLOPs/bandwidth with MFU lookup) is unaffected and not being replaced.
+| Component | Current Implementation | Limitation |
+|---|---|---|
+| **StepTime** | `beta0 + beta1*prefill + beta2*decode` (3 coefficients) | Only 2 features; no KV cache, architecture, or batch composition awareness |
+| **QueueingTime** | `alpha0 + alpha1*inputLen` (2 coefficients) | Fixed linear model; doesn't account for system load or batch formation dynamics |
+| **OutputTokenProcessingTime** | constant `alpha2` | Single constant for all tokens regardless of context |
+| **SchedulingProcessingTime** | **returns 0** | Real scheduling has overhead (queue scanning, KV allocation, priority sorting) |
+| **PreemptionProcessingTime** | **returns 0** | Real preemption has cost (KV block release, re-queuing, state bookkeeping) |
+| **KV transfer latency** | Separate KV subsystem | Only applies to tiered (GPU+CPU) configurations |
+
+### Round 1 Findings
+
+Round 1 focused exclusively on replacing `StepTime()`. Key results (see `round1/round1_FINDINGS_SUMMARY.md`):
+- **Best result:** Per-experiment XGBoost achieved 34.0% avg per-step MAPE (2x better than blackbox)
+- **Binding constraint:** Missing per-request KV cache lengths in training data
+- **Generalization fails:** Per-model training is mandatory (LOMO 2559.7% MAPE)
+- **Critical gap:** Per-step MAPE was the only metric tested; workload-level E2E mean error was NOT evaluated
+
+### Broadened Scope for Round 2
+
+**The goal is to achieve <10% workload-level E2E mean error by improving ANY or ALL of the 5 LatencyModel methods**, not just StepTime. Opportunities include:
+
+1. **StepTime improvement** — continue from Round 1's XGBoost (34% MAPE), potentially with per-request KV features derived from lifecycle data
+2. **QueueingTime calibration** — the `alpha0 + alpha1*inputLen` model may systematically over/underpredict arrival-to-queue delay, biasing all downstream latencies
+3. **SchedulingProcessingTime** — currently 0, but real scheduling overhead (vLLM's `scheduler.schedule()`) is measurable from ground-truth timing data and scales with queue depth and batch size
+4. **OutputTokenProcessingTime** — currently constant, but may vary with model size, TP degree, or output token position
+5. **PreemptionProcessingTime** — currently 0, but preemption events are observable in ground-truth traces and have real cost
+6. **End-to-end calibration** — even if individual components have errors, calibrating the *composition* of all components to minimize E2E error is valid (e.g., intentional over/underestimation of one component to compensate for systematic bias in another)
+
+**The winning approach must integrate back into BLIS as a Go `LatencyModel` implementation.** The simulator's existing roofline model (analytical FLOPs/bandwidth with MFU lookup) is unaffected and not being replaced.
 
 ## Ground-Truth Data
 
@@ -181,26 +213,37 @@ Each idea must specify which integration path it would use.
 
 ## Algorithm Scope
 
-**Not restricted to ML.** Research ideas may propose:
+**Not restricted to ML or to StepTime.** Research ideas may propose:
 - Statistical regression (Ridge, Lasso, polynomial, piecewise)
 - Tree ensembles (XGBoost, LightGBM, random forest)
 - Neural networks (small MLPs, attention-based)
 - Physics-informed models (analytical compute model + learned residuals)
 - Evolutionary program synthesis (OpenEvolve, GEPA — evolved prediction functions)
 - Hybrid approaches (analytical backbone + ML residual correction)
+- **Multi-component calibration** (jointly optimize all 5 LatencyModel methods for E2E fidelity)
+- **Scheduling/preemption overhead models** (data-driven models for the currently-zero methods)
+- **End-to-end calibration** (tune any/all components with E2E mean error as the objective, not per-component accuracy)
 
 Each approach must:
 1. Cite relevant prior work from systems/ML literature
 2. Address all evaluation dimensions (P1–P6)
-3. Specify which LatencyModel methods it covers (minimum: StepTime)
+3. Specify which LatencyModel methods it covers (minimum: StepTime; **bonus: additional methods**)
 4. Document its Go integration path
 5. Be distinct from other proposed approaches
 
 ## Key Questions for Ideas to Address
 
+### From Round 1 (still open)
 1. How to handle the 3-order-of-magnitude step time range across models?
 2. How to capture KV-cache-length effects using only ProgressIndex as proxy?
 3. How to handle dense vs MoE architecture differences (25% active parameters for MoE)?
-4. How to achieve good per-step accuracy that also translates to <10% E2E mean error?
-5. How to handle the non-additive prefill/decode interaction in mixed batches (chunked prefill)?
-6. What features beyond the existing schema would improve predictions, and are they derivable from Request objects?
+4. How to handle the non-additive prefill/decode interaction in mixed batches (chunked prefill)?
+5. What features beyond the existing schema would improve predictions, and are they derivable from Request objects?
+
+### New for Round 2 (broadened scope)
+6. **Which LatencyModel component contributes most to E2E error?** Is StepTime the dominant error source, or do QueueingTime/SchedulingTime/OutputTokenProcessingTime introduce comparable systematic bias?
+7. **Can we derive per-request KV features from lifecycle data?** The `request_metrics/` directories contain per-token timestamps — can these reconstruct ProgressIndex at each step?
+8. **Does per-step MAPE translate to E2E error?** Round 1 showed 34% per-step MAPE. If errors are symmetric, E2E mean error could be much lower. This must be measured via BLIS simulation.
+9. **Can non-zero SchedulingProcessingTime and PreemptionProcessingTime improve E2E fidelity?** These are currently hardcoded to 0. Ground-truth traces contain timing data for these events.
+10. **Is end-to-end calibration more practical than per-component accuracy?** Instead of optimizing each component independently, calibrate the composition to minimize E2E error directly (e.g., grid search over alpha/beta coefficients with E2E error as the objective).
+11. **Can simpler models with better features match XGBoost?** Round 1's XGBoost underfits (shallow trees) — better features (per-request KV) might enable Ridge or piecewise linear models that are trivial to integrate in Go.
