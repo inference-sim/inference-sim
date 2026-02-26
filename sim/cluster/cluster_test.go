@@ -770,8 +770,8 @@ func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
 
 func BenchmarkClusterSimulator_1K_1Instance(b *testing.B) {
 	config := newTestDeploymentConfig(1)
-	requests := newTestRequests(1000)
 	for i := 0; i < b.N; i++ {
+		requests := newTestRequests(1000)
 		cs := NewClusterSimulator(config, requests)
 		if err := cs.Run(); err != nil {
 			b.Fatalf("cs.Run: %v", err)
@@ -781,8 +781,8 @@ func BenchmarkClusterSimulator_1K_1Instance(b *testing.B) {
 
 func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 	config := newTestDeploymentConfig(4)
-	requests := newTestRequests(10000)
 	for i := 0; i < b.N; i++ {
+		requests := newTestRequests(10000)
 		cs := NewClusterSimulator(config, requests)
 		if err := cs.Run(); err != nil {
 			b.Fatalf("cs.Run: %v", err)
@@ -792,8 +792,8 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 
 func BenchmarkClusterSimulator_1K_10Instances(b *testing.B) {
 	config := newTestDeploymentConfig(10)
-	requests := newTestRequests(1000)
 	for i := 0; i < b.N; i++ {
+		requests := newTestRequests(1000)
 		cs := NewClusterSimulator(config, requests)
 		if err := cs.Run(); err != nil {
 			b.Fatalf("cs.Run: %v", err)

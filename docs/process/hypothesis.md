@@ -497,7 +497,7 @@ The #385/#390 pattern: run N hypothesis experiments simultaneously with a team l
 ### Setup
 
 1. **Team lead creates worktree:** `.worktrees/h-<batch-name>/`
-2. **Team lead builds binary once:** `go build -o simulation_worker main.go` (agents reference this shared binary)
+2. **Team lead builds binary once:** `go build -o blis main.go` (agents reference this shared binary)
 3. **Team lead creates team** with N hypothesis agents, each assigned to `hypotheses/<name>/`
 4. Each agent runs the full pipeline independently (Steps 1-9)
 

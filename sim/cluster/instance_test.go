@@ -154,12 +154,30 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 // TestInstanceSimulator_Determinism verifies same seed produces identical results.
 func TestInstanceSimulator_Determinism(t *testing.T) {
 	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
 
 	instance1 := NewInstanceSimulator(InstanceID("run1"), cfg)
 	instance2 := NewInstanceSimulator(InstanceID("run2"), cfg)
 
+	// Inject identical requests into both instances
+	requests := newTestRequests(20)
+	for i, req := range requests {
+		r1 := *req
+		r1.ID = fmt.Sprintf("request_%d", i)
+		instance1.InjectRequest(&r1)
+
+		r2 := *req
+		r2.ID = fmt.Sprintf("request_%d", i)
+		instance2.InjectRequest(&r2)
+	}
+
 	instance1.Run()
 	instance2.Run()
+
+	// Verify non-trivial: at least some requests completed
+	if instance1.Metrics().CompletedRequests == 0 {
+		t.Fatal("Determinism test vacuous: no requests completed in instance1")
+	}
 
 	if instance1.Metrics().CompletedRequests != instance2.Metrics().CompletedRequests {
 		t.Errorf("Determinism broken: completed_requests %d vs %d",

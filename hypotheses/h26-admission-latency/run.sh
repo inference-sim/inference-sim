@@ -18,7 +18,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORKTREE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BINARY="$WORKTREE_DIR/simulation_worker"
+BINARY="$WORKTREE_DIR/blis"
 RESULTS_DIR="$SCRIPT_DIR/results"
 
 mkdir -p "$RESULTS_DIR"

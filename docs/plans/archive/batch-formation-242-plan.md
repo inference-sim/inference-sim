@@ -1104,7 +1104,7 @@ Expected: No new issues
 
 Run the simulator twice with the same seed and verify identical output:
 ```bash
-go build -o simulation_worker main.go && ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --num-requests 10 --seed 42 2>/dev/null > /tmp/run1.json && ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --num-requests 10 --seed 42 2>/dev/null > /tmp/run2.json && diff /tmp/run1.json /tmp/run2.json && echo "DETERMINISM CHECK: PASS"
+go build -o blis main.go && ./blis run --model meta-llama/llama-3.1-8b-instruct --num-requests 10 --seed 42 2>/dev/null > /tmp/run1.json && ./blis run --model meta-llama/llama-3.1-8b-instruct --num-requests 10 --seed 42 2>/dev/null > /tmp/run2.json && diff /tmp/run1.json /tmp/run2.json && echo "DETERMINISM CHECK: PASS"
 ```
 Expected: No diff — identical output
 

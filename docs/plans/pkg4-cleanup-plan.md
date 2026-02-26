@@ -421,9 +421,9 @@ Expected: No new issues.
 
 ```bash
 cd .worktrees/pkg4-cleanup
-go build -o simulation_worker main.go
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --seed 42 --num-requests 100 > /tmp/run1.json 2>/dev/null
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --seed 42 --num-requests 100 > /tmp/run2.json 2>/dev/null
+go build -o blis main.go
+./blis run --model meta-llama/llama-3.1-8b-instruct --seed 42 --num-requests 100 > /tmp/run1.json 2>/dev/null
+./blis run --model meta-llama/llama-3.1-8b-instruct --seed 42 --num-requests 100 > /tmp/run2.json 2>/dev/null
 diff /tmp/run1.json /tmp/run2.json
 ```
 Expected: No diff (byte-identical).

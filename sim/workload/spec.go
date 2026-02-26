@@ -71,17 +71,17 @@ type CohortSpec struct {
 }
 
 // DiurnalSpec configures sinusoidal rate modulation over a 24-hour cycle.
+// Trough is placed at PeakHour ± 12 by the cosine formula.
 type DiurnalSpec struct {
-	PeakHour          int     `yaml:"peak_hour"`           // 0-23
-	TroughHour        int     `yaml:"trough_hour"`         // 0-23
+	PeakHour          int     `yaml:"peak_hour"`            // 0-23
 	PeakToTroughRatio float64 `yaml:"peak_to_trough_ratio"` // >= 1.0
 }
 
-// SpikeSpec configures a traffic spike with step-function rate multiplier.
+// SpikeSpec configures a traffic spike as a lifecycle window.
+// Clients are active during [StartTimeUs, StartTimeUs+DurationUs).
 type SpikeSpec struct {
-	StartTimeUs int64   `yaml:"start_time_us"`
-	DurationUs  int64   `yaml:"duration_us"`
-	Multiplier  float64 `yaml:"multiplier"` // > 0
+	StartTimeUs int64 `yaml:"start_time_us"`
+	DurationUs  int64 `yaml:"duration_us"`
 }
 
 // DrainSpec configures a linear ramp-down to zero rate.
@@ -208,8 +208,8 @@ func (s *WorkloadSpec) Validate() error {
 	if !validCategories[s.Category] {
 		return fmt.Errorf("unknown category %q; valid: language, multimodal, reasoning", s.Category)
 	}
-	if s.AggregateRate <= 0 {
-		return fmt.Errorf("aggregate_rate must be positive, got %f", s.AggregateRate)
+	if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
+		return err
 	}
 	if len(s.Clients) == 0 && s.ServeGenData == nil && len(s.Cohorts) == 0 {
 		return fmt.Errorf("at least one client, cohort, or servegen_data path required")
@@ -232,8 +232,8 @@ func validateClient(c *ClientSpec, idx int) error {
 	if !validSLOClasses[c.SLOClass] {
 		return fmt.Errorf("%s: unknown slo_class %q; valid: critical, standard, sheddable, batch, background, or empty", prefix, c.SLOClass)
 	}
-	if c.RateFraction <= 0 {
-		return fmt.Errorf("%s: rate_fraction must be positive, got %f", prefix, c.RateFraction)
+	if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
+		return err
 	}
 	if !validArrivalProcesses[c.Arrival.Process] {
 		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
@@ -278,8 +278,8 @@ func validateCohort(c *CohortSpec, idx int) error {
 	if c.Population <= 0 {
 		return fmt.Errorf("%s: population must be positive, got %d", prefix, c.Population)
 	}
-	if c.RateFraction <= 0 {
-		return fmt.Errorf("%s: rate_fraction must be positive, got %f", prefix, c.RateFraction)
+	if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
+		return err
 	}
 	if !validSLOClasses[c.SLOClass] {
 		return fmt.Errorf("%s: unknown slo_class %q; valid: critical, standard, sheddable, batch, background, or empty", prefix, c.SLOClass)
@@ -294,20 +294,14 @@ func validateCohort(c *CohortSpec, idx int) error {
 		return err
 	}
 	if c.Diurnal != nil {
-		if c.Diurnal.PeakToTroughRatio < 1.0 {
-			return fmt.Errorf("%s: diurnal peak_to_trough_ratio must be >= 1.0, got %f", prefix, c.Diurnal.PeakToTroughRatio)
+		if math.IsNaN(c.Diurnal.PeakToTroughRatio) || math.IsInf(c.Diurnal.PeakToTroughRatio, 0) || c.Diurnal.PeakToTroughRatio < 1.0 {
+			return fmt.Errorf("%s: diurnal peak_to_trough_ratio must be a finite number >= 1.0, got %f", prefix, c.Diurnal.PeakToTroughRatio)
 		}
 		if c.Diurnal.PeakHour < 0 || c.Diurnal.PeakHour > 23 {
 			return fmt.Errorf("%s: diurnal peak_hour must be 0-23, got %d", prefix, c.Diurnal.PeakHour)
 		}
-		if c.Diurnal.TroughHour < 0 || c.Diurnal.TroughHour > 23 {
-			return fmt.Errorf("%s: diurnal trough_hour must be 0-23, got %d", prefix, c.Diurnal.TroughHour)
-		}
 	}
 	if c.Spike != nil {
-		if c.Spike.Multiplier <= 0 {
-			return fmt.Errorf("%s: spike multiplier must be > 0, got %f", prefix, c.Spike.Multiplier)
-		}
 		if c.Spike.DurationUs <= 0 {
 			return fmt.Errorf("%s: spike duration_us must be > 0, got %d", prefix, c.Spike.DurationUs)
 		}

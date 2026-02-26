@@ -23,7 +23,7 @@ TIMEOUT_EXTENDED=600   # stress tests, >500 requests or multi-turn
 # Locate repo root relative to lib/
 HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HARNESS_DIR/../.." && pwd)"
-BINARY="$REPO_ROOT/simulation_worker"
+BINARY="$REPO_ROOT/blis"
 MODEL="meta-llama/llama-3.1-8b-instruct"
 RESULTS_DIR=""
 
@@ -32,15 +32,15 @@ RESULTS_DIR=""
 # Sets RESULTS_DIR and registers cleanup trap.
 setup_experiment() {
     if [[ "${1:-}" == "--rebuild" ]] || [[ ! -x "$BINARY" ]]; then
-        echo "Building simulation_worker..." >&2
-        (cd "$REPO_ROOT" && go build -o simulation_worker main.go)
+        echo "Building blis..." >&2
+        (cd "$REPO_ROOT" && go build -o blis main.go)
     fi
     RESULTS_DIR=$(mktemp -d) || { echo "ERROR: mktemp failed" >&2; return 1; }
     trap 'rm -rf "$RESULTS_DIR"' EXIT
 }
 
-# blis_run <timeout_seconds> <output_file> [--stderr <stderr_file>] [simulation_worker flags...]
-# Wraps ./simulation_worker run with a mandatory timeout.
+# blis_run <timeout_seconds> <output_file> [--stderr <stderr_file>] [blis flags...]
+# Wraps ./blis run with a mandatory timeout.
 # On timeout (exit 124): writes "TIMEOUT" to output_file, warns on stderr.
 # On other failure: writes "ERROR:<exit_code>" to output_file, warns on stderr.
 # Use --stderr <file> to capture stderr (for panic detection in robustness experiments).

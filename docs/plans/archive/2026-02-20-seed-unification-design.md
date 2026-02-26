@@ -57,7 +57,7 @@ Users expect `--seed` to be the master seed controlling all randomness. A user r
 **Rationale:**
 - Follows the existing precedent: `--horizon` and `--num-requests` already use `Changed()` to override YAML defaults
 - Satisfies R18 (CLI flag precedence): the CLI flag is the user's explicit intent
-- Preserves backward compatibility: `./simulation_worker run --workload-spec w.yaml` without `--seed` produces the same output as before
+- Preserves backward compatibility: `./blis run --workload-spec w.yaml` without `--seed` produces the same output as before
 - Minimal code change: 3 lines in `cmd/root.go`, no library API change
 - Preserves the "shareable workload" use case: the YAML seed remains the default for users who don't specify `--seed`
 

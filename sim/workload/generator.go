@@ -42,17 +42,17 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		}
 	}
 
-	// Expand cohorts into explicit client specs before generation.
-	// Cohort-expanded clients are merged with explicitly defined clients.
-	if len(spec.Cohorts) > 0 {
-		expanded := ExpandCohorts(spec.Cohorts, spec.Seed)
-		spec.Clients = append(spec.Clients, expanded...)
-	}
-
 	UpgradeV1ToV2(spec)
 
 	if err := spec.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid workload spec: %w", err)
+	}
+
+	// Build working client list without mutating spec.Clients (idempotency, INV-6).
+	allClients := append([]ClientSpec{}, spec.Clients...)
+	if len(spec.Cohorts) > 0 {
+		expanded := ExpandCohorts(spec.Cohorts, spec.Seed)
+		allClients = append(allClients, expanded...)
 	}
 
 	// Create partitioned RNG for deterministic generation
@@ -60,10 +60,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
 
 	// Normalize rate fractions
-	clientRates := normalizeRateFractions(spec.Clients, spec.AggregateRate)
+	clientRates := normalizeRateFractions(allClients, spec.AggregateRate)
 
 	// Generate shared prefix tokens per prefix group
-	prefixes := generatePrefixTokens(spec.Clients, workloadRNG)
+	prefixes := generatePrefixTokens(allClients, workloadRNG)
 
 	// Per-client generation cap: prevent OOM when horizon >> maxRequests.
 	// Each client generates at most 2x maxRequests, then post-merge truncation finalizes.
@@ -77,8 +77,8 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 
 	// Per-client generation
 	var allRequests []*sim.Request
-	for i := range spec.Clients {
-		client := &spec.Clients[i]
+	for i := range allClients {
+		client := &allClients[i]
 		clientRate := clientRates[i]
 		if clientRate <= 0 {
 			continue // EC-4: skip zero-rate clients

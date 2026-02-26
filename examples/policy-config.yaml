@@ -1,6 +1,6 @@
 # BLIS Policy Configuration (defaults)
 #
-# Use with: ./simulation_worker run --model <model> --policy-config policy-config.yaml
+# Use with: ./blis run --model <model> --policy-config policy-config.yaml
 #
 # All fields are optional. Omit any field to use CLI flags or built-in defaults.
 # CLI flags always override YAML values when both are specified.

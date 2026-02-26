@@ -75,7 +75,7 @@ The scorer framework is internal to the `weighted` routing policy and introduces
 
 ### B.6 CLI Entrypoints and Flag Surface
 
-**Current CLI** (`cmd/root.go`): `simulation_worker run` with `--routing-policy` (string), `--routing-cache-weight` (float64, default 0.6), `--routing-load-weight` (float64, default 0.4). Policy config YAML via `--policy-config` overrides CLI flags.
+**Current CLI** (`cmd/root.go`): `blis run` with `--routing-policy` (string), `--routing-cache-weight` (float64, default 0.6), `--routing-load-weight` (float64, default 0.4). Policy config YAML via `--policy-config` overrides CLI flags.
 
 **After this plan:** `--routing-cache-weight` and `--routing-load-weight` removed. Replaced by `--routing-scorers` (string, comma-separated `name:weight` pairs).
 

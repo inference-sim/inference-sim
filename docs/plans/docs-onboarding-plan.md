@@ -234,7 +234,7 @@ Current:
 
 ```bash
 # Build
-go build -o simulation_worker main.go
+go build -o blis main.go
 
 # Test
 go test ./...
@@ -252,7 +252,7 @@ Replace with:
 
 ```bash
 # Build
-go build -o simulation_worker main.go
+go build -o blis main.go
 
 # Test
 go test ./...

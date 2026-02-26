@@ -936,14 +936,14 @@ The calibration report always includes these annotations:
 
 **Workflow 1: Pure simulation (existing BLIS, unchanged)**
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --workload distribution --rate 10
 ```
 
 **Workflow 2: ServeGen-style simulation**
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --workload-spec workload.yaml \
   --num-instances 4 --routing-policy weighted
@@ -951,7 +951,7 @@ The calibration report always includes these annotations:
 
 **Workflow 3: Real mode (observe)**
 ```bash
-./simulation_worker run \
+./blis run \
   --workload-spec workload.yaml \
   --real-mode \
   --server-url http://localhost:8000 \
@@ -962,7 +962,7 @@ The calibration report always includes these annotations:
 
 **Workflow 4: Sim replay of real trace (predict)**
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --workload traces \
   --workload-traces-filepath traces/trace-data.csv \
@@ -971,7 +971,7 @@ The calibration report always includes these annotations:
 
 **Workflow 5: Calibrate (compare)**
 ```bash
-./simulation_worker calibrate \
+./blis calibrate \
   --model meta-llama/llama-3.1-8b-instruct \
   --calibrate traces/trace-header.yaml \
   --calibration-output calibration.json

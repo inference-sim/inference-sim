@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 )
@@ -30,7 +31,13 @@ func ConvertServeGen(path string) (*WorkloadSpec, error) {
 
 // ConvertCSVTrace converts a legacy CSV trace file into a v2 WorkloadSpec.
 // The CSV format has columns: arrival_time(s), ..., prefill_tokens(JSON), decode_tokens(JSON).
-// Returns a spec with a single constant-arrival client whose requests match the CSV.
+// Returns a spec with a single constant-arrival client using averaged token lengths.
+//
+// Note: this is a lossy conversion. Per-request token counts and arrival times
+// are replaced by aggregate statistics (mean lengths, constant arrival rate).
+// For faithful trace replay, use the trace v2 format (YAML header + CSV data)
+// via LoadTraceV2 instead.
+//
 // horizon is in microseconds; 0 means no horizon truncation.
 func ConvertCSVTrace(path string, horizon int64) (*WorkloadSpec, error) {
 	if path == "" {
@@ -158,8 +165,8 @@ type PresetConfig struct {
 // ConvertPreset converts a named workload preset (e.g., "chatbot") into a v2 WorkloadSpec.
 // rate is in requests/second. Returns error for unknown preset names.
 func ConvertPreset(name string, rate float64, numRequests int, preset PresetConfig) (*WorkloadSpec, error) {
-	if rate <= 0 {
-		return nil, fmt.Errorf("rate must be positive, got %f", rate)
+	if math.IsNaN(rate) || math.IsInf(rate, 0) || rate <= 0 {
+		return nil, fmt.Errorf("rate must be a finite positive number, got %f", rate)
 	}
 	if numRequests <= 0 {
 		return nil, fmt.Errorf("num_requests must be positive, got %d", numRequests)
@@ -228,6 +235,9 @@ func ConvertInferencePerf(path string) (*WorkloadSpec, error) {
 
 // ComposeSpecs merges multiple WorkloadSpecs into a single spec.
 // Client lists are concatenated, aggregate rates summed, rate fractions renormalized.
+// Each client's fraction is weighted by its original spec's rate contribution
+// to preserve absolute rates: a 10 req/s spec + 5 req/s spec → 15 req/s total,
+// with the first spec's clients receiving 10/15 of the merged rate.
 func ComposeSpecs(specs []*WorkloadSpec) (*WorkloadSpec, error) {
 	if len(specs) == 0 {
 		return nil, fmt.Errorf("at least one spec file required")
@@ -241,19 +251,17 @@ func ComposeSpecs(specs []*WorkloadSpec) (*WorkloadSpec, error) {
 	var totalRate float64
 	for _, s := range specs {
 		totalRate += s.AggregateRate
-		merged.Clients = append(merged.Clients, s.Clients...)
 	}
 	merged.AggregateRate = totalRate
 
-	// Renormalize rate fractions so they sum to 1.0 in the merged spec
-	if len(merged.Clients) > 0 {
-		var totalFraction float64
-		for i := range merged.Clients {
-			totalFraction += merged.Clients[i].RateFraction
-		}
-		if totalFraction > 0 {
-			for i := range merged.Clients {
-				merged.Clients[i].RateFraction /= totalFraction
+	// Renormalize: each client's fraction is scaled by its spec's share of total rate.
+	// client_merged_fraction = client_original_fraction * (spec_rate / total_rate)
+	if totalRate > 0 {
+		for _, s := range specs {
+			weight := s.AggregateRate / totalRate
+			for _, c := range s.Clients {
+				c.RateFraction *= weight
+				merged.Clients = append(merged.Clients, c)
 			}
 		}
 	}

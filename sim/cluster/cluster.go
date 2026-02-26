@@ -223,8 +223,6 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 	return c.aggregatedMetrics
 }
 
-// SetPreGeneratedRequests sets pre-generated requests for workload-spec mode.
-// Must be called before Run(). These requests bypass the normal generation pipeline.
 // RejectedRequests returns the count of requests rejected by the admission policy (EC-2).
 // Returns 0 if AlwaysAdmit is used or if no requests were rejected by TokenBucket.
 func (c *ClusterSimulator) RejectedRequests() int {

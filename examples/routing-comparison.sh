@@ -39,11 +39,11 @@
 #   ./examples/routing-comparison.sh
 #
 # Prerequisites:
-#   go build -o simulation_worker main.go
+#   go build -o blis main.go
 
 set -e
 
-BINARY=${BLIS_BINARY:-./simulation_worker}
+BINARY=${BLIS_BINARY:-./blis}
 MODEL="meta-llama/llama-3.1-8b-instruct"
 INSTANCES=4
 REQUESTS=1000
@@ -51,8 +51,8 @@ RATE=5000
 
 if [ ! -f "$BINARY" ]; then
     echo "Building BLIS..."
-    go build -o simulation_worker main.go
-    BINARY=./simulation_worker
+    go build -o blis main.go
+    BINARY=./blis
 fi
 
 echo "================================================================"

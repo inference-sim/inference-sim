@@ -21,14 +21,14 @@
 # ============================================================================
 #
 #   # Default profile (llm-d parity: prefix-affinity dominant)
-#   ./simulation_worker run \
+#   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
 #     --workload-spec examples/servegen-language.yaml \
 #     --trace-level decisions --summarize-trace
 #
 #   # Prefix-affinity dominant (maximize cache reuse)
-#   ./simulation_worker run \
+#   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "prefix-affinity:5,queue-depth:1" \
@@ -36,7 +36,7 @@
 #     --trace-level decisions --summarize-trace
 #
 #   # Load-balance only (no prefix awareness, equivalent to least-loaded)
-#   ./simulation_worker run \
+#   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "load-balance:1" \

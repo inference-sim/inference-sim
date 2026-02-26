@@ -187,11 +187,15 @@ func TestComposeSpecs_TwoSpecs_MergesClients(t *testing.T) {
 	if merged.AggregateRate != 15.0 {
 		t.Errorf("aggregate_rate = %f, want 15.0", merged.AggregateRate)
 	}
-	// Each had fraction 1.0, so each should be renormalized to 0.5
-	for _, c := range merged.Clients {
-		if c.RateFraction != 0.5 {
-			t.Errorf("client %s rate_fraction = %f, want 0.5", c.ID, c.RateFraction)
-		}
+	// Rate-weighted fractions: A (10/15 ≈ 0.6667), B (5/15 ≈ 0.3333)
+	const eps = 1e-9
+	expectedA := 10.0 / 15.0
+	expectedB := 5.0 / 15.0
+	if diff := merged.Clients[0].RateFraction - expectedA; diff > eps || diff < -eps {
+		t.Errorf("client %s rate_fraction = %f, want %f", merged.Clients[0].ID, merged.Clients[0].RateFraction, expectedA)
+	}
+	if diff := merged.Clients[1].RateFraction - expectedB; diff > eps || diff < -eps {
+		t.Errorf("client %s rate_fraction = %f, want %f", merged.Clients[1].ID, merged.Clients[1].RateFraction, expectedB)
 	}
 }
 

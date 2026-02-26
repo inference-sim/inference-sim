@@ -282,7 +282,7 @@ This revision incorporates the simplification assessment findings:
 | **In Scope** | (1) `SimConfig` options struct replacing 17-param constructors, (2) Unified CLI path (always ClusterSimulator), (3) Privatize ~15 internal Simulator fields, (4) Move `AdmissionPolicy` interface to `sim/` base package |
 | **Out of Scope** | Unified event queue, workload deduplication, package restructuring |
 | **Files Changed** | Modified: `sim/simulator.go` (~80 LOC), `sim/cluster/instance.go` (~40 LOC), `sim/cluster/cluster.go` (~20 LOC), `sim/cluster/deployment.go` (~10 LOC), `cmd/root.go` (~60 LOC), `sim/policy/admission.go` (~10 LOC), test files (~100 LOC). New: none |
-| **CLI** | `./simulation_worker run --model X` (same interface, but internally always uses ClusterSimulator) |
+| **CLI** | `./blis run --model X` (same interface, but internally always uses ClusterSimulator) |
 | **Tests** | All golden tests must pass. New: `TestUnifiedCLIPath_MatchesGoldenDataset` (verifies N=1 cluster path = single-instance results) |
 | **LOC Estimate** | ~320 changed, ~200 net reduction |
 | **Architectural Impact** | Major internal cleanup; no behavioral change; all golden tests pass |
@@ -307,7 +307,7 @@ This revision incorporates the simplification assessment findings:
 | **In Scope** | `RoutingPolicy` interface, `RoundRobin`, `LeastLoaded`, `WeightedScoring`, `PrefixAffinity` templates |
 | **Out of Scope** | Priority and scheduling policies (PR 7) |
 | **Files Changed** | New: `sim/policy/routing.go` (~200 LOC). Modified: `sim/cluster/cluster.go` (~30 LOC), `sim/cluster/cluster_event.go` (~20 LOC), `cmd/root.go` (~20 LOC) |
-| **CLI** | `./simulation_worker run --model X --num-instances 4 --routing-policy weighted` |
+| **CLI** | `./blis run --model X --num-instances 4 --routing-policy weighted` |
 | **Tests** | Unit: each template. Integration: load distribution across instances |
 | **LOC Estimate** | ~270 |
 | **Architectural Impact** | Replaces hardcoded round-robin in `RoutingDecisionEvent.Execute` with pluggable policy |
@@ -330,7 +330,7 @@ This revision incorporates the simplification assessment findings:
 | **In Scope** | `PriorityPolicy` interface (`ConstantPriority`, `SLOBasedPriority`), `InstanceScheduler` interface (`FCFSScheduler`, `PriorityFCFSScheduler`, `SJFScheduler`), `Priority` field on `Request`, `SchedulerContext` |
 | **Out of Scope** | Pathological templates (deferred to PR 9) |
 | **Files Changed** | New: `sim/policy/priority.go` (~120 LOC), `sim/policy/scheduler.go` (~180 LOC). Modified: `sim/request.go` (~10 LOC), `sim/cluster/instance.go` (~30 LOC), `cmd/root.go` (~30 LOC) |
-| **CLI** | `./simulation_worker run --model X --priority-policy slo-based --scheduler priority-fcfs` |
+| **CLI** | `./blis run --model X --priority-policy slo-based --scheduler priority-fcfs` |
 | **Tests** | Unit: each template. Integration: priority ordering in scheduling, batch formation respects scheduler |
 | **Parallel With** | PR 6 |
 | **LOC Estimate** | ~370 |
@@ -354,7 +354,7 @@ This revision incorporates the simplification assessment findings:
 | **In Scope** | `RouterState`, `TenantState`, `GlobalMetrics`, `PolicyBundle`, YAML loading |
 | **Out of Scope** | AutoScale policy (Phase 4) |
 | **Files Changed** | New: `sim/cluster/router_state.go` (~150 LOC), `sim/policy/bundle.go` (~100 LOC). Modified: `cmd/root.go` (~30 LOC) |
-| **CLI** | `./simulation_worker run --model X --policy-config policies.yaml` |
+| **CLI** | `./blis run --model X --policy-config policies.yaml` |
 | **Tests** | Unit: YAML parsing, validation. Integration: policy config overrides CLI flags |
 | **LOC Estimate** | ~280 |
 | **Behavioral Guarantees** | CLI flags override YAML defaults; missing config uses defaults |
@@ -377,7 +377,7 @@ This revision incorporates the simplification assessment findings:
 | **In Scope** | `RawMetrics`, `Distribution`, `FitnessFunction`, `EvaluationResult`, anomaly counters, pathological templates (`RejectAll`, `InvertedSLO`, `AlwaysBusiest`, `ReversePriority`) |
 | **Out of Scope** | Scale oscillation detection (requires AutoScaler) |
 | **Files Changed** | New: `sim/cluster/raw_metrics.go` (~300 LOC). Modified: `sim/policy/*.go` (~100 LOC), `sim/cluster/cluster.go` (~50 LOC), `cmd/root.go` (~20 LOC) |
-| **CLI** | `./simulation_worker run --model X --num-instances 4 --fitness-weights "throughput:0.5,p99_ttft:0.3"` |
+| **CLI** | `./blis run --model X --num-instances 4 --fitness-weights "throughput:0.5,p99_ttft:0.3"` |
 | **Tests** | Integration tests: pathological policies trigger expected anomaly counts |
 | **LOC Estimate** | ~470 |
 | **Why Independently Reviewable** | Complete metrics feature; pathological templates immediately testable |
@@ -410,7 +410,7 @@ At this point, BLIS supports:
 | **Depends On** | PR 9 |
 | **In Scope** | `WorkloadSpec`, `TenantSpec`, arrival patterns (Poisson, Bursty, Diurnal), built-in scenarios |
 | **Files Changed** | New: `sim/workload/` (~680 LOC). Modified: `cmd/root.go` (~20 LOC) |
-| **CLI** | `./simulation_worker run --model X --workload-spec workload.yaml` |
+| **CLI** | `./blis run --model X --workload-spec workload.yaml` |
 | **LOC Estimate** | ~700 |
 | **Why Independently Reviewable** | Complete workload feature; existing `--workload distribution` preserved |
 
@@ -430,7 +430,7 @@ At this point, BLIS supports:
 | **In Scope** | `AutoScaler`, `AutoScalePolicy`, `ThresholdScaler`, `Oscillator` (pathological), `WarmupProfile`, `DrainPolicy`, `InstanceState` lifecycle |
 | **Out of Scope** | Predictive scaling |
 | **Files Changed** | New: `sim/policy/autoscale.go` (~380 LOC). Modified: `sim/cluster/cluster.go` (~70 LOC), `sim/cluster/instance.go` (~50 LOC), `cmd/root.go` (~50 LOC) |
-| **CLI** | `./simulation_worker run --model X --autoscaler-enabled --autoscaler-max 8 --provisioning-delay 30s` |
+| **CLI** | `./blis run --model X --autoscaler-enabled --autoscaler-max 8 --provisioning-delay 30s` |
 | **Tests** | Unit: threshold logic. Integration: scale up/down with warmup, drain, oscillation detection |
 | **Parallel With** | PR 12, PR 13 |
 | **LOC Estimate** | ~520 |
@@ -450,7 +450,7 @@ At this point, BLIS supports:
 | **In Scope** | `KVTier` enum, `KVTierConfig`, offload trigger, reload on CPU hit, transfer latency, `KVThrashingRate` metric |
 | **Out of Scope** | P/D architecture (PR 14) |
 | **Files Changed** | New: `sim/kv/tiered.go` (~100 LOC), `sim/kv/transfer.go` (~200 LOC). Modified: `sim/kvcache.go` (~30 LOC), `cmd/root.go` (~30 LOC) |
-| **CLI** | `./simulation_worker run --model X --kv-gpu-blocks 1000 --kv-cpu-blocks 10000 --kv-offload-threshold 0.9` |
+| **CLI** | `./blis run --model X --kv-gpu-blocks 1000 --kv-cpu-blocks 10000 --kv-offload-threshold 0.9` |
 | **Parallel With** | PR 11, PR 13 |
 | **LOC Estimate** | ~360 |
 | **Why Independently Reviewable** | Complete tiered KV feature; `--kv-cpu-blocks 0` preserves existing behavior |
@@ -469,7 +469,7 @@ At this point, BLIS supports:
 | **In Scope** | `SimulationTrace`, `DecisionTrace`, `RoutingRecord`, `TraceConfig`, `TopKCandidates`, `Regret`, `TraceSummary` |
 | **Out of Scope** | LLM-based reflection (framework-specific) |
 | **Files Changed** | New: `sim/trace/trace.go` (~100 LOC), `sim/trace/record.go` (~150 LOC), `sim/trace/summary.go` (~200 LOC). Modified: `cmd/root.go` (~35 LOC) |
-| **CLI** | `./simulation_worker run --model X --trace-level decisions --counterfactual-k 5 --summarize-trace` |
+| **CLI** | `./blis run --model X --trace-level decisions --counterfactual-k 5 --summarize-trace` |
 | **Parallel With** | PR 11, PR 12 |
 | **LOC Estimate** | ~485 |
 | **Why Independently Reviewable** | Complete trace + analysis feature; `--trace-level none` has no overhead |
@@ -488,7 +488,7 @@ At this point, BLIS supports:
 | **In Scope** | `DISAGGREGATED_PD` type, `PrefillPool`, `DecodePool`, `PDHandoffEvent`, `PDTransferConfig`, `BlockTransferState`, routing changes, ownership tracking |
 | **Out of Scope** | Multi-hop transfers |
 | **Files Changed** | Modified: `sim/cluster/deployment.go` (~50 LOC), `sim/cluster/cluster.go` (~200 LOC), `sim/cluster/cluster_event.go` (~100 LOC), `sim/kv/transfer.go` (~150 LOC), `cmd/root.go` (~40 LOC) |
-| **CLI** | `./simulation_worker run --model X --architecture pd --prefill-replicas 2 --decode-replicas 4` |
+| **CLI** | `./blis run --model X --architecture pd --prefill-replicas 2 --decode-replicas 4` |
 | **LOC Estimate** | ~540 |
 | **Why Independently Reviewable** | Complete P/D feature; `--architecture monolithic` (default) preserves existing behavior |
 
@@ -507,7 +507,7 @@ At this point, BLIS supports:
 | **Depends On** | PR 13 (traces) |
 | **In Scope** | `BLISGEPAAdapter`, `BLISEvaluator`, `gepa-evaluate` command, `openevolve-evaluate` command |
 | **Files Changed** | New: `sim/adapter/gepa.go` (~150 LOC), `sim/adapter/openevolve.go` (~150 LOC). Modified: `cmd/root.go` (~80 LOC) |
-| **CLI** | `./simulation_worker gepa-evaluate --policy-config p.yaml` and `./simulation_worker openevolve-evaluate --config oe.yaml` |
+| **CLI** | `./blis gepa-evaluate --policy-config p.yaml` and `./blis openevolve-evaluate --config oe.yaml` |
 | **LOC Estimate** | ~380 |
 | **Why Independently Reviewable** | Self-contained adapters; BLIS core unchanged |
 

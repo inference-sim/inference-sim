@@ -44,7 +44,7 @@ data/
 *.txt
 
 # binaries
-simulation_worker
+blis
 
 # results
 results/

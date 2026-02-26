@@ -28,7 +28,7 @@
 **Seeds:** Single seed (42) — deterministic experiment
 
 **Preconditions verified:**
-1. Binary builds and runs (`go build -o simulation_worker main.go`)
+1. Binary builds and runs (`go build -o blis main.go`)
 2. CLI flags verified against `cmd/root.go`: `--total-kv-blocks`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency`
 3. YAML field names verified against `sim/workload/spec.go` struct tags
 

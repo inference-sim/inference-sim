@@ -38,7 +38,7 @@ func TestCohortValidation_PeakToTroughLessThanOne_ReturnsError(t *testing.T) {
 				Arrival:   ArrivalSpec{Process: "poisson"},
 				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
-				Diurnal: &DiurnalSpec{PeakHour: 14, TroughHour: 2, PeakToTroughRatio: 0.5},
+				Diurnal: &DiurnalSpec{PeakHour: 14, PeakToTroughRatio: 0.5},
 			},
 		},
 	}
@@ -46,7 +46,7 @@ func TestCohortValidation_PeakToTroughLessThanOne_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for peak_to_trough_ratio < 1.0")
 	}
-	if !strings.Contains(err.Error(), "peak_to_trough_ratio must be >= 1.0") {
+	if !strings.Contains(err.Error(), "peak_to_trough_ratio must be") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -61,33 +61,13 @@ func TestCohortValidation_ValidCohort_NoError(t *testing.T) {
 				Arrival:   ArrivalSpec{Process: "poisson"},
 				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
-				Diurnal: &DiurnalSpec{PeakHour: 14, TroughHour: 2, PeakToTroughRatio: 4.0},
+				Diurnal: &DiurnalSpec{PeakHour: 14, PeakToTroughRatio: 4.0},
 			},
 		},
 	}
 	err := spec.Validate()
 	if err != nil {
 		t.Fatalf("unexpected validation error: %v", err)
-	}
-}
-
-func TestCohortValidation_SpikeInvalidMultiplier_ReturnsError(t *testing.T) {
-	spec := &WorkloadSpec{
-		Version:       "2",
-		AggregateRate: 10.0,
-		Cohorts: []CohortSpec{
-			{
-				ID: "test", Population: 5, RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
-				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
-				Spike: &SpikeSpec{StartTimeUs: 1000000, DurationUs: 100000, Multiplier: -1.0},
-			},
-		},
-	}
-	err := spec.Validate()
-	if err == nil {
-		t.Fatal("expected error for negative spike multiplier")
 	}
 }
 
@@ -199,7 +179,7 @@ func TestExpandCohorts_DiurnalPattern_ProducesLifecycleWindows(t *testing.T) {
 			Arrival:   ArrivalSpec{Process: "poisson"},
 			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
-			Diurnal: &DiurnalSpec{PeakHour: 14, TroughHour: 2, PeakToTroughRatio: 4.0},
+			Diurnal: &DiurnalSpec{PeakHour: 14, PeakToTroughRatio: 4.0},
 		},
 	}
 	result := ExpandCohorts(cohorts, 42)
@@ -229,7 +209,7 @@ func TestExpandCohorts_SpikePattern_ProducesLifecycleWindow(t *testing.T) {
 			Arrival:   ArrivalSpec{Process: "poisson"},
 			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
-			Spike: &SpikeSpec{StartTimeUs: 1_000_000, DurationUs: 500_000, Multiplier: 5.0},
+			Spike: &SpikeSpec{StartTimeUs: 1_000_000, DurationUs: 500_000},
 		},
 	}
 	result := ExpandCohorts(cohorts, 42)

@@ -88,7 +88,7 @@ See [`defaults.yaml`](./defaults.yaml) for the full list of pre-trained model co
 ```bash
 git clone git@github.com:inference-sim/inference-sim.git
 cd inference-sim
-go build -o simulation_worker main.go
+go build -o blis main.go
 ```
 
 ---
@@ -98,7 +98,7 @@ go build -o simulation_worker main.go
 Run BLIS for `meta-llama/llama-3.1-8b-instruct` with default configs:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct
+./blis run --model meta-llama/llama-3.1-8b-instruct
 ```
 
 You should see JSON output like:
@@ -124,7 +124,7 @@ You should see JSON output like:
 Run a preset workload (`chatbot`, `summarization`, `contentgen`, `multidoc`):
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --workload chatbot
+./blis run --model meta-llama/llama-3.1-8b-instruct --workload chatbot
 ```
 
 ### Custom GPU, TP, vLLM Versions
@@ -132,7 +132,7 @@ Run a preset workload (`chatbot`, `summarization`, `contentgen`, `multidoc`):
 Override GPU, TP, and vLLM version:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --hardware H100 --tp 1 --vllm-version vllm/vllm-openai:v0.8.4
 ```
 
@@ -141,7 +141,7 @@ Override GPU, TP, and vLLM version:
 Define custom workload distribution to sample input/output lengths from:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --workload distribution \
   --rate 10 \
@@ -155,7 +155,7 @@ Define custom workload distribution to sample input/output lengths from:
 ### Custom vLLM Configs
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --max-num-running-reqs 256 \
   --max-num-scheduled-tokens 2048
@@ -166,7 +166,7 @@ Define custom workload distribution to sample input/output lengths from:
 Replay a CSV file of recorded requests for deterministic, reproducible simulation:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --workload traces --workload-traces-filepath traces.csv \
   --results-path results.json
@@ -197,7 +197,7 @@ Token arrays must be valid JSON integers. The length of each array determines th
 Run multiple instances with a routing policy:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-scorers "queue-depth:2,kv-utilization:2,load-balance:1"
@@ -270,7 +270,7 @@ default (qd:2,kv:2,lb:1)   252 / 250 / 249 / 249       2,634
 
 ```bash
 # Even distribution, good tail latency (immediate signal)
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-scorers "queue-depth:1" \
@@ -278,7 +278,7 @@ default (qd:2,kv:2,lb:1)   252 / 250 / 249 / 249       2,634
   --trace-level decisions --summarize-trace
 
 # Skewed distribution, 3x worse tail latency (lagging signal)
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-scorers "kv-utilization:1" \
@@ -293,7 +293,7 @@ See `examples/routing-comparison.sh` for a full automated comparison, and `examp
 Enable a two-tier KV cache where blocks are offloaded from GPU to CPU memory when GPU utilization exceeds a threshold, and reloaded on demand with modeled transfer latency:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 \
   --kv-cpu-blocks 500000 \
@@ -315,7 +315,7 @@ When `--kv-cpu-blocks` is 0 (default), BLIS uses the single-tier GPU-only KV cac
 Control request prioritization and batch formation order:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --priority-policy slo-based \
   --scheduler priority-fcfs
@@ -339,7 +339,7 @@ Available schedulers:
 Evaluate policy fitness using a weighted combination of metrics:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 \
   --fitness-weights "throughput:0.5,p99_ttft:0.3,mean_e2e:0.2"
@@ -360,7 +360,7 @@ BLIS also detects anomalies automatically:
 Define all policies in a single YAML file for easier management:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 \
   --policy-config examples/policy-config.yaml
@@ -373,7 +373,7 @@ YAML values serve as defaults; CLI flags override YAML settings. See `examples/p
 Generate realistic workloads from a ServeGen-style YAML specification with multi-client traffic classes, configurable arrival processes, and length distributions:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 \
   --workload-spec examples/servegen-language.yaml
@@ -390,7 +390,7 @@ The workload generation module is informed by the ServeGen characterization fram
 Record routing decisions and evaluate what would have happened with alternative choices:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --trace-level decisions --counterfactual-k 5 --summarize-trace
@@ -429,7 +429,7 @@ BLIS uses two estimation techniques. Choose based on your model support:
 To simulate models without pre-trained coefficients, use the roofline model by providing model and hardware configs:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --hardware H100 \
   --tp 1 \
@@ -512,10 +512,10 @@ Simulation results (metrics JSON, fitness scores, anomaly counters, trace summar
 
 ```bash
 # Capture only simulation results
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct > results.txt
+./blis run --model meta-llama/llama-3.1-8b-instruct > results.txt
 
 # Suppress diagnostics, show only results
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct 2>/dev/null
+./blis run --model meta-llama/llama-3.1-8b-instruct 2>/dev/null
 ```
 
 ### Log Levels
@@ -524,10 +524,10 @@ Control verbosity of diagnostic messages with `--log` (default: `warn`):
 
 ```bash
 # See policy configuration and workload generation details
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --log info
+./blis run --model meta-llama/llama-3.1-8b-instruct --log info
 
 # Full event-level tracing (very verbose)
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --log debug
+./blis run --model meta-llama/llama-3.1-8b-instruct --log debug
 ```
 
 Available levels: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`
@@ -537,7 +537,7 @@ Available levels: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic`
 Record every routing and admission decision for post-hoc analysis:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --trace-level decisions --summarize-trace
@@ -554,7 +554,7 @@ The trace summary shows:
 Evaluate "what if" scenarios — how much better would alternative routing choices have been:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --trace-level decisions --counterfactual-k 5 --summarize-trace
@@ -567,7 +567,7 @@ The `--counterfactual-k 5` flag computes regret for the top 5 alternative candid
 Compare policy configurations using a single composite score:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 \
   --fitness-weights "throughput:0.5,p99_ttft:0.3,mean_e2e:0.2"

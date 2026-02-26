@@ -21,7 +21,7 @@
 - Original: `meta-llama/llama-3.1-8b-instruct` (H100, TP=2) — alpha=[1601.35, 3.51, 1805.54], beta=[6910.42, 17.67, 2.84], kv_blocks=132139
 - Treatment: `Qwen/Qwen2.5-7B-Instruct` (H100, TP=1) — alpha=[4680.30, 0.0, 0.0], beta=[7051.80, 19.54, 25.43], kv_blocks=65833
 
-**Coefficient provenance:** The Qwen alpha/beta coefficients and kv_blocks were specified in issue #396 by the project maintainer. They do NOT match any entry in `defaults.yaml` (the H100/TP=1 entry has alpha=[5223.76, 2.41, 5368.06], beta=[1602.21, 19.87, 452.94], kv_blocks=67659). The alpha1=0.0 and alpha2=0.0 values are notably different from the defaults.yaml profile. Users running `./simulation_worker run --model Qwen/Qwen2.5-7B-Instruct --hardware H100 --tp 1` without explicit `--alpha-coeffs`/`--beta-coeffs` would get the defaults.yaml coefficients, not the ones tested here.
+**Coefficient provenance:** The Qwen alpha/beta coefficients and kv_blocks were specified in issue #396 by the project maintainer. They do NOT match any entry in `defaults.yaml` (the H100/TP=1 entry has alpha=[5223.76, 2.41, 5368.06], beta=[1602.21, 19.87, 452.94], kv_blocks=67659). The alpha1=0.0 and alpha2=0.0 values are notably different from the defaults.yaml profile. Users running `./blis run --model Qwen/Qwen2.5-7B-Instruct --hardware H100 --tp 1` without explicit `--alpha-coeffs`/`--beta-coeffs` would get the defaults.yaml coefficients, not the ones tested here.
 
 **Key differences in alpha/beta profile:**
 - **alpha1=0.0**: No input-length-dependent queueing delay (llama: 3.51 us/token). QueueingTime (`sim/latency_model.go:56-61`) becomes constant at alpha0=4680.3 us regardless of input length.

@@ -231,7 +231,7 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Intuition:** When GPU KV blocks are exhausted, the single-tier cache preempts requests. With a CPU tier, blocks can be offloaded to CPU instead of being evicted entirely. When the request resumes, blocks are reloaded from CPU (faster than recomputing from scratch). The tradeoff: reload incurs transfer latency, but avoids full recomputation.
 
-**Prerequisite:** Verify CLI flags exist: `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency`. Run `./simulation_worker run --help | grep kv-cpu` to confirm. Also verify that `kvcache_tiered.go` exists and is compiled.
+**Prerequisite:** Verify CLI flags exist: `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency`. Run `./blis run --help | grep kv-cpu` to confirm. Also verify that `kvcache_tiered.go` exists and is compiled.
 
 **Experiment:** Constrained GPU blocks (200, `--block-size-in-tokens 16`), rate=500, 200 requests, 4 instances. Compare single-tier (`--kv-cpu-blocks 0`) vs tiered (`--kv-cpu-blocks 500 --kv-offload-threshold 0.8 --kv-transfer-bandwidth 100 --kv-transfer-base-latency 10`). Transfer bandwidth is in blocks/tick (see `kvcache_tiered.go`). Measure preemption count, TTFT p99, E2E p99.
 
@@ -291,7 +291,7 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Intuition:** The pathological policies exist specifically to test anomaly detection. `always-busiest` should produce HOL blocking (routes to most loaded instance). `reverse-priority` should produce priority inversions. If anomaly counters don't detect these, the detection logic has a bug.
 
-**Prerequisite:** Verify pathological policy names exist in CLI: `always-busiest`, `reverse-priority`, `inverted-slo`. Run `./simulation_worker run --help | grep -E "always-busiest|reverse-priority|inverted-slo"` or check `ValidRoutingPolicyNames()`, `ValidSchedulerNames()`, `ValidPriorityPolicyNames()`. **This hypothesis is a prerequisite for H24** — if individual pathological templates don't work, the combined test (H24) is meaningless.
+**Prerequisite:** Verify pathological policy names exist in CLI: `always-busiest`, `reverse-priority`, `inverted-slo`. Run `./blis run --help | grep -E "always-busiest|reverse-priority|inverted-slo"` or check `ValidRoutingPolicyNames()`, `ValidSchedulerNames()`, `ValidPriorityPolicyNames()`. **This hypothesis is a prerequisite for H24** — if individual pathological templates don't work, the combined test (H24) is meaningless.
 
 **Experiment:** Mixed SLO workload with 4 instances. Compare normal configuration (`least-loaded` + `priority-fcfs` + `slo-based`) vs pathological (`always-busiest` + `priority-fcfs` + `inverted-slo`). Measure HOL blocking events, priority inversions, TTFT p99, distribution std_dev.
 
@@ -415,7 +415,7 @@ This pattern -- **hypothesis-driven testing as a debugging and documentation met
 
 **Intuition:** `--total-kv-blocks 0` is an invalid configuration. BLIS should catch it at the CLI boundary with a clear error message, not let it reach `kvcache.go` where it would cause a cryptic division-by-zero or empty-allocation panic. This tests the input validation chain.
 
-**Experiment:** Run `./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --total-kv-blocks 0` and capture stderr. It should produce a `logrus.Fatalf` message from `cmd/root.go`, not a panic stack trace from `sim/`.
+**Experiment:** Run `./blis run --model meta-llama/llama-3.1-8b-instruct --total-kv-blocks 0` and capture stderr. It should produce a `logrus.Fatalf` message from `cmd/root.go`, not a panic stack trace from `sim/`.
 
 **Predicted outcome:** Clean error: `"--total-kv-blocks must be > 0, got 0"` from CLI boundary. **Metric source:** Exit code 1 + logrus error on stderr, no panic.
 

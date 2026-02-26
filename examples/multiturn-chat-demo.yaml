@@ -13,7 +13,7 @@
 # ============================================================================
 #
 #   # Prefix-affinity dominant (sessions cluster on instances)
-#   ./simulation_worker run \
+#   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "prefix-affinity:3,queue-depth:2" \
@@ -21,7 +21,7 @@
 #     --trace-level decisions --summarize-trace
 #
 #   # Load-only (rounds scatter across instances — no cache reuse)
-#   ./simulation_worker run \
+#   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "queue-depth:1" \
