@@ -1,6 +1,6 @@
 # Idea 3, H3: Evolved Formula Generalizes via Physically Meaningful Structure
 
-**Status:** Pending
+**Status:** Deferred (depends on h1 and h2 which are deferred)
 **Family:** Performance-regime
 **Type:** Type 2 (Statistical -- Dominance)
 **Date:** 2026-02-26

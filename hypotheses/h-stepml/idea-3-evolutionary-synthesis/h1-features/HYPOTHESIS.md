@@ -1,6 +1,6 @@
 # Idea 3, H1: Evolutionary Search Discovers Non-Obvious Feature Combinations
 
-**Status:** Pending
+**Status:** Deferred (Idea 2 dependency failed; OpenEvolve infrastructure not set up)
 **Family:** Performance-regime
 **Type:** Type 2 (Statistical -- Dominance)
 **Date:** 2026-02-26
