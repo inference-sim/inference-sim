@@ -326,20 +326,32 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		var observers []observerFunc
 		observerRegistered := false // only register PA observer once (shared index)
 
+		// Beta coefficients for cost-benefit and slo-headroom scorers.
+		// Default: llama-3.1-8b H100 TP=2 with quadratic attention.
+		betaCoeffs := cfg.BetaCoeffs
+		if betaCoeffs == nil {
+			betaCoeffs = []float64{6910.42, 17.67, 2.84, 0.004}
+		}
+
 		for sloClass, profile := range profiles {
 			p := &sloScorerPipeline{
 				scorers:         make([]scorerFunc, len(profile.Scorers)),
 				maxLoadHeadroom: profile.MaxLoadHeadroom,
 			}
 			for i, sc := range profile.Scorers {
-				if sc.Name == "prefix-affinity" {
+				switch sc.Name {
+				case "prefix-affinity":
 					scorer, obs := newPrefixAffinityScorerWithIndex(prefixIdx)
 					p.scorers[i] = scorer
 					if obs != nil && !observerRegistered {
 						observers = append(observers, obs)
 						observerRegistered = true
 					}
-				} else {
+				case "cost-benefit":
+					p.scorers[i] = newCostBenefitScorer(prefixIdx, betaCoeffs)
+				case "slo-headroom":
+					p.scorers[i] = newSLOHeadroomScorer(betaCoeffs)
+				default:
 					scorer, obs := newScorerWithObserver(sc.Name, int(blockSize))
 					p.scorers[i] = scorer
 					if obs != nil {

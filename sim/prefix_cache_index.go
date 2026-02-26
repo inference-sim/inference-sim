@@ -44,6 +44,9 @@ func NewPrefixCacheIndex(blockSize int, lruCapacity int) *PrefixCacheIndex {
 	}
 }
 
+// BlockSize returns the number of tokens per KV cache block.
+func (idx *PrefixCacheIndex) BlockSize() int { return idx.blockSize }
+
 // ComputeBlockHashes returns hierarchical block hashes for a token sequence.
 // Each block hash incorporates the previous block's hash, creating prefix-semantic
 // hashes: two requests sharing the first K blocks produce identical hashes for those K blocks.

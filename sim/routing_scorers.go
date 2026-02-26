@@ -24,6 +24,8 @@ var validScorerNames = map[string]bool{
 	"queue-depth":     true,
 	"kv-utilization":  true,
 	"load-balance":    true,
+	"cost-benefit":    true,
+	"slo-headroom":    true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.

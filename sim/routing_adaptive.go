@@ -32,42 +32,51 @@ type SLOProfile struct {
 func DefaultSLOProfiles() map[string]SLOProfile {
 	return map[string]SLOProfile{
 		"critical": {
+			// Critical: the cost-benefit scorer naturally suppresses cache affinity
+			// when queue delay is high, and slo-headroom penalizes instances that
+			// would blow the tight TTFT budget. No load headroom override needed —
+			// the scorers handle it continuously.
 			Scorers: []ScorerConfig{
-				{Name: "prefix-affinity", Weight: 2.0},
-				{Name: "queue-depth", Weight: 5.0},
-				{Name: "kv-utilization", Weight: 2.0},
+				{Name: "cost-benefit", Weight: 3.0},
+				{Name: "slo-headroom", Weight: 4.0},
+				{Name: "queue-depth", Weight: 2.0},
 			},
-			MaxLoadHeadroom: 0,
+			MaxLoadHeadroom: math.MaxInt, // let the scorers decide
 		},
 		"standard": {
+			// Standard: cost-benefit handles the cache-vs-load tradeoff,
+			// supplemented by direct QD for load-balancing.
 			Scorers: []ScorerConfig{
-				{Name: "prefix-affinity", Weight: 3.0},
+				{Name: "cost-benefit", Weight: 3.0},
+				{Name: "slo-headroom", Weight: 2.0},
 				{Name: "queue-depth", Weight: 2.0},
-				{Name: "kv-utilization", Weight: 2.0},
 			},
-			MaxLoadHeadroom: 3,
+			MaxLoadHeadroom: math.MaxInt,
 		},
 		"sheddable": {
 			Scorers: []ScorerConfig{
-				{Name: "prefix-affinity", Weight: 3.0},
+				{Name: "cost-benefit", Weight: 3.0},
+				{Name: "slo-headroom", Weight: 1.0},
 				{Name: "queue-depth", Weight: 2.0},
-				{Name: "kv-utilization", Weight: 2.0},
 			},
-			MaxLoadHeadroom: 5,
+			MaxLoadHeadroom: math.MaxInt,
 		},
 		"batch": {
+			// Batch: cost-benefit with large budget means CB ≈ 1.0 for any cache hit
+			// (budget is so large that queue delay is negligible relative to saving).
+			// Heavy PA weight exploits cache aggressively.
 			Scorers: []ScorerConfig{
-				{Name: "prefix-affinity", Weight: 5.0},
+				{Name: "cost-benefit", Weight: 4.0},
+				{Name: "prefix-affinity", Weight: 3.0},
 				{Name: "queue-depth", Weight: 1.0},
-				{Name: "kv-utilization", Weight: 1.0},
 			},
-			MaxLoadHeadroom: 10,
+			MaxLoadHeadroom: math.MaxInt,
 		},
 		"background": {
+			// Background: pure cache affinity + cost-benefit. No SLO constraint.
 			Scorers: []ScorerConfig{
+				{Name: "cost-benefit", Weight: 3.0},
 				{Name: "prefix-affinity", Weight: 5.0},
-				{Name: "queue-depth", Weight: 0.5},
-				{Name: "kv-utilization", Weight: 0.5},
 			},
 			MaxLoadHeadroom: math.MaxInt,
 		},
@@ -85,6 +94,10 @@ type AdaptiveConfig struct {
 	// SLOProfiles maps SLO class names to scorer weight profiles.
 	// If nil, DefaultSLOProfiles() is used.
 	SLOProfiles map[string]SLOProfile
+
+	// BetaCoeffs are the latency model beta coefficients used by cost-benefit
+	// and slo-headroom scorers. If nil, uses default llama-3.1-8b coefficients.
+	BetaCoeffs []float64
 }
 
 // DefaultAdaptiveConfig returns sensible defaults.
