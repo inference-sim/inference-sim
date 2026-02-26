@@ -327,6 +327,17 @@ func TestNewLatencyModel_InvalidRoofline(t *testing.T) {
 	}
 }
 
+// TestNewLatencyModel_RooflineNilMFUDatabase verifies factory rejects nil MFUDatabase.
+func TestNewLatencyModel_RooflineNilMFUDatabase(t *testing.T) {
+	mhw := sim.NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, true)
+	// MFUDatabase is nil (no WithMFUDatabase call)
+	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
+	_, err := NewLatencyModel(coeffs, mhw)
+	if err == nil {
+		t.Fatal("expected error for nil MFUDatabase in roofline mode, got nil")
+	}
+}
+
 // TestNewLatencyModel_ShortAlphaCoeffs verifies factory rejects short alpha slices.
 func TestNewLatencyModel_ShortAlphaCoeffs(t *testing.T) {
 	tests := []struct {

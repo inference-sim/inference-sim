@@ -161,11 +161,9 @@ var runCmd = &cobra.Command{
 			}
 
 			// Warn if user also provided explicit beta coefficients — roofline replaces
-			// step time estimation. Alpha coefficients are still used for queueing time
-			// and output token processing time.
+			// step time estimation entirely with analytical FLOPs/bandwidth model.
 			if !AllZeros(betaCoeffs) {
-				logrus.Warnf("--roofline replaces --beta-coeffs with analytical step time estimation. " +
-					"Alpha coefficients are still used for queueing time and output token processing")
+				logrus.Warnf("--roofline replaces --beta-coeffs with analytical step time estimation")
 			}
 
 			// Log when explicit overrides interact with --roofline
@@ -205,9 +203,19 @@ var runCmd = &cobra.Command{
 			// AllZeros() check at the implicit-detection block is guarded by !rooflineActive.
 			rooflineActive = true
 
-			// Load alpha coefficients and totalKVBlocks from defaults.yaml.
-			// Roofline replaces beta (step time) but still needs alpha
-			// (queueing time, output token processing) and KV cache capacity.
+			// Roofline mode: alpha coefficients default to zero.
+			// The roofline model is a pure analytical estimator — it predicts step time
+			// from FLOPs/bandwidth without trained regression coefficients. Using trained
+			// alpha coefficients (which were fit jointly with beta) would mix two different
+			// estimation paradigms and produce inconsistent results. Users who want
+			// queueing-time estimation can still pass --alpha-coeffs explicitly.
+			if !AllZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
+				logrus.Warnf("--roofline: ignoring non-zero alpha coefficients from defaults; " +
+					"roofline uses zero alpha by default. Pass --alpha-coeffs explicitly to override")
+				alphaCoeffs = []float64{0, 0, 0}
+			}
+
+			// Load totalKVBlocks from defaults.yaml if not explicitly set.
 			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
 				if vllmVersion == "" {
 					_, _, ver := GetDefaultSpecs(model)
@@ -215,11 +223,7 @@ var runCmd = &cobra.Command{
 						vllmVersion = ver
 					}
 				}
-				defAlpha, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-				if AllZeros(alphaCoeffs) && !AllZeros(defAlpha) {
-					alphaCoeffs = defAlpha
-					logrus.Infof("--roofline: loaded alpha coefficients from defaults.yaml for queueing time estimation")
-				}
+				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 					totalKVBlocks = kvBlocks
 					logrus.Infof("--roofline: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
@@ -228,14 +232,9 @@ var runCmd = &cobra.Command{
 						"using default %d. Consider setting --total-kv-blocks explicitly for accurate KV cache simulation",
 						model, gpu, tensorParallelism, totalKVBlocks)
 				}
-				if AllZeros(alphaCoeffs) {
-					logrus.Warnf("--roofline: no trained alpha coefficients found for model=%s, GPU=%s, TP=%d; "+
-						"queueing time and output token processing time will use zero alpha (may underestimate TTFT/ITL)",
-						model, gpu, tensorParallelism)
-				}
 			} else {
-				logrus.Warnf("--roofline: defaults file %s not found; alpha coefficients and total-kv-blocks not loaded. "+
-					"Queueing time estimation will use zero alpha coefficients", defaultsFilePath)
+				logrus.Warnf("--roofline: defaults file %s not found; total-kv-blocks not loaded",
+					defaultsFilePath)
 			}
 		}
 
@@ -277,6 +276,14 @@ var runCmd = &cobra.Command{
 			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
 				rooflineActive = true
+				// Implicit roofline also needs bench_data for MFU lookups
+				if benchDataPath == "" {
+					resolvedBench, err := resolveBenchDataPath("", defaultsFilePath)
+					if err != nil {
+						logrus.Fatalf("--roofline (implicit): %v", err)
+					}
+					benchDataPath = resolvedBench
+				}
 			} else if len(modelConfigFolder) == 0 {
 				logrus.Fatalf("Please provide model config folder containing config.json for model=%v\n", model)
 			} else if len(hwConfigPath) == 0 {

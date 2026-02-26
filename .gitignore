@@ -81,3 +81,8 @@ saturation_regimes.xlsx
 traces.csv
 
 prompts.md
+
+# Python evaluation scripts and data (not tracked)
+python_scripts/
+eval/
+InferSim/

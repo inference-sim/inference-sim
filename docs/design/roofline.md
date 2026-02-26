@@ -7,50 +7,75 @@ This document describes the analytical approach used to estimate the GPU latency
 
 The Blackbox optimization approach outlined in [Configuration: Coefficient Calibration](configuration.md#coefficient-calibration) requires training over ground-truth workload metrics obtained by running live vLLM instances over GPUs. In practice, collecting this ground-truth data and training the GPU latency model for each LLM can take several hours. For a faster approximation of GPU latencies without actually ever running vLLM, we recommend the roofline approach. This technique only requires the Huggingface LLM config (`config.json`) and hardware specifications (e.g. GPU Peak TFLOPS/Peak BW from NVIDIA datasheets) in `hardware_config.json`. It allows BLIS to generalize across diverse LLMs, TP values and workloads, while preserving TTFT/ITL/E2E accuracy.
 
-## 2. Core Methodology: The Roofline Model
-The simulator predicts execution time by identifying whether a phase (prefill/decode) is **Compute-Bound** or **Memory-Bound**. 
+## 2. Core Methodology: The Roofline Model (v2)
+
+The simulator predicts execution time by identifying whether a phase (prefill/decode) is **Compute-Bound** or **Memory-Bound**.
+
+**v2** uses MFU (Model FLOPs Utilization) values looked up from benchmark data (`bench_data/`) instead of static constants. MFU varies by operation type, batch size, sequence length, and attention configuration, providing more accurate estimates across diverse workloads.
 
 For each phase:
 
-$$\text{Phase Time} = \max\left( \frac{\text{Total FLOPS}}{\text{Peak Performance}}, \frac{\text{Total Bytes Transferred}}{\text{Memory Bandwidth}} \right)$$
+$$\text{Phase Time} = \max\left( \frac{\text{Total FLOPS}}{\text{Peak Performance} \times \text{MFU}}, \frac{\text{Total Bytes Transferred}}{\text{Effective Bandwidth}} \right)$$
 
-As a result, overall step time is given by:
+For mixed batches (both prefill and decode requests), phases are combined via max (modeling chunked-prefill overlap):
 
-$$\text{Step Time} = \text{Prefill Phase Time} + \text{Decode Phase Time}$$
+$$\text{Step Time} = \max(\text{Prefill Phase Time}, \text{Decode Phase Time}) + \text{CPU Overhead}$$
+
+For single-phase batches:
+
+$$\text{Step Time} = \text{Phase Time} + \text{CPU Overhead}$$
 
 ---
 
-## 3. Calculation Phases
+## 3. MFU Database (`bench_data/`)
 
-### A. FLOPs Calculation (`calculateTransformerFlops`)
-We track two types of operations:
-* **GEMM Ops:** Matrix multiplications for QKV projections, Attention Output, and MLP (SwiGLU) layers. Includes $QK^T$ and $AV$ operations.
-* **Vector Ops:** Non-tensor core operations like Softmax, RoPE (rotary embeddings), and normalization.
+The v2 roofline model uses empirically measured MFU values from GPU micro-benchmarks:
 
-### B. Memory Access (`calculateMemoryAccessBytes`)
-We calculate the data movement between HBM (High Bandwidth Memory) and the processor:
-* **Weights:** Static model parameters loaded once per layer.
+- **`bench_data/mha/prefill/<gpu>/`**: Attention prefill MFU by attention config and sequence length
+- **`bench_data/mha/decode/<gpu>/`**: Attention decode MFU by attention config, batch size, KV length, and TP
+- **`bench_data/gemm/<gpu>/data.csv`**: GEMM MFU by matrix dimensions (M, K, N)
+
+MFU values are interpolated between grid points:
+- Prefill: linear interpolation on sequence length
+- Decode: bilinear interpolation on (batch_size, kv_len) grid
+- GEMM: linear interpolation on M dimension after matching (K, N)
+
+If the model's attention configuration doesn't match any benchmark config, the nearest available config is selected using Euclidean distance.
+
+---
+
+## 4. Calculation Phases
+
+### A. GEMM Projections (`computeTransformerGEMMTimes`)
+
+For each GEMM projection (Q, K, V, O, Gate, Up, Down), time is:
+
+$$\text{GEMM Time} = \max\left( \frac{2 \times M \times K \times N}{\text{Peak FLOPS} \times \text{MFU}(M,K,N)}, \frac{K \times N \times \text{bytes\_per\_param}}{\text{Effective BW}} \right)$$
+
+The memory-bandwidth floor ensures GEMM time never drops below the weight-load time, which dominates at small batch sizes.
+
+### B. Attention Core (`calculateAttentionCoreFLOPs`)
+
+FLOPs for QK^T and AV matmuls, with MFU looked up per sequence length (prefill) or per batch_size/kv_len (decode).
+
+### C. Memory Access (`calculateMemoryAccessBytes`)
+
+Data movement between HBM and the processor:
+* **Weights:** Static model parameters loaded once per step.
 * **KV Cache Growth:** Writing new Key/Value tokens to memory.
-* **KV Cache Access:** Reading the history (past tokens) for attention.
+* **KV Cache Access:** Reading cached tokens for attention.
+* **Activations:** Intermediate activation tensors.
 
 ---
 
-## 3. Execution Pipeline
-The final step time is the sum of independent phases and overheads:
+## 5. Key Performance Variables
 
-1.  **Prefill Phase:** Calculated for the initial prompt processing chunk.
-2.  **Decode Phase:** Calculated for generating new tokens (usually memory-bound).
-3.  **Communication Overhead:** If using Tensor Parallelism ($TP > 1$), adds All-Reduce latency per layer.
-4.  **Hardware Overheads:** Static kernel launch times and layer-by-layer overhead constants.
+* **MFU (Model FLOPs Utilization):** Looked up from benchmark data per operation type, varying by batch size, sequence length, and matrix dimensions.
+* **TP Factor:** Divides compute and memory load across multiple GPUs. Applied as `1/tp` scaling to both compute and memory bandwidth terms.
+* **Bandwidth Efficiency Factor (`bwEfficiencyFactor`):** Scales peak HBM bandwidth to reflect real-world effective bandwidth (typically 0.75-0.85).
+* **Per-Layer CPU Overhead (`perLayerOverhead`):** Microseconds of CPU scheduling overhead per transformer layer, scaled by TP.
 
----
-
-## 4. Key Performance Variables
-* **MFU (Model Flops Utilization):** Scaled TFLOPs efficiency factors for Prefill vs. Decode.
-* **TP Factor:** Divides compute and memory load across multiple GPUs.
-* **Bandwidth Efficiency:** Real-world effective bandwidth versus theoretical peak bandwidth.
-
-## 5. Onboarding a new LLM/GPU
+## 6. Onboarding a new LLM/GPU
 
 ### Automatic (recommended): `--roofline` flag
 
@@ -63,6 +88,10 @@ The simplest way to run roofline mode is with the `--roofline` flag, which auto-
 The flag automatically:
 1. Checks `model_configs/` for an existing `config.json` (previously fetched)
 2. Fetches from HuggingFace on miss and writes into `model_configs/` (supports `HF_TOKEN` for gated models)
+3. Loads MFU benchmark data from `bench_data/`
+4. Loads `total-kv-blocks` from `defaults.yaml` (if not set explicitly)
+
+**Alpha coefficients:** Roofline mode uses **zero alpha coefficients** by default. The roofline model is a pure analytical estimator — alpha coefficients were trained jointly with beta coefficients for the blackbox regression model, and mixing trained alpha with analytical step-time estimation produces inconsistent results. To override this, pass `--alpha-coeffs` explicitly on the command line.
 
 For models not in `defaults.yaml`, add an `hf_repo` entry mapping the BLIS model name to the case-sensitive HuggingFace repo path.
 
@@ -74,19 +103,24 @@ Alternatively, download the `config.json` manually:
 
 ### Adding a new GPU
 
-* Refer to NVIDIA datasheets for GPU specs (for example, [datasheet for H100](https://www.nvidia.com/en-us/data-center/h100/)) and add an entry to `hardware_config.json` as follows:
+* Refer to NVIDIA datasheets for GPU specs (for example, [datasheet for H100](https://www.nvidia.com/en-us/data-center/h100/)) and add an entry to `hardware_config.json`:
 
-```
-<GPU_name>: {
-		"TFlopsEff":        <Peak TFLOPS from datasheet>,      
-		"BwEffTBs":         <Peak BW from datasheet>,
-        "BwEffConstant":    0.72,
-		"TOverheadMicros":  500.0,
-		"perLayerOverhead": 20.0,
-		"mfuPrefill":       0.65,
-		"mfuDecode":        0.12,
-		"allReduceLatency": 20.0
-	}
+```json
+{
+    "<GPU_name>": {
+        "TFlopsPeak": 989.5,
+        "BwPeakTBs": 3.35,
+        "bwEfficiencyFactor": 0.82,
+        "perLayerOverhead": 100
+    }
+}
 ```
 
-> Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`. 
+| Field | Description |
+|-------|-------------|
+| `TFlopsPeak` | Peak BF16 TFLOPS from GPU datasheet |
+| `BwPeakTBs` | Peak HBM bandwidth in TB/s from GPU datasheet |
+| `bwEfficiencyFactor` | Fraction of peak BW achieved in practice (0-1, optional, 0 = use raw peak) |
+| `perLayerOverhead` | CPU scheduling overhead per transformer layer in microseconds |
+
+> Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.
