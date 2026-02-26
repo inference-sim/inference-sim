@@ -1,0 +1,2111 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../core-engine/">
+      
+      
+        <link rel="next" href="../configuration/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Concepts & Glossary - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#concepts-glossary" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Concepts & Glossary
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts & Glossary
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts & Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#admission-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admission Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#alpha-coefficients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alpha Coefficients
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#batch-formation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Batch Formation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#beta-coefficients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Beta Coefficients
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#block-kv-block" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Block (KV Block)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chunked-prefill" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunked Prefill
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#continuous-batching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuous Batching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#counterfactual-regret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Counterfactual Regret
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decode-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decode Phase
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discrete-event-simulation-des" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discrete Event Simulation (DES)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#e2e-end-to-end-latency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        E2E (End-to-End Latency)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#effective-load" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Effective Load
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fitness-score" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fitness Score
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#horizon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Horizon
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#itl-inter-token-latency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ITL (Inter-Token Latency)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kv-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KV Cache
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latency-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Latency Model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pending-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pending Requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#policy-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Bundle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preemption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preemption
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefill-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefill Phase
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefix-caching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefix Caching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefix-affinity-scoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefix-Affinity Scoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#priority-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Priority Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roofline-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roofline Model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#routing-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#routing-snapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing Snapshot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scorer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scorer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#seed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tick
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tiered-kv-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tiered KV Cache
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ttft-time-to-first-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TTFT (Time To First Token)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workload-specification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload Specification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#work-conserving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Work-Conserving
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Process
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Documents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#admission-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admission Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#alpha-coefficients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alpha Coefficients
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#batch-formation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Batch Formation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#beta-coefficients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Beta Coefficients
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#block-kv-block" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Block (KV Block)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chunked-prefill" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chunked Prefill
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#continuous-batching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuous Batching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#counterfactual-regret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Counterfactual Regret
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decode-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decode Phase
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discrete-event-simulation-des" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discrete Event Simulation (DES)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#e2e-end-to-end-latency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        E2E (End-to-End Latency)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#effective-load" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Effective Load
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fitness-score" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fitness Score
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#horizon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Horizon
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#itl-inter-token-latency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ITL (Inter-Token Latency)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kv-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KV Cache
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latency-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Latency Model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pending-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pending Requests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#policy-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Bundle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preemption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preemption
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefill-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefill Phase
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefix-caching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefix Caching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefix-affinity-scoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefix-Affinity Scoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#priority-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Priority Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roofline-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roofline Model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#routing-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#routing-snapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing Snapshot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scorer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scorer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#seed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tick
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tiered-kv-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tiered KV Cache
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ttft-time-to-first-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TTFT (Time To First Token)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workload-specification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload Specification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#work-conserving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Work-Conserving
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="concepts-glossary">Concepts &amp; Glossary<a class="headerlink" href="#concepts-glossary" title="Permanent link">&para;</a></h1>
+<p>This page defines terminology used throughout BLIS documentation. Terms are listed alphabetically with cross-references to the relevant design pages.</p>
+<hr />
+<h3 id="admission-policy">Admission Policy<a class="headerlink" href="#admission-policy" title="Permanent link">&para;</a></h3>
+<p>A cluster-level gate that decides whether an incoming request enters the routing pipeline or is rejected. Built-in policies: <code>always-admit</code> (accept all), <code>token-bucket</code> (rate-limiting), <code>reject-all</code> (testing only). See <a href="../architecture/#admission-pipeline">Cluster Architecture</a>.</p>
+<h3 id="alpha-coefficients">Alpha Coefficients<a class="headerlink" href="#alpha-coefficients" title="Permanent link">&para;</a></h3>
+<p>Three regression coefficients <code>[alpha0, alpha1, alpha2]</code> that model non-GPU overhead per request. <code>alpha0 + alpha1 * input_length</code> estimates queueing delay (tokenization, API serialization); <code>alpha2</code> estimates output token processing time. These overheads are added to per-request metrics but do not block the simulation clock. See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a>.</p>
+<h3 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h3>
+<p>The process of selecting which requests from the wait queue join the running batch for the next step. BLIS implements vLLM-style continuous batching with chunked prefill and preemption. See <a href="../core-engine/#batch-formation">Core Engine: Batch Formation</a>.</p>
+<h3 id="beta-coefficients">Beta Coefficients<a class="headerlink" href="#beta-coefficients" title="Permanent link">&para;</a></h3>
+<p>Three regression coefficients <code>[beta0, beta1, beta2]</code> that predict GPU step time: <code>beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens</code>. Trained offline via Bayesian optimization against real vLLM measurements. See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a>.</p>
+<h3 id="block-kv-block">Block (KV Block)<a class="headerlink" href="#block-kv-block" title="Permanent link">&para;</a></h3>
+<p>The unit of KV cache allocation. Each block holds a fixed number of tokens (default: 16). Requests are allocated blocks proportional to their token count. Blocks are reference-counted and can be shared across requests via prefix caching. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
+<h3 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h3>
+<p>A vLLM optimization where long prefill sequences are split into chunks that fit within the per-step token budget (<code>max-num-scheduled-tokens</code>). Controlled by <code>--long-prefill-token-threshold</code>. See <a href="../core-engine/#batch-formation">Core Engine: Batch Formation</a>.</p>
+<h3 id="continuous-batching">Continuous Batching<a class="headerlink" href="#continuous-batching" title="Permanent link">&para;</a></h3>
+<p>The serving strategy where new requests can join the running batch between decode steps, rather than waiting for the entire batch to complete. BLIS models this by re-evaluating the batch composition at every step. See <a href="../core-engine/#batch-formation">Core Engine: Batch Formation</a>.</p>
+<h3 id="counterfactual-regret">Counterfactual Regret<a class="headerlink" href="#counterfactual-regret" title="Permanent link">&para;</a></h3>
+<p>A trace-level metric that measures how much better an alternative routing decision could have been. For each routing decision, BLIS scores all candidate instances and computes <code>regret = best_score - chosen_score</code>. Useful for offline analysis of routing policy quality. See <a href="../architecture/#counterfactual-regret">Cluster Architecture: Counterfactual Regret</a>.</p>
+<h3 id="decode-phase">Decode Phase<a class="headerlink" href="#decode-phase" title="Permanent link">&para;</a></h3>
+<p>The token generation phase where the model produces output tokens one at a time (or in parallel within a step). Each decode token uses the KV cache from all prior tokens. Decode steps are typically memory-bandwidth-bound. Contrast with <em>Prefill Phase</em>.</p>
+<h3 id="discrete-event-simulation-des">Discrete Event Simulation (DES)<a class="headerlink" href="#discrete-event-simulation-des" title="Permanent link">&para;</a></h3>
+<p>A simulation paradigm where the system state changes only at discrete event times. BLIS maintains a priority queue of timestamped events and advances the simulation clock by jumping between events, rather than stepping through fixed time intervals. See <a href="../core-engine/#event-queue">Core Engine: Event Queue</a>.</p>
+<h3 id="e2e-end-to-end-latency">E2E (End-to-End Latency)<a class="headerlink" href="#e2e-end-to-end-latency" title="Permanent link">&para;</a></h3>
+<p>Total time from request arrival to final token completion. Computed as <code>TTFT + sum(ITLs)</code>, where each ITL includes step time plus output processing overhead (alpha2). See <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
+<h3 id="effective-load">Effective Load<a class="headerlink" href="#effective-load" title="Permanent link">&para;</a></h3>
+<p>A routing signal computed as <code>QueueDepth + BatchSize + PendingRequests</code>. Represents the total work visible at an instance, including requests that have been routed but not yet enqueued. Used by least-loaded routing and load-balance scoring. See <a href="../architecture/#routing-pipeline">Cluster Architecture: Routing Pipeline</a>.</p>
+<h3 id="fitness-score">Fitness Score<a class="headerlink" href="#fitness-score" title="Permanent link">&para;</a></h3>
+<p>A single numeric value summarizing multi-objective simulation performance. Computed as a weighted combination of configurable metrics (TTFT percentiles, E2E percentiles, throughput). Latency metrics normalized via <code>1/(1 + value/1000)</code>; throughput metrics via <code>value/(value + reference)</code>. See <a href="../configuration/#fitness-evaluation">Configuration Reference</a>.</p>
+<h3 id="horizon">Horizon<a class="headerlink" href="#horizon" title="Permanent link">&para;</a></h3>
+<p>The simulation time limit in ticks (microseconds). The simulation stops when the clock exceeds the horizon or all requests complete, whichever comes first. See <a href="../configuration/#simulation-control">Configuration Reference</a>.</p>
+<h3 id="itl-inter-token-latency">ITL (Inter-Token Latency)<a class="headerlink" href="#itl-inter-token-latency" title="Permanent link">&para;</a></h3>
+<p>The observed time between consecutive decode steps for a single request. ITL varies with batch composition changes between steps. Mean ITL is reported as TPOT (Time Per Output Token).</p>
+<h3 id="kv-cache">KV Cache<a class="headerlink" href="#kv-cache" title="Permanent link">&para;</a></h3>
+<p>GPU memory organized as blocks that store key-value tensors computed during attention. BLIS simulates block allocation, prefix sharing, LRU eviction, and optional CPU offloading without actual GPU memory. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
+<h3 id="latency-model">Latency Model<a class="headerlink" href="#latency-model" title="Permanent link">&para;</a></h3>
+<p>The component that predicts GPU execution time for a batch step. Two modes: <em>Blackbox</em> (trained regression coefficients) and <em>Roofline</em> (analytical FLOPs/bandwidth estimation). See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a> and <a href="../roofline/">Roofline Estimation</a>.</p>
+<h3 id="pending-requests">Pending Requests<a class="headerlink" href="#pending-requests" title="Permanent link">&para;</a></h3>
+<p>Requests that have been routed to an instance but not yet enqueued (the queueing event hasn't fired). Tracked per-instance to prevent routing pile-on at high arrival rates. Decremented when the <code>QueuedEvent</code> fires. See <a href="../architecture/#routing-pipeline">Cluster Architecture: Routing Pipeline</a>.</p>
+<h3 id="policy-bundle">Policy Bundle<a class="headerlink" href="#policy-bundle" title="Permanent link">&para;</a></h3>
+<p>A YAML configuration file (<code>--policy-config</code>) that specifies admission, routing, priority, and scheduling policies in one place. CLI flags override bundle values when explicitly set. See <a href="../configuration/#policy-bundle">Configuration Reference</a>.</p>
+<h3 id="preemption">Preemption<a class="headerlink" href="#preemption" title="Permanent link">&para;</a></h3>
+<p>KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch tail, frees their blocks, and re-enqueues them at the front of the wait queue. See <a href="../core-engine/#batch-formation">Core Engine: Batch Formation</a>.</p>
+<h3 id="prefill-phase">Prefill Phase<a class="headerlink" href="#prefill-phase" title="Permanent link">&para;</a></h3>
+<p>The initial processing phase where the model computes attention over all input tokens. Prefill is compute-bound for large inputs. After prefill completes, the request transitions to decode. TTFT is recorded at this boundary.</p>
+<h3 id="prefix-caching">Prefix Caching<a class="headerlink" href="#prefix-caching" title="Permanent link">&para;</a></h3>
+<p>Reuse of KV blocks across requests that share a common input prefix. BLIS uses hierarchical block hashing: each block's hash chains with the prior block's hash, enabling semantic prefix matching. Shared blocks are reference-counted and exempt from eviction while in use. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
+<h3 id="prefix-affinity-scoring">Prefix-Affinity Scoring<a class="headerlink" href="#prefix-affinity-scoring" title="Permanent link">&para;</a></h3>
+<p>A routing scorer that directs requests to instances likely to have their prefix cached. Uses a lightweight router-side cache index (not the actual per-instance KV cache) to estimate cache hit probability per instance. Score range [0, 1]. See <a href="../architecture/#scorer-composition">Cluster Architecture: Scorer Composition</a>.</p>
+<h3 id="priority-policy">Priority Policy<a class="headerlink" href="#priority-policy" title="Permanent link">&para;</a></h3>
+<p>A per-instance policy that assigns a numeric priority score to each request before batch formation. Used by priority-aware schedulers to reorder the wait queue. Built-in policies: <code>constant</code>, <code>slo-based</code>, <code>inverted-slo</code> (testing only). Note: despite its name, <code>slo-based</code> currently uses only request age (favoring older requests), not per-request SLO metadata. See <a href="../core-engine/#scheduling-policies">Core Engine: Scheduling</a>.</p>
+<h3 id="roofline-model">Roofline Model<a class="headerlink" href="#roofline-model" title="Permanent link">&para;</a></h3>
+<p>An analytical latency estimation technique that predicts step time as <code>max(FLOPs / peak_compute, bytes / peak_bandwidth)</code>. Requires only the model's HuggingFace <code>config.json</code> and GPU hardware specs. No training data needed. See <a href="../roofline/">Roofline Estimation</a>.</p>
+<h3 id="routing-policy">Routing Policy<a class="headerlink" href="#routing-policy" title="Permanent link">&para;</a></h3>
+<p>A cluster-level policy that selects which instance receives an admitted request. Simple policies (round-robin, least-loaded) use fixed rules. The weighted scoring policy composes multiple scorers with configurable weights. See <a href="../architecture/#routing-pipeline">Cluster Architecture: Routing Pipeline</a>.</p>
+<h3 id="routing-snapshot">Routing Snapshot<a class="headerlink" href="#routing-snapshot" title="Permanent link">&para;</a></h3>
+<p>A point-in-time view of instance state used for routing decisions. Contains queue depth, batch size, KV utilization, cache hit rate, and pending request count. Signals have different freshness tiers depending on how they're collected. See <a href="../architecture/#signal-freshness">Cluster Architecture: Signal Freshness</a>.</p>
+<h3 id="scorer">Scorer<a class="headerlink" href="#scorer" title="Permanent link">&para;</a></h3>
+<p>A component in the weighted scoring pipeline that produces a per-instance score in [0, 1] for a specific signal dimension. Built-in scorers: <code>prefix-affinity</code>, <code>queue-depth</code>, <code>kv-utilization</code>, <code>load-balance</code>. Scores are multiplied by weights and summed. See <a href="../architecture/#scorer-composition">Cluster Architecture: Scorer Composition</a>.</p>
+<h3 id="seed">Seed<a class="headerlink" href="#seed" title="Permanent link">&para;</a></h3>
+<p>The random seed for deterministic simulation. Same seed produces byte-identical stdout across runs (INV-6). BLIS uses partitioned RNG to isolate randomness across subsystems. See <a href="../configuration/#simulation-control">Configuration Reference</a>.</p>
+<h3 id="step">Step<a class="headerlink" href="#step" title="Permanent link">&para;</a></h3>
+<p>A single iteration of the inference engine. Each step processes one batch: prefill tokens for new/continuing requests and decode tokens for generating output. Step time is predicted by the latency model. See <a href="../core-engine/#step-phases">Core Engine: Step Phases</a>.</p>
+<h3 id="tick">Tick<a class="headerlink" href="#tick" title="Permanent link">&para;</a></h3>
+<p>The fundamental time unit in BLIS, representing one microsecond. All timestamps, durations, and latencies are measured in ticks. The simulation clock advances in ticks.</p>
+<h3 id="tiered-kv-cache">Tiered KV Cache<a class="headerlink" href="#tiered-kv-cache" title="Permanent link">&para;</a></h3>
+<p>An extension of the KV cache with GPU and CPU tiers. When GPU utilization exceeds a threshold, blocks are offloaded to CPU memory. On cache miss, blocks can be reloaded from CPU with a transfer latency penalty. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
+<h3 id="ttft-time-to-first-token">TTFT (Time To First Token)<a class="headerlink" href="#ttft-time-to-first-token" title="Permanent link">&para;</a></h3>
+<p>Time from request arrival to completion of the prefill phase (first output token ready). Includes queueing delay, prefill step times, and output processing overhead (alpha2). A key latency SLO metric for interactive applications. See <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
+<h3 id="workload-specification">Workload Specification<a class="headerlink" href="#workload-specification" title="Permanent link">&para;</a></h3>
+<p>A YAML file (<code>--workload-spec</code>) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports <code>poisson</code>, <code>gamma</code>, and <code>weibull</code> arrival processes and <code>gaussian</code>, <code>exponential</code>, <code>pareto_lognormal</code>, <code>constant</code>, and <code>empirical</code> token distributions. See <a href="../configuration/#workload-modes">Configuration Reference</a>.</p>
+<h3 id="work-conserving">Work-Conserving<a class="headerlink" href="#work-conserving" title="Permanent link">&para;</a></h3>
+<p>The property that the simulator never idles while requests are waiting. After every step completion, if the wait queue is non-empty, a new <code>StepEvent</code> is scheduled immediately (INV-8). See <a href="../core-engine/#event-queue">Core Engine: Event Queue</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,2300 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../extension-recipes/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Contributing - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#contributing-to-blis" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Contributing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts & Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Process
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Documents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#your-first-contribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Your First Contribution
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Your First Contribution">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-create-a-branch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Create a branch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-write-the-failing-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Write the failing test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-implement-the-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Implement the policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-register-in-the-factory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Register in the factory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-verify-tests-pass" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Verify tests pass
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-6-commit-and-open-a-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6: Commit and open a PR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributing-with-claude-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributing with Claude Code
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Contributing with Claude Code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#choosing-your-journey" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing Your Journey
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fix-small-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fix / Small Change
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-policy-or-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Policy or Extension
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-feature-idea-to-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Feature (Idea to PR)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#without-claude-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Without Claude Code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#engineering-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Engineering Principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#antipattern-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Antipattern Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Components
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Adding New Components">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-model-to-defaultsyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Model to defaults.yaml
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#policy-template-lightest-3-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Template (lightest — ~3 files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subsystem-module-heaviest-new-interface-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subsystem Module (heaviest — new interface + integration)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backend-swap-two-phases-extract-interface-then-add-alternative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend Swap (two phases — extract interface, then add alternative)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tier-composition-delegation-pattern-4-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier Composition (delegation pattern — ~4 files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-trace-record-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Trace Record Type
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-or-contributing-hypothesis-experiments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running or Contributing Hypothesis Experiments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Style
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#your-first-contribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Your First Contribution
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Your First Contribution">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-create-a-branch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Create a branch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-write-the-failing-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Write the failing test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-implement-the-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Implement the policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-register-in-the-factory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Register in the factory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-verify-tests-pass" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Verify tests pass
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-6-commit-and-open-a-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6: Commit and open a PR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributing-with-claude-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributing with Claude Code
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Contributing with Claude Code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#choosing-your-journey" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing Your Journey
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fix-small-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fix / Small Change
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-policy-or-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Policy or Extension
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-feature-idea-to-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Feature (Idea to PR)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#without-claude-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Without Claude Code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#engineering-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Engineering Principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#antipattern-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Antipattern Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Components
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Adding New Components">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-model-to-defaultsyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Model to defaults.yaml
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#policy-template-lightest-3-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Template (lightest — ~3 files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subsystem-module-heaviest-new-interface-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subsystem Module (heaviest — new interface + integration)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backend-swap-two-phases-extract-interface-then-add-alternative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend Swap (two phases — extract interface, then add alternative)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tier-composition-delegation-pattern-4-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier Composition (delegation pattern — ~4 files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-trace-record-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Trace Record Type
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-or-contributing-hypothesis-experiments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running or Contributing Hypothesis Experiments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Style
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="contributing-to-blis">Contributing to BLIS<a class="headerlink" href="#contributing-to-blis" title="Permanent link">&para;</a></h1>
+<p>This guide covers the engineering standards that keep BLIS (Blackbox Inference Simulator) correct and maintainable.</p>
+<h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Build</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>simulation_worker<span class="w"> </span>main.go
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Test</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Install linter (one-time setup)</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>go<span class="w"> </span>install<span class="w"> </span>github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Lint</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...
+</code></pre></div>
+<p>All three must pass before submitting a PR. CI uses golangci-lint v2.9.0 (see <code>.github/workflows/ci.yml</code>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Local docs preview (requires Python + mkdocs-material)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material<span class="o">==</span><span class="m">9</span>.7.3
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>sed<span class="w"> </span><span class="s1">&#39;s|](|](|g&#39;</span><span class="w"> </span>CONTRIBUTING.md<span class="w"> </span>&gt;<span class="w"> </span>docs/contributing.md
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>mkdocs<span class="w"> </span>serve
+</code></pre></div>
+<h2 id="your-first-contribution">Your First Contribution<a class="headerlink" href="#your-first-contribution" title="Permanent link">&para;</a></h2>
+<p>This walkthrough adds a trivial admission policy — the lightest extension type (~3 files). Follow it step-by-step to learn the patterns, then apply them to your own contribution.</p>
+<p><strong>What we'll build:</strong> A <code>CountingAdmit</code> admission policy that admits the first N requests and rejects the rest. We'll use test-driven development, starting with a test for the feature we want to implement.</p>
+<h3 id="step-1-create-a-branch">Step 1: Create a branch<a class="headerlink" href="#step-1-create-a-branch" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>feature/counting-admit
+</code></pre></div>
+<h3 id="step-2-write-the-failing-test">Step 2: Write the failing test<a class="headerlink" href="#step-2-write-the-failing-test" title="Permanent link">&para;</a></h3>
+<p>Add a test to <code>sim/admission_test.go</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestCountingAdmit_RejectsAfterLimit</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="c1">// GIVEN a CountingAdmit policy with limit=2</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nx">policy</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">CountingAdmit</span><span class="p">{</span><span class="nx">Limit</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">}</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nx">req</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">Request</span><span class="p">{</span><span class="nx">ID</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">InputTokens</span><span class="p">:</span><span class="w"> </span><span class="nb">make</span><span class="p">([]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">)}</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="nx">state</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">RouterState</span><span class="p">{</span><span class="nx">Clock</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">}</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="c1">// WHEN 3 requests arrive</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nx">r1</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">policy</span><span class="p">.</span><span class="nx">Admit</span><span class="p">(</span><span class="nx">req</span><span class="p">,</span><span class="w"> </span><span class="nx">state</span><span class="p">)</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nx">r2</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">policy</span><span class="p">.</span><span class="nx">Admit</span><span class="p">(</span><span class="nx">req</span><span class="p">,</span><span class="w"> </span><span class="nx">state</span><span class="p">)</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="nx">r3</span><span class="p">,</span><span class="w"> </span><span class="nx">reason</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">policy</span><span class="p">.</span><span class="nx">Admit</span><span class="p">(</span><span class="nx">req</span><span class="p">,</span><span class="w"> </span><span class="nx">state</span><span class="p">)</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">    </span><span class="c1">// THEN the first 2 are admitted and the 3rd is rejected</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">r1</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Error</span><span class="p">(</span><span class="s">&quot;first request should be admitted&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">r2</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Error</span><span class="p">(</span><span class="s">&quot;second request should be admitted&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">r3</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;third request should be rejected, got reason: %s&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">reason</span><span class="p">)</span>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="p">}</span>
+</code></pre></div>
+<p>Run: <code>go test ./sim/... -run TestCountingAdmit -v</code>
+Expected: <strong>FAIL</strong> (type <code>CountingAdmit</code> does not exist yet)</p>
+<h3 id="step-3-implement-the-policy">Step 3: Implement the policy<a class="headerlink" href="#step-3-implement-the-policy" title="Permanent link">&para;</a></h3>
+<p>In <code>sim/admission.go</code>, add after the existing policies:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// CountingAdmit admits the first Limit requests, then rejects all subsequent ones.</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kd">type</span><span class="w"> </span><span class="nx">CountingAdmit</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nx">Limit</span><span class="w"> </span><span class="kt">int</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nx">count</span><span class="w"> </span><span class="kt">int</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="p">}</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">CountingAdmit</span><span class="p">)</span><span class="w"> </span><span class="nx">Admit</span><span class="p">(</span><span class="nx">_</span><span class="w"> </span><span class="o">*</span><span class="nx">Request</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="o">*</span><span class="nx">RouterState</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="kt">bool</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nx">c</span><span class="p">.</span><span class="nx">count</span><span class="o">++</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">count</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">Limit</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;counting-admit limit exceeded&quot;</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="p">}</span>
+</code></pre></div>
+<h3 id="step-4-register-in-the-factory">Step 4: Register in the factory<a class="headerlink" href="#step-4-register-in-the-factory" title="Permanent link">&para;</a></h3>
+<p>Two files need changes:</p>
+<p>In <code>sim/bundle.go</code>, add <code>"counting-admit"</code> to the <code>validAdmissionPolicies</code> map:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nx">validAdmissionPolicies</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">bool</span><span class="p">{</span><span class="s">&quot;&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;always-admit&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;token-bucket&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;reject-all&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;counting-admit&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">}</span>
+</code></pre></div>
+<p>In <code>sim/admission.go</code>, add a case to the <code>NewAdmissionPolicy</code> factory switch:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">case</span><span class="w"> </span><span class="s">&quot;counting-admit&quot;</span><span class="p">:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">CountingAdmit</span><span class="p">{</span><span class="nx">Limit</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">}</span><span class="w"> </span><span class="c1">// hardcoded for tutorial simplicity</span>
+</code></pre></div>
+<blockquote>
+<p><strong>Note:</strong> In a real policy, you would wire the limit through the factory parameters (e.g., <code>Limit: int(capacity)</code>) or via <code>PolicyBundle</code> YAML config. Hardcoded defaults would fail code review — see how <code>token-bucket</code> uses <code>capacity</code> and <code>refillRate</code>.</p>
+</blockquote>
+<h3 id="step-5-verify-tests-pass">Step 5: Verify tests pass<a class="headerlink" href="#step-5-verify-tests-pass" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./sim/...<span class="w"> </span>-run<span class="w"> </span>TestCountingAdmit<span class="w"> </span>-v<span class="w">   </span><span class="c1"># Your new test</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...<span class="w">                                    </span><span class="c1"># All tests still pass</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...<span class="w">                          </span><span class="c1"># No lint issues</span>
+</code></pre></div>
+<h3 id="step-6-commit-and-open-a-pr">Step 6: Commit and open a PR<a class="headerlink" href="#step-6-commit-and-open-a-pr" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>git<span class="w"> </span>add<span class="w"> </span>sim/admission.go<span class="w"> </span>sim/admission_test.go<span class="w"> </span>sim/bundle.go
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(sim): add counting-admit admission policy</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="s2">- Admits first N requests, rejects the rest</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="s2">- Registered in factory with default limit=100&quot;</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>feature/counting-admit
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;feat: add counting-admit admission policy&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;My first BLIS contribution!&quot;</span>
+</code></pre></div>
+<p><strong>That's it!</strong> You've added a complete, tested, registered policy. Real contributions follow the same pattern — just with more contracts and a formal implementation plan.</p>
+<blockquote>
+<p><strong>Important:</strong> This example is for learning only. Do <strong>not</strong> submit this as a real PR — <code>CountingAdmit</code> is a toy policy with no practical use. For your actual first contribution, check <a href="https://github.com/inference-sim/inference-sim/issues">open issues</a> for tasks labeled <code>good first issue</code>.</p>
+</blockquote>
+<h2 id="contributing-with-claude-code">Contributing with Claude Code<a class="headerlink" href="#contributing-with-claude-code" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>Canonical source:</strong> <a href="../process/pr-workflow/"><code>docs/process/pr-workflow.md</code></a>. If this section diverges, pr-workflow.md is authoritative.</p>
+</blockquote>
+<p>BLIS development workflows are orchestrated through <a href="https://claude.ai/code">Claude Code</a> skills — structured sequences that handle worktree creation, plan generation, multi-perspective review with convergence enforcement, and PR creation. Contributors with Claude Code get the full automated pipeline. Contributors without it follow the manual path below and still go through the same quality gates (maintainers run the automated reviews on submitted PRs).</p>
+<p><strong>Prerequisites:</strong> Claude Code installed with project skills available (<code>convergence-review</code>, <code>hypothesis-experiment</code>) and general Claude Code skills (<code>writing-plans</code>, <code>executing-plans</code>, <code>commit-push-pr</code>). See <a href="../process/pr-workflow/"><code>docs/process/pr-workflow.md</code></a> for the full skill table. Before your first contribution, read <a href="../templates/design-guidelines/"><code>docs/templates/design-guidelines.md</code></a> — it covers module architecture, extension types, and DES foundations.</p>
+<h3 id="choosing-your-journey">Choosing Your Journey<a class="headerlink" href="#choosing-your-journey" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>You want to...</th>
+<th>Journey</th>
+<th>Starts with</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fix a bug or make a small change</td>
+<td><a href="#bug-fix--small-change">Bug Fix / Small Change</a></td>
+<td>A GitHub issue or observed bug</td>
+</tr>
+<tr>
+<td>Add a new policy, scorer, or extension</td>
+<td><a href="#new-policy-or-extension">New Policy or Extension</a></td>
+<td>An existing interface to implement</td>
+</tr>
+<tr>
+<td>Build a new feature or subsystem</td>
+<td><a href="#new-feature-idea-to-pr">New Feature (Idea to PR)</a></td>
+<td>An idea or requirement</td>
+</tr>
+<tr>
+<td>Validate simulator behavior</td>
+<td><a href="#running-or-contributing-hypothesis-experiments">Hypothesis Experiment</a></td>
+<td>A behavioral prediction</td>
+</tr>
+</tbody>
+</table>
+<p>For hypothesis experiments, see <a href="#running-or-contributing-hypothesis-experiments">Running or Contributing Hypothesis Experiments</a> below. With Claude Code, the <code>hypothesis-experiment</code> skill orchestrates the full Steps 0–10 workflow.</p>
+<h3 id="bug-fix-small-change">Bug Fix / Small Change<a class="headerlink" href="#bug-fix-small-change" title="Permanent link">&para;</a></h3>
+<p>The lightest path. For bug fixes, docs updates, and single-PR changes that don't introduce new module boundaries.</p>
+<ol>
+<li><strong>Create worktree</strong> — <code>/superpowers:using-git-worktrees fix-&lt;name&gt;</code></li>
+<li><strong>Write micro plan</strong> — <code>/superpowers:writing-plans</code> using <code>@docs/templates/micro-plan.md</code></li>
+<li><strong>Review plan</strong> — <code>/pr-review-toolkit:review-pr</code> then <code>/convergence-review pr-plan &lt;plan-path&gt;</code></li>
+<li><strong>Human approval</strong> — review contracts and tasks, approve to proceed</li>
+<li><strong>Implement</strong> — <code>/superpowers:executing-plans @&lt;plan-path&gt;</code></li>
+<li><strong>Review code</strong> — <code>/pr-review-toolkit:review-pr</code> then <code>/convergence-review pr-code</code></li>
+<li><strong>Self-audit + commit</strong> — deliberate critical thinking, then <code>/commit-commands:commit-push-pr</code></li>
+</ol>
+<p>Full process: <a href="../process/pr-workflow/"><code>docs/process/pr-workflow.md</code></a></p>
+<h3 id="new-policy-or-extension">New Policy or Extension<a class="headerlink" href="#new-policy-or-extension" title="Permanent link">&para;</a></h3>
+<p>For adding a routing policy, admission policy, scorer, scheduler, priority policy, or tier composition — anything behind an existing interface.</p>
+<ol>
+<li><strong>Identify extension type</strong> — see <a href="#adding-new-components">Adding New Components</a> below</li>
+<li><strong>Create worktree</strong> — <code>/superpowers:using-git-worktrees &lt;extension-name&gt;</code></li>
+<li><strong>Write micro plan</strong> — <code>/superpowers:writing-plans</code> using <code>@docs/templates/micro-plan.md</code> and <code>@docs/extension-recipes.md</code></li>
+<li><strong>Follow steps 3–7 from Bug Fix</strong> (review → approve → implement → review → commit)</li>
+</ol>
+<p>No design doc needed for policy templates. For tier compositions, a design doc is recommended — see the extension type table in <a href="#adding-new-components">Adding New Components</a>. Full process: <a href="../process/pr-workflow/"><code>docs/process/pr-workflow.md</code></a></p>
+<h3 id="new-feature-idea-to-pr">New Feature (Idea to PR)<a class="headerlink" href="#new-feature-idea-to-pr" title="Permanent link">&para;</a></h3>
+<p>The full pipeline for features that introduce new module boundaries, new interfaces, or span multiple PRs.</p>
+<p><strong>Phase 1 — Idea to Design:</strong>
+1. <strong>Explore approaches</strong> — discuss design options with Claude, settle on an approach
+2. <strong>Write design doc</strong> — following <a href="../templates/design-guidelines/"><code>docs/templates/design-guidelines.md</code></a>
+3. <strong>Review design</strong> — <code>/convergence-review design &lt;path&gt;</code> (8 perspectives)
+4. <strong>Human approval</strong> — review design doc before planning begins</p>
+<p>Full process: <a href="../process/design/"><code>docs/process/design.md</code></a></p>
+<p><strong>Phase 2 — Design to Macro Plan</strong> (skip if single-PR):</p>
+<ol>
+<li><strong>Write macro plan</strong> — decompose into PRs following <a href="../templates/macro-plan/"><code>docs/templates/macro-plan.md</code></a></li>
+<li><strong>Review macro plan</strong> — <code>/convergence-review macro-plan &lt;path&gt;</code> (8 perspectives)</li>
+<li><strong>Human approval</strong> — review PR decomposition and module contracts</li>
+</ol>
+<p>Full process: <a href="../process/macro-plan/"><code>docs/process/macro-plan.md</code></a></p>
+<p><strong>Phase 3 — Plan to PR</strong> (repeat for each PR):</p>
+<ol>
+<li><strong>Follow the Bug Fix journey</strong> (steps 1–7) using the macro plan section or design doc as the source document</li>
+</ol>
+<p>Each phase produces an artifact that feeds the next. Human approval gates between phases prevent wasted work.</p>
+<h3 id="without-claude-code">Without Claude Code<a class="headerlink" href="#without-claude-code" title="Permanent link">&para;</a></h3>
+<p>If you are not using Claude Code, here is the simplified workflow:</p>
+<ol>
+<li><strong>Branch</strong> — <code>git checkout -b feature/my-change</code></li>
+<li><strong>Plan</strong> — write an implementation plan following <code>docs/templates/micro-plan.md</code>. Include behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post the plan as a PR draft or issue comment for review.</li>
+<li><strong>Implement</strong> — follow TDD: write a failing test, implement the minimal code to pass it, run <code>go test ./...</code>, run <code>golangci-lint run ./...</code>, commit. Repeat for each contract.</li>
+<li><strong>Self-review</strong> — check the <a href="#antipattern-checklist">Antipattern Checklist</a> below. Run <code>go build ./... &amp;&amp; go test ./... &amp;&amp; golangci-lint run ./...</code> one final time.</li>
+<li><strong>PR</strong> — push your branch and open a PR. Maintainers will run the automated review protocols (convergence-review with 10 perspectives).</li>
+</ol>
+<p>The automated review tools (convergence-review, pr-review-toolkit) are run by maintainers — you do not need Claude Code installed. Your PR will go through the same quality gates regardless of tooling.</p>
+<p>For design docs and macro plans: follow the same templates (<a href="../templates/design-guidelines/"><code>docs/templates/design-guidelines.md</code></a>, <a href="../templates/macro-plan/"><code>docs/templates/macro-plan.md</code></a>) and submit for review. Maintainers will run convergence review.</p>
+<p>Full process: <a href="../process/pr-workflow/"><code>docs/process/pr-workflow.md</code></a> (the same workflow applies regardless of tooling)</p>
+<h2 id="engineering-principles">Engineering Principles<a class="headerlink" href="#engineering-principles" title="Permanent link">&para;</a></h2>
+<p>See <a href="../standards/principles/"><code>docs/standards/principles.md</code></a> for the full principles guide covering: separation of concerns, interface design, configuration design, canonical constructors, output channel separation, error handling boundaries, and BDD/TDD development.</p>
+<p>Key points for new contributors:
+- <code>sim/</code> is a library — never call <code>os.Exit</code> or <code>logrus.Fatalf</code>. Return errors. Only <code>cmd/</code> may terminate.
+- Write behavioral contracts (GIVEN/WHEN/THEN) before tests. Test observable behavior, not internal structure.
+- If your PR touches request lifecycle, KV cache, or metrics, add or extend invariant tests (see <a href="../standards/invariants/"><code>docs/standards/invariants.md</code></a>).</p>
+<h2 id="antipattern-checklist">Antipattern Checklist<a class="headerlink" href="#antipattern-checklist" title="Permanent link">&para;</a></h2>
+<p>20 rules, each tracing to a real bug. See <a href="../standards/rules/"><code>docs/standards/rules.md</code></a> for full details.</p>
+<p>Before submitting a PR, verify:</p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R1: No silent <code>continue</code>/<code>return</code> dropping data</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R2: Map keys sorted before float accumulation or ordered output</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R3: Every new CLI flag validated (zero, negative, NaN, Inf)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R4: All struct construction sites audited for new fields</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R5: Resource allocation loops handle mid-loop failure with rollback</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R6: No <code>logrus.Fatalf</code> or <code>os.Exit</code> in <code>sim/</code> packages</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R7: Invariant tests alongside any golden tests</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R8: No exported mutable maps</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R9: <code>*float64</code> for YAML fields where zero is valid</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R10: YAML strict parsing (<code>KnownFields(true)</code>)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R11: Division by runtime-derived denominators guarded</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R12: Golden dataset regenerated if output changed</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R13: New interfaces work for 2+ implementations</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R14: No method spans multiple module responsibilities</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R15: Stale PR references resolved</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R16: Config params grouped by module</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R17: Routing scorer signals documented for freshness tier</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R18: CLI flag values not silently overwritten by defaults.yaml</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R19: Unbounded retry/requeue loops have circuit breakers</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)</li>
+</ul>
+<h2 id="adding-new-components">Adding New Components<a class="headerlink" href="#adding-new-components" title="Permanent link">&para;</a></h2>
+<p>BLIS has four extension types. Identify which type your change is, then follow the corresponding recipe. See <code>docs/templates/design-guidelines.md</code> Section 5 for full details.</p>
+<table>
+<thead>
+<tr>
+<th>Extension Type</th>
+<th>What It Is</th>
+<th>Design Doc Required?</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Policy Template</strong></td>
+<td>New algorithm behind an existing interface</td>
+<td>No</td>
+<td>New routing algorithm</td>
+</tr>
+<tr>
+<td><strong>Subsystem Module</strong></td>
+<td>New module with its own interface and events</td>
+<td>Yes</td>
+<td>AutoScaler, P/D disaggregation</td>
+</tr>
+<tr>
+<td><strong>Backend Swap</strong></td>
+<td>Alternative implementation of internal module</td>
+<td>Yes (covers both phases)</td>
+<td>SGLang latency model</td>
+</tr>
+<tr>
+<td><strong>Tier Composition</strong></td>
+<td>Wrapper layering behavior on existing module</td>
+<td>Recommended</td>
+<td>NVMe KV tier</td>
+</tr>
+</tbody>
+</table>
+<h3 id="adding-a-new-model-to-defaultsyaml">Adding a New Model to defaults.yaml<a class="headerlink" href="#adding-a-new-model-to-defaultsyaml" title="Permanent link">&para;</a></h3>
+<p>When adding a new model configuration:</p>
+<ol>
+<li>Add an entry to the <code>defaults:</code> section with <code>GPU</code>, <code>tensor_parallelism</code>, and <code>vllm_version</code></li>
+<li>Add an <code>hf_repo</code> field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., <code>hf_repo: meta-llama/Llama-3.1-8B-Instruct</code>). This enables <code>--roofline</code> auto-fetch. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit <code>hf_repo</code> — document why with a YAML comment.</li>
+<li>If trained coefficients exist, add a corresponding entry to the <code>models:</code> list</li>
+</ol>
+<h3 id="policy-template-lightest-3-files">Policy Template (lightest — ~3 files)<a class="headerlink" href="#policy-template-lightest-3-files" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement the interface in the corresponding file (<code>sim/admission.go</code>, <code>sim/routing.go</code>, <code>sim/priority.go</code>, <code>sim/scheduler.go</code>)</li>
+<li>Register in <code>sim/bundle.go</code> (valid names map + <code>IsValid*</code> function)</li>
+<li>Add <code>case</code> to factory function</li>
+<li>Add behavioral tests (<code>TestMyPolicy_Scenario_Behavior</code>)</li>
+<li>Update CLAUDE.md and README</li>
+</ol>
+<h3 id="subsystem-module-heaviest-new-interface-integration">Subsystem Module (heaviest — new interface + integration)<a class="headerlink" href="#subsystem-module-heaviest-new-interface-integration" title="Permanent link">&para;</a></h3>
+<p>Requires a design doc defining the module contract (observes / controls / owns / invariants / events / extension friction). See design guidelines Section 5.3.</p>
+<ol>
+<li>Write design doc with module contract, event integration, state ownership, failure modes, default behavior</li>
+<li>Create implementation plan via <code>docs/templates/micro-plan.md</code></li>
+<li>Implement interface + default implementation + factory</li>
+<li>Integrate into cluster event pipeline</li>
+<li>Add CLI flags with full validation</li>
+<li>Add behavioral tests + invariant tests</li>
+<li>Update CLAUDE.md, README, and design guidelines module map if needed</li>
+</ol>
+<h3 id="backend-swap-two-phases-extract-interface-then-add-alternative">Backend Swap (two phases — extract interface, then add alternative)<a class="headerlink" href="#backend-swap-two-phases-extract-interface-then-add-alternative" title="Permanent link">&para;</a></h3>
+<p><strong>Phase A (refactoring):</strong> Extract interface from hardcoded logic, verify existing tests pass unchanged.
+<strong>Phase B (extension):</strong> Implement new backend behind extracted interface, add configuration to select between backends.</p>
+<p>See design guidelines Section 5.4 for the full two-phase recipe.</p>
+<h3 id="tier-composition-delegation-pattern-4-files">Tier Composition (delegation pattern — ~4 files)<a class="headerlink" href="#tier-composition-delegation-pattern-4-files" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement the same interface as the inner module (Liskov substitution)</li>
+<li>Compose existing tiers using delegation pattern</li>
+<li>Update factory with validation</li>
+<li>Add CLI flags with validation (zero, negative, NaN/Inf guards)</li>
+<li>Aggregate metrics from all tiers</li>
+<li>Add conservation invariant tests</li>
+</ol>
+<h3 id="new-trace-record-type">New Trace Record Type<a class="headerlink" href="#new-trace-record-type" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Define record struct in <code>sim/trace/record.go</code> (pure data, no <code>sim/</code> dependency)</li>
+<li>Add slice field to <code>SimulationTrace</code></li>
+<li>Add recording method</li>
+<li>Hook into cluster event pipeline (<code>if cs.trace != nil</code>)</li>
+<li>Update <code>Summarize()</code> aggregation</li>
+<li>Add behavioral tests</li>
+</ol>
+<h2 id="running-or-contributing-hypothesis-experiments">Running or Contributing Hypothesis Experiments<a class="headerlink" href="#running-or-contributing-hypothesis-experiments" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>Canonical source:</strong> <a href="../process/hypothesis/"><code>docs/process/hypothesis.md</code></a>. If this section diverges, hypothesis.md is authoritative.</p>
+</blockquote>
+<p>BLIS uses hypothesis-driven experimentation to validate system behavior, surface bugs, and document design tradeoffs. Experiments are organized into 6 families (workload/arrival, scheduler invariants, performance-regime, structural model, robustness, cross-policy comparative).</p>
+<p><strong>To run existing experiments:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">cd</span><span class="w"> </span>hypotheses/h13-determinism
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>./run.sh
+</code></pre></div>
+See <code>hypotheses/README.md</code> for the full list and coverage gaps.</p>
+<p><strong>To propose a new hypothesis:</strong>
+File a GitHub issue using the "Hypothesis Proposal" template. Include: the hypothesis sentence, family, diagnostic value, and rough experiment design.</p>
+<p><strong>To implement and run a new experiment:</strong>
+Follow <code>docs/process/hypothesis.md</code> for the full process (Steps 0-10). Key phases:
+1. Create worktree, classify hypothesis, design experiment
+2. <strong>Design Review</strong> (5 perspectives) → convergence → <strong>human approval</strong>
+3. Implement <code>run.sh</code> and <code>analyze.py</code> using shared harness (<code>hypotheses/lib/</code>)
+4. <strong>Code Review</strong> (5 perspectives) → convergence
+5. Run experiments, document FINDINGS.md
+6. <strong>FINDINGS Review</strong> (10 perspectives) → convergence
+7. Self-audit (6 dimensions), verification gate, commit and PR</p>
+<p><strong>Review protocol:</strong> Three review gates at different lifecycle stages, each using the universal convergence protocol (zero CRITICAL + zero IMPORTANT from all reviewers). External contributors without AI review infrastructure should submit their artifacts via PR — maintainers will run the review protocols. Only standard-library Python packages are needed (json, math, re, sys, pathlib).</p>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hypotheses/README.md</code></td>
+<td>Existing experiments, coverage gaps</td>
+</tr>
+<tr>
+<td><code>docs/process/hypothesis.md</code></td>
+<td>Full process (Steps 0-10, three review gates)</td>
+</tr>
+<tr>
+<td><code>docs/process/convergence.md</code></td>
+<td>Universal Convergence Protocol (used by all review gates)</td>
+</tr>
+<tr>
+<td><code>docs/standards/experiments.md</code></td>
+<td>Rigor requirements (families, types, VV&amp;UQ, RCV rules)</td>
+</tr>
+<tr>
+<td><code>docs/templates/hypothesis.md</code></td>
+<td>FINDINGS.md template</td>
+</tr>
+</tbody>
+</table>
+<h2 id="code-style">Code Style<a class="headerlink" href="#code-style" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Composition over inheritance</li>
+<li>Timestamp-based event ordering via min-heap</li>
+<li>Partitioned RNG per subsystem for deterministic isolation</li>
+<li>BDD-style test naming: <code>TestType_Scenario_Behavior</code></li>
+<li>Conventional commits: <code>feat(scope)</code>, <code>fix(scope)</code>, <code>refactor(scope)</code>, <code>test(scope)</code>, <code>docs(scope)</code></li>
+</ul>
+<h2 id="key-references">Key References<a class="headerlink" href="#key-references" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>What It Covers</th>
+<th>When to Read</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CLAUDE.md</code></td>
+<td>Code architecture, file organization, CLI flags, compact rule/invariant tables</td>
+<td>Always — authoritative for current codebase state</td>
+</tr>
+<tr>
+<td><code>docs/standards/rules.md</code></td>
+<td>20 antipattern rules with evidence, checks, enforcement</td>
+<td>When reviewing or writing code</td>
+</tr>
+<tr>
+<td><code>docs/standards/invariants.md</code></td>
+<td>8 system invariants (INV-1 through INV-8) with verification strategies</td>
+<td>When touching request lifecycle, KV cache, or metrics</td>
+</tr>
+<tr>
+<td><code>docs/standards/experiments.md</code></td>
+<td>Experiment taxonomy, rigor requirements, findings classification</td>
+<td>When running hypothesis experiments</td>
+</tr>
+<tr>
+<td><code>docs/process/pr-workflow.md</code></td>
+<td>End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR)</td>
+<td>Before starting any PR</td>
+</tr>
+<tr>
+<td><code>docs/design/</code></td>
+<td>System architecture, core engine, concepts glossary, configuration reference</td>
+<td>When learning how BLIS works before contributing</td>
+</tr>
+<tr>
+<td><code>docs/templates/design-guidelines.md</code></td>
+<td>DES foundations, module architecture, extension framework</td>
+<td>Before designing a new feature or extending BLIS</td>
+</tr>
+<tr>
+<td><code>docs/templates/micro-plan.md</code></td>
+<td>Template for single-PR implementation plans</td>
+<td>When creating any PR implementation plan</td>
+</tr>
+<tr>
+<td><code>docs/templates/macro-plan.md</code></td>
+<td>Template for multi-PR feature expansions</td>
+<td>When planning a large feature with multiple PRs</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

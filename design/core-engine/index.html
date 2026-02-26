@@ -1,0 +1,2415 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../architecture/">
+      
+      
+        <link rel="next" href="../concepts/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Core Engine - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#core-engine" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Core Engine
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-queue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event Queue
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step Phases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step Phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-schedule-batch-schedulebatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Schedule Batch (scheduleBatch)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-execute-batch-step-executebatchstep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Execute Batch Step (executeBatchStep)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-process-completions-processcompletions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Process Completions (processCompletions)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-schedule-next-step-schedulenextstep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Schedule Next Step (scheduleNextStep)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#request-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request Lifecycle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Request Lifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        States
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-timestamps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Timestamps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preemption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preemption
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dropped-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dropped Requests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#batch-formation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Batch Formation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Batch Formation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-phase-algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two-Phase Algorithm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preemption-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preemption Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kv-cache-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KV Cache Management
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="KV Cache Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#single-tier-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Single-Tier Cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tiered-cache-gpu-cpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tiered Cache (GPU + CPU)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latency-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Latency Models
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Latency Models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#blackbox-model-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Blackbox Model (Default)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#roofline-model-analytical" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roofline Model (Analytical)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alpha-overhead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alpha Overhead
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduling-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduling Policies
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scheduling Policies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#priority-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Priority Policies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Metrics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-request-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Request Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aggregate-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aggregate Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conservation-invariant-inv-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conservation Invariant (INV-1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#determinism" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Determinism
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts & Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Process
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Documents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../process/convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-queue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event Queue
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step Phases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step Phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-schedule-batch-schedulebatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Schedule Batch (scheduleBatch)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-execute-batch-step-executebatchstep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Execute Batch Step (executeBatchStep)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-process-completions-processcompletions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Process Completions (processCompletions)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-schedule-next-step-schedulenextstep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Schedule Next Step (scheduleNextStep)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#request-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request Lifecycle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Request Lifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        States
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-timestamps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Timestamps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preemption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preemption
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dropped-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dropped Requests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#batch-formation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Batch Formation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Batch Formation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-phase-algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two-Phase Algorithm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preemption-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preemption Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kv-cache-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KV Cache Management
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="KV Cache Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#single-tier-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Single-Tier Cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tiered-cache-gpu-cpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tiered Cache (GPU + CPU)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latency-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Latency Models
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Latency Models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#blackbox-model-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Blackbox Model (Default)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#roofline-model-analytical" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roofline Model (Analytical)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alpha-overhead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alpha Overhead
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduling-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduling Policies
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scheduling Policies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#priority-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Priority Policies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Metrics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-request-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Request Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aggregate-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aggregate Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conservation-invariant-inv-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conservation Invariant (INV-1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#determinism" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Determinism
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="core-engine">Core Engine<a class="headerlink" href="#core-engine" title="Permanent link">&para;</a></h1>
+<p>This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see <a href="../architecture/">Cluster Architecture</a>.</p>
+<blockquote>
+<p><strong>Canonical sources:</strong> System invariants (INV-1 through INV-8) are defined in <a href="../../standards/invariants/"><code>docs/standards/invariants.md</code></a>. If invariant descriptions here diverge, <code>invariants.md</code> is authoritative.</p>
+</blockquote>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Each BLIS instance is a self-contained discrete event simulator. The engine maintains an event queue (min-heap), processes events in timestamp order, and advances a simulation clock. The core loop is:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>while events remain and clock &lt; horizon:
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    event = pop earliest event from queue
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    advance clock to event.timestamp
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    execute event (may produce new events)
+</code></pre></div>
+<p>The engine models the full vLLM inference pipeline: request arrival, queueing, batch formation, step execution, KV cache management, and latency estimation — all without real GPU hardware.</p>
+<h2 id="event-queue">Event Queue<a class="headerlink" href="#event-queue" title="Permanent link">&para;</a></h2>
+<p>The event queue is a min-heap ordered by event timestamp. Events represent state transitions in the simulation:</p>
+<table>
+<thead>
+<tr>
+<th>Event Type</th>
+<th>Trigger</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ArrivalEvent</code></td>
+<td>Request enters system</td>
+<td>Computes queueing delay (alpha overhead), schedules <code>QueuedEvent</code></td>
+</tr>
+<tr>
+<td><code>QueuedEvent</code></td>
+<td>Request enters wait queue</td>
+<td>Adds request to wait queue; if no <code>StepEvent</code> exists, schedules one (work-conserving)</td>
+</tr>
+<tr>
+<td><code>StepEvent</code></td>
+<td>Batch ready for execution</td>
+<td>Runs the 4-phase Step() cycle (see below)</td>
+</tr>
+<tr>
+<td><code>ScheduledEvent</code></td>
+<td>Request moves to running batch</td>
+<td>Timeline marker for tracing (scheduling delay recorded in <code>scheduleBatch</code>)</td>
+</tr>
+<tr>
+<td><code>PreemptionEvent</code></td>
+<td>KV cache eviction</td>
+<td>Timeline marker for tracing (preemption count recorded in <code>scheduleBatch</code>)</td>
+</tr>
+<tr>
+<td><code>RequestLeftEvent</code></td>
+<td>Request completes</td>
+<td>Timeline marker for tracing (E2E metrics recorded in <code>processCompletions</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Clock monotonicity (INV-3):</strong> The simulation clock never decreases. Events are processed in strictly non-decreasing timestamp order.</p>
+<p><strong>Work-conserving (INV-8):</strong> After every step completion, if the wait queue is non-empty, a <code>StepEvent</code> must exist in the event queue. The simulator never idles while work is waiting.</p>
+<p><img alt="Event Processing Loop" src="../diagrams/eventprocessingloop.png" /></p>
+<h2 id="step-phases">Step Phases<a class="headerlink" href="#step-phases" title="Permanent link">&para;</a></h2>
+<p>The <code>Step()</code> function is a 4-line orchestrator that delegates to four phases:</p>
+<h3 id="phase-1-schedule-batch-schedulebatch">Phase 1: Schedule Batch (<code>scheduleBatch</code>)<a class="headerlink" href="#phase-1-schedule-batch-schedulebatch" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Assign priority scores to all queued requests via the priority policy</li>
+<li>Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-based)</li>
+<li>Invoke batch formation to select which requests enter the running batch</li>
+<li>Schedule <code>PreemptionEvent</code> for any evicted requests</li>
+<li>Schedule <code>ScheduledEvent</code> for any newly admitted requests</li>
+</ol>
+<h3 id="phase-2-execute-batch-step-executebatchstep">Phase 2: Execute Batch Step (<code>executeBatchStep</code>)<a class="headerlink" href="#phase-2-execute-batch-step-executebatchstep" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Compute step time via the latency model based on batch composition</li>
+<li>For each request in the batch:</li>
+<li>If in prefill phase: advance the progress index through input tokens (respecting chunked prefill limits)</li>
+<li>If in decode phase: advance the progress index by one output token</li>
+<li>Record TTFT at the prefill-to-decode boundary</li>
+<li>Return the computed step time to Phase 4 for scheduling the next <code>StepEvent</code> (the clock itself advances only at the event-loop level when the next event is popped)</li>
+</ol>
+<h3 id="phase-3-process-completions-processcompletions">Phase 3: Process Completions (<code>processCompletions</code>)<a class="headerlink" href="#phase-3-process-completions-processcompletions" title="Permanent link">&para;</a></h3>
+<p>Identify completed requests (all output tokens generated), release their KV blocks, record E2E metrics, and schedule <code>RequestLeftEvent</code>. Note: TTFT is already recorded in Phase 2 at the prefill-to-decode boundary, so Phase 3 only handles E2E and completion bookkeeping. This separation (TTFT in Phase 2, E2E in Phase 3) is the "two-pass" design that ensures TTFT is recorded before E2E.</p>
+<h3 id="phase-4-schedule-next-step-schedulenextstep">Phase 4: Schedule Next Step (<code>scheduleNextStep</code>)<a class="headerlink" href="#phase-4-schedule-next-step-schedulenextstep" title="Permanent link">&para;</a></h3>
+<ol>
+<li>If the running batch still has requests, schedule the next <code>StepEvent</code> at <code>now + stepTime</code></li>
+<li>If the running batch is empty but the wait queue has requests, schedule the next <code>StepEvent</code> at <code>now + stepTime</code> (work-conserving)</li>
+<li>If both are empty, do nothing (next event will be a future arrival)</li>
+</ol>
+<h2 id="request-lifecycle">Request Lifecycle<a class="headerlink" href="#request-lifecycle" title="Permanent link">&para;</a></h2>
+<p>Requests follow a linear state machine with one exception (preemption):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>                      ┌─────────────────────────────────┐
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>                      │         Preemption               │
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                      │    (re-enqueue at front)         │
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>                      ▼                                  │
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  Arrival ──▶ Queued ──▶ Running ──▶ Completed
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>               │                        │
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>               │                        ▼
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>               │                   RequestLeft
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>               │
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  Arrival ──▶ DroppedUnservable
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>             (input too large for KV cache)
+</code></pre></div>
+<p><img alt="Request Lifecycle" src="../diagrams/requestlifecycle.png" /></p>
+<h3 id="states">States<a class="headerlink" href="#states" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Queued</strong></td>
+<td>In wait queue, not yet in running batch. Ordered by scheduling policy.</td>
+</tr>
+<tr>
+<td><strong>Running</strong></td>
+<td>In running batch, actively being processed. Progressing through prefill or decode.</td>
+</tr>
+<tr>
+<td><strong>Completed</strong></td>
+<td>All output tokens generated. KV blocks released. Metrics recorded.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-timestamps">Key Timestamps<a class="headerlink" href="#key-timestamps" title="Permanent link">&para;</a></h3>
+<p>These are the conceptual timestamps in a request's lifecycle. Some are stored as struct fields (e.g., <code>ArrivalTime</code>, <code>FirstTokenTime</code>), while others are computed at metric recording time.</p>
+<table>
+<thead>
+<tr>
+<th>Timestamp</th>
+<th>When Recorded</th>
+<th>Used For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Arrival time</td>
+<td>Request creation</td>
+<td>E2E and scheduling delay baseline</td>
+</tr>
+<tr>
+<td>Enqueue time</td>
+<td>After alpha queueing delay</td>
+<td>Conceptual start of wait queue residence</td>
+</tr>
+<tr>
+<td>Schedule time</td>
+<td>Batch formation selects request</td>
+<td>Scheduling delay = time in wait queue</td>
+</tr>
+<tr>
+<td>First token time</td>
+<td>End of prefill phase</td>
+<td>TTFT = FirstTokenTime (stored on Request)</td>
+</tr>
+<tr>
+<td>Completion time</td>
+<td>All tokens generated</td>
+<td>E2E = FirstTokenTime + sum(ITLs)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Causality invariant (INV-5):</strong> <code>arrival_time &lt;= enqueue_time &lt;= schedule_time &lt;= completion_time</code></p>
+<h3 id="preemption">Preemption<a class="headerlink" href="#preemption" title="Permanent link">&para;</a></h3>
+<p>When KV cache pressure forces eviction, running requests are preempted:
+1. Request is removed from the running batch (tail-first eviction)
+2. Its KV blocks are freed
+3. It is re-enqueued at the front of the wait queue (not the back)
+4. A <code>PreemptionEvent</code> is recorded for tracing</p>
+<p>Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and their KV blocks are freed. However, the freed blocks' prefix hashes are preserved in the KV cache's free list — when the request is re-scheduled, prefix caching may find these blocks (if not yet evicted by LRU), reducing recomputation. This matches vLLM's "recompute" preemption mode.</p>
+<h3 id="dropped-requests">Dropped Requests<a class="headerlink" href="#dropped-requests" title="Permanent link">&para;</a></h3>
+<p>Requests whose input tokens require more KV blocks than the total cache capacity are dropped at enqueue time with a <code>DroppedUnservable</code> counter increment. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.</p>
+<h2 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h2>
+<p>BLIS models vLLM's continuous batching algorithm through the <code>VLLMBatchFormation</code> implementation.</p>
+<h3 id="two-phase-algorithm">Two-Phase Algorithm<a class="headerlink" href="#two-phase-algorithm" title="Permanent link">&para;</a></h3>
+<p><strong>Phase 1: Continuing Requests</strong>
+Process requests already in the running batch:
+- Apply chunked prefill limits (<code>--long-prefill-token-threshold</code>)
+- Allocate token budget for decode tokens
+- If KV allocation fails for a continuing request, preempt requests from the batch tail to free blocks</p>
+<p><strong>Phase 2: New Requests</strong>
+Dequeue requests from the wait queue:
+- Compute cached prefix blocks (prefix caching reduces allocation needs)
+- Allocate KV blocks for uncached prefix tokens being processed this step (bounded by chunked prefill threshold and remaining token budget)
+- Stop dequeuing when: max batch size reached (<code>--max-num-running-reqs</code>), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1</p>
+<h3 id="constraints">Constraints<a class="headerlink" href="#constraints" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Constraint</th>
+<th>Flag</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Max batch size</td>
+<td><code>--max-num-running-reqs</code></td>
+<td>Limits number of concurrent requests in the running batch</td>
+</tr>
+<tr>
+<td>Token budget</td>
+<td><code>--max-num-scheduled-tokens</code></td>
+<td>Limits total new tokens across all running requests per step</td>
+</tr>
+<tr>
+<td>Chunked prefill</td>
+<td><code>--long-prefill-token-threshold</code></td>
+<td>Splits long prefills across multiple steps</td>
+</tr>
+</tbody>
+</table>
+<h3 id="preemption-strategy">Preemption Strategy<a class="headerlink" href="#preemption-strategy" title="Permanent link">&para;</a></h3>
+<p>When KV allocation fails for a continuing request:
+1. Evict requests from the batch tail (reverse order of admission)
+2. Free their KV blocks
+3. Re-enqueue evicted requests at the front of the wait queue
+4. Retry allocation for the original request
+5. <strong>Circuit breaker:</strong> Stop if allocation still fails after exhausting the batch, or if the request itself is unservable</p>
+<h2 id="kv-cache-management">KV Cache Management<a class="headerlink" href="#kv-cache-management" title="Permanent link">&para;</a></h2>
+<p>The KV cache simulates GPU memory organized as fixed-size blocks. Each block holds <code>--block-size-in-tokens</code> tokens (default: 16).</p>
+<h3 id="single-tier-cache">Single-Tier Cache<a class="headerlink" href="#single-tier-cache" title="Permanent link">&para;</a></h3>
+<p>The default KV cache operates entirely in GPU memory:</p>
+<ul>
+<li><strong>Block allocation:</strong> Requests are allocated blocks proportional to their token count</li>
+<li><strong>Prefix caching:</strong> Hierarchical block hashing enables prefix sharing across requests. Each block's hash chains with the prior block's hash, creating semantic prefix signatures. When a new request shares a prefix with an existing request, the cached blocks are reused rather than reallocated.</li>
+<li><strong>LRU eviction:</strong> Free blocks are managed via a doubly-linked list with LRU ordering</li>
+<li><strong>Reference counting:</strong> Shared blocks (prefix caching) are reference-counted and exempt from eviction while any request references them</li>
+<li><strong>Transactional allocation:</strong> Multi-block allocations are rolled back on failure (no partial allocation)</li>
+</ul>
+<p><strong>Conservation invariant (INV-4):</strong> <code>allocated_blocks + free_blocks = total_blocks</code> at all times.</p>
+<h3 id="tiered-cache-gpu-cpu">Tiered Cache (GPU + CPU)<a class="headerlink" href="#tiered-cache-gpu-cpu" title="Permanent link">&para;</a></h3>
+<p>When <code>--kv-cpu-blocks</code> is set to a positive value, BLIS enables a two-tier cache:</p>
+<ul>
+<li><strong>GPU tier:</strong> Full KV cache with prefix caching and LRU eviction</li>
+<li><strong>CPU tier:</strong> Simple capacity store for offloaded blocks</li>
+<li><strong>Offload trigger:</strong> When GPU utilization exceeds <code>--kv-offload-threshold</code> (default: 0.9), blocks are offloaded to CPU</li>
+<li><strong>Reload:</strong> On GPU allocation failure, blocks are reloaded from CPU with a transfer latency penalty</li>
+<li><strong>Transfer latency:</strong> Per reloaded block: <code>base_latency + ceil(block_size_tokens / bandwidth)</code>. Accumulated across all reloaded blocks. Non-blocking (added to step time).</li>
+<li><strong>Thrashing detection:</strong> Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter</li>
+</ul>
+<h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
+<p>BLIS predicts GPU step time through one of two latency model backends. The choice is made automatically based on available configuration.</p>
+<h3 id="blackbox-model-default">Blackbox Model (Default)<a class="headerlink" href="#blackbox-model-default" title="Permanent link">&para;</a></h3>
+<p>Uses trained regression coefficients to predict step time:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>QueueingTime = alpha0 + alpha1 * input_length
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>OutputTokenProcessingTime = alpha2
+</code></pre></div>
+<ul>
+<li><strong>Beta coefficients</strong> model GPU execution time as a linear function of batch composition</li>
+<li><strong>Alpha coefficients</strong> model non-GPU overhead (tokenization, API serialization, output processing)</li>
+<li>Coefficients are trained offline via Bayesian optimization against real vLLM measurements</li>
+<li>Pre-trained coefficients for common model/GPU combinations are shipped in <code>defaults.yaml</code></li>
+</ul>
+<p>See <a href="../configuration/#coefficient-calibration">Configuration Reference: Coefficient Calibration</a> for the training process.</p>
+<h3 id="roofline-model-analytical">Roofline Model (Analytical)<a class="headerlink" href="#roofline-model-analytical" title="Permanent link">&para;</a></h3>
+<p>Uses analytical FLOPs/bandwidth estimation when no trained coefficients are available:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>Step Time  = Prefill Phase Time + Decode Phase Time
+</code></pre></div>
+<ul>
+<li>Requires HuggingFace <code>config.json</code> (model architecture: layers, heads, hidden dim)</li>
+<li>Requires <code>hardware_config.json</code> (GPU specs: peak TFLOPS, peak bandwidth, MFU)</li>
+<li>Accounts for Tensor Parallelism, All-Reduce latency, and per-layer overheads</li>
+<li>No training data needed — works for any supported model immediately</li>
+</ul>
+<p>See <a href="../roofline/">Roofline Estimation</a> for implementation details.</p>
+<h3 id="alpha-overhead">Alpha Overhead<a class="headerlink" href="#alpha-overhead" title="Permanent link">&para;</a></h3>
+<p>Alpha overhead models non-GPU processing time:
+- <strong>Queueing time</strong> (<code>alpha0 + alpha1 * input_length</code>): Delays request enqueue but does not block the server. The simulation clock is not advanced by this overhead.
+- <strong>Output token processing time</strong> (<code>alpha2</code>): Added to per-request ITL/TTFT metrics but does not block the next step.</p>
+<p>This is architecturally correct for vLLM, where CPU post-processing (tokenization, output serialization) runs concurrently with GPU execution.</p>
+<h2 id="scheduling-policies">Scheduling Policies<a class="headerlink" href="#scheduling-policies" title="Permanent link">&para;</a></h2>
+<p>Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance. To add a new scheduling policy, see <a href="../../extension-recipes/">Extension Recipes</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Policy</th>
+<th>Ordering Rule</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fcfs</code></td>
+<td>No reordering (arrival order)</td>
+<td>Default, fair</td>
+</tr>
+<tr>
+<td><code>priority-fcfs</code></td>
+<td>Priority descending, then arrival ascending</td>
+<td>SLO-aware scheduling</td>
+</tr>
+<tr>
+<td><code>sjf</code></td>
+<td>Input token count ascending, then arrival ascending</td>
+<td>Shortest-job-first for TTFT optimization</td>
+</tr>
+<tr>
+<td><code>reverse-priority</code></td>
+<td>Priority ascending (starves high-priority)</td>
+<td>Pathological testing only</td>
+</tr>
+</tbody>
+</table>
+<h3 id="priority-policies">Priority Policies<a class="headerlink" href="#priority-policies" title="Permanent link">&para;</a></h3>
+<p>Priority policies assign a numeric score to each request before scheduling:</p>
+<table>
+<thead>
+<tr>
+<th>Policy</th>
+<th>Score Computation</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>constant</code></td>
+<td>Fixed score for all requests</td>
+<td>No differentiation (default)</td>
+</tr>
+<tr>
+<td><code>slo-based</code></td>
+<td><code>base + age_weight * (clock - arrival)</code></td>
+<td>Favors older requests, prevents starvation. Note: despite the name, does not currently use per-request SLO metadata.</td>
+</tr>
+<tr>
+<td><code>inverted-slo</code></td>
+<td><code>base - age_weight * age</code></td>
+<td>Starves older requests (pathological)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h2>
+<p>BLIS records per-request and aggregate metrics throughout the simulation.</p>
+<h3 id="per-request-metrics">Per-Request Metrics<a class="headerlink" href="#per-request-metrics" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Definition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>TTFT</strong></td>
+<td>Time from arrival to first token: includes queueing delay, prefill step times, and output processing overhead (alpha2)</td>
+</tr>
+<tr>
+<td><strong>E2E</strong></td>
+<td><code>FirstTokenTime + sum(ITLs)</code>, where each ITL includes step time + alpha2</td>
+</tr>
+<tr>
+<td><strong>ITL</strong></td>
+<td>Observed time between consecutive decode steps (includes alpha2 per token)</td>
+</tr>
+<tr>
+<td><strong>Scheduling Delay</strong></td>
+<td>Time from request arrival to entering the running batch (includes alpha queueing overhead + wait queue residence)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="aggregate-metrics">Aggregate Metrics<a class="headerlink" href="#aggregate-metrics" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Aggregation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TTFT, E2E, ITL distributions</td>
+<td>Mean, p90, p95, p99 in JSON output. Cluster-internal <code>Distribution</code> type also computes p50, min, max for fitness evaluation.</td>
+</tr>
+<tr>
+<td>Throughput</td>
+<td>Output tokens per second, requests per second</td>
+</tr>
+<tr>
+<td>Preemption count</td>
+<td>Total KV cache evictions</td>
+</tr>
+<tr>
+<td>KV allocation failures</td>
+<td>Failed block allocations</td>
+</tr>
+<tr>
+<td>Dropped unservable</td>
+<td>Requests too large for cache</td>
+</tr>
+</tbody>
+</table>
+<h3 id="conservation-invariant-inv-1">Conservation Invariant (INV-1)<a class="headerlink" href="#conservation-invariant-inv-1" title="Permanent link">&para;</a></h3>
+<p>At simulation end: <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable</code></p>
+<p>This is the fundamental accounting invariant that ensures no requests are silently lost.</p>
+<h2 id="determinism">Determinism<a class="headerlink" href="#determinism" title="Permanent link">&para;</a></h2>
+<p>BLIS guarantees deterministic output: the same seed produces byte-identical stdout across runs (INV-6).</p>
+<p>Key mechanisms:
+- <strong>Partitioned RNG:</strong> Each subsystem (workload generation, scheduling, etc.) uses an independent random stream derived from the seed, so adding randomness to one subsystem doesn't perturb others
+- <strong>Sorted map iteration:</strong> Where map iteration order affects output, keys are sorted first
+- <strong>Stdout/stderr separation:</strong> Deterministic results go to stdout; wall-clock timing and diagnostics go to stderr via logrus</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,1547 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../templates/hypothesis/">
+      
+      
+        <link rel="next" href="../contributing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Extension Recipes - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#blis-extension-recipes" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Extension Recipes
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts & Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Process
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Documents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process/convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-policy-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Policy Templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-scorers-weighted-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Scorers (Weighted Routing)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-kv-cache-tiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extending KV Cache Tiers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-trace-record-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Trace Record Types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-latency-model-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Latency Model Backends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-batch-formation-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Batch Formation Strategies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-per-request-metric-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Per-Request Metric Fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-policy-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Policy Templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-scorers-weighted-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Scorers (Weighted Routing)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-kv-cache-tiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extending KV Cache Tiers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-trace-record-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Trace Record Types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-latency-model-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Latency Model Backends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-batch-formation-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Batch Formation Strategies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-new-per-request-metric-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Per-Request Metric Fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="blis-extension-recipes">BLIS Extension Recipes<a class="headerlink" href="#blis-extension-recipes" title="Permanent link">&para;</a></h1>
+<p>Step-by-step guides for extending BLIS. Each recipe lists the exact files to touch, the order, and examples to follow.</p>
+<h2 id="adding-new-policy-templates">Adding New Policy Templates<a class="headerlink" href="#adding-new-policy-templates" title="Permanent link">&para;</a></h2>
+<p>To add a new policy template (e.g., a new routing algorithm):</p>
+<ol>
+<li><strong>Implement the interface</strong> in the corresponding file:</li>
+<li><code>AdmissionPolicy</code> → <code>sim/admission.go</code> (cluster-level: receives <code>*RouterState</code> with snapshots + clock)</li>
+<li><code>RoutingPolicy</code> → <code>sim/routing.go</code> (cluster-level: receives <code>*RouterState</code> with snapshots + clock)</li>
+<li><code>PriorityPolicy</code> → <code>sim/priority.go</code> (instance-level: receives <code>req</code> + <code>clock</code> only)</li>
+<li><code>InstanceScheduler</code> → <code>sim/scheduler.go</code> (instance-level: receives <code>requests</code> + <code>clock</code> only)</li>
+<li>
+<p>Note: <code>RouterState</code> is a bridge type in <code>sim/</code> to avoid import cycles — see <code>sim/router_state.go</code></p>
+</li>
+<li>
+<p><strong>Register in two places</strong> (both required):</p>
+</li>
+<li>Add policy name to valid names map in <code>sim/bundle.go</code> (e.g., <code>validRoutingPolicies</code>) and corresponding <code>IsValid*</code> function</li>
+<li>Add <code>case</code> to factory function in the same policy file (e.g., <code>NewRoutingPolicy</code> in <code>sim/routing.go</code>)</li>
+<li>
+<p>CLI error messages auto-derive from <code>ValidAdmissionPolicyNames()</code> etc. — no manual update needed</p>
+</li>
+<li>
+<p><strong>Add tests</strong> following BDD naming: <code>TestMyPolicy_Scenario_Behavior</code></p>
+</li>
+<li>Test observable behavior, not internal structure</li>
+<li>Include empty-snapshots panic test for routing policies (defensive programming convention)</li>
+<li>
+<p>Use <code>&amp;RouterState{Snapshots: snapshots, Clock: clock}</code> in test setup</p>
+</li>
+<li>
+<p><strong>Update documentation</strong>: CLAUDE.md file organization, README policy lists</p>
+</li>
+</ol>
+<p><strong>Important:</strong> For load-based routing, use <code>snap.EffectiveLoad()</code> — never compute <code>QueueDepth + BatchSize + PendingRequests</code> inline. This ensures all routing policies use the same formula.</p>
+<p>Examples:
+- See <code>RejectAll</code> in <code>sim/admission.go</code> for a simple admission template (constant return)
+- See <code>PrefixAffinity</code> in <code>sim/routing.go</code> for a stateful routing policy with LeastLoaded fallback. <strong>Known limitation (#259):</strong> hashes the full input sequence, not just the prefix — degrades to LeastLoaded for prefix-sharing workloads. PR18's prefix-affinity scorer with hierarchical block hashing addresses this.</p>
+<h2 id="adding-new-scorers-weighted-routing">Adding New Scorers (Weighted Routing)<a class="headerlink" href="#adding-new-scorers-weighted-routing" title="Permanent link">&para;</a></h2>
+<p>To add a new scoring dimension for the <code>weighted</code> routing policy (e.g., predicted-latency):</p>
+<ol>
+<li><strong>Implement the scorer function</strong> in <code>sim/routing_scorers.go</code> (stateless) or a new file (stateful) — a <code>scorerFunc</code> that takes <code>(*Request, []RoutingSnapshot)</code> and returns <code>map[string]float64</code> with scores in [0,1] per instance. Stateful scorers also return an <code>observerFunc</code> called after each routing decision.</li>
+<li><strong>Register the scorer</strong> in <code>sim/routing_scorers.go</code>: add to <code>validScorerNames</code> map + <code>newScorerWithObserver</code> factory switch</li>
+<li><strong>Add behavioral tests</strong> — monotonicity, boundary values, INV-1/INV-2 conformance</li>
+<li>Extension friction: <strong>2 touch points</strong> (implementation + registration in <code>newScorerWithObserver</code>). Stateful scorers (like prefix-affinity) may use a separate file (e.g., <code>sim/routing_prefix_scorer.go</code>) but the registration point is the same <code>newScorerWithObserver</code> switch in <code>sim/routing_scorers.go</code>.</li>
+<li><strong>Stateful scorers</strong> return an <code>observerFunc</code> alongside the <code>scorerFunc</code> from <code>newScorerWithObserver</code>. The <code>observerFunc</code> signature is <code>func(req *Request, targetInstance string)</code> and is called after each routing decision to update scorer state. The scorer and observer share state via closure.</li>
+</ol>
+<p>Examples:
+- See <code>scoreLoadBalance</code> in <code>sim/routing_scorers.go</code> for a simple stateless scorer
+- See <code>scoreQueueDepth</code> for a scorer with edge case handling (uniform load)
+- See <code>newPrefixAffinityScorer</code> in <code>sim/routing_prefix_scorer.go</code> for a stateful scorer with observer and router-side cache</p>
+<h2 id="extending-kv-cache-tiers">Extending KV Cache Tiers<a class="headerlink" href="#extending-kv-cache-tiers" title="Permanent link">&para;</a></h2>
+<p>To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):</p>
+<ol>
+<li><strong>Implement the <code>KVStore</code> interface</strong> in <code>sim/kv/</code> (11 methods: allocate, get cached, release, capacity queries, metrics, <code>SetClock</code>, <code>ConsumePendingTransferLatency</code>)</li>
+<li><strong>Compose existing tiers</strong> — e.g., wrap <code>TieredKVCache</code> (GPU+CPU) with NVMe logic, following the same delegation pattern</li>
+<li><strong>Update <code>NewKVStore</code> factory</strong> in <code>sim/kv/register.go</code> to instantiate your tier based on <code>KVCacheConfig</code> fields (add new fields to <code>KVCacheConfig</code> in <code>sim/config.go</code>)</li>
+<li><strong>Add CLI flags</strong> in <code>cmd/root.go</code> for new parameters (e.g., <code>--kv-nvme-blocks</code>) and wire them into the <code>KVCacheConfig</code> sub-config</li>
+<li><strong>Aggregate metrics</strong> — combine hit/miss/thrashing counters from all tiers; see <code>TieredKVCache.CacheHitRate()</code> for the 2-tier pattern</li>
+<li><strong>Add behavioral tests</strong> in <code>sim/kv/*_test.go</code></li>
+<li><strong>Preserve rollback semantics</strong> — <code>KVCacheState.AllocateKVBlocks</code> is transactional: on mid-loop failure, <code>rollbackAllocation()</code> undoes all mutations (UsedBlockCnt, CacheMisses, CacheHits, RefCount, InUse, free list, HashToBlock, RequestMap). If your tier adds mutations beyond what delegation to <code>gpu.AllocateKVBlocks()</code> handles, you must roll those back too. See <code>cachedBlockMutation</code> and <code>newBlockMutation</code> types in <code>sim/kv/cache.go</code>.</li>
+<li><strong><code>GetCachedBlocks</code> is a pure query</strong> — it returns cached block IDs without side effects. <code>CacheHits</code> are counted by <code>AllocateKVBlocks</code> when cached blocks are committed to an allocation (and rolled back on failure). This was fixed in the Phase 3 hardening PR; the previous implementation incremented CacheHits in GetCachedBlocks, causing double-counting in tiered mode.</li>
+</ol>
+<p>Examples:
+- See <code>TieredKVCache</code> in <code>sim/kv/tiered.go</code> for 2-tier GPU+CPU composition
+- See <code>KVCacheState</code> in <code>sim/kv/cache.go</code> for single-tier baseline (also implements <code>KVStore</code>)
+- See <code>docs/plans/archive/pr12-architectural-predesign.md</code> for the design decisions behind the tiered architecture</p>
+<h2 id="adding-new-trace-record-types">Adding New Trace Record Types<a class="headerlink" href="#adding-new-trace-record-types" title="Permanent link">&para;</a></h2>
+<p>To add a new trace record type (e.g., <code>ScaleRecord</code> for autoscaling events):</p>
+<ol>
+<li><strong>Define the record struct</strong> in <code>sim/trace/record.go</code> (pure data, no <code>sim/</code> dependency)</li>
+<li><strong>Add a slice field</strong> to <code>SimulationTrace</code> in <code>sim/trace/trace.go</code> (e.g., <code>Scales []ScaleRecord</code>)</li>
+<li><strong>Add a recording method</strong> to <code>SimulationTrace</code> (e.g., <code>RecordScale(ScaleRecord)</code>)</li>
+<li><strong>Hook recording</strong> into the cluster event pipeline in <code>sim/cluster/cluster_event.go</code> (guard with <code>if cs.trace != nil</code> for zero-overhead default)</li>
+<li><strong>Update <code>Summarize()</code></strong> in <code>sim/trace/summary.go</code> to aggregate the new record type</li>
+<li><strong>Add behavioral tests</strong> in <code>sim/trace/*_test.go</code></li>
+</ol>
+<p>Examples:
+- See <code>AdmissionRecord</code> in <code>sim/trace/record.go</code> for a simple record
+- See <code>RoutingRecord</code> with <code>CandidateScore</code> for a record with nested counterfactual data
+- See <code>computeCounterfactual()</code> in <code>sim/cluster/counterfactual.go</code> for derived computation that lives in <code>sim/cluster/</code> (not <code>sim/trace/</code>) because it needs <code>sim.RoutingSnapshot</code></p>
+<h2 id="adding-new-latency-model-backends">Adding New Latency Model Backends<a class="headerlink" href="#adding-new-latency-model-backends" title="Permanent link">&para;</a></h2>
+<p>To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-LLM, neural surrogate):</p>
+<ol>
+<li><strong>Implement the <code>LatencyModel</code> interface</strong> in <code>sim/latency/latency.go</code> (or a new file in <code>sim/latency/</code> for complex models) — 5 methods:</li>
+<li><code>StepTime(batch []*Request) int64</code> — estimate batch step duration from request states</li>
+<li><code>QueueingTime(req *Request) int64</code> — estimate arrival-to-queue delay</li>
+<li><code>OutputTokenProcessingTime() int64</code> — per-token post-processing overhead</li>
+<li><code>SchedulingProcessingTime() int64</code> — scheduling overhead per request</li>
+<li><code>PreemptionProcessingTime() int64</code> — preemption overhead per eviction</li>
+<li><strong>Register in <code>NewLatencyModel</code> factory</strong> in <code>sim/latency/latency.go</code>: add a branch based on <code>ModelHardwareConfig</code> fields (e.g., a new string field or boolean in <code>sim/config.go</code>). The factory signature is <code>NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)</code>.</li>
+<li><strong>Add behavioral tests</strong> in <code>sim/latency/</code> — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)</li>
+<li>Extension friction: <strong>2 touch points</strong> (implementation + factory branch)</li>
+</ol>
+<p>Examples:
+- See <code>BlackboxLatencyModel</code> in <code>sim/latency/latency.go</code> for a simple stateless model (alpha/beta regression)
+- See <code>RooflineLatencyModel</code> in <code>sim/latency/latency.go</code> for a model that uses hardware config (FLOPs/bandwidth)</p>
+<h2 id="adding-new-batch-formation-strategies">Adding New Batch Formation Strategies<a class="headerlink" href="#adding-new-batch-formation-strategies" title="Permanent link">&para;</a></h2>
+<p>To add a new batch formation strategy (e.g., disaggregated prefill/decode, speculative decoding, continuous batching without preemption):</p>
+<ol>
+<li><strong>Implement the <code>BatchFormation</code> interface</strong> in <code>sim/batch_formation.go</code> (or a new file for complex strategies) — 1 method:</li>
+<li><code>FormBatch(ctx BatchContext) BatchResult</code> — compose the running batch for the next step</li>
+<li>The implementation receives <code>BatchContext</code> with: RunningBatch, WaitQ, KVCache, token budget, batch size limit, chunked prefill threshold, simulation time, step count, and ComputedTokens map</li>
+<li>The implementation MUST update <code>ctx.ComputedTokens[req.ID]</code> for each request that receives new tokens (Phase 2 of <code>Step()</code> reads this map to advance <code>ProgressIndex</code>)</li>
+<li>The implementation may mutate <code>WaitQ</code> (dequeue/prepend) and <code>KVCache</code> (allocate/release) during batch formation</li>
+<li>The implementation MUST NOT schedule events or record metrics — return decisions in <code>BatchResult</code>, the Simulator applies them</li>
+<li><strong>Register in <code>NewBatchFormation</code> factory</strong> in <code>sim/batch_formation.go</code>: add a selection branch. The factory signature is <code>NewBatchFormation(LatencyModel)</code> — a future PR will add a strategy selection parameter (e.g., a string field in <code>PolicyConfig</code> or <code>BatchConfig</code>)</li>
+<li><strong>Add behavioral tests</strong> — token budget enforcement, batch size limits, KV conservation, preemption behavior (if applicable), FCFS ordering</li>
+<li>Extension friction: <strong>2 touch points</strong> (implementation + factory registration)</li>
+</ol>
+<p><strong>Note:</strong> Currently only <code>VLLMBatchFormation</code> exists. Adding a second strategy will also require: (a) a <code>BatchFormation string</code> field in <code>PolicyConfig</code> or <code>BatchConfig</code> (in <code>sim/config.go</code>), (b) a CLI flag in <code>cmd/root.go</code>, (c) validation in <code>sim/bundle.go</code>, (d) selection logic in <code>NewBatchFormation</code>.</p>
+<p>Examples:
+- See <code>VLLMBatchFormation</code> in <code>sim/batch_formation.go</code> for the vLLM FCFS + chunked-prefill + preemption strategy
+- See <code>preemptForTokens</code> for the KV allocation + eviction loop pattern</p>
+<h2 id="adding-new-per-request-metric-fields">Adding New Per-Request Metric Fields<a class="headerlink" href="#adding-new-per-request-metric-fields" title="Permanent link">&para;</a></h2>
+<p>To add a new field to per-request JSON output (appears in <code>--results-path</code> output):</p>
+<ol>
+<li><strong>Add field to <code>Request</code></strong> in <code>sim/request.go</code> (runtime state, zero-value safe). When constructing <code>Request</code> structs, use <code>RequestState</code> typed constants (<code>StateQueued</code>, <code>StateRunning</code>, <code>StateCompleted</code>) — never bare strings.</li>
+<li><strong>Add field to <code>RequestMetrics</code></strong> in <code>sim/metrics_utils.go</code> (JSON output struct, use <code>omitempty</code> for backward compatibility)</li>
+<li><strong>Update <code>NewRequestMetrics()</code> constructor</strong> in <code>sim/metrics_utils.go</code> to propagate the new field from <code>Request</code> to <code>RequestMetrics</code></li>
+<li><strong>Set the field</strong> at the appropriate event (e.g., <code>RoutingDecisionEvent</code> for cluster-level, or completion for computed metrics)</li>
+<li><strong>Add behavioral tests</strong> covering multi-instance, single-instance, and standalone boundaries</li>
+</ol>
+<p>Examples:
+- See <code>HandledBy</code> (#181) — set by <code>RoutingDecisionEvent</code>, zero-value when used outside cluster pipeline (suppressed from JSON via <code>omitempty</code>)
+- See <code>SLOClass</code>/<code>TenantID</code> (PR10) — set during workload generation, propagated at injection</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
