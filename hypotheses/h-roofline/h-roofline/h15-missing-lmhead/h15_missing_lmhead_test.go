@@ -1,11 +1,13 @@
 //go:build ignore
 
-package sim
+package latency
 
 import (
 	"fmt"
 	"math"
 	"testing"
+
+	sim "github.com/inference-sim/inference-sim/sim"
 )
 
 // =============================================================================
@@ -103,8 +105,8 @@ func evalSuiteModels() []modelSpec {
 	}
 }
 
-func (ms modelSpec) toModelConfig() ModelConfig {
-	return ModelConfig{
+func (ms modelSpec) toModelConfig() sim.ModelConfig {
+	return sim.ModelConfig{
 		NumLayers:       ms.NumLayers,
 		HiddenDim:       ms.HiddenDim,
 		NumHeads:        ms.NumHeads,

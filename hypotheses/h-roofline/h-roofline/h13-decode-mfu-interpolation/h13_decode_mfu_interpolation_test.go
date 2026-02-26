@@ -1,12 +1,14 @@
 //go:build ignore
 
-package sim
+package latency
 
 import (
 	"fmt"
 	"math"
 	"sort"
 	"testing"
+
+	sim "github.com/inference-sim/inference-sim/sim"
 )
 
 // =============================================================================
@@ -29,11 +31,11 @@ import (
 
 // h13LoadMFUDatabase loads the real bench_data for H13 tests.
 // Skips the test if bench_data is not available.
-func h13LoadMFUDatabase(t *testing.T) *MFUDatabase {
+func h13LoadMFUDatabase(t *testing.T) *sim.MFUDatabase {
 	t.Helper()
 	mc := testModelConfig() // Llama-3.1-8B: 32-8-128
 	benchDataPath := "../bench_data"
-	db, err := NewMFUDatabase(mc, benchDataPath, "h100")
+	db, err := sim.NewMFUDatabase(mc, benchDataPath, "h100")
 	if err != nil {
 		t.Skipf("bench_data not available, skipping H13 test: %v", err)
 	}
@@ -42,7 +44,7 @@ func h13LoadMFUDatabase(t *testing.T) *MFUDatabase {
 
 // h13ExtractDecodeGrid extracts the (batchSize, kvLen) -> MFU grid for decode
 // attention from the MFU database for the given TP config.
-func h13ExtractDecodeGrid(t *testing.T, db *MFUDatabase, tp int) (
+func h13ExtractDecodeGrid(t *testing.T, db *sim.MFUDatabase, tp int) (
 	bsVals []int, kvVals []int, grid map[[2]int]float64,
 ) {
 	t.Helper()

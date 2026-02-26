@@ -1,5 +1,5 @@
 #!/bin/bash
-# H34: Decode GEMM Time Underestimate Below MFU Grid Minimum
+# H17: Decode GEMM Time Underestimate Below MFU Grid Minimum (formerly H34)
 #
 # Hypothesis: For decode steps at batch sizes 1-7, computeTransformerGEMMTimes
 # predicts GEMM time proportional to batch size (ratio bs/8), whereas actual
@@ -18,7 +18,7 @@
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 # --- Build if needed ---
 if [[ "${1:-}" == "--rebuild" ]]; then
@@ -39,20 +39,36 @@ OUTPUT_DIR="$SCRIPT_DIR/output"
 mkdir -p "$OUTPUT_DIR"
 
 echo "=========================================="
-echo "  H34: Decode GEMM Time Underestimate Below MFU Grid Minimum"
+echo "  H17: Decode GEMM Time Underestimate Below MFU Grid Minimum"
 echo "=========================================="
 echo ""
-echo "Running Go tests: TestH34_*"
+echo "Running Go tests: TestH17_*"
 echo "  Models: Llama-3.1-8B + eval suite"
 echo "  Hardware: H100 (testHardwareCalib)"
 echo "  TP: 1"
 echo "  Batch sizes: 1, 2, 4, 8, 16, 32"
 echo ""
 
-# --- Run all H34 experiments via Go test ---
+# --- Copy test files into sim/latency/ for access to unexported functions ---
+# Strip //go:build ignore (test files already declare package latency).
+# H17 depends on evalSuiteModels() and modelSpec from H15, so copy both.
+TEST_SRC="$SCRIPT_DIR/../h17-decode-gemm-subgrid/h17_decode_gemm_subgrid_test.go"
+TEST_DST="$REPO_ROOT/sim/latency/h17_decode_gemm_subgrid_test.go"
+DEPS_SRC="$SCRIPT_DIR/../h15-missing-lmhead/h15_missing_lmhead_test.go"
+DEPS_DST="$REPO_ROOT/sim/latency/h15_missing_lmhead_test.go"
+
+cleanup() {
+    rm -f "$TEST_DST" "$DEPS_DST"
+}
+trap cleanup EXIT
+
+grep -v '^//go:build ignore$' "$TEST_SRC" > "$TEST_DST"
+grep -v '^//go:build ignore$' "$DEPS_SRC" > "$DEPS_DST"
+
+# --- Run all H17 experiments via Go test ---
 cd "$REPO_ROOT"
-go test ./sim/... \
-    -run "TestH34_" \
+go test ./sim/latency/... \
+    -run "TestH17_" \
     -v \
     -count=1 \
     2>"$OUTPUT_DIR/test_stderr.log" \

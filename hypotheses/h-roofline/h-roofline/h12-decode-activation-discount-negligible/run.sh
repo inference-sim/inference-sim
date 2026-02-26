@@ -1,5 +1,5 @@
 #!/bin/bash
-# H35: Decode Activation Memory Factor Is Inconsequential
+# H18: Decode Activation Memory Factor Is Inconsequential (formerly H35)
 #
 # Hypothesis: The decode activation memory factor (0.75) is inconsequential
 # because activation bytes constitute less than 0.5% of total memory traffic
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 # --- Build if needed ---
 if [[ "${1:-}" == "--rebuild" ]]; then
@@ -40,11 +40,11 @@ OUTPUT_DIR="$SCRIPT_DIR/output"
 mkdir -p "$OUTPUT_DIR"
 
 echo "=========================================="
-echo "  H35: Decode Activation Memory Factor"
+echo "  H18: Decode Activation Memory Factor"
 echo "        Is Inconsequential"
 echo "=========================================="
 echo ""
-echo "Running Go test: TestH35_DecodeActivationDiscountNegligible"
+echo "Running Go test: TestH18_DecodeActivationDiscountNegligible"
 echo "  Model: Llama-3.1-8B (testModelConfig)"
 echo "  Hardware: H100 (testHardwareCalib)"
 echo "  TP: 1"
@@ -53,11 +53,23 @@ echo "  KV lengths: 128, 256, 512, 1024, 2048, 4096, 8192"
 echo "  Activation factors: 0.50, 0.75, 1.00, 1.50"
 echo ""
 
+# --- Copy test file into sim/latency/ for access to unexported functions ---
+# Strip //go:build ignore (test file already declares package latency).
+TEST_SRC="$SCRIPT_DIR/../h18-decode-activation-discount/h18_decode_activation_discount_test.go"
+TEST_DST="$REPO_ROOT/sim/latency/h18_decode_activation_discount_test.go"
+
+cleanup() {
+    rm -f "$TEST_DST"
+}
+trap cleanup EXIT
+
+grep -v '^//go:build ignore$' "$TEST_SRC" > "$TEST_DST"
+
 # --- Run the experiment via Go test ---
 # The test outputs structured data to stdout; stderr has test logs.
 cd "$REPO_ROOT"
-go test ./sim/... \
-    -run TestH35_DecodeActivationDiscountNegligible \
+go test ./sim/latency/... \
+    -run TestH18_DecodeActivationDiscountNegligible \
     -v \
     -count=1 \
     2>"$OUTPUT_DIR/test_stderr.log" \

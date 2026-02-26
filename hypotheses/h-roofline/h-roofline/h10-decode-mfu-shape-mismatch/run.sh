@@ -1,5 +1,5 @@
 #!/bin/bash
-# H33: Decode Attention MFU Shape Mismatch
+# H16: Decode Attention MFU Shape Mismatch (formerly H33)
 #
 # Hypothesis: In heterogeneous decode batches, using maxKVLen for the attention
 # MFU lookup while using per-request actual KV lengths for FLOPs systematically
@@ -18,7 +18,7 @@
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 # --- Build if needed ---
 if [[ "${1:-}" == "--rebuild" ]]; then
@@ -39,20 +39,32 @@ OUTPUT_DIR="$SCRIPT_DIR/output"
 mkdir -p "$OUTPUT_DIR"
 
 echo "=========================================="
-echo "  H33: Decode Attention MFU Shape Mismatch"
+echo "  H16: Decode Attention MFU Shape Mismatch"
 echo "=========================================="
 echo ""
-echo "Running Go tests: TestH33_*"
+echo "Running Go tests: TestH16_*"
 echo "  Model: Llama-3.1-8B (testModelConfig)"
 echo "  Hardware: H100 (testHardwareCalib)"
 echo "  TP: 1"
 echo "  Scenarios: 15 batch compositions (homo, mild, moderate, high, extreme, pathological)"
 echo ""
 
+# --- Copy test file into sim/latency/ for access to unexported functions ---
+# Strip //go:build ignore (test file already declares package latency).
+TEST_SRC="$SCRIPT_DIR/../h16-decode-mfu-shape-mismatch/h16_decode_mfu_shape_mismatch_test.go"
+TEST_DST="$REPO_ROOT/sim/latency/h16_decode_mfu_shape_mismatch_test.go"
+
+cleanup() {
+    rm -f "$TEST_DST"
+}
+trap cleanup EXIT
+
+grep -v '^//go:build ignore$' "$TEST_SRC" > "$TEST_DST"
+
 # --- Run the experiment via Go test ---
 cd "$REPO_ROOT"
-go test ./sim/... \
-    -run "TestH33_" \
+go test ./sim/latency/... \
+    -run "TestH16_" \
     -v \
     -count=1 \
     2>"$OUTPUT_DIR/test_stderr.log" \

@@ -1,6 +1,6 @@
 //go:build ignore
 
-package sim
+package latency
 
 // H27 Mixed-Batch Max Combination Experiment
 //

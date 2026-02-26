@@ -24,7 +24,7 @@
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 # Create output directory
 OUTPUT_DIR="$SCRIPT_DIR/output"
@@ -48,8 +48,9 @@ echo "Test compares rooflineStepTime with mixed batches against"
 echo "max of prefill-only and decode-only step times."
 echo ""
 
-# Copy test file into sim/ package for access to unexported functions
-TEST_FILE="$REPO_ROOT/sim/h27_mixed_batch_max_test.go"
+# Copy test file into sim/latency/ for access to unexported functions.
+# Strip //go:build ignore (test file already declares package latency).
+TEST_FILE="$REPO_ROOT/sim/latency/h27_mixed_batch_max_test.go"
 
 # Clean up test file on exit (whether success or failure)
 cleanup() {
@@ -57,14 +58,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cp "$SCRIPT_DIR/h27_mixed_batch_max_test.go" "$TEST_FILE"
+grep -v '^//go:build ignore$' "$SCRIPT_DIR/h27_mixed_batch_max_test.go" > "$TEST_FILE"
 
 # Run the test, capturing output
 echo "Running H27 mixed-batch comparison test..."
 echo ""
 
 cd "$REPO_ROOT"
-go test ./sim/... \
+go test ./sim/latency/... \
     -run "TestH27_MixedBatchMaxComparison" \
     -v \
     -count=1 \
