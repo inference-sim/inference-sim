@@ -102,8 +102,8 @@ var (
 
 // rootCmd is the base command for the CLI
 var rootCmd = &cobra.Command{
-	Use:   "inference-sim",
-	Short: "Discrete-event simulator for inference platforms",
+	Use:   "blis",
+	Short: "BLIS — Blackbox Inference Simulator for LLM serving systems",
 }
 
 // check if all values in the coefficients list is 0 (default)
