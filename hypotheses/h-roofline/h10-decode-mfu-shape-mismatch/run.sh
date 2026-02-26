@@ -1,25 +1,24 @@
 #!/bin/bash
-# H18: Decode Activation Memory Factor Is Inconsequential (formerly H35)
+# H16: Decode Attention MFU Shape Mismatch (formerly H33)
 #
-# Hypothesis: The decode activation memory factor (0.75) is inconsequential
-# because activation bytes constitute less than 0.5% of total memory traffic
-# across all evaluation operating points (bs=1..256, kvLen=128..8192), so
-# replacing 0.75 with any value in [0.5, 1.5] changes predicted step time
-# by less than 0.05%.
+# Hypothesis: In heterogeneous decode batches, using maxKVLen for the attention
+# MFU lookup while using per-request actual KV lengths for FLOPs systematically
+# underestimates decode attention time, because the MFU at maxKVLen is higher
+# than the effective per-request MFU at shorter KV lengths.
 #
 # Family: Structural model
 # VV&UQ: Validation
 # Type: Deterministic (no RNG, pure roofline computation)
 #
-# Independent variable: activation memory discount factor [0.50, 0.75, 1.00, 1.50]
+# Independent variable: batch composition (KV length heterogeneity)
 # Controlled variables: Llama-3.1-8B model config, H100 hardware, TP=1
-# Dependent variable: activation fraction of dynamic bytes, decode step time delta
+# Dependent variable: ratio of current method / per-request method attention time
 #
 # Usage: ./run.sh [--rebuild]
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # --- Build if needed ---
 if [[ "${1:-}" == "--rebuild" ]]; then
@@ -40,23 +39,20 @@ OUTPUT_DIR="$SCRIPT_DIR/output"
 mkdir -p "$OUTPUT_DIR"
 
 echo "=========================================="
-echo "  H18: Decode Activation Memory Factor"
-echo "        Is Inconsequential"
+echo "  H16: Decode Attention MFU Shape Mismatch"
 echo "=========================================="
 echo ""
-echo "Running Go test: TestH18_DecodeActivationDiscountNegligible"
+echo "Running Go tests: TestH16_*"
 echo "  Model: Llama-3.1-8B (testModelConfig)"
 echo "  Hardware: H100 (testHardwareCalib)"
 echo "  TP: 1"
-echo "  Batch sizes: 1, 4, 8, 16, 32, 64, 128, 256"
-echo "  KV lengths: 128, 256, 512, 1024, 2048, 4096, 8192"
-echo "  Activation factors: 0.50, 0.75, 1.00, 1.50"
+echo "  Scenarios: 15 batch compositions (homo, mild, moderate, high, extreme, pathological)"
 echo ""
 
 # --- Copy test file into sim/latency/ for access to unexported functions ---
 # Strip //go:build ignore (test file already declares package latency).
-TEST_SRC="$SCRIPT_DIR/../h18-decode-activation-discount/h18_decode_activation_discount_test.go"
-TEST_DST="$REPO_ROOT/sim/latency/h18_decode_activation_discount_test.go"
+TEST_SRC="$SCRIPT_DIR/../h16-decode-mfu-shape-mismatch/h16_decode_mfu_shape_mismatch_test.go"
+TEST_DST="$REPO_ROOT/sim/latency/h16_decode_mfu_shape_mismatch_test.go"
 
 cleanup() {
     rm -f "$TEST_DST"
@@ -66,19 +62,18 @@ trap cleanup EXIT
 grep -v '^//go:build ignore$' "$TEST_SRC" > "$TEST_DST"
 
 # --- Run the experiment via Go test ---
-# The test outputs structured data to stdout; stderr has test logs.
 cd "$REPO_ROOT"
 go test ./sim/latency/... \
-    -run TestH18_DecodeActivationDiscountNegligible \
+    -run "TestH16_" \
     -v \
     -count=1 \
     2>"$OUTPUT_DIR/test_stderr.log" \
-    | tee "$OUTPUT_DIR/raw_output.txt"
+    | tee "$OUTPUT_DIR/test_output.txt"
 
 echo ""
 echo "=========================================="
 echo "  Output files:"
-echo "    $OUTPUT_DIR/raw_output.txt"
+echo "    $OUTPUT_DIR/test_output.txt"
 echo "    $OUTPUT_DIR/test_stderr.log"
 echo "=========================================="
 echo ""

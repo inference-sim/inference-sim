@@ -16,8 +16,8 @@
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-source "$SCRIPT_DIR/../../../lib/harness.sh"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+source "$SCRIPT_DIR/../../lib/harness.sh"
 setup_experiment "${1:-}"
 
 GT_DIR="$REPO_ROOT/eval/ground_truth"
