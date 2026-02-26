@@ -312,7 +312,7 @@ Fix any issues found, then proceed to Stage 2.
 /convergence-review pr-plan docs/plans/pr<N>-<name>-plan.md
 ```
 
-The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol) for the protocol rules.
+The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/convergence.md](convergence.md) for the protocol rules.
 
 **Why two stages?** `review-pr` does a holistic sweep that catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed.
 
@@ -328,7 +328,7 @@ The `convergence-review` skill dispatches all 10 perspectives in parallel, talli
 
 **Why rounds with multiple perspectives?** Generic "review everything" misses issues that targeted perspectives catch. Different lenses find different bugs: cross-doc consistency catches stale references, architecture catches boundary violations, substance catches design bugs. Running them in parallel maximizes coverage per round. The hypothesis process proved this model: 3 parallel reviewers with different foci caught issues that sequential single-reviewer rounds missed.
 
-For convergence rules (max rounds, re-run requirements, severity definitions), see [Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol).
+For convergence rules (max rounds, re-run requirements, severity definitions), see [Universal Convergence Protocol](convergence.md).
 
 ---
 
@@ -575,7 +575,7 @@ Fix any issues found, then proceed to Stage 2.
 /convergence-review pr-code
 ```
 
-The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol) for the protocol rules.
+The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/convergence.md](convergence.md) for the protocol rules.
 
 **Why two stages?** `review-pr` does a holistic sweep that catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds.
 
@@ -586,7 +586,7 @@ The `convergence-review` skill dispatches all 10 perspectives in parallel, talli
 > **If 0 CRITICAL and 0 IMPORTANT findings:** The round converged. Run verification gate.
 >
 > **If any CRITICAL or IMPORTANT findings:** Fix all issues, then re-run the entire round
-> from scratch. Repeat until convergence (see [Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol)).
+> from scratch. Repeat until convergence (see [Universal Convergence Protocol](convergence.md)).
 
 **Why 10 perspectives in parallel?** Each catches issues the others miss. In the standards-audit-hardening PR, Perspective 1 (substance) found a runtime-breaking regression, Perspective 3 (tests) found weakened coverage, Perspective 7 (vLLM expert) confirmed CLI validation matches real server semantics, and Perspective 10 (security) found pre-existing factory validation gaps. Domain-specific perspectives (DES, vLLM, distributed platform) catch issues that generic code-quality reviewers miss.
 
@@ -737,7 +737,7 @@ gh issue create --title "Bug: <concise description>" --body "<location, impact, 
 
 #### Convergence Protocol
 
-**Canonical source:** [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol). The same protocol applies to all review gates (PR plan, PR code, hypothesis design/code/FINDINGS).
+**Canonical source:** [docs/process/convergence.md](convergence.md). The same protocol applies to all review gates (PR plan, PR code, hypothesis design/code/FINDINGS).
 
 In summary: run all perspectives as a parallel round. If zero CRITICAL and zero IMPORTANT across all reviewers, the round converged. If any CRITICAL or IMPORTANT from any reviewer, fix all issues and re-run the **entire** round. Max 10 rounds per gate. Hard gate — no exceptions.
 

@@ -322,7 +322,7 @@ Evidence: H10's "28% TTFT improvement" is specific to GPU=2100 blocks near the p
 
 ## Iterative Review Protocol
 
-> **Canonical source:** [`docs/process/hypothesis.md`](../process/hypothesis.md) (Universal Convergence Protocol section). If this section diverges, hypothesis.md is authoritative.
+> **Canonical source:** [`docs/process/convergence.md`](../process/convergence.md). If this section diverges, convergence.md is authoritative.
 
 Every hypothesis experiment iterates until convergence (max 10 rounds per gate) through three review gates, each using the universal convergence protocol:
 
@@ -330,7 +330,7 @@ Every hypothesis experiment iterates until convergence (max 10 rounds per gate) 
 2. **Code Review** (5 perspectives) — after implementing run.sh/analyze.py, before execution
 3. **FINDINGS Review** (10 perspectives) — after documenting results, before finalization
 
-**Convergence:** Zero CRITICAL and zero IMPORTANT items from any reviewer perspective in the current round. No minimum round count — convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item. SUGGESTION-level items do not block convergence. See `docs/process/hypothesis.md` for the full protocol, reviewer prompts, perspective checklists, and severity definitions.
+**Convergence:** Zero CRITICAL and zero IMPORTANT items from any reviewer perspective in the current round. No minimum round count — convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item. SUGGESTION-level items do not block convergence. See `docs/process/convergence.md` for the full protocol and severity definitions, and `docs/process/hypothesis.md` for reviewer prompts and perspective checklists.
 
 **Why internal agents instead of external LLM reviews:** Internal Task agents can read the actual source files, verify `file:line` citations, and cross-reference analyzer regexes against simulator output format strings — capabilities external LLM reviews lack. See `docs/process/hypothesis.md` for the full evidence and comparison table.
 

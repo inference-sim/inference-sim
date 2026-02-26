@@ -318,7 +318,8 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 - `docs/process/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
 - `docs/process/design.md`: Design document creation process
 - `docs/process/macro-plan.md`: Macro-level (multi-PR) planning process
-- `docs/process/hypothesis.md`: End-to-end hypothesis experiment process (Steps 0-10, three review gates, convergence protocol)
+- `docs/process/hypothesis.md`: End-to-end hypothesis experiment process (Steps 0-10, three review gates)
+- `docs/process/convergence.md`: Universal Convergence Protocol (used by all review gates across PR, hypothesis, design, and macro-plan workflows)
 
 ### Templates (what to produce)
 

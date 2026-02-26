@@ -446,47 +446,11 @@ The PR description should include:
 
 ## Universal Convergence Protocol
 
-All three review gates (Design Review, Code Review, FINDINGS Review) use this same protocol. It is defined here once and referenced from each gate.
+> **Canonical source:** [`docs/process/convergence.md`](convergence.md). If this section diverges, convergence.md is authoritative.
 
-> **Executable implementation:** The `convergence-review` skill automates this protocol — dispatching perspectives, tallying findings independently, and enforcing the re-run gate. Invoke with `/convergence-review <gate-type> [artifact-path] [--model opus|sonnet|haiku]` (default: `haiku`).
+All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See [`docs/process/convergence.md`](convergence.md) for the full protocol, severity definitions, agent failure handling, and expected convergence rates.
 
-### The Protocol
-
-1. Run all N perspectives in parallel (one round)
-2. Collect all findings; each classified as CRITICAL / IMPORTANT / SUGGESTION
-3. **If zero CRITICAL and zero IMPORTANT across all N reviewers:** Converged — proceed to next step
-4. **If any CRITICAL or IMPORTANT from any reviewer:** Fix all issues, return to step 1 (re-run **entire** round)
-5. Repeat until convergence
-
-### Rules
-
-- **Max 10 rounds per gate.** Each gate has its own independent round counter. If a gate fails to converge within 10 rounds, suspend the experiment: document the remaining issues as future work.
-- **No minimum round count.** Convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item.
-- **Hard gate — NO EXCEPTIONS.** You MUST re-run after fixes. You may NOT skip the re-run, propose alternative steps, or rationalize that fixes were "trivial enough." The re-run is the only evidence of convergence. This is non-negotiable.
-- **SUGGESTION-level items** (documentation nits, cosmetic fixes, off-by-one line citations) do not block convergence.
-
-### Severity Levels
-
-Each reviewer must classify every finding:
-
-- **CRITICAL**: Must fix before proceeding. Examples: missing control experiment (RCV-4), status classification contradicted by data, silent data loss in analyzer, cross-document contradiction.
-- **IMPORTANT**: Should fix before proceeding. The key test: **would proceeding with this unfixed item mislead a reader or produce incorrect conclusions?** Examples: sub-threshold effect size in one seed, stale text contradicting current results, undocumented confound.
-- **SUGGESTION**: Does not affect correctness or reader understanding. Examples: off-by-one line citation (±2 lines), cosmetic terminology, style consistency.
-
-**When in doubt between IMPORTANT and SUGGESTION:** If fixing the item would change any conclusion, metric, or user guidance, it is IMPORTANT. If it would only improve readability without changing any conclusion, it is SUGGESTION. If multiple reviewers classify the same item at different severities, the highest severity applies.
-
-### Agent Failure Handling
-
-- **Timeout:** 5 minutes per reviewer agent. If an agent exceeds this, check its output file and restart if stalled.
-- **Failure:** If a reviewer agent fails or hangs, fall back to performing that review directly (read the artifact yourself with that reviewer's checklist). Do not skip a reviewer perspective.
-- **External contributors:** Submit your artifacts via PR. Maintainers will run the review protocol on your behalf.
-
-### Expected Convergence Rates
-
-Gates with more perspectives (FINDINGS Review: 10) will naturally converge more slowly than gates with fewer (Design Review: 5). This is correct behavior — more eyes = higher quality bar. Typical expectations:
-- Design Review: 1-2 rounds
-- Code Review: 1-3 rounds
-- FINDINGS Review: 1-5 rounds
+> **Executable implementation:** The `convergence-review` skill automates this protocol. Invoke with `/convergence-review <gate-type> [artifact-path] [--model opus|sonnet|haiku]`.
 
 ---
 

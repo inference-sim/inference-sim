@@ -20,7 +20,7 @@ This document describes the process for creating a macro-level implementation pl
 4. **Define module contracts per PR boundary** — what does each PR guarantee to the next?
 5. **Identify frozen interfaces** — which interfaces are stable (can be developed against in parallel)?
 6. **Identify flexible internals** — which implementation details may change during micro-planning?
-7. **Convergence review** — `/convergence-review macro-plan <plan-path>` dispatches 8 parallel perspectives and enforces convergence (see [hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol)). Manual alternative: review against the quality gates below.
+7. **Convergence review** — `/convergence-review macro-plan <plan-path>` dispatches 8 parallel perspectives and enforces convergence (see [docs/process/convergence.md](convergence.md)). Manual alternative: review against the quality gates below.
 8. **Human review** — approve before micro-planning begins for any PR in the plan
 
 ## Quality Gates
