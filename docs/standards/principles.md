@@ -63,6 +63,14 @@ Never use `continue` in an error path without propagating, counting, or document
 - Invariant verification: `assert.Equal(completed+queued+running, injected)`
 - Ordering/ranking: `assert.True(scoreA > scoreB)`
 
+## Test Suite Performance
+
+As the test suite grows (invariant tests, golden tests, hypothesis-promoted regression tests), keep total `go test ./...` time manageable:
+
+- **Individual test budget:** No single test should exceed 5 seconds without using `testing.Short()` to provide a fast-path skip. Tests that run full cluster simulations (e.g., 10K requests across 8 instances) should check `testing.Short()` and reduce to a minimal configuration.
+- **CI target:** Total `go test ./...` should complete in under 60 seconds. If it exceeds this, audit for tests that can use smaller configurations without losing behavioral coverage.
+- **Benchmark isolation:** Performance benchmarks (`Benchmark*` functions) run only with `go test -bench=.`, never in the default `go test ./...` path. This is Go's default behavior — just don't put benchmark assertions in regular tests.
+
 ## Documentation Single Source of Truth
 
 Every piece of documentation lives in exactly one canonical location. Other files may contain **working copies** (summaries for quick reference) with explicit canonical-source headers.
