@@ -876,6 +876,30 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 
 ---
 
+### PR Size Tiers
+
+Not all PRs need the same level of review. Use these objective criteria to select the appropriate tier:
+
+| Tier | Criteria | Plan Review (Step 2.5) | Code Review (Step 4.5) | Self-Audit (Step 4.75) |
+|------|----------|----------------------|----------------------|----------------------|
+| **Small** | Docs-only, OR ≤3 files changed AND no new interfaces/types AND no new CLI flags | Skip convergence review; single `review-pr` pre-pass sufficient | Skip convergence review; single `review-pr` pre-pass sufficient | Full (all 10 dimensions) |
+| **Medium** | 4-10 files changed, OR new policy template behind existing interface | Full two-stage (pre-pass + convergence) | Full two-stage (pre-pass + convergence) | Full (all 10 dimensions) |
+| **Large** | >10 files, OR new interfaces/modules, OR architecture changes | Full two-stage (pre-pass + convergence) | Full two-stage (pre-pass + convergence) | Full (all 10 dimensions) |
+
+**Rules:**
+- **Steps 1, 2, 3, 4, 5 are always required** — worktree, plan, human review, execution, and commit apply to all tiers.
+- **Self-audit is always full** — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
+- **When in doubt, tier up** — if you're unsure whether a change is Small or Medium, use Medium. The cost of an extra convergence round is 10-15 minutes; the cost of a missed design bug is hours of rework.
+- **Human reviewer can override** — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.
+
+**Examples:**
+- Fix a typo in README.md → **Small** (1 file, docs-only)
+- Add R18-R20 to micro-plan checklist → **Small** (1 file, docs-only, no behavior change)
+- Add a new routing policy → **Medium** (new policy template, ~3 files)
+- Extract KV cache to sub-package → **Large** (>10 files, architecture change)
+
+---
+
 ## Skill Reference Quick Guide
 
 | Skill | When to Use | Input | Output |
