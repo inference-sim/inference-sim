@@ -84,12 +84,22 @@ func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
 		return 0
 	}
 
-	// Extract heads first to handle the KV heads default logic
-	numHeads := getInt("num_attention_heads")
-	numKVHeads := getInt("num_key_value_heads")
+	// getIntWithFallbacks tries multiple field names, returning the first non-zero value.
+	getIntWithFallbacks := func(keys ...string) int {
+		for _, k := range keys {
+			if v := getInt(k); v != 0 {
+				return v
+			}
+		}
+		return 0
+	}
 
-	// Implementation logic: If num_key_value_heads is missing (0),
-	// it typically defaults to num_attention_heads (MHA).
+	// Extract heads first to handle the KV heads default logic.
+	// Fallback field names: Falcon uses "num_kv_heads", GLM uses "multi_query_group_num".
+	numHeads := getInt("num_attention_heads")
+	numKVHeads := getIntWithFallbacks("num_key_value_heads", "num_kv_heads", "multi_query_group_num")
+
+	// If all KV head fields are missing (0), default to num_attention_heads (MHA).
 	if numKVHeads == 0 {
 		numKVHeads = numHeads
 	}
@@ -115,12 +125,15 @@ func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
 		bytesPerParam = precisionToBytesPerParam[dtype]
 	}
 
+	// Intermediate dim: Falcon/GLM use "ffn_hidden_size" instead of "intermediate_size".
+	intermediateDim := getIntWithFallbacks("intermediate_size", "ffn_hidden_size")
+
 	modelConfig := &sim.ModelConfig{
 		// From HFConfig.Raw
 		NumLayers:       getInt("num_hidden_layers"),
 		HiddenDim:       getInt("hidden_size"),
 		VocabSize:       getInt("vocab_size"),
-		IntermediateDim: getInt("intermediate_size"),
+		IntermediateDim: intermediateDim,
 		NumHeads:        numHeads,
 		NumKVHeads:      numKVHeads,
 		BytesPerParam:   float64(bytesPerParam),

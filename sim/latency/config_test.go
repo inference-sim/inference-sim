@@ -181,6 +181,156 @@ func TestGetModelConfig_ValidConfig(t *testing.T) {
 	}
 }
 
+func TestGetModelConfig_MoEConfig_ParsesStandardFields(t *testing.T) {
+	// GIVEN a Mixtral-style MoE config.json with standard field names
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 32000,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16",
+		"num_local_experts": 8,
+		"num_experts_per_tok": 2
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// WHEN GetModelConfig parses the config
+	cfg, err := latency.GetModelConfig(configFile)
+
+	// THEN all fields are correctly extracted (MoE-specific fields are ignored but don't break parsing)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.NumLayers != 32 {
+		t.Errorf("expected NumLayers=32, got %v", cfg.NumLayers)
+	}
+	if cfg.HiddenDim != 4096 {
+		t.Errorf("expected HiddenDim=4096, got %v", cfg.HiddenDim)
+	}
+	if cfg.NumHeads != 32 {
+		t.Errorf("expected NumHeads=32, got %v", cfg.NumHeads)
+	}
+	if cfg.NumKVHeads != 8 {
+		t.Errorf("expected NumKVHeads=8 (GQA), got %v", cfg.NumKVHeads)
+	}
+	if cfg.IntermediateDim != 14336 {
+		t.Errorf("expected IntermediateDim=14336, got %v", cfg.IntermediateDim)
+	}
+	if cfg.BytesPerParam != 2 {
+		t.Errorf("expected BytesPerParam=2 for bfloat16, got %v", cfg.BytesPerParam)
+	}
+}
+
+func TestGetModelConfig_FalconFieldNames(t *testing.T) {
+	// GIVEN a Falcon-style config.json using non-standard field names:
+	//   num_kv_heads (instead of num_key_value_heads)
+	//   ffn_hidden_size (instead of intermediate_size)
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 60,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_kv_heads": 8,
+		"vocab_size": 65024,
+		"ffn_hidden_size": 16384,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// WHEN GetModelConfig parses the config
+	cfg, err := latency.GetModelConfig(configFile)
+
+	// THEN fallback field names are used correctly
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.NumKVHeads != 8 {
+		t.Errorf("expected NumKVHeads=8 via num_kv_heads fallback, got %v", cfg.NumKVHeads)
+	}
+	if cfg.IntermediateDim != 16384 {
+		t.Errorf("expected IntermediateDim=16384 via ffn_hidden_size fallback, got %v", cfg.IntermediateDim)
+	}
+}
+
+func TestGetModelConfig_GLMFieldNames(t *testing.T) {
+	// GIVEN a GLM-style config.json using non-standard field names:
+	//   multi_query_group_num (instead of num_key_value_heads)
+	//   ffn_hidden_size (instead of intermediate_size)
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 40,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"multi_query_group_num": 2,
+		"vocab_size": 151552,
+		"ffn_hidden_size": 13696,
+		"dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// WHEN GetModelConfig parses the config
+	cfg, err := latency.GetModelConfig(configFile)
+
+	// THEN fallback field names are used correctly
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.NumKVHeads != 2 {
+		t.Errorf("expected NumKVHeads=2 via multi_query_group_num fallback, got %v", cfg.NumKVHeads)
+	}
+	if cfg.IntermediateDim != 13696 {
+		t.Errorf("expected IntermediateDim=13696 via ffn_hidden_size fallback, got %v", cfg.IntermediateDim)
+	}
+	if cfg.BytesPerParam != 2 {
+		t.Errorf("expected BytesPerParam=2 via dtype fallback, got %v", cfg.BytesPerParam)
+	}
+}
+
+func TestGetModelConfig_StandardFieldsTakePrecedenceOverFallbacks(t *testing.T) {
+	// GIVEN a config.json with both standard and fallback field names
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"num_kv_heads": 4,
+		"intermediate_size": 14336,
+		"ffn_hidden_size": 11008,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// WHEN GetModelConfig parses the config
+	cfg, err := latency.GetModelConfig(configFile)
+
+	// THEN standard field names take precedence
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.NumKVHeads != 8 {
+		t.Errorf("expected NumKVHeads=8 (standard field takes precedence), got %v", cfg.NumKVHeads)
+	}
+	if cfg.IntermediateDim != 14336 {
+		t.Errorf("expected IntermediateDim=14336 (standard field takes precedence), got %v", cfg.IntermediateDim)
+	}
+}
+
 func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
 	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
 
