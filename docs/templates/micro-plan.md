@@ -393,7 +393,7 @@ IMPORTANT TASK DESIGN RULES:
    REQUIRED assertion patterns (behavioral — these survive refactor):
    - Observable output: `assert.Equal(policy.Compute(req, clock), 0.0)`
    - Behavioral outcome: `assert.Equal(decision.TargetInstance, 1)`
-   - Invariant verification: `assert.Equal(completed+queued+running, injected)`
+   - Invariant verification: `assert.Equal(completed+queued+running+dropped, injected)`
    - Ordering/ranking: `assert.True(scoreA > scoreB)` when contract says
      A should rank higher than B
 
