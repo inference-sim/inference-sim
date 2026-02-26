@@ -477,7 +477,7 @@ Additional requirements:
    while golden tests answer "did the code change?"
 
    Key invariants for this simulator (derived from CLAUDE.md):
-   - **Request conservation:** completed + still_queued + still_running = injected
+   - **Request conservation:** completed + still_queued + still_running + dropped_unservable = injected
    - **KV block conservation:** allocated_blocks + free_blocks = total_blocks
    - **Clock monotonicity:** simulation clock never decreases
    - **Causality:** arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time
