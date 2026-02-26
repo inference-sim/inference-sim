@@ -93,15 +93,6 @@ func GenerateLengthGauss(rng *rand.Rand, mean, std, min, max int) int {
 	return int(math.Round(clampedVal))
 }
 
-// GenerateRandomTokenIDs creates a slice of random token IDs in [0, MaxTokenID).
-// RNG calls: length × Intn(MaxTokenID).
-func GenerateRandomTokenIDs(rng *rand.Rand, length int) []int {
-	tokens := make([]int, length)
-	for i := range tokens {
-		tokens[i] = rng.Intn(MaxTokenID)
-	}
-	return tokens
-}
 
 func (sim *Simulator) generateLengthGauss(lengthMean, lengthStd, lengthMin, lengthMax int) int {
 	return GenerateLengthGauss(sim.WorkloadRNG(), lengthMean, lengthStd, lengthMin, lengthMax)

@@ -5,6 +5,7 @@ package sim
 
 import (
 	"fmt"
+	"math/rand"
 )
 
 // Request models a single request's lifecycle in the simulation.
@@ -69,4 +70,14 @@ type Request struct {
 // This method returns a human-readable string representation of a Request.
 func (req Request) String() string {
 	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v, ArrivalTime: %d)", req.ID, req.State, req.ProgressIndex, req.ArrivalTime)
+}
+
+// GenerateRandomTokenIDs creates a slice of random token IDs in [0, MaxTokenID).
+// RNG calls: length × Intn(MaxTokenID).
+func GenerateRandomTokenIDs(rng *rand.Rand, length int) []int {
+	tokens := make([]int, length)
+	for i := range tokens {
+		tokens[i] = rng.Intn(MaxTokenID)
+	}
+	return tokens
 }
