@@ -14,11 +14,12 @@ Every hypothesis falls into one of three VV&UQ categories. This determines what 
 
 Most current experiments are **Verification** (invariant checking) or informal **Validation** (metric comparison). Future experiments should increasingly incorporate **UQ** — every threshold finding should include a confidence interval, every "confirmed" result should quantify the probability of holding under parameter variation.
 
-### Three purposes
+### Purposes
 
-1. **Verification** — confirm that code implements intended math correctly (scheduler invariants, conservation laws)
-2. **Validation** — confirm that model outputs match expected behavior within acceptable accuracy intervals
-3. **Discovery** — surface bugs, design gaps, and undocumented limitations
+The VV&UQ categories above classify what *kind of evidence* an experiment needs. But experiments also serve broader purposes beyond their category:
+
+- **Verification and Validation** — the primary purposes, aligned with the VV&UQ categories above
+- **Discovery** — a secondary outcome of any experiment. Bugs, design gaps, and undocumented limitations often surface during verification or validation experiments. Discovery is not a separate VV&UQ category — it's a valuable byproduct. Example: H5 (a Validation experiment) discovered that the per-input-token cost model makes burst smoothing structurally impossible — a design limitation finding that was not the hypothesis being tested.
 
 ### How to choose your VV&UQ category
 
