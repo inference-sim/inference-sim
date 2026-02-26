@@ -304,6 +304,43 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
 		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
+	case "adaptive-weighted":
+		cfg := DefaultAdaptiveConfig()
+
+		// Create a shared PrefixCacheIndex for both exploit scoring and classification
+		prefixIdx := NewPrefixCacheIndex(int(blockSize), defaultLRUCapacity)
+
+		// Build exploit scorers (cache-heavy)
+		exploitConfigs := cfg.ExploitWeights
+		if exploitConfigs == nil {
+			exploitConfigs = defaultExploitWeights()
+		}
+		exploitScorers := make([]scorerFunc, len(exploitConfigs))
+		var observers []observerFunc
+		for i, sc := range exploitConfigs {
+			if sc.Name == "prefix-affinity" {
+				scorer, obs := newPrefixAffinityScorerWithIndex(prefixIdx)
+				exploitScorers[i] = scorer
+				if obs != nil {
+					observers = append(observers, obs)
+				}
+			} else {
+				scorer, obs := newScorerWithObserver(sc.Name, int(blockSize))
+				exploitScorers[i] = scorer
+				if obs != nil {
+					observers = append(observers, obs)
+				}
+			}
+		}
+		exploitWeights := normalizeScorerWeights(exploitConfigs)
+
+		return &AdaptiveWeightedScoring{
+			exploitScorers: exploitScorers,
+			exploitWeights: exploitWeights,
+			observers:      observers,
+			config:         cfg,
+			prefixIdx:      prefixIdx,
+		}
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string), blockSize: blockSize}
 	case "always-busiest":

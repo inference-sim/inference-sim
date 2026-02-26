@@ -498,7 +498,7 @@ var runCmd = &cobra.Command{
 			admissionPolicy, routingPolicy, priorityPolicy, scheduler)
 		// Parse and validate scorer configuration for weighted routing
 		var parsedScorerConfigs []sim.ScorerConfig
-		if routingPolicy == "weighted" {
+		if routingPolicy == "weighted" || routingPolicy == "adaptive-weighted" {
 			if routingScorers != "" {
 				var err error
 				parsedScorerConfigs, err = sim.ParseScorerConfigs(routingScorers)
@@ -520,8 +520,8 @@ var runCmd = &cobra.Command{
 			}
 			logrus.Infof("Weighted routing scorers: %s", strings.Join(scorerStrs, ", "))
 		}
-		if routingPolicy != "weighted" && routingScorers != "" {
-			logrus.Warnf("--routing-scorers has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
+		if routingPolicy != "weighted" && routingPolicy != "adaptive-weighted" && routingScorers != "" {
+			logrus.Warnf("--routing-scorers has no effect when routing policy is %q (only applies to 'weighted' or 'adaptive-weighted')", routingPolicy)
 		}
 		if admissionPolicy == "token-bucket" {
 			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
@@ -745,7 +745,7 @@ func init() {
 	runCmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
 
 	// Routing policy config
-	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, prefix-affinity, always-busiest")
+	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, adaptive-weighted, prefix-affinity, always-busiest")
 	runCmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: prefix-affinity:3,queue-depth:2,kv-utilization:2")
 
 	// Priority and scheduler config (PR7)

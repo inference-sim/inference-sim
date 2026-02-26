@@ -18,8 +18,14 @@ const defaultLRUCapacity = 10000
 // Both the scorer and observer share the same PrefixCacheIndex via closure.
 // The blockSize should match the simulation's KV cache block size.
 func newPrefixAffinityScorer(blockSize int) (scorerFunc, observerFunc) {
-	idx := NewPrefixCacheIndex(blockSize, defaultLRUCapacity)
+	return newPrefixAffinityScorerWithIndex(NewPrefixCacheIndex(blockSize, defaultLRUCapacity))
+}
 
+// newPrefixAffinityScorerWithIndex creates a prefix-affinity scorer using an externally
+// provided PrefixCacheIndex. This allows the adaptive routing policy to share the
+// same cache index between the scorer (for scoring) and the signal computation
+// (for cache opportunity measurement).
+func newPrefixAffinityScorerWithIndex(idx *PrefixCacheIndex) (scorerFunc, observerFunc) {
 	scorer := func(req *Request, snapshots []RoutingSnapshot) map[string]float64 {
 		scores := make(map[string]float64, len(snapshots))
 		if req == nil {
