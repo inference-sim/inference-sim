@@ -149,7 +149,7 @@ If skills are unavailable, you can implement each step manually:
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
 | **4.5. Review code** | `/pr-review-toolkit:review-pr` then `/convergence-review pr-code` |
-| **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths |
+| **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths, docs DRY |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
 **Example for PR 8 (same-session workflow with `.worktrees/`):**

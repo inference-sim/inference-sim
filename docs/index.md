@@ -56,7 +56,7 @@ For detailed architecture documentation, see [Cluster Architecture](design/archi
 |---------|-----------------|
 | [Design](design/README.md) | System architecture, core engine, concepts glossary, configuration reference |
 | [Standards](standards/rules.md) | Antipattern rules (R1-R20), system invariants (INV-1-8), engineering principles |
-| [Process](process/pr-workflow.md) | PR workflow, design document process, hypothesis experiments |
+| [Process](process/pr-workflow.md) | PR workflow, design document process, macro planning, hypothesis experiments, convergence protocol |
 | [Templates](templates/design-guidelines.md) | Design guidelines, macro/micro plan templates, hypothesis template |
 | [Extension Recipes](extension-recipes.md) | Step-by-step guides for adding policies, scorers, KV tiers, and more |
 | [Contributing](contributing.md) | Engineering standards, development workflow, and getting started |

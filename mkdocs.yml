@@ -70,6 +70,7 @@ nav:
       - Design Documents: process/design.md
       - Macro Planning: process/macro-plan.md
       - Hypothesis Experiments: process/hypothesis.md
+      - Convergence Protocol: process/convergence.md
   - Templates:
       - Design Guidelines: templates/design-guidelines.md
       - Macro Plan: templates/macro-plan.md
