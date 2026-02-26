@@ -1,22 +1,14 @@
 {
     "H100": {
-		"TFlopsPeak":        989.5,       
-		"BwPeakTBs":         3.35,
-        "BwEffConstant": 0.72,
-		"TOverheadMicros":  500.0,       
-		"perLayerOverhead": 20.0,
-		"mfuPrefill":       0.65,
-		"mfuDecode":        0.12,
-		"allReduceLatency": 20.0
-	},
-	"A100-SXM": {
-		"TFlopsPeak":        312,      
-		"BwPeakTBs":         2.039,
-        "BwEffConstant": 0.72,
-		"TOverheadMicros":  500.0,
-		"perLayerOverhead": 20.0,
-		"mfuPrefill":       0.65,
-		"mfuDecode":        0.12,
-		"allReduceLatency": 20.0
-	}
+        "TFlopsPeak": 989.5,
+        "BwPeakTBs": 3.35,
+        "bwEfficiencyFactor": 0.82,
+        "perLayerOverhead": 100
+    },
+    "A100-SXM": {
+        "TFlopsPeak": 312,
+        "BwPeakTBs": 2.039,
+        "bwEfficiencyFactor": 0.80,
+        "perLayerOverhead": 100
+    }
 }
