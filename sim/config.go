@@ -98,20 +98,11 @@ func NewPolicyConfig(priorityPolicy, scheduler string) PolicyConfig {
 	}
 }
 
-// WorkloadConfig groups workload generation parameters.
-// Both fields zero-valued means no workload generation (caller injects via InjectArrival).
-// In cluster mode, these fields are typically zero-valued because workload is passed
-// separately to NewClusterSimulator. They are populated only in single-instance mode.
-type WorkloadConfig struct {
-	GuideLLMConfig         *GuideLLMConfig // distribution-based workload (optional)
-	TracesWorkloadFilePath string          // CSV trace file path (optional)
-}
+// WorkloadConfig is retained as an empty struct for SimConfig embedding compatibility.
+// All workload generation now happens externally via workload.GenerateRequests().
+type WorkloadConfig struct{}
 
-// NewWorkloadConfig creates a WorkloadConfig with all fields explicitly set.
-// This is the canonical constructor — all construction sites must use it (R4).
-func NewWorkloadConfig(guideLLMConfig *GuideLLMConfig, tracesWorkloadFilePath string) WorkloadConfig {
-	return WorkloadConfig{
-		GuideLLMConfig:         guideLLMConfig,
-		TracesWorkloadFilePath: tracesWorkloadFilePath,
-	}
+// NewWorkloadConfig creates an empty WorkloadConfig.
+func NewWorkloadConfig() WorkloadConfig {
+	return WorkloadConfig{}
 }

@@ -22,14 +22,9 @@ func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T)
 		TraceLevel:      "decisions",
 		CounterfactualK: 2,
 	}
-	workload := &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, NumRequests: 3,
-		PromptTokens: 10, OutputTokens: 5,
-		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
-		PromptTokensMin: 10, PromptTokensMax: 10,
-		OutputTokensMin: 5, OutputTokensMax: 5,
-	}
-	cs := NewClusterSimulator(config, workload, "")
+	requests := testGenerateRequests(42, 5000000, 1.0/1e6, 3,
+		0, 10, 0, 10, 10, 5, 0, 5, 5)
+	cs := NewClusterSimulator(config, requests)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("cs.Run: %v", err)
 	}

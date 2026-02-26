@@ -568,7 +568,7 @@ func TestPathological_RejectAll_AllRejected(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	config.AdmissionPolicy = "reject-all"
 
-	cs := NewClusterSimulator(config, newTestWorkload(20), "")
+	cs := NewClusterSimulator(config, newTestRequests(20))
 	if err := cs.Run(); err != nil {
 		t.Fatalf("cs.Run: %v", err)
 	}
@@ -590,7 +590,7 @@ func TestPathological_AlwaysBusiest_CausesImbalance(t *testing.T) {
 	config := newTestDeploymentConfig(3)
 	config.RoutingPolicy = "always-busiest"
 
-	cs := NewClusterSimulator(config, newTestWorkload(20), "")
+	cs := NewClusterSimulator(config, newTestRequests(20))
 	if err := cs.Run(); err != nil {
 		t.Fatalf("cs.Run: %v", err)
 	}

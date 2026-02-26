@@ -32,54 +32,6 @@ func (eq *EventQueue) Pop() any {
 	return item
 }
 
-// GuideLLMConfig supports GuideLLM style request generation
-type GuideLLMConfig struct {
-	Rate               float64 // Requests per second
-	NumRequests        int     // Number of requests
-	PrefixTokens       int     // Prefix Token Count
-	PromptTokens       int     // Average Prompt Token Count
-	PromptTokensStdDev int     // Stddev Prompt Token Count
-	PromptTokensMin    int     // Min Prompt Token Count
-	PromptTokensMax    int     // Max Prompt Token Count
-	OutputTokens       int     // Average Output Token Count
-	OutputTokensStdDev int     // Stddev Output Token Count
-	OutputTokensMin    int     // Min Output Token Count
-	OutputTokensMax    int     // Max Output Token Count
-}
-
-// NewGuideLLMConfig creates a GuideLLMConfig with all fields explicitly set.
-// This is the canonical constructor — all construction sites must use it (R4).
-// Parameter order matches struct field order: Rate, NumRequests, PrefixTokens,
-// PromptTokens, PromptTokensStdDev, PromptTokensMin, PromptTokensMax,
-// OutputTokens, OutputTokensStdDev, OutputTokensMin, OutputTokensMax.
-func NewGuideLLMConfig(
-	rate float64,
-	numRequests int,
-	prefixTokens int,
-	promptTokens int,
-	promptTokensStdDev int,
-	promptTokensMin int,
-	promptTokensMax int,
-	outputTokens int,
-	outputTokensStdDev int,
-	outputTokensMin int,
-	outputTokensMax int,
-) *GuideLLMConfig {
-	return &GuideLLMConfig{
-		Rate:               rate,
-		NumRequests:        numRequests,
-		PrefixTokens:       prefixTokens,
-		PromptTokens:       promptTokens,
-		PromptTokensStdDev: promptTokensStdDev,
-		PromptTokensMin:    promptTokensMin,
-		PromptTokensMax:    promptTokensMax,
-		OutputTokens:       outputTokens,
-		OutputTokensStdDev: outputTokensStdDev,
-		OutputTokensMin:    outputTokensMin,
-		OutputTokensMax:    outputTokensMax,
-	}
-}
-
 // SimConfig holds all configuration for creating a Simulator.
 // Sub-configs are embedded so fields are accessible via promotion
 // (e.g., cfg.TotalKVBlocks resolves to cfg.KVCacheConfig.TotalKVBlocks).
@@ -122,22 +74,16 @@ type Simulator struct {
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
-	guideLLMConfig       *GuideLLMConfig
 	model                  string
 	gpu                    string
-	tracesWorkloadFilePath string
 	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
 	priorityPolicy         PriorityPolicy
 	scheduler              InstanceScheduler
 	latencyModel           LatencyModel
-	requestRate            float64 // arrival rate for workload generation (moved from Metrics — DES state/statistics separation, #243)
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
-// Workload mode is determined by the config fields:
-//   - TracesWorkloadFilePath != "" → load workload from CSV traces
-//   - GuideLLMConfig != nil → generate workload from distribution
-//   - Both zero-valued → no workload (caller injects via InjectArrival)
+// All workload generation now happens externally — callers inject requests via InjectArrival.
 func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*Simulator, error) {
 	if kvStore == nil {
 		return nil, fmt.Errorf("NewSimulator: kvStore must not be nil")
@@ -162,8 +108,6 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		stepCount:                 0,
 		reqNumComputedTokens:      make(map[string]int64),
 		batchFormation:            batchFormation,
-		guideLLMConfig:            cfg.GuideLLMConfig,
-		tracesWorkloadFilePath:    cfg.TracesWorkloadFilePath,
 		model:                     cfg.Model,
 		gpu:                       cfg.GPU,
 		latencyModel:              latencyModel,
@@ -171,17 +115,6 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
 	s.priorityPolicy = NewPriorityPolicy(cfg.PriorityPolicy)
 	s.scheduler = NewScheduler(cfg.Scheduler)
-
-	if cfg.TracesWorkloadFilePath != "" && cfg.GuideLLMConfig == nil {
-		s.requestRate = 0.0
-		if err := s.generateWorkloadFromCSV(); err != nil {
-			return nil, fmt.Errorf("loading CSV workload: %w", err)
-		}
-	} else if cfg.GuideLLMConfig != nil {
-		s.requestRate = cfg.GuideLLMConfig.Rate
-		s.generateWorkloadDistribution()
-	}
-	// else: no workload — caller injects via InjectArrival
 
 	return s, nil
 }
@@ -277,11 +210,6 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 
 // SimHorizon returns the simulation horizon (in ticks).
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
-
-// SetRequestRate sets the arrival rate for workload generation.
-// Used by cluster mode to propagate the per-instance rate.
-// Precondition: rate >= 0. Callers are responsible for validation (R3).
-func (sim *Simulator) SetRequestRate(rate float64) { sim.requestRate = rate }
 
 // EnqueueRequest adds a newly arrived request to the waiting queue.
 // Requests whose input tokens require more KV blocks than the total cache

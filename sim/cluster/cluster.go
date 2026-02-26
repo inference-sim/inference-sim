@@ -18,8 +18,6 @@ type ClusterSimulator struct {
 	instances         []*InstanceSimulator
 	rng               *sim.PartitionedRNG
 	clock             int64
-	workload          *sim.GuideLLMConfig
-	tracesPath        string
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
 
@@ -33,20 +31,16 @@ type ClusterSimulator struct {
 	routingPolicy      sim.RoutingPolicy
 	rejectedRequests       int // EC-2: count of requests rejected by admission policy
 	trace                  *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
-	preGeneratedRequests   []*sim.Request // Pre-generated requests from workload-spec (PR10)
+	preGeneratedRequests   []*sim.Request // Pre-generated requests (all workload paths unified)
 	pendingRequests        map[string]int // instance ID → routed-but-not-queued count (#170)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
-// Panics if config.NumInstances < 1 or if both workload and tracesPath are unset
-// (unless pre-generated requests will be provided via SetPreGeneratedRequests before Run).
-func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
-	tracesPath string) *ClusterSimulator {
+// All workload generation now happens externally — requests are passed in directly.
+// Panics if config.NumInstances < 1.
+func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *ClusterSimulator {
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
-	}
-	if workload == nil && tracesPath == "" {
-		panic("ClusterSimulator: workload config is nil and no traces path provided")
 	}
 	simCfg := config.ToSimConfig()
 	instances := make([]*InstanceSimulator, config.NumInstances)
@@ -72,19 +66,18 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 	}
 
 	cs := &ClusterSimulator{
-		config:           config,
-		instances:        instances,
-		rng:              sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed)),
-		workload:         workload,
-		tracesPath:       tracesPath,
-		clusterEvents:    make(ClusterEventQueue, 0),
-		admissionLatency: config.AdmissionLatency,
-		routingLatency:   config.RoutingLatency,
-		admissionPolicy:  sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
-		snapshotProvider: NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
-		routingPolicy:    sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
-		trace:            simTrace,
-		pendingRequests:  make(map[string]int, config.NumInstances),
+		config:               config,
+		instances:            instances,
+		rng:                  sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed)),
+		preGeneratedRequests: requests,
+		clusterEvents:        make(ClusterEventQueue, 0),
+		admissionLatency:     config.AdmissionLatency,
+		routingLatency:       config.RoutingLatency,
+		admissionPolicy:      sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
+		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
+		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
+		trace:                simTrace,
+		pendingRequests:      make(map[string]int, config.NumInstances),
 	}
 
 	// Startup warning: horizon too small for pipeline (BC-1)
@@ -107,11 +100,8 @@ func (c *ClusterSimulator) Run() error {
 	}
 	c.hasRun = true
 
-	// 1. Generate requests centrally
-	requests, err := c.generateRequests()
-	if err != nil {
-		return fmt.Errorf("generating requests: %w", err)
-	}
+	// 1. Use pre-generated requests (all workload paths now pre-generate)
+	requests := c.preGeneratedRequests
 
 	// 2. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
@@ -120,13 +110,6 @@ func (c *ClusterSimulator) Run() error {
 			event: &ClusterArrivalEvent{time: req.ArrivalTime, request: req},
 			seqID: c.nextSeqID(),
 		})
-	}
-
-	// Set request rate on all instances for metrics compatibility
-	if c.workload != nil {
-		for _, inst := range c.instances {
-			inst.SetRequestRate(c.workload.Rate)
-		}
 	}
 
 	// 3. Shared-clock event loop (BC-4: cluster events before instance events)
@@ -242,10 +225,6 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 
 // SetPreGeneratedRequests sets pre-generated requests for workload-spec mode.
 // Must be called before Run(). These requests bypass the normal generation pipeline.
-func (c *ClusterSimulator) SetPreGeneratedRequests(reqs []*sim.Request) {
-	c.preGeneratedRequests = reqs
-}
-
 // RejectedRequests returns the count of requests rejected by the admission policy (EC-2).
 // Returns 0 if AlwaysAdmit is used or if no requests were rejected by TokenBucket.
 func (c *ClusterSimulator) RejectedRequests() int {

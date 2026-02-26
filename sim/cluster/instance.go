@@ -93,11 +93,6 @@ func (i *InstanceSimulator) InjectRequest(req *sim.Request) {
 	i.sim.InjectArrival(req)
 }
 
-// SetRequestRate sets the request rate on the underlying simulator.
-func (i *InstanceSimulator) SetRequestRate(rate float64) {
-	i.sim.SetRequestRate(rate)
-}
-
 // HasPendingEvents returns true if the instance has pending events.
 func (i *InstanceSimulator) HasPendingEvents() bool { return i.sim.HasPendingEvents() }
 

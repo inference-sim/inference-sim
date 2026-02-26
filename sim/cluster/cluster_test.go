@@ -10,8 +10,6 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
-	"github.com/inference-sim/inference-sim/sim/kv"
-	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // newTestDeploymentConfig creates a DeploymentConfig suitable for testing.
@@ -29,22 +27,6 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 	}
 }
 
-// newTestWorkload creates a GuideLLMConfig suitable for testing.
-func newTestWorkload(numRequests int) *sim.GuideLLMConfig {
-	return &sim.GuideLLMConfig{
-		Rate:               10.0 / 1e6,
-		NumRequests:         numRequests,
-		PrefixTokens:       0,
-		PromptTokens:       100,
-		PromptTokensStdDev: 20,
-		PromptTokensMin:    10,
-		PromptTokensMax:    200,
-		OutputTokens:       50,
-		OutputTokensStdDev: 10,
-		OutputTokensMin:    10,
-		OutputTokensMax:    100,
-	}
-}
 
 // mustRun is a test helper that calls Run and fails the test on error.
 func mustRun(t *testing.T, cs *ClusterSimulator) {
@@ -62,7 +44,7 @@ func TestPerInstanceMetrics_BeforeRun_Panics(t *testing.T) {
 		}
 	}()
 	config := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(config, newTestWorkload(5), "")
+	cs := NewClusterSimulator(config, newTestRequests(5))
 	cs.PerInstanceMetrics() // should panic
 }
 
@@ -93,12 +75,9 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 		t.Errorf("ToSimConfig() differs from embedded SimConfig:\n  got:  %+v\n  want: %+v", sc, dc.SimConfig)
 	}
 
-	// BC-4: Workload fields zero-valued (cluster generates workload centrally)
-	if sc.GuideLLMConfig != nil {
-		t.Error("GuideLLMConfig should be nil (workload generated centrally)")
-	}
-	if sc.TracesWorkloadFilePath != "" {
-		t.Error("TracesWorkloadFilePath should be empty (workload generated centrally)")
+	// BC-4: WorkloadConfig is an empty struct (cluster generates workload centrally)
+	if sc.WorkloadConfig != (sim.WorkloadConfig{}) {
+		t.Error("WorkloadConfig should be zero-valued (workload generated centrally)")
 	}
 }
 
@@ -162,21 +141,12 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 				NumInstances: 1,
 			}
 
-			workload := &sim.GuideLLMConfig{
-				Rate:               tc.Rate / 1e6,
-				NumRequests:         tc.NumRequests,
-				PrefixTokens:       tc.PrefixTokens,
-				PromptTokens:       tc.PromptTokens,
-				PromptTokensStdDev: tc.PromptTokensStdev,
-				PromptTokensMin:    tc.PromptTokensMin,
-				PromptTokensMax:    tc.PromptTokensMax,
-				OutputTokens:       tc.OutputTokens,
-				OutputTokensStdDev: tc.OutputTokensStdev,
-				OutputTokensMin:    tc.OutputTokensMin,
-				OutputTokensMax:    tc.OutputTokensMax,
-			}
+			requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
+				tc.NumRequests, tc.PrefixTokens,
+				tc.PromptTokens, tc.PromptTokensStdev, tc.PromptTokensMin, tc.PromptTokensMax,
+				tc.OutputTokens, tc.OutputTokensStdev, tc.OutputTokensMin, tc.OutputTokensMax)
 
-			cs := NewClusterSimulator(config, workload, "")
+			cs := NewClusterSimulator(config, requests)
 			mustRun(t, cs)
 
 			m := cs.AggregatedMetrics()
@@ -221,21 +191,12 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 				NumInstances: 1,
 			}
 
-			workload := &sim.GuideLLMConfig{
-				Rate:               tc.Rate / 1e6,
-				NumRequests:        tc.NumRequests,
-				PrefixTokens:      tc.PrefixTokens,
-				PromptTokens:      tc.PromptTokens,
-				PromptTokensStdDev: tc.PromptTokensStdev,
-				PromptTokensMin:   tc.PromptTokensMin,
-				PromptTokensMax:   tc.PromptTokensMax,
-				OutputTokens:      tc.OutputTokens,
-				OutputTokensStdDev: tc.OutputTokensStdev,
-				OutputTokensMin:   tc.OutputTokensMin,
-				OutputTokensMax:   tc.OutputTokensMax,
-			}
+			requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
+				tc.NumRequests, tc.PrefixTokens,
+				tc.PromptTokens, tc.PromptTokensStdev, tc.PromptTokensMin, tc.PromptTokensMax,
+				tc.OutputTokens, tc.OutputTokensStdev, tc.OutputTokensMin, tc.OutputTokensMax)
 
-			cs := NewClusterSimulator(config, workload, "")
+			cs := NewClusterSimulator(config, requests)
 			mustRun(t, cs)
 			m := cs.AggregatedMetrics()
 
@@ -268,12 +229,11 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 // THEN per-instance and aggregated CompletedRequests are identical.
 func TestClusterSimulator_MultiInstance_Determinism(t *testing.T) {
 	config := newTestDeploymentConfig(4)
-	workload := newTestWorkload(100)
 
-	cs1 := NewClusterSimulator(config, workload, "")
+	cs1 := NewClusterSimulator(config, newTestRequests(100))
 	mustRun(t, cs1)
 
-	cs2 := NewClusterSimulator(config, workload, "")
+	cs2 := NewClusterSimulator(config, newTestRequests(100))
 	mustRun(t, cs2)
 
 	// Check aggregated
@@ -324,9 +284,9 @@ func TestClusterSimulator_MultiInstance_Determinism(t *testing.T) {
 // THEN aggregated CompletedRequests == 100 AND each instance completed > 0.
 func TestClusterSimulator_MultiInstance_AllComplete(t *testing.T) {
 	config := newTestDeploymentConfig(4)
-	workload := newTestWorkload(100)
+	requests := newTestRequests(100)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -347,9 +307,9 @@ func TestClusterSimulator_MultiInstance_AllComplete(t *testing.T) {
 // THEN each instance has CompletedRequests == 3.
 func TestClusterSimulator_RoundRobin_EvenDistribution(t *testing.T) {
 	config := newTestDeploymentConfig(3)
-	workload := newTestWorkload(9)
+	requests := newTestRequests(9)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	for i, inst := range cs.Instances() {
@@ -366,9 +326,9 @@ func TestClusterSimulator_RoundRobin_EvenDistribution(t *testing.T) {
 // THEN instance 0 has 4, instances 1,2 have 3.
 func TestClusterSimulator_RoundRobin_UnevenDistribution(t *testing.T) {
 	config := newTestDeploymentConfig(3)
-	workload := newTestWorkload(10)
+	requests := newTestRequests(10)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	expected := []int{4, 3, 3}
@@ -386,9 +346,9 @@ func TestClusterSimulator_RoundRobin_UnevenDistribution(t *testing.T) {
 // THEN instances 0,1 have CompletedRequests == 1, instances 2,3 have 0, no panic.
 func TestClusterSimulator_ZeroRequestInstances(t *testing.T) {
 	config := newTestDeploymentConfig(4)
-	workload := newTestWorkload(2)
+	requests := newTestRequests(2)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	expected := []int{1, 1, 0, 0}
@@ -411,9 +371,9 @@ func TestClusterSimulator_ZeroRequestInstances(t *testing.T) {
 // THEN aggregated == sum(per-instance) for counts, max for SimEndedTime.
 func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 	config := newTestDeploymentConfig(2)
-	workload := newTestWorkload(50)
+	requests := newTestRequests(50)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	var sumCompleted, sumInput, sumOutput int
@@ -492,9 +452,9 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 // THEN cluster.Clock() >= every instance's Clock().
 func TestClusterSimulator_SharedClock_MonotonicGlobal(t *testing.T) {
 	config := newTestDeploymentConfig(2)
-	workload := newTestWorkload(50)
+	requests := newTestRequests(50)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	for i, inst := range cs.Instances() {
@@ -511,9 +471,9 @@ func TestClusterSimulator_SharedClock_MonotonicGlobal(t *testing.T) {
 // THEN panic.
 func TestClusterSimulator_RunOnce_Panics(t *testing.T) {
 	config := newTestDeploymentConfig(2)
-	workload := newTestWorkload(10)
+	requests := newTestRequests(10)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	defer func() {
@@ -546,7 +506,7 @@ func TestNewClusterSimulator_ZeroInstances_Panics(t *testing.T) {
 	}()
 
 	config := newTestDeploymentConfig(0)
-	NewClusterSimulator(config, newTestWorkload(10), "")
+	NewClusterSimulator(config, newTestRequests(10))
 }
 
 // TestInstanceSimulator_InjectAfterRun_Panics verifies C.3:
@@ -580,9 +540,9 @@ func TestInstanceSimulator_InjectAfterRun_Panics(t *testing.T) {
 // AND all request IDs across instances are distinct.
 func TestClusterSimulator_GloballyUniqueRequestIDs(t *testing.T) {
 	config := newTestDeploymentConfig(4)
-	workload := newTestWorkload(20)
+	requests := newTestRequests(20)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -610,9 +570,9 @@ func TestClusterSimulator_GloballyUniqueRequestIDs(t *testing.T) {
 func TestClusterSimulator_HorizonEnforcement(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	config.Horizon = 500000 // finite horizon
-	workload := newTestWorkload(100)
+	requests := newTestRequests(100)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -629,21 +589,28 @@ func TestClusterSimulator_HorizonEnforcement(t *testing.T) {
 	}
 }
 
-// TestClusterSimulator_NilWorkload_Panics verifies the nil workload guard.
-func TestClusterSimulator_NilWorkload_Panics(t *testing.T) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Error("expected panic for nil workload and empty traces path, got none")
-		}
-		expected := "ClusterSimulator: workload config is nil and no traces path provided"
-		if r != expected {
-			t.Errorf("panic message = %q, want %q", r, expected)
-		}
-	}()
-
+// TestClusterSimulator_NilRequests_NoPanic verifies that nil/empty requests are accepted
+// (the new constructor no longer panics on nil requests — it simply produces zero arrivals).
+func TestClusterSimulator_NilRequests_NoPanic(t *testing.T) {
 	config := newTestDeploymentConfig(2)
-	NewClusterSimulator(config, nil, "")
+
+	// nil requests: should not panic
+	cs := NewClusterSimulator(config, nil)
+	mustRun(t, cs)
+
+	if cs.AggregatedMetrics().CompletedRequests != 0 {
+		t.Errorf("expected 0 completed requests with nil requests, got %d",
+			cs.AggregatedMetrics().CompletedRequests)
+	}
+
+	// empty requests: should not panic
+	cs2 := NewClusterSimulator(config, []*sim.Request{})
+	mustRun(t, cs2)
+
+	if cs2.AggregatedMetrics().CompletedRequests != 0 {
+		t.Errorf("expected 0 completed requests with empty requests, got %d",
+			cs2.AggregatedMetrics().CompletedRequests)
+	}
 }
 
 // TestClusterSimulator_AggregatedMetrics_BeforeRun_Panics verifies the hasRun guard.
@@ -660,7 +627,7 @@ func TestClusterSimulator_AggregatedMetrics_BeforeRun_Panics(t *testing.T) {
 	}()
 
 	config := newTestDeploymentConfig(2)
-	cs := NewClusterSimulator(config, newTestWorkload(10), "")
+	cs := NewClusterSimulator(config, newTestRequests(10))
 	cs.AggregatedMetrics()
 }
 
@@ -673,9 +640,9 @@ func TestClusterSimulator_AggregatedMetrics_BeforeRun_Panics(t *testing.T) {
 func TestClusterSimulator_HandledBy_PopulatedInMetrics(t *testing.T) {
 	config := newTestDeploymentConfig(3)
 	config.RoutingPolicy = "round-robin"
-	workload := newTestWorkload(15)
+	requests := newTestRequests(15)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -720,8 +687,8 @@ func TestClusterSimulator_HandledBy_PopulatedInMetrics(t *testing.T) {
 // THEN all requests have HandledBy == "instance_0"
 func TestClusterSimulator_HandledBy_SingleInstance(t *testing.T) {
 	config := newTestDeploymentConfig(1)
-	workload := newTestWorkload(5)
-	cs := NewClusterSimulator(config, workload, "")
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -741,9 +708,9 @@ func TestClusterSimulator_HandledBy_SingleInstance(t *testing.T) {
 func TestClusterSimulator_RoutingPolicy_RoundRobinDefault(t *testing.T) {
 	config := newTestDeploymentConfig(3)
 	config.RoutingPolicy = "round-robin"
-	workload := newTestWorkload(10)
+	requests := newTestRequests(10)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	// Requests distributed evenly: 4, 3, 3 (or variant)
@@ -768,9 +735,9 @@ func TestClusterSimulator_RoutingPolicy_RoundRobinDefault(t *testing.T) {
 func TestClusterSimulator_RoutingPolicy_LeastLoaded(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	config.RoutingPolicy = "least-loaded"
-	workload := newTestWorkload(5)
+	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	if cs.AggregatedMetrics().CompletedRequests == 0 {
@@ -787,9 +754,9 @@ func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
 			config := newTestDeploymentConfig(2)
 			config.RoutingPolicy = policyName
 			config.RoutingScorerConfigs = sim.DefaultScorerConfigs()
-			workload := newTestWorkload(5)
+			requests := newTestRequests(5)
 
-			cs := NewClusterSimulator(config, workload, "")
+			cs := NewClusterSimulator(config, requests)
 			mustRun(t, cs)
 
 			if cs.AggregatedMetrics().CompletedRequests == 0 {
@@ -803,9 +770,9 @@ func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
 
 func BenchmarkClusterSimulator_1K_1Instance(b *testing.B) {
 	config := newTestDeploymentConfig(1)
-	workload := newTestWorkload(1000)
+	requests := newTestRequests(1000)
 	for i := 0; i < b.N; i++ {
-		cs := NewClusterSimulator(config, workload, "")
+		cs := NewClusterSimulator(config, requests)
 		if err := cs.Run(); err != nil {
 			b.Fatalf("cs.Run: %v", err)
 		}
@@ -814,9 +781,9 @@ func BenchmarkClusterSimulator_1K_1Instance(b *testing.B) {
 
 func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 	config := newTestDeploymentConfig(4)
-	workload := newTestWorkload(10000)
+	requests := newTestRequests(10000)
 	for i := 0; i < b.N; i++ {
-		cs := NewClusterSimulator(config, workload, "")
+		cs := NewClusterSimulator(config, requests)
 		if err := cs.Run(); err != nil {
 			b.Fatalf("cs.Run: %v", err)
 		}
@@ -825,143 +792,11 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 
 func BenchmarkClusterSimulator_1K_10Instances(b *testing.B) {
 	config := newTestDeploymentConfig(10)
-	workload := newTestWorkload(1000)
+	requests := newTestRequests(1000)
 	for i := 0; i < b.N; i++ {
-		cs := NewClusterSimulator(config, workload, "")
+		cs := NewClusterSimulator(config, requests)
 		if err := cs.Run(); err != nil {
 			b.Fatalf("cs.Run: %v", err)
-		}
-	}
-}
-
-// === Workload Parity Tests (F.4) ===
-
-// TestClusterWorkloadGen_MatchesSimulator verifies D.6:
-// GIVEN same seed and workload config
-// WHEN sim.NewSimulator generates workload AND ClusterSimulator generates requests
-// THEN count matches and for each request: ArrivalTime, len(InputTokens), len(OutputTokens) match.
-func TestClusterWorkloadGen_MatchesSimulator(t *testing.T) {
-	dataset := testutil.LoadGoldenDataset(t)
-	if len(dataset.Tests) == 0 {
-		t.Fatal("Golden dataset contains no test cases")
-	}
-
-	for _, tc := range dataset.Tests {
-		t.Run(tc.Model, func(t *testing.T) {
-			guideLLMConfig := &sim.GuideLLMConfig{
-				Rate:               tc.Rate / 1e6,
-				NumRequests:         tc.NumRequests,
-				PrefixTokens:       tc.PrefixTokens,
-				PromptTokens:       tc.PromptTokens,
-				PromptTokensStdDev: tc.PromptTokensStdev,
-				PromptTokensMin:    tc.PromptTokensMin,
-				PromptTokensMax:    tc.PromptTokensMax,
-				OutputTokens:       tc.OutputTokens,
-				OutputTokensStdDev: tc.OutputTokensStdev,
-				OutputTokensMin:    tc.OutputTokensMin,
-				OutputTokensMax:    tc.OutputTokensMax,
-			}
-
-			// Reference: sim.NewSimulator generates workload internally
-			refCfg := sim.SimConfig{
-				Horizon:             math.MaxInt64,
-				Seed:                tc.Seed,
-				KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-				BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
-				LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
-				WorkloadConfig:      sim.NewWorkloadConfig(guideLLMConfig, ""),
-			}
-			refKV := kv.NewKVCacheState(refCfg.TotalKVBlocks, refCfg.BlockSizeTokens)
-			refLM, err := latency.NewLatencyModel(refCfg.LatencyCoeffs, refCfg.ModelHardwareConfig)
-			if err != nil {
-				t.Fatalf("NewLatencyModel: %v", err)
-			}
-			refSim, err := sim.NewSimulator(refCfg, refKV, refLM)
-			if err != nil {
-				t.Fatalf("NewSimulator: %v", err)
-			}
-
-			// Cluster workload generation
-			config := DeploymentConfig{
-				SimConfig: sim.SimConfig{
-					Horizon:             math.MaxInt64,
-					Seed:                tc.Seed,
-					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
-					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
-				},
-				NumInstances: 1,
-			}
-			cs := NewClusterSimulator(config, guideLLMConfig, "")
-			requests := cs.generateRequestsFromDistribution()
-
-			// Compare counts
-			refCount := len(refSim.Metrics.Requests)
-			if len(requests) != refCount {
-				t.Fatalf("request count mismatch: cluster=%d, simulator=%d", len(requests), refCount)
-			}
-
-			// Compare each request
-			for _, req := range requests {
-				refMetric, ok := refSim.Metrics.Requests[req.ID]
-				if !ok {
-					t.Errorf("request %s not found in simulator Metrics.Requests", req.ID)
-					continue
-				}
-				// ArrivalTime: compare via ArrivedAt (float64 seconds)
-				gotArrived := float64(req.ArrivalTime) / 1e6
-				if gotArrived != refMetric.ArrivedAt {
-					t.Errorf("request %s ArrivalTime: cluster=%v, simulator=%v",
-						req.ID, gotArrived, refMetric.ArrivedAt)
-				}
-				if len(req.InputTokens) != refMetric.NumPrefillTokens {
-					t.Errorf("request %s InputTokens len: cluster=%d, simulator=%d",
-						req.ID, len(req.InputTokens), refMetric.NumPrefillTokens)
-				}
-				if len(req.OutputTokens) != refMetric.NumDecodeTokens {
-					t.Errorf("request %s OutputTokens len: cluster=%d, simulator=%d",
-						req.ID, len(req.OutputTokens), refMetric.NumDecodeTokens)
-				}
-			}
-		})
-	}
-}
-
-// TestClusterWorkloadGen_Determinism verifies BC-2:
-// GIVEN same seed
-// WHEN called twice
-// THEN request lists are identical.
-func TestClusterWorkloadGen_Determinism(t *testing.T) {
-	config := newTestDeploymentConfig(1)
-	workload := newTestWorkload(50)
-
-	cs1 := NewClusterSimulator(config, workload, "")
-	reqs1 := cs1.generateRequestsFromDistribution()
-
-	cs2 := NewClusterSimulator(config, workload, "")
-	reqs2 := cs2.generateRequestsFromDistribution()
-
-	if len(reqs1) != len(reqs2) {
-		t.Fatalf("request count mismatch: %d vs %d", len(reqs1), len(reqs2))
-	}
-
-	for i := range reqs1 {
-		if reqs1[i].ID != reqs2[i].ID {
-			t.Errorf("request %d ID mismatch: %s vs %s", i, reqs1[i].ID, reqs2[i].ID)
-		}
-		if reqs1[i].ArrivalTime != reqs2[i].ArrivalTime {
-			t.Errorf("request %d ArrivalTime mismatch: %d vs %d",
-				i, reqs1[i].ArrivalTime, reqs2[i].ArrivalTime)
-		}
-		if len(reqs1[i].InputTokens) != len(reqs2[i].InputTokens) {
-			t.Errorf("request %d InputTokens len mismatch: %d vs %d",
-				i, len(reqs1[i].InputTokens), len(reqs2[i].InputTokens))
-		}
-		if len(reqs1[i].OutputTokens) != len(reqs2[i].OutputTokens) {
-			t.Errorf("request %d OutputTokens len mismatch: %d vs %d",
-				i, len(reqs1[i].OutputTokens), len(reqs2[i].OutputTokens))
 		}
 	}
 }
@@ -969,7 +804,7 @@ func TestClusterWorkloadGen_Determinism(t *testing.T) {
 func TestAggregateMetrics_IncludesKVCacheFields(t *testing.T) {
 	// GIVEN a cluster simulation with 2 instances
 	cfg := newTestDeploymentConfig(2)
-	cs := NewClusterSimulator(cfg, newTestWorkload(10), "")
+	cs := NewClusterSimulator(cfg, newTestRequests(10))
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -1017,7 +852,7 @@ func TestAggregateMetrics_IncludesKVCacheFields(t *testing.T) {
 func TestAggregateMetrics_SingleInstance_AverageEqualsSelf(t *testing.T) {
 	// GIVEN a cluster with exactly 1 instance (edge case: average = self)
 	cfg := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(cfg, newTestWorkload(5), "")
+	cs := NewClusterSimulator(cfg, newTestRequests(5))
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -1045,9 +880,9 @@ func TestAggregateMetrics_SingleInstance_AverageEqualsSelf(t *testing.T) {
 // THEN sum of per-instance CompletedRequests == 100 == aggregated CompletedRequests.
 func TestClusterSimulator_RequestConservation_SumAcrossInstances(t *testing.T) {
 	config := newTestDeploymentConfig(4)
-	workload := newTestWorkload(100)
+	requests := newTestRequests(100)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	sumCompleted := 0
@@ -1076,9 +911,9 @@ func TestClusterSimulator_RequestConservation_SumAcrossInstances(t *testing.T) {
 // THEN for every completed request: TTFT >= 0, E2E >= TTFT, and all ITL >= 0.
 func TestClusterSimulator_Causality_PerInstance(t *testing.T) {
 	config := newTestDeploymentConfig(3)
-	workload := newTestWorkload(50)
+	requests := newTestRequests(50)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	totalChecked := 0
@@ -1119,9 +954,9 @@ func TestClusterSimulator_Causality_PerInstance(t *testing.T) {
 // THEN cluster.Clock() >= every instance's Clock().
 func TestClusterSimulator_ClockMonotonicity_ClusterDominatesInstances(t *testing.T) {
 	config := newTestDeploymentConfig(4)
-	workload := newTestWorkload(100)
+	requests := newTestRequests(100)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
 	for i, inst := range cs.Instances() {
@@ -1139,8 +974,8 @@ func TestClusterSimulator_ClockMonotonicity_ClusterDominatesInstances(t *testing
 func TestClusterSimulator_Determinism_ByteIdenticalAggregation(t *testing.T) {
 	run := func() *sim.Metrics {
 		config := newTestDeploymentConfig(3)
-		workload := newTestWorkload(50)
-		cs := NewClusterSimulator(config, workload, "")
+		requests := newTestRequests(50)
+		cs := NewClusterSimulator(config, requests)
 		mustRun(t, cs)
 		return cs.AggregatedMetrics()
 	}
@@ -1247,8 +1082,8 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 				config.TokenBucketRefillRate = 1e6
 			}
 
-			workload := newTestWorkload(numRequests)
-			cs := NewClusterSimulator(config, workload, "")
+			requests := newTestRequests(numRequests)
+			cs := NewClusterSimulator(config, requests)
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
@@ -1308,20 +1143,9 @@ func TestClusterSimulator_Determinism_PrefixAffinity_ByteIdentical(t *testing.T)
 				config.RoutingPolicy = pol.routingPolicy
 				config.RoutingScorerConfigs = pol.scorerConfigs
 				// Use prefix tokens to exercise the prefix cache index
-				workload := &sim.GuideLLMConfig{
-					Rate:               10.0 / 1e6,
-					NumRequests:        30,
-					PrefixTokens:       32,
-					PromptTokens:       100,
-					PromptTokensStdDev: 20,
-					PromptTokensMin:    10,
-					PromptTokensMax:    200,
-					OutputTokens:       50,
-					OutputTokensStdDev: 10,
-					OutputTokensMin:    10,
-					OutputTokensMax:    100,
-				}
-				cs := NewClusterSimulator(config, workload, "")
+				requests := testGenerateRequests(42, math.MaxInt64, 10.0/1e6, 30,
+					32, 100, 20, 10, 200, 50, 10, 10, 100)
+				cs := NewClusterSimulator(config, requests)
 				mustRun(t, cs)
 				return cs
 			}
@@ -1406,21 +1230,10 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 				config.TokenBucketRefillRate = tc.tbRefillRate
 			}
 
-			workload := &sim.GuideLLMConfig{
-				Rate:               rateReqPerS / 1e6,
-				NumRequests:        numRequests,
-				PrefixTokens:       0,
-				PromptTokens:       100,
-				PromptTokensStdDev: 20,
-				PromptTokensMin:    10,
-				PromptTokensMax:    200,
-				OutputTokens:       50,
-				OutputTokensStdDev: 10,
-				OutputTokensMin:    10,
-				OutputTokensMax:    100,
-			}
+			requests := testGenerateRequests(42, math.MaxInt64, rateReqPerS/1e6, numRequests,
+				0, 100, 20, 10, 200, 50, 10, 10, 100)
 
-			cs := NewClusterSimulator(config, workload, "")
+			cs := NewClusterSimulator(config, requests)
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
@@ -1499,21 +1312,10 @@ func TestClusterSimulator_SchedulerLiveness(t *testing.T) {
 			config.PriorityPolicy = tc.priorityPolicy
 
 			// Mixed workload: varying prompt and output sizes to exercise scheduler ordering
-			workload := &sim.GuideLLMConfig{
-				Rate:               rateReqPerS / 1e6,
-				NumRequests:        numRequests,
-				PrefixTokens:       0,
-				PromptTokens:       200,
-				PromptTokensStdDev: 100,
-				PromptTokensMin:    32,
-				PromptTokensMax:    512,
-				OutputTokens:       128,
-				OutputTokensStdDev: 64,
-				OutputTokensMin:    16,
-				OutputTokensMax:    256,
-			}
+			requests := testGenerateRequests(42, math.MaxInt64, rateReqPerS/1e6, numRequests,
+				0, 200, 100, 32, 512, 128, 64, 16, 256)
 
-			cs := NewClusterSimulator(config, workload, "")
+			cs := NewClusterSimulator(config, requests)
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
@@ -1553,27 +1355,16 @@ func TestClusterSimulator_AdmissionLatency_ExactOffset(t *testing.T) {
 	)
 
 	// Constant tokens (zero stddev) eliminates variance.
-	mkWorkload := func() *sim.GuideLLMConfig {
-		return &sim.GuideLLMConfig{
-			Rate:               rateReqPerS / 1e6,
-			NumRequests:        numRequests,
-			PrefixTokens:       0,
-			PromptTokens:       inputTokens,
-			PromptTokensStdDev: 0,
-			PromptTokensMin:    inputTokens,
-			PromptTokensMax:    inputTokens,
-			OutputTokens:       outputTokens,
-			OutputTokensStdDev: 0,
-			OutputTokensMin:    outputTokens,
-			OutputTokensMax:    outputTokens,
-		}
+	mkRequests := func() []*sim.Request {
+		return testGenerateRequests(42, math.MaxInt64, rateReqPerS/1e6, numRequests,
+			0, inputTokens, 0, inputTokens, inputTokens, outputTokens, 0, outputTokens, outputTokens)
 	}
 
 	runWithLatency := func(latencyUS int64) *sim.Metrics {
 		config := newTestDeploymentConfig(numInstances)
 		config.RoutingPolicy = "least-loaded"
 		config.AdmissionLatency = latencyUS
-		cs := NewClusterSimulator(config, mkWorkload(), "")
+		cs := NewClusterSimulator(config, mkRequests())
 		mustRun(t, cs)
 		return cs.AggregatedMetrics()
 	}
@@ -1652,20 +1443,9 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		rateReqPerS  = 200.0
 	)
 
-	mkWorkload := func() *sim.GuideLLMConfig {
-		return &sim.GuideLLMConfig{
-			Rate:               rateReqPerS / 1e6,
-			NumRequests:        numRequests,
-			PrefixTokens:       32,
-			PromptTokens:       128,
-			PromptTokensStdDev: 32,
-			PromptTokensMin:    32,
-			PromptTokensMax:    256,
-			OutputTokens:       64,
-			OutputTokensStdDev: 16,
-			OutputTokensMin:    16,
-			OutputTokensMax:    128,
-		}
+	mkRequests := func() []*sim.Request {
+		return testGenerateRequests(42, math.MaxInt64, rateReqPerS/1e6, numRequests,
+			32, 128, 32, 32, 256, 64, 16, 16, 128)
 	}
 
 	mkFullStackConfig := func() DeploymentConfig {
@@ -1681,7 +1461,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 	t.Run("always-admit/ample-kv", func(t *testing.T) {
 		// BC-3: Happy path — all modules active, ample resources
 		config := mkFullStackConfig()
-		cs := NewClusterSimulator(config, mkWorkload(), "")
+		cs := NewClusterSimulator(config, mkRequests())
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()
@@ -1716,20 +1496,9 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		config.TotalKVBlocks = 50
 		config.BlockSizeTokens = 16
 		config.Horizon = 500000 // 0.5 seconds — many requests still in-flight at end
-		constWorkload := &sim.GuideLLMConfig{
-			Rate:               2000.0 / 1e6, // High rate to saturate
-			NumRequests:        numRequests,
-			PrefixTokens:       32,
-			PromptTokens:       128,
-			PromptTokensStdDev: 0,
-			PromptTokensMin:    128,
-			PromptTokensMax:    128,
-			OutputTokens:       64,
-			OutputTokensStdDev: 0,
-			OutputTokensMin:    64,
-			OutputTokensMax:    64,
-		}
-		cs := NewClusterSimulator(config, constWorkload, "")
+		constRequests := testGenerateRequests(42, math.MaxInt64, 2000.0/1e6, numRequests,
+			32, 128, 0, 128, 128, 64, 0, 64, 64)
+		cs := NewClusterSimulator(config, constRequests)
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()
@@ -1759,7 +1528,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		config.AdmissionPolicy = "token-bucket"
 		config.TokenBucketCapacity = 500
 		config.TokenBucketRefillRate = 300
-		cs := NewClusterSimulator(config, mkWorkload(), "")
+		cs := NewClusterSimulator(config, mkRequests())
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()

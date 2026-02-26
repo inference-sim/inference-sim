@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 
-	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
@@ -47,36 +46,6 @@ type Model struct {
 	VLLMVersion       string    `yaml:"vllm_version"`
 	TotalKVBlocks     int64     `yaml:"total_kv_blocks"`
 	BestLoss          float64   `yaml:"best_loss"` // Calibration metric from coefficient fitting; not used at runtime
-}
-
-func GetWorkloadConfig(workloadFilePath string, workloadType string, rate float64, numRequests int) *sim.GuideLLMConfig {
-	data, err := os.ReadFile(workloadFilePath)
-	if err != nil {
-		logrus.Fatalf("Failed to read defaults file: %v", err)
-	}
-
-	// Parse into Config (not WorkloadConfig) because defaults.yaml has all top-level
-	// sections (models, defaults, workloads, version). KnownFields(true) requires all
-	// sections to be declared in the target struct (R10).
-	var cfg Config
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&cfg); err != nil {
-		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
-	}
-
-	if workload, workloadExists := cfg.Workloads[workloadType]; workloadExists {
-		logrus.Infof("Using preset workload %v\n", workloadType)
-		return sim.NewGuideLLMConfig(
-			rate, numRequests,
-			workload.PrefixTokens, workload.PromptTokensMean,
-			workload.PromptTokensStdev, workload.PromptTokensMin, workload.PromptTokensMax,
-			workload.OutputTokensMean, workload.OutputTokensStdev,
-			workload.OutputTokensMin, workload.OutputTokensMax,
-		)
-	} else {
-		return nil
-	}
 }
 
 func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion string) {
