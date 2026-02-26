@@ -131,7 +131,7 @@ If skills are unavailable, you can implement each step manually:
      - Catches design issues before implementation
    - **Code Review** (Step 4.5) - two-stage: holistic `review-pr` pre-pass, then `convergence-review` with 10 targeted perspectives
      - Catches implementation issues before PR creation
-   - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 9 dimensions
+   - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 10 dimensions
      - Catches substance bugs that pattern-matching agents miss
 
 ---
