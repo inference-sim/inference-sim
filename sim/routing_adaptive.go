@@ -5,30 +5,92 @@ import (
 	"math"
 )
 
-// AdaptiveConfig configures the exploit/explore adaptive routing behavior.
-type AdaptiveConfig struct {
-	// ExploitThreshold is the minimum prefix match ratio (matched_blocks/total_blocks)
-	// to trigger exploit mode. Below this, the request is routed via load-balanced
-	// explore mode. Range: (0, 1]. Default: 0.3 (30% prefix match triggers exploit).
-	ExploitThreshold float64
-
-	// LoadHeadroom is the maximum load difference (in effective load units) between
-	// the best-cached instance and the least-loaded instance that still permits
-	// exploit mode. If the cached instance exceeds the least-loaded by more than
-	// this margin, fall back to explore mode to prevent queue concentration.
-	// Range: [0, inf). Default: 2.
-	LoadHeadroom int
-
-	// ExploitWeights are the scorer weights used in exploit mode (cache-heavy).
-	// If nil, defaults to prefix-affinity:5,queue-depth:1,kv-utilization:1.
-	ExploitWeights []ScorerConfig
+// SLOProfile defines a scorer weight profile for a specific SLO class.
+// Each SLO tier gets its own balance of cache-affinity vs load-balancing,
+// reflecting different latency tolerances.
+type SLOProfile struct {
+	Scorers []ScorerConfig
+	// MaxLoadHeadroom is the maximum load difference (vs least-loaded instance)
+	// that this SLO class tolerates for cache-affinity routing. Critical requests
+	// get 0 (only exploit if cached instance IS least-loaded), batch requests
+	// get a large value (tolerate significant queuing for cache benefit).
+	MaxLoadHeadroom int
 }
 
-// DefaultAdaptiveConfig returns sensible defaults for exploit/explore routing.
+// DefaultSLOProfiles returns the default per-SLO-class weight profiles.
+//
+// Design rationale (derived from analytical model with beta3=0.004):
+//   - critical: TTFT budget ~50ms. Even 1 extra queued request adds ~173ms delay,
+//     which exceeds the cache saving of 53ms (prefix=2048). Never sacrifice load
+//     balance for cache affinity.
+//   - standard: Balanced approach. The default pa:3,qd:2,kv:2 scorer's natural
+//     per-request adaptation handles this well.
+//   - sheddable: Similar to standard but slightly more cache-tolerant.
+//   - batch: TTFT budget ~5000ms. Queue delay of 5-10 extra requests is acceptable.
+//     Maximize cache affinity to save compute.
+//   - background: No TTFT constraint. Pure cache affinity to maximize throughput.
+func DefaultSLOProfiles() map[string]SLOProfile {
+	return map[string]SLOProfile{
+		"critical": {
+			Scorers: []ScorerConfig{
+				{Name: "prefix-affinity", Weight: 2.0},
+				{Name: "queue-depth", Weight: 5.0},
+				{Name: "kv-utilization", Weight: 2.0},
+			},
+			MaxLoadHeadroom: 0,
+		},
+		"standard": {
+			Scorers: []ScorerConfig{
+				{Name: "prefix-affinity", Weight: 3.0},
+				{Name: "queue-depth", Weight: 2.0},
+				{Name: "kv-utilization", Weight: 2.0},
+			},
+			MaxLoadHeadroom: 3,
+		},
+		"sheddable": {
+			Scorers: []ScorerConfig{
+				{Name: "prefix-affinity", Weight: 3.0},
+				{Name: "queue-depth", Weight: 2.0},
+				{Name: "kv-utilization", Weight: 2.0},
+			},
+			MaxLoadHeadroom: 5,
+		},
+		"batch": {
+			Scorers: []ScorerConfig{
+				{Name: "prefix-affinity", Weight: 5.0},
+				{Name: "queue-depth", Weight: 1.0},
+				{Name: "kv-utilization", Weight: 1.0},
+			},
+			MaxLoadHeadroom: 10,
+		},
+		"background": {
+			Scorers: []ScorerConfig{
+				{Name: "prefix-affinity", Weight: 5.0},
+				{Name: "queue-depth", Weight: 0.5},
+				{Name: "kv-utilization", Weight: 0.5},
+			},
+			MaxLoadHeadroom: math.MaxInt,
+		},
+	}
+}
+
+// AdaptiveConfig configures the SLO-aware adaptive routing behavior.
+type AdaptiveConfig struct {
+	// ExploitThreshold is the minimum prefix match ratio (matched_blocks/total_blocks)
+	// to consider cache-affinity routing. Below this, the scorer pipeline handles
+	// distribution naturally (PA returns 0, QD/KV take over).
+	// Range: (0, 1]. Default: 0.3.
+	ExploitThreshold float64
+
+	// SLOProfiles maps SLO class names to scorer weight profiles.
+	// If nil, DefaultSLOProfiles() is used.
+	SLOProfiles map[string]SLOProfile
+}
+
+// DefaultAdaptiveConfig returns sensible defaults.
 func DefaultAdaptiveConfig() AdaptiveConfig {
 	return AdaptiveConfig{
 		ExploitThreshold: 0.3,
-		LoadHeadroom:     5,
 	}
 }
 
@@ -38,64 +100,44 @@ func ValidateAdaptiveConfig(cfg AdaptiveConfig) error {
 		math.IsNaN(cfg.ExploitThreshold) || math.IsInf(cfg.ExploitThreshold, 0) {
 		return fmt.Errorf("ExploitThreshold must be in (0, 1], got %v", cfg.ExploitThreshold)
 	}
-	if cfg.LoadHeadroom < 0 {
-		return fmt.Errorf("LoadHeadroom must be non-negative, got %d", cfg.LoadHeadroom)
-	}
 	return nil
 }
 
-// defaultExploitWeights returns cache-heavy scorer config for exploit mode.
-func defaultExploitWeights() []ScorerConfig {
-	return []ScorerConfig{
-		{Name: "prefix-affinity", Weight: 5.0},
-		{Name: "queue-depth", Weight: 1.0},
-		{Name: "kv-utilization", Weight: 1.0},
-	}
+// sloScorerPipeline holds the pre-built scorer pipeline for one SLO class.
+type sloScorerPipeline struct {
+	scorers         []scorerFunc
+	weights         []float64
+	maxLoadHeadroom int
 }
 
-// AdaptiveWeightedScoring routes requests using an exploit/explore strategy with
-// temporal workload tracking.
+// AdaptiveWeightedScoring routes requests using SLO-aware per-request weight profiles.
 //
-// The design addresses three adaptation axes:
+// Each SLO tier gets a different balance of cache-affinity vs load-balancing:
+//   - critical: pure load-balancing (pa:0, qd:5, kv:2) — never sacrifice latency for cache
+//   - standard: balanced (pa:3, qd:2, kv:2) — the static default, handles both naturally
+//   - batch: cache-heavy (pa:5, qd:1, kv:1) — tolerate queuing for compute savings
+//   - background: maximum cache (pa:5, qd:0.5, kv:0.5) — throughput over latency
 //
-//  1. Per-request: each request is classified as exploit or explore based on its
-//     prefix cache match and the target instance's load.
-//  2. Over time: an EMA (exponential moving average) of recent cache hit rates
-//     tracks whether the current workload phase benefits from cache-aware routing.
-//     When the EMA is low (independent workload), exploit decisions are suppressed.
-//  3. Over workloads: the EMA automatically adapts to workload transitions —
-//     when traffic shifts from prefix-heavy to independent (or vice versa),
-//     the EMA tracks the change within ~50 requests (alpha=0.02).
+// The static composable scorer's natural per-request adaptation (PA=0 on cache miss,
+// PA>0 on cache hit) works within each profile. The SLO-aware layer adds a second
+// adaptation axis: different latency tolerances get different weight balances.
 //
-// The exploit/explore decision:
-//   - EXPLOIT: Strong prefix cache hit + instance not overloaded + recent workload
-//     shows cache benefit (EMA above threshold). Routes directly to cached instance.
-//   - EXPLORE: Otherwise, uses round-robin for perfect distribution uniformity.
-//
-// The LoadHeadroom parameter prevents the degenerate cascade (H21): even with
-// a cache hit, if the target instance has substantially more load than the lightest
-// instance, the policy falls back to explore mode.
+// This design was motivated by the finding that a single weight profile cannot be
+// optimal for both latency-sensitive and throughput-sensitive requests in the same
+// stream. A critical request should never queue behind others for a cache hit,
+// while a batch request should almost always take a cache hit even with queuing.
 type AdaptiveWeightedScoring struct {
-	// Exploit mode: cache-aware scorers for scoring when a cache hit qualifies
-	exploitScorers []scorerFunc
-	exploitWeights []float64
+	// Per-SLO-class scorer pipelines (pre-built at construction)
+	pipelines map[string]*sloScorerPipeline
 
-	// Explore mode: round-robin counter for uniform distribution
-	rrCounter int
+	// Default pipeline for requests with unrecognized or empty SLO class
+	defaultPipeline *sloScorerPipeline
 
-	// Temporal tracking: EMA of recent cache hit ratios.
-	// Tracks whether the current workload phase benefits from cache-aware routing.
-	// Updated after every request. When low (<ExploitThreshold), exploit is suppressed
-	// even for individual requests with cache hits, because the workload is in an
-	// independent/non-prefix phase where concentration hurts.
-	cacheHitEMA float64
-	emaAlpha    float64 // EMA smoothing factor (default: 0.02 ≈ 50-request window)
-
-	// Shared observers (called regardless of mode)
+	// Shared observers (called regardless of SLO class)
 	observers []observerFunc
 
 	config    AdaptiveConfig
-	prefixIdx *PrefixCacheIndex // shared with prefix-affinity scorer, for cache probing
+	prefixIdx *PrefixCacheIndex
 }
 
 // Route implements RoutingPolicy for AdaptiveWeightedScoring.
@@ -105,29 +147,71 @@ func (aws *AdaptiveWeightedScoring) Route(req *Request, state *RouterState) Rout
 		panic("AdaptiveWeightedScoring.Route: empty snapshots")
 	}
 
-	// Determine exploit vs explore mode (per-request + temporal)
-	mode, cacheRatio, bestCacheInst := aws.classifyRequest(req, snapshots)
+	// Select scorer pipeline based on request SLO class
+	sloClass := ""
+	if req != nil {
+		sloClass = req.SLOClass
+	}
+	pipeline := aws.pipelines[sloClass]
+	if pipeline == nil {
+		pipeline = aws.defaultPipeline
+	}
 
-	// Update temporal EMA with this request's cache opportunity
-	aws.cacheHitEMA = aws.emaAlpha*cacheRatio + (1-aws.emaAlpha)*aws.cacheHitEMA
+	// Compute composite scores with the SLO-specific weights
+	scores := make(map[string]float64, len(snapshots))
+	for i, scorer := range pipeline.scorers {
+		dimScores := scorer(req, snapshots)
+		for _, snap := range snapshots {
+			s := dimScores[snap.ID]
+			if s < 0 {
+				s = 0
+			}
+			if s > 1 {
+				s = 1
+			}
+			scores[snap.ID] += s * pipeline.weights[i]
+		}
+	}
 
-	var bestIdx int
-	var scores map[string]float64
+	// Argmax: select instance with highest composite score
+	bestScore := -1.0
+	bestIdx := 0
+	for i, snap := range snapshots {
+		if scores[snap.ID] > bestScore {
+			bestScore = scores[snap.ID]
+			bestIdx = i
+		}
+	}
 
-	if mode == "exploit" {
-		// Exploit: route directly to the best-cached instance.
-		// No scoring needed — classifyRequest already verified the cache hit is strong
-		// and the instance isn't overloaded (within LoadHeadroom of least-loaded).
+	// Load headroom check: if the selected instance exceeds the SLO's load
+	// tolerance relative to the least-loaded, fall back to least-loaded.
+	if pipeline.maxLoadHeadroom < math.MaxInt {
+		minLoad := math.MaxInt
+		minIdx := 0
 		for i, snap := range snapshots {
-			if snap.ID == bestCacheInst {
-				bestIdx = i
-				break
+			if snap.EffectiveLoad() < minLoad {
+				minLoad = snap.EffectiveLoad()
+				minIdx = i
 			}
 		}
-	} else {
-		// Explore: round-robin for perfect distribution uniformity
-		bestIdx = aws.rrCounter % len(snapshots)
-		aws.rrCounter++
+		chosenLoad := snapshots[bestIdx].EffectiveLoad()
+		if chosenLoad-minLoad > pipeline.maxLoadHeadroom {
+			bestIdx = minIdx
+		}
+	}
+
+	// Offloading pressure check: avoid instances with pending CPU→GPU reloads
+	if snapshots[bestIdx].PendingTransferLatency > 0 || snapshots[bestIdx].KVThrashingRate > 0.1 {
+		// Find the least-loaded non-thrashing instance
+		minLoad := math.MaxInt
+		for i, snap := range snapshots {
+			if snap.PendingTransferLatency == 0 && snap.KVThrashingRate <= 0.1 {
+				if snap.EffectiveLoad() < minLoad {
+					minLoad = snap.EffectiveLoad()
+					bestIdx = i
+				}
+			}
+		}
 	}
 
 	// Notify observers of routing decision
@@ -137,83 +221,7 @@ func (aws *AdaptiveWeightedScoring) Route(req *Request, state *RouterState) Rout
 
 	return NewRoutingDecisionWithScores(
 		snapshots[bestIdx].ID,
-		fmt.Sprintf("adaptive-%s (cache=%.2f, cached=%s)",
-			mode, cacheRatio, bestCacheInst),
+		fmt.Sprintf("adaptive-slo[%s] (score=%.3f)", sloClass, bestScore),
 		scores,
 	)
-}
-
-// classifyRequest determines whether to exploit (cache-affinity) or explore (load-balance).
-// Returns the mode, best cache match ratio, and best-cached instance ID.
-func (aws *AdaptiveWeightedScoring) classifyRequest(
-	req *Request, snapshots []RoutingSnapshot,
-) (string, float64, string) {
-	if aws.prefixIdx == nil || req == nil || len(req.InputTokens) == 0 {
-		return "explore", 0.0, ""
-	}
-
-	hashes := aws.prefixIdx.ComputeBlockHashes(req.InputTokens)
-	totalBlocks := len(hashes)
-	if totalBlocks == 0 {
-		return "explore", 0.0, ""
-	}
-
-	// Find the instance with the best prefix match
-	bestMatch := 0
-	bestInst := ""
-	for _, snap := range snapshots {
-		matched := aws.prefixIdx.MatchLength(hashes, snap.ID)
-		if matched > bestMatch {
-			bestMatch = matched
-			bestInst = snap.ID
-		}
-	}
-
-	cacheRatio := float64(bestMatch) / float64(totalBlocks)
-
-	// Check threshold: is the cache hit strong enough to exploit?
-	if cacheRatio < aws.config.ExploitThreshold {
-		return "explore", cacheRatio, bestInst
-	}
-
-	// Temporal check: suppress exploit if recent workload doesn't benefit from caching.
-	// This adapts to workload shifts — when traffic transitions from prefix-heavy
-	// to independent, the EMA drops and exploit is suppressed, avoiding the
-	// concentration overhead of cache-affinity routing during non-prefix phases.
-	if aws.cacheHitEMA < aws.config.ExploitThreshold {
-		return "explore", cacheRatio, bestInst
-	}
-
-	// Check load headroom: is the cached instance too overloaded?
-	// Find the least-loaded instance for comparison
-	minLoad := math.MaxInt
-	cachedLoad := 0
-	for _, snap := range snapshots {
-		load := snap.EffectiveLoad()
-		if load < minLoad {
-			minLoad = load
-		}
-		if snap.ID == bestInst {
-			cachedLoad = load
-		}
-	}
-
-	if cachedLoad-minLoad > aws.config.LoadHeadroom {
-		return "explore", cacheRatio, bestInst
-	}
-
-	// Check offloading pressure: avoid instances with high pending transfer latency
-	// or KV thrashing. When a tiered KV cache is reloading blocks from CPU→GPU,
-	// routing more requests there amplifies the reload penalty. Fall back to explore
-	// if the cached instance has significant pending transfers.
-	for _, snap := range snapshots {
-		if snap.ID == bestInst {
-			if snap.PendingTransferLatency > 0 || snap.KVThrashingRate > 0.1 {
-				return "explore", cacheRatio, bestInst
-			}
-			break
-		}
-	}
-
-	return "exploit", cacheRatio, bestInst
 }

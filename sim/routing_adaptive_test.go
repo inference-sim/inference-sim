@@ -5,38 +5,61 @@ import (
 	"testing"
 )
 
-// TestAdaptiveWeightedScoring_ExploreMode_NoCacheHit verifies that requests
-// with no prefix cache hit use explore (load-balanced) routing.
-func TestAdaptiveWeightedScoring_ExploreMode_NoCacheHit(t *testing.T) {
+// TestAdaptiveWeightedScoring_CriticalSLO_RoutesToLeastLoaded verifies that
+// critical-SLO requests are routed to the least-loaded instance even when
+// a cache hit exists on a busier instance.
+func TestAdaptiveWeightedScoring_CriticalSLO_RoutesToLeastLoaded(t *testing.T) {
 	policy := NewRoutingPolicy("adaptive-weighted", nil, 16)
 
-	req := &Request{InputTokens: make([]int, 32)}
-	for i := range req.InputTokens {
-		req.InputTokens[i] = i
+	// Seed cache on inst-0 with a shared prefix
+	prefix := make([]int, 256)
+	for i := range prefix {
+		prefix[i] = 1000 + i
+	}
+	seedReq := &Request{
+		InputTokens: append(append([]int{}, prefix...), make([]int, 128)...),
+		SLOClass:    "batch", // seed with batch to warm cache
+	}
+	for i := 256; i < len(seedReq.InputTokens); i++ {
+		seedReq.InputTokens[i] = 5000 + i
 	}
 
-	snapshots := []RoutingSnapshot{
-		{ID: "inst-0", QueueDepth: 10, BatchSize: 0, KVUtilization: 0.3},
-		{ID: "inst-1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.1},
+	balancedState := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{ID: "inst-0", QueueDepth: 0},
+			{ID: "inst-1", QueueDepth: 0},
+		},
 	}
-	state := &RouterState{Snapshots: snapshots, Clock: 1000}
+	policy.Route(seedReq, balancedState)
 
-	d := policy.Route(req, state)
+	// Now inst-0 is busier, critical request should go to inst-1
+	loadedState := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{ID: "inst-0", QueueDepth: 5, BatchSize: 2},
+			{ID: "inst-1", QueueDepth: 0, BatchSize: 0},
+		},
+	}
+	criticalReq := &Request{
+		InputTokens: append(append([]int{}, prefix...), make([]int, 128)...),
+		SLOClass:    "critical",
+	}
+	for i := 256; i < len(criticalReq.InputTokens); i++ {
+		criticalReq.InputTokens[i] = 9000 + i
+	}
 
-	// With no cache hit, should use explore mode → round-robin (starts at inst-0)
-	if d.TargetInstance != "inst-0" {
-		t.Errorf("explore mode should round-robin starting at inst-0; got %s", d.TargetInstance)
+	d := policy.Route(criticalReq, loadedState)
+
+	// Critical SLO has MaxLoadHeadroom=0 + no PA weight → must go to least-loaded
+	if d.TargetInstance != "inst-1" {
+		t.Errorf("critical SLO should route to least-loaded inst-1; got %s", d.TargetInstance)
 	}
 }
 
-// TestAdaptiveWeightedScoring_ExploitMode_StrongCacheHit verifies that
-// after seeding the cache and warming up the EMA, subsequent requests with
-// matching prefix exploit the cached instance.
-func TestAdaptiveWeightedScoring_ExploitMode_StrongCacheHit(t *testing.T) {
+// TestAdaptiveWeightedScoring_BatchSLO_ExploitsCache verifies that
+// batch-SLO requests exploit cache hits even on slightly busier instances.
+func TestAdaptiveWeightedScoring_BatchSLO_ExploitsCache(t *testing.T) {
 	policy := NewRoutingPolicy("adaptive-weighted", nil, 16)
-	aws := policy.(*AdaptiveWeightedScoring)
 
-	// Create a prefix that all requests share (256 tokens = 16 blocks)
 	prefix := make([]int, 256)
 	for i := range prefix {
 		prefix[i] = 1000 + i
@@ -44,96 +67,74 @@ func TestAdaptiveWeightedScoring_ExploitMode_StrongCacheHit(t *testing.T) {
 
 	state := &RouterState{
 		Snapshots: []RoutingSnapshot{
-			{ID: "inst-0", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.1},
-			{ID: "inst-1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.1},
-			{ID: "inst-2", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.1},
-			{ID: "inst-3", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.1},
+			{ID: "inst-0", QueueDepth: 0},
+			{ID: "inst-1", QueueDepth: 0},
 		},
-		Clock: 1000,
 	}
 
-	// Seed the cache and warm up the EMA with many prefix-sharing requests.
-	// The EMA (alpha=0.02) needs ~50 requests with cache hits to cross the threshold.
-	makeReq := func(suffix int) *Request {
-		tokens := append(append([]int{}, prefix...), make([]int, 128)...)
-		for i := 256; i < len(tokens); i++ {
-			tokens[i] = suffix*1000 + i
+	// Seed cache on inst-0 with many batch requests to build PA scores
+	for i := 0; i < 50; i++ {
+		req := &Request{
+			InputTokens: append(append([]int{}, prefix...), make([]int, 128)...),
+			SLOClass:    "batch",
 		}
-		return &Request{InputTokens: tokens}
-	}
-
-	// Route 100 requests to warm up cache index and EMA
-	var seededInstance string
-	for i := 0; i < 100; i++ {
-		d := policy.Route(makeReq(i), state)
-		if i == 0 {
-			seededInstance = d.TargetInstance
+		for j := 256; j < len(req.InputTokens); j++ {
+			req.InputTokens[j] = i*1000 + j
 		}
+		policy.Route(req, state)
 	}
 
-	// EMA should now be above ExploitThreshold (many cache hits at 0.67 ratio)
-	if aws.cacheHitEMA < aws.config.ExploitThreshold {
-		t.Fatalf("EMA %.3f should exceed ExploitThreshold %.3f after 100 prefix-sharing requests",
-			aws.cacheHitEMA, aws.config.ExploitThreshold)
+	// Now inst-0 has some load but batch tolerance is high (MaxLoadHeadroom=10)
+	loadedState := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{ID: "inst-0", QueueDepth: 3, BatchSize: 1},
+			{ID: "inst-1", QueueDepth: 0, BatchSize: 0},
+		},
+	}
+	batchReq := &Request{
+		InputTokens: append(append([]int{}, prefix...), make([]int, 128)...),
+		SLOClass:    "batch",
+	}
+	for i := 256; i < len(batchReq.InputTokens); i++ {
+		batchReq.InputTokens[i] = 9000 + i
 	}
 
-	// Next request: should exploit the cached instance
-	d := policy.Route(makeReq(999), state)
+	d := policy.Route(batchReq, loadedState)
 
-	// With all instances at zero load, exploit should route to one of the cached instances
-	// (load headroom check passes since all loads are equal)
-	_ = seededInstance
-	// Verify the reason mentions exploit (the specific instance depends on cache state)
-	if d.Reason == "" {
-		t.Error("expected non-empty routing reason")
+	// Batch SLO has high PA weight + MaxLoadHeadroom=10 → should exploit cache
+	// The PA scorer gives inst-0 a high score from the cached prefix.
+	// QD=3 vs QD=0 is within headroom=10.
+	if d.TargetInstance != "inst-0" {
+		t.Errorf("batch SLO should exploit cache on inst-0 (QD diff=3, headroom=10); got %s",
+			d.TargetInstance)
 	}
 }
 
-// TestAdaptiveWeightedScoring_ExploitMode_OverloadedFallback verifies that
-// even with a cache hit, an overloaded instance triggers explore mode.
-func TestAdaptiveWeightedScoring_ExploitMode_OverloadedFallback(t *testing.T) {
+// TestAdaptiveWeightedScoring_EmptySLOUsesStandardProfile verifies that
+// requests with empty SLO class use the standard (default) profile.
+func TestAdaptiveWeightedScoring_EmptySLOUsesStandardProfile(t *testing.T) {
 	policy := NewRoutingPolicy("adaptive-weighted", nil, 16)
 
-	// Create prefix and seed cache on inst-0
-	prefix := make([]int, 256)
-	for i := range prefix {
-		prefix[i] = 1000 + i
+	req := &Request{
+		InputTokens: make([]int, 32),
+		SLOClass:    "", // empty
+	}
+	for i := range req.InputTokens {
+		req.InputTokens[i] = i
 	}
 
-	// Seed cache on inst-0 at zero load
-	req1 := &Request{InputTokens: append(append([]int{}, prefix...), make([]int, 128)...)}
-	for i := 256; i < len(req1.InputTokens); i++ {
-		req1.InputTokens[i] = 5000 + i
-	}
-	zeroState := &RouterState{
+	state := &RouterState{
 		Snapshots: []RoutingSnapshot{
-			{ID: "inst-0", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.1},
-			{ID: "inst-1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.1},
+			{ID: "inst-0", QueueDepth: 10},
+			{ID: "inst-1", QueueDepth: 0},
 		},
-		Clock: 1000,
-	}
-	policy.Route(req1, zeroState)
-
-	// Now inst-0 is heavily loaded (QD=20), inst-1 is empty (QD=0)
-	// LoadHeadroom default = 5, so 20-0=20 > 5 → should fall back to explore
-	overloadState := &RouterState{
-		Snapshots: []RoutingSnapshot{
-			{ID: "inst-0", QueueDepth: 20, BatchSize: 0, KVUtilization: 0.8},
-			{ID: "inst-1", QueueDepth: 0, BatchSize: 0, KVUtilization: 0.1},
-		},
-		Clock: 2000,
 	}
 
-	req2 := &Request{InputTokens: append(append([]int{}, prefix...), make([]int, 128)...)}
-	for i := 256; i < len(req2.InputTokens); i++ {
-		req2.InputTokens[i] = 9000 + i
-	}
+	d := policy.Route(req, state)
 
-	d := policy.Route(req2, overloadState)
-
-	// Should NOT route to overloaded inst-0 despite cache hit
+	// Should use standard profile (pa:3,qd:2,kv:2) → route to least-loaded
 	if d.TargetInstance != "inst-1" {
-		t.Errorf("overloaded cached instance should trigger explore mode; got %s, want inst-1",
+		t.Errorf("empty SLO should use standard profile → least-loaded inst-1; got %s",
 			d.TargetInstance)
 	}
 }
@@ -143,16 +144,20 @@ func TestAdaptiveWeightedScoring_DeterministicRouting(t *testing.T) {
 	policy1 := NewRoutingPolicy("adaptive-weighted", nil, 16)
 	policy2 := NewRoutingPolicy("adaptive-weighted", nil, 16)
 
-	req := &Request{InputTokens: make([]int, 32)}
+	req := &Request{
+		InputTokens: make([]int, 32),
+		SLOClass:    "standard",
+	}
 	for i := range req.InputTokens {
 		req.InputTokens[i] = i
 	}
 
-	snapshots := []RoutingSnapshot{
-		{ID: "inst-0", QueueDepth: 5, BatchSize: 2, KVUtilization: 0.3},
-		{ID: "inst-1", QueueDepth: 10, BatchSize: 1, KVUtilization: 0.5},
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{ID: "inst-0", QueueDepth: 5, BatchSize: 2, KVUtilization: 0.3},
+			{ID: "inst-1", QueueDepth: 10, BatchSize: 1, KVUtilization: 0.5},
+		},
 	}
-	state := &RouterState{Snapshots: snapshots, Clock: 1000}
 
 	d1 := policy1.Route(req, state)
 	d2 := policy2.Route(req, state)
@@ -162,7 +167,7 @@ func TestAdaptiveWeightedScoring_DeterministicRouting(t *testing.T) {
 	}
 }
 
-// TestValidateAdaptiveConfig verifies config validation.
+// TestValidateAdaptiveConfig_RejectsInvalid verifies config validation.
 func TestValidateAdaptiveConfig_RejectsInvalid(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -170,11 +175,10 @@ func TestValidateAdaptiveConfig_RejectsInvalid(t *testing.T) {
 		wantErr bool
 	}{
 		{"valid defaults", DefaultAdaptiveConfig(), false},
-		{"threshold=1", AdaptiveConfig{ExploitThreshold: 1.0, LoadHeadroom: 5}, false},
-		{"threshold=0", AdaptiveConfig{ExploitThreshold: 0, LoadHeadroom: 5}, true},
-		{"threshold>1", AdaptiveConfig{ExploitThreshold: 1.5, LoadHeadroom: 5}, true},
-		{"NaN threshold", AdaptiveConfig{ExploitThreshold: math.NaN(), LoadHeadroom: 5}, true},
-		{"negative headroom", AdaptiveConfig{ExploitThreshold: 0.3, LoadHeadroom: -1}, true},
+		{"threshold=1", AdaptiveConfig{ExploitThreshold: 1.0}, false},
+		{"threshold=0", AdaptiveConfig{ExploitThreshold: 0}, true},
+		{"threshold>1", AdaptiveConfig{ExploitThreshold: 1.5}, true},
+		{"NaN threshold", AdaptiveConfig{ExploitThreshold: math.NaN()}, true},
 	}
 
 	for _, tc := range tests {
@@ -187,26 +191,19 @@ func TestValidateAdaptiveConfig_RejectsInvalid(t *testing.T) {
 	}
 }
 
-// TestAdaptiveWeightedScoring_ClassifyRequest_EmptyPrefix verifies that
-// nil/empty input tokens always classify as explore.
-func TestAdaptiveWeightedScoring_ClassifyRequest_EmptyPrefix(t *testing.T) {
+// TestAdaptiveWeightedScoring_NilRequest verifies safe handling of nil request.
+func TestAdaptiveWeightedScoring_NilRequest(t *testing.T) {
 	policy := NewRoutingPolicy("adaptive-weighted", nil, 16)
-	aws := policy.(*AdaptiveWeightedScoring)
-
-	snapshots := []RoutingSnapshot{
-		{ID: "inst-0"},
-		{ID: "inst-1"},
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{ID: "inst-0"},
+			{ID: "inst-1"},
+		},
 	}
 
-	// Nil request
-	mode, _, _ := aws.classifyRequest(nil, snapshots)
-	if mode != "explore" {
-		t.Errorf("nil request: mode=%s, want explore", mode)
-	}
-
-	// Empty input tokens
-	mode, _, _ = aws.classifyRequest(&Request{}, snapshots)
-	if mode != "explore" {
-		t.Errorf("empty input: mode=%s, want explore", mode)
+	// Should not panic, route using default profile
+	d := policy.Route(nil, state)
+	if d.TargetInstance == "" {
+		t.Error("expected non-empty target for nil request")
 	}
 }

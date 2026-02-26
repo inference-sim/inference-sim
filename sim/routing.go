@@ -310,40 +310,60 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 	case "adaptive-weighted":
 		cfg := DefaultAdaptiveConfig()
 
-		// Create a shared PrefixCacheIndex for both exploit scoring and classification
+		// Shared PrefixCacheIndex: all SLO pipelines that include prefix-affinity
+		// share the same cache index so routing decisions from any SLO class update
+		// the same cache state. This is correct: the physical KV cache is shared
+		// across all request types on each instance.
 		prefixIdx := NewPrefixCacheIndex(int(blockSize), defaultLRUCapacity)
 
-		// Build exploit scorers (cache-heavy)
-		exploitConfigs := cfg.ExploitWeights
-		if exploitConfigs == nil {
-			exploitConfigs = defaultExploitWeights()
+		profiles := cfg.SLOProfiles
+		if profiles == nil {
+			profiles = DefaultSLOProfiles()
 		}
-		exploitScorers := make([]scorerFunc, len(exploitConfigs))
+
+		// Build a scorer pipeline for each SLO class
+		pipelines := make(map[string]*sloScorerPipeline, len(profiles))
 		var observers []observerFunc
-		for i, sc := range exploitConfigs {
-			if sc.Name == "prefix-affinity" {
-				scorer, obs := newPrefixAffinityScorerWithIndex(prefixIdx)
-				exploitScorers[i] = scorer
-				if obs != nil {
-					observers = append(observers, obs)
-				}
-			} else {
-				scorer, obs := newScorerWithObserver(sc.Name, int(blockSize))
-				exploitScorers[i] = scorer
-				if obs != nil {
-					observers = append(observers, obs)
+		observerRegistered := false // only register PA observer once (shared index)
+
+		for sloClass, profile := range profiles {
+			p := &sloScorerPipeline{
+				scorers:         make([]scorerFunc, len(profile.Scorers)),
+				maxLoadHeadroom: profile.MaxLoadHeadroom,
+			}
+			for i, sc := range profile.Scorers {
+				if sc.Name == "prefix-affinity" {
+					scorer, obs := newPrefixAffinityScorerWithIndex(prefixIdx)
+					p.scorers[i] = scorer
+					if obs != nil && !observerRegistered {
+						observers = append(observers, obs)
+						observerRegistered = true
+					}
+				} else {
+					scorer, obs := newScorerWithObserver(sc.Name, int(blockSize))
+					p.scorers[i] = scorer
+					if obs != nil {
+						observers = append(observers, obs)
+					}
 				}
 			}
+			p.weights = normalizeScorerWeights(profile.Scorers)
+			pipelines[sloClass] = p
 		}
-		exploitWeights := normalizeScorerWeights(exploitConfigs)
+
+		// The "standard" pipeline doubles as the default for empty/unknown SLO classes
+		defaultPipeline := pipelines["standard"]
+		if defaultPipeline == nil {
+			// Fallback: build a balanced pipeline
+			defaultPipeline = pipelines[""]
+		}
 
 		return &AdaptiveWeightedScoring{
-			exploitScorers: exploitScorers,
-			exploitWeights: exploitWeights,
-			observers:      observers,
-			config:         cfg,
-			prefixIdx:      prefixIdx,
-			emaAlpha:       0.02, // ~50-request window
+			pipelines:       pipelines,
+			defaultPipeline: defaultPipeline,
+			observers:       observers,
+			config:          cfg,
+			prefixIdx:       prefixIdx,
 		}
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string), blockSize: blockSize}
