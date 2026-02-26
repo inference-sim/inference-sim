@@ -145,11 +145,26 @@ func calculateMemoryAccessBytes(
 // floor ensures that GEMM time never drops below weight-load time:
 //
 //	time = max(flops / (peakFlops * mfu), weightBytes / peakBW)
+//
+// Note on TP scaling: This function computes time for the FULL (un-split) GEMM.
+// The caller (computeTransformerGEMMTimes) applies tpScaling = 1/tp AFTER the max().
+// This is correct because max(a,b)/tp = max(a/tp, b/tp), so the TP-split compute
+// and TP-split memory floor are both correctly represented.
 func computeGEMMTime(m, k, n int, peakFlops, peakBW, bytesPerParam float64, mfuDB *sim.MFUDatabase) float64 {
 	flops := 2.0 * float64(m) * float64(k) * float64(n)
 	mfu := mfuDB.GetGEMMmfu(m, k, n)
-	computeTime := flops / (peakFlops * mfu)
+
+	// R11: guard division by peakFlops*mfu and peakBW (validated at factory, defense-in-depth)
+	effectiveFlops := peakFlops * mfu
+	if effectiveFlops <= 0 {
+		effectiveFlops = 1 // floor: prevents Inf; degenerate config yields ~flops seconds
+	}
+	computeTime := flops / effectiveFlops
+
 	weightBytes := float64(k) * float64(n) * bytesPerParam
+	if peakBW <= 0 {
+		return computeTime // no valid BW floor; return compute-only
+	}
 	memFloor := weightBytes / peakBW
 	return math.Max(computeTime, memFloor)
 }
@@ -173,6 +188,10 @@ func computeTransformerGEMMTimes(
 		nKVHeads = nHeads
 	}
 
+	// R11: guard division by nHeads (validated at factory via ValidateRooflineConfig, defense-in-depth)
+	if nHeads <= 0 {
+		return 0
+	}
 	headDim := dModel / nHeads
 	dKV := nKVHeads * headDim
 	bytesPerParam := modelConfig.BytesPerParam
@@ -182,34 +201,20 @@ func computeTransformerGEMMTimes(
 		dFF = modelConfig.IntermediateDim
 	}
 
-	totalTime := 0.0
+	// All layers have identical dimensions; compute one layer and multiply (nLayers × 7 MFU lookups → 7).
+	// === Attention GEMMs ===
+	qTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, peakBW, bytesPerParam, mfuDB)
+	kTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, peakBW, bytesPerParam, mfuDB)
+	vTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, peakBW, bytesPerParam, mfuDB)
+	oTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, peakBW, bytesPerParam, mfuDB)
 
-	for layer := 0; layer < nLayers; layer++ {
-		// === Attention GEMMs ===
-		qTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, peakBW, bytesPerParam, mfuDB)
-		totalTime += qTime * tpScaling
+	// === MLP GEMMs (SwiGLU) ===
+	gateTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, peakBW, bytesPerParam, mfuDB)
+	upTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, peakBW, bytesPerParam, mfuDB)
+	downTime := computeGEMMTime(batchSize, dFF, dModel, peakFlops, peakBW, bytesPerParam, mfuDB)
 
-		kTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, peakBW, bytesPerParam, mfuDB)
-		totalTime += kTime * tpScaling
-
-		vTime := computeGEMMTime(batchSize, dModel, dKV, peakFlops, peakBW, bytesPerParam, mfuDB)
-		totalTime += vTime * tpScaling
-
-		oTime := computeGEMMTime(batchSize, dModel, dModel, peakFlops, peakBW, bytesPerParam, mfuDB)
-		totalTime += oTime * tpScaling
-
-		// === MLP GEMMs (SwiGLU) ===
-		gateTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, peakBW, bytesPerParam, mfuDB)
-		totalTime += gateTime * tpScaling
-
-		upTime := computeGEMMTime(batchSize, dModel, dFF, peakFlops, peakBW, bytesPerParam, mfuDB)
-		totalTime += upTime * tpScaling
-
-		downTime := computeGEMMTime(batchSize, dFF, dModel, peakFlops, peakBW, bytesPerParam, mfuDB)
-		totalTime += downTime * tpScaling
-	}
-
-	return totalTime
+	perLayerTime := (qTime + kTime + vTime + oTime + gateTime + upTime + downTime) * tpScaling
+	return perLayerTime * float64(nLayers)
 }
 
 // --- Attention Core FLOPs Calculation ---
@@ -223,6 +228,10 @@ func calculateAttentionCoreFLOPs(
 	batchSize int,
 	seqLen int64,
 ) float64 {
+	// R11: guard division by nHeads (validated at factory via ValidateRooflineConfig, defense-in-depth)
+	if nHeads <= 0 {
+		return 0
+	}
 	headDim := dModel / nHeads
 	effectiveCtx := float64(seqLen)
 
@@ -235,10 +244,9 @@ func calculateAttentionCoreFLOPs(
 // --- Main Roofline Function ---
 
 // rooflineStepTime computes step latency using the roofline model (v2).
-// When mfuDB is non-nil, MFU values are looked up from benchmark data.
-// When mfuDB is nil, falls back to a minimal compute-only estimate.
-// Precondition: ValidateRooflineConfig(modelConfig, hwConfig) must return nil
-// and tp must be > 0. Callers must validate before first call.
+// MFU values are looked up from benchmark data via mfuDB.
+// Precondition: mfuDB must be non-nil, ValidateRooflineConfig(modelConfig, hwConfig)
+// must return nil, and tp must be > 0. NewLatencyModel enforces these at construction.
 func rooflineStepTime(
 	_ string,
 	modelConfig sim.ModelConfig,
@@ -279,6 +287,9 @@ func rooflineStepTime(
 		)
 
 		// === Attention Core ===
+		// Known approximation: decode MFU from bench_data measures standalone attention
+		// kernel efficiency. In mixed batches, actual MFU may differ due to kernel scheduling
+		// interactions. See hypothesis H16 for decode MFU semantic validation.
 		// FLOPs-weighted MFU across heterogeneous KV lengths
 		var attnCoreFLOPs float64
 		var weightedMFUSum float64
@@ -306,6 +317,10 @@ func rooflineStepTime(
 		decodeComputeS = gemmTimeS + attnCoreTimeS
 
 		// === Memory Bandwidth ===
+		// Known approximation: model weights are counted once per phase (decode OR prefill).
+		// In mixed batches where max() selects the slower phase, only that phase's weight
+		// load is counted. This slightly underestimates total memory traffic but aligns
+		// with the max()-based phase combination model.
 		var dDynamicBytes float64
 		for _, req := range stepConfig.DecodeRequests {
 			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
@@ -381,7 +396,10 @@ func rooflineStepTime(
 
 			attnMFU := mfuDB.GetAttnPrefillMFU(bucketSeqLen)
 
-			// The /1.8 factor corrects for causal attention masking.
+			// Known approximation: The /1.8 factor corrects for causal attention masking.
+			// Causal masking skips ~50% of FLOPs (lower triangle), but HW utilization
+			// differs from dense attention. The 1.8 constant was empirically calibrated
+			// against H100 kernel measurements; exact value varies by GPU architecture.
 			attnCoreTimeS := attnCoreFLOPs / 1.8 / (peakFlops * attnMFU) * tpScaling
 
 			prefillComputeS += gemmTimeS + attnCoreTimeS
@@ -407,6 +425,10 @@ func rooflineStepTime(
 	var stepHardwareS float64
 
 	if hasPrefill && hasDecode {
+		// Known approximation: mixed batches use max(prefill, decode) rather than sum.
+		// This models chunked-prefill scheduling where prefill and decode overlap on the
+		// GPU pipeline. In practice, overlap is partial; max() slightly underestimates
+		// mixed-batch latency. See hypothesis H27 for empirical validation.
 		prefillTimeS := math.Max(prefillComputeS, prefillMemoryS)
 		decodeTimeS := math.Max(decodeComputeS, decodeMemoryS)
 		stepHardwareS = math.Max(prefillTimeS, decodeTimeS)

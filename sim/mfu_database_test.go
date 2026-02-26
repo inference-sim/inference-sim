@@ -10,6 +10,21 @@ import (
 // --- Helper: synthetic MFUDatabase for testing without bench_data/ ---
 
 func syntheticMFUDatabase() *MFUDatabase {
+	decodeRows := map[string][]MHADecodeRow{
+		"32-8-128-tp1": {
+			{BatchSize: 1, KVLen: 128, MFU: 0.05},
+			{BatchSize: 1, KVLen: 512, MFU: 0.10},
+			{BatchSize: 8, KVLen: 128, MFU: 0.15},
+			{BatchSize: 8, KVLen: 512, MFU: 0.20},
+			{BatchSize: 32, KVLen: 128, MFU: 0.25},
+			{BatchSize: 32, KVLen: 512, MFU: 0.30},
+		},
+	}
+	// Pre-build decode grids (mirrors NewMFUDatabase construction)
+	grids := make(map[string]*decodeGrid, len(decodeRows))
+	for key, rows := range decodeRows {
+		grids[key] = buildDecodeGrid(rows)
+	}
 	return &MFUDatabase{
 		attentionConfig: "32-8-128",
 		gpu:             "h100",
@@ -21,16 +36,8 @@ func syntheticMFUDatabase() *MFUDatabase {
 				{SeqLen: 4096, MFU: 0.70},
 			},
 		},
-		decodeData: map[string][]MHADecodeRow{
-			"32-8-128-tp1": {
-				{BatchSize: 1, KVLen: 128, MFU: 0.05},
-				{BatchSize: 1, KVLen: 512, MFU: 0.10},
-				{BatchSize: 8, KVLen: 128, MFU: 0.15},
-				{BatchSize: 8, KVLen: 512, MFU: 0.20},
-				{BatchSize: 32, KVLen: 128, MFU: 0.25},
-				{BatchSize: 32, KVLen: 512, MFU: 0.30},
-			},
-		},
+		decodeData:  decodeRows,
+		decodeGrids: grids,
 		gemmData: []GEMMRow{
 			{M: 1, K: 4096, N: 4096, MFU: 0.05},
 			{M: 8, K: 4096, N: 4096, MFU: 0.20},
@@ -83,6 +90,17 @@ func TestBracketIndex(t *testing.T) {
 			t.Errorf("bracketIndex(%v, %d) = (%d, %d), want (%d, %d)",
 				sorted, tc.target, lo, hi, tc.wantLo, tc.wantHi)
 		}
+	}
+}
+
+func TestBracketIndex_EmptySlice(t *testing.T) {
+	lo, hi := bracketIndex(nil, 42)
+	if lo != 0 || hi != 0 {
+		t.Errorf("bracketIndex(nil, 42) = (%d, %d), want (0, 0)", lo, hi)
+	}
+	lo, hi = bracketIndex([]int{}, 42)
+	if lo != 0 || hi != 0 {
+		t.Errorf("bracketIndex([], 42) = (%d, %d), want (0, 0)", lo, hi)
 	}
 }
 

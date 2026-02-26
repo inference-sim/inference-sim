@@ -22,6 +22,9 @@ func lerp(a, b, t float64) float64 {
 // point to 0. If at or above the maximum, both point to len-1.
 func bracketIndex(sorted []int, target int) (lo, hi int) {
 	n := len(sorted)
+	if n == 0 {
+		return 0, 0
+	}
 	if target <= sorted[0] {
 		return 0, 0
 	}
@@ -65,10 +68,23 @@ type AttentionShape struct {
 	ConfigKey  string // "32-32-128"
 }
 
+// decodeGridKey identifies a cell in the (batch_size, kv_len) decode MFU grid.
+type decodeGridKey struct{ bs, kv int }
+
+// decodeGrid holds a pre-built 2D interpolation grid for decode MFU lookups.
+// Built once at NewMFUDatabase time to avoid per-lookup map/sort overhead.
+type decodeGrid struct {
+	bsVals []int                      // sorted unique batch sizes
+	kvVals []int                      // sorted unique KV lengths
+	grid   map[decodeGridKey]float64  // (bs, kv) → MFU
+	rows   []MHADecodeRow             // original rows for zero-MFU fallback search
+}
+
 // MFUDatabase holds all MFU benchmark data
 type MFUDatabase struct {
 	prefillData      map[string][]MHAPrefillRow // key: "32-32-128"
 	decodeData       map[string][]MHADecodeRow  // key: "32-32-128-tp2"
+	decodeGrids      map[string]*decodeGrid     // pre-built grids, same keys as decodeData
 	gemmData         []GEMMRow
 	attentionConfig  string // Model's attention config
 	availableConfigs []AttentionShape
@@ -88,10 +104,14 @@ func computeAttentionConfig(config ModelConfig) string {
 	return fmt.Sprintf("%d-%d-%d", config.NumHeads, numKVHeads, headDim)
 }
 
-// parseAttentionConfig parses "32-32-128" into AttentionShape
+// parseAttentionConfig parses "32-32-128" into AttentionShape.
+// Logs a warning (R1) if the config key doesn't parse into exactly 3 fields.
 func parseAttentionConfig(configKey string) AttentionShape {
 	var nh, nkv, hd int
-	_, _ = fmt.Sscanf(configKey, "%d-%d-%d", &nh, &nkv, &hd)
+	n, _ := fmt.Sscanf(configKey, "%d-%d-%d", &nh, &nkv, &hd)
+	if n != 3 {
+		logrus.Warnf("parseAttentionConfig: %q parsed only %d of 3 fields", configKey, n)
+	}
 	return AttentionShape{
 		NumHeads:   nh,
 		NumKVHeads: nkv,
@@ -100,7 +120,11 @@ func parseAttentionConfig(configKey string) AttentionShape {
 	}
 }
 
-// euclideanDistance computes distance between two attention shapes
+// euclideanDistance computes distance between two attention shapes.
+// Known approximation: dimensions (NumHeads, NumKVHeads, HeadDim) are unweighted,
+// so a 32-head difference counts the same as a 32-HeadDim difference even though
+// their impact on MFU differs. This is acceptable for nearest-config selection
+// where exact matches are expected for most production models.
 func euclideanDistance(a, b AttentionShape) float64 {
 	dh := float64(a.NumHeads - b.NumHeads)
 	dkv := float64(a.NumKVHeads - b.NumKVHeads)
@@ -140,6 +164,9 @@ func loadPrefillCSV(path string) ([]MHAPrefillRow, error) {
 		mfu, err := strconv.ParseFloat(record[3], 64)
 		if err != nil {
 			return nil, fmt.Errorf("prefill CSV row %d: invalid mfu: %w", i+2, err)
+		}
+		if math.IsNaN(mfu) || math.IsInf(mfu, 0) || mfu < 0 {
+			return nil, fmt.Errorf("prefill CSV row %d: mfu must be finite and non-negative, got %v", i+2, mfu)
 		}
 
 		rows = append(rows, MHAPrefillRow{
@@ -220,6 +247,9 @@ func loadDecodeCSV(path string) ([]MHADecodeRow, error) {
 		mfu, err := strconv.ParseFloat(record[5], 64)
 		if err != nil {
 			return nil, fmt.Errorf("decode CSV row %d: invalid mfu: %w", i+2, err)
+		}
+		if math.IsNaN(mfu) || math.IsInf(mfu, 0) || mfu < 0 {
+			return nil, fmt.Errorf("decode CSV row %d: mfu must be finite and non-negative, got %v", i+2, mfu)
 		}
 
 		rows = append(rows, MHADecodeRow{
@@ -306,6 +336,9 @@ func loadGEMMCSV(basePath, gpu string) ([]GEMMRow, error) {
 		if err != nil {
 			return nil, fmt.Errorf("GEMM CSV row %d: invalid mfu: %w", i+2, err)
 		}
+		if math.IsNaN(mfu) || math.IsInf(mfu, 0) || mfu < 0 {
+			return nil, fmt.Errorf("GEMM CSV row %d: mfu must be finite and non-negative, got %v", i+2, mfu)
+		}
 
 		rows = append(rows, GEMMRow{
 			M:   m,
@@ -337,6 +370,38 @@ func findNearestConfig(target string, available []AttentionShape) string {
 	}
 
 	return nearest
+}
+
+// buildDecodeGrid pre-builds the 2D interpolation grid for a set of decode rows.
+func buildDecodeGrid(rows []MHADecodeRow) *decodeGrid {
+	grid := make(map[decodeGridKey]float64, len(rows))
+	bsSet := make(map[int]bool, len(rows))
+	kvSet := make(map[int]bool, len(rows))
+
+	for _, r := range rows {
+		grid[decodeGridKey{r.BatchSize, r.KVLen}] = r.MFU
+		bsSet[r.BatchSize] = true
+		kvSet[r.KVLen] = true
+	}
+
+	bsVals := make([]int, 0, len(bsSet))
+	for v := range bsSet {
+		bsVals = append(bsVals, v)
+	}
+	sort.Ints(bsVals)
+
+	kvVals := make([]int, 0, len(kvSet))
+	for v := range kvSet {
+		kvVals = append(kvVals, v)
+	}
+	sort.Ints(kvVals)
+
+	return &decodeGrid{
+		bsVals: bsVals,
+		kvVals: kvVals,
+		grid:   grid,
+		rows:   rows,
+	}
 }
 
 // NewMFUDatabase creates a new MFU database from benchmark data
@@ -380,9 +445,16 @@ func NewMFUDatabase(modelConfig ModelConfig, benchDataPath string, gpu string) (
 	logrus.Infof("Loaded MFU database: %s, attention config %s (model: %s), %d prefill rows, %d decode rows, %d GEMM rows",
 		gpu, attentionConfig, originalConfig, len(prefillData[attentionConfig]), decodeRowCount, len(gemmData))
 
+	// Pre-build decode grids to avoid per-lookup map/sort overhead
+	decodeGrids := make(map[string]*decodeGrid, len(decodeData))
+	for key, rows := range decodeData {
+		decodeGrids[key] = buildDecodeGrid(rows)
+	}
+
 	return &MFUDatabase{
 		prefillData:      prefillData,
 		decodeData:       decodeData,
+		decodeGrids:      decodeGrids,
 		gemmData:         gemmData,
 		attentionConfig:  attentionConfig,
 		availableConfigs: availableConfigs,
@@ -456,56 +528,40 @@ func (db *MFUDatabase) GetAttnPrefillMFU(seqLen int) float64 {
 // GetAttnDecodeMFU returns MFU for decode attention.
 // Bilinearly interpolates on the (batch_size, kv_len) grid, producing smooth
 // MFU transitions instead of step-function jumps at grid boundaries.
+// Uses pre-built grids from NewMFUDatabase to avoid per-lookup allocation overhead.
 func (db *MFUDatabase) GetAttnDecodeMFU(batchSize, kvLen, tp int) float64 {
 	configKey := fmt.Sprintf("%s-tp%d", db.attentionConfig, tp)
-	rows := db.decodeData[configKey]
-	if len(rows) == 0 {
+	dg := db.decodeGrids[configKey]
+	if dg == nil {
 		// Try fallback to tp=1
 		fallbackKey := fmt.Sprintf("%s-tp1", db.attentionConfig)
-		rows = db.decodeData[fallbackKey]
-		if len(rows) == 0 {
+		dg = db.decodeGrids[fallbackKey]
+		if dg == nil {
 			logrus.Warnf("No decode MFU data for config %s (TP=%d) - returning floor MFU", db.attentionConfig, tp)
 			return 0.0001
 		}
-		logrus.Infof("Using TP=1 decode data as fallback for TP=%d", tp)
+		logrus.Debugf("Using TP=1 decode data as fallback for TP=%d", tp)
 	}
 
-	// Build 2D grid: collect unique batch_size and kv_len values
-	type gridKey struct{ bs, kv int }
-	grid := make(map[gridKey]float64)
-	bsSet := make(map[int]bool)
-	kvSet := make(map[int]bool)
-
-	for _, r := range rows {
-		grid[gridKey{r.BatchSize, r.KVLen}] = r.MFU
-		bsSet[r.BatchSize] = true
-		kvSet[r.KVLen] = true
+	// Guard: empty axis slices should be unreachable (rows > 0 guarantees entries),
+	// but defend against it to prevent index-out-of-bounds panics.
+	if len(dg.bsVals) == 0 || len(dg.kvVals) == 0 {
+		logrus.Warnf("Decode MFU grid has empty axis (bs=%d, kv=%d entries) - returning floor MFU", len(dg.bsVals), len(dg.kvVals))
+		return 0.0001
 	}
-
-	bsVals := make([]int, 0, len(bsSet))
-	for v := range bsSet {
-		bsVals = append(bsVals, v)
-	}
-	sort.Ints(bsVals)
-
-	kvVals := make([]int, 0, len(kvSet))
-	for v := range kvSet {
-		kvVals = append(kvVals, v)
-	}
-	sort.Ints(kvVals)
 
 	// Find floor/ceiling indices in each dimension
-	bsLo, bsHi := bracketIndex(bsVals, batchSize)
-	kvLo, kvHi := bracketIndex(kvVals, kvLen)
+	bsLo, bsHi := bracketIndex(dg.bsVals, batchSize)
+	kvLo, kvHi := bracketIndex(dg.kvVals, kvLen)
 
-	bs0, bs1 := bsVals[bsLo], bsVals[bsHi]
-	kv0, kv1 := kvVals[kvLo], kvVals[kvHi]
+	bs0, bs1 := dg.bsVals[bsLo], dg.bsVals[bsHi]
+	kv0, kv1 := dg.kvVals[kvLo], dg.kvVals[kvHi]
 
 	// Look up the four corner MFU values
-	q00 := grid[gridKey{bs0, kv0}]
-	q10 := grid[gridKey{bs1, kv0}]
-	q01 := grid[gridKey{bs0, kv1}]
-	q11 := grid[gridKey{bs1, kv1}]
+	q00 := dg.grid[decodeGridKey{bs0, kv0}]
+	q10 := dg.grid[decodeGridKey{bs1, kv0}]
+	q01 := dg.grid[decodeGridKey{bs0, kv1}]
+	q11 := dg.grid[decodeGridKey{bs1, kv1}]
 
 	// Bilinear interpolation
 	var mfu float64
@@ -530,14 +586,14 @@ func (db *MFUDatabase) GetAttnDecodeMFU(batchSize, kvLen, tp int) float64 {
 	if mfu < 0.0001 {
 		var fallbackRow *MHADecodeRow
 		minFallbackDist := math.MaxFloat64
-		for i := range rows {
-			if rows[i].MFU >= 0.0001 {
-				dbs := float64(rows[i].BatchSize - batchSize)
-				dkv := float64(rows[i].KVLen - kvLen)
+		for i := range dg.rows {
+			if dg.rows[i].MFU >= 0.0001 {
+				dbs := float64(dg.rows[i].BatchSize - batchSize)
+				dkv := float64(dg.rows[i].KVLen - kvLen)
 				dist := math.Sqrt(dbs*dbs + dkv*dkv)
 				if dist < minFallbackDist {
 					minFallbackDist = dist
-					fallbackRow = &rows[i]
+					fallbackRow = &dg.rows[i]
 				}
 			}
 		}
@@ -581,10 +637,18 @@ func (db *MFUDatabase) GetGEMMmfu(m, k, n int) float64 {
 	}
 
 	if targetK == -1 || targetN == -1 {
-		// No match found, use largest available
-		logrus.Infof("No GEMM (k,n) >= (%d,%d), using largest available", k, n)
-		targetK = db.gemmData[len(db.gemmData)-1].K
-		targetN = db.gemmData[len(db.gemmData)-1].N
+		// No (k,n) >= target found; use the largest available (k,n) by Euclidean distance from origin.
+		// gemmData is not sorted by (k,n), so we must scan.
+		logrus.Debugf("No GEMM (k,n) >= (%d,%d), using largest available", k, n)
+		maxMag := -1.0
+		for _, row := range db.gemmData {
+			mag := float64(row.K)*float64(row.K) + float64(row.N)*float64(row.N)
+			if mag > maxMag {
+				maxMag = mag
+				targetK = row.K
+				targetN = row.N
+			}
+		}
 	}
 
 	// Stage 2: Collect all M values for (targetK, targetN) and interpolate
@@ -625,7 +689,7 @@ func (db *MFUDatabase) GetGEMMmfu(m, k, n int) float64 {
 		// Find nearest non-zero MFU in the database
 		for _, row := range db.gemmData {
 			if row.MFU >= 0.0001 {
-				logrus.Infof("GEMM MFU=%.4f too small for (m=%d, k=%d, n=%d), using fallback (m=%d, k=%d, n=%d) with MFU=%.4f",
+				logrus.Debugf("GEMM MFU=%.4f too small for (m=%d, k=%d, n=%d), using fallback (m=%d, k=%d, n=%d) with MFU=%.4f",
 					mfu, m, k, n, row.M, row.K, row.N, row.MFU)
 				return row.MFU
 			}

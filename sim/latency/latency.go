@@ -141,6 +141,9 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 		if err := ValidateRooflineConfig(hw.ModelConfig, hw.HWConfig); err != nil {
 			return nil, fmt.Errorf("latency model: %w", err)
 		}
+		if hw.MFUDatabase == nil {
+			return nil, fmt.Errorf("latency model: roofline requires MFUDatabase (bench_data); provide --bench-data-path or ensure bench_data/ is bundled")
+		}
 		return &RooflineLatencyModel{
 			modelConfig: hw.ModelConfig,
 			hwConfig:    hw.HWConfig,
