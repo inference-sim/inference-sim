@@ -260,6 +260,14 @@ BLIS has four extension types. Identify which type your change is, then follow t
 | **Backend Swap** | Alternative implementation of internal module | Yes (covers both phases) | SGLang latency model |
 | **Tier Composition** | Wrapper layering behavior on existing module | Recommended | NVMe KV tier |
 
+### Adding a New Model to defaults.yaml
+
+When adding a new model configuration:
+
+1. Add an entry to the `defaults:` section with `GPU`, `tensor_parallelism`, and `vllm_version`
+2. Add an `hf_repo` field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., `hf_repo: meta-llama/Llama-3.1-8B-Instruct`). This enables `--roofline` auto-fetch. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit `hf_repo` — document why with a YAML comment.
+3. If trained coefficients exist, add a corresponding entry to the `models:` list
+
 ### Policy Template (lightest — ~3 files)
 
 1. Implement the interface in the corresponding file (`sim/admission.go`, `sim/routing.go`, `sim/priority.go`, `sim/scheduler.go`)

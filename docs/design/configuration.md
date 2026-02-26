@@ -82,18 +82,20 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. |
-| `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. |
+| `--roofline` | bool | false | Enable roofline mode with auto-fetch. Requires `--hardware` and `--tp`. Auto-resolves model config from `model_configs/` or HuggingFace, and hardware config from bundled `hardware_config.json`. Set `HF_TOKEN` env var for gated models. |
+| `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--roofline` auto-resolution. |
+| `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--roofline` auto-resolution. |
 
-Roofline mode activates automatically when all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided. See [Roofline Estimation](roofline.md).
+See [Roofline Estimation](roofline.md) for details on the analytical model.
 
 ### Latency Mode Selection
 
-The latency model mode is selected automatically based on available configuration:
+The latency model mode is selected based on available configuration:
 
 1. **Blackbox mode** (default): If coefficients are provided via CLI flags or loaded from `defaults.yaml`
-2. **Roofline mode**: If all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided
-3. **Error**: If no coefficients can be resolved and roofline inputs are incomplete
+2. **Explicit roofline mode**: If `--roofline` is set with `--hardware` and `--tp`. Model config is auto-resolved: `model_configs/` (local) → HuggingFace fetch → error. Alpha coefficients and `total_kv_blocks` are loaded from `defaults.yaml` when available. Beta coefficients are replaced by analytical roofline computation.
+3. **Implicit roofline mode**: If all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided
+4. **Error**: If no coefficients can be resolved and roofline inputs are incomplete
 
 ## Cluster Configuration
 
@@ -324,13 +326,18 @@ workloads:
 
 When BLIS starts:
 
-1. If `--alpha-coeffs` and `--beta-coeffs` are both all-zero and no roofline config is provided:
+1. If `--roofline` is set:
+   - Auto-resolve model config: check `model_configs/` for existing `config.json`, fetch from HuggingFace on miss (set `HF_TOKEN` for gated models)
+   - Auto-resolve hardware config from bundled `hardware_config.json`
+   - Load alpha coefficients and `total_kv_blocks` from `defaults.yaml` (beta coefficients are replaced by roofline computation)
+   - `--model-config-folder` and `--hardware-config` override auto-resolution when explicitly set
+2. If `--alpha-coeffs` and `--beta-coeffs` are both all-zero and no roofline config is provided:
    - Look up the model in `defaults.yaml` using `--model`, `--hardware`, `--tp`, `--vllm-version`
    - Load alpha/beta coefficients and `total_kv_blocks` from the matching entry
    - Override `--total-kv-blocks` only if the user did not explicitly set it
-2. If coefficients are still all-zero but `--model-config-folder` and `--hardware-config` are provided:
-   - Enable roofline mode
-3. If coefficients were explicitly provided via CLI:
+3. If coefficients are still all-zero but `--model-config-folder` and `--hardware-config` are provided:
+   - Enable roofline mode (implicit activation)
+4. If coefficients were explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
 
 ## Coefficient Calibration
@@ -354,7 +361,7 @@ For environments where live profiling is not feasible, the [Roofline model](roof
 | **KVCacheConfig** | `--total-kv-blocks`, `--block-size-in-tokens`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency` |
 | **BatchConfig** | `--max-num-running-reqs`, `--max-num-scheduled-tokens`, `--long-prefill-token-threshold` |
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
-| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--model-config-folder`, `--hardware-config` |
+| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--roofline`, `--model-config-folder`, `--hardware-config` |
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--workload-traces-filepath`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` |

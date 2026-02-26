@@ -52,7 +52,28 @@ The final step time is the sum of independent phases and overheads:
 
 ## 5. Onboarding a new LLM/GPU
 
+### Automatic (recommended): `--roofline` flag
+
+The simplest way to run roofline mode is with the `--roofline` flag, which auto-resolves the model config:
+
+```bash
+./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --roofline --hardware H100 --tp 1
+```
+
+The flag automatically:
+1. Checks `model_configs/` for an existing `config.json` (previously fetched)
+2. Fetches from HuggingFace on miss and writes into `model_configs/` (supports `HF_TOKEN` for gated models)
+
+For models not in `defaults.yaml`, add an `hf_repo` entry mapping the BLIS model name to the case-sensitive HuggingFace repo path.
+
+### Manual: explicit config paths
+
+Alternatively, download the `config.json` manually:
+
 * Download the `config.json` for the LLM of your choice into `model_configs/`. [This](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct/blob/main/config.json) is an example config.json for `meta-llama/Llama-3.3-70B-Instruct`. The recommended file structure is `model_configs/llama-3.1-8b-instruct/config.json`.
+
+### Adding a new GPU
+
 * Refer to NVIDIA datasheets for GPU specs (for example, [datasheet for H100](https://www.nvidia.com/en-us/data-center/h100/)) and add an entry to `hardware_config.json` as follows:
 
 ```

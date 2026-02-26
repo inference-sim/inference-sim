@@ -409,7 +409,7 @@ BLIS uses two estimation techniques. Choose based on your model support:
 | **Accuracy** | High (trained on real measurements) | Moderate (first-principles estimate) |
 | **Setup** | Requires pre-trained coefficients | Requires HuggingFace `config.json` + hardware spec |
 | **When to use** | Supported model/GPU/TP combos in `defaults.yaml` | New models, unsupported configurations |
-| **Required flags** | `--model` (coefficients loaded automatically) | `--model-config-folder` + `--hardware-config` |
+| **Required flags** | `--model` (coefficients loaded automatically) | `--roofline --hardware --tp` (auto-fetch) or `--model-config-folder` + `--hardware-config` (manual) |
 
 ### Blackbox Optimization (Data-Driven)
 - Uses pre-trained linear regression coefficients (α/β) from `defaults.yaml`
@@ -426,7 +426,27 @@ BLIS uses two estimation techniques. Choose based on your model support:
 
 ### Using Roofline Mode
 
-To simulate models without pre-trained coefficients, use the roofline model by providing model and hardware configs:
+**Quick start (recommended):** Use the `--roofline` flag for automatic config resolution:
+
+```bash
+./simulation_worker run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --roofline --hardware H100 --tp 1
+```
+
+The `--roofline` flag automatically resolves the model's HuggingFace `config.json` using this resolution chain:
+1. **Explicit `--model-config-folder`** (if provided)
+2. **Local `model_configs/`** (previously fetched)
+3. **HuggingFace fetch** (downloads into `model_configs/`)
+
+For gated models (e.g., Llama), set the `HF_TOKEN` environment variable:
+
+```bash
+export HF_TOKEN=hf_your_token_here
+./simulation_worker run --model meta-llama/llama-3.1-70b-instruct --roofline --hardware H100 --tp 4
+```
+
+**Manual mode:** Provide model and hardware configs explicitly:
 
 ```bash
 ./simulation_worker run \
@@ -434,13 +454,16 @@ To simulate models without pre-trained coefficients, use the roofline model by p
   --hardware H100 \
   --tp 1 \
   --vllm-version vllm/vllm-openai:v0.8.4 \
-  --model-config-folder model_configs/llama-3.1-8b-instruct \
+  --model-config-folder /path/to/your/model-config \
   --hardware-config hardware_config.json
 ```
 
-This requires the HuggingFace `config.json` for the model saved under the `model-config-folder` path. Pre-configured configs for common models are provided in `model_configs/`.
+This requires a HuggingFace `config.json` for the model saved under the `--model-config-folder` path.
+You can obtain one by downloading it from HuggingFace (e.g., `wget https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/resolve/main/config.json`), or by running `--roofline` once (which auto-fetches into `model_configs/`).
 
-> **Note:** Currently supports H100 and A100-80 GPUs.
+> **Note:** The first `--roofline` run requires network access to fetch the model's `config.json` from HuggingFace. Subsequent runs use the cached copy in `model_configs/`. For offline/air-gapped environments, pre-fetch configs using `--model-config-folder` or copy a previously cached `model_configs/` directory.
+
+> **Note:** Currently supports H100 and A100-80 GPUs. Roofline estimation assumes dense transformer architecture — MoE models may show overestimated latency.
 
 ---
 
@@ -661,9 +684,10 @@ See [implementation plans](./docs/plans/) for details. For system architecture a
 inference-sim/
 ├── main.go                 # CLI entry point
 ├── cmd/                    # CLI commands
-│   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, etc.)
+│   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, --roofline, etc.)
 │   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
-│   └── default_config.go   # defaults.yaml loading
+│   ├── hfconfig.go         # HuggingFace config resolution (--roofline auto-fetch into model_configs/)
+│   └── default_config.go   # defaults.yaml loading (includes GetHFRepo for HF repo mapping)
 ├── sim/                    # Core simulation engine
 │   ├── config.go           # Module-scoped sub-config types (R16)
 │   ├── doc.go              # Package reading guide
@@ -734,7 +758,7 @@ inference-sim/
 │   ├── servegen-language.yaml # ServeGen workload spec example
 │   ├── prefix-affinity-demo.yaml # Prefix-affinity routing demo (long shared prefix)
 │   └── multiturn-chat-demo.yaml  # Multi-turn chat session demo
-├── model_configs/          # HuggingFace config.json files
+├── model_configs/          # Auto-fetched HuggingFace config.json files (gitignored)
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
 ├── hardware_config.json    # GPU hardware specifications
 └── docs/                   # Documentation and design plans
@@ -757,8 +781,9 @@ inference-sim/
 | `--results-path` | (none) | Save JSON results to file |
 | `--log` | warn | Log level: trace, debug, info, warn, error, fatal, panic |
 | `--defaults-filepath` | defaults.yaml | Path to trained coefficients file |
-| `--model-config-folder` | (none) | Path to folder with HuggingFace `config.json` (enables roofline mode) |
-| `--hardware-config` | (none) | Path to GPU hardware specifications file (for roofline mode) |
+| `--roofline` | false | Enable roofline mode with auto-fetch of HuggingFace `config.json` and bundled hardware config. Requires `--hardware` and `--tp`. Fetched configs are saved to `model_configs/`. Set `HF_TOKEN` for gated models. |
+| `--model-config-folder` | (none) | Path to folder with HuggingFace `config.json` (enables roofline mode). Overrides `--roofline` auto-resolution. |
+| `--hardware-config` | (none) | Path to GPU hardware specifications file (for roofline mode). Overrides `--roofline` auto-resolution. |
 
 ### Workload Configuration
 

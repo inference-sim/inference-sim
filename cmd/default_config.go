@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -36,6 +37,7 @@ type DefaultConfig struct {
 	GPU               string `yaml:"GPU"`
 	TensorParallelism int    `yaml:"tensor_parallelism"`
 	VLLMVersion       string `yaml:"vllm_version"`
+	HFRepo            string `yaml:"hf_repo,omitempty"`
 }
 
 type Model struct {
@@ -98,6 +100,28 @@ func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion
 	} else {
 		return "", 0, ""
 	}
+}
+
+// GetHFRepo returns the HuggingFace repository path for the given model from defaults.yaml.
+// Returns ("", nil) if the model exists but has no hf_repo mapping.
+// Returns ("", error) if the defaults file cannot be read or parsed (R1: no silent data loss).
+func GetHFRepo(modelName string, defaultsFile string) (string, error) {
+	data, err := os.ReadFile(defaultsFile)
+	if err != nil {
+		return "", fmt.Errorf("read defaults file %s: %w", defaultsFile, err)
+	}
+
+	var cfg Config
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
+		return "", fmt.Errorf("parse defaults YAML: %w", err)
+	}
+
+	if dc, ok := cfg.Defaults[modelName]; ok {
+		return dc.HFRepo, nil
+	}
+	return "", nil
 }
 
 func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, defaultsFilePath string) ([]float64, []float64, int64) {

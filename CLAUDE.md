@@ -190,9 +190,10 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --roofline)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
-│   └── default_config.go      # defaults.yaml loading
+│   ├── hfconfig.go            # HuggingFace config resolution chain (--roofline auto-fetch, caching)
+│   └── default_config.go      # defaults.yaml loading (includes GetHFRepo for HF repo name mapping)
 ├── sim/                       # Core single-instance simulator
 │   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16)
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
@@ -257,7 +258,7 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-├── model_configs/             # HuggingFace config.json files
+├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files
@@ -292,6 +293,7 @@ Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) b
 2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `sim/latency/roofline.go`
    - Requires HuggingFace `config.json` in `model_configs/`
    - Requires `hardware_config.json` with GPU specs
+   - **`--roofline` flag**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./simulation_worker run --model <name> --roofline --hardware <GPU> --tp <N>`
 
 ### Key Data Flow
 
