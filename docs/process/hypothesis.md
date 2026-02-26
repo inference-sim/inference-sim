@@ -2,7 +2,7 @@
 
 **Status:** Active (v2.0 — updated 2026-02-23)
 
-This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/standards/experiments.md](../standards/experiments.md). For the FINDINGS.md template, see [docs/templates/hypothesis.md](../templates/hypothesis.md). For experiment status and coverage gaps, see [hypotheses/README.md](../../hypotheses/README.md).
+This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/standards/experiments.md](../standards/experiments.md). For the FINDINGS.md template, see [docs/templates/hypothesis.md](../templates/hypothesis.md). For experiment status and coverage gaps, see [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md).
 
 ---
 
@@ -126,7 +126,7 @@ This creates `.worktrees/h-<name>/` with a new branch. All subsequent steps happ
 
 **Context:** Worktree
 
-1. **Select hypothesis** — from `docs/plans/research.md`, coverage gaps in [hypotheses/README.md](../../hypotheses/README.md), or a new observation
+1. **Select hypothesis** — from `docs/plans/research.md`, coverage gaps in [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md), or a new observation
 2. **Classify:**
    - (a) Which **family**? (See [experiments.md](../standards/experiments.md) for the 6 families and sentence patterns)
    - (b) **Verification**, **Validation**, or **UQ**? (Determines evidence requirements)
@@ -592,7 +592,7 @@ See [Issue Taxonomy](#issue-taxonomy-after-convergence) for the complete filing 
 - Testing intuitive claims about system behavior (from `docs/plans/research.md`)
 - Investigating unexpected behavior observed during development
 - Exploring design tradeoffs between configurations
-- Filling coverage gaps identified in the [family coverage table](../../hypotheses/README.md)
+- Filling coverage gaps identified in the [family coverage table](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md)
 
 ---
 
@@ -605,7 +605,7 @@ Hypotheses can come from **internal** sources (your own experiments and developm
 | Source | How it works | Example |
 |--------|-------------|---------|
 | **User intuition** | "I think X should be better than Y because of Z" | "SJF should reduce TTFT for mixed workloads because short jobs finish first" |
-| **Coverage gaps** | Check the [family coverage table](../../hypotheses/README.md) for untested families | Workload/arrival family has 0 experiments → "Gamma sampler should match theoretical CV" |
+| **Coverage gaps** | Check the [family coverage table](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md) for untested families | Workload/arrival family has 0 experiments → "Gamma sampler should match theoretical CV" |
 | **Experiment findings** | Surprises and open questions from completed experiments spawn follow-up hypotheses | H10's maybeOffload finding → "test at GPU=1500 for preemption-path offload" |
 | **Bug reports** | "This behavior seems wrong" → formalize as a testable claim | H12: preemption panic → "conservation should hold even under preemption pressure" |
 | **Analytical models** | Divergence between theory and simulation → "does the DES match M/M/k under matching assumptions?" | "Under Poisson arrivals, queue length should match M/M/k within 5%" |
@@ -636,12 +636,12 @@ A good hypothesis is **behavioral** (about observable system behavior), **testab
 
 ### How to propose a new hypothesis
 
-1. **Check coverage**: Read the [family coverage table](../../hypotheses/README.md). Prioritize families with low coverage.
+1. **Check coverage**: Read the [family coverage table](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md). Prioritize families with low coverage.
 2. **Choose a family**: Which domain does your claim target? (See [experiments.md](../standards/experiments.md) for the 6 families.)
 3. **Write the sentence**: Use the family-specific pattern from experiments.md.
 4. **Add the diagnostic clause**: "If this fails, it would indicate..."
 5. **Check for redundancy**: Search existing hypotheses in `docs/plans/research.md` and on GitHub: [issues labeled `hypothesis`](https://github.com/inference-sim/inference-sim/labels/hypothesis).
-6. **File as a GitHub issue**: Use the [Hypothesis Proposal issue template](../../.github/ISSUE_TEMPLATE/hypothesis.md) on GitHub (click "New Issue" → "Hypothesis Proposal"). This template has fields for family, VV&UQ category, diagnostic value, and experiment design.
+6. **File as a GitHub issue**: Use the [Hypothesis Proposal issue template](https://github.com/inference-sim/inference-sim/issues/new?template=hypothesis.md) on GitHub (click "New Issue" → "Hypothesis Proposal"). This template has fields for family, VV&UQ category, diagnostic value, and experiment design.
 
 External contributors should file a GitHub issue using the Hypothesis Proposal template. Maintainers will triage, prioritize, and run the review protocol.
 
@@ -767,7 +767,7 @@ H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H
 - Standards: [docs/standards/experiments.md](../standards/experiments.md)
 - Template: [docs/templates/hypothesis.md](../templates/hypothesis.md)
 - Hypothesis catalog: [docs/plans/research.md](../plans/research.md)
-- Validated experiments: [hypotheses/README.md](../../hypotheses/README.md)
+- Validated experiments: [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md)
 - PR workflow (structural inspiration): [docs/process/pr-workflow.md](pr-workflow.md)
 
 ---

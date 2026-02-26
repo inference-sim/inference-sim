@@ -23,7 +23,7 @@ All three must pass before submitting a PR. CI uses golangci-lint v2.9.0 (see `.
 ```bash
 # Local docs preview (requires Python + mkdocs-material)
 pip install mkdocs-material==9.7.3
-ln -sf ../CONTRIBUTING.md docs/contributing.md
+sed 's|](docs/|](|g' CONTRIBUTING.md > docs/contributing.md
 mkdocs serve
 ```
 
