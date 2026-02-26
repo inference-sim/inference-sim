@@ -344,7 +344,7 @@ git commit -m "feat(package): implement Component.Method (BC-X, BC-Y)
 - Implement contract BC-X: [brief description]
 - Implement contract BC-Y: [brief description]
 
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+Co-Authored-By: Claude <noreply@anthropic.com>"
 ```
 
 ---
