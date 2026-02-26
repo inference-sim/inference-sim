@@ -559,6 +559,9 @@ Before implementation, verify:
 - [ ] R15: Stale PR references resolved
 - [ ] R16: Config params grouped by module
 - [ ] R17: Routing scorer signals documented for freshness tier
+- [ ] R18: CLI flag values not silently overwritten by defaults.yaml
+- [ ] R19: Unbounded retry/requeue loops have circuit breakers
+- [ ] R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)
 
 ======================================================================
 APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS
