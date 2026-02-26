@@ -18,6 +18,7 @@
   - [Step 4.75: Pre-Commit Self-Audit](#step-475-pre-commit-self-audit-no-agent--deliberate-thinking)
   - [Step 5: Commit, Push, and Create PR](#step-5-commit-push-and-create-pr-using-commit-commandscommit-push-pr)
 - [Workflow Variants](#workflow-variants)
+  - [PR Size Tiers](#pr-size-tiers)
 - [Skill Reference Quick Guide](#skill-reference-quick-guide)
 - [Example A: Macro Plan PR](#example-a-macro-plan-pr-workflow-same-session-with-worktrees)
 - [Example B: Issue/Design-Doc PR](#example-b-issuedesign-doc-pr-workflow)
@@ -131,7 +132,7 @@ If skills are unavailable, you can implement each step manually:
      - Catches design issues before implementation
    - **Code Review** (Step 4.5) - two-stage: holistic `review-pr` pre-pass, then `convergence-review` with 10 targeted perspectives
      - Catches implementation issues before PR creation
-   - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 9 dimensions
+   - **Self-Audit** (Step 4.75) - Deliberate critical thinking across 10 dimensions
      - Catches substance bugs that pattern-matching agents miss
 
 ---
@@ -148,7 +149,7 @@ If skills are unavailable, you can implement each step manually:
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
 | **4.5. Review code** | `/pr-review-toolkit:review-pr` then `/convergence-review pr-code` |
-| **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths |
+| **4.75. Self-audit** | Deliberate critical thinking: logic, design, determinism, consistency, docs, edge cases, test epistemology, construction sites, error paths, docs DRY |
 | **5. Commit, push, PR** | `/commit-commands:commit-push-pr` |
 
 **Example for PR 8 (same-session workflow with `.worktrees/`):**
@@ -312,7 +313,7 @@ Fix any issues found, then proceed to Stage 2.
 /convergence-review pr-plan docs/plans/pr<N>-<name>-plan.md
 ```
 
-The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol) for the protocol rules.
+The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/convergence.md](convergence.md) for the protocol rules.
 
 **Why two stages?** `review-pr` does a holistic sweep that catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed.
 
@@ -328,7 +329,7 @@ The `convergence-review` skill dispatches all 10 perspectives in parallel, talli
 
 **Why rounds with multiple perspectives?** Generic "review everything" misses issues that targeted perspectives catch. Different lenses find different bugs: cross-doc consistency catches stale references, architecture catches boundary violations, substance catches design bugs. Running them in parallel maximizes coverage per round. The hypothesis process proved this model: 3 parallel reviewers with different foci caught issues that sequential single-reviewer rounds missed.
 
-For convergence rules (max rounds, re-run requirements, severity definitions), see [Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol).
+For convergence rules (max rounds, re-run requirements, severity definitions), see [Universal Convergence Protocol](convergence.md).
 
 ---
 
@@ -575,7 +576,7 @@ Fix any issues found, then proceed to Stage 2.
 /convergence-review pr-code
 ```
 
-The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol) for the protocol rules.
+The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/convergence.md](convergence.md) for the protocol rules.
 
 **Why two stages?** `review-pr` does a holistic sweep that catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds.
 
@@ -586,7 +587,7 @@ The `convergence-review` skill dispatches all 10 perspectives in parallel, talli
 > **If 0 CRITICAL and 0 IMPORTANT findings:** The round converged. Run verification gate.
 >
 > **If any CRITICAL or IMPORTANT findings:** Fix all issues, then re-run the entire round
-> from scratch. Repeat until convergence (see [Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol)).
+> from scratch. Repeat until convergence (see [Universal Convergence Protocol](convergence.md)).
 
 **Why 10 perspectives in parallel?** Each catches issues the others miss. In the standards-audit-hardening PR, Perspective 1 (substance) found a runtime-breaking regression, Perspective 3 (tests) found weakened coverage, Perspective 7 (vLLM expert) confirmed CLI validation matches real server semantics, and Perspective 10 (security) found pre-existing factory validation gaps. Domain-specific perspectives (DES, vLLM, distributed platform) catch issues that generic code-quality reviewers miss.
 
@@ -737,7 +738,7 @@ gh issue create --title "Bug: <concise description>" --body "<location, impact, 
 
 #### Convergence Protocol
 
-**Canonical source:** [docs/process/hypothesis.md — Universal Convergence Protocol](hypothesis.md#universal-convergence-protocol). The same protocol applies to all review gates (PR plan, PR code, hypothesis design/code/FINDINGS).
+**Canonical source:** [docs/process/convergence.md](convergence.md). The same protocol applies to all review gates (PR plan, PR code, hypothesis design/code/FINDINGS).
 
 In summary: run all perspectives as a parallel round. If zero CRITICAL and zero IMPORTANT across all reviewers, the round converged. If any CRITICAL or IMPORTANT from any reviewer, fix all issues and re-run the **entire** round. Max 10 rounds per gate. Hard gate — no exceptions.
 
@@ -873,6 +874,30 @@ Use the subagent-driven-development skill to implement docs/plans/pr<N>-<feature
 - ✅ Better for iterative refinement
 - ⚠️ Uses current session's context (can grow large)
 - ⚠️ Review after every task (vs continuous execution in executing-plans)
+
+---
+
+### PR Size Tiers
+
+Not all PRs need the same level of review. Use these objective criteria to select the appropriate tier:
+
+| Tier | Criteria | Plan Review (Step 2.5) | Code Review (Step 4.5) | Self-Audit (Step 4.75) |
+|------|----------|----------------------|----------------------|----------------------|
+| **Small** | Docs-only with no process/workflow semantic changes (typo fixes, formatting, comment updates, link fixes), OR ≤3 files changed AND only mechanical changes (renames, formatting) AND no behavioral logic changes AND no new interfaces/types AND no new CLI flags | Skip convergence review; single `review-pr` pre-pass sufficient | Skip convergence review; single `review-pr` pre-pass sufficient | Full (all 10 dimensions) |
+| **Medium** | 4-10 files changed, OR new policy template behind existing interface | Full two-stage (pre-pass + convergence) | Full two-stage (pre-pass + convergence) | Full (all 10 dimensions) |
+| **Large** | >10 files, OR new interfaces/modules, OR architecture changes | Full two-stage (pre-pass + convergence) | Full two-stage (pre-pass + convergence) | Full (all 10 dimensions) |
+
+**Rules:**
+- **Steps 1, 2, 3, 4, 5 are always required** — worktree, plan, human review, execution, and commit apply to all tiers.
+- **Self-audit is always full** — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
+- **When in doubt, tier up** — if you're unsure whether a change is Small or Medium, use Medium. The cost of an extra convergence round is 10-15 minutes; the cost of a missed design bug is hours of rework.
+- **Human reviewer can override** — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.
+
+**Examples:**
+- Fix a typo in README.md → **Small** (1 file, docs-only)
+- Add R18-R20 to micro-plan checklist → **Small** (1 file, docs-only, no behavior change)
+- Add a new routing policy → **Medium** (new policy template, ~3 files)
+- Extract KV cache to sub-package → **Large** (>10 files, architecture change)
 
 ---
 

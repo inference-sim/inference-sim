@@ -344,7 +344,7 @@ git commit -m "feat(package): implement Component.Method (BC-X, BC-Y)
 - Implement contract BC-X: [brief description]
 - Implement contract BC-Y: [brief description]
 
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+Co-Authored-By: Claude <noreply@anthropic.com>"
 ```
 
 ---
@@ -393,7 +393,7 @@ IMPORTANT TASK DESIGN RULES:
    REQUIRED assertion patterns (behavioral — these survive refactor):
    - Observable output: `assert.Equal(policy.Compute(req, clock), 0.0)`
    - Behavioral outcome: `assert.Equal(decision.TargetInstance, 1)`
-   - Invariant verification: `assert.Equal(completed+queued+running, injected)`
+   - Invariant verification: `assert.Equal(completed+queued+running+dropped, injected)`
    - Ordering/ranking: `assert.True(scoreA > scoreB)` when contract says
      A should rank higher than B
 
@@ -477,7 +477,7 @@ Additional requirements:
    while golden tests answer "did the code change?"
 
    Key invariants for this simulator (derived from CLAUDE.md):
-   - **Request conservation:** completed + still_queued + still_running = injected
+   - **Request conservation:** completed + still_queued + still_running + dropped_unservable = injected
    - **KV block conservation:** allocated_blocks + free_blocks = total_blocks
    - **Clock monotonicity:** simulation clock never decreases
    - **Causality:** arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time
@@ -559,6 +559,9 @@ Before implementation, verify:
 - [ ] R15: Stale PR references resolved
 - [ ] R16: Config params grouped by module
 - [ ] R17: Routing scorer signals documented for freshness tier
+- [ ] R18: CLI flag values not silently overwritten by defaults.yaml
+- [ ] R19: Unbounded retry/requeue loops have circuit breakers
+- [ ] R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)
 
 ======================================================================
 APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS

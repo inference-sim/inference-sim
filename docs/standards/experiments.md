@@ -14,11 +14,12 @@ Every hypothesis falls into one of three VV&UQ categories. This determines what 
 
 Most current experiments are **Verification** (invariant checking) or informal **Validation** (metric comparison). Future experiments should increasingly incorporate **UQ** — every threshold finding should include a confidence interval, every "confirmed" result should quantify the probability of holding under parameter variation.
 
-### Three purposes
+### Purposes
 
-1. **Verification** — confirm that code implements intended math correctly (scheduler invariants, conservation laws)
-2. **Validation** — confirm that model outputs match expected behavior within acceptable accuracy intervals
-3. **Discovery** — surface bugs, design gaps, and undocumented limitations
+The VV&UQ categories above classify what *kind of evidence* an experiment needs. But experiments also serve broader purposes beyond their category:
+
+- **Verification and Validation** — the primary purposes, aligned with the VV&UQ categories above
+- **Discovery** — a secondary outcome of any experiment. Bugs, design gaps, and undocumented limitations often surface during verification or validation experiments. Discovery is not a separate VV&UQ category — it's a valuable byproduct. Example: H5 (a Validation experiment) discovered that the per-input-token cost model makes burst smoothing structurally impossible — a design limitation finding that was not the hypothesis being tested.
 
 ### How to choose your VV&UQ category
 
@@ -321,7 +322,7 @@ Evidence: H10's "28% TTFT improvement" is specific to GPU=2100 blocks near the p
 
 ## Iterative Review Protocol
 
-> **Canonical source:** [`docs/process/hypothesis.md`](../process/hypothesis.md) (Universal Convergence Protocol section). If this section diverges, hypothesis.md is authoritative.
+> **Canonical source:** [`docs/process/convergence.md`](../process/convergence.md). If this section diverges, convergence.md is authoritative.
 
 Every hypothesis experiment iterates until convergence (max 10 rounds per gate) through three review gates, each using the universal convergence protocol:
 
@@ -329,7 +330,7 @@ Every hypothesis experiment iterates until convergence (max 10 rounds per gate) 
 2. **Code Review** (5 perspectives) — after implementing run.sh/analyze.py, before execution
 3. **FINDINGS Review** (10 perspectives) — after documenting results, before finalization
 
-**Convergence:** Zero CRITICAL and zero IMPORTANT items from any reviewer perspective in the current round. No minimum round count — convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item. SUGGESTION-level items do not block convergence. See `docs/process/hypothesis.md` for the full protocol, reviewer prompts, perspective checklists, and severity definitions.
+**Convergence:** Zero CRITICAL and zero IMPORTANT items from any reviewer perspective in the current round. No minimum round count — convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item. SUGGESTION-level items do not block convergence. See `docs/process/convergence.md` for the full protocol and severity definitions, and `docs/process/hypothesis.md` for reviewer prompts and perspective checklists.
 
 **Why internal agents instead of external LLM reviews:** Internal Task agents can read the actual source files, verify `file:line` citations, and cross-reference analyzer regexes against simulator output format strings — capabilities external LLM reviews lack. See `docs/process/hypothesis.md` for the full evidence and comparison table.
 

@@ -60,8 +60,16 @@ Never use `continue` in an error path without propagating, counting, or document
 
 **Required assertion patterns** (behavioral — survive refactor):
 - Observable output: `assert.Equal(policy.Compute(req, clock), 0.0)`
-- Invariant verification: `assert.Equal(completed+queued+running, injected)`
+- Invariant verification: `assert.Equal(completed+queued+running+dropped, injected)`
 - Ordering/ranking: `assert.True(scoreA > scoreB)`
+
+## Test Suite Performance
+
+As the test suite grows (invariant tests, golden tests, hypothesis-promoted regression tests), keep total `go test ./...` time manageable:
+
+- **Individual test budget:** No single test should exceed 5 seconds without using `testing.Short()` to provide a fast-path skip. Tests that run full cluster simulations (e.g., 10K requests across 8 instances) should check `testing.Short()` and reduce to a minimal configuration.
+- **CI target:** Total `go test ./...` should complete in under 60 seconds. If it exceeds this, audit for tests that can use smaller configurations without losing behavioral coverage.
+- **Benchmark isolation:** Performance benchmarks (`Benchmark*` functions) run only with `go test -bench=.`, never in the default `go test ./...` path. This is Go's default behavior — just don't put benchmark assertions in regular tests.
 
 ## Documentation Single Source of Truth
 
@@ -89,6 +97,7 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | File organization and architecture | CLAUDE.md (File Organization tree) | README.md (Project Structure tree) |
 | Hypothesis catalog and specifications | `docs/plans/research.md` | — |
 | Experiment status and coverage | `hypotheses/README.md` | — |
-| Experiment standards | `docs/standards/experiments.md` | — (note: review protocol subsection references `docs/process/hypothesis.md` as canonical) |
-| Hypothesis experiment workflow | `docs/process/hypothesis.md` | CONTRIBUTING.md (summary), hypotheses/README.md (step list), `.claude/skills/hypothesis-experiment/SKILL.md` (workflow steps), `.claude/skills/hypothesis-experiment/review-prompts.md` (perspective prompts), `.claude/skills/convergence-review/SKILL.md` (convergence protocol copy) |
+| Experiment standards | `docs/standards/experiments.md` | — (note: review protocol subsection references `docs/process/convergence.md` as canonical) |
+| Convergence protocol | `docs/process/convergence.md` | `docs/process/hypothesis.md` (summary), `docs/process/pr-workflow.md` (summary), `docs/standards/experiments.md` (review protocol summary), `.claude/skills/convergence-review/SKILL.md` (protocol copy) |
+| Hypothesis experiment workflow | `docs/process/hypothesis.md` | CONTRIBUTING.md (summary), hypotheses/README.md (step list), `.claude/skills/hypothesis-experiment/SKILL.md` (workflow steps), `.claude/skills/hypothesis-experiment/review-prompts.md` (perspective prompts) |
 | PR workflow | `docs/process/pr-workflow.md` | CONTRIBUTING.md (summary), `.claude/skills/convergence-review/pr-prompts.md` (perspective prompts) |
