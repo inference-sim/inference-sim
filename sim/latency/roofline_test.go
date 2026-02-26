@@ -189,6 +189,7 @@ func testHardwareCalib() sim.HardwareCalib {
 		MfuPrefill:       0.55,
 		MfuDecode:        0.30,
 		AllReduceLatency: 10.0,
+		MemoryGiB:        80.0,
 	}
 }
 

@@ -332,7 +332,7 @@ func TestGetModelConfig_StandardFieldsTakePrecedenceOverFallbacks(t *testing.T) 
 }
 
 func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
 
 	tests := []struct {
 		name  string
@@ -390,6 +390,7 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 		BwEffConstant: 0.7,
 		MfuPrefill:    0.5,
 		MfuDecode:     math.NaN(),
+		MemoryGiB:     80.0,
 	}
 
 	// WHEN ValidateRooflineConfig is called
@@ -410,7 +411,7 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	// GIVEN valid ModelConfig and HardwareCalib
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
 
 	// WHEN ValidateRooflineConfig is called
 	err := latency.ValidateRooflineConfig(mc, hc)
@@ -426,7 +427,7 @@ func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
-		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
 		"", "", 1, true,
 	)
 
@@ -447,7 +448,7 @@ func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
-		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
 		"", "", 0, true,
 	)
 
@@ -460,5 +461,34 @@ func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "TP") {
 		t.Errorf("error should mention TP, got: %v", err)
+	}
+}
+
+func TestGetHWConfig_MemoryGiB_ParsedFromRealConfig(t *testing.T) {
+	// GIVEN the real hardware_config.json in the repo root
+	hwConfigPath := filepath.Join("..", "..", "hardware_config.json")
+
+	tests := []struct {
+		name string
+		gpu  string
+	}{
+		{"H100", "H100"},
+		{"A100-SXM", "A100-SXM"},
+		{"A100-80 alias (BC-14)", "A100-80"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// WHEN GetHWConfig is called for the GPU
+			cfg, err := latency.GetHWConfig(hwConfigPath, tt.gpu)
+
+			// THEN it succeeds and MemoryGiB is 80.0
+			if err != nil {
+				t.Fatalf("unexpected error for GPU %q: %v", tt.gpu, err)
+			}
+			if cfg.MemoryGiB != 80.0 {
+				t.Errorf("expected MemoryGiB=80.0 for %q, got %v", tt.gpu, cfg.MemoryGiB)
+			}
+		})
 	}
 }
