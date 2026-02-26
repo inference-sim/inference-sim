@@ -30,7 +30,7 @@ Add a `--roofline` boolean CLI flag. When set, BLIS automatically resolves both 
 - `--tp` > 0
 
 **Precedence rules:**
-1. `--model-config-folder` (explicit) > cache > HF fetch > bundled `model_configs/`
+1. `--model-config-folder` (explicit) > `model_configs/` (local) > HF fetch (into `model_configs/`)
 2. `--hardware-config` (explicit) > bundled `hardware_config.json`
 
 Explicit overrides always win. The `--roofline` flag only activates the auto-resolution chain for whichever config is not explicitly provided.
