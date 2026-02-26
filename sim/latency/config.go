@@ -271,14 +271,20 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 	if invalidPositiveFloat(hc.BwPeakTBs) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.BwPeakTBs must be a valid positive number, got %v", hc.BwPeakTBs))
 	}
-	if invalidPositiveFloat(hc.BwEffConstant) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.BwEffConstant must be a valid positive number, got %v", hc.BwEffConstant))
+	// BwEfficiencyFactor is optional (0 = disabled, use raw peak BW).
+	// When set, it must be a valid positive number in (0, 1].
+	if hc.BwEfficiencyFactor != 0 {
+		if math.IsNaN(hc.BwEfficiencyFactor) || math.IsInf(hc.BwEfficiencyFactor, 0) || hc.BwEfficiencyFactor < 0 || hc.BwEfficiencyFactor > 1 {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.BwEfficiencyFactor must be in (0, 1] or 0 (disabled), got %v", hc.BwEfficiencyFactor))
+		}
 	}
-	if invalidPositiveFloat(hc.MfuPrefill) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuPrefill must be a valid positive number, got %v", hc.MfuPrefill))
-	}
-	if invalidPositiveFloat(hc.MfuDecode) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuDecode must be a valid positive number, got %v", hc.MfuDecode))
+
+	// PerLayerCPUOverhead is optional (0 = no CPU overhead).
+	// When set, it must be non-negative and finite.
+	if hc.PerLayerCPUOverhead != 0 {
+		if math.IsNaN(hc.PerLayerCPUOverhead) || math.IsInf(hc.PerLayerCPUOverhead, 0) || hc.PerLayerCPUOverhead < 0 {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.PerLayerCPUOverhead must be >= 0 and finite, got %v", hc.PerLayerCPUOverhead))
+		}
 	}
 
 	// MemoryGiB is optional (0 = no auto-calculation).

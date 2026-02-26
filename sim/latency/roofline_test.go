@@ -9,15 +9,12 @@ import (
 )
 
 func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
-	// GIVEN a ModelConfig with multiple non-zero fields
 	config := testModelConfig()
 
-	// WHEN calculateMemoryAccessBytes is called 100 times
 	var firstTotal float64
 	for i := 0; i < 100; i++ {
 		result := calculateMemoryAccessBytes(config, 1024, 64, true)
 
-		// THEN every call produces the same "total"
 		if i == 0 {
 			firstTotal = result["total"]
 		} else if result["total"] != firstTotal {
@@ -25,13 +22,10 @@ func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
 		}
 	}
 
-	// Also verify the total is positive (sanity)
 	if firstTotal <= 0 {
 		t.Errorf("expected positive total, got %v", firstTotal)
 	}
 
-	// Verify component-sum conservation: total == sum of all non-"total" keys
-	// Sort keys for deterministic accumulation (antipattern #2)
 	result := calculateMemoryAccessBytes(config, 1024, 64, true)
 	keys := make([]string, 0, len(result))
 	for k := range result {
@@ -63,7 +57,6 @@ func testModelConfig() sim.ModelConfig {
 }
 
 func TestCalculateTransformerFlops_Conservation_TotalEqualsSumOfComponents(t *testing.T) {
-	// BC-8: total MUST equal gemm_ops + sram_ops
 	mc := testModelConfig()
 	tests := []struct {
 		name   string
@@ -91,18 +84,15 @@ func TestCalculateTransformerFlops_Conservation_TotalEqualsSumOfComponents(t *te
 }
 
 func TestCalculateTransformerFlops_AttentionOnly_NoMLPContribution(t *testing.T) {
-	// BC-7: disabling MLP zeroes MLP FLOPs
 	mc := testModelConfig()
 
 	attnOnly := calculateTransformerFlops(mc, 256, 64, true, false)
 	both := calculateTransformerFlops(mc, 256, 64, true, true)
 
-	// With MLP disabled, gemm_ops should be less (no SwiGLU)
 	if attnOnly["gemm_ops"] >= both["gemm_ops"] {
 		t.Errorf("attention-only gemm_ops (%g) should be less than attn+mlp gemm_ops (%g)",
 			attnOnly["gemm_ops"], both["gemm_ops"])
 	}
-	// sram_ops should be the same (MLP doesn't contribute to sram_ops)
 	if attnOnly["sram_ops"] != both["sram_ops"] {
 		t.Errorf("sram_ops should be identical with/without MLP: got %g vs %g",
 			attnOnly["sram_ops"], both["sram_ops"])
@@ -110,7 +100,6 @@ func TestCalculateTransformerFlops_AttentionOnly_NoMLPContribution(t *testing.T)
 }
 
 func TestCalculateTransformerFlops_MLPOnly_NoAttentionContribution(t *testing.T) {
-	// BC-6: disabling attention zeroes attention FLOPs, sram_ops must be zero
 	mc := testModelConfig()
 
 	mlpOnly := calculateTransformerFlops(mc, 256, 64, false, true)
@@ -124,7 +113,6 @@ func TestCalculateTransformerFlops_MLPOnly_NoAttentionContribution(t *testing.T)
 }
 
 func TestCalculateTransformerFlops_Monotonicity_MoreTokensMoreFlops(t *testing.T) {
-	// BC-1: more newTokens MUST produce higher total FLOPs
 	mc := testModelConfig()
 
 	small := calculateTransformerFlops(mc, 512, 100, true, true)
@@ -134,7 +122,6 @@ func TestCalculateTransformerFlops_Monotonicity_MoreTokensMoreFlops(t *testing.T
 		t.Errorf("200 tokens total FLOPs (%g) should exceed 100 tokens (%g)",
 			large["total"], small["total"])
 	}
-	// Check component-level monotonicity too
 	if large["gemm_ops"] <= small["gemm_ops"] {
 		t.Errorf("200 tokens gemm_ops (%g) should exceed 100 tokens (%g)",
 			large["gemm_ops"], small["gemm_ops"])
@@ -142,7 +129,6 @@ func TestCalculateTransformerFlops_Monotonicity_MoreTokensMoreFlops(t *testing.T
 }
 
 func TestCalculateMemoryAccessBytes_Monotonicity_MoreTokensMoreBytes(t *testing.T) {
-	// BC-2: more newTokens MUST produce higher total bytes
 	mc := testModelConfig()
 
 	small := calculateMemoryAccessBytes(mc, 512, 100, true)
@@ -155,12 +141,10 @@ func TestCalculateMemoryAccessBytes_Monotonicity_MoreTokensMoreBytes(t *testing.
 }
 
 func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *testing.T) {
-	// BC-9: total MUST equal sum of all non-"total" components
 	mc := testModelConfig()
 
 	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
 
-	// Sort keys before float accumulation (antipattern #2)
 	keys := make([]string, 0, len(mem))
 	for k := range mem {
 		if k != "total" {
@@ -181,102 +165,162 @@ func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *t
 // testHardwareCalib returns an H100-like hardware config for roofline tests.
 func testHardwareCalib() sim.HardwareCalib {
 	return sim.HardwareCalib{
-		TFlopsPeak:       989.0,
-		BwPeakTBs:        3.35,
-		BwEffConstant:    0.7,
-		TOverheadMicros:  50.0,
-		PerLayerOverhead: 5.0,
-		MfuPrefill:       0.55,
-		MfuDecode:        0.30,
-		AllReduceLatency: 10.0,
-		MemoryGiB:        80.0,
+		TFlopsPeak:          989.0,
+		BwPeakTBs:           3.35,
+		BwEfficiencyFactor:  0.82,
+		PerLayerCPUOverhead: 100.0,
+		MemoryGiB:           80.0,
 	}
 }
 
-func TestRooflineStepTime_TPScaling_TP2LessThanTP1(t *testing.T) {
-	// BC-3: TP=2 MUST produce strictly less latency than TP=1
+// loadTestMFUDatabase loads the real bench_data for V2 roofline tests.
+// Skips the test if bench_data is not available.
+func loadTestMFUDatabase(t *testing.T) *sim.MFUDatabase {
+	t.Helper()
 	mc := testModelConfig()
-	hc := testHardwareCalib()
+	benchDataPath := "../../bench_data"
+	db, err := sim.NewMFUDatabase(mc, benchDataPath, "h100")
+	if err != nil {
+		t.Skipf("bench_data not available, skipping V2 test: %v", err)
+	}
+	return db
+}
+
+func TestRooflineStepTime_BwEfficiency_DecodeBoundHigherLatency(t *testing.T) {
+	mc := testModelConfig()
+	mfuDB := loadTestMFUDatabase(t)
+
+	hcBaseline := testHardwareCalib()
+	hcBaseline.BwEfficiencyFactor = 0
+	hcWithEff := testHardwareCalib()
+	hcWithEff.BwEfficiencyFactor = 0.80
 
 	step := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+			{ProgressIndex: 256, NumNewDecodeTokens: 1},
+			{ProgressIndex: 1024, NumNewDecodeTokens: 1},
+		},
+	}
+
+	baseline := rooflineStepTime("", mc, hcBaseline, step, 1, mfuDB)
+	withEff := rooflineStepTime("", mc, hcWithEff, step, 1, mfuDB)
+
+	if withEff <= baseline {
+		t.Errorf("BwEfficiencyFactor=0.80 latency (%d µs) should exceed baseline (%d µs)", withEff, baseline)
+	}
+	if baseline <= 0 {
+		t.Errorf("baseline latency should be positive, got %d", baseline)
+	}
+}
+
+func TestRooflineStepTime_BwEfficiency_ZeroAndOneIdentical(t *testing.T) {
+	mc := testModelConfig()
+	mfuDB := loadTestMFUDatabase(t)
+
+	hcZero := testHardwareCalib()
+	hcZero.BwEfficiencyFactor = 0
+	hcOne := testHardwareCalib()
+	hcOne.BwEfficiencyFactor = 1.0
+
+	step := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
 		PrefillRequests: []PrefillRequestConfig{
 			{ProgressIndex: 0, NumNewPrefillTokens: 128},
 		},
+	}
+
+	resultZero := rooflineStepTime("", mc, hcZero, step, 1, mfuDB)
+	resultOne := rooflineStepTime("", mc, hcOne, step, 1, mfuDB)
+
+	if resultZero != resultOne {
+		t.Errorf("BwEfficiencyFactor=0 (%d µs) and BwEfficiencyFactor=1.0 (%d µs) should be identical",
+			resultZero, resultOne)
+	}
+}
+
+func TestRooflineStepTime_BwEfficiency_PrefillAlsoAffected(t *testing.T) {
+	mc := testModelConfig()
+	mfuDB := loadTestMFUDatabase(t)
+
+	hcBaseline := testHardwareCalib()
+	hcBaseline.BwEfficiencyFactor = 0
+	hcWithEff := testHardwareCalib()
+	hcWithEff.BwEfficiencyFactor = 0.80
+
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 256},
+		},
+	}
+
+	baseline := rooflineStepTime("", mc, hcBaseline, step, 1, mfuDB)
+	withEff := rooflineStepTime("", mc, hcWithEff, step, 1, mfuDB)
+
+	if withEff < baseline {
+		t.Errorf("BwEfficiencyFactor=0.80 prefill latency (%d µs) should be >= baseline (%d µs)", withEff, baseline)
+	}
+}
+
+func TestRooflineStepTime_PerLayerCPUOverhead_ScalesWithLayersAndTP(t *testing.T) {
+	mfuDB := loadTestMFUDatabase(t)
+
+	hc := sim.HardwareCalib{
+		TFlopsPeak:          989.5,
+		BwPeakTBs:           3.35,
+		PerLayerCPUOverhead: 100.0,
+	}
+
+	step := StepConfig{
 		DecodeRequests: []DecodeRequestConfig{
-			{ProgressIndex: 256, NumNewDecodeTokens: 1},
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
 		},
 	}
 
-	tp1 := rooflineStepTime(mc, hc, step, 1)
-	tp2 := rooflineStepTime(mc, hc, step, 2)
+	mc32 := testModelConfig() // 32 layers
+	mc64 := testModelConfig()
+	mc64.NumLayers = 64
 
-	if tp2 >= tp1 {
-		t.Errorf("TP=2 latency (%d µs) should be less than TP=1 (%d µs)", tp2, tp1)
+	result32 := rooflineStepTime("", mc32, hc, step, 1, mfuDB)
+	result64 := rooflineStepTime("", mc64, hc, step, 1, mfuDB)
+	if result64 <= result32 {
+		t.Errorf("64 layers (%d µs) should exceed 32 layers (%d µs) at TP=1", result64, result32)
 	}
-	if tp2 <= 0 {
-		t.Errorf("TP=2 latency should be positive, got %d", tp2)
+
+	resultTP1 := rooflineStepTime("", mc32, hc, step, 1, mfuDB)
+	resultTP2 := rooflineStepTime("", mc32, hc, step, 2, mfuDB)
+	if resultTP2 >= resultTP1 {
+		t.Errorf("TP=2 (%d µs) should be less than TP=1 (%d µs) for same model", resultTP2, resultTP1)
 	}
 }
 
-func TestRooflineStepTime_Smoke_ValidInputsProducePositiveFiniteResult(t *testing.T) {
-	// BC-4: valid inputs MUST produce > 0, finite result
+func TestRooflineStepTime_PerLayerCPUOverhead_ZeroMeansNoOverhead(t *testing.T) {
+	mfuDB := loadTestMFUDatabase(t)
 	mc := testModelConfig()
-	hc := testHardwareCalib()
 
-	tests := []struct {
-		name string
-		step StepConfig
-	}{
-		{
-			"prefill only",
-			StepConfig{
-				PrefillRequests: []PrefillRequestConfig{
-					{ProgressIndex: 0, NumNewPrefillTokens: 256},
-				},
-			},
-		},
-		{
-			"decode only",
-			StepConfig{
-				DecodeRequests: []DecodeRequestConfig{
-					{ProgressIndex: 512, NumNewDecodeTokens: 1},
-				},
-			},
-		},
-		{
-			"mixed prefill+decode",
-			StepConfig{
-				PrefillRequests: []PrefillRequestConfig{
-					{ProgressIndex: 0, NumNewPrefillTokens: 64},
-				},
-				DecodeRequests: []DecodeRequestConfig{
-					{ProgressIndex: 128, NumNewDecodeTokens: 1},
-					{ProgressIndex: 256, NumNewDecodeTokens: 1},
-				},
-			},
+	step := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := rooflineStepTime(mc, hc, tt.step, 1)
-			if result <= 0 {
-				t.Errorf("expected positive latency, got %d µs", result)
-			}
-		})
+	hcZero := sim.HardwareCalib{
+		TFlopsPeak: 989.5,
+		BwPeakTBs:  3.35,
 	}
-}
 
-func TestRooflineStepTime_EmptyStep_ReturnsOverheadOnly(t *testing.T) {
-	// Edge case: no requests should still return overhead (non-zero due to TOverheadMicros)
-	mc := testModelConfig()
-	hc := testHardwareCalib()
+	hcWithOverhead := sim.HardwareCalib{
+		TFlopsPeak:          989.5,
+		BwPeakTBs:           3.35,
+		PerLayerCPUOverhead: 100.0,
+	}
 
-	step := StepConfig{} // empty
-	result := rooflineStepTime(mc, hc, step, 1)
+	resultZero := rooflineStepTime("", mc, hcZero, step, 1, mfuDB)
+	resultWith := rooflineStepTime("", mc, hcWithOverhead, step, 1, mfuDB)
 
-	// Should be approximately TOverheadMicros (50) + layer overhead
-	if result <= 0 {
-		t.Errorf("empty step should still have overhead latency, got %d µs", result)
+	if resultWith <= resultZero {
+		t.Errorf("PerLayerCPUOverhead=100 (%d µs) should exceed zero-overhead (%d µs)", resultWith, resultZero)
 	}
 }

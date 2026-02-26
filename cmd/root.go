@@ -34,6 +34,7 @@ var (
 	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
 	modelConfigFolder         string    // Path to folder containing config.json and model.json
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
+	benchDataPath             string    // Path to benchmark data directory for MFU lookups
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
 	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
@@ -189,6 +190,13 @@ var runCmd = &cobra.Command{
 			}
 			hwConfigPath = resolvedHW
 
+			// Resolve bench data path (explicit → bundled default)
+			resolvedBench, err := resolveBenchDataPath(benchDataPath, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			benchDataPath = resolvedBench
+
 			// Explicitly activate roofline mode (design doc step 4).
 			// Do NOT rely on downstream "all coefficients zero" heuristic.
 			// Note (I10): When --roofline is set with explicit --alpha-coeffs/--beta-coeffs,
@@ -300,6 +308,16 @@ var runCmd = &cobra.Command{
 					logrus.Warnf("--roofline: model appears to be MoE (Mixture-of-Experts). " +
 						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
 				}
+			}
+		}
+
+		// Load MFU database if roofline mode is enabled
+		var mfuDB *sim.MFUDatabase
+		if rooflineActive && benchDataPath != "" {
+			var mfuErr error
+			mfuDB, mfuErr = sim.NewMFUDatabase(modelConfig, benchDataPath, gpu)
+			if mfuErr != nil {
+				logrus.Fatalf("Failed to load MFU database: %v", mfuErr)
 			}
 		}
 
@@ -544,6 +562,12 @@ var runCmd = &cobra.Command{
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances)
+		// Build ModelHardwareConfig and add MFU database if available (roofline v2)
+		mhwConfig := sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, rooflineActive)
+		if mfuDB != nil {
+			mhwConfig = mhwConfig.WithMFUDatabase(mfuDB)
+		}
+
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,
@@ -552,7 +576,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, rooflineActive),
+				ModelHardwareConfig: mhwConfig,
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,
@@ -707,6 +731,7 @@ func init() {
 	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
 	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
 	runCmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
+	runCmd.Flags().StringVar(&benchDataPath, "bench-data-path", "", "Path to benchmark data directory for MFU lookups (default: auto-resolved bench_data/ bundled with BLIS)")
 	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)")
 	runCmd.Flags().StringVar(&tracesWorkloadFilePath, "workload-traces-filepath", "", "Workload filepath for traces workload type.")
 

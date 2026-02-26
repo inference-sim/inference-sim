@@ -803,3 +803,54 @@ func TestValidHFRepoPattern(t *testing.T) {
 		}
 	}
 }
+
+// --- resolveBenchDataPath tests ---
+
+func TestResolveBenchDataPath_ExplicitOverride(t *testing.T) {
+	path, err := resolveBenchDataPath("/custom/bench_data", "defaults.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != "/custom/bench_data" {
+		t.Errorf("expected /custom/bench_data, got %s", path)
+	}
+}
+
+func TestResolveBenchDataPath_BundledDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	benchDir := filepath.Join(tmpDir, "bench_data")
+	if err := os.MkdirAll(benchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
+	path, err := resolveBenchDataPath("", defaultsFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != benchDir {
+		t.Errorf("expected %s, got %s", benchDir, path)
+	}
+}
+
+func TestResolveBenchDataPath_Missing_ReturnsError(t *testing.T) {
+	_, err := resolveBenchDataPath("", "/nonexistent/dir/defaults.yaml")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestResolveBenchDataPath_FileNotDir_ReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Create bench_data as a file instead of a directory
+	benchFile := filepath.Join(tmpDir, "bench_data")
+	if err := os.WriteFile(benchFile, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
+	_, err := resolveBenchDataPath("", defaultsFile)
+	if err == nil {
+		t.Fatal("expected error when bench_data is a file, got nil")
+	}
+}

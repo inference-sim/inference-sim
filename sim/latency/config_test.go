@@ -332,7 +332,7 @@ func TestGetModelConfig_StandardFieldsTakePrecedenceOverFallbacks(t *testing.T) 
 }
 
 func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35}
 
 	tests := []struct {
 		name  string
@@ -347,10 +347,7 @@ func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// WHEN ValidateRooflineConfig is called
 			err := latency.ValidateRooflineConfig(tt.mc, hc)
-
-			// THEN it returns an error mentioning the zero field
 			if err == nil {
 				t.Fatalf("expected error for %s, got nil", tt.field)
 			}
@@ -362,19 +359,16 @@ func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
 }
 
 func TestValidateRooflineConfig_ZeroHardwareFields_ReturnsAllErrors(t *testing.T) {
-	// GIVEN a HardwareCalib with all critical fields zero (model config is valid)
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
 	hc := sim.HardwareCalib{} // all zero
 
-	// WHEN ValidateRooflineConfig is called
 	err := latency.ValidateRooflineConfig(mc, hc)
-
-	// THEN it returns an error mentioning every zero field
 	if err == nil {
 		t.Fatal("expected error for zero hardware fields, got nil")
 	}
 	errMsg := err.Error()
-	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "BwEffConstant", "MfuPrefill", "MfuDecode"} {
+	// TFlopsPeak and BwPeakTBs are required positive fields
+	for _, field := range []string{"TFlopsPeak", "BwPeakTBs"} {
 		if !strings.Contains(errMsg, field) {
 			t.Errorf("error should mention %s, got: %v", field, errMsg)
 		}
@@ -382,26 +376,20 @@ func TestValidateRooflineConfig_ZeroHardwareFields_ReturnsAllErrors(t *testing.T
 }
 
 func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
-	// GIVEN a HardwareCalib with NaN and Inf fields (bypass <= 0 check)
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096}
 	hc := sim.HardwareCalib{
-		TFlopsPeak:    math.NaN(),
-		BwPeakTBs:     math.Inf(1),
-		BwEffConstant: 0.7,
-		MfuPrefill:    0.5,
-		MfuDecode:     math.NaN(),
-		MemoryGiB:     math.Inf(-1),
+		TFlopsPeak:         math.NaN(),
+		BwPeakTBs:          math.Inf(1),
+		BwEfficiencyFactor: 0.82,
+		MemoryGiB:          math.Inf(-1),
 	}
 
-	// WHEN ValidateRooflineConfig is called
 	err := latency.ValidateRooflineConfig(mc, hc)
-
-	// THEN it returns an error mentioning the invalid fields
 	if err == nil {
 		t.Fatal("expected error for NaN/Inf hardware fields, got nil")
 	}
 	errMsg := err.Error()
-	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "MfuDecode", "MemoryGiB"} {
+	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "MemoryGiB"} {
 		if !strings.Contains(errMsg, field) {
 			t.Errorf("error should mention %s, got: %v", field, errMsg)
 		}
@@ -412,7 +400,7 @@ func TestValidateRooflineConfig_NaNMemoryGiB_ReturnsError(t *testing.T) {
 	// NaN != 0 is true in IEEE 754, so NaN passes the outer guard and must
 	// be caught by the inner math.IsNaN check. This test covers that path.
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: math.NaN()}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEfficiencyFactor: 0.82, MemoryGiB: math.NaN()}
 
 	err := latency.ValidateRooflineConfig(mc, hc)
 
@@ -428,7 +416,7 @@ func TestValidateRooflineConfig_NegativeMemoryGiB_ReturnsError(t *testing.T) {
 	// A plain negative value (not -Inf) exercises the hc.MemoryGiB < 0 branch,
 	// which is distinct from the math.IsInf path tested by NaNInfFields.
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: -80.0}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEfficiencyFactor: 0.82, MemoryGiB: -80.0}
 
 	err := latency.ValidateRooflineConfig(mc, hc)
 
@@ -440,33 +428,63 @@ func TestValidateRooflineConfig_NegativeMemoryGiB_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
-	// GIVEN valid ModelConfig and HardwareCalib
+func TestValidateRooflineConfig_BwEfficiencyFactor_InvalidValues(t *testing.T) {
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
 
-	// WHEN ValidateRooflineConfig is called
+	tests := []struct {
+		name string
+		bwEf float64
+	}{
+		{"negative", -0.1},
+		{"greater than 1", 1.5},
+		{"NaN", math.NaN()},
+		{"Inf", math.Inf(1)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEfficiencyFactor: tt.bwEf}
+			err := latency.ValidateRooflineConfig(mc, hc)
+			if err == nil {
+				t.Fatalf("expected error for BwEfficiencyFactor=%v, got nil", tt.bwEf)
+			}
+			if !strings.Contains(err.Error(), "BwEfficiencyFactor") {
+				t.Errorf("error should mention BwEfficiencyFactor, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEfficiencyFactor: 0.82}
+
 	err := latency.ValidateRooflineConfig(mc, hc)
-
-	// THEN it returns nil
 	if err != nil {
 		t.Errorf("expected nil error for valid config, got: %v", err)
 	}
 }
 
-// TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError verifies roofline rejects zero NumHeads.
+func TestValidateRooflineConfig_ValidConfig_ZeroBwEff_ReturnsNil(t *testing.T) {
+	// BwEfficiencyFactor=0 means disabled (use raw peak BW), should be valid
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEfficiencyFactor: 0}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err != nil {
+		t.Errorf("expected nil error for zero BwEfficiencyFactor (disabled), got: %v", err)
+	}
+}
+
 func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
-		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35},
 		"", "", 1, true,
 	)
 
-	// WHEN NewLatencyModel is called (roofline validation happens here)
 	_, err := latency.NewLatencyModel(coeffs, hw)
-
-	// THEN it returns a non-nil error mentioning NumHeads
 	if err == nil {
 		t.Fatal("expected error for roofline with zero NumHeads, got nil")
 	}
@@ -475,19 +493,15 @@ func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestNewLatencyModel_RooflineZeroTP_ReturnsError verifies roofline rejects zero TP.
 func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
-		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35},
 		"", "", 0, true,
 	)
 
-	// WHEN NewLatencyModel is called (roofline validation happens here)
 	_, err := latency.NewLatencyModel(coeffs, hw)
-
-	// THEN it returns a non-nil error mentioning TP
 	if err == nil {
 		t.Fatal("expected error for roofline with zero TP, got nil")
 	}

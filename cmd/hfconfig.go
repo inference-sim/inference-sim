@@ -110,6 +110,26 @@ func resolveHardwareConfig(explicitPath, defaultsFile string) (string, error) {
 	)
 }
 
+// resolveBenchDataPath finds the benchmark data directory for MFU lookups.
+// Returns the explicit path if provided, or the bundled default (bench_data/ next to defaults.yaml).
+func resolveBenchDataPath(explicitPath, defaultsFile string) (string, error) {
+	if explicitPath != "" {
+		return explicitPath, nil
+	}
+
+	defaultsDir := filepath.Dir(defaultsFile)
+	bundledPath := filepath.Join(defaultsDir, "bench_data")
+	if info, err := os.Stat(bundledPath); err == nil && info.IsDir() {
+		logrus.Infof("--roofline: using bundled bench data at %s", bundledPath)
+		return bundledPath, nil
+	}
+
+	return "", fmt.Errorf(
+		"--roofline: bundled bench data not found at %q. Provide --bench-data-path explicitly",
+		bundledPath,
+	)
+}
+
 // fetchHFConfigFunc is the function used to fetch HF configs. Package-level
 // variable allows tests to inject a mock without hitting real HuggingFace.
 // Second parameter is the target directory to write config.json into.
