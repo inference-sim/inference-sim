@@ -1,4 +1,4 @@
-# Step-Time Prediction Research Design
+# Latency Model Fidelity Research Design
 
 **Status:** Draft
 **Date:** 2026-02-26
@@ -149,7 +149,7 @@ All on H100 80GB, vLLM v0.15.1, `max_model_len=4096`, `max_num_batched_tokens=20
 
 - **KV events** (`kv_events.jsonl`): BlockStored, CacheStoreCommitted, TransferInitiated/Completed — useful for KV cache offloading research.
 - **Per-request lifecycle** (`per_request_lifecycle_metrics.json`): Per-token timestamps, input/output token counts — useful for request-level validation.
-- **MFU benchmarks** (`InferSim/bench_data/`): Kernel-level GEMM and attention MFU data by GPU/attention-config — useful for physics-informed features.
+- **MFU benchmarks** (`InferSim/bench_data/`): Kernel-level GEMM and attention MFU data collected using InferSim, organized by GPU type, attention configuration, and matrix shape. Contains empirical throughput measurements for the key GPU operations underlying transformer inference (dense GEMMs, attention kernels). **Ideas are encouraged to use this data** — it enables physics-informed approaches that ground predictions in measured hardware performance rather than purely statistical fitting. For example, an idea could use MFU benchmarks to estimate the compute-bound vs. memory-bound regime for a given batch composition, then use that regime classification as a feature or to select between sub-models.
 
 ## Modeling Decisions
 
@@ -219,12 +219,20 @@ The existing factory accepts two parameters: calibration coefficients and model/
 
 **Decision deferred** to the production macro plan. The research phase validates that a model *can* satisfy the behavioral contract; the factory wiring is an integration detail.
 
-### Go Parallel Development Path
+### Go Integration During Research (Validation Loop)
 
-During research (Python), the existing Go latency model code is unmodified. The Go integration PR can be developed independently after research concludes:
-- **Research team** works in Python under `hypotheses/h-stepml/`
-- **Integration team** (future) writes the Go implementation in `sim/latency/` once the winning model is selected
-- No merge conflicts because the research artifacts and Go code are in non-overlapping directories
+The primary success metric (workload-level E2E mean error < 10%) requires running BLIS with the candidate model's predictions and measuring the resulting E2E latency. Per-step MAPE in Python is a necessary diagnostic but NOT sufficient — emergent queueing dynamics (component [2] in the E2E decomposition) and error compounding/cancellation across steps can only be measured by actual BLIS simulation runs.
+
+**Lightweight Go integration is required during research, not deferred to post-research:**
+
+- **Phase 0 infrastructure** includes a Go tree evaluator (`sim/latency/stepml.go`) that loads exported model coefficients/weights and implements the LatencyModel interface. This enables BLIS runs with candidate models during the research phase.
+- **Validation harness** (`hypotheses/h-stepml/shared/validate_blis.sh`) runs BLIS with candidate model coefficients on each of the 16 experiments' ground-truth traces, then uses the existing calibration infrastructure (`sim/workload/calibrate.go`) to compute E2E mean error.
+- **Two integration paths available during research:**
+  - **Path A (coefficients):** For linear/polynomial models — export alpha/beta coefficients to a YAML file, load via `--alpha-coeffs`/`--beta-coeffs` flags. Zero Go code changes needed.
+  - **Path B (tree evaluator):** For tree ensembles — a ~200-line Go tree evaluator that loads exported XGBoost JSON and traverses trees at prediction time. Registers as a new LatencyModel backend.
+- **Research team** works in Python under `hypotheses/h-stepml/` for model training, then exports artifacts for BLIS validation.
+- **Production integration** (separate macro plan) adds CLI flags, config types, and production-quality error handling after the winning model is selected.
+- No merge conflicts because research artifacts (`hypotheses/`) and Go code (`sim/latency/`) are in non-overlapping directories.
 
 ### Cluster-Level Configuration
 
@@ -329,7 +337,7 @@ All 5 LatencyModel methods are targets for the StepML replacement. Step-time est
 2. **End-to-end calibration:** Jointly optimize all 5 methods to minimize workload-level E2E mean error. Allows intentional over/underprediction of one component to compensate for systematic bias in another. For example, if StepTime systematically overpredicts by 5%, reducing OutputTokenProcessingTime can partially compensate.
 3. **Error attribution first:** Measure which components contribute most to E2E error before optimizing. If QueueingTime contributes 60% of E2E error and StepTime contributes 30%, improving QueueingTime has higher ROI.
 
-**Minimum viable scope:** A research idea that improves only step-time estimation while retaining the current implementations for the other 4 methods is acceptable — the success criterion is workload-level E2E mean accuracy, and step-time dominates the E2E budget. However, ideas that improve multiple methods or pursue end-to-end calibration may achieve better E2E fidelity with less per-component effort.
+**Minimum viable scope:** A research idea that improves only step-time estimation while retaining the current implementations for the other 4 methods is acceptable — the success criterion is workload-level E2E mean accuracy, and step-time dominates the E2E budget. However, ideas that improve multiple methods or pursue end-to-end calibration may achieve better E2E fidelity with less per-component effort. **All ideas must validate via BLIS simulation runs** (Stage 1 Tier 1b) — per-step MAPE alone is insufficient to claim E2E fidelity.
 
 ### Construction and Failure Behavior
 
@@ -384,7 +392,7 @@ The StepML model must handle these degenerate inputs explicitly:
 
 ## Multi-Instance Scope
 
-**This research targets single-instance step-time prediction.** The rationale:
+**This research targets single-instance latency model fidelity (all 5 LatencyModel methods).** The rationale:
 
 1. Step time is computed per-instance by the LatencyModel behavioral contract — it depends only on the batch composition at that instance, not on other instances' state.
 2. Multi-instance effects (routing decisions, admission control, snapshot staleness) affect *which* requests reach an instance, not *how long* a step takes once the batch is formed.
@@ -405,7 +413,7 @@ The StepML model must handle these degenerate inputs explicitly:
 | D-1 | Train on 10%-sampled data with bias characterization | Proposed |
 | D-2 | Research both unified and per-architecture models | Proposed |
 | D-3 | Allow Python features with Go-feasibility tracking | Proposed |
-| D-4 | Temporal split within experiments, stratified across | Proposed |
+| D-4 | BLIS runs as primary evaluation; splits are idea-specific | Proposed |
 | D-5 | Research in Python, defer Go integration path selection | Proposed |
 | D-6 | Treat blackbox as replaced (not demoted to fallback) | Proposed |
 | D-7 | Report systematic bias (signed error) alongside MAPE | Proposed |
@@ -433,20 +441,20 @@ The StepML model must handle these degenerate inputs explicitly:
 **Alternatives considered:** (a) Restrict to Go-computable features from the start — limits research exploration; (b) Allow arbitrary features without feasibility analysis — risks un-integratable winners.
 **Why this wins:** Research should not be prematurely constrained, but integration feasibility must be tracked.
 
-### D-4: Temporal vs. random data split
+### D-4: BLIS runs as primary evaluation; training splits are idea-specific
 
-**Status:** Proposed
-**Decision:** Use temporal ordering within each experiment to prevent temporal leakage, with stratification by model×workload across experiments.
-**Alternatives considered:** (a) Pure random split — risks temporal leakage from autocorrelated consecutive steps; (b) Leave-one-experiment-out — too few experiments (16) for stable estimates.
-**Why this wins:** Temporal ordering within experiments preserves the natural train→validate→test sequence while stratification ensures representation.
+**Status:** Proposed (updated from "fixed 60/20/20 split")
+**Decision:** The primary evaluation is BLIS E2E mean error on full traces. Training data splits (granularity, strategy, ratios) are decided by each idea, not prescribed by shared infrastructure. The shared infrastructure provides data loading and the BLIS validation harness.
+**Alternatives considered:** (a) Shared fixed split across all ideas — overly prescriptive; different ideas may fit models at different granularities (step-level, request-level, experiment-level) and need different splits; (b) No guidance at all — some ideas may not realize temporal autocorrelation exists.
+**Why this wins:** Ideas are free to use whatever training methodology best serves their approach. An end-to-end calibration idea might do grid search over coefficients with BLIS E2E as the objective (no train/test split needed). A tree ensemble idea might use step-level temporal splits. A request-level QueueingTime model might split at the request level. The BLIS validation harness is the common denominator — it's the only shared evaluation.
 
-### D-5: Research language (Python) vs. deployment language (Go)
+### D-5: Research language (Python) with lightweight Go validation loop
 
-**Status:** Proposed
-**Decision:** Conduct all research in Python; defer Go integration path selection to the production macro plan.
-**Alternatives considered:** (a) Research directly in Go — limits ML library access; (b) Research in Python with Go prototype in parallel — doubles effort during exploratory phase.
-**Why this wins:** Python has the best ML ecosystem (scikit-learn, XGBoost, PyTorch). The Go integration path depends on the winning model's complexity (see Python-to-Go Integration Strategy), which is unknown until research concludes.
-**What breaks if wrong:** If the winning model is fundamentally difficult to port to Go (e.g., requires a custom CUDA kernel), the integration cost may be higher than expected. Mitigated by requiring each idea to document its Go integration path.
+**Status:** Proposed (updated from "defer Go entirely")
+**Decision:** Conduct model training in Python; build lightweight Go integration during Phase 0 for BLIS validation runs during research. Full production Go integration deferred to post-research macro plan.
+**Alternatives considered:** (a) Research directly in Go — limits ML library access; (b) Research in Python with Go prototype in parallel — doubles effort during exploratory phase; (c) Defer all Go work to post-research — **rejected because the primary metric (E2E mean error) requires BLIS simulation runs, which require Go integration.**
+**Why this wins:** Python has the best ML ecosystem for training. A lightweight Go tree evaluator (~200 lines) enables BLIS validation without full production integration. This closes the validation gap that plagued Round 1 (34% per-step MAPE but unknown E2E error). Coefficient-swap models (linear, polynomial) need zero Go changes — just export alpha/beta values and run BLIS.
+**What breaks if wrong:** If the winning model requires a complex Go implementation (e.g., custom neural network), the lightweight evaluator won't suffice and a heavier Go integration will be needed during research. Mitigated by prioritizing model families with simple Go paths (tree ensembles, linear models).
 
 ### D-6: Blackbox replacement vs. blackbox demotion
 
@@ -479,18 +487,18 @@ Four phases, each using a specific skill:
 
 ### Phase 1: Ideation (`/research-ideas`)
 
-Generate research ideas for step-time prediction algorithms (statistical, analytical, ML, or hybrid), iteratively reviewed by multiple LLM judges. Each idea must cite relevant prior work and meet top-tier conference rigor.
+Generate research ideas for achieving <10% BLIS E2E mean error by improving any or all of the 5 LatencyModel methods. Ideas are NOT limited to step-time prediction — they may propose end-to-end calibration, multi-component joint optimization, scheduling/preemption overhead models, or any approach that makes the BLIS simulation output match ground truth. Each idea is iteratively reviewed by multiple LLM judges and must cite relevant prior work.
 
 **problem.md scope:**
-- Dense + MoE model step-time prediction
-- KV cache dynamics as features (offloading, utilization)
-- Single-instance step-time error reduction
+- Any approach to improving BLIS simulation fidelity via the LatencyModel interface (all 5 methods)
+- Dense + MoE model support on H100 GPUs
+- KV cache dynamics (offloading, utilization, per-request lengths)
 - Literature-grounded algorithmic design with citations
 - Must address evaluation dimensions: workload-level E2E mean fidelity (P1), TTFT/ITL mean fidelity (P2), tail behavior (P3), generalization (workloads, vLLM config, LLMs), ease of use, retraining story, vLLM version robustness, overhead, reproducibility, hardware generalization (P5, lower priority), quantization (P6, lowest)
 
 **Context sources:**
 - This repo (BLIS simulator, existing latency models, calibration infrastructure)
-- `tektonc-data-collection/results/` (ground-truth data schema)
+- `eval/ground_truth/` (ground-truth data schema)
 - `InferSim/bench_data/` (kernel benchmark data)
 - Existing roofline hypotheses (`hypotheses/h-roofline/`)
 - Targeted web search for academic literature (10 specific queries)
@@ -503,14 +511,17 @@ Extract top ideas from `research.md` and map each to a hypothesis family with 2-
 
 ### Phase 3: Experimentation (`/hypothesis-test` adapted)
 
-Per idea, scaffold and run:
-1. **H-stepml-N.1: Feature Engineering** — which features matter?
-2. **H-stepml-N.2: Model Training** — does the model achieve <10% MAPE?
-3. **H-stepml-N.3: Generalization** — does it hold across configs?
+Per idea, scaffold and run sub-hypotheses. The sub-hypothesis structure is **idea-specific** — different ideas may decompose differently depending on their approach. Examples:
+
+- A step-time ML idea might use: h1-features → h2-model → h3-generalization
+- An end-to-end calibration idea might use: h1-component-attribution → h2-joint-calibration → h3-generalization
+- A scheduling overhead idea might use: h1-overhead-characterization → h2-model-fitting → h3-blis-validation
+
+**All ideas must include at least one sub-hypothesis that reports BLIS E2E mean error** via the shared validation harness.
 
 ### Phase 4: Comparison & Selection
 
-Cross-idea leaderboard on held-out test set.
+Cross-idea leaderboard on BLIS E2E validation results.
 
 ## Hypothesis Structure
 
@@ -518,33 +529,41 @@ Cross-idea leaderboard on held-out test set.
 
 Each research idea follows the standard BLIS hypothesis directory structure (per `docs/templates/hypothesis.md`), organized under `hypotheses/h-stepml/` (to be created during Phase 0 infrastructure setup). The structure consists of:
 
-- **Shared infrastructure directory:** Common data loading, split computation, evaluation harness, and baseline implementations. All ideas import from here rather than reimplementing.
-- **Per-idea directories:** Each idea contains three sub-hypotheses (h1-features, h2-model, h3-generalization), each following the standard hypothesis template with HYPOTHESIS.md, experiment scripts, analysis scripts, and FINDINGS.md.
-- **Leaderboard:** A top-level index tracking all ideas' results across evaluation dimensions.
+- **Shared infrastructure directory:** Common data loading, BLIS validation harness, baseline implementations. All ideas use the shared validation harness for BLIS E2E evaluation.
+- **Per-idea directories:** Each idea contains 2-3 sub-hypotheses, structured as appropriate for the idea's approach. Each sub-hypothesis follows the standard hypothesis template with HYPOTHESIS.md, experiment scripts, analysis scripts, and FINDINGS.md.
+- **Leaderboard:** A top-level index tracking all ideas' BLIS E2E results across evaluation dimensions.
 
-Exact filenames and module organization are determined during micro-planning (Phase 0 infrastructure plan), not prescribed here.
+Exact sub-hypothesis decomposition, filenames, and module organization are determined by each idea during its design phase.
 
 ### Dependency Chain (per idea)
 
-```
-h1-features ──→ h2-model ──→ h3-generalization
-```
+The sub-hypothesis chain is **idea-specific**. Each idea defines its own dependency structure. The only universal requirement is that the final sub-hypothesis reports BLIS E2E mean error via `validate_blis.sh`.
 
-Short-circuit rule: if h1 shows features yield per-step MAPE > 30% even with a strong baseline model (Ridge regression), skip h2 and h3 for that idea. **Justification and validation:** The naive mean baseline typically achieves ~40-60% per-step MAPE. The blackbox 2-feature model achieves ~20-25% per-step MAPE. A feature set that cannot reduce per-step MAPE below 30% with a linear model is performing worse than the trivially simple blackbox baseline — this strongly suggests the features lack causal signal rather than the model lacking capacity. The 30% threshold is validated in Phase 0 infrastructure by computing the blackbox baseline's workload-level E2E mean error and per-step MAPE on the training split. Threshold adjustment is bidirectional: if the blackbox baseline exceeds 25% per-step MAPE, the short-circuit threshold is raised to `blackbox_MAPE + 10%`; if the blackbox baseline achieves workload-level E2E mean error < 12% (already near the 10% target), the incremental value of a complex replacement diminishes — Phase 0 must report this finding and reassess whether the research is justified. The threshold is confirmed during the Phase 0 baseline computation before any idea begins h1.
+### Short-Circuit Rule
+
+An idea should be abandoned early if it clearly cannot achieve the target. The short-circuit signal is **BLIS E2E mean error**, not per-step MAPE:
+
+- After an idea's first BLIS validation run, if E2E mean error > 25% on more than 50% of experiments, the idea is unlikely to reach 10% with refinement — consider dropping it.
+- The blackbox baseline's BLIS E2E error (established in Phase 0, Task 13) is the reference. An idea that performs worse than the blackbox on BLIS E2E is clearly not working.
+- Per-step MAPE > 30% is a secondary warning signal for step-time-focused ideas, but is NOT the short-circuit criterion — an idea might have high per-step MAPE but low E2E error if errors cancel, or might achieve low per-step MAPE but high E2E error due to other components.
 
 ## Evaluation Framework
 
 ### Primary Metrics
 
-The primary success metric is **workload-level E2E mean error**, not per-step MAPE. For each of the 16 experiments (model × workload), the simulation produces one mean E2E latency value. That value must be within 10% of the ground-truth mean E2E.
+The primary success metric is **workload-level E2E mean error measured via BLIS simulation runs**, not per-step MAPE. For each of the 16 experiments (model × workload), BLIS replays the ground-truth trace with the candidate model and produces predicted mean E2E, TTFT, and ITL. These are compared against ground-truth means from the real vLLM runs.
 
-| Metric | Target | Granularity | Source |
-|--------|--------|-------------|--------|
-| Workload-level E2E mean error | < 10% | One value per experiment (16 experiments) | `shared/evaluation.py` |
-| Per-step MAPE (step_duration_us) | Diagnostic (no hard target) | Per-step | `shared/evaluation.py` |
-| Pearson r (step-level) | > 0.95 | Per-step | `shared/evaluation.py` |
+| Metric | Target | Granularity | Measurement Method |
+|--------|--------|-------------|-------------------|
+| Workload-level E2E mean error | **< 10%** | One value per experiment (16 experiments) | **BLIS simulation run** (`validate_blis.sh` → `calibrate.go`) |
+| Workload-level TTFT mean error | < 15% | One value per experiment | **BLIS simulation run** |
+| Workload-level ITL mean error | < 15% | One value per experiment | **BLIS simulation run** |
+| Per-step MAPE (step_duration_us) | Diagnostic (no hard target) | Per-step | Python-side (`shared/evaluation.py`) |
+| Pearson r (step-level) | > 0.95 | Per-step | Python-side (`shared/evaluation.py`) |
 
-**Definition:** For experiment $e$, the workload-level E2E mean error is: `|predicted_mean_e2e(e) - observed_mean_e2e(e)| / observed_mean_e2e(e)`. The predicted mean E2E is reconstructed by summing predicted step times along each request's path and averaging across all requests in the experiment. The 10% target means this error must be < 10% for each experiment individually (not averaged across experiments).
+**Definition:** For experiment $e$, the workload-level E2E mean error is: `|predicted_mean_e2e(e) - observed_mean_e2e(e)| / observed_mean_e2e(e)`. BLIS replays the ground-truth trace, and the candidate model predicts step times (and queueing/scheduling/output token processing times) for every batch as the simulator forms them. The resulting per-request E2E latencies are averaged to produce `predicted_mean_e2e(e)`. The ground-truth `observed_mean_e2e(e)` comes from the per-request lifecycle data. The 10% target means this error must be < 10% for each experiment individually (not averaged across experiments).
+
+**Why BLIS runs, not Python-side trace replay:** Python-side synthetic trace replay sums predicted step times along a fixed request path, but cannot capture emergent queueing dynamics — how step-time prediction errors affect batch formation, which changes future batch compositions, which changes future step times. BLIS simulation captures these feedback loops. Per-step MAPE in Python is a useful diagnostic but the authoritative measurement is the BLIS-produced E2E mean error.
 
 ### Diagnostic Breakdowns
 
@@ -558,12 +577,12 @@ The primary success metric is **workload-level E2E mean error**, not per-step MA
 
 ### Evaluation Dimensions (ordered by priority)
 
-| Priority | Dimension | What We Measure |
-|----------|-----------|----------------|
-| **P1** | **Workload-level E2E mean fidelity** | For each experiment: `|predicted_mean_e2e - observed_mean_e2e| / observed_mean_e2e < 10%`. This is the primary go/no-go metric. |
-| **P1** | **Per-step accuracy (diagnostic)** | Per-step MAPE and Pearson r on test set — reported as a diagnostic to understand error aggregation, but not a hard gate. No fixed per-step MAPE target. |
-| **P2** | **TTFT mean fidelity** | TTFT mean prediction error (first-step prediction accuracy) |
-| **P2** | **ITL mean fidelity** | ITL mean prediction error (decode step prediction accuracy) |
+| Priority | Dimension | What We Measure | How |
+|----------|-----------|----------------|-----|
+| **P1** | **Workload-level E2E mean fidelity** | For each experiment: `\|predicted_mean_e2e - observed_mean_e2e\| / observed_mean_e2e < 10%`. Primary go/no-go metric. | **BLIS simulation run** |
+| **P1** | **Per-step accuracy (diagnostic)** | Per-step MAPE and Pearson r — diagnostic to understand error aggregation, not a hard gate. | Python-side evaluation |
+| **P2** | **TTFT mean fidelity** | `\|predicted_mean_ttft - observed_mean_ttft\| / observed_mean_ttft < 15%` per experiment | **BLIS simulation run** |
+| **P2** | **ITL mean fidelity** | `\|predicted_mean_itl - observed_mean_itl\| / observed_mean_itl < 15%` per experiment | **BLIS simulation run** |
 | **P3** | **Tail latency behavior** | p99 E2E and TTFT — no ranking inversions vs. baseline |
 | **P4** | **Generalization: workloads** | MAPE variance across codegen, reasoning, roleplay, general |
 | **P4** | **Generalization: vLLM config** | Sensitivity to max_num_seqs, max_num_batched_tokens changes |
@@ -583,7 +602,7 @@ Every `analyze.py` must compare against:
 2. **Roofline (not being replaced — comparison only):** Analytical FLOPs/bandwidth model (when model config available). The roofline model remains an independent, unmodified option in BLIS. It is included here for informational comparison only. Note: the roofline model has no MoE-specific logic; for Mixtral-8x7B, roofline MAPE should be reported separately and interpreted accordingly.
 3. **Naive mean:** Always predict mean `step_duration_us`
 
-**Baseline fairness:** The blackbox baseline's beta coefficients should be re-trained on the same training split used by research models (not the defaults.yaml coefficients, which were fit on different data). This ensures a fair comparison.
+**Baseline fairness:** The blackbox baseline's beta coefficients should be re-trained on the same training data used by research models (not the defaults.yaml coefficients, which were fit on different data). This ensures a fair per-step comparison. For the BLIS E2E baseline, the blackbox is run with its own re-trained coefficients via `validate_blis.sh`.
 
 ### Statistical Rigor Requirements
 
@@ -619,25 +638,36 @@ The target is `E2E_mean_error(e) < 10%` for **each** of the 16 experiments indiv
 
 TTFT mean error and ITL mean error use the same workload-level formulation: `|predicted_mean_ttft(e) - observed_mean_ttft(e)| / observed_mean_ttft(e)`, target < 15%.
 
-#### Stage 1: Lightweight Error Propagation Analysis (During Research)
+#### Stage 1: BLIS Validation Loop (During Research — Required)
 
-Even before BLIS integration, each idea can estimate error propagation impact:
+Each idea validates E2E fidelity by running BLIS with the candidate model's predictions. This has two tiers:
+
+**Tier 1a: Python-side error propagation analysis (fast, approximate)**
 
 1. **Component-level error attribution (prerequisite):** Using the shared `e2e_decomposition.py` tool, measure each LatencyModel method's contribution to workload-level E2E mean error. For each of the 5 methods, replace the current prediction with ground-truth (if available) and measure the marginal improvement in E2E error. This reveals where the error budget is concentrated and which components have the highest ROI for improvement.
-2. **Synthetic trace replay:** Using the per-request lifecycle data, reconstruct the sequence of steps for a complete request. Sum the predicted step times (and queueing time, output token processing time, scheduling time) along the request's path and compare to the observed request-level metrics (E2E latency, TTFT, ITL). This does not require BLIS integration — it uses Python and the ground-truth data.
-3. **Acceptance criteria (ordered by metrics priority):**
-   - **(P1 — E2E mean)** Workload-level E2E mean error < 10% on each experiment. This is the primary go/no-go criterion — it directly measures whether the model is accurate enough for simulation use.
-   - **(P2 — TTFT/ITL mean)** Workload-level TTFT mean error < 15% and ITL mean error < 15% on each experiment. If E2E mean passes but TTFT mean fails, the model has systematic prefill-path or queueing-time errors.
+2. **Synthetic trace replay:** Using the per-request lifecycle data, reconstruct the sequence of steps for a complete request. Sum the predicted step times (and queueing time, output token processing time, scheduling time) along the request's path and compare to the observed request-level metrics (E2E latency, TTFT, ITL). This provides a quick directional signal but does NOT capture emergent queueing dynamics.
+
+**Tier 1b: BLIS simulation runs (required for P1 metric)**
+
+3. **BLIS validation runs:** Export the candidate model's coefficients/weights and run BLIS on each of the 16 experiments' ground-truth traces using the shared `validate_blis.sh` harness. This uses the existing calibration infrastructure (`sim/workload/calibrate.go`) to compute calibration pairs and E2E mean error. Two export paths:
+   - **Coefficient models (linear, polynomial):** Export alpha/beta coefficients to a YAML file; BLIS loads them via existing `--alpha-coeffs`/`--beta-coeffs` flags. No Go code changes.
+   - **Tree ensemble models:** Export to JSON; the Go tree evaluator (`sim/latency/stepml.go`) loads and evaluates at step time. Requires the Phase 0 Go tree evaluator.
+4. **Acceptance criteria (ordered by metrics priority):**
+   - **(P1 — E2E mean)** Workload-level E2E mean error < 10% on each experiment **measured via BLIS simulation runs** (Tier 1b). This is the primary go/no-go criterion. Tier 1a (Python-side) is a diagnostic; Tier 1b (BLIS runs) is the authoritative measurement.
+   - **(P2 — TTFT/ITL mean)** Workload-level TTFT mean error < 15% and ITL mean error < 15% on each experiment, also from BLIS calibration output.
    - **(P3 — Tail)** P99 E2E and P99 TTFT should not show ranking inversions across workloads compared to baselines. Tail metrics are evaluated after mean metrics pass.
-4. **Cancellation analysis:** Compute the autocorrelation of per-step signed errors along each request's step sequence. If errors are positively autocorrelated (consecutive steps both over- or under-predicted), they compound. If negatively autocorrelated or uncorrelated, they partially cancel.
+5. **Cancellation analysis:** Compute the autocorrelation of per-step signed errors along each request's step sequence. If errors are positively autocorrelated (consecutive steps both over- or under-predicted), they compound. If negatively autocorrelated or uncorrelated, they partially cancel.
 
-#### Stage 2: Full BLIS Integration Validation (Post-Research)
+#### Stage 2: Production-Quality BLIS Integration Validation (Post-Research)
 
-After the winning model is integrated into BLIS:
+After the winning model is selected and the production Go implementation is complete:
 
-1. **Calibration pairs:** Use BLIS's existing calibration infrastructure to generate calibration pairs (predicted vs. observed) for TTFT, ITL, and E2E latency.
-2. **Error propagation study:** Run BLIS with the winning StepML model vs. the blackbox model it replaces on the same workload traces. Compare end-to-end metric distributions (TTFT p50, p99; throughput; E2E latency) to quantify how per-step error propagates. The roofline model may also be included as an independent comparison point, but is not being replaced.
-3. **Cluster-level validation:** In cluster mode, verify that per-step errors don't compound across instances or interact with routing/scheduling policies in unexpected ways.
+1. **Production Go implementation:** Full-quality Go code with proper error handling, CLI flags (`--stepml-model`), config types, factory dispatch (roofline → stepml → blackbox fallback), and comprehensive unit tests (INV-M-1 through INV-M-5).
+2. **Calibration pairs:** Use BLIS's existing calibration infrastructure to generate calibration pairs (predicted vs. observed) for TTFT, ITL, and E2E latency with the production implementation (not the lightweight research evaluator).
+3. **Error propagation study:** Run BLIS with the winning StepML model vs. the blackbox model it replaces on the same workload traces. Compare end-to-end metric distributions (TTFT p50, p99; throughput; E2E latency) to quantify how per-step error propagates. The roofline model may also be included as an independent comparison point, but is not being replaced.
+4. **Cluster-level validation:** In cluster mode, verify that per-step errors don't compound across instances or interact with routing/scheduling policies in unexpected ways.
+
+**Note:** Stage 1 (during research) already runs BLIS with candidate models via the lightweight Go evaluator. Stage 2 validates the production-quality Go implementation against the same benchmarks to ensure the production code matches the research results.
 
 **Integration gate (ordered by metrics priority):** The StepML model will not become the default in BLIS main branch until Stage 2 validation passes:
 1. **(P1 — E2E mean)** Workload-level E2E mean error < 10% on all standard workload scenarios
@@ -658,9 +688,14 @@ The StepML approach should be abandoned (reverting to the blackbox model) if any
 5. **Non-monotonicity (INV-M-5 violations) on >5% of test pairs** (the model learned spurious correlations that would produce physically implausible simulation behavior)
 6. **Request-feature insufficiency:** If the best model using only Request-derivable features (input tokens, output tokens, progress index, new tokens, plus experiment-level metadata) achieves workload-level E2E mean error > 15% on the majority of experiments despite trying multiple algorithmic approaches, the Request-only assumption is falsified and the LatencyModel interface may need extension
 
-### Step-Level Validation Against Real System
+### Validation Against Real System
 
-Each idea validates its step-time predictions directly against the ground-truth step durations from instrumented vLLM. The `step.duration_us` field is the wall-clock duration of vLLM's model execution call, which is the authoritative measurement of real step time. No additional real-system benchmarking is required during the research phase because the ground-truth data already captures real execution times.
+Each idea validates its LatencyModel implementation against ground truth via two paths:
+
+1. **BLIS E2E validation (authoritative):** Run BLIS with the candidate LatencyModel on ground-truth traces and compare predicted E2E/TTFT/ITL means against observed means. This captures the full interaction between all 5 LatencyModel methods and emergent simulation dynamics.
+2. **Component-level diagnostics (optional):** Ideas that fit step-time models can validate against `step.duration_us` (wall-clock step duration from instrumented vLLM). Ideas that calibrate other methods can validate against the corresponding ground-truth signals (e.g., scheduling overhead from trace timing data, queueing delay from request lifecycle timestamps).
+
+No additional real-system benchmarking is required during the research phase because the ground-truth data already captures real execution times, request lifecycles, and KV events.
 
 ### MFU Sensitivity Analysis
 
@@ -670,33 +705,59 @@ The roofline baseline depends on MFU (Model FLOPs Utilization) values from `hard
 
 Columns ordered by metrics priority (P1 → P5). Workload-level metrics are reported as "X/16 experiments passing threshold":
 
-| Idea | Algorithm | Key Citations | E2E Mean <10% (P1) | TTFT Mean <15% (P2) | ITL Mean <15% (P2) | Per-step MAPE (diag) | Pearson r | P99 Inversions (P3) | Dense E2E Err | MoE E2E Err | p-value vs. baseline | Go Path |
-|------|-----------|--------------|---------------------|---------------------|--------------------|--------------------|-----------|---------------------|---------------|-------------|---------------------|---------|
+| Idea | Algorithm | Methods Targeted | Key Citations | E2E Mean <10% (P1) | TTFT Mean <15% (P2) | ITL Mean <15% (P2) | Per-step MAPE (diag) | P99 Inversions (P3) | Dense E2E Err | MoE E2E Err | p-value vs. baseline | Go Path |
+|------|-----------|-----------------|--------------|---------------------|---------------------|--------------------|--------------------|---------------------|---------------|-------------|---------------------|---------|
 
-## Data Split Strategy
+## Data Split and Training Strategy
 
-**One-time split, shared across all ideas:**
+### Primary Evaluation: BLIS Simulation Runs
 
-```python
-# Within each experiment: temporal ordering (first 60% → train, next 20% → valid, last 20% → test)
-# Across experiments: stratified by (model, workload_type) to ensure balanced representation
-train (60%) / valid (20%) / test (20%)
-```
+The authoritative evaluation for every idea is **BLIS E2E mean error** measured by running the simulator on each experiment's full ground-truth trace. BLIS replays the complete workload — there is no train/test split at this level. The model is evaluated on its ability to produce accurate E2E/TTFT/ITL means for the complete workload.
 
-### Temporal Leakage Prevention
+### Data Integrity Requirements (Mandatory)
 
-Steps within a single experiment are temporally autocorrelated — consecutive steps share similar batch compositions because requests persist across steps in continuous batching. A random split would leak future batch composition information into the training set.
+**These rules are non-negotiable and apply to every idea regardless of approach:**
 
-**Mitigation:** Within each of the 16 main experiments, steps are sorted by `step_id` (temporal order). The first 60% of each experiment's steps form the training set, the next 20% the validation set, and the final 20% the test set. This ensures the model is always evaluated on *future* steps relative to training data.
+1. **No data leakage.** Train, validation, and test (if used) sets must be strictly non-overlapping. No data point used for fitting model parameters or selecting hyperparameters may appear in the set used to report final metrics. This applies at whatever granularity the idea operates — step-level, request-level, or experiment-level.
 
-### Split Properties
+2. **No evaluation on training data.** If an idea trains on data from experiment X, it must not report per-step or per-request accuracy metrics on that same data as if it were a held-out evaluation. Training-set accuracy may be reported only if clearly labeled as such (e.g., "training MAPE" vs. "validation MAPE").
 
-- Stratification ensures each split contains data from all 16 model×workload combinations
-- Temporal ordering within experiments prevents autocorrelation leakage
-- Test set is NEVER seen during any idea's training or hyperparameter tuning
-- The split is saved as indices (not data) so it's reproducible
-- For generalization testing (h3), additional leave-one-model-out splits are created
-- The 4 sweep experiments are held out entirely as an additional generalization test set
+3. **BLIS E2E validation and the training data boundary.** BLIS replays entire traces — it uses the model to predict on ALL steps in a trace, including steps the model may have been trained on. This is acceptable because:
+   - BLIS forms its own batches (which differ from real vLLM batches due to divergent dynamics), so even "seen" steps are evaluated in novel batch contexts.
+   - The E2E metric captures emergent simulation behavior, not per-step memorization.
+   - However: **model selection and hyperparameter tuning must NOT use BLIS E2E on the same experiments the model was trained on.** If an idea trains on all 16 experiments' step data and tunes hyperparameters by running BLIS on those same 16 experiments, that is overfitting to the evaluation set. Instead, use a held-out validation strategy:
+     - Hold out a subset of experiments for BLIS E2E validation during development (e.g., train on 12, validate BLIS E2E on 4), OR
+     - Use per-step validation split for hyperparameter selection, then report final BLIS E2E on all 16, OR
+     - Use leave-one-experiment-out cross-validation for model selection.
+   - The final BLIS E2E numbers reported in the leaderboard must clearly state which data was used for training vs. evaluation.
+
+4. **Temporal leakage awareness.** Ideas that use step-level or request-level data from a single experiment must not allow future information to leak into the training set. Within a continuous-batching trace, consecutive steps share requests — a random split at step level leaks future batch composition into the training set. Ideas must document their split strategy and explain why it prevents leakage.
+
+5. **Feature leakage.** Features that are only knowable after step execution (e.g., `num_finished`, `num_preempted`, `ts_end_ns`) must not be used as prediction inputs. See "Step lifecycle features" in the Ground-Truth Data schema for the full list of leakage-risk features.
+
+6. **Reproducibility.** Whatever split strategy an idea uses must be fully reproducible — random seeds documented, split indices saved, and the exact train/validation/test partition recoverable from the saved artifacts.
+
+### Training Strategy: Idea-Specific
+
+**Each idea defines its own training methodology, data splits, and fitting targets** — subject to the data integrity requirements above. The shared infrastructure provides data loading and the BLIS validation harness, but does NOT prescribe how ideas use the data. Different ideas may:
+
+- **Split at different granularities:** An idea fitting a step-time model may split step-level data. An idea calibrating QueueingTime may split request-level data. An end-to-end calibration idea may split at the experiment level (leave-one-experiment-out).
+- **Use different split strategies:** Temporal split, random split, k-fold cross-validation, leave-one-out — whatever is appropriate for the idea's approach.
+- **Fit models for different targets:** Step time, queueing time, scheduling overhead, output token processing time, preemption cost, or any combination. An idea may jointly calibrate all 5 LatencyModel methods to minimize BLIS E2E error directly.
+- **Use different data sources:** Step-level batch features, request-level lifecycle data, KV event traces, experiment-level metadata, or **MFU benchmarks from `InferSim/bench_data/`** (empirical GPU kernel throughput by shape/config — enables physics-informed approaches). Not all ideas need step-level data.
+
+**Shared constraints:** Every idea must (a) report its BLIS E2E/TTFT/ITL mean errors using the shared `validate_blis.sh` harness, and (b) satisfy all data integrity requirements above. How the idea arrives at its LatencyModel implementation is its own design choice.
+
+### Temporal Autocorrelation Warning
+
+Ideas that split step-level data should be aware: steps within a single experiment are temporally autocorrelated — consecutive steps share similar batch compositions because requests persist across steps in continuous batching. Random splits at the step level risk temporal leakage (violating integrity requirement #4). Temporal ordering (train on earlier steps, validate on later steps) mitigates this. But the specific split strategy is the idea's choice — it must just be documented and justified.
+
+### Generalization Assessment
+
+Generalization across models and workloads is a P4 evaluation dimension. Ideas that claim generalization should demonstrate it via:
+- **Leave-one-model-out:** Train on 3 models, evaluate BLIS E2E on the held-out model's experiments
+- **Leave-one-workload-out:** Train on 3 workloads, evaluate BLIS E2E on the held-out workload's experiments
+- The 4 sweep experiments are available as an additional out-of-distribution test set
 
 ## Execution Plan
 
@@ -711,8 +772,21 @@ Step 1: Build shared infrastructure
   │   └── Measure each LatencyModel method's contribution to E2E error
   │   └── Identify which component dominates the error budget
   └── lifecycle_kv_extractor.py: derive per-request KV lengths
-      └── Extract per-request ProgressIndex at each step from request_metrics/
-      └── Compute per-step kv_mean, kv_max, kv_sum from per-request data
+  │   └── Extract per-request ProgressIndex at each step from request_metrics/
+  │   └── Compute per-step kv_mean, kv_max, kv_sum from per-request data
+  └── Go tree evaluator (sim/latency/stepml.go): lightweight LatencyModel
+  │   └── Loads exported model artifacts (JSON for trees, YAML for coefficients)
+  │   └── Implements LatencyModel interface (all 5 methods)
+  │   └── Registers via existing factory pattern alongside blackbox/roofline
+  │   └── ~200 lines; enables BLIS validation runs during research
+  └── validate_blis.sh: BLIS validation harness
+  │   └── For each of 16 experiments: run BLIS with candidate model on trace
+  │   └── Uses existing calibration infrastructure (calibrate.go) for E2E error
+  │   └── Outputs per-experiment E2E mean error, TTFT mean error, ITL mean error
+  └── Coefficient-swap baseline validation
+      └── Run BLIS with current blackbox alpha/beta on all 16 traces
+      └── Establish blackbox E2E mean error baseline (currently unknown)
+      └── This is the number Round 2 ideas must beat
 
 Step 2: Run /research-ideas (sequential)
   └── problem.md with full context
@@ -721,36 +795,27 @@ Step 2: Run /research-ideas (sequential)
 
 Step 3: Scaffold hypotheses (parallel across ideas)
   └── Extract top 3-5 ideas
-  └── Create directory structure
+  └── Create idea-specific directory structure and sub-hypothesis decomposition
   └── Write HYPOTHESIS.md for each sub-hypothesis
 
-Step 4 - Wave 1: Feature engineering (parallel across ideas)
-  └── All h1-features run simultaneously
-  └── Each idea extracts its unique features
-  └── Short-circuit check: drop ideas with MAPE > 30%
-
-Step 5 - Wave 2: Model training (parallel across surviving ideas)
-  └── All h2-model run simultaneously
-  └── Each uses its h1's best feature set
-  └── Output: trained models + validation MAPE
-
-Step 6 - Wave 3: Generalization (parallel)
-  └── All h3-generalization run simultaneously
-  └── Leave-one-model-out evaluation
-  └── Cross-workload MAPE breakdown
+Step 4-6 - Waves: Execute sub-hypotheses (parallel across ideas, sequential within)
+  └── Each wave runs the current sub-hypothesis for all active ideas in parallel
+  └── Sub-hypothesis decomposition is idea-specific (not fixed h1/h2/h3)
+  └── Every idea's final sub-hypothesis MUST run BLIS validation (validate_blis.sh)
+  └── Short-circuit: drop ideas whose BLIS E2E error is worse than blackbox baseline
 
 Step 7: Leaderboard + selection (sequential)
-  └── Compare all ideas on test set
+  └── Compare all ideas on BLIS E2E validation results
   └── Evaluate on all dimensions (accuracy, ease of use, etc.)
   └── Select best approach, document findings
 ```
 
 ### Parallelism Model
 
-- **Across ideas:** Fully parallel (independent data, independent models)
-- **Within an idea:** Sequential dependency chain (h1 → h2 → h3)
+- **Across ideas:** Fully parallel (independent data, independent approaches)
+- **Within an idea:** Sequential dependency chain (idea-specific sub-hypotheses)
 - **Within a hypothesis:** Parallel configs/ablations within `run.sh`
-- **Short-circuiting:** After Wave 1, drop ideas with feature MAPE > 30%
+- **Short-circuiting:** After first BLIS validation, drop ideas with E2E error worse than blackbox baseline
 
 ## Skill Invocation Specifications
 
@@ -760,7 +825,7 @@ Each skill invocation below specifies the key decision points and their rational
 
 ### S1. `/research-ideas` — Phase 1: Ideation
 
-**Purpose:** Generate 3+ research ideas for step-time prediction, iteratively reviewed by external LLM judges.
+**Purpose:** Generate 3+ research ideas for achieving <10% BLIS E2E mean error via any combination of LatencyModel method improvements, iteratively reviewed by external LLM judges.
 
 **Pre-requisite:** Write `problem.md` (content derived from this design doc — see problem.md Content section above) before invoking the skill.
 
@@ -775,15 +840,15 @@ Each skill invocation below specifies the key decision points and their rational
 The `problem.md` file is written before skill invocation with content derived from this design document. It is a **reference template** — the authoritative content lives in the sections above (Problem Statement, Ground-Truth Data, Evaluation Framework, Baselines). The problem.md content should be regenerated from those sections at invocation time rather than maintained as a separate copy.
 
 **Key content requirements for problem.md:**
-- Problem statement: step-time prediction for LLM inference serving simulation
-- Scope clarification: replacing the blackbox model only; roofline is NOT being replaced
-- Available data: ~165K step-level observations, 4 models × 4 workloads, H100 GPUs, vLLM v0.15.1
-- Algorithm scope: statistical, analytical, ML, or hybrid — not restricted to ML
-- 10 evaluation dimensions (from the Evaluation Framework section above)
-- Constraints: <1ms inference, features observable at step time, 10% sampling
-- Baselines: blackbox (being replaced — must outperform), roofline (comparison only — NOT being replaced), naive mean
-- Strong idea criteria: algorithmic design, feature representation, fitting methodology, generalization mechanism, related work positioning
-- All 10 evaluation dimensions must be addressed per idea
+- Problem statement: achieving <10% BLIS E2E mean error by improving any or all of the 5 LatencyModel methods
+- Scope clarification: replacing the blackbox model only; roofline is NOT being replaced. Ideas may target any combination of the 5 methods (step time, queueing time, output token processing, scheduling overhead, preemption cost).
+- Available data: ~165K step-level observations + per-request lifecycle data + KV event traces, 4 models × 4 workloads, H100 GPUs, vLLM v0.15.1
+- Algorithm scope: statistical, analytical, ML, end-to-end calibration, multi-component optimization, or hybrid — not restricted to ML or to step-time-only approaches
+- Primary metric: BLIS E2E mean error < 10% per experiment, measured via BLIS simulation runs
+- Constraints: <1ms inference per step, features observable at prediction time, 10% step sampling
+- Baselines: blackbox (being replaced — must outperform on BLIS E2E), roofline (comparison only — NOT being replaced), naive mean
+- Strong idea criteria: algorithmic design, which LatencyModel methods are targeted, fitting methodology, generalization mechanism, Go integration path, related work positioning
+- All evaluation dimensions must be addressed per idea
 
 **Data sources referenced:** This repository (BLIS latency models), the data collection results directory (ground-truth schema), kernel benchmark data, existing roofline hypotheses.
 
@@ -843,49 +908,36 @@ LLM inference serving latency prediction, Vidur step time estimation, roofline G
 
 #### Pre-invocation Setup (per idea)
 
-Before invoking `/hypothesis-test` for Idea N, manually create:
+Before invoking `/hypothesis-test` for Idea N, create the idea's sub-hypothesis directories. The sub-hypothesis decomposition is **idea-specific** — it depends on the idea's approach:
 
 ```
-hypotheses/h-stepml/idea-N-<name>/h1-features/HYPOTHESIS.md   # Status: Pending
-hypotheses/h-stepml/idea-N-<name>/h2-model/HYPOTHESIS.md      # Status: Pending
-hypotheses/h-stepml/idea-N-<name>/h3-generalization/HYPOTHESIS.md  # Status: Pending
+hypotheses/h-stepml/idea-N-<name>/h1-<first>/HYPOTHESIS.md    # Status: Pending
+hypotheses/h-stepml/idea-N-<name>/h2-<second>/HYPOTHESIS.md   # Status: Pending
+hypotheses/h-stepml/idea-N-<name>/h3-<third>/HYPOTHESIS.md    # Status: Pending (optional)
 ```
 
-Each `HYPOTHESIS.md` follows the project template with content derived from the research idea. It MUST include a Related Work section with citations from `research.md`. Example for h1-features:
+Each `HYPOTHESIS.md` follows the project template with content derived from the research idea. It MUST include a Related Work section with citations from `research.md`. The claim and refutation criteria should be expressed in terms of **BLIS E2E mean error** wherever possible, not just per-step MAPE.
 
+Example for a step-time-focused idea (h1-features):
 ```markdown
-# Hypothesis: [Idea N] Feature Engineering
-
-**Status:** Pending
-**Family:** Performance-regime
-**Type:** Type 2 (Statistical — Dominance)
-
 ## Claim
-
-[Extracted from research.md idea N]: Feature set X (e.g., "physics-informed features
-including compute intensity ratio, memory boundedness index, and prefill/decode token
-interaction terms") achieves lower validation MAPE than raw batch features alone when
-used with a baseline Ridge regression model.
+Feature set X achieves BLIS E2E mean error < 15% on at least 12/16 experiments
+when used with a Ridge regression model for step-time prediction.
 
 ## Refuted If
+BLIS E2E mean error > 20% on more than 8/16 experiments.
+```
 
-The engineered feature set achieves validation MAPE within 2 percentage points of
-raw features (no statistically significant improvement at p < 0.05).
+Example for an end-to-end calibration idea (h1-component-attribution):
+```markdown
+## Claim
+QueueingTime and SchedulingProcessingTime together contribute >30% of BLIS E2E
+mean error. Calibrating these two methods reduces E2E error by at least 5
+percentage points compared to calibrating StepTime alone.
 
-## Related Work
-
-[Extracted from research.md idea N — required citations]:
-- [Author et al., Venue Year]: How this work informs our feature design
-- [Author et al., Venue Year]: What features they used and why ours differ
-- ...
-
-## Algorithmic Justification
-
-[First-principles reasoning for why this feature set should work for step-time
-prediction — e.g., "Compute intensity ratio captures the transition between
-compute-bound and memory-bound regimes that determines which hardware resource
-is the bottleneck for a given batch composition" (cf. Williams et al., roofline
-model, 2009)]
+## Refuted If
+Component ablation shows QueueingTime + SchedulingProcessingTime contribute
+<15% of E2E error, or calibrating them reduces E2E error by <2 percentage points.
 ```
 
 #### Key Decisions
@@ -893,18 +945,20 @@ model, 2009)]
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Project scope | Current directory, scoped to the specific idea directory | Prevents generating unrelated hypotheses |
-| Hypothesis count | 3 per idea (pre-written) | h1-features → h2-model → h3-generalization dependency chain |
-| Hypothesis selection | Select only our 3 pending HYPOTHESIS.md files; ignore any auto-generated ones | We control the hypothesis content via pre-written files |
-| Execution mode | Sequential (within an idea) | h2 depends on h1's output; cross-idea parallelism handled by wave dispatch |
+| Hypothesis count | 2-3 per idea (pre-written, idea-specific decomposition) | Depends on the idea's approach |
+| Hypothesis selection | Select only our pending HYPOTHESIS.md files; ignore any auto-generated ones | We control the hypothesis content via pre-written files |
+| Execution mode | Sequential (within an idea) | Sub-hypotheses may have dependencies; cross-idea parallelism handled by wave dispatch |
 | Experiment approval | Review scaffolded code, then run all | Verify shared infrastructure usage before running |
 | Commit | Commit all (including failed experiments) | Failed experiments provide diagnostic information |
 
 **Verification checklist (before approving scaffolded experiments):**
+- **Data integrity:** Train/validation/test splits (if used) are strictly non-overlapping; no leakage-risk features used as inputs; split strategy documented and justified
+- **Data integrity:** Model selection and hyperparameter tuning do NOT use BLIS E2E on the same experiments the model was trained on (see Data Integrity Requirement #3)
 - `run.sh` sources shared data loader, not custom parsing
-- `run.sh` uses the shared train/valid/test split (not its own)
-- `analyze.py` imports shared evaluation harness for MAPE computation
-- `analyze.py` computes baseline comparisons (blackbox [must outperform], roofline [informational comparison], naive mean)
-- `FINDINGS.md` template includes all evaluation dimensions + systematic bias (MSPE) + p99 error analysis
+- `run.sh` runs BLIS validation via `validate_blis.sh` for at least one sub-hypothesis (the final one must)
+- `analyze.py` reports BLIS E2E mean error as the primary metric
+- `analyze.py` computes baseline comparisons (blackbox [must outperform on BLIS E2E], roofline [informational comparison])
+- `FINDINGS.md` template includes BLIS E2E mean error per experiment + all evaluation dimensions + clear statement of which data was used for training vs. evaluation
 - No hardcoded absolute paths; uses relative paths from hypothesis directory
 
 ---
@@ -1000,23 +1054,19 @@ model, 2009)]
 
 | Agent | Directory | Task |
 |-------|-----------|------|
-| Agent 1 | `hypotheses/h-stepml/idea-1-<name>/h1-features/` | Run `./run.sh`, then `python3 analyze.py`. Report MAPE results. |
-| Agent 2 | `hypotheses/h-stepml/idea-2-<name>/h1-features/` | Run `./run.sh`, then `python3 analyze.py`. Report MAPE results. |
-| Agent 3 | `hypotheses/h-stepml/idea-3-<name>/h1-features/` | Run `./run.sh`, then `python3 analyze.py`. Report MAPE results. |
+| Agent 1 | `hypotheses/h-stepml/idea-1-<name>/h1-<first>/` | Run `./run.sh`, then `python3 analyze.py`. Report results. |
+| Agent 2 | `hypotheses/h-stepml/idea-2-<name>/h1-<first>/` | Run `./run.sh`, then `python3 analyze.py`. Report results. |
+| Agent 3 | `hypotheses/h-stepml/idea-3-<name>/h1-<first>/` | Run `./run.sh`, then `python3 analyze.py`. Report results. |
 
 **Post-wave integration:** After all agents complete, the orchestrator:
-1. Collects each agent's MAPE results
-2. Applies short-circuit rule: drop ideas with MAPE > 30%
+1. Collects each agent's results (BLIS E2E error if available, per-step metrics otherwise)
+2. Applies short-circuit rule: drop ideas whose BLIS E2E error is worse than blackbox baseline
 3. Updates leaderboard README.md
-4. Proceeds to Wave 2 with surviving ideas
+4. Proceeds to next wave with surviving ideas
 
-#### Wave 2 Dispatch: Model Training
+#### Subsequent Waves
 
-Same pattern as Wave 1, but for `h2-model/` directories. Only surviving ideas participate.
-
-#### Wave 3 Dispatch: Generalization
-
-Same pattern, for `h3-generalization/` directories. Only ideas that passed Wave 2 (<10% MAPE on validation) participate.
+Same pattern for each idea's subsequent sub-hypotheses. Sub-hypothesis names and count are idea-specific. Only surviving ideas participate in each subsequent wave.
 
 ---
 
@@ -1036,17 +1086,28 @@ Same pattern, for `h3-generalization/` directories. Only ideas that passed Wave 
 
 The plan covers only the shared infrastructure (Step 1 of the execution plan). Subsequent steps (research-ideas, hypothesis-test, etc.) are orchestrated by this design doc's skill specifications, not by the implementation plan.
 
-Tasks for the plan:
+Tasks for the plan (shared infrastructure only — idea-specific training, splits, and model fitting are NOT shared):
+
+**Data loading and characterization:**
 1. Parse all 20 experiments' step-level data → unified Parquet dataset
-2. Verify `step.duration_us` semantics: confirm it equals `ts_end_ns - ts_start_ns` and characterize what it includes/excludes (D-8: resolve prefix cache semantics in this task too)
-3. Characterize sampling distribution: check for periodic bias, measurement overhead, phase representation (see Sampling Bias Characterization)
-4. Implement stratified train/valid/test split (60/20/20 by model×workload, temporal ordering within experiments)
-5. Implement MAPE + Pearson r + MSPE + p99 error evaluation harness
-6. Implement blackbox (being replaced) + roofline (informational comparison) + naive mean baselines
-7. Verify baselines produce expected MAPE ranges; calibrate short-circuit threshold (if blackbox MAPE > 25%, adjust threshold to blackbox_MAPE + 10%)
-8. Validate the temporal split: compare random vs. temporal split MAPE to confirm leakage prevention is effective
-9. **E2E latency decomposition tool** (`e2e_decomposition.py`): Given ground-truth per-request lifecycle data and current LatencyModel predictions, compute the error contribution of each of the 5 LatencyModel methods to workload-level E2E mean error. This identifies which component dominates the error budget and should be prioritized. Implementation: reconstruct per-request E2E by summing predicted delays along the request path, then ablate each component (replace with ground-truth value) to measure its marginal error contribution.
-10. **Per-request KV length extractor** (`lifecycle_kv_extractor.py`): Derive per-request KV cache lengths at each step from the per-request lifecycle data in `request_metrics/`. Output: per-step features (`kv_mean`, `kv_max`, `kv_sum`, `kv_std`) joined to the step-level dataset. This unlocks the primary feature gap identified in Round 1 and is prerequisite for any idea using per-request KV features.
+2. Parse per-request lifecycle data → request-level dataset (for ideas that work at request granularity)
+3. Verify `step.duration_us` semantics: confirm it equals `ts_end_ns - ts_start_ns` and characterize what it includes/excludes (D-8: resolve prefix cache semantics in this task too)
+4. Characterize sampling distribution: check for periodic bias, measurement overhead, phase representation (see Sampling Bias Characterization)
+
+**Evaluation infrastructure (Python-side diagnostics):**
+5. Implement per-step MAPE + Pearson r + MSPE + p99 error evaluation harness (diagnostic — ideas may use for model debugging)
+6. Implement blackbox (being replaced) + roofline (informational comparison) + naive mean per-step baselines
+
+**BLIS validation infrastructure (authoritative evaluation):**
+7. **Go tree evaluator** (`sim/latency/stepml.go`): Lightweight LatencyModel implementation that loads exported model artifacts (XGBoost JSON for tree ensembles, YAML for coefficient-based models) and implements all 5 LatencyModel methods. Registers via the existing factory pattern alongside blackbox and roofline. ~200 lines of Go. This enables BLIS validation runs during research without requiring full production integration. Selection via a new `--stepml-model <path>` CLI flag.
+8. **BLIS validation harness** (`hypotheses/h-stepml/shared/validate_blis.sh`): For each of the 16 experiments, runs BLIS with the candidate model's exported artifacts on the experiment's ground-truth trace (trace v2 format via `--workload-spec`). Uses the existing calibration infrastructure (`sim/workload/calibrate.go`) to compute per-experiment E2E mean error, TTFT mean error, and ITL mean error. Outputs a summary CSV for leaderboard inclusion.
+9. **Blackbox E2E baseline**: Run the validation harness with the current blackbox alpha/beta coefficients on all 16 traces. This establishes the blackbox's actual E2E mean error (currently unknown — Round 1 only measured per-step MAPE). This number is the baseline that Round 2 ideas must beat.
+
+**Feature extraction tools (used by ideas that need them):**
+10. **E2E latency decomposition tool** (`e2e_decomposition.py`): Given ground-truth per-request lifecycle data and current LatencyModel predictions, compute the error contribution of each of the 5 LatencyModel methods to workload-level E2E mean error. This identifies which component dominates the error budget and should be prioritized. Implementation: reconstruct per-request E2E by summing predicted delays along the request path, then ablate each component (replace with ground-truth value) to measure its marginal error contribution.
+11. **Per-request KV length extractor** (`lifecycle_kv_extractor.py`): Derive per-request KV cache lengths at each step from the per-request lifecycle data in `request_metrics/`. Output: per-step features (`kv_mean`, `kv_max`, `kv_sum`, `kv_std`) joined to the step-level dataset. This unlocks the primary feature gap identified in Round 1 and is prerequisite for any idea using per-request KV features.
+
+**Note:** Data splits, training strategies, and model fitting are NOT part of shared infrastructure. Each idea defines its own training methodology (see Data Split and Training Strategy section).
 
 ---
 
@@ -1076,24 +1137,24 @@ Tasks for the plan:
 | Prediction latency < 1ms | Benchmark test at max batch size with p99 measurement (INV-M-4) |
 | Predictions are monotonic in total tokens | Incrementally larger batches test (INV-M-5) |
 | Data loading preserves all records | Row count validation against source files |
-| Train/valid/test split is temporally ordered | Assert all training step_ids < all validation step_ids within each experiment |
-| Temporal split prevents leakage | Train a model on random split vs. temporal split; if random split MAPE is significantly lower (<2% difference), temporal leakage is minimal and the split is effective. If random is much lower (>5% difference), the temporal split is correctly preventing leakage. |
+| Ideas using temporal splits have correct ordering | Assert all training step_ids < all validation step_ids within each experiment (for ideas that use step-level temporal splits) |
+| BLIS validation harness produces correct results | Run BLIS with known-good blackbox coefficients and verify calibration output matches expected E2E/TTFT/ITL values |
 | Feature derivation from Request batch is correct | For each derived feature (e.g., mean KV length from progress indices), compare the Python research implementation's feature values against the values that would be computed from the Request fields. Document the exact mapping. |
 
 ### Validation (Fidelity)
 
 | What | How |
 |------|-----|
-| Step-time prediction accuracy | MAPE + Pearson r on held-out test set (per-model breakdown) |
+| LatencyModel fidelity | BLIS E2E mean error on full traces (primary) + per-step MAPE on idea-specific validation split (diagnostic) |
 | Improvement over baselines is real | Paired statistical test (p < 0.05) against best baseline |
 | Model doesn't overfit to sampling artifacts | Compare MAPE on 10%-sampled vs. full traces (if feasible) |
-| Error doesn't compound in simulation | End-to-end validation with BLIS calibration infrastructure (deferred to post-research integration) |
+| Error doesn't compound in simulation | BLIS validation runs during research (Stage 1 Tier 1b) using lightweight Go evaluator + calibration infrastructure; production-quality validation in Stage 2 |
 
 ### Reproducibility Contract
 
 - All random seeds fixed and documented
 - All Python dependencies pinned with exact versions
-- Training data split saved as reproducible indices
+- Each idea's training data split (if any) saved as reproducible indices
 - Trained model artifacts saved alongside experiment results
 - Every `run.sh` is executable from a clean environment with documented setup steps
 
@@ -1110,7 +1171,7 @@ Per Section 2.6 of the Design Guidelines:
 | What new state is introduced? Who owns it? | Trained model weights (immutable, owned by StepML LatencyModel instance). No mutable simulation state introduced. |
 | What new metrics are derived? | Per-step prediction accuracy (MAPE, MSPE) — research-time only, not part of simulation output. |
 | How will correctness be verified? | Invariants INV-M-1 through INV-M-5 (see Invariant Analysis). Unit tests. INV-6 (determinism) verified by INV-M-2: same batch → same prediction across runs (no random sampling at inference time). |
-| How will fidelity be validated? | MAPE on held-out test set + lightweight error propagation analysis (Stage 1, during research) + full BLIS calibration (Stage 2, deferred). See Validation Strategy. |
+| How will fidelity be validated? | BLIS simulation runs during research (Stage 1 Tier 1b) — each candidate model is exported and run through BLIS on all 16 ground-truth traces, producing E2E/TTFT/ITL mean errors via `calibrate.go`. Per-step MAPE on Python-side validation split is a diagnostic. Production-quality validation in Stage 2. See Validation Strategy. |
 | Does this introduce new randomness? | No — prediction is deterministic (supports INV-6). Training uses randomness but that's offline, not in the DES loop. All random seeds in training are fixed for reproducibility. |
 | What is the simplest version that answers the same questions? | A re-trained blackbox model with more features (e.g., adding batch_size and mean_kv_len as 4th/5th coefficients). If this achieves <10% workload-level E2E mean error, more complex approaches are unnecessary. This is tested as the feature engineering baseline in h1-features. The roofline model is unaffected regardless of outcome. |
 | How does this interact with KV cache offloading? | The StepML model predicts GPU-side step time. KV cache offload/reload latency is handled by the separate KV cache subsystem (transfer latency consumed via the KVStore interface). The StepML model does not predict transfer latency — it only predicts the model execution time for a formed batch. If offloading reduces effective GPU KV usage, the batch composition features capture this indirectly (fewer decode tokens if requests are offloaded). |
@@ -1120,19 +1181,19 @@ Per Section 2.6 of the Design Guidelines:
 
 Ordered by priority (highest first):
 
-### Priority 1: Workload-Level E2E Mean Fidelity
-1. **Workload-level E2E mean error < 10%** on each of the 16 experiments individually — this is the primary go/no-go metric. For each experiment (model × workload), the predicted mean E2E latency must be within 10% of the ground-truth mean E2E latency.
-2. The improvement over the best baseline is **statistically significant** (p < 0.05, paired test across experiments)
-3. Per-step MAPE is reported as a **diagnostic metric** (no hard target, but informs understanding of how per-step errors aggregate)
+### Priority 1: Workload-Level E2E Mean Fidelity (measured via BLIS runs)
+1. **Workload-level E2E mean error < 10%** on each of the 16 experiments individually, **measured by running BLIS with the candidate model on the ground-truth trace and comparing the simulated mean E2E against the observed mean E2E.** This is the primary go/no-go metric.
+2. The improvement over the blackbox baseline is **statistically significant** (p < 0.05, paired test across experiments). The blackbox baseline's E2E error is also measured via BLIS runs (Task 13 in Phase 0).
+3. Per-step MAPE is reported as a **diagnostic metric** (no hard target, but informs understanding of how per-step errors aggregate into E2E error)
 
-### Priority 2: Per-Metric Accuracy (TTFT and ITL mean)
-4. **Workload-level TTFT mean error < 15%** on each experiment — TTFT mean is reconstructed from first-step predictions
-5. **Workload-level ITL mean error < 15%** on each experiment — ITL mean is reconstructed from decode step predictions
-6. The winning model **outperforms the blackbox baseline** it replaces on all three workload-level mean metrics: E2E, TTFT, and ITL (roofline comparison is informational — roofline is not being replaced)
+### Priority 2: TTFT and ITL Mean Fidelity (measured via BLIS runs)
+4. **Workload-level TTFT mean error < 15%** on each experiment — TTFT is the first-token latency from the BLIS simulation, compared against observed TTFT from ground-truth traces
+5. **Workload-level ITL mean error < 15%** on each experiment — ITL is the inter-token latency from the BLIS simulation, compared against observed ITL from ground-truth traces
+6. The winning model **outperforms the blackbox baseline** it replaces on all three BLIS-measured workload-level mean metrics: E2E, TTFT, and ITL (roofline comparison is informational — roofline is not being replaced)
 
-### Priority 3: Tail Latency Behavior
-7. **Tail latencies** (p99 E2E, p99 TTFT) do not exhibit ranking inversions compared to the blackbox baseline — i.e., the StepML model should not produce a worse ordering of workload scenarios at the tail
-8. Extreme errors (>50% per-step error) on <10% of steps
+### Priority 3: Tail Latency Behavior (measured via BLIS runs)
+7. **Tail latencies** (p99 E2E, p99 TTFT) from BLIS simulation do not exhibit ranking inversions compared to the blackbox baseline — i.e., the StepML model should not produce a worse ordering of workload scenarios at the tail
+8. Extreme errors (>50% per-step error) on <10% of steps (Python-side diagnostic)
 
 ### Priority 4: Model Quality and Practicality
 9. The winning model generalizes across **dense and MoE** architectures (workload-level E2E mean error < 15% on all MoE experiments)
