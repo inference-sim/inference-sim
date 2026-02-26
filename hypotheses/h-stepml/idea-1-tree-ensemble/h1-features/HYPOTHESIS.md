@@ -1,6 +1,6 @@
 # Idea 1, H1: Physics-Informed Feature Set Achieves <25% MAPE with Ridge Regression
 
-**Status:** Pending
+**Status:** Weakly Supported (per-experiment); Short-circuited (global)
 **Family:** Performance-regime
 **Type:** Type 2 (Statistical -- Dominance)
 **Date:** 2026-02-26

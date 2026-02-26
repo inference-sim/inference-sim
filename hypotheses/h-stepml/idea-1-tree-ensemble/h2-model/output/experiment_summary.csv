@@ -1,0 +1,17 @@
+experiment_id,model,workload,n_train,n_test,valid_mape,test_mape,best_max_depth,best_n_estimators,best_learning_rate,top_feature_1,top_feature_2,top_feature_3
+20260217-155451-llama-2-7b-tp1-codegen,llama-2-7b,codegen,9353,3117,32.58763780122561,33.424690292964485,4,100,0.05,f_kv_gpu_usage,f_kv_blocks_used,f_batch_size_x_kv_pressure
+20260217-162547-llama-2-7b-tp1-roleplay,llama-2-7b,roleplay,9130,3043,31.325907995304263,30.89725099486664,4,100,0.05,f_kv_blocks_free,f_prefill_x_decode,f_kv_gpu_usage
+20260217-170634-llama-2-7b-tp1-reasoning,llama-2-7b,reasoning,2980,993,7.79229724245867,12.989744856986524,4,100,0.05,f_num_decode_reqs,f_running_depth,f_decode_memory_intensity
+20260217-202857-llama-2-70b-tp4-general,llama-2-70b,general,3595,1199,55.0205391145186,55.44604078496176,4,100,0.05,f_running_depth,f_decode_tokens,f_kv_blocks_free
+20260217-203421-llama-2-70b-hf-tp4-codegen,llama-2-70b-hf,codegen,4007,1336,29.30651669247316,31.092550162487285,4,100,0.05,f_batch_size_x_kv_pressure,f_decode_tokens,f_kv_blocks_used
+20260217-231439-llama-2-7b-tp1-general,llama-2-7b,general,6758,2253,42.62140238256703,50.87802808537635,8,300,0.1,f_kv_blocks_free,f_total_flops_estimate,f_decode_memory_intensity
+20260218-065057-llama-2-70b-hf-tp4-reasoning,llama-2-70b-hf,reasoning,2669,889,3.526076330436208,9.76312572921235,4,100,0.05,f_decode_tokens,f_running_depth,f_num_decode_reqs
+20260218-084319-llama-2-70b-tp4-roleplay,llama-2-70b,roleplay,4045,1348,28.076381977882747,28.347986050299372,4,100,0.1,f_kv_blocks_free,f_decode_memory_intensity,f_kv_gpu_usage
+20260218-120914-mixtral-8x7b-v0-1-tp2-codegen,mixtral-8x7b-v0-1,codegen,3926,1309,13.248237850184747,14.705283271206179,4,100,0.05,f_total_flops_estimate,f_scheduled_tokens,f_batch_size_x_kv_pressure
+20260218-130541-mixtral-8x7b-v0-1-tp2-general,mixtral-8x7b-v0-1,general,3520,1174,8.791955835014557,9.064043627109717,4,100,0.05,f_total_flops_estimate,f_scheduled_tokens,f_arithmetic_intensity
+20260218-135247-mixtral-8x7b-v0-1-tp2-reasoning,mixtral-8x7b-v0-1,reasoning,2206,735,14.467283600337154,62.38428803401212,4,100,0.05,f_decode_tokens,f_decode_memory_intensity,f_num_decode_reqs
+20260218-141024-mixtral-8x7b-v0-1-tp2-roleplay,mixtral-8x7b-v0-1,roleplay,4006,1336,25.452351082491116,28.292368646807986,4,100,0.05,f_prefill_x_decode,f_prefill_x_kv_usage,f_prefill_tokens
+20260218-150304-codellama-34b-tp2-general,codellama-34b,general,4465,1488,124.73422573782081,121.47807235004294,8,100,0.05,f_running_depth,f_kv_blocks_free,f_batch_size_x_kv_pressure
+20260218-150956-codellama-34b-tp2-codegen,codellama-34b,codegen,4930,1643,15.926455789882901,16.120798962009967,4,100,0.05,f_prefill_x_kv_usage,f_total_flops_estimate,f_prefill_x_decode
+20260218-155500-codellama-34b-tp2-roleplay,codellama-34b,roleplay,5066,1688,27.272296065392947,25.69219883898297,4,100,0.05,f_prefill_x_decode,f_prefill_x_kv_usage,f_running_depth
+20260218-160939-codellama-34b-tp2-reasoning,codellama-34b,reasoning,2996,999,7.098569434358677,13.989923525830111,4,100,0.05,f_running_depth,f_decode_tokens,f_num_decode_reqs

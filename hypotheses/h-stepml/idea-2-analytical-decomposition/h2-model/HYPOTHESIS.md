@@ -1,6 +1,6 @@
 # Idea 2, H2: Learned Correction Factors Achieve <10% E2E Mean Error
 
-**Status:** Pending
+**Status:** Not Supported (0/16 < 15% MAPE; avg 78.7% worse than blackbox 70.4%)
 **Family:** Performance-regime
 **Type:** Type 2 (Statistical -- Dominance)
 **Date:** 2026-02-26

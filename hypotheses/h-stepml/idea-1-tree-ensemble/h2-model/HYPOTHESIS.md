@@ -1,6 +1,6 @@
 # Idea 1, H2: XGBoost Achieves <15% Per-Step MAPE and <10% Workload-Level E2E Mean Error
 
-**Status:** Pending
+**Status:** Weakly Supported (5/16 < 15% MAPE, avg 34.0% vs blackbox 70.4%)
 **Family:** Performance-regime
 **Type:** Type 2 (Statistical -- Dominance)
 **Date:** 2026-02-26

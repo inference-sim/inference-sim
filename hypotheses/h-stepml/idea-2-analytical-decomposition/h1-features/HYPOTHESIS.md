@@ -1,6 +1,6 @@
 # Idea 2, H1: Analytical Component Decomposition Captures Physical Structure
 
-**Status:** Pending
+**Status:** Not Supported (0/4 components > 0.8; only 6 pure-prefill steps)
 **Family:** Performance-regime
 **Type:** Type 2 (Statistical -- Dominance)
 **Date:** 2026-02-26

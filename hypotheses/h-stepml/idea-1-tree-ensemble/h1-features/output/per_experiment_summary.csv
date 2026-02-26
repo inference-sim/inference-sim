@@ -1,0 +1,17 @@
+experiment_id,model,workload,n_train,n_test
+20260217-155451-llama-2-7b-tp1-codegen,llama-2-7b,codegen,9353,3117
+20260217-162547-llama-2-7b-tp1-roleplay,llama-2-7b,roleplay,9130,3043
+20260217-170634-llama-2-7b-tp1-reasoning,llama-2-7b,reasoning,2980,993
+20260217-202857-llama-2-70b-tp4-general,llama-2-70b,general,3595,1199
+20260217-203421-llama-2-70b-hf-tp4-codegen,llama-2-70b-hf,codegen,4007,1336
+20260217-231439-llama-2-7b-tp1-general,llama-2-7b,general,6758,2253
+20260218-065057-llama-2-70b-hf-tp4-reasoning,llama-2-70b-hf,reasoning,2669,889
+20260218-084319-llama-2-70b-tp4-roleplay,llama-2-70b,roleplay,4045,1348
+20260218-120914-mixtral-8x7b-v0-1-tp2-codegen,mixtral-8x7b-v0-1,codegen,3926,1309
+20260218-130541-mixtral-8x7b-v0-1-tp2-general,mixtral-8x7b-v0-1,general,3520,1174
+20260218-135247-mixtral-8x7b-v0-1-tp2-reasoning,mixtral-8x7b-v0-1,reasoning,2206,735
+20260218-141024-mixtral-8x7b-v0-1-tp2-roleplay,mixtral-8x7b-v0-1,roleplay,4006,1336
+20260218-150304-codellama-34b-tp2-general,codellama-34b,general,4465,1488
+20260218-150956-codellama-34b-tp2-codegen,codellama-34b,codegen,4930,1643
+20260218-155500-codellama-34b-tp2-roleplay,codellama-34b,roleplay,5066,1688
+20260218-160939-codellama-34b-tp2-reasoning,codellama-34b,reasoning,2996,999

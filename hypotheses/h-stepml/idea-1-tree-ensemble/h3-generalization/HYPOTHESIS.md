@@ -1,6 +1,6 @@
 # Idea 1, H3: XGBoost Generalizes Across Unseen Models and Workloads
 
-**Status:** Pending
+**Status:** Not Supported (LOMO avg 2559.7%, LOWO avg 109.7%)
 **Family:** Performance-regime
 **Type:** Type 2 (Statistical -- Dominance)
 **Date:** 2026-02-26

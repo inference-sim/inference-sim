@@ -1,0 +1,12 @@
+subset,component,pearson_r,n_steps
+pure_prefill,prefill_gemm_us,,6
+pure_prefill,prefill_attn_us,,6
+pure_prefill,total_analytical_us,,6
+pure_prefill,batch.prefill_tokens (baseline),,6
+pure_decode,decode_gemm_us,0.43670588050427783,98961
+pure_decode,decode_attn_us,,98961
+pure_decode,total_analytical_us,0.43670588050427783,98961
+pure_decode,batch.decode_tokens (baseline),0.42017378432376795,98961
+all,total_analytical_us,0.3349961156151272,122752
+all,prefill_gemm_us,0.026127345817234547,122752
+all,decode_gemm_us,0.43344537843878794,122752
