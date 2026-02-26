@@ -42,6 +42,13 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		}
 	}
 
+	// Expand cohorts into explicit client specs before generation.
+	// Cohort-expanded clients are merged with explicitly defined clients.
+	if len(spec.Cohorts) > 0 {
+		expanded := ExpandCohorts(spec.Cohorts, spec.Seed)
+		spec.Clients = append(spec.Clients, expanded...)
+	}
+
 	UpgradeV1ToV2(spec)
 
 	if err := spec.Validate(); err != nil {

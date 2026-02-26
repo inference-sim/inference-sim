@@ -179,7 +179,7 @@ func ConvertPreset(name string, rate float64, numRequests int, preset PresetConf
 					Type: "gaussian",
 					Params: map[string]float64{
 						"mean":  float64(preset.PromptTokensMean),
-						"stdev": float64(preset.PromptTokensStdev),
+						"std_dev": float64(preset.PromptTokensStdev),
 						"min":   float64(preset.PromptTokensMin),
 						"max":   float64(preset.PromptTokensMax),
 					},
@@ -188,7 +188,7 @@ func ConvertPreset(name string, rate float64, numRequests int, preset PresetConf
 					Type: "gaussian",
 					Params: map[string]float64{
 						"mean":  float64(preset.OutputTokensMean),
-						"stdev": float64(preset.OutputTokensStdev),
+						"std_dev": float64(preset.OutputTokensStdev),
 						"min":   float64(preset.OutputTokensMin),
 						"max":   float64(preset.OutputTokensMax),
 					},

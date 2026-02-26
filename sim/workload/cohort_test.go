@@ -14,8 +14,8 @@ func TestCohortValidation_ZeroPopulation_ReturnsError(t *testing.T) {
 			{
 				ID: "test", Population: 0, RateFraction: 1.0,
 				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 			},
 		},
 	}
@@ -36,8 +36,8 @@ func TestCohortValidation_PeakToTroughLessThanOne_ReturnsError(t *testing.T) {
 			{
 				ID: "test", Population: 5, RateFraction: 1.0,
 				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 				Diurnal: &DiurnalSpec{PeakHour: 14, TroughHour: 2, PeakToTroughRatio: 0.5},
 			},
 		},
@@ -59,8 +59,8 @@ func TestCohortValidation_ValidCohort_NoError(t *testing.T) {
 			{
 				ID: "valid", Population: 10, RateFraction: 1.0,
 				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 				Diurnal: &DiurnalSpec{PeakHour: 14, TroughHour: 2, PeakToTroughRatio: 4.0},
 			},
 		},
@@ -79,8 +79,8 @@ func TestCohortValidation_SpikeInvalidMultiplier_ReturnsError(t *testing.T) {
 			{
 				ID: "test", Population: 5, RateFraction: 1.0,
 				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 				Spike: &SpikeSpec{StartTimeUs: 1000000, DurationUs: 100000, Multiplier: -1.0},
 			},
 		},
@@ -99,8 +99,8 @@ func TestCohortValidation_DrainZeroRamp_ReturnsError(t *testing.T) {
 			{
 				ID: "test", Population: 5, RateFraction: 1.0,
 				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 				Drain: &DrainSpec{StartTimeUs: 1000000, RampDurationUs: 0},
 			},
 		},
@@ -120,8 +120,8 @@ func TestExpandCohorts_Determinism_SameSeedSameOutput(t *testing.T) {
 			ID: "workers", Population: 5, RateFraction: 1.0,
 			TenantID: "t1", SLOClass: "standard",
 			Arrival:   ArrivalSpec{Process: "poisson"},
-			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 		},
 	}
 
@@ -143,8 +143,8 @@ func TestExpandCohorts_ClientIDsUnique(t *testing.T) {
 		{
 			ID: "group-a", Population: 3, RateFraction: 1.0,
 			Arrival:   ArrivalSpec{Process: "poisson"},
-			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 		},
 	}
 	result := ExpandCohorts(cohorts, 42)
@@ -170,8 +170,8 @@ func TestExpandCohorts_FieldInheritance(t *testing.T) {
 			ID: "inherited", Population: 2, RateFraction: 1.0,
 			TenantID: "tenant-x", SLOClass: "critical", Model: "model-y",
 			Arrival:   ArrivalSpec{Process: "constant"},
-			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 			Streaming: true,
 		},
 	}
@@ -197,8 +197,8 @@ func TestExpandCohorts_DiurnalPattern_ProducesLifecycleWindows(t *testing.T) {
 		{
 			ID: "diurnal", Population: 1, RateFraction: 1.0,
 			Arrival:   ArrivalSpec{Process: "poisson"},
-			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 			Diurnal: &DiurnalSpec{PeakHour: 14, TroughHour: 2, PeakToTroughRatio: 4.0},
 		},
 	}
@@ -227,8 +227,8 @@ func TestExpandCohorts_SpikePattern_ProducesLifecycleWindow(t *testing.T) {
 		{
 			ID: "spiked", Population: 1, RateFraction: 1.0,
 			Arrival:   ArrivalSpec{Process: "poisson"},
-			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 			Spike: &SpikeSpec{StartTimeUs: 1_000_000, DurationUs: 500_000, Multiplier: 5.0},
 		},
 	}
@@ -254,8 +254,8 @@ func TestExpandCohorts_DrainPattern_ProducesRampDownWindows(t *testing.T) {
 		{
 			ID: "draining", Population: 1, RateFraction: 1.0,
 			Arrival:   ArrivalSpec{Process: "poisson"},
-			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 			Drain: &DrainSpec{StartTimeUs: 1_000_000, RampDurationUs: 1_000_000},
 		},
 	}
@@ -277,18 +277,61 @@ func TestExpandCohorts_DrainPattern_ProducesRampDownWindows(t *testing.T) {
 	}
 }
 
+func TestGenerateRequests_WithCohorts_MergesWithExplicitClients(t *testing.T) {
+	// GIVEN a spec with 1 explicit client + 1 cohort (population=3)
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []ClientSpec{
+			{
+				ID: "explicit", RateFraction: 0.5,
+				Arrival:   ArrivalSpec{Process: "constant"},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+			},
+		},
+		Cohorts: []CohortSpec{
+			{
+				ID: "cohort", Population: 3, RateFraction: 0.5,
+				Arrival:   ArrivalSpec{Process: "constant"},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+			},
+		},
+	}
+
+	// WHEN generating requests over a short horizon
+	requests, err := GenerateRequests(spec, 10_000_000, 50)
+	if err != nil {
+		t.Fatalf("GenerateRequests failed: %v", err)
+	}
+
+	// THEN requests are generated (merged from explicit + cohort clients)
+	if len(requests) == 0 {
+		t.Fatal("expected non-empty request list")
+	}
+	// Requests must be sorted by arrival time (INV-5 causality)
+	for i := 1; i < len(requests); i++ {
+		if requests[i].ArrivalTime < requests[i-1].ArrivalTime {
+			t.Errorf("requests not sorted: request[%d].ArrivalTime=%d < request[%d].ArrivalTime=%d",
+				i, requests[i].ArrivalTime, i-1, requests[i-1].ArrivalTime)
+		}
+	}
+}
+
 func TestExpandCohorts_IndependentRNG_ReorderingDoesNotChange(t *testing.T) {
 	cohortA := CohortSpec{
 		ID: "a", Population: 3, RateFraction: 0.5,
 		Arrival:   ArrivalSpec{Process: "poisson"},
-		InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
-		OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "stdev": 5, "min": 1, "max": 100}},
+		InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+		OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 	}
 	cohortB := CohortSpec{
 		ID: "b", Population: 2, RateFraction: 0.5,
 		Arrival:   ArrivalSpec{Process: "constant"},
-		InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 200, "stdev": 20, "min": 1, "max": 400}},
-		OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "stdev": 10, "min": 1, "max": 200}},
+		InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 200, "std_dev": 20, "min": 1, "max": 400}},
+		OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 	}
 
 	// Expand in order [A, B]
