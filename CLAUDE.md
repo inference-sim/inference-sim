@@ -12,10 +12,16 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 ```bash
 # Build
-go build -o simulation_worker main.go
+go build -o blis main.go
 
 # Run with default model
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct
+./blis run --model meta-llama/llama-3.1-8b-instruct
+
+# Convert workload formats
+./blis convert preset --name chatbot --rate 10 --num-requests 100
+./blis convert csv-trace --file trace.csv
+./blis convert servegen --path data/
+./blis compose --from spec1.yaml --from spec2.yaml
 ```
 
 ## Testing
@@ -144,7 +150,7 @@ Full details: see [`docs/standards/principles.md`](docs/standards/principles.md)
 
 Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`). PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache) completed. Default weighted routing profile: `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity).
 
-Phase 0 workload unification in progress (see issue #420): W0-1 (spec v2 schema + SLO tiers) complete. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant.
+Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + SLO tiers), W0-2 (binary rename + converters), W0-3 (cohort population dynamics), W0-4 (legacy retirement). All workload generation now flows through `sim/workload/GenerateRequests()`. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant. CLI binary renamed from `simulation_worker` to `blis`.
 
 ### Extension Recipes
 
@@ -192,11 +198,13 @@ inference-sim/
 ├── cmd/
 │   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
+│   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
+│   ├── compose.go             # `blis compose` for merging v2 specs
 │   └── default_config.go      # defaults.yaml loading
 ├── sim/                       # Core single-instance simulator
 │   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16)
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
-│   ├── simulator.go           # SimConfig struct (composed of 6 embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor, event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording (recordQueueSnapshots, recordKVUsageMetrics, recordRequestCompletion), observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon())
+│   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor, event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording, observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon()). All workload generation external via InjectArrival().
 │   ├── admission.go           # AdmissionPolicy interface (accepts *RouterState), AlwaysAdmit, TokenBucket, RejectAll, NewAdmissionPolicy factory
 │   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() for canonical load calculation), RoutingDecision (with Priority hint), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), PrefixAffinity, AlwaysBusiest templates, NewRoutingPolicy factory
 │   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs, IsValidScorer, DefaultScorerConfigs, newScorerWithObserver factory
@@ -217,7 +225,6 @@ inference-sim/
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
 │   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/)
-│   ├── workload_config.go     # CSV trace loading and distribution-based workload generation
 │   └── internal/testutil/     # Shared test infrastructure (golden dataset loading)
 ├── sim/kv/                    # KV cache implementations (PKG-1)
 │   ├── cache.go               # KVCacheState (single-tier GPU)
@@ -236,7 +243,6 @@ inference-sim/
 │   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
 │   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
 │   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields; ToSimConfig() returns the embedded config
-│   ├── workload.go            # Centralized request generation for cluster dispatch
 │   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
 ├── sim/workload/              # ServeGen-informed workload generation (PR10)
 │   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, v1→v2 auto-upgrade (UpgradeV1ToV2), IsValidSLOClass accessor
@@ -252,7 +258,10 @@ inference-sim/
 │   ├── reasoning.go           # Reasoning multi-turn with context accumulation
 │   ├── network.go             # Client-perspective latency (RTT + bandwidth)
 │   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
-│   └── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
+│   ├── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
+│   ├── convert.go             # Format converters: ConvertServeGen, ConvertCSVTrace, ConvertPreset, ComposeSpecs
+│   ├── cohort.go              # CohortSpec expansion: diurnal, spike, drain patterns → lifecycle windows
+│   └── synthesis.go           # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
 ├── sim/trace/                 # Decision trace recording (PR13)
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
