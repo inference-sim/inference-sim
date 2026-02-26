@@ -50,11 +50,11 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 	// 2. Check model_configs/ for an existing config.json (bundled or previously fetched)
 	localPath := filepath.Join(localDir, hfConfigFile)
 	if data, err := os.ReadFile(localPath); err == nil {
-		if json.Valid(data) {
+		if json.Valid(data) && isHFConfig(data) {
 			logrus.Infof("--roofline: using config from %s", localDir)
 			return localDir, nil
 		}
-		logrus.Warnf("--roofline: config at %s is not valid JSON, removing", localPath)
+		logrus.Warnf("--roofline: config at %s is not a valid HuggingFace config, removing", localPath)
 		if removeErr := os.Remove(localPath); removeErr != nil {
 			logrus.Warnf("--roofline: failed to remove corrupted config %s: %v", localPath, removeErr)
 		}
@@ -152,6 +152,11 @@ func fetchHFConfigFromURL(url, targetDir string) (string, error) {
 			host := req.URL.Hostname()
 			if host != "huggingface.co" && !strings.HasSuffix(host, ".huggingface.co") {
 				return fmt.Errorf("redirect to non-HuggingFace host %q blocked", host)
+			}
+			// Strip Authorization header on subdomain redirects to avoid leaking
+			// HF_TOKEN to CDN or other HuggingFace subdomains (defense-in-depth).
+			if host != "huggingface.co" {
+				req.Header.Del("Authorization")
 			}
 			return nil
 		},

@@ -220,6 +220,11 @@ var runCmd = &cobra.Command{
 						"using default %d. Consider setting --total-kv-blocks explicitly for accurate KV cache simulation",
 						model, gpu, tensorParallelism, totalKVBlocks)
 				}
+				if AllZeros(alphaCoeffs) {
+					logrus.Warnf("--roofline: no trained alpha coefficients found for model=%s, GPU=%s, TP=%d; "+
+						"queueing time and output token processing time will use zero alpha (may underestimate TTFT/ITL)",
+						model, gpu, tensorParallelism)
+				}
 			} else {
 				logrus.Warnf("--roofline: defaults file %s not found; alpha coefficients and total-kv-blocks not loaded. "+
 					"Queueing time estimation will use zero alpha coefficients", defaultsFilePath)
