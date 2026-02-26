@@ -300,3 +300,35 @@ For PR authors — check each rule before submitting:
 - [ ] **R18:** CLI flag values not silently overwritten by defaults.yaml
 - [ ] **R19:** Unbounded retry/requeue loops have circuit breakers
 - [ ] **R20:** Detectors and analyzers handle degenerate inputs (empty, skewed, zero)
+
+---
+
+## Rule Lifecycle
+
+Rules are born from real bugs and live as long as they prevent real bugs. As the codebase evolves, some rules may become automated, consolidated, or no longer applicable.
+
+### Lifecycle States
+
+| State | Meaning | Action |
+|-------|---------|--------|
+| **Active** | Rule prevents a class of bugs that can still occur | Check in every PR review |
+| **Automated** | Rule is enforced by CI (linter, test, build) | Note the enforcement mechanism; keep for documentation but skip manual checks |
+| **Consolidated** | Rule merged into a broader rule | Redirect to the parent rule; remove from checklist |
+| **Retired** | The class of bugs is no longer possible (e.g., the vulnerable code path was removed) | Move to a "Retired Rules" appendix with rationale |
+
+### When to Consolidate
+
+If two rules address the same root principle and checking one always catches the other, consolidate them. Example: if a linter rule were added that caught all R2 violations (unsorted map iteration), R2 could move to "Automated" state.
+
+### Quarterly Review
+
+Every ~10 PRs or quarterly (whichever comes first), scan the rule list:
+1. Can any rule be automated by a linter or CI check?
+2. Are any two rules always checked together and catching the same class of bugs?
+3. Has the code path that motivated any rule been removed?
+
+File an issue for each proposed state change. Do not retire rules silently.
+
+### Current State
+
+All 20 rules (R1-R20) are **Active** as of 2026-02-26. No rules have been automated, consolidated, or retired.
