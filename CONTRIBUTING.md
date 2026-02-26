@@ -20,6 +20,13 @@ golangci-lint run ./...
 
 All three must pass before submitting a PR. CI uses golangci-lint v2.9.0 (see `.github/workflows/ci.yml`).
 
+```bash
+# Local docs preview (requires Python + mkdocs-material)
+pip install mkdocs-material==9.7.3
+sed 's|](docs/|](|g' CONTRIBUTING.md > docs/contributing.md
+mkdocs serve
+```
+
 ## Your First Contribution
 
 This walkthrough adds a trivial admission policy — the lightest extension type (~3 files). Follow it step-by-step to learn the patterns, then apply them to your own contribution.
