@@ -100,6 +100,22 @@ func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion
 	}
 }
 
+// loadDefaultsConfig parses defaults.yaml into a Config struct.
+// Uses strict field checking (R10).
+func loadDefaultsConfig(path string) Config {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		logrus.Fatalf("Failed to read defaults file: %v", err)
+	}
+	var cfg Config
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
+		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
+	}
+	return cfg
+}
+
 func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, defaultsFilePath string) ([]float64, []float64, int64) {
 	data, err := os.ReadFile(defaultsFilePath)
 	if err != nil {
