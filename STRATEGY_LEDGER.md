@@ -249,6 +249,34 @@ The full N-way scan in weighted scoring provides better cache coverage than P2C'
 5. **Cache-aware routing eliminates queueing** → scheduling becomes irrelevant
 6. **The framework IS the strategy** — the composable scorer architecture with orthogonal dimensions is the optimal design. No per-request adaptation, SLO profiling, or scheduling tricks improve upon it.
 
+### Iteration 6: KV Pressure Baseline — STATIC-DEFAULT FAILS! (CONFIRMED)
+
+Under reduced KV blocks, static pa:3,qd:2,kv:2 LOSES to RR by 23-25%:
+
+| KV Blocks | RR | Static-Default | KV-Heavy (pa:2,qd:2,kv:5) |
+|-----------|-----|------|------|
+| 132K (normal) | 73.5ms | **68.4ms** (+7%) | 76.7ms (-4%) |
+| 5000 | **73.5ms** | 91.9ms (-25%) | **76.7ms** (-4%) |
+| 2000 | **73.5ms** | 90.5ms (-23%) | **76.7ms** (-4%) |
+| 1500 | timeout | timeout | timeout (230 preemptions) |
+
+**The KV-heavy profile (pa:2,qd:2,kv:5) is the BEST strategy under KV pressure** — stable at 76.7ms across ALL levels.
+
+### Iteration 7: KV-Adaptive Routing — Parameterized but NOT Yet Winning
+
+Implemented `KVAdaptiveScoring` with configurable thresholds and weight profiles. Uses max-instance KV utilization as trigger. However, the threshold doesn't fire because per-instance KV utilization stays below 50% even at 5000 total blocks.
+
+The degradation under KV pressure appears to be from PA-driven LOAD imbalance (not KV utilization levels). The PA scorer's match ratios change when fewer blocks are available for caching, causing different routing patterns.
+
+**Key remaining question**: Why does static-default degrade under KV pressure when KV utilization stays low? The llm-d blog's finding about approximate vs precise routing suggests the answer: the `PrefixCacheIndex` (approximate) diverges from actual KV state under block pressure, causing phantom cache hits that route to suboptimal instances.
+
+### New Components Implemented (Iterations 6-7)
+- `SLOClassPriority` — per-SLO-class base scores (critical=10, standard=5, batch=1)
+- `kv-pressure` scorer — FreeKVBlocks-based differentiation
+- `KVAdaptiveScoring` — parameterized dual-profile routing with configurable thresholds
+- Cost-benefit/slo-headroom scorers wired into regular weighted pipeline
+- Orthogonal SLO profiles replacing cost-benefit in DefaultSLOProfiles()
+
 4. **Next direction**: Scheduling-layer optimization to compound the routing benefit. PriorityFCFS with cache-aware priority should create HOL-blocking reduction (H27 analog)
 
 ### Iteration 3: Scheduling Co-optimization (CPAR) — NULL RESULT
