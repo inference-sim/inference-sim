@@ -22,6 +22,7 @@
 		"MemoryGiB":        80.0
 	},
 	"A100-80": {
+		"_comment":          "Alias for A100-SXM — defaults.yaml uses A100-80 for all A100 model entries (BC-14)",
 		"TFlopsPeak":        312,
 		"BwPeakTBs":         2.039,
         "BwEffConstant": 0.72,

@@ -390,7 +390,7 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 		BwEffConstant: 0.7,
 		MfuPrefill:    0.5,
 		MfuDecode:     math.NaN(),
-		MemoryGiB:     80.0,
+		MemoryGiB:     math.Inf(-1),
 	}
 
 	// WHEN ValidateRooflineConfig is called
@@ -401,7 +401,7 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 		t.Fatal("expected error for NaN/Inf hardware fields, got nil")
 	}
 	errMsg := err.Error()
-	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "MfuDecode"} {
+	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "MfuDecode", "MemoryGiB"} {
 		if !strings.Contains(errMsg, field) {
 			t.Errorf("error should mention %s, got: %v", field, errMsg)
 		}
@@ -461,6 +461,21 @@ func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "TP") {
 		t.Errorf("error should mention TP, got: %v", err)
+	}
+}
+
+// R7 companion invariant: every GPU in hardware_config.json must have positive MemoryGiB.
+// Survives refactoring — any GPU with valid memory passes regardless of exact value.
+func TestGetHWConfig_AllGPUs_HavePositiveMemoryGiB(t *testing.T) {
+	hwConfigPath := filepath.Join("..", "..", "hardware_config.json")
+	for _, gpu := range []string{"H100", "A100-SXM", "A100-80"} {
+		cfg, err := latency.GetHWConfig(hwConfigPath, gpu)
+		if err != nil {
+			t.Fatalf("GPU %q: %v", gpu, err)
+		}
+		if cfg.MemoryGiB <= 0 {
+			t.Errorf("GPU %q: MemoryGiB must be > 0, got %v", gpu, cfg.MemoryGiB)
+		}
 	}
 }
 
