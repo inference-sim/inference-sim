@@ -19,64 +19,68 @@ type SLOProfile struct {
 
 // DefaultSLOProfiles returns the default per-SLO-class weight profiles.
 //
-// Design rationale (derived from analytical model with beta3=0.004):
-//   - critical: TTFT budget ~50ms. Even 1 extra queued request adds ~173ms delay,
-//     which exceeds the cache saving of 53ms (prefix=2048). Never sacrifice load
-//     balance for cache affinity.
-//   - standard: Balanced approach. The default pa:3,qd:2,kv:2 scorer's natural
-//     per-request adaptation handles this well.
-//   - sheddable: Similar to standard but slightly more cache-tolerant.
-//   - batch: TTFT budget ~5000ms. Queue delay of 5-10 extra requests is acceptable.
-//     Maximize cache affinity to save compute.
-//   - background: No TTFT constraint. Pure cache affinity to maximize throughput.
+// Design rationale (iteration 5, informed by iterations 1-4 findings):
+//
+// Uses ORTHOGONAL scorers (PA + QD + KV) instead of cost-benefit.
+// Iteration 4 proved that independent signals provide more information to the
+// argmax than pre-combined signals. PA naturally self-corrects to 0 when no
+// cache match exists (iteration 2 finding), so including PA at low weight costs
+// nothing on cache miss while capturing savings on hit.
+//
+// Per-SLO differentiation:
+//   - critical: TTFT budget ~50ms. Heavy QD weight for load balance. PA:1 included
+//     at minimal weight — captures free cache hits without creating load imbalance.
+//   - standard: Balanced pa:3,qd:2,kv:2 (the proven default from iterations 1-4).
+//   - sheddable: Slightly more cache-tolerant than standard.
+//   - batch: TTFT budget ~5000ms. Heavy PA weight for aggressive cache exploitation.
+//     Queue penalty is negligible relative to budget.
+//   - background: Maximum cache affinity for throughput optimization.
 func DefaultSLOProfiles() map[string]SLOProfile {
 	return map[string]SLOProfile{
 		"critical": {
-			// Critical: the cost-benefit scorer naturally suppresses cache affinity
-			// when queue delay is high, and slo-headroom penalizes instances that
-			// would blow the tight TTFT budget. No load headroom override needed —
-			// the scorers handle it continuously.
+			// Critical: heavy load balance with minimal PA (captures free cache hits).
+			// PA:1 adds zero cost when no cache (returns 0 for all instances) but
+			// saves 9-72ms when a cache hit aligns with the least-loaded instance.
 			Scorers: []ScorerConfig{
-				{Name: "cost-benefit", Weight: 3.0},
-				{Name: "slo-headroom", Weight: 4.0},
-				{Name: "queue-depth", Weight: 2.0},
+				{Name: "prefix-affinity", Weight: 1.0},
+				{Name: "queue-depth", Weight: 5.0},
+				{Name: "kv-utilization", Weight: 2.0},
 			},
-			MaxLoadHeadroom: math.MaxInt, // let the scorers decide
+			MaxLoadHeadroom: math.MaxInt,
 		},
 		"standard": {
-			// Standard: cost-benefit handles the cache-vs-load tradeoff,
-			// supplemented by direct QD for load-balancing.
+			// Standard: the proven balanced profile from iterations 1-4.
 			Scorers: []ScorerConfig{
-				{Name: "cost-benefit", Weight: 3.0},
-				{Name: "slo-headroom", Weight: 2.0},
+				{Name: "prefix-affinity", Weight: 3.0},
 				{Name: "queue-depth", Weight: 2.0},
+				{Name: "kv-utilization", Weight: 2.0},
 			},
 			MaxLoadHeadroom: math.MaxInt,
 		},
 		"sheddable": {
+			// Sheddable: slightly more cache-tolerant than standard.
 			Scorers: []ScorerConfig{
-				{Name: "cost-benefit", Weight: 3.0},
-				{Name: "slo-headroom", Weight: 1.0},
+				{Name: "prefix-affinity", Weight: 3.0},
 				{Name: "queue-depth", Weight: 2.0},
+				{Name: "kv-utilization", Weight: 1.0},
 			},
 			MaxLoadHeadroom: math.MaxInt,
 		},
 		"batch": {
-			// Batch: cost-benefit with large budget means CB ≈ 1.0 for any cache hit
-			// (budget is so large that queue delay is negligible relative to saving).
-			// Heavy PA weight exploits cache aggressively.
+			// Batch: aggressive cache exploitation. 5s TTFT budget means queue
+			// penalty is negligible. PA:5 maximizes prefix cache reuse.
 			Scorers: []ScorerConfig{
-				{Name: "cost-benefit", Weight: 4.0},
-				{Name: "prefix-affinity", Weight: 3.0},
+				{Name: "prefix-affinity", Weight: 5.0},
 				{Name: "queue-depth", Weight: 1.0},
+				{Name: "kv-utilization", Weight: 1.0},
 			},
 			MaxLoadHeadroom: math.MaxInt,
 		},
 		"background": {
-			// Background: pure cache affinity + cost-benefit. No SLO constraint.
+			// Background: maximum cache affinity for throughput.
 			Scorers: []ScorerConfig{
-				{Name: "cost-benefit", Weight: 3.0},
 				{Name: "prefix-affinity", Weight: 5.0},
+				{Name: "queue-depth", Weight: 0.5},
 			},
 			MaxLoadHeadroom: math.MaxInt,
 		},

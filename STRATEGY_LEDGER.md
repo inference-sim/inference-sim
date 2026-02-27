@@ -201,6 +201,30 @@ The full N-way scan in weighted scoring provides better cache coverage than P2C'
 3. **The composable framework already captures the right trade-off**: The argmax over `pa:3,qd:2,kv:2` automatically balances cache vs load based on the instance-specific scores
 4. **Rate-sweep profile**: Static-default TTFT p99 grows only sub-linearly with rate (114→134ms for 100→500 req/s). RR grows linearly (170→404ms). This shows cache-aware routing provides increasing relative benefit at higher load.
 
+### Iteration 5 (in progress): Mixed-SLO Compound Strategy
+
+**New components implemented**:
+- `SLOClassPriority`: Per-SLO-class base scores (critical=10, standard=5, batch=1) + AgeWeight=1e-5
+- Updated `DefaultSLOProfiles()`: Orthogonal PA+QD profiles instead of cost-benefit
+  - critical: `pa:1,qd:5,kv:2` (minimal PA, heavy load balance)
+  - standard: `pa:3,qd:2,kv:2` (proven default)
+  - batch: `pa:5,qd:1,kv:1` (aggressive cache exploitation)
+- Cost-benefit and slo-headroom scorers wired into regular `weighted` pipeline
+
+**First batch results** (mixed-SLO: 30% critical + 50% batch + 20% standard, 8 instances):
+
+| Rate | RR | Static-Default | Adaptive-Ortho | +SLO Priority | SJF |
+|------|-----|------|------|------|------|
+| 200 | 125.19ms | **94.34ms** | **94.34ms** | **94.34ms** | **94.34ms** |
+| 300 | 132.74ms | **115.97ms** | **115.97ms** | **115.97ms** | 117.15ms |
+| 400 | 141.58ms | **128.02ms** | **128.02ms** | **128.02ms** | 131.93ms |
+
+**ALL cache-aware policies produce IDENTICAL TTFT p99** across rates 200-400. SLO-class priority has zero effect. Adaptive-weighted = static-default.
+
+**Root cause**: Cache-aware routing eliminates queueing → system never saturates at these rates → scheduling has nothing to optimize. Cache hit on batch requests drops prefill from 82ms to 9ms, dramatically increasing capacity.
+
+**Remaining experiment**: Need rate=600-1000 or N=4 to force saturation. The scheduling benefit appears only when queues are non-trivially deep.
+
 4. **Next direction**: Scheduling-layer optimization to compound the routing benefit. PriorityFCFS with cache-aware priority should create HOL-blocking reduction (H27 analog)
 
 ### Iteration 3: Scheduling Co-optimization (CPAR) — NULL RESULT
