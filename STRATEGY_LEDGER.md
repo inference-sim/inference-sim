@@ -399,7 +399,29 @@ Key: PA:QD ratio is the sole dominant parameter. Admission thresholds don't matt
 | 14b | **Bayesian PA:QD sweep** | **132ms** | **69%** | **PA:QD ≤ 1.33 safety rule** |
 | 15 | Epoch-adaptive | 162ms | 69% | Online learning infra built |
 
-### New Components Implemented (Iterations 6-15)
+### Iteration 16: Staleness Immunity (llm-d Blog Hypothesis)
+
+**pa:3,qd:2 is PERFECTLY INVARIANT across ALL staleness levels AND KV pressure levels:**
+
+| Policy | KV=132K/fresh | KV=132K/100ms stale | KV=5K/fresh | KV=5K/100ms stale |
+|--------|------|------|------|------|
+| **pa:3,qd:2** | **65.45ms** | **65.45ms** | **65.45ms** | **65.45ms** |
+| pa:3,qd:2,kv:2 | 68.35ms | 64.56ms | 91.89ms | 86.30ms |
+
+**Principle #12**: Staleness immunity comes from signal independence. PA reads synchronous PrefixCacheIndex, QD reads Immediate EffectiveLoad. Neither uses Periodic signals.
+
+### Iteration 17: Multi-Session Prefix Groups
+
+| Policy | TTFT P99 | vs RR |
+|--------|----------|-------|
+| **pa:4,qd:3** | **63.71ms** | **+13.9%** |
+| pa:3,qd:2 | 63.86ms | +13.7% |
+| pa:3,qd:2,kv:2 | 66.21ms | +10.5% |
+| RR | 73.99ms | baseline |
+
+PA creates effective session affinity: 8 sessions × 8 instances → near-1:1 mapping.
+
+### New Components Implemented (Iterations 6-17)
 - `SLOClassPriority` — per-SLO-class base scores (critical=10, standard=5, batch=1)
 - `kv-pressure` scorer — FreeKVBlocks-based differentiation
 - `KVAdaptiveScoring` — parameterized dual-profile routing with configurable thresholds
