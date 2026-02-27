@@ -74,6 +74,7 @@ Four-layer strategy exploiting `SLOClass` at every pipeline stage:
 | 7 | KV pressure + workload shapes | See below | See below | See below | Robustness characterization | Strategy generalizes |
 | 8 | Token budget + instance scaling | Crit: -73.4% at t=1024 | ~0% | 8.0x | Lower token budget = faster critical drain | Manual Pareto point |
 | **8-opt** | **Bayesian optimized (40 calls)** | **Crit: -73.7%** | **-1.1%** | **8.5x** | t=962, prefill_crit=508, age=9.8e-5, base_crit=12.9 | **GLOBAL OPTIMUM: 70.8ms critical** |
+| 9 | SLO-aware KV preemption | No effect (0 preempt) or WORSE (livelock) | — | — | Evict lowest-priority instead of tail | **NEGATIVE: no moderate-preemption regime for shared-prefix** |
 
 ## Key Insights Across Iterations
 

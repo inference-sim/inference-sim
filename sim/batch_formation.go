@@ -52,6 +52,16 @@ type BatchResult struct {
 	PreemptionHappened bool
 }
 
+// SLOPreemptionConfig controls SLO-aware preemption ordering.
+// When Enabled, preemptForTokens evicts the lowest-priority request in the batch
+// instead of the batch tail. This protects critical requests from preemption
+// when KV pressure forces eviction, at the cost of O(n) search per preemption.
+var SLOPreemptionConfig = struct {
+	Enabled bool
+}{
+	Enabled: false,
+}
+
 // SLOPrefillConfig controls per-SLO-class chunked prefill thresholds.
 // When Enabled, critical requests use CriticalThreshold and sheddable use SheddableThreshold.
 // Other classes use the global PrefillTokenThreshold from BatchContext.
@@ -191,9 +201,25 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 
 			result.PreemptionHappened = true
 			preemptionDelay := v.latencyModel.PreemptionProcessingTime()
-			preemptedRequest := result.RunningBatch.Requests[len(result.RunningBatch.Requests)-1]
-			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", ctx.Now, preemptedRequest.ID)
-			result.RunningBatch.Requests = result.RunningBatch.Requests[:len(result.RunningBatch.Requests)-1]
+
+			// Select victim: lowest-priority (SLO-aware) or batch tail (default)
+			victimIdx := len(result.RunningBatch.Requests) - 1
+			if SLOPreemptionConfig.Enabled && len(result.RunningBatch.Requests) > 1 {
+				minPriority := result.RunningBatch.Requests[0].Priority
+				victimIdx = 0
+				for i := 1; i < len(result.RunningBatch.Requests); i++ {
+					if result.RunningBatch.Requests[i].Priority < minPriority {
+						minPriority = result.RunningBatch.Requests[i].Priority
+						victimIdx = i
+					}
+				}
+			}
+			preemptedRequest := result.RunningBatch.Requests[victimIdx]
+			logrus.Warnf("[tick %07d] preemption: evicting %s (priority=%.2f) to make room", ctx.Now, preemptedRequest.ID, preemptedRequest.Priority)
+			// Remove victim from batch (swap with last, then truncate)
+			last := len(result.RunningBatch.Requests) - 1
+			result.RunningBatch.Requests[victimIdx] = result.RunningBatch.Requests[last]
+			result.RunningBatch.Requests = result.RunningBatch.Requests[:last]
 
 			result.Preempted = append(result.Preempted, PreemptedRequest{
 				Request:         preemptedRequest,

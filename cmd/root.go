@@ -94,6 +94,7 @@ var (
 	sloPrefillEnabled          bool
 	sloPrefillCriticalThresh   int64
 	sloPrefillSheddableThresh  int64
+	sloPreemptionEnabled       bool
 
 	// Policy bundle config (PR8)
 	policyConfigPath string // Path to YAML policy configuration file
@@ -583,6 +584,7 @@ var runCmd = &cobra.Command{
 		sim.SLOPrefillConfig.Enabled = sloPrefillEnabled
 		sim.SLOPrefillConfig.CriticalThreshold = sloPrefillCriticalThresh
 		sim.SLOPrefillConfig.SheddableThreshold = sloPrefillSheddableThresh
+		sim.SLOPreemptionConfig.Enabled = sloPreemptionEnabled
 
 		// Unified cluster path (used for all values of numInstances)
 		config := cluster.DeploymentConfig{
@@ -818,6 +820,7 @@ func init() {
 	runCmd.Flags().BoolVar(&sloPrefillEnabled, "slo-prefill", false, "Enable per-SLO chunked prefill thresholds")
 	runCmd.Flags().Int64Var(&sloPrefillCriticalThresh, "slo-prefill-critical", 128, "Chunked prefill threshold for critical (lower = more aggressive)")
 	runCmd.Flags().Int64Var(&sloPrefillSheddableThresh, "slo-prefill-sheddable", 0, "Chunked prefill threshold for sheddable (0 = no chunking)")
+	runCmd.Flags().BoolVar(&sloPreemptionEnabled, "slo-preemption", false, "Enable SLO-aware preemption (evict lowest-priority, not batch tail)")
 
 	// Policy bundle config (PR8)
 	runCmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
