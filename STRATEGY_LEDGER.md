@@ -173,6 +173,34 @@ The full N-way scan in weighted scoring provides better cache coverage than P2C'
 1. **Static weighted scoring IS already dynamically adaptive**: PA scorer returns 0 when no cache → degenerates to load-only
 2. **74.15ms combined is 40.5% better than RR**: This is already a strong result for cache-heavy workloads
 3. **The remaining gap (vs RR on no-cache workloads) is intrinsic**: Weighted scoring's argmax on fresh snapshots creates slightly more variance than RR's perfect uniformity
+### Iteration 4: Cost-Benefit Composable Scorer (REFUTED — orthogonality matters)
+
+**Strategy**: Wire the cost-benefit scorer (`cache_saving / (cache_saving + queue_delay)`) into the regular weighted pipeline as `cost-benefit:3,queue-depth:2`.
+
+**Bug found and fixed**: The svcTime computation in `routing_scorers_adaptive.go` conflated step time (~7ms) with total service time (~524ms), massively overestimating queue delay.
+
+**Rate sweep results** (RAG, 8 instances):
+
+| Rate | Cost-Benefit | Static-Default | RR | CB vs Static |
+|------|-------------|----------------|-----|-------------|
+| 100 | 147.0ms | **114.0ms** | 170.0ms | -29% |
+| 200 | 197.4ms | **120.5ms** | 266.0ms | -64% |
+| 300 | 236.7ms | **129.0ms** | 327.2ms | -84% |
+| 400 | 282.6ms | **131.9ms** | 374.9ms | -114% |
+| 500 | 314.1ms | **134.1ms** | 404.3ms | -134% |
+
+**Static-default dominates at EVERY rate point.**
+
+**Root cause**: The cost-benefit scorer pre-mixes cache and load into one number, destroying signal orthogonality. The PA scorer (pure cache signal, 0-1) + QD scorer (pure load signal, 0-1) are INDEPENDENT dimensions that the weighted argmax can optimally combine. A mixed signal provides less information to the composite scoring.
+
+**Key insight**: The composable scorer framework's power IS the independence of its signals. `pa:3,qd:2,kv:2` with orthogonal scorers > cost-benefit with pre-combined signals. This explains why the static default is so hard to beat.
+
+### Iteration 4 Key Insights
+1. **Orthogonal signals > combined signals**: Independent PA + QD outperforms cost-benefit at every load level
+2. **Static default is remarkably robust**: 114-134ms across rate 100-500 (only 18% degradation from 5x load increase)
+3. **The composable framework already captures the right trade-off**: The argmax over `pa:3,qd:2,kv:2` automatically balances cache vs load based on the instance-specific scores
+4. **Rate-sweep profile**: Static-default TTFT p99 grows only sub-linearly with rate (114→134ms for 100→500 req/s). RR grows linearly (170→404ms). This shows cache-aware routing provides increasing relative benefit at higher load.
+
 4. **Next direction**: Scheduling-layer optimization to compound the routing benefit. PriorityFCFS with cache-aware priority should create HOL-blocking reduction (H27 analog)
 
 ### Iteration 3: Scheduling Co-optimization (CPAR) — NULL RESULT

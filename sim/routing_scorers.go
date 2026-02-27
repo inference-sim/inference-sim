@@ -110,6 +110,24 @@ func newScorerWithObserver(name string, blockSize int) (scorerFunc, observerFunc
 		return scoreKVUtilization, nil
 	case "load-balance":
 		return scoreLoadBalance, nil
+	case "cost-benefit":
+		// The cost-benefit scorer needs a PrefixCacheIndex for cache-match queries
+		// and beta coefficients for cache-saving estimation. Uses default llama-3.1-8b
+		// H100 TP=2 coefficients. The PrefixCacheIndex is independent per-scorer
+		// (each scorer that needs cache state gets its own index + observer).
+		prefixIdx := NewPrefixCacheIndex(blockSize, defaultLRUCapacity)
+		betaCoeffs := []float64{6910.42, 17.67, 2.84}
+		scorer := newCostBenefitScorer(prefixIdx, betaCoeffs)
+		obs := func(req *Request, targetInstance string) {
+			if req != nil && len(req.InputTokens) > 0 {
+				hashes := prefixIdx.ComputeBlockHashes(req.InputTokens)
+				prefixIdx.RecordBlocks(hashes, targetInstance)
+			}
+		}
+		return scorer, obs
+	case "slo-headroom":
+		betaCoeffs := []float64{6910.42, 17.67, 2.84}
+		return newSLOHeadroomScorer(betaCoeffs), nil
 	default:
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}

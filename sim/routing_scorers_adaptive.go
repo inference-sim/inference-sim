@@ -69,8 +69,12 @@ func newCostBenefitScorer(prefixIdx *PrefixCacheIndex, betaCoeffs []float64) sco
 			}
 		}
 
-		// Estimate average service time (for queue delay estimation)
-		// StepTime ≈ beta0 + beta1*totalTokens + beta3*totalTokens^2
+		// Queue penalty per extra queued request: one average step time.
+		// Most steps are decode steps (beta0 + beta2 per token), so we use
+		// a conservative estimate. This deliberately does NOT include the
+		// prefill cost (which varies per request) — the queue delay should
+		// reflect how long you wait per extra request AHEAD of you, which
+		// is dominated by decode-phase step times in continuous batching.
 		beta0 := 0.0
 		if len(betaCoeffs) > 0 {
 			beta0 = betaCoeffs[0]
@@ -79,9 +83,9 @@ func newCostBenefitScorer(prefixIdx *PrefixCacheIndex, betaCoeffs []float64) sco
 		if len(betaCoeffs) > 2 {
 			beta2 = betaCoeffs[2]
 		}
-		avgOutputTokens := 64.0 // reasonable estimate for mixed workloads
-		svcTime := beta0 + beta1*float64(totalTokens) + beta3*float64(totalTokens)*float64(totalTokens) +
-			avgOutputTokens*(beta0+beta2)
+		// Average step time ≈ beta0 + beta2 (one decode token per step)
+		// This is ~6.9ms for llama-3.1-8b, matching the typical decode step.
+		avgStepTime := beta0 + beta2
 
 		for _, snap := range snapshots {
 			matched := prefixIdx.MatchLength(hashes, snap.ID)
@@ -99,9 +103,9 @@ func newCostBenefitScorer(prefixIdx *PrefixCacheIndex, betaCoeffs []float64) sco
 				cacheSaving = 0
 			}
 
-			// Estimate queue delay: extra load relative to least-loaded × service time
+			// Estimate queue delay: extra load relative to least-loaded × step time
 			extraLoad := float64(snap.EffectiveLoad() - minLoad)
-			queueDelay := extraLoad * svcTime
+			queueDelay := extraLoad * avgStepTime
 
 			// Cost-benefit ratio: cache saving / (cache saving + queue delay)
 			denominator := cacheSaving + queueDelay
