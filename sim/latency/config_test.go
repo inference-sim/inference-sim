@@ -424,6 +424,22 @@ func TestValidateRooflineConfig_NaNMemoryGiB_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestValidateRooflineConfig_NegativeMemoryGiB_ReturnsError(t *testing.T) {
+	// A plain negative value (not -Inf) exercises the hc.MemoryGiB < 0 branch,
+	// which is distinct from the math.IsInf path tested by NaNInfFields.
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: -80.0}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for negative MemoryGiB, got nil")
+	}
+	if !strings.Contains(err.Error(), "MemoryGiB") {
+		t.Errorf("error should mention MemoryGiB, got: %v", err)
+	}
+}
+
 func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	// GIVEN valid ModelConfig and HardwareCalib
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
