@@ -233,7 +233,7 @@ clients:
         max: 7000
 ```
 
-**Supported arrival processes:** `poisson`, `gamma` (with `cv` parameter), `weibull` (with `cv` parameter).
+**Supported arrival processes:** `poisson`, `gamma` (with `cv` parameter), `weibull` (with `cv` parameter), `constant`.
 
 **Supported token distributions:** `gaussian`, `exponential`, `pareto_lognormal`, `constant`, `empirical`.
 
@@ -298,28 +298,32 @@ When configured, BLIS computes a single fitness score from aggregated metrics. L
 The `defaults.yaml` file serves as a model registry and workload preset store:
 
 ```yaml
-version: "1.0"
-
-models:
-  - id: "meta-llama/llama-3.1-8b-instruct"
-    GPU: "H100"
+# Section 1: Hardware/TP mappings (keyed by model ID)
+defaults:
+  meta-llama/llama-3.1-8b-instruct:
+    GPU: H100
     tensor_parallelism: 2
-    vllm_version: "0.6.1"
+    vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: meta-llama/Llama-3.1-8B-Instruct
+
+# Section 2: Workload presets
+workloads:
+  chatbot:
+    prompt_tokens: 256
+    prompt_tokens_stdev: 100
+    output_tokens: 256
+    output_tokens_stdev: 100
+    # ... min/max bounds
+
+# Section 3: Trained coefficients (keyed by model+GPU+TP)
+models:
+  - id: meta-llama/llama-3.1-8b-instruct
+    GPU: H100
+    tensor_parallelism: 2
+    vllm_version: vllm/vllm-openai:v0.8.4
     alpha_coeffs: [1601.35, 3.51, 1805.54]
     beta_coeffs: [6910.42, 17.67, 2.84]
     total_kv_blocks: 132139
-
-defaults:
-  "meta-llama/llama-3.1-8b-instruct":
-    GPU: "H100"
-    tensor_parallelism: 2
-    vllm_version: "0.6.1"
-
-workloads:
-  chatbot:
-    prompt_tokens: 512
-    output_tokens: 512
-    # ... distribution parameters
 ```
 
 ### Resolution Process

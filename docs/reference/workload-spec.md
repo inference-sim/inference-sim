@@ -55,7 +55,7 @@ Used for `input_distribution` and `output_distribution`:
 |-------|------|-------------|
 | `type` | string | `gaussian`, `exponential`, `pareto_lognormal`, `constant`, `empirical` |
 | `params` | map | Type-specific parameters (see below) |
-| `file` | string | Path to empirical data file (for `empirical` type) |
+| `file` | string | Reserved for future use (file-based loading not yet implemented). Use inline `params` instead. |
 
 ### Distribution Parameters
 
@@ -65,7 +65,7 @@ Used for `input_distribution` and `output_distribution`:
 | `exponential` | `mean` |
 | `pareto_lognormal` | `mean`, `sigma`, `alpha` |
 | `constant` | `value` |
-| `empirical` | `file` (path to data file) |
+| `empirical` | inline `params` map (key=token count, value=probability) |
 
 ## Network Specification
 

@@ -138,7 +138,7 @@ Time from request arrival to completion of the prefill phase (first output token
 
 ### Workload Specification
 
-A YAML file (`--workload-spec`) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports `poisson`, `gamma`, and `weibull` arrival processes and `gaussian`, `exponential`, `pareto_lognormal`, `constant`, and `empirical` token distributions. See [Configuration Reference](../reference/configuration.md#workload-modes).
+A YAML file (`--workload-spec`) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports `poisson`, `gamma`, `weibull`, and `constant` arrival processes and `gaussian`, `exponential`, `pareto_lognormal`, `constant`, and `empirical` token distributions. See [Configuration Reference](../reference/configuration.md#workload-modes).
 
 ### Work-Conserving
 

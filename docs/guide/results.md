@@ -17,7 +17,7 @@ The JSON output on stdout contains:
 | Field | Unit | Description |
 |-------|------|-------------|
 | `ttft_mean_ms` | ms | Mean Time To First Token — average responsiveness |
-| `ttft_p50_ms` | ms | Median TTFT |
+| `ttft_p90_ms` | ms | 90th percentile TTFT |
 | `ttft_p99_ms` | ms | 99th percentile TTFT — tail latency |
 | `e2e_mean_ms` | ms | Mean End-to-End latency — average total request time |
 | `e2e_p99_ms` | ms | 99th percentile E2E |

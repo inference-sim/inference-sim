@@ -63,9 +63,9 @@ All experiments use a shared harness (`hypotheses/lib/`) for consistency:
 source hypotheses/lib/harness.sh
 
 # Run a simulation with standard setup
-blis_run --model meta-llama/llama-3.1-8b-instruct \
-  --num-instances 4 --rate 100 --num-requests 500 \
-  --stderr results/baseline.json
+blis_run 60 results/baseline.json \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 --rate 100 --num-requests 500
 ```
 
 The harness provides:

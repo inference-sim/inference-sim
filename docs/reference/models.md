@@ -16,23 +16,22 @@ All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for
 | NVIDIA LLaMA 3.1 Nemotron | 70B |
 | OpenAI GPT-OSS | 20B, 120B |
 | Qwen 2.5 | 7B |
-| SmolLM3 | 3B |
 
 ## MoE Models
 
 | Model | Architecture |
 |-------|-------------|
-| LLaMA 4 Maverick | 17B, 128 experts |
+| LLaMA 4 Maverick (FP8) | 17B, 128 experts |
 | LLaMA 4 Scout | 17B, 16 experts |
 | Mixtral | 8x7B |
 
 ## Quantized Variants
 
-Red Hat AI (`redhatai/`) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, and Qwen 2.5. See [`defaults.yaml`](https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml) for the full list.
+Red Hat AI (`redhatai/`) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, Qwen 2.5, and SmolLM3 3B (FP8 only). See [`defaults.yaml`](https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml) for the full list.
 
 ## Roofline-Only Models
 
-Any model with a HuggingFace `config.json` can use roofline mode via `--roofline` or `--model-config-folder`. Pre-packaged configs exist for additional architectures (Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B) in `model_configs/`.
+Any model with a HuggingFace `config.json` can use roofline mode via `--roofline` or `--model-config-folder`. The `--roofline` flag auto-fetches configs from HuggingFace on first use, caching them in `model_configs/`. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, and LLaMA 2 7B/70B.
 
 ## Adding a New Model
 

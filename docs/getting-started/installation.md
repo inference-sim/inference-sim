@@ -19,7 +19,7 @@ go build -o simulation_worker main.go
 ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --num-requests 10
 ```
 
-You should see JSON output with TTFT, E2E, and throughput metrics. If you see `Simulation complete.` on stderr, BLIS is working correctly.
+You should see JSON output on stdout containing fields like `ttft_mean_ms`, `e2e_mean_ms`, and `responses_per_sec`. This confirms BLIS is working correctly.
 
 ## Optional: Local Documentation
 
