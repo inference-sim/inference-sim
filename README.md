@@ -686,6 +686,8 @@ inference-sim/
 ├── cmd/                    # CLI commands
 │   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, --roofline, etc.)
 │   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
+│   ├── convert.go          # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
+│   ├── compose.go          # `blis compose` for merging v2 specs
 │   ├── hfconfig.go         # HuggingFace config resolution (--roofline auto-fetch into model_configs/)
 │   └── default_config.go   # defaults.yaml loading (includes GetHFRepo for HF repo mapping)
 ├── sim/                    # Core simulation engine
@@ -711,8 +713,7 @@ inference-sim/
 │   ├── metrics.go          # TTFT, TPOT, E2E collection
 │   ├── metrics_utils.go    # MetricsOutput JSON struct, percentile calculations
 │   ├── rng.go              # PartitionedRNG for deterministic simulation
-│   ├── model_hardware_config.go  # ModelConfig, HardwareCalib structs
-│   └── workload_config.go  # CSV trace loading and distribution-based workload
+│   └── model_hardware_config.go  # ModelConfig, HardwareCalib structs
 ├── sim/kv/                 # KV cache implementations
 │   ├── cache.go            # KVCacheState (single-tier GPU)
 │   ├── tiered.go           # TieredKVCache (GPU+CPU)
@@ -730,8 +731,7 @@ inference-sim/
 │   ├── metrics.go          # RawMetrics, FitnessResult, anomaly detection, per-SLO-class metrics
 │   ├── counterfactual.go   # Top-k candidate ranking and regret computation
 │   ├── deployment.go       # DeploymentConfig (embeds SimConfig + cluster fields)
-│   ├── evaluation.go       # EvaluationResult wrapper (metrics + trace + summary)
-│   └── workload.go         # Centralized request generation for cluster dispatch
+│   └── evaluation.go       # EvaluationResult wrapper (metrics + trace + summary)
 ├── sim/workload/           # ServeGen-informed workload generation
 │   ├── spec.go             # WorkloadSpec, ClientSpec, ArrivalSpec, DistSpec, YAML loading
 │   ├── arrival.go          # ArrivalSampler: Poisson, Gamma, Weibull, Constant
@@ -746,22 +746,36 @@ inference-sim/
 │   ├── reasoning.go        # Reasoning multi-turn with context accumulation
 │   ├── network.go          # Client-perspective latency (RTT + bandwidth)
 │   ├── inference_perf.go   # inference-perf format loading and validation
-│   └── scenarios.go        # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
+│   ├── scenarios.go        # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
+│   ├── cohort.go           # CohortSpec expansion: diurnal, spike, drain patterns
+│   ├── convert.go          # Format converters: ConvertServeGen, ConvertCSVTrace, ConvertPreset
+│   └── synthesis.go        # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
 ├── sim/trace/              # Decision trace recording
 │   ├── trace.go            # TraceLevel, TraceConfig, SimulationTrace
 │   ├── record.go           # AdmissionRecord, RoutingRecord, CandidateScore
 │   └── summary.go          # TraceSummary, Summarize()
 ├── examples/               # Example configuration files
-│   ├── policy-config.yaml  # Policy bundle example
-│   ├── weighted-routing.yaml  # Weighted routing scorer pipeline config
-│   ├── routing-comparison.sh  # Automated routing policy comparison (run to reproduce performance table)
-│   ├── servegen-language.yaml # ServeGen workload spec example
-│   ├── prefix-affinity-demo.yaml # Prefix-affinity routing demo (long shared prefix)
-│   └── multiturn-chat-demo.yaml  # Multi-turn chat session demo
+│   ├── policy-config.yaml
+│   ├── weighted-routing.yaml
+│   ├── routing-comparison.sh
+│   ├── servegen-language.yaml
+│   ├── prefix-affinity-demo.yaml
+│   ├── multiturn-chat-demo.yaml
+│   ├── epp-estimate-prefix.yaml
+│   ├── epp-precise-prefix.yaml
+│   └── inference-perf-shared-prefix.yaml
 ├── model_configs/          # Auto-fetched HuggingFace config.json files (gitignored)
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
 ├── hardware_config.json    # GPU hardware specifications
-└── docs/                   # Documentation and design plans
+├── docs/                   # Documentation (MkDocs Material site)
+│   ├── getting-started/    # New user onboarding
+│   ├── guide/              # Task-oriented user guides
+│   ├── concepts/           # Architecture and design documentation
+│   ├── reference/          # Configuration and model reference
+│   ├── methodology/        # Research methodology
+│   ├── contributing/       # Contributor documentation
+│   └── plans/              # Active implementation plans
+└── mkdocs.yml              # MkDocs Material site configuration
 ```
 
 ---
