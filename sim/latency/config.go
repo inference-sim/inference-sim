@@ -18,10 +18,33 @@ type HFConfig struct {
 	Raw map[string]any
 }
 
+// deprecatedHWFields lists hardware_config.json field names that were removed in roofline v2.
+// Used by parseHWConfig to warn users with custom configs about the schema change.
+var deprecatedHWFields = []string{
+	"BwEffConstant", "TOverheadMicros", "mfuPrefill", "mfuDecode", "allReduceLatency",
+}
+
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
 	data, err := os.ReadFile(HWConfigFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("read hardware config %q: %w", HWConfigFilePath, err)
+	}
+
+	// Check for deprecated field names from roofline v1 schema (C5 migration check).
+	// Go's json.Unmarshal silently ignores unknown fields, so we detect them explicitly.
+	var rawGPUs map[string]map[string]any
+	if jsonErr := json.Unmarshal(data, &rawGPUs); jsonErr == nil {
+		for gpuName, fields := range rawGPUs {
+			for _, deprecated := range deprecatedHWFields {
+				if _, found := fields[deprecated]; found {
+					fmt.Fprintf(os.Stderr, "WARNING: hardware_config.json GPU %q has deprecated field %q "+
+						"(removed in roofline v2). This field is silently ignored. "+
+						"New schema uses: bwEfficiencyFactor, perLayerOverhead, MemoryGiB. "+
+						"MFU values now come from bench_data/ instead of hardware_config.json.\n",
+						gpuName, deprecated)
+				}
+			}
+		}
 	}
 
 	var HardwareList map[string]sim.HardwareCalib
@@ -271,14 +294,20 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 	if invalidPositiveFloat(hc.BwPeakTBs) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.BwPeakTBs must be a valid positive number, got %v", hc.BwPeakTBs))
 	}
-	if invalidPositiveFloat(hc.BwEffConstant) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.BwEffConstant must be a valid positive number, got %v", hc.BwEffConstant))
+	// BwEfficiencyFactor is optional (0 = disabled, use raw peak BW).
+	// When set, it must be a valid positive number in (0, 1].
+	if hc.BwEfficiencyFactor != 0 {
+		if math.IsNaN(hc.BwEfficiencyFactor) || math.IsInf(hc.BwEfficiencyFactor, 0) || hc.BwEfficiencyFactor < 0 || hc.BwEfficiencyFactor > 1 {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.BwEfficiencyFactor must be in (0, 1] or 0 (disabled), got %v", hc.BwEfficiencyFactor))
+		}
 	}
-	if invalidPositiveFloat(hc.MfuPrefill) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuPrefill must be a valid positive number, got %v", hc.MfuPrefill))
-	}
-	if invalidPositiveFloat(hc.MfuDecode) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuDecode must be a valid positive number, got %v", hc.MfuDecode))
+
+	// PerLayerCPUOverhead is optional (0 = no CPU overhead).
+	// When set, it must be non-negative and finite.
+	if hc.PerLayerCPUOverhead != 0 {
+		if math.IsNaN(hc.PerLayerCPUOverhead) || math.IsInf(hc.PerLayerCPUOverhead, 0) || hc.PerLayerCPUOverhead < 0 {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.PerLayerCPUOverhead must be >= 0 and finite, got %v", hc.PerLayerCPUOverhead))
+		}
 	}
 
 	// MemoryGiB is optional (0 = no auto-calculation).

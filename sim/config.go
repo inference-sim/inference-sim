@@ -62,6 +62,7 @@ func NewLatencyCoeffs(betaCoeffs, alphaCoeffs []float64) LatencyCoeffs {
 type ModelHardwareConfig struct {
 	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline mode)
 	HWConfig    HardwareCalib // GPU specifications (for roofline mode)
+	MFUDatabase *MFUDatabase  // MFU benchmark database (for roofline v2 mode, optional)
 	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
 	GPU         string        // GPU type (e.g., "H100")
 	TP          int           // tensor parallelism degree
@@ -76,11 +77,19 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 	return ModelHardwareConfig{
 		ModelConfig: modelConfig,
 		HWConfig:    hwConfig,
+		MFUDatabase: nil, // MFU database is optional, set separately if needed
 		Model:       model,
 		GPU:         gpu,
 		TP:          tp,
 		Roofline:    roofline,
 	}
+}
+
+// WithMFUDatabase returns a copy of ModelHardwareConfig with MFU database set.
+// Use this to add roofline v2 support to an existing config.
+func (m ModelHardwareConfig) WithMFUDatabase(mfuDB *MFUDatabase) ModelHardwareConfig {
+	m.MFUDatabase = mfuDB
+	return m
 }
 
 // PolicyConfig groups scheduling and priority policy selection.

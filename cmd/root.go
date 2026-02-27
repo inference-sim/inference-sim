@@ -34,6 +34,7 @@ var (
 	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
 	modelConfigFolder         string    // Path to folder containing config.json and model.json
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
+	benchDataPath             string    // Path to benchmark data directory for MFU lookups
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
 	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
 	maxModelLength            int       // Max request length (input + output tokens) to be handled
@@ -160,11 +161,9 @@ var runCmd = &cobra.Command{
 			}
 
 			// Warn if user also provided explicit beta coefficients — roofline replaces
-			// step time estimation. Alpha coefficients are still used for queueing time
-			// and output token processing time.
+			// step time estimation entirely with analytical FLOPs/bandwidth model.
 			if !AllZeros(betaCoeffs) {
-				logrus.Warnf("--roofline replaces --beta-coeffs with analytical step time estimation. " +
-					"Alpha coefficients are still used for queueing time and output token processing")
+				logrus.Warnf("--roofline replaces --beta-coeffs with analytical step time estimation")
 			}
 
 			// Log when explicit overrides interact with --roofline
@@ -189,6 +188,13 @@ var runCmd = &cobra.Command{
 			}
 			hwConfigPath = resolvedHW
 
+			// Resolve bench data path (explicit → bundled default)
+			resolvedBench, err := resolveBenchDataPath(benchDataPath, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			benchDataPath = resolvedBench
+
 			// Explicitly activate roofline mode (design doc step 4).
 			// Do NOT rely on downstream "all coefficients zero" heuristic.
 			// Note (I10): When --roofline is set with explicit --alpha-coeffs/--beta-coeffs,
@@ -197,9 +203,19 @@ var runCmd = &cobra.Command{
 			// AllZeros() check at the implicit-detection block is guarded by !rooflineActive.
 			rooflineActive = true
 
-			// Load alpha coefficients and totalKVBlocks from defaults.yaml.
-			// Roofline replaces beta (step time) but still needs alpha
-			// (queueing time, output token processing) and KV cache capacity.
+			// Roofline mode: alpha coefficients default to zero.
+			// The roofline model is a pure analytical estimator — it predicts step time
+			// from FLOPs/bandwidth without trained regression coefficients. Using trained
+			// alpha coefficients (which were fit jointly with beta) would mix two different
+			// estimation paradigms and produce inconsistent results. Users who want
+			// queueing-time estimation can still pass --alpha-coeffs explicitly.
+			if !AllZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
+				logrus.Warnf("--roofline: ignoring non-zero alpha coefficients from defaults; " +
+					"roofline uses zero alpha by default. Pass --alpha-coeffs explicitly to override")
+				alphaCoeffs = []float64{0, 0, 0}
+			}
+
+			// Load totalKVBlocks from defaults.yaml if not explicitly set.
 			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
 				if vllmVersion == "" {
 					_, _, ver := GetDefaultSpecs(model)
@@ -207,11 +223,7 @@ var runCmd = &cobra.Command{
 						vllmVersion = ver
 					}
 				}
-				defAlpha, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-				if AllZeros(alphaCoeffs) && !AllZeros(defAlpha) {
-					alphaCoeffs = defAlpha
-					logrus.Infof("--roofline: loaded alpha coefficients from defaults.yaml for queueing time estimation")
-				}
+				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 					totalKVBlocks = kvBlocks
 					logrus.Infof("--roofline: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
@@ -220,14 +232,9 @@ var runCmd = &cobra.Command{
 						"using default %d. Consider setting --total-kv-blocks explicitly for accurate KV cache simulation",
 						model, gpu, tensorParallelism, totalKVBlocks)
 				}
-				if AllZeros(alphaCoeffs) {
-					logrus.Warnf("--roofline: no trained alpha coefficients found for model=%s, GPU=%s, TP=%d; "+
-						"queueing time and output token processing time will use zero alpha (may underestimate TTFT/ITL)",
-						model, gpu, tensorParallelism)
-				}
 			} else {
-				logrus.Warnf("--roofline: defaults file %s not found; alpha coefficients and total-kv-blocks not loaded. "+
-					"Queueing time estimation will use zero alpha coefficients", defaultsFilePath)
+				logrus.Warnf("--roofline: defaults file %s not found; total-kv-blocks not loaded",
+					defaultsFilePath)
 			}
 		}
 
@@ -269,6 +276,14 @@ var runCmd = &cobra.Command{
 			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
 				rooflineActive = true
+				// Implicit roofline also needs bench_data for MFU lookups
+				if benchDataPath == "" {
+					resolvedBench, err := resolveBenchDataPath("", defaultsFilePath)
+					if err != nil {
+						logrus.Fatalf("--roofline (implicit): %v", err)
+					}
+					benchDataPath = resolvedBench
+				}
 			} else if len(modelConfigFolder) == 0 {
 				logrus.Fatalf("Please provide model config folder containing config.json for model=%v\n", model)
 			} else if len(hwConfigPath) == 0 {
@@ -300,6 +315,16 @@ var runCmd = &cobra.Command{
 					logrus.Warnf("--roofline: model appears to be MoE (Mixture-of-Experts). " +
 						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
 				}
+			}
+		}
+
+		// Load MFU database if roofline mode is enabled
+		var mfuDB *sim.MFUDatabase
+		if rooflineActive && benchDataPath != "" {
+			var mfuErr error
+			mfuDB, mfuErr = sim.NewMFUDatabase(modelConfig, benchDataPath, gpu)
+			if mfuErr != nil {
+				logrus.Fatalf("Failed to load MFU database: %v", mfuErr)
 			}
 		}
 
@@ -544,6 +569,12 @@ var runCmd = &cobra.Command{
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances)
+		// Build ModelHardwareConfig and add MFU database if available (roofline v2)
+		mhwConfig := sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, rooflineActive)
+		if mfuDB != nil {
+			mhwConfig = mhwConfig.WithMFUDatabase(mfuDB)
+		}
+
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,
@@ -552,7 +583,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, rooflineActive),
+				ModelHardwareConfig: mhwConfig,
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,
@@ -707,6 +738,7 @@ func init() {
 	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
 	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
 	runCmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
+	runCmd.Flags().StringVar(&benchDataPath, "bench-data-path", "", "Path to benchmark data directory for MFU lookups (default: auto-resolved bench_data/ bundled with BLIS)")
 	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)")
 	runCmd.Flags().StringVar(&tracesWorkloadFilePath, "workload-traces-filepath", "", "Workload filepath for traces workload type.")
 

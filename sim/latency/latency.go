@@ -59,9 +59,13 @@ func (m *BlackboxLatencyModel) PreemptionProcessingTime() int64 {
 
 // RooflineLatencyModel estimates latency using analytical FLOPs/bandwidth roofline model.
 // Step time is computed via rooflineStepTime(); overhead estimates use alpha coefficients.
+// In v2 mode (mfuDB != nil), MFU values are looked up from benchmark data instead of
+// using static constants.
 type RooflineLatencyModel struct {
 	modelConfig sim.ModelConfig
 	hwConfig    sim.HardwareCalib
+	mfuDB       *sim.MFUDatabase
+	gpu         string
 	tp          int
 	alphaCoeffs []float64
 }
@@ -84,7 +88,7 @@ func (m *RooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
 			})
 		}
 	}
-	return rooflineStepTime(m.modelConfig, m.hwConfig, stepConfig, m.tp)
+	return rooflineStepTime(m.modelConfig, m.hwConfig, stepConfig, m.tp, m.mfuDB)
 }
 
 func (m *RooflineLatencyModel) QueueingTime(req *sim.Request) int64 {
@@ -137,9 +141,14 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 		if err := ValidateRooflineConfig(hw.ModelConfig, hw.HWConfig); err != nil {
 			return nil, fmt.Errorf("latency model: %w", err)
 		}
+		if hw.MFUDatabase == nil {
+			return nil, fmt.Errorf("latency model: roofline requires MFUDatabase (bench_data); provide --bench-data-path or ensure bench_data/ is bundled")
+		}
 		return &RooflineLatencyModel{
 			modelConfig: hw.ModelConfig,
 			hwConfig:    hw.HWConfig,
+			mfuDB:       hw.MFUDatabase,
+			gpu:         hw.GPU,
 			tp:          hw.TP,
 			alphaCoeffs: coeffs.AlphaCoeffs,
 		}, nil
