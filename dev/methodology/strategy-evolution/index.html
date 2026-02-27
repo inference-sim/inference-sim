@@ -14,7 +14,7 @@
         <link rel="prev" href="../">
       
       
-        <link rel="next" href="../principles/">
+        <link rel="next" href="../../contributing/">
       
       
         
@@ -1277,8 +1277,6 @@
       
         
       
-        
-      
     
     
     
@@ -1505,34 +1503,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../principles/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Discovered Principles
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -2324,13 +2294,13 @@
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>In systems with multiple interacting policy layers — routing, scheduling, memory management, admission control — the optimal configuration cannot be derived analytically or guessed by experts. Interactions between layers produce non-obvious emergent behaviors: super-additive effects, signal cancellation, and regime-dependent dominance.</p>
 <p>Strategy Evolution discovers optimal configurations through disciplined experimentation: human-guided mechanism design combined with machine-guided parameter optimization, organized into iterative cycles with rigorous measurement and cumulative principle extraction.</p>
-<pre class="mermaid"><code>flowchart LR
-    P1[Phase 1\nProblem\nFraming] --&gt; P2[Phase 2\nMulti-Judge\nResearch]
-    P2 --&gt; P3[Phase 3\nImplement &amp;\nMeasure]
-    P3 --&gt; P4[Phase 4\nBayesian\nOptimization]
-    P4 --&gt; P5[Phase 5\nAblation &amp;\nPrinciples]
+<pre class="mermaid"><code>flowchart TD
+    P1["Phase 1&lt;br/&gt;Problem Framing"] --&gt; P2["Phase 2&lt;br/&gt;Multi-Judge Research"]
+    P2 --&gt; P3["Phase 3&lt;br/&gt;Implement &amp; Measure"]
+    P3 --&gt; P4["Phase 4&lt;br/&gt;Bayesian Optimization"]
+    P4 --&gt; P5["Phase 5&lt;br/&gt;Ablation &amp; Principles"]
     P5 --&gt;|Iterate| P2
-    P5 --&gt;|Converged| Done[Definitive\nStrategy +\nPrinciples]</code></pre>
+    P5 --&gt;|Converged| Done["Definitive Strategy&lt;br/&gt;+ Principles"]</code></pre>
 <hr />
 <h2 id="phase-1-problem-framing">Phase 1: Problem Framing<a class="headerlink" href="#phase-1-problem-framing" title="Permanent link">&para;</a></h2>
 <p>Write a precise problem statement (<code>problem.md</code>) that specifies:</p>
@@ -2436,15 +2406,15 @@
 <h2 id="phase-4-bayesian-parameter-optimization">Phase 4: Bayesian Parameter Optimization<a class="headerlink" href="#phase-4-bayesian-parameter-optimization" title="Permanent link">&para;</a></h2>
 <p>Once a mechanism proves directionally correct, optimize its parameters:</p>
 <pre class="mermaid"><code>flowchart TD
-    A[Define parameter ranges\nin strategy YAML] --&gt; B[Bayesian optimizer\nselects next point]
-    B --&gt; C[Run simulator\n3 seeds × N params]
-    C --&gt; D{Constraint\nviolation?}
-    D --&gt;|Yes| E[Add penalty\nto objective]
-    D --&gt;|No| F[Record metric]
-    E --&gt; G[Update GP\nsurrogate model]
+    A["Define parameter ranges&lt;br/&gt;in strategy YAML"] --&gt; B["Bayesian optimizer&lt;br/&gt;selects next point"]
+    B --&gt; C["Run simulator&lt;br/&gt;3 seeds x N params"]
+    C --&gt; D{"Constraint&lt;br/&gt;violation?"}
+    D --&gt;|Yes| E["Add penalty&lt;br/&gt;to objective"]
+    D --&gt;|No| F["Record metric"]
+    E --&gt; G["Update GP&lt;br/&gt;surrogate model"]
     F --&gt; G
     G --&gt;|Budget remaining| B
-    G --&gt;|Budget exhausted| H[Extract best\nparameters]</code></pre>
+    G --&gt;|Budget exhausted| H["Extract best&lt;br/&gt;parameters"]</code></pre>
 <p>This separates <strong>mechanism design</strong> (human creativity) from <strong>parameter tuning</strong> (machine search). Every strategy gets the benefit of optimization, so comparisons are fair.</p>
 <p><strong>Strategy YAML format:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;slo-gated-priority-cascade&quot;</span>
@@ -2481,7 +2451,7 @@
 <li><strong>Ablation</strong> — remove each component individually to quantify contribution and test for super-additivity</li>
 </ul>
 <p>Every few iterations, distill findings into <strong>numbered principles</strong> — concise, falsifiable statements grounded in experimental evidence. These constrain future iterations and prevent re-learning the same lessons.</p>
-<p>See <a href="../principles/">Discovered Principles</a> for the full catalog.</p>
+<p>A principles catalog documenting findings from the BLIS strategy evolution experiments is planned for a future release.</p>
 <hr />
 <h2 id="skills-and-tools-inventory">Skills and Tools Inventory<a class="headerlink" href="#skills-and-tools-inventory" title="Permanent link">&para;</a></h2>
 <p>The following Claude Code skills were used throughout the process:</p>
@@ -2520,7 +2490,7 @@
 <td>Send plans to external LLMs for technical review</td>
 </tr>
 <tr>
-<td><code>/hypothesis-test</code></td>
+<td><code>/hypothesis-experiment</code></td>
 <td>3</td>
 <td>Structured experiment: scaffold → run → analyze → findings</td>
 </tr>
@@ -2556,6 +2526,16 @@
 </tr>
 </tbody>
 </table>
+<div class="admonition info">
+<p class="admonition-title">Where to Get These Skills</p>
+<p>These skills are <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> plugins. To install them:</p>
+<ul>
+<li><strong><code>/brainstorming</code>, <code>/test-driven-development</code>, <code>/executing-plans</code>, <code>/verification-before-completion</code>, <code>/dispatching-parallel-agents</code>, <code>/code-review</code>, <code>/commit-push-pr</code></strong>: Install the <a href="https://github.com/anthropics/claude-code-plugins">superpowers</a> plugin — <code>claude plugins add superpowers</code></li>
+<li><strong><code>/convergence-review</code>, <code>/hypothesis-experiment</code></strong>: Project-local skills defined in this repository's <code>.claude/skills/</code> directory. Available automatically when Claude Code is run from the repo root.</li>
+<li><strong><code>/research-ideas</code>, <code>/review-plan</code></strong>: Install the <a href="https://github.com/anthropics/claude-code-plugins">research-ideas</a> plugin — <code>claude plugins add research-ideas</code></li>
+<li><strong><code>/pr-review-toolkit:review-pr</code></strong>: Install the <a href="https://github.com/anthropics/claude-code-plugins">pr-review-toolkit</a> plugin — <code>claude plugins add pr-review-toolkit</code></li>
+</ul>
+</div>
 <p><strong>Non-skill tools:</strong></p>
 <table>
 <thead>
@@ -2663,7 +2643,7 @@
     Both drop kv-utilization     :milestone, 12, 12</code></pre>
 <div class="admonition note">
 <p class="admonition-title">Experimental Configurations</p>
-<p>The winning strategies described above were discovered during Strategy Evolution experiments using custom configurations. Some components (SLO-gated admission, SLO-tiered priority as compound strategies) are not yet available as standard BLIS policy templates. The current BLIS default (<code>pa:3,qd:2,kv:2</code>) is maintained for llm-d parity. See RP-7 in the <a href="../principles/">principles catalog</a> for the regime-dependent recommendation.</p>
+<p>The winning strategies described above were discovered during Strategy Evolution experiments using custom configurations. Some components (SLO-gated admission, SLO-tiered priority as compound strategies) are not yet available as standard BLIS policy templates. The current BLIS default (<code>pa:3,qd:2,kv:2</code>) is maintained for llm-d parity. The regime-dependent recommendation (normal KV: <code>pa:3,qd:2,kv:2</code>; under pressure: <code>pa:3,qd:2</code>; high load with admission: <code>pa:4,qd:3</code>) will be documented in the forthcoming principles catalog.</p>
 </div>
 
 
@@ -2717,13 +2697,13 @@
         
         
           
-          <a href="../principles/" class="md-footer__link md-footer__link--next" aria-label="Next: Discovered Principles">
+          <a href="../../contributing/" class="md-footer__link md-footer__link--next" aria-label="Next: Contributing">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Discovered Principles
+                Contributing
               </div>
             </div>
             <div class="md-footer__button md-icon">
