@@ -307,6 +307,48 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
 		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
+	case "epoch-adaptive":
+		bs := int(blockSize)
+		if bs <= 0 {
+			bs = 16
+		}
+		cfg := DefaultEpochAdaptiveConfig()
+		prefixIdx := NewPrefixCacheIndex(bs, defaultLRUCapacity)
+
+		// Build initial scorer
+		initConfigs := []ScorerConfig{
+			{Name: "prefix-affinity", Weight: cfg.InitialPA},
+			{Name: "queue-depth", Weight: cfg.InitialQD},
+		}
+		initScorers := make([]scorerFunc, len(initConfigs))
+		var initObservers []observerFunc
+		for i, sc := range initConfigs {
+			if sc.Name == "prefix-affinity" {
+				scorer, obs := newPrefixAffinityScorerWithIndex(prefixIdx)
+				initScorers[i] = scorer
+				if obs != nil {
+					initObservers = append(initObservers, obs)
+				}
+			} else {
+				scorer, obs := newScorerWithObserver(sc.Name, bs)
+				initScorers[i] = scorer
+				if obs != nil {
+					initObservers = append(initObservers, obs)
+				}
+			}
+		}
+
+		return &EpochAdaptiveScoring{
+			currentPA: cfg.InitialPA,
+			currentQD: cfg.InitialQD,
+			scorer: &WeightedScoring{
+				scorers:   initScorers,
+				weights:   normalizeScorerWeights(initConfigs),
+				observers: initObservers,
+			},
+			prefixIdx: prefixIdx,
+			config:    cfg,
+		}
 	case "kv-adaptive":
 		// Build normal and pressure profiles from config.
 		// Both share the same PrefixCacheIndex so cache state is consistent.
