@@ -148,6 +148,32 @@ The full N-way scan in weighted scoring provides better cache coverage than P2C'
 3. **RAG workloads are the sweet spot**: 4096-token shared prefix creates massive cache benefit (52.7% vs RR). This is the production-relevant regime.
 4. **Consistent hashing is catastrophic at small N**: CH at N=4 with 256-token prefix = 821ms TTFT p99 (hash collisions create total load imbalance)
 5. **The static default is the real competitor**: Not RR. The next strategy must beat static-default's 79.90ms combined.
+
+### Iteration 2: Dynamic Weight Switching (REFUTED — unnecessary)
+
+**Strategy**: DynamicWeightedScoring — detect per-request cache availability, switch between cache-aware weights (pa:3,qd:2,kv:2) and load-only weights (qd:1,kv:1) based on whether PrefixCacheIndex has any match.
+
+**Result**: Dynamic-weighted produces **byte-identical** results to static-default on ALL workloads and ALL seeds.
+
+| Workload | Dynamic-Weighted | Static-Default | RR | vs RR |
+|----------|-----------------|----------------|-----|-------|
+| RAG (4096-token, 8 inst) | **127.65ms** | **127.65ms** | 296.29ms | **+56.8%** |
+| Prefix-std (256-token, 4 inst) | 46.45ms | 46.45ms | 38.30ms | -21.3% |
+| Independent (8 inst) | 48.37ms | 48.37ms | 39.54ms | -22.3% |
+| **Combined** | **74.15ms** | **74.15ms** | 124.71ms | **+40.5%** |
+
+**Key discovery**: The prefix-affinity scorer ALREADY returns 0 for all instances when no cache match exists. This means the static weights are self-correcting — PA weight only differentiates when cache IS available. Dynamic switching adds complexity with zero benefit.
+
+**Implication**: The right strategy is NOT about changing weights. It's about:
+1. **Amplifying the cache benefit when it exists** — scheduling optimization (PriorityFCFS with cache-priority hint)
+2. **Reducing load imbalance on no-cache workloads** — the ~21% regression vs RR on indep/prefix-std
+3. **Combining both** — use scheduling co-optimization to compound the routing benefit
+
+### Iteration 2 Key Insights
+1. **Static weighted scoring IS already dynamically adaptive**: PA scorer returns 0 when no cache → degenerates to load-only
+2. **74.15ms combined is 40.5% better than RR**: This is already a strong result for cache-heavy workloads
+3. **The remaining gap (vs RR on no-cache workloads) is intrinsic**: Weighted scoring's argmax on fresh snapshots creates slightly more variance than RR's perfect uniformity
+4. **Next direction**: Scheduling-layer optimization to compound the routing benefit. PriorityFCFS with cache-aware priority should create HOL-blocking reduction (H27 analog)
 6. **Consistent hashing baseline is the right comparator**: vLLM ships this. HCAR's advantage is specifically the load-gated fallback.
 7. **Decompose into phases**: Ship clean core (2 mechanisms), then layer on scheduling hints, SLO, offloading pressure as separate experiments.
 
