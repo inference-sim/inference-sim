@@ -11,26 +11,26 @@ Principles extracted from 30 iterations of [Strategy Evolution](strategy-evoluti
 
 | # | Principle | Source | Evidence |
 |---|-----------|--------|----------|
-| R1 | **Orthogonal signals > pre-combined signals** — Independent PA+QD give the argmax more information than cost-benefit | Iter 4 | Cost-benefit scorer 29–134% worse than `pa:3,qd:2,kv:2` across all rate points |
-| R2 | **Full N-way scan > Power-of-2-Choices at moderate scale** — At N≤16 with cheap snapshot reads, seeing all instances finds better cache+load combinations. At large N, P2C's O(1) cost may dominate. | Iter 1 | HCAR (P2C) 16% worse than static-default; misses 6/8 instances |
-| R3 | **PA scorer self-corrects on cache miss** — Returns 0 when no cache match exists, degenerating to load-only | Iter 2 | Dynamic weight switching produces byte-identical results to static-default |
-| R4 | **Uniform routing > SLO-differentiated routing** — Per-SLO profiles fragment cache affinity | Iter 5 | Adaptive+SLO priority 3–5% worse; fragments per-instance cache hit rate |
-| R5 | **Routing dominates scheduling at moderate load** — Effective routing keeps queues short, leaving nothing for the scheduler to optimize | Iter 3, 5 | Priority scheduling had zero effect (byte-identical) when routing was effective |
-| R6 | **KV-utilization as a routing scorer is counterproductive under memory pressure** — The `1-KVUtilization` formula routes away from instances with high occupancy, which are often the instances with the most valuable cached prefixes. Note: KV-utilization remains valuable as an admission/capacity signal; the finding is specific to its use as a routing preference scorer with approximate cache indexes. | Iter 6, 8 | Removing kv-util from routing scorer improved performance 4% AND made routing KV-pressure-immune (instance-level KV behavior unchanged) |
-| R7 | **The optimal strategy is regime-dependent** — Normal KV: `pa:3,qd:2,kv:2`. Under pressure: `pa:3,qd:2`. At high load with admission: `pa:4,qd:3`. | Iter 8, 10 | Static default fails under KV pressure (23–25% worse than RR) |
+| RP-1 | **Orthogonal signals > pre-combined signals** — Independent PA+QD give the argmax more information than cost-benefit | Iter 4 | Cost-benefit scorer 29–134% worse than `pa:3,qd:2,kv:2` across all rate points |
+| RP-2 | **Full N-way scan > Power-of-2-Choices at moderate scale** — At N≤16 with cheap snapshot reads, seeing all instances finds better cache+load combinations. At large N, P2C's O(1) cost may dominate. | Iter 1 | HCAR (P2C) 16% worse than static-default; misses 6/8 instances |
+| RP-3 | **PA scorer self-corrects on cache miss** — Returns 0 when no cache match exists, degenerating to load-only | Iter 2 | Dynamic weight switching produces byte-identical results to static-default |
+| RP-4 | **Uniform routing > SLO-differentiated routing** — Per-SLO profiles fragment cache affinity | Iter 5 | Adaptive+SLO priority 3–5% worse; fragments per-instance cache hit rate |
+| RP-5 | **Routing dominates scheduling at moderate load** — Effective routing keeps queues short, leaving nothing for the scheduler to optimize | Iter 3, 5 | Priority scheduling had zero effect (byte-identical) when routing was effective |
+| RP-6 | **KV-utilization as a routing scorer is counterproductive under memory pressure** — The `1-KVUtilization` formula routes away from instances with high occupancy, which are often the instances with the most valuable cached prefixes. Note: KV-utilization remains valuable as an admission/capacity signal; the finding is specific to its use as a routing preference scorer with approximate cache indexes. | Iter 6, 8 | Removing kv-util from routing scorer improved performance 4% AND made routing KV-pressure-immune (instance-level KV behavior unchanged) |
+| RP-7 | **The optimal strategy is regime-dependent** — Normal KV: `pa:3,qd:2,kv:2`. Under pressure: `pa:3,qd:2`. At high load with admission: `pa:4,qd:3`. | Iter 8, 10 | Static default fails under KV pressure (23–25% worse than RR) |
 
 !!! info "Reconciling with BLIS Defaults"
-    The current BLIS default is `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity). Strategy Evolution discovered that `pa:4,qd:3` (no kv-util) performs better under KV pressure and at high load with admission control. The default is maintained for compatibility with the llm-d ecosystem. Users running Strategy Evolution experiments should consider the regime-dependent recommendation in R7 rather than assuming the default is optimal for all scenarios.
+    The current BLIS default is `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity). Strategy Evolution discovered that `pa:4,qd:3` (no kv-util) performs better under KV pressure and at high load with admission control. The default is maintained for compatibility with the llm-d ecosystem. Users running Strategy Evolution experiments should consider the regime-dependent recommendation in RP-7 rather than assuming the default is optimal for all scenarios.
 
 | # | Principle | Source | Evidence |
 |---|-----------|--------|----------|
-| R8 | **Approximate routing degrades under KV pressure** — PrefixCacheIndex diverges from actual KV state | Iter 6 | Validated by llm-d blog's 57x finding on approximate vs precise routing |
-| R9 | **Admission control is the 3rd lever at high load** — Neither routing nor scheduling can reduce total queue depth; admission can | Iter 11 | Compound strategy beats RR by 47% at rate=2000 (admission shedding 30%) |
-| R10 | **PA:QD ratio is the dominant parameter; empirical safety rule ≤1.33 for tested config** — Disproportionate PA without QD causes cascade failure. The 1.33 threshold was measured at 8 instances, 2000 req/s, 2x overload; the safe ratio will vary with cluster size, arrival rate, and prefix group cardinality. | Iter 13, 14 | `pa:4,qd:2` (ratio 2.0) → 3570ms cascade; `pa:4,qd:3` (ratio 1.33) → 132ms optimal |
-| R11 | **Goodput > P99 as primary optimization metric** — Fair comparison when strategies have different completion rates | Iter 14 | GPT-4o review identified metric fairness issue |
-| R12 | **Staleness immunity comes from signal independence** — PA reads synchronous PrefixCacheIndex, QD reads Immediate EffectiveLoad | Iter 16 | `pa:3,qd:2` produced identical 65.45ms across all staleness levels and KV pressures |
-| R13 | **Bursty arrivals amplify admission control benefit** — Admission shedding during gamma bursts provides outsized relief | Iter 18 | Compound achieves 174ms (+65% vs RR's 496ms) under gamma CV=2.0 |
-| R14 | **Compound advantage scales inversely with cluster size** — Smaller clusters see larger relative improvement | Iter 19 | N=4: +83.5%, N=8: +69.6%, N=16: +51.2% |
+| RP-8 | **Approximate routing degrades under KV pressure** — PrefixCacheIndex diverges from actual KV state | Iter 6 | Validated by llm-d blog's 57x finding on approximate vs precise routing |
+| RP-9 | **Admission control is the 3rd lever at high load** — Neither routing nor scheduling can reduce total queue depth; admission can | Iter 11 | Compound strategy beats RR by 47% at rate=2000 (admission shedding 30%) |
+| RP-10 | **PA:QD ratio is the dominant parameter; empirical safety rule ≤1.33 for tested config** — Disproportionate PA without QD causes cascade failure. The 1.33 threshold was measured at 8 instances, 2000 req/s, 2x overload; the safe ratio will vary with cluster size, arrival rate, and prefix group cardinality. | Iter 13, 14 | `pa:4,qd:2` (ratio 2.0) → 3570ms cascade; `pa:4,qd:3` (ratio 1.33) → 132ms optimal |
+| RP-11 | **Goodput > P99 as primary optimization metric** — Fair comparison when strategies have different completion rates | Iter 14 | GPT-4o review identified metric fairness issue |
+| RP-12 | **Staleness immunity comes from signal independence** — PA reads synchronous PrefixCacheIndex, QD reads Immediate EffectiveLoad | Iter 16 | `pa:3,qd:2` produced identical 65.45ms across all staleness levels and KV pressures |
+| RP-13 | **Bursty arrivals amplify admission control benefit** — Admission shedding during gamma bursts provides outsized relief | Iter 18 | Compound achieves 174ms (+65% vs RR's 496ms) under gamma CV=2.0 |
+| RP-14 | **Compound advantage scales inversely with cluster size** — Smaller clusters see larger relative improvement | Iter 19 | N=4: +83.5%, N=8: +69.6%, N=16: +51.2% |
 
 ---
 
@@ -61,10 +61,10 @@ Principles extracted from 30 iterations of [Strategy Evolution](strategy-evoluti
 
 Principles function as **hard constraints** on subsequent iteration design:
 
-- **R1** (orthogonality) prevented building a combined cache-load scorer in iterations 5–19
-- **R6** (KV-util counterproductive) eliminated KV-utilization from all subsequent strategies
+- **RP-1** (orthogonality) prevented building a combined cache-load scorer in iterations 5–19
+- **RP-6** (KV-util counterproductive) eliminated KV-utilization from all subsequent strategies
 - **S6** (scheduling is zero-sum) redirected effort from scheduler optimization to admission control
-- **R10** (PA:QD safety rule) prevented ratio violations in Bayesian search bounds
+- **RP-10** (PA:QD safety rule) prevented ratio violations in Bayesian search bounds
 
 When a new iteration proposes a mechanism that contradicts an existing principle, it must either:
 

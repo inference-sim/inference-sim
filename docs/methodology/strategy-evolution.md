@@ -245,4 +245,4 @@ gantt
 ```
 
 !!! note "Experimental Configurations"
-    The winning strategies described above were discovered during Strategy Evolution experiments using custom configurations. Some components (SLO-gated admission, SLO-tiered priority as compound strategies) are not yet available as standard BLIS policy templates. The current BLIS default (`pa:3,qd:2,kv:2`) is maintained for llm-d parity. See R7 in the [principles catalog](principles.md) for the regime-dependent recommendation.
+    The winning strategies described above were discovered during Strategy Evolution experiments using custom configurations. Some components (SLO-gated admission, SLO-tiered priority as compound strategies) are not yet available as standard BLIS policy templates. The current BLIS default (`pa:3,qd:2,kv:2`) is maintained for llm-d parity. See RP-7 in the [principles catalog](principles.md) for the regime-dependent recommendation.
