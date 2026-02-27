@@ -390,7 +390,7 @@ func TestH17_RegimeAnalysis(t *testing.T) {
 
 		// Step time via roofline
 		step := StepConfig{DecodeRequests: decodeReqs}
-		stepTimeUS := rooflineStepTime("", mc, hwCalib, step, tp, mfuDB)
+		stepTimeUS := rooflineStepTime(mc, hwCalib, step, tp, mfuDB)
 
 		regime := "MEM"
 		if decodeComputeS > decodeMemoryS {
@@ -426,7 +426,7 @@ func TestH17_RegimeAnalysis(t *testing.T) {
 		}
 
 		step := StepConfig{DecodeRequests: decodeReqs}
-		currentUS := rooflineStepTime("", mc, hwCalib, step, tp, mfuDB)
+		currentUS := rooflineStepTime(mc, hwCalib, step, tp, mfuDB)
 
 		// Compute what step time would be with GEMM floor = bs=8 GEMM time
 		gemmTimeCurrent := computeTransformerGEMMTimes(mc, bs, peakFlops, peakBW, mfuDB, tpScaling)

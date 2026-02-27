@@ -120,7 +120,7 @@ func TestH18_DecodeActivationDiscountNegligible(t *testing.T) {
 			step := StepConfig{DecodeRequests: decodeReqs}
 
 			// Get baseline step time at hardcoded factor=0.75
-			stepTime075 := rooflineStepTime("", mc, hc, step, tp, mfuDB)
+			stepTime075 := rooflineStepTime(mc, hc, step, tp, mfuDB)
 
 			// Compute memory times analytically for factor scaling
 			tpScaling := 1.0 / float64(tp)
@@ -224,7 +224,7 @@ func TestH18_DecodeActivationDiscountNegligible(t *testing.T) {
 			}
 
 			step := StepConfig{DecodeRequests: decodeReqs}
-			stepTime075 := rooflineStepTime("", mc, hc, step, tp, mfuDB)
+			stepTime075 := rooflineStepTime(mc, hc, step, tp, mfuDB)
 
 			// Compute per-request activation and dynamic bytes at 0.75
 			var activBytes075, dynamicBytes075 float64
@@ -330,7 +330,7 @@ func TestH18_DecodeActivationDiscountNegligible(t *testing.T) {
 				}
 			}
 			step := StepConfig{DecodeRequests: decodeReqs}
-			actual := rooflineStepTime("", mc, hc, step, tp, mfuDB)
+			actual := rooflineStepTime(mc, hc, step, tp, mfuDB)
 
 			// Reconstruct at factor=0.75 (should be identity)
 			var activBytes075, dynamicBytes075 float64

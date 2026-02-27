@@ -7,6 +7,51 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+// --- Roofline Model Calibration Constants ---
+//
+// Known approximations: these empirical discount factors were calibrated against
+// H100 kernel measurements. They account for HW-level effects (caching, prefetching,
+// warp scheduling) that reduce effective memory traffic below theoretical values.
+// Exact values may vary by GPU architecture; making them HardwareCalib fields is a
+// future improvement tracked as a known limitation.
+const (
+	// kvCacheAccessDiscountDecode is the fraction of theoretical KV cache read
+	// bytes actually transferred during decode (batch_size=1 token per request).
+	// Lower than prefill because decode reads are more scattered (single-token
+	// attention patterns), reducing cache line utilization.
+	kvCacheAccessDiscountDecode = 0.80
+
+	// kvCacheAccessDiscountPrefill is the fraction of theoretical KV cache read
+	// bytes actually transferred during prefill (contiguous multi-token reads).
+	// Higher than decode because prefill reads are sequential, benefiting from
+	// HBM burst mode and L2 prefetching.
+	kvCacheAccessDiscountPrefill = 0.92
+
+	// activationDiscountDecode is the fraction of theoretical activation bytes
+	// transferred during decode. Decode activations are small (single token),
+	// reducing effective bandwidth utilization.
+	activationDiscountDecode = 0.75
+
+	// activationDiscountPrefill is the fraction of theoretical activation bytes
+	// transferred during prefill. Prefill activations are larger and more
+	// sequential, achieving better bandwidth utilization.
+	activationDiscountPrefill = 0.85
+
+	// causalAttentionFLOPsReduction is the divisor applied to attention FLOPs
+	// to account for causal masking. Causal attention skips the upper triangle
+	// of the attention matrix, theoretically halving FLOPs (factor of 2.0).
+	// The empirical value of 1.8 accounts for FlashAttention's tile-based
+	// execution where partial tiles still execute some masked operations.
+	// Known approximation: this value was calibrated on H100; exact value
+	// varies by GPU architecture and kernel implementation.
+	causalAttentionFLOPsReduction = 1.8
+
+	// minStepTimeMicros is the minimum step time in microseconds.
+	// Prevents zero-advance steps that could cause livelock in the DES event loop
+	// when both phases are empty and PerLayerCPUOverhead is zero (R19/INV-3).
+	minStepTimeMicros = 1.0
+)
+
 // PrefillRequestConfig describes a single prefill request in a batch step.
 type PrefillRequestConfig struct {
 	ProgressIndex       int64 `json:"progress_index"`
@@ -27,6 +72,9 @@ type StepConfig struct {
 
 // --- Transformer FLOPs and Memory Access ---
 
+// calculateTransformerFlops is test-only infrastructure used by roofline_test.go
+// for validating FLOPs decomposition. It is NOT called by production rooflineStepTime,
+// which computes FLOPs inline via MFU-based lookups from bench_data.
 func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) map[string]float64 {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
@@ -108,17 +156,17 @@ func calculateMemoryAccessBytes(
 
 		kvReadPerToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
 		if newT == 1 {
-			mem["kv_cache_access"] = kvReadPerToken * seq * 0.80
+			mem["kv_cache_access"] = kvReadPerToken * seq * kvCacheAccessDiscountDecode
 		} else {
-			mem["kv_cache_access"] = kvReadPerToken * seq * 0.92
+			mem["kv_cache_access"] = kvReadPerToken * seq * kvCacheAccessDiscountPrefill
 		}
 	}
 
 	var activationBytes float64
 	if newT == 1 {
-		activationBytes = nLayers * dModel * config.BytesPerParam * newT * 0.75
+		activationBytes = nLayers * dModel * config.BytesPerParam * newT * activationDiscountDecode
 	} else {
-		activationBytes = nLayers * dModel * config.BytesPerParam * newT * 0.85
+		activationBytes = nLayers * dModel * config.BytesPerParam * newT * activationDiscountPrefill
 	}
 	mem["activations_tokens"] = activationBytes
 
@@ -248,7 +296,6 @@ func calculateAttentionCoreFLOPs(
 // Precondition: mfuDB must be non-nil, ValidateRooflineConfig(modelConfig, hwConfig)
 // must return nil, and tp must be > 0. NewLatencyModel enforces these at construction.
 func rooflineStepTime(
-	_ string,
 	modelConfig sim.ModelConfig,
 	hwConfig sim.HardwareCalib,
 	stepConfig StepConfig,
@@ -400,7 +447,7 @@ func rooflineStepTime(
 			// Causal masking skips ~50% of FLOPs (lower triangle), but HW utilization
 			// differs from dense attention. The 1.8 constant was empirically calibrated
 			// against H100 kernel measurements; exact value varies by GPU architecture.
-			attnCoreTimeS := attnCoreFLOPs / 1.8 / (peakFlops * attnMFU) * tpScaling
+			attnCoreTimeS := attnCoreFLOPs / causalAttentionFLOPsReduction / (peakFlops * attnMFU) * tpScaling
 
 			prefillComputeS += gemmTimeS + attnCoreTimeS
 		}
@@ -441,10 +488,21 @@ func rooflineStepTime(
 	// ========================================
 	// 4. CPU SCHEDULING OVERHEAD
 	// ========================================
+	// Known approximation: dividing by tpFactor models the assumption that CPU
+	// scheduling work is distributed across TP ranks. This is an approximation —
+	// standard TP splits each layer's tensors across GPUs (not distributing layers),
+	// so CPU overhead per layer is arguably constant regardless of TP. However,
+	// empirical H2b calibration showed better MAPE with the division, suggesting
+	// vLLM's per-rank scheduling does scale with TP degree in practice.
 	overheadMicros := hwConfig.PerLayerCPUOverhead * float64(modelConfig.NumLayers) / tpFactor
 
 	totalS := stepHardwareS + (overheadMicros / 1e6)
 	totalMicros := totalS * 1e6
+
+	// Enforce minimum step time to prevent zero-advance livelock (R19/INV-3).
+	if totalMicros < minStepTimeMicros {
+		totalMicros = minStepTimeMicros
+	}
 
 	return int64(math.Round(totalMicros))
 }

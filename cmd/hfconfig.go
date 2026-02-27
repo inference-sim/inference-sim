@@ -114,6 +114,13 @@ func resolveHardwareConfig(explicitPath, defaultsFile string) (string, error) {
 // Returns the explicit path if provided, or the bundled default (bench_data/ next to defaults.yaml).
 func resolveBenchDataPath(explicitPath, defaultsFile string) (string, error) {
 	if explicitPath != "" {
+		info, err := os.Stat(explicitPath)
+		if err != nil {
+			return "", fmt.Errorf("--bench-data-path %q: %w", explicitPath, err)
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("--bench-data-path %q is not a directory", explicitPath)
+		}
 		return explicitPath, nil
 	}
 

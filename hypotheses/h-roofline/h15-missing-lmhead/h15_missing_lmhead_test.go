@@ -385,7 +385,7 @@ func TestH15_DecodeStepTimeComparison(t *testing.T) {
 
 			// --- Baseline: current roofline (no LM head) ---
 			step := StepConfig{DecodeRequests: decodeReqs}
-			baselineUS := rooflineStepTime("", mc, hwCalib, step, sc.tp, mfuDB)
+			baselineUS := rooflineStepTime(mc, hwCalib, step, sc.tp, mfuDB)
 
 			// --- With LM head: compute additional GEMM time and memory bytes ---
 			// Additional GEMM time

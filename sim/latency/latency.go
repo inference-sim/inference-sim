@@ -88,7 +88,7 @@ func (m *RooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
 			})
 		}
 	}
-	return rooflineStepTime(m.gpu, m.modelConfig, m.hwConfig, stepConfig, m.tp, m.mfuDB)
+	return rooflineStepTime(m.modelConfig, m.hwConfig, stepConfig, m.tp, m.mfuDB)
 }
 
 func (m *RooflineLatencyModel) QueueingTime(req *sim.Request) int64 {

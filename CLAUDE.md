@@ -196,7 +196,7 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --roofline)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --roofline, --bench-data-path)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
@@ -226,6 +226,7 @@ inference-sim/
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
 │   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/); HardwareCalib includes MemoryGiB (reserved for future KV capacity auto-calculation)
+│   ├── mfu_database.go        # MFUDatabase: benchmark-driven MFU lookups for roofline v2 (prefill/decode attention + GEMM); pre-indexed at construction for O(log n) hot-path lookups
 │   ├── workload_config.go     # CSV trace loading and distribution-based workload generation
 │   └── internal/testutil/     # Shared test infrastructure (golden dataset loading)
 ├── sim/kv/                    # KV cache implementations (PKG-1)
@@ -269,8 +270,9 @@ inference-sim/
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
 ├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
+├── bench_data/                # MFU benchmark data (prefill/decode attention + GEMM CSVs per GPU); used by roofline v2 for MFU lookups via MFUDatabase
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
-├── hardware_config.json       # GPU specifications
+├── hardware_config.json       # GPU specifications (roofline v2 schema: TFlopsPeak, BwPeakTBs, bwEfficiencyFactor, perLayerOverhead, MemoryGiB)
 ├── examples/                  # Example configuration files
 ├── hypotheses/                # Hypothesis experiment artifacts (run.sh, analyze.py, FINDINGS.md)
 ├── testdata/goldendataset.json # Golden dataset for regression tests
@@ -328,10 +330,13 @@ Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) b
    - Alpha coefficients: queueing time estimation
    - Beta coefficients: step time estimation based on batch features
 
-2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `sim/latency/roofline.go`
+2. **Roofline mode (v2)**: MFU-based analytical estimation via `sim/latency/roofline.go` + `sim/mfu_database.go`
    - Requires HuggingFace `config.json` in `model_configs/`
-   - Requires `hardware_config.json` with GPU specs
-   - **`--roofline` flag**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./blis run --model <name> --roofline --hardware <GPU> --tp <N>`
+   - Requires `hardware_config.json` with GPU specs (v2 schema: `bwEfficiencyFactor`, `perLayerOverhead`, `MemoryGiB`)
+   - Requires `bench_data/` directory with MFU benchmark CSVs (bundled, or `--bench-data-path` to override)
+   - MFU lookups: prefill attention (by seq_len), decode attention (by batch_size × kv_len, bilinear), GEMM (by M × K × N)
+   - **Alpha coefficients default to zero** in roofline mode — the roofline model is a pure analytical estimator. This means `QueueingTime()` returns 0 and `OutputTokenProcessingTime()` returns 0. Users who want queueing-time estimation can pass `--alpha-coeffs` explicitly.
+   - **`--roofline` flag**: Auto-resolves configs — checks `model_configs/` first, fetches from HuggingFace on miss, uses bundled `hardware_config.json` and `bench_data/`. Usage: `./blis run --model <name> --roofline --hardware <GPU> --tp <N>`
 
 ### Key Data Flow
 

@@ -10,6 +10,7 @@ import (
 // --- Helper: synthetic MFUDatabase for testing without bench_data/ ---
 
 func syntheticMFUDatabase() *MFUDatabase {
+	attentionConfig := "32-8-128"
 	decodeRows := map[string][]MHADecodeRow{
 		"32-8-128-tp1": {
 			{BatchSize: 1, KVLen: 128, MFU: 0.05},
@@ -20,30 +21,45 @@ func syntheticMFUDatabase() *MFUDatabase {
 			{BatchSize: 32, KVLen: 512, MFU: 0.30},
 		},
 	}
-	// Pre-build decode grids (mirrors NewMFUDatabase construction)
+	prefillData := map[string][]MHAPrefillRow{
+		"32-8-128": {
+			{SeqLen: 128, MFU: 0.10},
+			{SeqLen: 512, MFU: 0.30},
+			{SeqLen: 1024, MFU: 0.50},
+			{SeqLen: 4096, MFU: 0.70},
+		},
+	}
+	gemmData := []GEMMRow{
+		{M: 1, K: 4096, N: 4096, MFU: 0.05},
+		{M: 8, K: 4096, N: 4096, MFU: 0.20},
+		{M: 32, K: 4096, N: 4096, MFU: 0.40},
+		{M: 128, K: 4096, N: 4096, MFU: 0.60},
+	}
+
+	// Pre-build all indexes (mirrors NewMFUDatabase construction)
 	grids := make(map[string]*decodeGrid, len(decodeRows))
 	for key, rows := range decodeRows {
 		grids[key] = buildDecodeGrid(rows)
 	}
+	prefillGrids := make(map[string]*prefillGrid, len(prefillData))
+	for key, rows := range prefillData {
+		prefillGrids[key] = buildPrefillGrid(rows)
+	}
+	gemmIdx, allKNs := buildGEMMIndex(gemmData)
+	decodeTPKeys, sortedTPs := collectDecodeTPKeys(attentionConfig, decodeRows)
+
 	return &MFUDatabase{
-		attentionConfig: "32-8-128",
+		attentionConfig: attentionConfig,
 		gpu:             "h100",
-		prefillData: map[string][]MHAPrefillRow{
-			"32-8-128": {
-				{SeqLen: 128, MFU: 0.10},
-				{SeqLen: 512, MFU: 0.30},
-				{SeqLen: 1024, MFU: 0.50},
-				{SeqLen: 4096, MFU: 0.70},
-			},
-		},
-		decodeData:  decodeRows,
-		decodeGrids: grids,
-		gemmData: []GEMMRow{
-			{M: 1, K: 4096, N: 4096, MFU: 0.05},
-			{M: 8, K: 4096, N: 4096, MFU: 0.20},
-			{M: 32, K: 4096, N: 4096, MFU: 0.40},
-			{M: 128, K: 4096, N: 4096, MFU: 0.60},
-		},
+		prefillData:     prefillData,
+		prefillGrids:    prefillGrids,
+		decodeData:      decodeRows,
+		decodeGrids:     grids,
+		decodeTPKeys:    decodeTPKeys,
+		decodeSortedTPs: sortedTPs,
+		gemmData:        gemmData,
+		gemmIndex:       gemmIdx,
+		gemmAllKNs:      allKNs,
 	}
 }
 

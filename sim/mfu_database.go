@@ -80,12 +80,36 @@ type decodeGrid struct {
 	rows   []MHADecodeRow             // original rows for zero-MFU fallback search
 }
 
-// MFUDatabase holds all MFU benchmark data
+// gemmKN is a composite key for GEMM data indexed by (K, N) dimensions.
+type gemmKN struct{ k, n int }
+
+// gemmMPoint is a (M, MFU) pair, used in pre-sorted slices for M-dimension interpolation.
+type gemmMPoint struct {
+	m   int
+	mfu float64
+}
+
+// prefillGrid holds pre-sorted seq_len → MFU data for O(log n) lookup.
+// Built once at construction to avoid per-call allocation and sort.
+type prefillGrid struct {
+	seqLens []int     // sorted ascending
+	mfus    []float64 // parallel to seqLens
+	rows    []MHAPrefillRow // original rows for zero-MFU fallback
+}
+
+// MFUDatabase holds all MFU benchmark data with pre-built indexes for
+// efficient hot-path lookups. All indexes are built at construction time
+// by NewMFUDatabase to avoid per-call allocations in the DES event loop.
 type MFUDatabase struct {
 	prefillData      map[string][]MHAPrefillRow // key: "32-32-128"
+	prefillGrids     map[string]*prefillGrid    // pre-sorted prefill data (I5)
 	decodeData       map[string][]MHADecodeRow  // key: "32-32-128-tp2"
 	decodeGrids      map[string]*decodeGrid     // pre-built grids, same keys as decodeData
+	decodeTPKeys     map[int]string             // pre-computed TP config keys (I7b)
+	decodeSortedTPs  []int                      // sorted available TPs for nearest-TP fallback (I16)
 	gemmData         []GEMMRow
+	gemmIndex        map[gemmKN][]gemmMPoint    // pre-indexed GEMM data by (K,N), sorted by M (I6)
+	gemmAllKNs       []gemmKN                   // all distinct (K,N) pairs for fallback search
 	attentionConfig  string // Model's attention config
 	availableConfigs []AttentionShape
 	gpu              string
@@ -404,7 +428,62 @@ func buildDecodeGrid(rows []MHADecodeRow) *decodeGrid {
 	}
 }
 
-// NewMFUDatabase creates a new MFU database from benchmark data
+// buildPrefillGrid pre-sorts prefill rows by seq_len for O(log n) lookup.
+func buildPrefillGrid(rows []MHAPrefillRow) *prefillGrid {
+	sorted := make([]MHAPrefillRow, len(rows))
+	copy(sorted, rows)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].SeqLen < sorted[j].SeqLen })
+
+	seqLens := make([]int, len(sorted))
+	mfus := make([]float64, len(sorted))
+	for i, r := range sorted {
+		seqLens[i] = r.SeqLen
+		mfus[i] = r.MFU
+	}
+	return &prefillGrid{seqLens: seqLens, mfus: mfus, rows: rows}
+}
+
+// buildGEMMIndex pre-indexes GEMM data by (K, N) with M-sorted point lists.
+// Converts O(n) per-lookup scans to O(1) map access + O(log m) binary search.
+func buildGEMMIndex(rows []GEMMRow) (map[gemmKN][]gemmMPoint, []gemmKN) {
+	idx := make(map[gemmKN][]gemmMPoint)
+	for _, r := range rows {
+		key := gemmKN{r.K, r.N}
+		idx[key] = append(idx[key], gemmMPoint{r.M, r.MFU})
+	}
+	// Sort each M-point list by M for binary search / interpolation
+	allKNs := make([]gemmKN, 0, len(idx))
+	for key, pts := range idx {
+		sort.Slice(pts, func(i, j int) bool { return pts[i].m < pts[j].m })
+		idx[key] = pts
+		allKNs = append(allKNs, key)
+	}
+	return idx, allKNs
+}
+
+// collectDecodeTPKeys pre-computes TP config key strings and collects available TPs.
+func collectDecodeTPKeys(attentionConfig string, decodeData map[string][]MHADecodeRow) (map[int]string, []int) {
+	tpSet := make(map[int]bool)
+	for key := range decodeData {
+		// Parse TP from key like "32-32-128-tp2"
+		var tp int
+		if _, err := fmt.Sscanf(key, attentionConfig+"-tp%d", &tp); err == nil {
+			tpSet[tp] = true
+		}
+	}
+	keys := make(map[int]string, len(tpSet))
+	tps := make([]int, 0, len(tpSet))
+	for tp := range tpSet {
+		keys[tp] = fmt.Sprintf("%s-tp%d", attentionConfig, tp)
+		tps = append(tps, tp)
+	}
+	sort.Ints(tps)
+	return keys, tps
+}
+
+// NewMFUDatabase creates a new MFU database from benchmark data.
+// All indexes are pre-built at construction time to avoid per-lookup
+// allocations in the hot path (DES event loop).
 func NewMFUDatabase(modelConfig ModelConfig, benchDataPath string, gpu string) (*MFUDatabase, error) {
 	if modelConfig.NumHeads <= 0 {
 		return nil, fmt.Errorf("NewMFUDatabase: ModelConfig.NumHeads must be > 0, got %d", modelConfig.NumHeads)
@@ -451,65 +530,98 @@ func NewMFUDatabase(modelConfig ModelConfig, benchDataPath string, gpu string) (
 		decodeGrids[key] = buildDecodeGrid(rows)
 	}
 
+	// Pre-build prefill grids (I5: avoid per-call sort/allocation)
+	prefillGrids := make(map[string]*prefillGrid, len(prefillData))
+	for key, rows := range prefillData {
+		prefillGrids[key] = buildPrefillGrid(rows)
+	}
+
+	// Pre-index GEMM data (I6: avoid O(n) scans per call)
+	gemmIdx, allKNs := buildGEMMIndex(gemmData)
+
+	// Pre-compute TP config keys (I7b: avoid fmt.Sprintf per call)
+	decodeTPKeys, sortedTPs := collectDecodeTPKeys(attentionConfig, decodeData)
+
 	return &MFUDatabase{
 		prefillData:      prefillData,
+		prefillGrids:     prefillGrids,
 		decodeData:       decodeData,
 		decodeGrids:      decodeGrids,
+		decodeTPKeys:     decodeTPKeys,
+		decodeSortedTPs:  sortedTPs,
 		gemmData:         gemmData,
+		gemmIndex:        gemmIdx,
+		gemmAllKNs:       allKNs,
 		attentionConfig:  attentionConfig,
 		availableConfigs: availableConfigs,
 		gpu:              gpu,
 	}, nil
 }
 
+// findNearestTPGrid returns the decode grid for the nearest available TP.
+// Uses pre-sorted TP list for efficient nearest-neighbor lookup (I16).
+func (db *MFUDatabase) findNearestTPGrid(targetTP int) *decodeGrid {
+	if len(db.decodeSortedTPs) == 0 {
+		return nil
+	}
+	// Find the nearest TP
+	bestTP := db.decodeSortedTPs[0]
+	bestDist := abs(bestTP - targetTP)
+	for _, tp := range db.decodeSortedTPs[1:] {
+		d := abs(tp - targetTP)
+		if d < bestDist {
+			bestDist = d
+			bestTP = tp
+		}
+	}
+	key := db.decodeTPKeys[bestTP]
+	if key == "" {
+		key = fmt.Sprintf("%s-tp%d", db.attentionConfig, bestTP)
+	}
+	logrus.Debugf("Using TP=%d decode data as fallback for TP=%d (nearest available)", bestTP, targetTP)
+	return db.decodeGrids[key]
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 // GetAttnPrefillMFU returns MFU for prefill attention at given seq_len.
 // Linearly interpolates between the floor and ceiling seq_len grid points
 // that bracket the target, producing smooth MFU transitions instead of
 // step-function jumps at grid boundaries.
+// Uses pre-sorted data from construction time for O(log n) lookup (I5).
 func (db *MFUDatabase) GetAttnPrefillMFU(seqLen int) float64 {
-	rows := db.prefillData[db.attentionConfig]
-	if len(rows) == 0 {
+	pg := db.prefillGrids[db.attentionConfig]
+	if pg == nil || len(pg.seqLens) == 0 {
 		logrus.Warnf("No prefill MFU data for config %s - returning floor MFU", db.attentionConfig)
 		return 0.0001
 	}
 
-	// Build sorted seq_len → MFU mapping
-	type seqPoint struct {
-		seqLen int
-		mfu    float64
-	}
-	pts := make([]seqPoint, len(rows))
-	for i, r := range rows {
-		pts[i] = seqPoint{r.SeqLen, r.MFU}
-	}
-	sort.Slice(pts, func(i, j int) bool { return pts[i].seqLen < pts[j].seqLen })
+	// O(log n) bracket lookup on pre-sorted seq_len array
+	lo, hi := bracketIndex(pg.seqLens, seqLen)
 
-	// Interpolate
 	var mfu float64
-	if seqLen <= pts[0].seqLen {
-		mfu = pts[0].mfu
-	} else if seqLen >= pts[len(pts)-1].seqLen {
-		mfu = pts[len(pts)-1].mfu
+	if lo == hi {
+		mfu = pg.mfus[lo]
 	} else {
-		for i := 0; i < len(pts)-1; i++ {
-			if pts[i].seqLen <= seqLen && seqLen < pts[i+1].seqLen {
-				t := float64(seqLen-pts[i].seqLen) / float64(pts[i+1].seqLen-pts[i].seqLen)
-				mfu = lerp(pts[i].mfu, pts[i+1].mfu, t)
-				break
-			}
-		}
+		t := float64(seqLen-pg.seqLens[lo]) / float64(pg.seqLens[hi]-pg.seqLens[lo])
+		mfu = lerp(pg.mfus[lo], pg.mfus[hi], t)
 	}
 
 	// Zero-MFU protection: find nearest non-zero value as fallback
 	if mfu < 0.0001 {
 		var fallbackRow *MHAPrefillRow
 		minFallbackDist := math.MaxFloat64
-		for i := range rows {
-			if rows[i].MFU >= 0.0001 {
-				dist := math.Abs(float64(rows[i].SeqLen - seqLen))
+		for i := range pg.rows {
+			if pg.rows[i].MFU >= 0.0001 {
+				dist := math.Abs(float64(pg.rows[i].SeqLen - seqLen))
 				if dist < minFallbackDist {
 					minFallbackDist = dist
-					fallbackRow = &rows[i]
+					fallbackRow = &pg.rows[i]
 				}
 			}
 		}
@@ -530,17 +642,19 @@ func (db *MFUDatabase) GetAttnPrefillMFU(seqLen int) float64 {
 // MFU transitions instead of step-function jumps at grid boundaries.
 // Uses pre-built grids from NewMFUDatabase to avoid per-lookup allocation overhead.
 func (db *MFUDatabase) GetAttnDecodeMFU(batchSize, kvLen, tp int) float64 {
-	configKey := fmt.Sprintf("%s-tp%d", db.attentionConfig, tp)
+	// Use pre-computed TP config key (I7b: no per-call fmt.Sprintf)
+	configKey := db.decodeTPKeys[tp]
+	if configKey == "" {
+		configKey = fmt.Sprintf("%s-tp%d", db.attentionConfig, tp)
+	}
 	dg := db.decodeGrids[configKey]
 	if dg == nil {
-		// Try fallback to tp=1
-		fallbackKey := fmt.Sprintf("%s-tp1", db.attentionConfig)
-		dg = db.decodeGrids[fallbackKey]
+		// Try fallback to nearest available TP instead of always tp=1 (I16)
+		dg = db.findNearestTPGrid(tp)
 		if dg == nil {
 			logrus.Warnf("No decode MFU data for config %s (TP=%d) - returning floor MFU", db.attentionConfig, tp)
 			return 0.0001
 		}
-		logrus.Debugf("Using TP=1 decode data as fallback for TP=%d", tp)
 	}
 
 	// Guard: empty axis slices should be unreachable (rows > 0 guarantees entries),
@@ -609,90 +723,94 @@ func (db *MFUDatabase) GetAttnDecodeMFU(batchSize, kvLen, tp int) float64 {
 	return mfu
 }
 
-// GetGEMMmfu returns MFU for GEMM operation (m, k, n)
-// Stage 1: Find smallest (k, n) where k >= target_k AND n >= target_n
-// Stage 2: Within that (k, n), find largest m <= target_m
+// GetGEMMmfu returns MFU for GEMM operation (m, k, n).
+// Stage 1: Find smallest (k, n) where k >= target_k AND n >= target_n using pre-built index.
+// Stage 2: Within that (k, n), interpolate M using pre-sorted M-points.
+// Uses pre-indexed data from construction time for O(1) + O(log m) lookup (I6).
 func (db *MFUDatabase) GetGEMMmfu(m, k, n int) float64 {
-	if len(db.gemmData) == 0 {
+	if len(db.gemmIndex) == 0 {
 		logrus.Warnf("No GEMM MFU data available - returning floor MFU")
 		return 0.0001
 	}
 
-	// Stage 1: Find smallest (k, n) >= target
-	targetK := -1
-	targetN := -1
+	// Stage 1: Find smallest (k, n) >= target using pre-built KN index
+	var targetKN gemmKN
+	found := false
 	minDist := math.MaxFloat64
 
-	for _, row := range db.gemmData {
-		if row.K >= k && row.N >= n {
-			dk := float64(row.K - k)
-			dn := float64(row.N - n)
-			dist := math.Sqrt(dk*dk + dn*dn)
+	for _, kn := range db.gemmAllKNs {
+		if kn.k >= k && kn.n >= n {
+			dk := float64(kn.k - k)
+			dn := float64(kn.n - n)
+			dist := dk*dk + dn*dn // skip sqrt for comparison
 			if dist < minDist {
 				minDist = dist
-				targetK = row.K
-				targetN = row.N
+				targetKN = kn
+				found = true
 			}
 		}
 	}
 
-	if targetK == -1 || targetN == -1 {
-		// No (k,n) >= target found; use the largest available (k,n) by Euclidean distance from origin.
-		// gemmData is not sorted by (k,n), so we must scan.
+	if !found {
+		// No (k,n) >= target found; use the largest available by magnitude.
 		logrus.Debugf("No GEMM (k,n) >= (%d,%d), using largest available", k, n)
 		maxMag := -1.0
-		for _, row := range db.gemmData {
-			mag := float64(row.K)*float64(row.K) + float64(row.N)*float64(row.N)
+		for _, kn := range db.gemmAllKNs {
+			mag := float64(kn.k)*float64(kn.k) + float64(kn.n)*float64(kn.n)
 			if mag > maxMag {
 				maxMag = mag
-				targetK = row.K
-				targetN = row.N
+				targetKN = kn
+				found = true
 			}
 		}
 	}
-
-	// Stage 2: Collect all M values for (targetK, targetN) and interpolate
-	type mPoint struct {
-		m   int
-		mfu float64
-	}
-	var mPoints []mPoint
-	for _, row := range db.gemmData {
-		if row.K == targetK && row.N == targetN {
-			mPoints = append(mPoints, mPoint{row.M, row.MFU})
-		}
-	}
-	if len(mPoints) == 0 {
-		logrus.Warnf("No GEMM data found for (k=%d, n=%d) - returning floor MFU", targetK, targetN)
+	if !found {
+		logrus.Warnf("No GEMM data found - returning floor MFU")
 		return 0.0001
 	}
-	sort.Slice(mPoints, func(i, j int) bool { return mPoints[i].m < mPoints[j].m })
 
-	// Linear interpolation in M dimension
-	var mfu float64
-	if m <= mPoints[0].m {
-		mfu = mPoints[0].mfu
-	} else if m >= mPoints[len(mPoints)-1].m {
-		mfu = mPoints[len(mPoints)-1].mfu
-	} else {
-		for i := 0; i < len(mPoints)-1; i++ {
-			if mPoints[i].m <= m && m < mPoints[i+1].m {
-				t := float64(m-mPoints[i].m) / float64(mPoints[i+1].m-mPoints[i].m)
-				mfu = lerp(mPoints[i].mfu, mPoints[i+1].mfu, t)
-				break
-			}
-		}
+	// Stage 2: O(1) map lookup + O(log m) interpolation on pre-sorted M-points
+	mPoints := db.gemmIndex[targetKN]
+	if len(mPoints) == 0 {
+		logrus.Warnf("No GEMM data found for (k=%d, n=%d) - returning floor MFU", targetKN.k, targetKN.n)
+		return 0.0001
 	}
 
-	// Handle zero or near-zero MFU (division by zero protection)
+	// Binary search for bracket in pre-sorted M-points
+	mVals := make([]int, len(mPoints))
+	for i, p := range mPoints {
+		mVals[i] = p.m
+	}
+	lo, hi := bracketIndex(mVals, m)
+
+	var mfu float64
+	if lo == hi {
+		mfu = mPoints[lo].mfu
+	} else {
+		t := float64(m-mPoints[lo].m) / float64(mPoints[hi].m-mPoints[lo].m)
+		mfu = lerp(mPoints[lo].mfu, mPoints[hi].mfu, t)
+	}
+
+	// Handle zero or near-zero MFU: find nearest non-zero by Euclidean distance (I5b)
 	if mfu < 0.0001 {
-		// Find nearest non-zero MFU in the database
-		for _, row := range db.gemmData {
-			if row.MFU >= 0.0001 {
-				logrus.Debugf("GEMM MFU=%.4f too small for (m=%d, k=%d, n=%d), using fallback (m=%d, k=%d, n=%d) with MFU=%.4f",
-					mfu, m, k, n, row.M, row.K, row.N, row.MFU)
-				return row.MFU
+		var bestRow *GEMMRow
+		bestDist := math.MaxFloat64
+		for i := range db.gemmData {
+			if db.gemmData[i].MFU >= 0.0001 {
+				dm := float64(db.gemmData[i].M - m)
+				dk := float64(db.gemmData[i].K - k)
+				dn := float64(db.gemmData[i].N - n)
+				dist := dm*dm + dk*dk + dn*dn
+				if dist < bestDist {
+					bestDist = dist
+					bestRow = &db.gemmData[i]
+				}
 			}
+		}
+		if bestRow != nil {
+			logrus.Debugf("GEMM MFU=%.4f too small for (m=%d, k=%d, n=%d), using nearest (m=%d, k=%d, n=%d) with MFU=%.4f",
+				mfu, m, k, n, bestRow.M, bestRow.K, bestRow.N, bestRow.MFU)
+			return bestRow.MFU
 		}
 		logrus.Warnf("All GEMM MFU values are zero - returning floor MFU")
 		return 0.0001

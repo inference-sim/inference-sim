@@ -179,7 +179,7 @@ func TestH14_DecodeKVBandwidthDiscount(t *testing.T) {
 		step := StepConfig{DecodeRequests: decodeReqs}
 
 		// Get baseline step time at 0.80 (current hardcoded)
-		stepTime080 := rooflineStepTime("", mc, hc, step, tp, mfuDB)
+		stepTime080 := rooflineStepTime(mc, hc, step, tp, mfuDB)
 
 		// To estimate step time at discount=1.00, we compute:
 		// 1. The decode compute time (unchanged)
@@ -343,7 +343,7 @@ func TestH14_DecodeKVBandwidthDiscount(t *testing.T) {
 	for _, ss := range sweepScenarios {
 		decodeReqs := []DecodeRequestConfig{{ProgressIndex: ss.kvLen, NumNewDecodeTokens: 1}}
 		step := StepConfig{DecodeRequests: decodeReqs}
-		stepTime080 := rooflineStepTime("", mc, hc, step, tp, mfuDB)
+		stepTime080 := rooflineStepTime(mc, hc, step, tp, mfuDB)
 
 		m := calculateMemoryAccessBytes(mc, ss.kvLen, 1, true)
 		kvAccess080 := m["kv_cache_access"]

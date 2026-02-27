@@ -223,19 +223,19 @@ func TestH27_MixedBatchMaxComparison(t *testing.T) {
 			PrefillRequests: tc.PrefillRequests,
 			DecodeRequests:  tc.DecodeRequests,
 		}
-		weightedAvgUS := rooflineStepTime("", mc, hc, mixedStep, tc.TP, mfuDB)
+		weightedAvgUS := rooflineStepTime(mc, hc, mixedStep, tc.TP, mfuDB)
 
 		// 2. Prefill-only step
 		prefillOnlyStep := StepConfig{
 			PrefillRequests: tc.PrefillRequests,
 		}
-		prefillOnlyUS := rooflineStepTime("", mc, hc, prefillOnlyStep, tc.TP, mfuDB)
+		prefillOnlyUS := rooflineStepTime(mc, hc, prefillOnlyStep, tc.TP, mfuDB)
 
 		// 3. Decode-only step
 		decodeOnlyStep := StepConfig{
 			DecodeRequests: tc.DecodeRequests,
 		}
-		decodeOnlyUS := rooflineStepTime("", mc, hc, decodeOnlyStep, tc.TP, mfuDB)
+		decodeOnlyUS := rooflineStepTime(mc, hc, decodeOnlyStep, tc.TP, mfuDB)
 
 		// 4. Max combination
 		maxCombinationUS := int64(math.Max(float64(prefillOnlyUS), float64(decodeOnlyUS)))

@@ -338,7 +338,7 @@ func TestH16_StepTimeImpact(t *testing.T) {
 
 		// === Baseline: current roofline (single MFU at maxKVLen) ===
 		step := StepConfig{DecodeRequests: decodeReqs}
-		baselineUS := rooflineStepTime("", mc, hc, step, tp, mfuDB)
+		baselineUS := rooflineStepTime(mc, hc, step, tp, mfuDB)
 
 		// === Adjusted: per-request MFU attention time ===
 		// Recompute attention time with per-request MFU, keeping everything else the same.

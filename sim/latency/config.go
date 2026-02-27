@@ -18,10 +18,33 @@ type HFConfig struct {
 	Raw map[string]any
 }
 
+// deprecatedHWFields lists hardware_config.json field names that were removed in roofline v2.
+// Used by parseHWConfig to warn users with custom configs about the schema change.
+var deprecatedHWFields = []string{
+	"BwEffConstant", "TOverheadMicros", "mfuPrefill", "mfuDecode", "allReduceLatency",
+}
+
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
 	data, err := os.ReadFile(HWConfigFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("read hardware config %q: %w", HWConfigFilePath, err)
+	}
+
+	// Check for deprecated field names from roofline v1 schema (C5 migration check).
+	// Go's json.Unmarshal silently ignores unknown fields, so we detect them explicitly.
+	var rawGPUs map[string]map[string]any
+	if jsonErr := json.Unmarshal(data, &rawGPUs); jsonErr == nil {
+		for gpuName, fields := range rawGPUs {
+			for _, deprecated := range deprecatedHWFields {
+				if _, found := fields[deprecated]; found {
+					fmt.Fprintf(os.Stderr, "WARNING: hardware_config.json GPU %q has deprecated field %q "+
+						"(removed in roofline v2). This field is silently ignored. "+
+						"New schema uses: bwEfficiencyFactor, perLayerOverhead, MemoryGiB. "+
+						"MFU values now come from bench_data/ instead of hardware_config.json.\n",
+						gpuName, deprecated)
+				}
+			}
+		}
 	}
 
 	var HardwareList map[string]sim.HardwareCalib

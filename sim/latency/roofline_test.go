@@ -203,8 +203,8 @@ func TestRooflineStepTime_BwEfficiency_DecodeBoundHigherLatency(t *testing.T) {
 		},
 	}
 
-	baseline := rooflineStepTime("", mc, hcBaseline, step, 1, mfuDB)
-	withEff := rooflineStepTime("", mc, hcWithEff, step, 1, mfuDB)
+	baseline := rooflineStepTime(mc, hcBaseline, step, 1, mfuDB)
+	withEff := rooflineStepTime(mc, hcWithEff, step, 1, mfuDB)
 
 	if withEff <= baseline {
 		t.Errorf("BwEfficiencyFactor=0.80 latency (%d µs) should exceed baseline (%d µs)", withEff, baseline)
@@ -232,8 +232,8 @@ func TestRooflineStepTime_BwEfficiency_ZeroAndOneIdentical(t *testing.T) {
 		},
 	}
 
-	resultZero := rooflineStepTime("", mc, hcZero, step, 1, mfuDB)
-	resultOne := rooflineStepTime("", mc, hcOne, step, 1, mfuDB)
+	resultZero := rooflineStepTime(mc, hcZero, step, 1, mfuDB)
+	resultOne := rooflineStepTime(mc, hcOne, step, 1, mfuDB)
 
 	if resultZero != resultOne {
 		t.Errorf("BwEfficiencyFactor=0 (%d µs) and BwEfficiencyFactor=1.0 (%d µs) should be identical",
@@ -256,8 +256,8 @@ func TestRooflineStepTime_BwEfficiency_PrefillAlsoAffected(t *testing.T) {
 		},
 	}
 
-	baseline := rooflineStepTime("", mc, hcBaseline, step, 1, mfuDB)
-	withEff := rooflineStepTime("", mc, hcWithEff, step, 1, mfuDB)
+	baseline := rooflineStepTime(mc, hcBaseline, step, 1, mfuDB)
+	withEff := rooflineStepTime(mc, hcWithEff, step, 1, mfuDB)
 
 	if withEff < baseline {
 		t.Errorf("BwEfficiencyFactor=0.80 prefill latency (%d µs) should be >= baseline (%d µs)", withEff, baseline)
@@ -283,14 +283,14 @@ func TestRooflineStepTime_PerLayerCPUOverhead_ScalesWithLayersAndTP(t *testing.T
 	mc64 := testModelConfig()
 	mc64.NumLayers = 64
 
-	result32 := rooflineStepTime("", mc32, hc, step, 1, mfuDB)
-	result64 := rooflineStepTime("", mc64, hc, step, 1, mfuDB)
+	result32 := rooflineStepTime(mc32, hc, step, 1, mfuDB)
+	result64 := rooflineStepTime(mc64, hc, step, 1, mfuDB)
 	if result64 <= result32 {
 		t.Errorf("64 layers (%d µs) should exceed 32 layers (%d µs) at TP=1", result64, result32)
 	}
 
-	resultTP1 := rooflineStepTime("", mc32, hc, step, 1, mfuDB)
-	resultTP2 := rooflineStepTime("", mc32, hc, step, 2, mfuDB)
+	resultTP1 := rooflineStepTime(mc32, hc, step, 1, mfuDB)
+	resultTP2 := rooflineStepTime(mc32, hc, step, 2, mfuDB)
 	if resultTP2 >= resultTP1 {
 		t.Errorf("TP=2 (%d µs) should be less than TP=1 (%d µs) for same model", resultTP2, resultTP1)
 	}
@@ -317,10 +317,79 @@ func TestRooflineStepTime_PerLayerCPUOverhead_ZeroMeansNoOverhead(t *testing.T) 
 		PerLayerCPUOverhead: 100.0,
 	}
 
-	resultZero := rooflineStepTime("", mc, hcZero, step, 1, mfuDB)
-	resultWith := rooflineStepTime("", mc, hcWithOverhead, step, 1, mfuDB)
+	resultZero := rooflineStepTime(mc, hcZero, step, 1, mfuDB)
+	resultWith := rooflineStepTime(mc, hcWithOverhead, step, 1, mfuDB)
 
 	if resultWith <= resultZero {
 		t.Errorf("PerLayerCPUOverhead=100 (%d µs) should exceed zero-overhead (%d µs)", resultWith, resultZero)
+	}
+}
+
+// Restored tests (I4): these were deleted during roofline v2 migration.
+// Adapted to use MFUDatabase-based API.
+
+func TestRooflineStepTime_Smoke_ValidInputsProducePositiveFiniteResult(t *testing.T) {
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+	mfuDB := loadTestMFUDatabase(t)
+
+	tests := []struct {
+		name string
+		step StepConfig
+	}{
+		{"prefill-only", StepConfig{
+			PrefillRequests: []PrefillRequestConfig{{ProgressIndex: 0, NumNewPrefillTokens: 128}},
+		}},
+		{"decode-only", StepConfig{
+			DecodeRequests: []DecodeRequestConfig{{ProgressIndex: 256, NumNewDecodeTokens: 1}},
+		}},
+		{"mixed", StepConfig{
+			PrefillRequests: []PrefillRequestConfig{{ProgressIndex: 0, NumNewPrefillTokens: 64}},
+			DecodeRequests:  []DecodeRequestConfig{{ProgressIndex: 128, NumNewDecodeTokens: 1}},
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := rooflineStepTime(mc, hc, tt.step, 1, mfuDB)
+			if result <= 0 {
+				t.Errorf("expected positive step time, got %d", result)
+			}
+			if result > 1e9 { // sanity: under 1 second in microseconds
+				t.Errorf("step time %d µs unreasonably large", result)
+			}
+		})
+	}
+}
+
+func TestRooflineStepTime_TPScaling_TP2LessThanTP1(t *testing.T) {
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+	mfuDB := loadTestMFUDatabase(t)
+
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{{ProgressIndex: 0, NumNewPrefillTokens: 512}},
+		DecodeRequests:  []DecodeRequestConfig{{ProgressIndex: 256, NumNewDecodeTokens: 1}},
+	}
+
+	resultTP1 := rooflineStepTime(mc, hc, step, 1, mfuDB)
+	resultTP2 := rooflineStepTime(mc, hc, step, 2, mfuDB)
+
+	if resultTP2 >= resultTP1 {
+		t.Errorf("TP=2 (%d µs) should be faster than TP=1 (%d µs)", resultTP2, resultTP1)
+	}
+}
+
+func TestRooflineStepTime_EmptyStep_ReturnsMinimumFloor(t *testing.T) {
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+	hc.PerLayerCPUOverhead = 0 // Zero overhead to test the minimum floor
+	mfuDB := loadTestMFUDatabase(t)
+
+	step := StepConfig{} // empty: no prefill, no decode
+	result := rooflineStepTime(mc, hc, step, 1, mfuDB)
+
+	if result < 1 {
+		t.Errorf("empty step should return at least minStepTimeMicros (1 µs), got %d", result)
 	}
 }
