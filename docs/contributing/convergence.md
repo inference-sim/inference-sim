@@ -3,10 +3,10 @@
 **Status:** Active (v1.0 — extracted 2026-02-26 from hypothesis.md)
 
 This document defines the convergence protocol used by all review gates across BLIS workflows:
-- **PR workflow** (docs/process/pr-workflow.md): Plan Review (10 perspectives), Code Review (10 perspectives)
-- **Hypothesis workflow** (docs/process/hypothesis.md): Design Review (5 perspectives), Code Review (5 perspectives), FINDINGS Review (10 perspectives)
-- **Design process** (docs/process/design.md): Design Doc Review (8 perspectives)
-- **Macro-plan process** (docs/process/macro-plan.md): Macro Plan Review (8 perspectives)
+- **PR workflow** (docs/contributing/pr-workflow.md): Plan Review (10 perspectives), Code Review (10 perspectives)
+- **Hypothesis workflow** (docs/contributing/hypothesis.md): Design Review (5 perspectives), Code Review (5 perspectives), FINDINGS Review (10 perspectives)
+- **Design process** (docs/contributing/design-process.md): Design Doc Review (8 perspectives)
+- **Macro-plan process** (docs/contributing/macro-planning.md): Macro Plan Review (8 perspectives)
 
 > **Executable implementation:** The `convergence-review` skill automates this protocol — dispatching perspectives, tallying findings independently, and enforcing the re-run gate. Invoke with `/convergence-review <gate-type> [artifact-path] [--model opus|sonnet|haiku]` (default: `haiku`).
 
@@ -55,7 +55,7 @@ Gates with more perspectives (FINDINGS Review: 10) will naturally converge more 
 
 ## References
 
-- PR workflow: [docs/process/pr-workflow.md](pr-workflow.md)
-- Hypothesis workflow: [docs/process/hypothesis.md](hypothesis.md)
-- Design process: [docs/process/design.md](design.md)
-- Macro-plan process: [docs/process/macro-plan.md](macro-plan.md)
+- PR workflow: [docs/contributing/pr-workflow.md](pr-workflow.md)
+- Hypothesis workflow: [docs/contributing/hypothesis.md](hypothesis.md)
+- Design process: [docs/contributing/design-process.md](design-process.md)
+- Macro-plan process: [docs/contributing/macro-planning.md](macro-planning.md)

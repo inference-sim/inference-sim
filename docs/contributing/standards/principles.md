@@ -77,7 +77,7 @@ Every piece of documentation lives in exactly one canonical location. Other file
 
 **The canonical-source pattern:**
 
-> **Canonical source:** [`docs/standards/rules.md`](rules.md). If this section diverges, rules.md is authoritative.
+> **Canonical source:** [`docs/contributing/standards/rules.md`](rules.md). If this section diverges, rules.md is authoritative.
 
 **When updating any standard, invariant, rule, or recipe:**
 1. Update the canonical source FIRST
@@ -88,16 +88,16 @@ Every piece of documentation lives in exactly one canonical location. Other file
 
 | Content | Canonical Source | Working Copies |
 |---------|-----------------|----------------|
-| Antipattern rules (R1-R20) | `docs/standards/rules.md` | CLAUDE.md (table), CONTRIBUTING.md (checklist) |
-| System invariants (INV-1–INV-8) | `docs/standards/invariants.md` | CLAUDE.md (summary), `docs/design/core-engine.md` (formulas), `docs/design/architecture.md` (signal freshness) |
-| Engineering principles | `docs/standards/principles.md` | CLAUDE.md (summary) |
-| Extension recipes (policies, scorers, KV tiers) | `docs/extension-recipes.md` | — |
-| Design process | `docs/process/design.md` | CONTRIBUTING.md (summary) |
-| Macro-plan process | `docs/process/macro-plan.md` | CONTRIBUTING.md (summary) |
+| Antipattern rules (R1-R20) | `docs/contributing/standards/rules.md` | CLAUDE.md (table), CONTRIBUTING.md (checklist) |
+| System invariants (INV-1–INV-8) | `docs/contributing/standards/invariants.md` | CLAUDE.md (summary), `docs/concepts/core-engine.md` (formulas), `docs/concepts/architecture.md` (signal freshness) |
+| Engineering principles | `docs/contributing/standards/principles.md` | CLAUDE.md (summary) |
+| Extension recipes (policies, scorers, KV tiers) | `docs/contributing/extension-recipes.md` | — |
+| Design process | `docs/contributing/design-process.md` | CONTRIBUTING.md (summary) |
+| Macro-plan process | `docs/contributing/macro-planning.md` | CONTRIBUTING.md (summary) |
 | File organization and architecture | CLAUDE.md (File Organization tree) | README.md (Project Structure tree) |
 | Hypothesis catalog and specifications | `docs/plans/research.md` | — |
 | Experiment status and coverage | `hypotheses/README.md` | — |
-| Experiment standards | `docs/standards/experiments.md` | — (note: review protocol subsection references `docs/process/convergence.md` as canonical) |
-| Convergence protocol | `docs/process/convergence.md` | `docs/process/hypothesis.md` (summary), `docs/process/pr-workflow.md` (summary), `docs/standards/experiments.md` (review protocol summary), `.claude/skills/convergence-review/SKILL.md` (protocol copy) |
-| Hypothesis experiment workflow | `docs/process/hypothesis.md` | CONTRIBUTING.md (summary), hypotheses/README.md (step list), `.claude/skills/hypothesis-experiment/SKILL.md` (workflow steps), `.claude/skills/hypothesis-experiment/review-prompts.md` (perspective prompts) |
-| PR workflow | `docs/process/pr-workflow.md` | CONTRIBUTING.md (summary), `.claude/skills/convergence-review/pr-prompts.md` (perspective prompts) |
+| Experiment standards | `docs/contributing/standards/experiments.md` | — (note: review protocol subsection references `docs/contributing/convergence.md` as canonical) |
+| Convergence protocol | `docs/contributing/convergence.md` | `docs/contributing/hypothesis.md` (summary), `docs/contributing/pr-workflow.md` (summary), `docs/contributing/standards/experiments.md` (review protocol summary), `.claude/skills/convergence-review/SKILL.md` (protocol copy) |
+| Hypothesis experiment workflow | `docs/contributing/hypothesis.md` | CONTRIBUTING.md (summary), hypotheses/README.md (step list), `.claude/skills/hypothesis-experiment/SKILL.md` (workflow steps), `.claude/skills/hypothesis-experiment/review-prompts.md` (perspective prompts) |
+| PR workflow | `docs/contributing/pr-workflow.md` | CONTRIBUTING.md (summary), `.claude/skills/convergence-review/pr-prompts.md` (perspective prompts) |

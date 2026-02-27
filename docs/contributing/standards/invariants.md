@@ -2,7 +2,7 @@
 
 Invariants are properties that must hold at all times during and after simulation. They are verified by invariant tests (see R7) and checked during self-audit (Step 4.75).
 
-**Hypothesis family mapping:** INV-1 through INV-3, INV-5, and INV-6 belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation), INV-7 (signal freshness), and INV-8 (work-conserving property) belong to the **Structural model** family. See `docs/standards/experiments.md` for hypothesis family definitions.
+**Hypothesis family mapping:** INV-1 through INV-3, INV-5, and INV-6 belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation), INV-7 (signal freshness), and INV-8 (work-conserving property) belong to the **Structural model** family. See `docs/contributing/standards/experiments.md` for hypothesis family definitions.
 
 ## INV-1: Request Conservation
 

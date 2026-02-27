@@ -23,7 +23,7 @@ All three must pass before submitting a PR. CI uses golangci-lint v2.9.0 (see `.
 ```bash
 # Local docs preview (requires Python + mkdocs-material)
 pip install mkdocs-material==9.7.3
-sed 's|](docs/|](|g' CONTRIBUTING.md > docs/contributing.md
+# Contributing docs served directly at docs/contributing/index.md
 mkdocs serve
 ```
 
@@ -136,11 +136,11 @@ gh pr create --title "feat: add counting-admit admission policy" --body "My firs
 
 ## Contributing with Claude Code
 
-> **Canonical source:** [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md). If this section diverges, pr-workflow.md is authoritative.
+> **Canonical source:** [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md). If this section diverges, pr-workflow.md is authoritative.
 
 BLIS development workflows are orchestrated through [Claude Code](https://claude.ai/code) skills — structured sequences that handle worktree creation, plan generation, multi-perspective review with convergence enforcement, and PR creation. Contributors with Claude Code get the full automated pipeline. Contributors without it follow the manual path below and still go through the same quality gates (maintainers run the automated reviews on submitted PRs).
 
-**Prerequisites:** Claude Code installed with project skills available (`convergence-review`, `hypothesis-experiment`) and general Claude Code skills (`writing-plans`, `executing-plans`, `commit-push-pr`). See [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md) for the full skill table. Before your first contribution, read [`docs/templates/design-guidelines.md`](docs/templates/design-guidelines.md) — it covers module architecture, extension types, and DES foundations.
+**Prerequisites:** Claude Code installed with project skills available (`convergence-review`, `hypothesis-experiment`) and general Claude Code skills (`writing-plans`, `executing-plans`, `commit-push-pr`). See [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md) for the full skill table. Before your first contribution, read [`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md) — it covers module architecture, extension types, and DES foundations.
 
 ### Choosing Your Journey
 
@@ -158,14 +158,14 @@ For hypothesis experiments, see [Running or Contributing Hypothesis Experiments]
 The lightest path. For bug fixes, docs updates, and single-PR changes that don't introduce new module boundaries.
 
 1. **Create worktree** — `/superpowers:using-git-worktrees fix-<name>`
-2. **Write micro plan** — `/superpowers:writing-plans` using `@docs/templates/micro-plan.md`
+2. **Write micro plan** — `/superpowers:writing-plans` using `@docs/contributing/templates/micro-plan.md`
 3. **Review plan** — `/pr-review-toolkit:review-pr` then `/convergence-review pr-plan <plan-path>`
 4. **Human approval** — review contracts and tasks, approve to proceed
 5. **Implement** — `/superpowers:executing-plans @<plan-path>`
 6. **Review code** — `/pr-review-toolkit:review-pr` then `/convergence-review pr-code`
 7. **Self-audit + commit** — deliberate critical thinking, then `/commit-commands:commit-push-pr`
 
-Full process: [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md)
+Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
 ### New Policy or Extension
 
@@ -173,10 +173,10 @@ For adding a routing policy, admission policy, scorer, scheduler, priority polic
 
 1. **Identify extension type** — see [Adding New Components](#adding-new-components) below
 2. **Create worktree** — `/superpowers:using-git-worktrees <extension-name>`
-3. **Write micro plan** — `/superpowers:writing-plans` using `@docs/templates/micro-plan.md` and `@docs/extension-recipes.md`
+3. **Write micro plan** — `/superpowers:writing-plans` using `@docs/contributing/templates/micro-plan.md` and `@docs/contributing/extension-recipes.md`
 4. **Follow steps 3–7 from Bug Fix** (review → approve → implement → review → commit)
 
-No design doc needed for policy templates. For tier compositions, a design doc is recommended — see the extension type table in [Adding New Components](#adding-new-components). Full process: [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md)
+No design doc needed for policy templates. For tier compositions, a design doc is recommended — see the extension type table in [Adding New Components](#adding-new-components). Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
 ### New Feature (Idea to PR)
 
@@ -184,19 +184,19 @@ The full pipeline for features that introduce new module boundaries, new interfa
 
 **Phase 1 — Idea to Design:**
 1. **Explore approaches** — discuss design options with Claude, settle on an approach
-2. **Write design doc** — following [`docs/templates/design-guidelines.md`](docs/templates/design-guidelines.md)
+2. **Write design doc** — following [`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md)
 3. **Review design** — `/convergence-review design <path>` (8 perspectives)
 4. **Human approval** — review design doc before planning begins
 
-Full process: [`docs/process/design.md`](docs/process/design.md)
+Full process: [`docs/contributing/design-process.md`](docs/contributing/design-process.md)
 
 **Phase 2 — Design to Macro Plan** (skip if single-PR):
 
-5. **Write macro plan** — decompose into PRs following [`docs/templates/macro-plan.md`](docs/templates/macro-plan.md)
+5. **Write macro plan** — decompose into PRs following [`docs/contributing/templates/macro-plan.md`](docs/contributing/templates/macro-plan.md)
 6. **Review macro plan** — `/convergence-review macro-plan <path>` (8 perspectives)
 7. **Human approval** — review PR decomposition and module contracts
 
-Full process: [`docs/process/macro-plan.md`](docs/process/macro-plan.md)
+Full process: [`docs/contributing/macro-planning.md`](docs/contributing/macro-planning.md)
 
 **Phase 3 — Plan to PR** (repeat for each PR):
 
@@ -209,29 +209,29 @@ Each phase produces an artifact that feeds the next. Human approval gates betwee
 If you are not using Claude Code, here is the simplified workflow:
 
 1. **Branch** — `git checkout -b feature/my-change`
-2. **Plan** — write an implementation plan following `docs/templates/micro-plan.md`. Include behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post the plan as a PR draft or issue comment for review.
+2. **Plan** — write an implementation plan following `docs/contributing/templates/micro-plan.md`. Include behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post the plan as a PR draft or issue comment for review.
 3. **Implement** — follow TDD: write a failing test, implement the minimal code to pass it, run `go test ./...`, run `golangci-lint run ./...`, commit. Repeat for each contract.
 4. **Self-review** — check the [Antipattern Checklist](#antipattern-checklist) below. Run `go build ./... && go test ./... && golangci-lint run ./...` one final time.
 5. **PR** — push your branch and open a PR. Maintainers will run the automated review protocols (convergence-review with 10 perspectives).
 
 The automated review tools (convergence-review, pr-review-toolkit) are run by maintainers — you do not need Claude Code installed. Your PR will go through the same quality gates regardless of tooling.
 
-For design docs and macro plans: follow the same templates ([`docs/templates/design-guidelines.md`](docs/templates/design-guidelines.md), [`docs/templates/macro-plan.md`](docs/templates/macro-plan.md)) and submit for review. Maintainers will run convergence review.
+For design docs and macro plans: follow the same templates ([`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md), [`docs/contributing/templates/macro-plan.md`](docs/contributing/templates/macro-plan.md)) and submit for review. Maintainers will run convergence review.
 
-Full process: [`docs/process/pr-workflow.md`](docs/process/pr-workflow.md) (the same workflow applies regardless of tooling)
+Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md) (the same workflow applies regardless of tooling)
 
 ## Engineering Principles
 
-See [`docs/standards/principles.md`](docs/standards/principles.md) for the full principles guide covering: separation of concerns, interface design, configuration design, canonical constructors, output channel separation, error handling boundaries, and BDD/TDD development.
+See [`docs/contributing/standards/principles.md`](docs/contributing/standards/principles.md) for the full principles guide covering: separation of concerns, interface design, configuration design, canonical constructors, output channel separation, error handling boundaries, and BDD/TDD development.
 
 Key points for new contributors:
 - `sim/` is a library — never call `os.Exit` or `logrus.Fatalf`. Return errors. Only `cmd/` may terminate.
 - Write behavioral contracts (GIVEN/WHEN/THEN) before tests. Test observable behavior, not internal structure.
-- If your PR touches request lifecycle, KV cache, or metrics, add or extend invariant tests (see [`docs/standards/invariants.md`](docs/standards/invariants.md)).
+- If your PR touches request lifecycle, KV cache, or metrics, add or extend invariant tests (see [`docs/contributing/standards/invariants.md`](docs/contributing/standards/invariants.md)).
 
 ## Antipattern Checklist
 
-20 rules, each tracing to a real bug. See [`docs/standards/rules.md`](docs/standards/rules.md) for full details.
+20 rules, each tracing to a real bug. See [`docs/contributing/standards/rules.md`](docs/contributing/standards/rules.md) for full details.
 
 Before submitting a PR, verify:
 
@@ -258,7 +258,7 @@ Before submitting a PR, verify:
 
 ## Adding New Components
 
-BLIS has four extension types. Identify which type your change is, then follow the corresponding recipe. See `docs/templates/design-guidelines.md` Section 5 for full details.
+BLIS has four extension types. Identify which type your change is, then follow the corresponding recipe. See `docs/contributing/templates/design-guidelines.md` Section 5 for full details.
 
 | Extension Type | What It Is | Design Doc Required? | Example |
 |---|---|---|---|
@@ -288,7 +288,7 @@ When adding a new model configuration:
 Requires a design doc defining the module contract (observes / controls / owns / invariants / events / extension friction). See design guidelines Section 5.3.
 
 1. Write design doc with module contract, event integration, state ownership, failure modes, default behavior
-2. Create implementation plan via `docs/templates/micro-plan.md`
+2. Create implementation plan via `docs/contributing/templates/micro-plan.md`
 3. Implement interface + default implementation + factory
 4. Integrate into cluster event pipeline
 5. Add CLI flags with full validation
@@ -322,7 +322,7 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 
 ## Running or Contributing Hypothesis Experiments
 
-> **Canonical source:** [`docs/process/hypothesis.md`](docs/process/hypothesis.md). If this section diverges, hypothesis.md is authoritative.
+> **Canonical source:** [`docs/contributing/hypothesis.md`](docs/contributing/hypothesis.md). If this section diverges, hypothesis.md is authoritative.
 
 BLIS uses hypothesis-driven experimentation to validate system behavior, surface bugs, and document design tradeoffs. Experiments are organized into 6 families (workload/arrival, scheduler invariants, performance-regime, structural model, robustness, cross-policy comparative).
 
@@ -337,7 +337,7 @@ See `hypotheses/README.md` for the full list and coverage gaps.
 File a GitHub issue using the "Hypothesis Proposal" template. Include: the hypothesis sentence, family, diagnostic value, and rough experiment design.
 
 **To implement and run a new experiment:**
-Follow `docs/process/hypothesis.md` for the full process (Steps 0-10). Key phases:
+Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key phases:
 1. Create worktree, classify hypothesis, design experiment
 2. **Design Review** (5 perspectives) → convergence → **human approval**
 3. Implement `run.sh` and `analyze.py` using shared harness (`hypotheses/lib/`)
@@ -351,10 +351,10 @@ Follow `docs/process/hypothesis.md` for the full process (Steps 0-10). Key phase
 | Document | Purpose |
 |---|---|
 | `hypotheses/README.md` | Existing experiments, coverage gaps |
-| `docs/process/hypothesis.md` | Full process (Steps 0-10, three review gates) |
-| `docs/process/convergence.md` | Universal Convergence Protocol (used by all review gates) |
-| `docs/standards/experiments.md` | Rigor requirements (families, types, VV&UQ, RCV rules) |
-| `docs/templates/hypothesis.md` | FINDINGS.md template |
+| `docs/contributing/hypothesis.md` | Full process (Steps 0-10, three review gates) |
+| `docs/contributing/convergence.md` | Universal Convergence Protocol (used by all review gates) |
+| `docs/contributing/standards/experiments.md` | Rigor requirements (families, types, VV&UQ, RCV rules) |
+| `docs/contributing/templates/hypothesis.md` | FINDINGS.md template |
 
 ## Code Style
 
@@ -369,11 +369,11 @@ Follow `docs/process/hypothesis.md` for the full process (Steps 0-10). Key phase
 | Document | What It Covers | When to Read |
 |---|---|---|
 | `CLAUDE.md` | Code architecture, file organization, CLI flags, compact rule/invariant tables | Always — authoritative for current codebase state |
-| `docs/standards/rules.md` | 20 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
-| `docs/standards/invariants.md` | 8 system invariants (INV-1 through INV-8) with verification strategies | When touching request lifecycle, KV cache, or metrics |
-| `docs/standards/experiments.md` | Experiment taxonomy, rigor requirements, findings classification | When running hypothesis experiments |
-| `docs/process/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
-| `docs/design/` | System architecture, core engine, concepts glossary, configuration reference | When learning how BLIS works before contributing |
-| `docs/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |
-| `docs/templates/micro-plan.md` | Template for single-PR implementation plans | When creating any PR implementation plan |
-| `docs/templates/macro-plan.md` | Template for multi-PR feature expansions | When planning a large feature with multiple PRs |
+| `docs/contributing/standards/rules.md` | 20 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
+| `docs/contributing/standards/invariants.md` | 8 system invariants (INV-1 through INV-8) with verification strategies | When touching request lifecycle, KV cache, or metrics |
+| `docs/contributing/standards/experiments.md` | Experiment taxonomy, rigor requirements, findings classification | When running hypothesis experiments |
+| `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
+| `docs/concepts/` | System architecture, core engine, concepts glossary, roofline estimation | When learning how BLIS works before contributing |
+| `docs/contributing/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |
+| `docs/contributing/templates/micro-plan.md` | Template for single-PR implementation plans | When creating any PR implementation plan |
+| `docs/contributing/templates/macro-plan.md` | Template for multi-PR feature expansions | When planning a large feature with multiple PRs |

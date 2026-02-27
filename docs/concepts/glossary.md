@@ -54,11 +54,11 @@ A routing signal computed as `QueueDepth + BatchSize + PendingRequests`. Represe
 
 ### Fitness Score
 
-A single numeric value summarizing multi-objective simulation performance. Computed as a weighted combination of configurable metrics (TTFT percentiles, E2E percentiles, throughput). Latency metrics normalized via `1/(1 + value/1000)`; throughput metrics via `value/(value + reference)`. See [Configuration Reference](configuration.md#fitness-evaluation).
+A single numeric value summarizing multi-objective simulation performance. Computed as a weighted combination of configurable metrics (TTFT percentiles, E2E percentiles, throughput). Latency metrics normalized via `1/(1 + value/1000)`; throughput metrics via `value/(value + reference)`. See [Configuration Reference](../reference/configuration.md#fitness-evaluation).
 
 ### Horizon
 
-The simulation time limit in ticks (microseconds). The simulation stops when the clock exceeds the horizon or all requests complete, whichever comes first. See [Configuration Reference](configuration.md#simulation-control).
+The simulation time limit in ticks (microseconds). The simulation stops when the clock exceeds the horizon or all requests complete, whichever comes first. See [Configuration Reference](../reference/configuration.md#simulation-control).
 
 ### ITL (Inter-Token Latency)
 
@@ -78,7 +78,7 @@ Requests that have been routed to an instance but not yet enqueued (the queueing
 
 ### Policy Bundle
 
-A YAML configuration file (`--policy-config`) that specifies admission, routing, priority, and scheduling policies in one place. CLI flags override bundle values when explicitly set. See [Configuration Reference](configuration.md#policy-bundle).
+A YAML configuration file (`--policy-config`) that specifies admission, routing, priority, and scheduling policies in one place. CLI flags override bundle values when explicitly set. See [Configuration Reference](../reference/configuration.md#policy-bundle).
 
 ### Preemption
 
@@ -118,7 +118,7 @@ A component in the weighted scoring pipeline that produces a per-instance score 
 
 ### Seed
 
-The random seed for deterministic simulation. Same seed produces byte-identical stdout across runs (INV-6). BLIS uses partitioned RNG to isolate randomness across subsystems. See [Configuration Reference](configuration.md#simulation-control).
+The random seed for deterministic simulation. Same seed produces byte-identical stdout across runs (INV-6). BLIS uses partitioned RNG to isolate randomness across subsystems. See [Configuration Reference](../reference/configuration.md#simulation-control).
 
 ### Step
 
@@ -138,7 +138,7 @@ Time from request arrival to completion of the prefill phase (first output token
 
 ### Workload Specification
 
-A YAML file (`--workload-spec`) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports `poisson`, `gamma`, and `weibull` arrival processes and `gaussian`, `exponential`, `pareto_lognormal`, `constant`, and `empirical` token distributions. See [Configuration Reference](configuration.md#workload-modes).
+A YAML file (`--workload-spec`) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports `poisson`, `gamma`, `weibull`, and `constant` arrival processes and `gaussian`, `exponential`, `pareto_lognormal`, `constant`, and `empirical` token distributions. See [Configuration Reference](../reference/configuration.md#workload-modes).
 
 ### Work-Conserving
 

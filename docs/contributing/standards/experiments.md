@@ -170,7 +170,7 @@ Every hypothesis belongs to a **family** (what domain is being tested) AND a **t
 
 ### Family-specific hypothesis sentence patterns
 
-Use these templates when generating new hypotheses. Each family has a characteristic sentence shape that ensures testability. See also `docs/process/hypothesis.md` for the full generation guide.
+Use these templates when generating new hypotheses. Each family has a characteristic sentence shape that ensures testability. See also `docs/contributing/hypothesis.md` for the full generation guide.
 
 | Family | Sentence pattern | Example |
 |--------|-----------------|---------|
@@ -322,7 +322,7 @@ Evidence: H10's "28% TTFT improvement" is specific to GPU=2100 blocks near the p
 
 ## Iterative Review Protocol
 
-> **Canonical source:** [`docs/process/convergence.md`](../process/convergence.md). If this section diverges, convergence.md is authoritative.
+> **Canonical source:** [`docs/contributing/convergence.md`](../convergence.md). If this section diverges, convergence.md is authoritative.
 
 Every hypothesis experiment iterates until convergence (max 10 rounds per gate) through three review gates, each using the universal convergence protocol:
 
@@ -330,9 +330,9 @@ Every hypothesis experiment iterates until convergence (max 10 rounds per gate) 
 2. **Code Review** (5 perspectives) — after implementing run.sh/analyze.py, before execution
 3. **FINDINGS Review** (10 perspectives) — after documenting results, before finalization
 
-**Convergence:** Zero CRITICAL and zero IMPORTANT items from any reviewer perspective in the current round. No minimum round count — convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item. SUGGESTION-level items do not block convergence. See `docs/process/convergence.md` for the full protocol and severity definitions, and `docs/process/hypothesis.md` for reviewer prompts and perspective checklists.
+**Convergence:** Zero CRITICAL and zero IMPORTANT items from any reviewer perspective in the current round. No minimum round count — convergence in Round 1 is valid if no reviewer flags any CRITICAL or IMPORTANT item. SUGGESTION-level items do not block convergence. See `docs/contributing/convergence.md` for the full protocol and severity definitions, and `docs/contributing/hypothesis.md` for reviewer prompts and perspective checklists.
 
-**Why internal agents instead of external LLM reviews:** Internal Task agents can read the actual source files, verify `file:line` citations, and cross-reference analyzer regexes against simulator output format strings — capabilities external LLM reviews lack. See `docs/process/hypothesis.md` for the full evidence and comparison table.
+**Why internal agents instead of external LLM reviews:** Internal Task agents can read the actual source files, verify `file:line` citations, and cross-reference analyzer regexes against simulator output format strings — capabilities external LLM reviews lack. See `docs/contributing/hypothesis.md` for the full evidence and comparison table.
 
 ---
 
@@ -387,15 +387,15 @@ Every experiment produces individual findings. Each finding MUST be classified i
 |-------------|------------|-----------------|
 | **Confirmation** | The hypothesis holds; the system works as designed | Document in FINDINGS.md. No issues needed. |
 | **Bug discovery** | The hypothesis failed due to a code defect | File GitHub issue with `--label bug`. Fix in separate PR. |
-| **New rule** | The experiment revealed a pattern that should be checked in all future PRs | Add to `docs/standards/rules.md` with evidence. File issue with `--label enhancement` if code changes needed. |
-| **New invariant** | The experiment revealed a property that must always hold | Add to `docs/standards/invariants.md`. |
+| **New rule** | The experiment revealed a pattern that should be checked in all future PRs | Add to `docs/contributing/standards/rules.md` with evidence. File issue with `--label enhancement` if code changes needed. |
+| **New invariant** | The experiment revealed a property that must always hold | Add to `docs/contributing/standards/invariants.md`. |
 | **Design limitation** | The system works as coded but has an undocumented behavioral limitation | Document in FINDINGS.md + file issue with `--label design` for design doc update. |
 | **Surprise** | An unexpected result that doesn't fit other categories | Document in FINDINGS.md. May spawn new hypotheses. |
 | **Open question** | Mechanism identified but explanation incomplete; requires different tooling to resolve | Mark explicitly in FINDINGS.md with proposed tooling/experiment. |
 
 ### The Audit Step
 
-After analyzing results, EVERY experiment MUST audit findings against `docs/standards/`:
+After analyzing results, EVERY experiment MUST audit findings against `docs/contributing/standards/`:
 
 1. Do any findings reveal violations of existing rules or principles?
 2. Do any findings suggest a new rule, invariant, or principle is needed?

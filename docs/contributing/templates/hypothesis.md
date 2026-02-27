@@ -65,7 +65,7 @@ If a mechanism is proposed, describe the control experiment that would confirm i
 
 ## Standards Audit
 
-Findings checked against docs/standards/:
+Findings checked against docs/contributing/standards/:
 - [ ] Any violations of existing rules? <list or "none found">
 - [ ] Any new rules needed? <list or "none">
 - [ ] Any new invariants needed? <list or "none">

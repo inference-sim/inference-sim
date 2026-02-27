@@ -11,7 +11,7 @@
 
 ## Antipattern Checklist
 
-<!-- Check each item. If N/A, check it and note why. Full details: docs/standards/rules.md -->
+<!-- Check each item. If N/A, check it and note why. Full details: docs/contributing/standards/rules.md -->
 
 - [ ] No silent data loss (R1)
 - [ ] Map keys sorted before float accumulation (R2)
@@ -24,7 +24,7 @@
 
 ## Invariants
 
-<!-- Which invariants does this PR maintain or test? Full details: docs/standards/invariants.md -->
+<!-- Which invariants does this PR maintain or test? Full details: docs/contributing/standards/invariants.md -->
 
 - [ ] Request conservation: injected == completed + queued + running (INV-1)
 - [ ] Request lifecycle: queued -> running -> completed (INV-2)

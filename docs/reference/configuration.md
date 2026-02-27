@@ -1,6 +1,6 @@
 # Configuration Reference
 
-This page documents all CLI flags, configuration files, and their interactions. For architectural context on what these settings control, see [Cluster Architecture](architecture.md) and [Core Engine](core-engine.md).
+This page documents all CLI flags, configuration files, and their interactions. For architectural context on what these settings control, see [Cluster Architecture](../concepts/architecture.md) and [Core Engine](../concepts/core-engine.md).
 
 ## Configuration Precedence
 
@@ -86,7 +86,7 @@ For analytical step time estimation without trained coefficients.
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--roofline` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--roofline` auto-resolution. |
 
-See [Roofline Estimation](roofline.md) for details on the analytical model.
+See [Roofline Estimation](../concepts/roofline.md) for details on the analytical model.
 
 ### Latency Mode Selection
 
@@ -99,7 +99,7 @@ The latency model mode is selected based on available configuration:
 
 ## Cluster Configuration
 
-With `--num-instances 1` (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no admission or routing layer. With `--num-instances N` (N > 1), the cluster simulation activates: requests pass through the admission and routing pipeline before reaching per-instance wait queues. See [Cluster Architecture](architecture.md) for the multi-instance pipeline and [Core Engine](core-engine.md) for single-instance internals.
+With `--num-instances 1` (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no admission or routing layer. With `--num-instances N` (N > 1), the cluster simulation activates: requests pass through the admission and routing pipeline before reaching per-instance wait queues. See [Cluster Architecture](../concepts/architecture.md) for the multi-instance pipeline and [Core Engine](../concepts/core-engine.md) for single-instance internals.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -107,7 +107,7 @@ With `--num-instances 1` (the default), BLIS runs a single-instance simulation �
 
 ## Admission Policy
 
-Controls which requests enter the routing pipeline. See [Cluster Architecture: Admission](architecture.md#admission-pipeline).
+Controls which requests enter the routing pipeline. See [Cluster Architecture: Admission](../concepts/architecture.md#admission-pipeline).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -118,7 +118,7 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 
 ## Routing Policy
 
-Controls how admitted requests are assigned to instances. See [Cluster Architecture: Routing](architecture.md#routing-pipeline).
+Controls how admitted requests are assigned to instances. See [Cluster Architecture: Routing](../concepts/architecture.md#routing-pipeline).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -139,7 +139,7 @@ Available scorers: `prefix-affinity`, `queue-depth`, `kv-utilization`, `load-bal
 
 Default (when `--routing-scorers` is empty): `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity).
 
-See [Cluster Architecture: Scorer Composition](architecture.md#scorer-composition) for details on each scorer.
+See [Cluster Architecture: Scorer Composition](../concepts/architecture.md#scorer-composition) for details on each scorer.
 
 ## Scheduling and Priority
 
@@ -150,7 +150,7 @@ Per-instance policies that control request ordering within the wait queue. Maps 
 | `--scheduler` | string | "fcfs" | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
 | `--priority-policy` | string | "constant" | Priority policy: `constant`, `slo-based`, `inverted-slo`. |
 
-See [Core Engine: Scheduling](core-engine.md#scheduling-policies) for policy details.
+See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 
 ## Workload Configuration
 
@@ -233,7 +233,7 @@ clients:
         max: 7000
 ```
 
-**Supported arrival processes:** `poisson`, `gamma` (with `cv` parameter), `weibull` (with `cv` parameter).
+**Supported arrival processes:** `poisson`, `gamma` (with `cv` parameter), `weibull` (with `cv` parameter), `constant`.
 
 **Supported token distributions:** `gaussian`, `exponential`, `pareto_lognormal`, `constant`, `empirical`.
 
@@ -283,7 +283,7 @@ CLI flags override policy bundle values when explicitly set. For example, `--rou
 | `--counterfactual-k` | int | 0 | Number of counterfactual candidates per routing decision. Requires `--trace-level decisions`. |
 | `--summarize-trace` | bool | false | Print trace summary after simulation. Requires `--trace-level decisions`. |
 
-See [Cluster Architecture: Counterfactual Regret](architecture.md#counterfactual-regret).
+See [Cluster Architecture: Counterfactual Regret](../concepts/architecture.md#counterfactual-regret).
 
 ## Fitness Evaluation
 
@@ -298,28 +298,32 @@ When configured, BLIS computes a single fitness score from aggregated metrics. L
 The `defaults.yaml` file serves as a model registry and workload preset store:
 
 ```yaml
-version: "1.0"
-
-models:
-  - id: "meta-llama/llama-3.1-8b-instruct"
-    GPU: "H100"
+# Section 1: Hardware/TP mappings (keyed by model ID)
+defaults:
+  meta-llama/llama-3.1-8b-instruct:
+    GPU: H100
     tensor_parallelism: 2
-    vllm_version: "0.6.1"
+    vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: meta-llama/Llama-3.1-8B-Instruct
+
+# Section 2: Workload presets
+workloads:
+  chatbot:
+    prompt_tokens: 256
+    prompt_tokens_stdev: 100
+    output_tokens: 256
+    output_tokens_stdev: 100
+    # ... min/max bounds
+
+# Section 3: Trained coefficients (keyed by model+GPU+TP)
+models:
+  - id: meta-llama/llama-3.1-8b-instruct
+    GPU: H100
+    tensor_parallelism: 2
+    vllm_version: vllm/vllm-openai:v0.8.4
     alpha_coeffs: [1601.35, 3.51, 1805.54]
     beta_coeffs: [6910.42, 17.67, 2.84]
     total_kv_blocks: 132139
-
-defaults:
-  "meta-llama/llama-3.1-8b-instruct":
-    GPU: "H100"
-    tensor_parallelism: 2
-    vllm_version: "0.6.1"
-
-workloads:
-  chatbot:
-    prompt_tokens: 512
-    output_tokens: 512
-    # ... distribution parameters
 ```
 
 ### Resolution Process
@@ -352,7 +356,7 @@ BLIS uses a data-driven calibration strategy to ensure simulation accuracy. This
 
 4. **Artifact generation**: Optimal alpha/beta coefficients are stored in `defaults.yaml` for production use
 
-For environments where live profiling is not feasible, the [Roofline model](roofline.md) provides analytical step time estimation without any training data.
+For environments where live profiling is not feasible, the [Roofline model](../concepts/roofline.md) provides analytical step time estimation without any training data.
 
 ## CLI Flag Summary by Sub-Config
 

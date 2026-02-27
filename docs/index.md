@@ -9,12 +9,9 @@ The simulator is CPU-only, deterministic, and designed for **capacity planning**
 ## Quick Start
 
 ```bash
-# Build
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o simulation_worker main.go
-
-# Run with default model
 ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct
 ```
 
@@ -23,7 +20,7 @@ go build -o simulation_worker main.go
 ## Key Features
 
 - **Discrete-event simulation** for prefill, decode, and request scheduling
-- **Deterministic execution** — same seed produces byte-identical output across runs (INV-6)
+- **Deterministic execution** — same seed produces byte-identical output across runs
 - **KV-cache modeling** with prefix caching and tiered GPU+CPU offload
 - **Chunked prefill and preemption-aware batch formation**
 - **Two latency estimation modes**: blackbox (data-driven) and roofline (analytical)
@@ -33,6 +30,7 @@ go build -o simulation_worker main.go
 - **ServeGen-informed workload generation** with multi-client traffic classes
 - **Decision tracing and counterfactual analysis** with top-k regret computation
 - **Fitness evaluation** with weighted multi-objective scoring
+- **Hypothesis experimentation framework** for rigorous, reproducible experiments
 
 ---
 
@@ -46,66 +44,25 @@ Request Arrival → Admission → Routing → WaitQueue → Batch Formation → 
 
 Admission and Routing apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
 
-For detailed architecture documentation, see [Cluster Architecture](design/architecture.md) and [Core Engine](design/core-engine.md).
-
 ---
 
 ## Documentation Guide
 
 | Section | What You'll Find |
 |---------|-----------------|
-| [Design](design/README.md) | System architecture, core engine, concepts glossary, configuration reference |
-| [Standards](standards/rules.md) | Antipattern rules (R1-R20), system invariants (INV-1-8), engineering principles |
-| [Process](process/pr-workflow.md) | PR workflow, design document process, macro planning, hypothesis experiments, convergence protocol |
-| [Templates](templates/design-guidelines.md) | Design guidelines, macro/micro plan templates, hypothesis template |
-| [Extension Recipes](extension-recipes.md) | Step-by-step guides for adding policies, scorers, KV tiers, and more |
-| [Contributing](contributing.md) | Engineering standards, development workflow, and getting started |
+| [Getting Started](getting-started/index.md) | What is BLIS, installation, quick start, capacity planning tutorial |
+| [User Guide](guide/index.md) | Task-oriented guides: routing, KV cache, roofline, workloads, cluster, results, experimentation |
+| [Concepts](concepts/index.md) | System architecture, core engine, glossary, roofline estimation |
+| [Reference](reference/index.md) | Configuration reference, supported models, workload spec schema |
+| [Contributing](contributing/index.md) | Extension recipes, PR workflow, standards, templates |
 
 ### Reading Order for Newcomers
 
-1. **[Concepts & Glossary](design/concepts.md)** — learn BLIS-specific terminology
-2. **[Core Engine](design/core-engine.md)** — understand the DES architecture and single-instance simulation
-3. **[Cluster Architecture](design/architecture.md)** — understand multi-instance orchestration
-4. **[Configuration Reference](design/configuration.md)** — when running experiments
-5. **[Extension Recipes](extension-recipes.md)** — when adding new policies or features
-
----
-
-## Supported Models
-
-All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for blackbox mode. Models with a HuggingFace `config.json` in `model_configs/` additionally support roofline mode.
-
-### Dense Models
-
-| Model | Sizes |
-|-------|-------|
-| Meta LLaMA 3.1 | 8B |
-| Meta LLaMA 3.3 | 70B |
-| IBM Granite 3.1 | 8B |
-| CodeLlama | 34B |
-| Microsoft Phi-4 | 14B |
-| Mistral Small (2501) | 24B |
-| Mistral Small 3.1 (2503) | 24B |
-| NVIDIA LLaMA 3.1 Nemotron | 70B |
-| OpenAI GPT-OSS | 20B, 120B |
-| Qwen 2.5 | 7B |
-| SmolLM3 | 3B |
-
-### MoE Models
-
-| Model | Architecture |
-|-------|-------------|
-| LLaMA 4 Maverick | 17B, 128 experts |
-| LLaMA 4 Scout | 17B, 16 experts |
-| Mixtral | 8x7B |
-
-### Quantized Variants
-
-Red Hat AI (`redhatai/`) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, and Qwen 2.5. See [`defaults.yaml`](https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml) for the full list.
-
-### Roofline-Only Models
-
-Any model with a HuggingFace `config.json` can use roofline mode via `--model-config-folder`. Pre-packaged configs exist for additional architectures (Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B) in `model_configs/`.
+1. **[What is BLIS?](getting-started/index.md)** — understand the problem BLIS solves
+2. **[Quick Start](getting-started/quickstart.md)** — run your first simulation
+3. **[Tutorial: Capacity Planning](getting-started/tutorial.md)** — end-to-end walkthrough
+4. **[Glossary](concepts/glossary.md)** — learn BLIS-specific terminology
+5. **[User Guide](guide/index.md)** — task-oriented how-to guides
 
 ---
 

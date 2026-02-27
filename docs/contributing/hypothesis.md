@@ -2,7 +2,7 @@
 
 **Status:** Active (v2.0 — updated 2026-02-23)
 
-This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/standards/experiments.md](../standards/experiments.md). For the FINDINGS.md template, see [docs/templates/hypothesis.md](../templates/hypothesis.md). For experiment status and coverage gaps, see [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md).
+This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/contributing/standards/experiments.md](standards/experiments.md). For the FINDINGS.md template, see [docs/contributing/templates/hypothesis.md](templates/hypothesis.md). For experiment status and coverage gaps, see [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md).
 
 ---
 
@@ -91,13 +91,13 @@ This workflow uses the following Claude Code skills. Each has a manual alternati
 | Step | Action |
 |------|--------|
 | **0. Worktree** | `/superpowers:using-git-worktrees h-<name>` |
-| **1. Classify** | Choose family, VV&UQ category, type from [experiments.md](../standards/experiments.md) |
+| **1. Classify** | Choose family, VV&UQ category, type from [experiments.md](standards/experiments.md) |
 | **2. Design** | ED-1–ED-6 compliance, then 5-perspective Design Review |
 | **3. Human gate** | Present design for approval — pause until approved |
 | **4. Implement** | `run.sh` + `analyze.py` using `hypotheses/lib/` harness |
 | **5. Code Review** | 5-perspective code review → convergence |
 | **6. Run** | Execute `./run.sh` across required seeds |
-| **7. Document** | Write FINDINGS.md using [template](../templates/hypothesis.md) |
+| **7. Document** | Write FINDINGS.md using [template](templates/hypothesis.md) |
 | **8. FINDINGS Review** | 10-perspective review → convergence (iterate rounds) |
 | **9. Self-audit** | 6 dimensions of deliberate critical thinking |
 | **10. Commit + PR** | Verification gate (if code fixes) + `/commit-commands:commit-push-pr` |
@@ -128,7 +128,7 @@ This creates `.worktrees/h-<name>/` with a new branch. All subsequent steps happ
 
 1. **Select hypothesis** — from `docs/plans/research.md`, coverage gaps in [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md), or a new observation
 2. **Classify:**
-   - (a) Which **family**? (See [experiments.md](../standards/experiments.md) for the 6 families and sentence patterns)
+   - (a) Which **family**? (See [experiments.md](standards/experiments.md) for the 6 families and sentence patterns)
    - (b) **Verification**, **Validation**, or **UQ**? (Determines evidence requirements)
    - (c) **Deterministic** or **statistical**? If statistical, which subtype (dominance, monotonicity, equivalence, Pareto)?
 
@@ -142,7 +142,7 @@ The family determines design rules; the VV&UQ category determines evidence requi
 
 **Context:** Worktree
 
-**Design the experiment** following ED-1 through ED-6 (see [experiments.md](../standards/experiments.md)):
+**Design the experiment** following ED-1 through ED-6 (see [experiments.md](standards/experiments.md)):
 - ED-1: Controlled comparison (vary exactly one dimension)
 - ED-2: Rate awareness (run at target rate AND where effect should vanish)
 - ED-3: Precondition verification (in script, not just prose)
@@ -300,7 +300,7 @@ Execute experiments across required seeds:
 
 1. **Analyze** — produce comparison tables, compute effect sizes
 2. **Verify root cause** — trace every causal claim through code (RCV-1, RCV-2, RCV-3)
-3. **Document FINDINGS.md** — use the [template](../templates/hypothesis.md). All sections must be present and non-empty.
+3. **Document FINDINGS.md** — use the [template](templates/hypothesis.md). All sections must be present and non-empty.
 4. **Update `hypotheses/README.md`** — add a row to the "Validated Hypotheses" table and update "Coverage by Family" if needed
 
 ---
@@ -357,11 +357,11 @@ Run the **10-perspective FINDINGS Review** using the [universal convergence prot
 - Does the mechanism explain the direction using experimental evidence, not just code-reading claims?
 
 **Reviewer 5 — Standards Compliance:**
-- Are ALL FINDINGS.md sections present and non-empty? (per `docs/templates/hypothesis.md`)
+- Are ALL FINDINGS.md sections present and non-empty? (per `docs/contributing/templates/hypothesis.md`)
 - Is the hypothesis correctly classified (family, VV&UQ category, type)?
 - Does the Devil's Advocate section (RCV-5) argue both directions convincingly?
 - Are scope and limitations (RCV-6) complete — operating point, dependencies, what was NOT tested, generalizability, UQ?
-- Does the standards audit correctly check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`?
+- Does the standards audit correctly check findings against `docs/contributing/standards/rules.md` and `docs/contributing/standards/invariants.md`?
 - Are any new rules or invariants warranted by the findings?
 
 **Reviewer 6 — Substance and Logic:**
@@ -446,9 +446,9 @@ The PR description should include:
 
 ## Universal Convergence Protocol
 
-> **Canonical source:** [`docs/process/convergence.md`](convergence.md). If this section diverges, convergence.md is authoritative.
+> **Canonical source:** [`docs/contributing/convergence.md`](convergence.md). If this section diverges, convergence.md is authoritative.
 
-All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See [`docs/process/convergence.md`](convergence.md) for the full protocol, severity definitions, agent failure handling, and expected convergence rates.
+All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See [`docs/contributing/convergence.md`](convergence.md) for the full protocol, severity definitions, agent failure handling, and expected convergence rates.
 
 > **Executable implementation:** The `convergence-review` skill automates this protocol. Invoke with `/convergence-review <gate-type> [artifact-path] [--model opus|sonnet|haiku]`.
 
@@ -562,7 +562,7 @@ See [Issue Taxonomy](#issue-taxonomy-after-convergence) for the complete filing 
 
 ## Generating Hypotheses
 
-Hypotheses can come from **internal** sources (your own experiments and development) or **external** sources (user questions, literature, analytical models). This section provides structured guidance for generating good hypotheses. See also [experiments.md](../standards/experiments.md) for family-specific sentence patterns.
+Hypotheses can come from **internal** sources (your own experiments and development) or **external** sources (user questions, literature, analytical models). This section provides structured guidance for generating good hypotheses. See also [experiments.md](standards/experiments.md) for family-specific sentence patterns.
 
 ### Sources of hypotheses
 
@@ -601,7 +601,7 @@ A good hypothesis is **behavioral** (about observable system behavior), **testab
 ### How to propose a new hypothesis
 
 1. **Check coverage**: Read the [family coverage table](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md). Prioritize families with low coverage.
-2. **Choose a family**: Which domain does your claim target? (See [experiments.md](../standards/experiments.md) for the 6 families.)
+2. **Choose a family**: Which domain does your claim target? (See [experiments.md](standards/experiments.md) for the 6 families.)
 3. **Write the sentence**: Use the family-specific pattern from experiments.md.
 4. **Add the diagnostic clause**: "If this fails, it would indicate..."
 5. **Check for redundancy**: Search existing hypotheses in `docs/plans/research.md` and on GitHub: [issues labeled `hypothesis`](https://github.com/inference-sim/inference-sim/labels/hypothesis).
@@ -673,8 +673,8 @@ After convergence, assess whether any confirmed findings should be promoted from
 |-----------|-----------|-----|
 | Confirmed deterministic hypothesis | **Go test** (regression protection in CI) | Deterministic properties are exact — they can be encoded as pass/fail tests. |
 | Deterministic invariant aspect of a statistical hypothesis | **Go test** for the invariant aspect | Statistical hypotheses often contain deterministic sub-claims (e.g., conservation holds across all configs). |
-| New invariant discovered | **`docs/standards/invariants.md`** entry | Codify as a formal system property with verification strategy. |
-| New rule discovered | **`docs/standards/rules.md`** entry | Codify as an antipattern check for PR reviews. |
+| New invariant discovered | **`docs/contributing/standards/invariants.md`** entry | Codify as a formal system property with verification strategy. |
+| New rule discovered | **`docs/contributing/standards/rules.md`** entry | Codify as an antipattern check for PR reviews. |
 
 ### What a promoted test looks like
 
@@ -728,11 +728,11 @@ H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H
 
 ## References
 
-- Standards: [docs/standards/experiments.md](../standards/experiments.md)
-- Template: [docs/templates/hypothesis.md](../templates/hypothesis.md)
+- Standards: [docs/contributing/standards/experiments.md](standards/experiments.md)
+- Template: [docs/contributing/templates/hypothesis.md](templates/hypothesis.md)
 - Hypothesis catalog: [docs/plans/research.md](../plans/research.md)
 - Validated experiments: [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md)
-- PR workflow (structural inspiration): [docs/process/pr-workflow.md](pr-workflow.md)
+- PR workflow (structural inspiration): [docs/contributing/pr-workflow.md](pr-workflow.md)
 
 ---
 

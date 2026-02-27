@@ -416,13 +416,13 @@ BLIS uses two estimation techniques. Choose based on your model support:
 - **Alpha coefficients**: model queueing time as a function of batch state
 - **Beta coefficients**: model step execution time from batch features (running requests, new tokens, cached tokens)
 - Automatically selected when `defaults.yaml` contains coefficients for the requested (model, GPU, TP, vLLM version) combination
-- See [Core Engine: Latency Models](./docs/design/core-engine.md#latency-models)
+- See [Core Engine: Latency Models](./docs/concepts/core-engine.md#latency-models)
 
 ### Roofline Approach (Analytical)
 - No pre-training required — estimates latency from FLOPs and memory bandwidth
 - Requires a HuggingFace `config.json` for the model (architecture parameters) and `hardware_config.json` (GPU specifications)
 - Automatically activated when `--model-config-folder` is provided and no matching coefficients exist
-- See [Roofline Estimation](./docs/design/roofline.md)
+- See [Roofline Estimation](./docs/concepts/roofline.md)
 
 ### Using Roofline Mode
 
@@ -506,7 +506,7 @@ You can obtain one by downloading it from HuggingFace (e.g., `wget https://huggi
 - **Scheduling Delay**: Time spent waiting in queue before batch formation
 - **Tokens/sec**: Aggregate throughput across all completed requests
 - `_p90`, `_p95`, `_p99` suffixes indicate percentile values
-- **Conservation fields**: `still_queued`, `still_running`, `dropped_unservable`, and `injected_requests` verify request conservation (`injected == completed + still_queued + still_running + dropped_unservable`). See [INV-1](docs/standards/invariants.md).
+- **Conservation fields**: `still_queued`, `still_running`, `dropped_unservable`, and `injected_requests` verify request conservation (`injected == completed + still_queued + still_running + dropped_unservable`). See [INV-1](docs/contributing/standards/invariants.md).
 
 When using `--results-path`, the JSON output also includes a `requests` array with per-request details:
 
@@ -672,7 +672,7 @@ Upcoming:
 - **Framework adapters** for OpenEvolve and GEPA policy evolution (PR15)
 - **Integration tests** (PR16)
 
-See [implementation plans](./docs/plans/) for details. For system architecture and design, see [design documentation](./docs/design/).
+See [implementation plans](./docs/plans/) for details. For system architecture and design, see [design documentation](./docs/concepts/).
 
 ---
 

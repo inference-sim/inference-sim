@@ -3,12 +3,10 @@ site_description: A discrete-event simulator for LLM inference serving systems
 repo_url: https://github.com/inference-sim/inference-sim
 repo_name: inference-sim/inference-sim
 
-# Override MkDocs default exclusion of templates/ directory.
-# MkDocs assumes templates/ contains Jinja2 overrides, but BLIS uses
-# docs/templates/ for plan and design templates that should be served.
-# The negation pattern (!) reverses the hardcoded /templates/ exclusion.
+# MkDocs default exclusion /templates/ only applies to top-level templates/.
+# Since templates moved to contributing/templates/ (nested), the default no longer
+# applies. Only plans/ needs explicit exclusion (internal implementation plans).
 exclude_docs: |
-  !/templates/
   plans/
 
 theme:
@@ -29,8 +27,11 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    - navigation.tabs
+    - navigation.indexes
     - navigation.sections
     - navigation.expand
+    - navigation.footer
     - navigation.top
     - search.highlight
     - search.suggest
@@ -39,6 +40,8 @@ theme:
 
 markdown_extensions:
   - admonition
+  - attr_list
+  - md_in_html
   - pymdownx.details
   - pymdownx.superfences
   - pymdownx.highlight:
@@ -47,34 +50,60 @@ markdown_extensions:
       alternate_style: true
   - pymdownx.tasklist:
       custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - tables
   - toc:
       permalink: true
 
+extra:
+  version:
+    provider: mike
+    default: latest
+
 nav:
   - Home: index.md
-  - Design:
-      - Overview: design/README.md
-      - Cluster Architecture: design/architecture.md
-      - Core Engine: design/core-engine.md
-      - Concepts & Glossary: design/concepts.md
-      - Configuration Reference: design/configuration.md
-      - Roofline Estimation: design/roofline.md
-  - Standards:
-      - Antipattern Rules (R1-R20): standards/rules.md
-      - System Invariants (INV-1-8): standards/invariants.md
-      - Engineering Principles: standards/principles.md
-      - Experiment Standards: standards/experiments.md
-  - Process:
-      - PR Workflow: process/pr-workflow.md
-      - Design Documents: process/design.md
-      - Macro Planning: process/macro-plan.md
-      - Hypothesis Experiments: process/hypothesis.md
-      - Convergence Protocol: process/convergence.md
-  - Templates:
-      - Design Guidelines: templates/design-guidelines.md
-      - Macro Plan: templates/macro-plan.md
-      - Micro Plan: templates/micro-plan.md
-      - Hypothesis: templates/hypothesis.md
-  - Extension Recipes: extension-recipes.md
-  - Contributing: contributing.md
+  - Getting Started:
+      - getting-started/index.md
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+      - "Tutorial: Capacity Planning": getting-started/tutorial.md
+  - User Guide:
+      - guide/index.md
+      - Routing Policies: guide/routing.md
+      - KV Cache & Memory: guide/kv-cache.md
+      - Roofline Mode: guide/roofline.md
+      - Workload Specifications: guide/workloads.md
+      - Cluster Simulation: guide/cluster.md
+      - Interpreting Results: guide/results.md
+      - Hypothesis Experimentation: guide/experimentation.md
+  - Concepts:
+      - concepts/index.md
+      - Glossary: concepts/glossary.md
+      - Cluster Architecture: concepts/architecture.md
+      - Core Engine: concepts/core-engine.md
+      - Roofline Estimation: concepts/roofline.md
+  - Reference:
+      - reference/index.md
+      - Configuration: reference/configuration.md
+      - Supported Models: reference/models.md
+      - Workload Spec Schema: reference/workload-spec.md
+  - Contributing:
+      - contributing/index.md
+      - Extension Recipes: contributing/extension-recipes.md
+      - PR Workflow: contributing/pr-workflow.md
+      - Design Process: contributing/design-process.md
+      - Macro Planning: contributing/macro-planning.md
+      - Hypothesis Experiments: contributing/hypothesis.md
+      - Convergence Protocol: contributing/convergence.md
+      - Standards:
+          - "Antipattern Rules (R1-R20)": contributing/standards/rules.md
+          - "System Invariants (INV-1-8)": contributing/standards/invariants.md
+          - Engineering Principles: contributing/standards/principles.md
+          - Experiment Standards: contributing/standards/experiments.md
+      - Templates:
+          - Design Guidelines: contributing/templates/design-guidelines.md
+          - Macro Plan: contributing/templates/macro-plan.md
+          - Micro Plan: contributing/templates/micro-plan.md
+          - Hypothesis: contributing/templates/hypothesis.md
