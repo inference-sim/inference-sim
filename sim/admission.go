@@ -85,6 +85,14 @@ func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPoli
 		return &RejectAll{}
 	case "slo-gated":
 		return NewSLOGatedAdmission(DefaultSLOGatedConfig())
+	case "predictive-slo":
+		// Create a PrefixCacheIndex for TTFT estimation. This is separate from
+		// the routing layer's PA scorer index. In production, these should share
+		// via KV events (llm-d precise approach). For simulation, the admission
+		// controller's index tracks routing decisions via its own observer
+		// (wired in the cluster event handler).
+		prefixIdx := NewPrefixCacheIndex(16, defaultLRUCapacity)
+		return NewPredictiveSLOAdmission(DefaultPredictiveSLOConfig(), prefixIdx)
 	default:
 		panic(fmt.Sprintf("unhandled admission policy %q", name))
 	}
