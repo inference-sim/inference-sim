@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="../concepts/roofline/">
+        <link rel="prev" href="../reference/workload-spec/">
       
       
-        <link rel="next" href="configuration/">
+        <link rel="next" href="strategy-evolution/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>Reference - BLIS — Blackbox Inference Simulator</title>
+        <title>Methodology - BLIS — Blackbox Inference Simulator</title>
       
     
     
@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#reference" class="md-skip">
+        <a href="#methodology" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Reference
+              Methodology
             
           </span>
         </div>
@@ -310,13 +310,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../reference/" class="md-tabs__link">
           
   
   
@@ -334,11 +332,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../methodology/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -1098,8 +1098,6 @@
       
   
   
-    
-  
   
   
     
@@ -1119,23 +1117,22 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="./" class="md-nav__link md-nav__link--active">
+            <a href="../reference/" class="md-nav__link ">
               
   
   
@@ -1153,13 +1150,13 @@
             </a>
             
               
-              <label class="md-nav__link md-nav__link--active" for="__nav_5" id="__nav_5_label" tabindex="">
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1179,7 +1176,7 @@
   
   
     <li class="md-nav__item">
-      <a href="configuration/" class="md-nav__link">
+      <a href="../reference/configuration/" class="md-nav__link">
         
   
   
@@ -1207,7 +1204,7 @@
   
   
     <li class="md-nav__item">
-      <a href="models/" class="md-nav__link">
+      <a href="../reference/models/" class="md-nav__link">
         
   
   
@@ -1235,7 +1232,7 @@
   
   
     <li class="md-nav__item">
-      <a href="workload-spec/" class="md-nav__link">
+      <a href="../reference/workload-spec/" class="md-nav__link">
         
   
   
@@ -1267,6 +1264,8 @@
       
   
   
+    
+  
   
   
     
@@ -1284,22 +1283,23 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../methodology/" class="md-nav__link ">
+            <a href="./" class="md-nav__link md-nav__link--active">
               
   
   
@@ -1317,13 +1317,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+              <label class="md-nav__link md-nav__link--active" for="__nav_6" id="__nav_6_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1343,7 +1343,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../methodology/strategy-evolution/" class="md-nav__link">
+      <a href="strategy-evolution/" class="md-nav__link">
         
   
   
@@ -1371,7 +1371,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../methodology/principles/" class="md-nav__link">
+      <a href="principles/" class="md-nav__link">
         
   
   
@@ -2047,6 +2047,47 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#methodology-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Methodology Pages
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-to-use-strategy-evolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Use Strategy Evolution
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#relationship-to-other-processes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relationship to Other Processes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -2065,8 +2106,9 @@
   
 
 
-<h1 id="reference">Reference<a class="headerlink" href="#reference" title="Permanent link">&para;</a></h1>
-<p>Lookup documentation for BLIS configuration, supported models, and workload specification schemas.</p>
+<h1 id="methodology">Methodology<a class="headerlink" href="#methodology" title="Permanent link">&para;</a></h1>
+<p>Reusable research methodologies developed and validated through BLIS experiments. These approaches are domain-agnostic — while they were refined on LLM inference serving, the techniques apply to any system with configurable policies and a simulation or benchmark harness.</p>
+<h2 id="methodology-pages">Methodology Pages<a class="headerlink" href="#methodology-pages" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -2076,19 +2118,30 @@
 </thead>
 <tbody>
 <tr>
-<td><a href="configuration/">Configuration</a></td>
-<td>All CLI flags, configuration precedence, defaults.yaml behavior</td>
+<td><a href="strategy-evolution/">Strategy Evolution</a></td>
+<td>Iterative policy discovery through simulation: 5-phase methodology with multi-judge review, Bayesian parameter optimization, and cumulative principle extraction</td>
 </tr>
 <tr>
-<td><a href="models/">Supported Models</a></td>
-<td>Pre-trained models with blackbox coefficients, roofline-compatible models</td>
-</tr>
-<tr>
-<td><a href="workload-spec/">Workload Spec Schema</a></td>
-<td>Complete YAML schema for multi-client workload specifications</td>
+<td><a href="principles/">Discovered Principles</a></td>
+<td>Catalog of 30 principles discovered across 30 iterations and 1000+ experiments, with source iteration and experimental evidence for each</td>
 </tr>
 </tbody>
 </table>
+<h2 id="when-to-use-strategy-evolution">When to Use Strategy Evolution<a class="headerlink" href="#when-to-use-strategy-evolution" title="Permanent link">&para;</a></h2>
+<p>Strategy Evolution is the right approach when:</p>
+<ul>
+<li>Your system has <strong>multiple interacting policy layers</strong> (routing, scheduling, memory, admission) where interactions produce non-obvious emergent behaviors</li>
+<li>The <strong>optimal configuration cannot be derived analytically</strong> because layer interactions are too complex</li>
+<li>You have a <strong>deterministic simulator or benchmark</strong> that accepts parameterized configuration and produces machine-parseable metrics</li>
+<li>You need <strong>defensible results</strong> — not just "it works" but "here's why it works, here's the evidence, and here are the principles"</li>
+</ul>
+<h2 id="relationship-to-other-processes">Relationship to Other Processes<a class="headerlink" href="#relationship-to-other-processes" title="Permanent link">&para;</a></h2>
+<p>Strategy Evolution builds on existing BLIS processes:</p>
+<ul>
+<li><strong><a href="../contributing/hypothesis/">Hypothesis Experiments</a></strong> — Strategy Evolution's Phase 3 uses the hypothesis experiment framework for structured measurement</li>
+<li><strong><a href="../contributing/convergence/">Convergence Protocol</a></strong> — Multi-judge review in Phase 2 follows the convergence protocol</li>
+<li><strong><a href="../contributing/pr-workflow/">PR Workflow</a></strong> — Implementation of winning strategies follows the standard PR workflow</li>
+</ul>
 
 
 
@@ -2124,7 +2177,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../concepts/roofline/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Roofline Estimation">
+          <a href="../reference/workload-spec/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Workload Spec Schema">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2134,20 +2187,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Roofline Estimation
+                Workload Spec Schema
               </div>
             </div>
           </a>
         
         
           
-          <a href="configuration/" class="md-footer__link md-footer__link--next" aria-label="Next: Configuration">
+          <a href="strategy-evolution/" class="md-footer__link md-footer__link--next" aria-label="Next: Strategy Evolution">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Configuration
+                Strategy Evolution
               </div>
             </div>
             <div class="md-footer__button md-icon">
