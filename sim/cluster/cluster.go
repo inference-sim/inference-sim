@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
@@ -32,6 +33,8 @@ type ClusterSimulator struct {
 	snapshotProvider   SnapshotProvider
 	routingPolicy      sim.RoutingPolicy
 	rejectedRequests       int // EC-2: count of requests rejected by admission policy
+	preciseKVEvictions     *int64 // counter for precise KV routing diagnostics (nil if not enabled)
+	preciseKVAllocations   *int64 // counter for KV allocation events (nil if not enabled)
 	trace                  *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests   []*sim.Request // Pre-generated requests from workload-spec (PR10)
 	pendingRequests        map[string]int // instance ID → routed-but-not-queued count (#170)
@@ -92,6 +95,12 @@ func NewClusterSimulator(config DeploymentConfig, workload *sim.GuideLLMConfig,
 	if cs.config.Horizon > 0 && cs.config.Horizon < pipelineLatency {
 		logrus.Warnf("[cluster] horizon (%d) < pipeline latency (%d); no requests can complete — increase --horizon or reduce admission/routing latency",
 			cs.config.Horizon, pipelineLatency)
+	}
+
+	// Precise KV routing: wire eviction callbacks from each instance's KV cache
+	// to the router-side PrefixCacheIndex, keeping it synchronized with actual state.
+	if config.PreciseKVRouting {
+		cs.wirePreciseKVRouting()
 	}
 
 	return cs
@@ -201,6 +210,11 @@ func (c *ClusterSimulator) Run() error {
 	}
 	c.aggregatedMetrics = c.aggregateMetrics()
 
+	// Precise KV routing diagnostic
+	if c.preciseKVEvictions != nil {
+		logrus.Infof("[cluster] precise KV routing: %d evictions, %d allocations", *c.preciseKVEvictions, *c.preciseKVAllocations)
+	}
+
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {
 		if c.rejectedRequests > 0 {
@@ -269,6 +283,72 @@ func (c *ClusterSimulator) PerInstanceMetrics() []*sim.Metrics {
 		metrics[i] = inst.Metrics()
 	}
 	return metrics
+}
+
+// prefixCacheIndexProvider is implemented by routing policies that expose their PrefixCacheIndex.
+// Used by wirePreciseKVRouting to set up eviction callbacks for precise KV routing.
+type prefixCacheIndexProvider interface {
+	PrefixIndex() *sim.PrefixCacheIndex
+	DisableObservers() // Remove observer-based updates in favor of KV event callbacks
+}
+
+// wirePreciseKVRouting connects each instance's KV cache eviction events to the
+// router-side PrefixCacheIndex. When a cached block is evicted from an instance's
+// KV cache, the callback removes the corresponding hash from the router's index,
+// eliminating phantom cache hits.
+func (c *ClusterSimulator) wirePreciseKVRouting() {
+	pp, ok := c.routingPolicy.(prefixCacheIndexProvider)
+	if !ok {
+		logrus.Warnf("[cluster] --precise-kv-routing enabled but routing policy does not expose PrefixCacheIndex")
+		return
+	}
+	idx := pp.PrefixIndex()
+	if idx == nil {
+		logrus.Warnf("[cluster] --precise-kv-routing enabled but routing policy has no PrefixCacheIndex (no prefix-affinity scorer?)")
+		return
+	}
+	// Disable observer-based updates: PrefixCacheIndex will be driven solely by
+	// actual KV events (allocations + evictions), not by routing intent.
+	pp.DisableObservers()
+	evictionCount := int64(0)
+	allocationCount := int64(0)
+	blockSize := idx.BlockSize()
+	for _, inst := range c.instances {
+		instID := string(inst.ID())
+		// Per-instance mapping: KV-cache hash (HashTokens) → PCI hash (ComputeBlockHashes).
+		// The KV cache and PrefixCacheIndex use different hash algorithms (see hash.go).
+		// This map translates eviction events (which carry KV hashes) into the
+		// PrefixCacheIndex hash space so RemoveBlock works correctly.
+		kvToPCI := make(map[string]string)
+
+		inst.SetKVEvictionCallback(func(kvHash string) {
+			evictionCount++
+			if pciHash, ok := kvToPCI[kvHash]; ok {
+				idx.RemoveBlock(pciHash, instID)
+				delete(kvToPCI, kvHash)
+			}
+		})
+		inst.SetKVAllocationCallback(func(inputTokens []int, cachedBlocks int) {
+			allocationCount++
+			// Compute hierarchical block hashes matching the scorer's format
+			pciHashes := idx.ComputeBlockHashes(inputTokens)
+			// Also compute KV-cache flat hashes for the translation map
+			numBlocks := len(inputTokens) / blockSize
+			for i := 0; i < numBlocks; i++ {
+				chunk := inputTokens[:(i+1)*blockSize]
+				kvHash := hash.HashTokens(chunk)
+				if i < len(pciHashes) {
+					kvToPCI[kvHash] = pciHashes[i]
+				}
+			}
+			// Record all block hashes in PrefixCacheIndex
+			idx.RecordBlocks(pciHashes, instID)
+		})
+	}
+	// Store counter for post-simulation diagnostic
+	c.preciseKVEvictions = &evictionCount
+	c.preciseKVAllocations = &allocationCount
+	logrus.Infof("[cluster] precise KV routing enabled: %d instances wired with hash translation (allocation+eviction events)", len(c.instances))
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.

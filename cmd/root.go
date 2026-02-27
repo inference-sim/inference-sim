@@ -96,6 +96,7 @@ var (
 	kvTransferBandwidth     float64
 	kvTransferBaseLatency   int64
 	snapshotRefreshInterval int64
+	preciseKVRouting        bool
 
 	// results file path
 	resultsPath string // File to save BLIS results to
@@ -557,6 +558,7 @@ var runCmd = &cobra.Command{
 			TraceLevel:              traceLevel,
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
+			PreciseKVRouting:        preciseKVRouting,
 		}
 		cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
 		if len(preGeneratedRequests) > 0 {
@@ -772,6 +774,7 @@ func init() {
 	runCmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
 	runCmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	runCmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "KV utilization snapshot refresh interval in microseconds (0 = immediate refresh every call)")
+	runCmd.Flags().BoolVar(&preciseKVRouting, "precise-kv-routing", false, "Enable precise KV routing: wire KV cache eviction events to router-side prefix cache index")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

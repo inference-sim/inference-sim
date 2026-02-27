@@ -159,3 +159,23 @@ func (i *InstanceSimulator) KVThrashingRate() float64 {
 func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int64) {
 	i.sim.InjectArrivalAt(req, eventTime)
 }
+
+// SetKVEvictionCallback wires a callback into the instance's KV cache that fires
+// whenever a cached block (with a prefix hash) is evicted. Used by precise KV routing
+// to keep the router-side PrefixCacheIndex synchronized with actual KV state.
+// No-op if the KV cache is not a single-tier KVCacheState (e.g., tiered cache).
+func (i *InstanceSimulator) SetKVEvictionCallback(cb func(hash string)) {
+	if kvState, ok := i.sim.KVCache.(*kv.KVCacheState); ok {
+		kvState.EvictionCallback = cb
+	}
+}
+
+// SetKVAllocationCallback wires a callback into the instance's KV cache that fires
+// after a successful block allocation with the request's input tokens and cache hit count.
+// Together with SetKVEvictionCallback, this provides a complete KV event stream
+// for precise routing. No-op if the KV cache is not a single-tier KVCacheState.
+func (i *InstanceSimulator) SetKVAllocationCallback(cb func(inputTokens []int, cachedBlocks int)) {
+	if kvState, ok := i.sim.KVCache.(*kv.KVCacheState); ok {
+		kvState.AllocationCallback = cb
+	}
+}

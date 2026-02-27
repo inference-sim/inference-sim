@@ -90,6 +90,19 @@ func (idx *PrefixCacheIndex) RecordBlocks(hashes []string, instanceID string) {
 	}
 }
 
+// RemoveBlock removes a specific block hash from an instance's cache.
+// Called by the precise KV routing eviction callback when the actual KV cache
+// evicts a cached block. This keeps the router-side index synchronized with
+// real instance state, eliminating phantom cache hits.
+// No-op if the instance or hash does not exist.
+func (idx *PrefixCacheIndex) RemoveBlock(hash string, instanceID string) {
+	cache, exists := idx.instances[instanceID]
+	if !exists {
+		return
+	}
+	delete(cache.hashes, hash)
+}
+
 // InstanceBlockCount returns the number of cached blocks for an instance.
 // Used for testing INV-7 (bounded growth).
 func (idx *PrefixCacheIndex) InstanceBlockCount(instanceID string) int {

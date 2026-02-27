@@ -44,6 +44,19 @@ type KVCacheState struct {
 	UsedBlockCnt    int64              // Total number of used blocks (tracked incrementally)
 	CacheHits       int64              // blocks found via prefix cache (PR12)
 	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
+
+	// EvictionCallback is called when a cached block (with a prefix hash) is evicted
+	// from the free list to make room for new content. This enables precise KV routing:
+	// the router-side PrefixCacheIndex can remove evicted hashes instead of relying on
+	// approximate LRU. Nil means no notification (approximate routing, default).
+	EvictionCallback func(hash string)
+
+	// AllocationCallback is called after a successful AllocateKVBlocks with the request's
+	// input tokens and the number of blocks that were cached (cache hits). Together with
+	// EvictionCallback, this provides a complete "KV event stream" that keeps the
+	// router-side PrefixCacheIndex synchronized with actual instance KV state.
+	// Nil means no notification.
+	AllocationCallback func(inputTokens []int, cachedBlocks int)
 }
 
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
@@ -266,10 +279,20 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 		}
 	}
 
+	// Notify allocation callback with the request's input tokens and cache hit count.
+	// The receiver can compute ComputeBlockHashes(inputTokens) to get the hierarchical
+	// hashes that match the PrefixCacheIndex scorer's hash format.
+	if kvc.AllocationCallback != nil && req.ProgressIndex < util.Len64(req.InputTokens) {
+		kvc.AllocationCallback(req.InputTokens, len(cachedBlocks))
+	}
+
 	return true
 }
 
 // popFreeBlock evicts a block from the free list and prepares it for reuse.
+// If the block had a cached prefix hash, notifies EvictionCallback (if set)
+// before clearing the hash. This enables precise KV routing by keeping the
+// router-side PrefixCacheIndex synchronized with actual KV state.
 func (kvc *KVCacheState) popFreeBlock() *KVBlock {
 	head := kvc.FreeHead
 	if head == nil {
@@ -277,6 +300,9 @@ func (kvc *KVCacheState) popFreeBlock() *KVBlock {
 	}
 	kvc.removeFromFreeList(head)
 	if head.Hash != "" {
+		if kvc.EvictionCallback != nil {
+			kvc.EvictionCallback(head.Hash)
+		}
 		delete(kvc.HashToBlock, head.Hash)
 		head.Hash = ""
 	}

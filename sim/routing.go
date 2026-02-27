@@ -153,7 +153,19 @@ type WeightedScoring struct {
 	scorers   []scorerFunc
 	weights   []float64 // normalized to sum to 1.0
 	observers []observerFunc
+	prefixIdx *PrefixCacheIndex // shared index for precise KV routing wiring (nil if no prefix-affinity)
 }
+
+// PrefixIndex returns the shared PrefixCacheIndex used by the prefix-affinity scorer.
+// Returns nil if no prefix-affinity scorer is configured.
+// Used by cluster-level wiring for precise KV routing (eviction callback).
+func (ws *WeightedScoring) PrefixIndex() *PrefixCacheIndex { return ws.prefixIdx }
+
+// DisableObservers removes all post-routing observers. Used when precise KV routing
+// replaces the observer-driven PrefixCacheIndex with actual KV event callbacks.
+// Without this, the observer would immediately re-add hashes that eviction callbacks
+// just removed, defeating the precision.
+func (ws *WeightedScoring) DisableObservers() { ws.observers = nil }
 
 // Route implements RoutingPolicy for WeightedScoring.
 func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecision {
@@ -296,17 +308,38 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		if len(scorerConfigs) == 0 {
 			scorerConfigs = DefaultScorerConfigs()
 		}
+		// Create shared PrefixCacheIndex if prefix-affinity is configured.
+		// This allows cluster-level wiring for precise KV routing.
+		var sharedIdx *PrefixCacheIndex
+		bs := int(blockSize)
+		if bs <= 0 {
+			bs = 16
+		}
+		for _, cfg := range scorerConfigs {
+			if cfg.Name == "prefix-affinity" {
+				sharedIdx = NewPrefixCacheIndex(bs, defaultLRUCapacity)
+				break
+			}
+		}
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize))
-			scorers[i] = scorer
-			if obs != nil {
-				observers = append(observers, obs)
+			if cfg.Name == "prefix-affinity" && sharedIdx != nil {
+				scorer, obs := newPrefixAffinityScorerWithIndex(sharedIdx)
+				scorers[i] = scorer
+				if obs != nil {
+					observers = append(observers, obs)
+				}
+			} else {
+				scorer, obs := newScorerWithObserver(cfg.Name, bs)
+				scorers[i] = scorer
+				if obs != nil {
+					observers = append(observers, obs)
+				}
 			}
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
-		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
+		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers, prefixIdx: sharedIdx}
 	case "epoch-adaptive":
 		bs := int(blockSize)
 		if bs <= 0 {
