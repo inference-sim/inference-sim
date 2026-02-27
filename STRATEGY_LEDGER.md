@@ -288,6 +288,50 @@ Root cause: kv-util penalizes instances with cached content (high utilization fr
 
 **The kv-utilization scorer is COUNTERPRODUCTIVE for prefix-cache-aware routing.**
 
+### Iteration 9: CPU Offloading
+- Default (pa:3,qd:2,kv:2) at KV=3000+5000CPU: 93.18ms (27% worse than RR's 73.46ms). Same pattern as iter 6 — kv-util hurts.
+- Optimal (pa:3,qd:2) timed out — KV=3000 with mixed-SLO workload may trigger cascading preemptions.
+
+### Iteration 10: Final Comprehensive Comparison
+
+| Workload | RR | pa:3,qd:2,kv:2 | pa:3,qd:2 | Best |
+|----------|-----|------|------|------|
+| RAG (8 inst) | 296.3ms | **127.6ms** | **127.6ms** | Both (tie) |
+| Independent (8 inst) | **39.5ms** | 48.4ms | 56.0ms | RR |
+| KV pressure (4 inst) | 73.5ms | 91.9ms | **65.5ms** | pa:3,qd:2 |
+| CPU offload (4 inst) | **73.5ms** | 93.2ms | N/A | RR |
+
+**FINAL ANSWER: The optimal strategy is REGIME-DEPENDENT.**
+- Normal KV: `pa:3,qd:2,kv:2` (KV helps load balance on no-cache workloads)
+- Under KV pressure: `pa:3,qd:2` (drop KV to avoid penalizing cached instances)
+- The `kv-adaptive` policy architecture is correct — but the trigger should detect KV block scarcity, not utilization threshold
+
+## Summary of All 10 Iterations
+
+| Iter | Strategy | Result | Key Finding |
+|------|----------|--------|-------------|
+| 1 | HCAR (P2C + dynamic epsilon) | +28% vs RR, -16% vs default | P2C misses cache hits |
+| 2 | Dynamic weight switching | = default | PA already self-corrects |
+| 3 | Scheduling co-optimization | = default | Routing eliminates queueing |
+| 4 | Cost-benefit composable scorer | -29% to -134% vs default | Pre-mixing destroys orthogonality |
+| 5 | SLO profiling + priority | -3% to -5% vs default | Fragments cache affinity |
+| 6 | KV pressure baseline | RR wins by 23-25% | Default fails under KV pressure |
+| 7 | KV-adaptive threshold | = default | Threshold mechanism wrong |
+| 8 | **pa:3,qd:2 (no kv)** | **+11% vs RR, +4% vs default at KV=5K** | **KV scorer is counterproductive for cache routing** |
+| 9 | CPU offloading | Default -27% vs RR | Same KV penalty under offloading |
+| 10 | Final comparison | Regime-dependent | kv:2 helps on no-cache; hurts under KV pressure |
+
+## The 8 Principles of Optimal LLM Inference Routing (from 300+ experiments)
+
+1. **Orthogonal signals > pre-combined signals** — Independent PA+QD give the argmax more information than cost-benefit
+2. **Full N-way scan > P2C** — Seeing all N instances finds better cache+load combinations
+3. **Self-correction > dynamic switching** — PA returns 0 on cache miss automatically
+4. **Uniform routing > SLO-differentiated routing** — Per-SLO profiles fragment cache affinity
+5. **Routing dominates scheduling** — Effective cache-aware routing keeps queues short
+6. **KV-utilization scorer is counterproductive under memory pressure** — It penalizes instances with valuable cached content
+7. **The optimal strategy is regime-dependent** — Normal KV: pa:3,qd:2,kv:2. Under pressure: pa:3,qd:2
+8. **Approximate routing degrades under KV pressure** — PrefixCacheIndex divergence from actual KV state causes phantom cache hits (validated by llm-d blog's 57x finding)
+
 ### New Components Implemented (Iterations 6-7)
 - `SLOClassPriority` — per-SLO-class base scores (critical=10, standard=5, batch=1)
 - `kv-pressure` scorer — FreeKVBlocks-based differentiation
