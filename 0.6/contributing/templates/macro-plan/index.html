@@ -1,0 +1,2528 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../design-guidelines/">
+      
+      
+        <link rel="next" href="../micro-plan/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Macro Plan - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Macro Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpreting Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/experimentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experimentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../macro-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_9" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+  <h1>Macro Plan</h1>
+
+<p>You are operating inside a real repository with full code access.</p>
+<p>You are tasked with producing a MACRO-LEVEL DESIGN PLAN for a:</p>
+<p>"Major Feature Expansion with Architectural Changes."</p>
+<p>This is a program-level plan that defines objectives, a concept model,
+architectural evolution, and an ordered PR series.</p>
+<p>This is NOT implementation planning.
+This is NOT a micro-level design.
+This is NOT speculative architecture.</p>
+<p>You MUST inspect the real codebase before proposing changes.</p>
+<p>======================================================================
+PREREQUISITE — DESIGN GUIDELINES
+======================================================================</p>
+<p>Before writing a macro plan, read and internalize:</p>
+<ul>
+<li><code>docs/contributing/templates/design-guidelines.md</code> — BLIS design guidelines
+  covering DES foundations, module architecture, and extension framework.</li>
+</ul>
+<p>The macro plan must be consistent with these guidelines. Specifically:
+- Building blocks must use the MODULE CONTRACT TEMPLATE from Section 4.3
+  (observes / controls / owns / invariants / events / extension friction)
+- New events must be classified as EXOGENOUS or ENDOGENOUS (Section 2.2)
+- Modeling decisions must apply the SIX SCOPING CRITERIA (Section 2.1)
+- PRs must identify their EXTENSION TYPE (Section 5.1): policy template,
+  subsystem module, backend swap, or tier composition
+- Building blocks should map to REAL SYSTEM COMPONENTS (Section 4.4)</p>
+<p>If no design doc exists for the feature being planned, one must be
+created (per the guidelines) before or alongside the macro plan.</p>
+<p>======================================================================
+ABSTRACTION LEVEL RULE (NON-NEGOTIABLE)
+======================================================================</p>
+<p>The macro plan describes WHAT to build and in WHAT ORDER, not HOW to
+implement each piece. Enforce these boundaries strictly:</p>
+<p>ALLOWED in macro plan:
+  - Behavioral descriptions of module contracts (prose)
+  - Frozen interface signatures (Go code ONLY for interfaces whose
+    freeze PR has already merged — these are facts, not aspirations)
+  - File path inventories (which packages, which files, per PR)
+  - LOC estimates per PR (sizing heuristics)
+  - CLI flag names and configuration surface area
+  - Brief YAML/config examples
+  - Architecture diagrams (text-based)</p>
+<p>PROHIBITED in macro plan:
+  - Method implementations (belongs in micro plan)
+  - Struct field lists (belongs in micro plan)
+  - Pre-freeze interface signatures in Go syntax (describe behaviorally:
+    "a single-method interface that selects a target instance given
+    request metadata and per-instance snapshots")
+  - Factory function code (belongs in micro plan)
+  - Test code (belongs in micro plan)</p>
+<p>THE TEST: Is this content a FACT about merged code, or an ASPIRATION
+about code to be written? Facts are allowed. Aspirations must be
+described behaviorally, not as Go code.</p>
+<p>WHY THIS MATTERS: The original macro plan had ~200 lines of Go code
+including full method implementations (TokenBucket.Admit(),
+PartitionedRNG.ForSubsystem()). These diverged during micro-planning
+and became misleading. Behavioral descriptions survive intact because
+they describe WHAT, not HOW.</p>
+<p>======================================================================
+PHASE 0 — REPOSITORY RECON (MANDATORY)
+======================================================================</p>
+<p>Before proposing anything:</p>
+<p>1) Identify and summarize:
+   - Top-level packages/modules and responsibilities
+   - Core data structures and interfaces
+   - Key invariants and assumptions encoded in the system
+   - CLI entrypoints and current flag surface
+   - Configuration flow
+   - Existing extension points (map to design guidelines Section 4.2)
+   - Areas of tight coupling or fragility
+   - Current module boundaries vs. target module map (guidelines 4.2)</p>
+<p>2) Clearly separate:
+   - Confirmed facts (from inspection — cite file:line for every claim)
+   - Inferred behavior (explicitly labeled as inference)
+   - Open uncertainties</p>
+<p>3) Identify architectural constraints that must not be violated.</p>
+<p>No invented abstractions.
+No imagined extension points.
+Everything must be grounded in code inspection with source references.</p>
+<p>ANTI-HALLUCINATION RULE: For every behavioral claim about existing code,
+provide a file:line citation. If you cannot cite it, mark it as
+"UNVERIFIED" and do not rely on it in subsequent phases.</p>
+<p>======================================================================
+PHASE 1 — HIGH-LEVEL OBJECTIVES AND MODEL SCOPING
+======================================================================</p>
+<p>Define:</p>
+<ul>
+<li>3-7 crisp objectives</li>
+<li>Explicit non-goals</li>
+<li>Compatibility constraints</li>
+<li>Performance constraints</li>
+<li>Backward compatibility guarantees</li>
+<li>Operational/CLI stability expectations</li>
+</ul>
+<p>Be precise.</p>
+<p>MODEL SCOPING (required — applies Banks et al. criteria):</p>
+<p>For this feature expansion, answer:</p>
+<p>1) What ANALYSIS QUESTIONS does this feature help answer?
+   (e.g., "What is the optimal routing policy for heterogeneous
+   hardware?" or "How does autoscaling latency affect tail TTFT?")</p>
+<p>2) What must be MODELED to answer those questions?</p>
+<p>3) What can be SIMPLIFIED without affecting the analysis?
+   (e.g., "model scaling latency as fixed delay, not warmup curve")</p>
+<p>4) What can be OMITTED entirely?
+   (e.g., "network partitions between instances — out of scope")</p>
+<p>Present as a table:</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Modeled</th>
+<th>Simplified</th>
+<th>Omitted</th>
+<th>Justification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(example) Scaling latency</td>
+<td>--</td>
+<td>Fixed delay, not warmup curve</td>
+<td>--</td>
+<td>Same steady-state throughput; warmup matters only for sub-minute scale-up</td>
+</tr>
+<tr>
+<td>(example) Network partitions</td>
+<td>--</td>
+<td>--</td>
+<td>Yes</td>
+<td>Not needed for routing policy comparison; add if modeling failure recovery</td>
+</tr>
+</tbody>
+</table>
+<p>For each "Simplified" entry, state what real-system behavior is lost
+and under what conditions it would matter in the Justification column.
+This is the fidelity trade-off record — it prevents "fidelity for its
+own sake" and enables future refinement with clear upgrade paths.</p>
+<p>======================================================================
+PHASE 2 — CONCEPT MODEL
+======================================================================</p>
+<p>Before diving into architecture, define the system at the level a human
+would explain it on a whiteboard:</p>
+<p>1) Building Blocks (3-7 named components)</p>
+<p>For EACH building block, provide the MODULE CONTRACT:
+   - Name and one-sentence responsibility
+   - OBSERVES: what state does this module read? (its inputs)
+   - CONTROLS: what decisions does this module make? (its outputs)
+   - OWNS: what mutable state does it exclusively manage?
+   - INVARIANTS: what must always hold for this module?
+   - EVENTS: what events does it produce or consume?
+     Classify each as EXOGENOUS (driven by external input) or
+     ENDOGENOUS (driven by internal state transitions).
+   - EXTENSION FRICTION: how many files must change to add one more
+     variant? (Reference targets from design guidelines Section 4.5)</p>
+<p>No building block may have more than one core responsibility.</p>
+<p>2) Interaction Model
+   - Who calls whom (directional arrows)
+   - Data flow between blocks (what crosses each boundary)
+   - Ownership transfer rules (when does data change owners?)</p>
+<p>3) System Invariants
+   - What must ALWAYS hold (e.g., "clock never decreases")
+   - What must NEVER happen (e.g., "no cross-instance state mutation")
+   - Causality constraints (ordering guarantees)
+   - DES-specific: state vs. statistics separation — which data is
+     simulation state (evolves the system) vs. derived statistics
+     (output for analysis)?</p>
+<p>4) Extension Points
+   - Where do new behaviors plug in? (behavioral description of
+     interface contract + responsibility)
+   - What is the default behavior for each extension point?
+   - What is the FIRST non-default implementation planned?</p>
+<p>5) State Ownership Map
+   - For every piece of mutable state: exactly one owner
+   - Shared state must be explicitly identified and justified</p>
+<p>6) Real-System Correspondence
+   - Map each building block to the real inference system component(s)
+     it models. Use a table:</p>
+<table>
+<thead>
+<tr>
+<th>Building Block</th>
+<th>llm-d</th>
+<th>vLLM</th>
+<th>SGLang</th>
+<th>Other</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>BLIS models an extensible distributed inference platform, not any
+     single system. The table ensures the architecture stays grounded
+     in real systems while remaining general enough to express
+     behaviors from multiple targets.</li>
+</ul>
+<p>THE CONCEPT MODEL MUST FIT IN UNDER 80 LINES.
+(Increased from 60 to accommodate module contracts and real-system
+correspondence. If it exceeds 80, the design is too complex —
+simplify before proceeding.)</p>
+<p>Every PR in Phase 6 must map to adding or modifying a specific building
+block from this model. If a PR cannot be described as a building block
+change, redesign the PR or the model.</p>
+<p>======================================================================
+PHASE 3 — ARCHITECTURAL RISK REGISTER
+======================================================================</p>
+<p>For every non-obvious architectural decision in the concept model:</p>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Assumption</th>
+<th>Validation Method</th>
+<th>Cost if Wrong</th>
+<th>Gate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>DECISION: The choice being made</li>
+<li>ASSUMPTION: What must be true for this to work</li>
+<li>VALIDATION: How to test cheaply (mock study, prototype, analysis, spike)</li>
+<li>COST IF WRONG: What breaks — count the affected PRs</li>
+<li>GATE: When validation must complete (before which PR)</li>
+</ul>
+<p>Example row:
+| Shared-clock event loop | O(N) scan per event is fast for N&lt;=16 |
+  Benchmark N=16, 10K events | PR 3 rework | Before PR 3 merge |</p>
+<p>MANDATORY VALIDATION RULE:
+If cost-of-being-wrong &gt;= 3 PRs of rework, validation is MANDATORY.
+The plan must include a spike/mock study PR or pre-PR validation step.</p>
+<p>For each validation gate, specify:
+- Exact success criteria (not "looks good" — measurable outcomes)
+- Abort plan (what changes if validation fails)</p>
+<p>======================================================================
+PHASE 4 — PROPOSED ARCHITECTURAL EVOLUTION
+======================================================================</p>
+<p>Only after the concept model and risk register:</p>
+<ul>
+<li>Describe how the architecture evolves FROM current TO concept model.</li>
+<li>Map each structural change to a concept model building block.</li>
+<li>Identify refactors that are strictly enabling (no behavior change).</li>
+<li>Explicitly describe what remains unchanged.</li>
+<li>For each new extension point: what is the default implementation and
+  when does the first non-default implementation arrive?</li>
+</ul>
+<p>Highlight risks and invariants.</p>
+<p>No premature generalization.
+No extension point without a concrete non-default implementation planned.</p>
+<p>ABSTRACTION LEVEL CHECK: This section describes the evolution
+BEHAVIORALLY. Do NOT include Go code here. Describe what each
+module will do and what contract it will satisfy, not how it will
+be implemented. Interface signatures appear only in the output
+sections (Section G, defined in the Output Format section below)
+and only for already-frozen interfaces.</p>
+<p>FIDELITY TRADE-OFFS: For each architectural simplification, state:
+- What real-system behavior is being approximated
+- What analysis questions the approximation still answers correctly
+- Under what conditions the approximation breaks down
+- What the upgrade path looks like (which future PR refines this)</p>
+<p>======================================================================
+PHASE 5 — CROSS-CUTTING INFRASTRUCTURE
+======================================================================</p>
+<p>Plan ONCE for the entire PR series. Each item must be assigned to a
+specific PR (defined in Phase 6) or handled as a standalone preparatory
+PR. Phases 5 and 6 are co-developed: sketch the PR series first, then
+assign cross-cutting items, then finalize both.</p>
+<p>1) Shared Test Infrastructure
+   - First: identify existing shared test packages in the codebase.
+     Build on them rather than duplicating or replacing them.
+   - New test helper packages, shared fixtures, golden dataset types
+   - Which PR creates them? Which PRs consume them?
+   - How do golden datasets evolve as the system grows?
+   - INVARIANT TESTS: which system invariants must have companion tests?
+     (Golden tests alone are insufficient — see design guidelines 6.3)</p>
+<p>2) Documentation Maintenance
+   - CLAUDE.md update triggers: new packages, new files, changed file
+     organization, completed plan milestones, new CLI flags
+   - Who updates CLAUDE.md? (The PR that causes the change.)
+   - README update triggers and ownership
+   - Design guidelines compliance: does this feature expansion require
+     updating the target module map in the design guidelines?</p>
+<p>3) CI Pipeline Changes
+   - New test packages to add to CI
+   - New linter rules or build steps
+   - Performance regression benchmarks</p>
+<p>4) Dependency Management
+   - New external dependencies (justify each one)
+   - Version pinning strategy</p>
+<p>5) Interface Freeze Schedule
+   - Which PR freezes which interface?
+   - What must be validated before freezing?
+   - After freeze: parallel development of templates/implementations
+     can proceed independently</p>
+<p>No item may be left as "address when needed."
+This applies to cross-cutting infrastructure (test helpers, CI, docs),
+not to feature packages which are detailed in Phase 6.</p>
+<p>======================================================================
+PHASE 6 — ORDERED PR SERIES (PR0 ... PRN)
+======================================================================</p>
+<p>Design an incremental, independently reviewable and mergeable PR sequence.</p>
+<p>For EACH PR, provide TWO TIERS:</p>
+<p>--- TIER 1: Human Review Summary (target 15 lines, max 25) ---</p>
+<ul>
+<li>Title</li>
+<li>Building Block Change: Which concept model block is added/modified?</li>
+<li>Extension Type (from design guidelines Section 5.1):<ul>
+<li>policy template: new algorithm behind existing interface</li>
+<li>subsystem module: new interface + new events</li>
+<li>backend swap: alternative implementation, requires interface extraction</li>
+<li>tier composition: decorator/wrapper over existing module</li>
+</ul>
+</li>
+<li>Motivation: Why does this PR exist? (1-2 sentences)</li>
+<li>Scope: In / Out (bullet points)</li>
+<li>Behavioral Guarantees: What MUST hold after this PR merges?
+  (Use named contracts: BC-1, BC-2, etc.)</li>
+<li>Risks: Top 1-2 risks and how they're mitigated</li>
+<li>Cross-Cutting: Which shared infra does this PR create or consume?</li>
+<li>Validation Gate: Does this PR depend on a risk register validation?</li>
+</ul>
+<p>--- TIER 2: Implementation Guide (for micro-planning) ---</p>
+<ul>
+<li>Architectural Impact (what changes structurally)</li>
+<li>API Surface Changes (new types, interfaces, methods — described
+  BEHAVIORALLY, not as Go code. E.g., "New single-method interface
+  for latency estimation, replacing hardcoded Step() logic")</li>
+<li>CLI Changes (new flags, changed behavior)</li>
+<li>Test Categories (unit, integration, regression, golden, invariant)</li>
+<li>Documentation Updates (CLAUDE.md, README, design guidelines if needed)</li>
+<li>Extension Friction: how many files to add one more variant of the
+  new type/interface? Compare against reference targets (guidelines 4.5)</li>
+<li>Parallel Development: after this PR merges, what can proceed
+  independently? (e.g., "multiple routing policies can be developed
+  in parallel after the interface freeze in this PR")</li>
+<li>Why this PR is independently reviewable</li>
+<li>Why it introduces no dead code</li>
+</ul>
+<p>Constraints:</p>
+<ul>
+<li>Each PR must deliver one cohesive building block change.</li>
+<li>Each PR must be exercisable immediately after merge.
+  "Exercisable" means: via CLI, OR via tests that demonstrate the
+  new behavior. Internal refactors exercised by passing existing tests
+  are valid. Scaffolding exercised only by future PRs is NOT valid.</li>
+<li>No speculative scaffolding.</li>
+<li>No unused interfaces.</li>
+<li>No flags that aren't exercised.</li>
+<li>Each PR must identify its extension type and follow the corresponding
+  recipe from the design guidelines (Section 5.2-5.5).</li>
+</ul>
+<p>======================================================================
+PHASE 7 — DEPENDENCY DAG &amp; PARALLELISM
+======================================================================</p>
+<p>Provide:</p>
+<ul>
+<li>A PR dependency graph (partial order).</li>
+<li>Parallelizable workstreams.</li>
+<li>Merge sequencing guidance.</li>
+<li>Validation gate placement (from risk register).</li>
+<li>Interface freeze points (from Phase 5, item 5: Interface Freeze
+  Schedule) — mark which PRs unlock parallel development of multiple
+  implementations.</li>
+<li>Integration risk notes.</li>
+</ul>
+<p>Maximize safe parallelism.</p>
+<p>======================================================================
+PHASE 8 — DESIGN BUG PREVENTION
+======================================================================</p>
+<p>Include:</p>
+<ul>
+<li>Invariants that must never be broken (reference concept model).</li>
+<li>Regression surfaces (which existing tests must keep passing).</li>
+<li>Cross-PR state migration risks (data format changes across PRs).</li>
+<li>Backward compatibility enforcement.</li>
+</ul>
+<p>Common architectural failure modes and how this plan prevents them:</p>
+<p>General:
+  - Scaffolding creep (dead code introduced "for later").
+    Prevention: every struct field, method, and flag must be exercised
+    by the end of the PR that introduces it.
+  - Documentation drift (CLAUDE.md diverges from reality).
+    Prevention: the PR that causes the change updates CLAUDE.md in the
+    same commit. No deferred documentation.
+  - Test infrastructure duplication (helpers copied across packages).
+    Prevention: shared test packages created in an early PR, consumed
+    by all subsequent PRs (specified in Phase 5, item 1).
+  - Golden dataset staleness (regression baselines not updated).
+    Prevention: every PR that changes output format includes a golden
+    dataset regeneration step with a verification command.
+  - Interface over-specification (freezing APIs too early).
+    Prevention: interfaces are frozen only after at least one
+    non-default implementation is designed (even if not yet built).
+    The freeze PR must demonstrate the interface accommodates two
+    implementations.</p>
+<p>DES-specific (from design guidelines Section 6):
+  - The Type Catalog trap: macro plan includes Go struct definitions
+    that diverge from implementation. Prevention: describe modules
+    behaviorally, not as Go types.
+  - Fidelity for its own sake: modeling components that don't affect
+    any analysis question. Prevention: every component must trace to
+    a modeling decision in Phase 1.
+  - Golden tests without invariant tests: characterization tests that
+    encode bugs as expected values. Prevention: every subsystem with
+    golden tests must have companion invariant tests.
+  - Mixing exogenous and endogenous: tight coupling between workload
+    generation and simulation logic that prevents replay experiments.
+    Prevention: exogenous inputs must be separable from endogenous
+    simulation logic.
+  - Interface leaking implementation: interfaces that encode one
+    backend's data model instead of the abstract behavioral contract.
+    Prevention: interfaces must accommodate at least two backends
+    (even if only one is implemented initially).</p>
+<p>Module architecture (from design guidelines Section 6.2):
+  - Shotgun surgery: multiple construction sites for the same type.
+    Prevention: canonical constructors for types constructed in &gt;1 place.
+  - Destructive reads: methods that both query and clear state.
+    Prevention: separate Get() and Consume() methods.
+  - Monolith methods: single methods containing logic for multiple
+    modules. Prevention: each module's logic callable through its
+    own interface.
+  - Config mixing concerns: single config struct combining unrelated
+    parameters. Prevention: group configuration by module.</p>
+<p>======================================================================
+OUTPUT FORMAT (STRICT)
+======================================================================</p>
+<p>A) Executive Summary (under 15 lines — synthesize the elevator pitch:
+   what is being built, why, how many PRs, key milestones)
+B) Repository Recon Summary
+C) High-Level Objectives + Non-Goals + Model Scoping Table
+D) Concept Model (under 80 lines — building blocks with module
+   contracts, interactions, invariants, extension points, real-system
+   correspondence)
+E) Architectural Risk Register
+F) Architectural Evolution (current -&gt; target, mapped to concept model,
+   described BEHAVIORALLY — no Go code)
+G) Frozen Interface Reference (ONLY for interfaces whose freeze PR
+   has already merged — Go signatures with per-PR annotations.
+   Include both interfaces frozen BY this plan's PRs and pre-existing
+   frozen interfaces that this plan depends on. Omit entirely if no
+   interfaces are frozen yet.)
+H) Cross-Cutting Infrastructure Plan
+I) PR Plan (PR0...PRN, Tier 1 + Tier 2 per PR)
+J) Dependency DAG
+K) Design Bug Prevention Checklist</p>
+<p>CONTEXT BUDGET RULE:
+Sections A, C, and D are the human-review core and must be concise.
+I-Tier-1 summaries should target 15 lines each (max 25).
+All other sections are reference material consulted on demand.
+The plan should be structured so a human can review the core sections
+(A + C + D + all I-Tier-1 summaries) without needing to read the rest.</p>
+<p>ABSTRACTION LEVEL CHECK (final gate):
+Before submitting, verify:
+- Section F contains ZERO lines of Go code
+- Section G contains ONLY frozen interface signatures (merged code)
+- Sections A-E and H-K contain ZERO Go code
+- All pre-freeze interfaces are described behaviorally
+- All module contracts use the template from Phase 2, not Go structs</p>
+<p>======================================================================</p>
+<p>Quality bar:</p>
+<ul>
+<li>Grounded in real code with file:line citations.</li>
+<li>No hallucinated modules or behaviors.</li>
+<li>No dead code.</li>
+<li>No bloated PRs.</li>
+<li>Must withstand expert review.</li>
+<li>Must be realistic and implementable.</li>
+<li>Concept model must be simple enough to explain verbally in 2 minutes.</li>
+<li>Consistent with design guidelines (docs/contributing/templates/design-guidelines.md).</li>
+<li>Every building block has a module contract.</li>
+<li>Every PR has an extension type.</li>
+<li>Every modeling decision traces to an analysis question.</li>
+</ul>
+<p>======================================================================
+LIVING DOCUMENT PROTOCOL
+======================================================================</p>
+<p>This plan will evolve. When updating:</p>
+<p>1) Add a dated revision note at the top explaining what changed and why.
+2) If a risk register validation fails, document the finding and the
+   resulting plan changes explicitly.
+3) Never silently change a PR's behavioral guarantees — if contracts
+   change, note the old contract, new contract, and reason.
+4) Track completed PRs by marking their status in the PR plan section.
+5) After each PR merges, check: does the concept model still accurately
+   describe the system? If not, update it. A stale concept model is
+   worse than no concept model.</p>
+<p>======================================================================</p>
+<p>Think deeply before answering.
+Inspect before designing.
+Validate before committing.
+Scope before modeling.
+Describe behavior, not implementation.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../design-guidelines/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Design Guidelines">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Design Guidelines
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../micro-plan/" class="md-footer__link md-footer__link--next" aria-label="Next: Micro Plan">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Micro Plan
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
