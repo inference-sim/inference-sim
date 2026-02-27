@@ -1,0 +1,166 @@
+# Strategy Evolution Ledger — Dynamic Weighted Scoring
+
+## Goal
+Find the highest-performing routing strategy (throughput + p99 tail latency) that beats the static weighted scoring baseline from PR #447.
+
+## Baseline (PR #447)
+- **Static default**: `prefix-affinity:3, queue-depth:2, kv-utilization:2`
+- **PR #447 Adaptive v0**: SLO-aware per-request weight profiles + cost-benefit scorer + SLO-headroom scorer + quadratic attention (beta3) + KV thrashing avoidance
+
+### Baseline Metrics (rate=200, 4 instances, 500 requests, 3 seeds)
+
+**Combined TTFT p99 (averaged across all workloads):**
+| Policy | Prefix | Indep | Mixed | Combined | vs RR |
+|--------|--------|-------|-------|----------|-------|
+| round-robin | 38.30 | 70.77 | 49.40 | **52.82** | baseline |
+| least-loaded | 47.96 | 68.93 | 55.20 | 57.36 | -8.6% |
+| adaptive-v0 | 50.49 | 68.93 | 53.94 | 57.79 | -9.4% |
+| static-default | 46.45 | 77.73 | 56.14 | 60.11 | -13.8% |
+| static-load-heavy | 46.45 | 77.73 | 56.14 | 60.11 | -13.8% |
+| static-cache-heavy | 578.18 | 77.73 | 70.23 | 242.05 | -358.2% |
+
+**Key finding**: RR wins at high utilization (ρ≈0.87). Its zero-variance distribution minimizes p99 TTFT. Any routing overhead or load imbalance from cache-aware routing is worse than the cache benefit.
+
+**Effective rates**: ~57.4 req/s/instance capacity. rate=200 → ρ≈200/230≈0.87.
+
+### Why RR Wins (Analysis)
+1. At ρ=0.87, each queued request adds ~17.4ms delay (beta0+beta1×avg_tokens)
+2. Cache saving for 256 shared prefix ≈ beta1×256 = 17.67×256 = 4.5ms
+3. Routing to cached but 1-extra-queued instance: cost 17.4ms, saving 4.5ms → net LOSS of 12.9ms
+4. RR distributes perfectly: each instance gets exactly N/4 requests → minimum queue depth variance
+5. LL has positional bias in tie-breaking (H4) → worse than RR at equal loads
+
+## Domain Knowledge Base
+
+### BLIS Simulator Physics
+- **Beta coefficients** (llama-3.1-8b, H100, TP=2): `[6910.42, 17.67, 2.84]` → stepTime = 6910 + 17.67×cacheMissTokens + 2.84×decodeTokens (μs)
+- **Alpha coefficients**: `[1601.35, 3.51, 1805.54]` → queueDelay = 1601 + 3.51×inputLen; outputProcessing = 1806 μs
+- **Beta3 (quadratic attention)**: Optional 4th coefficient. PR #447 added support but defaults.yaml has only 3 coefficients → beta3=0 in default configs. So the quadratic term doesn't help with default config!
+- **Capacity**: At avg prompt=512, output=128 → step time ≈ 6910+17.67×512+2.84×128 ≈ 16.3ms → ~61.4 req/s/instance. With avg prompt=256, output=128 → step time ≈ 11.5ms → ~87 req/s/instance
+- **Cache saving**: For N cached tokens, saving ≈ beta1×N = 17.67×N μs. For 256 tokens: 4.5ms. For 1024 tokens: 18.1ms. For 2048 tokens: 36.2ms
+- **Queue penalty**: Each queued request delays by approximately one step time (~11-17ms). At ρ=0.87 with 4 instances, mean queue depth per instance ≈ ρ/(1-ρ)/k ≈ 1.7 requests
+- **Prefill is compute-bound, decode is memory-bound**: Prefill cost scales linearly with token count (beta1×N), decode cost is nearly constant per token (beta2≈2.84 μs)
+- **KV block size**: 16 tokens per block (default)
+- **Default total KV blocks**: 132,139 (from defaults.yaml for llama-3.1-8b/H100/TP=2)
+
+### Routing Architecture
+- **RoutingPolicy interface**: `Route(req *Request, state *RouterState) RoutingDecision`
+- **RoutingSnapshot fields**: ID, QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PendingRequests, PendingTransferLatency, KVThrashingRate
+- **EffectiveLoad()**: QueueDepth + BatchSize + PendingRequests
+- **Priority hint**: RoutingDecision.Priority sets initial queue priority (0 = defer to instance PriorityPolicy). Instance-level PriorityPolicy recomputes each step.
+- **Existing policies**: RoundRobin, LeastLoaded, WeightedScoring, PrefixAffinity, AlwaysBusiest, AdaptiveWeightedScoring
+- **Scorer interface**: `func(req *Request, snapshots []RoutingSnapshot) map[string]float64` → scores in [0,1]
+- **Existing scorers**: queue-depth, kv-utilization, load-balance, prefix-affinity, cost-benefit, slo-headroom
+- **PrefixCacheIndex**: Per-instance LRU of hierarchical block hashes. `ComputeBlockHashes(tokens)`, `MatchLength(hashes, instanceID)`, `BlockSize()`, `UpdateCache(instanceID, hashes, blocks)`
+
+### Scheduling Architecture
+- **InstanceScheduler interface**: `Schedule(waitQ, maxReqs, maxTokens) []*Request`
+- **Existing schedulers**: FCFS, PriorityFCFS, SJF, ReversePriority
+- **Priority field on Request**: float64, higher = scheduled first in PriorityFCFS
+- **SLO-based priority**: `NewPriorityPolicy("slo-based")` assigns priority by SLO class
+
+### Workload Characteristics at Different Load Levels
+- **ρ < 0.5 (sub-saturation)**: Queue depths near 0. All policies equivalent within 4.4% (H23). Cache hits are "free" — no queuing penalty.
+- **ρ = 0.5-0.7 (moderate)**: Queues start forming. Cache-aware routing can help IF cache savings exceed queue penalty.
+- **ρ = 0.7-0.9 (high util)**: Queues are persistent. Load balance dominates. RR's uniformity is near-optimal.
+- **ρ > 0.9 (overloaded)**: Queue growth is linear. Routing strategy matters less — all requests queue. Throughput matters more than TTFT.
+- **Bursty arrivals**: Gamma CV=3.5 produces 1.25-1.66x worse TTFT p99 (H16). Bursts create transient overload where load-aware routing helps most.
+
+### Key Insights from All 31+ Hypotheses
+1. **Cache locality and load balance are NOT competing for multi-turn** (#377): Session stickiness is inherently balanced.
+2. **Single-scorer PA is degenerate** (H21): Always pair PA with QD/KV.
+3. **LL tie-breaking has positional bias** (H4): `routing.go:113-114` initializes with snapshots[0], strict `<` → always picks instance 0 when loads equal.
+4. **Counterfactual regret is degenerate for scored policies** (H6): chosen IS best → regret always 0.
+5. **Horizontal scaling is super-linear for TTFT** (H7): 7.4x at 4→8 instances.
+6. **Distribution MEDIAN drives KV pressure** (H20): Not mean or tail.
+7. **Chunked prefill benefits TTFT, not ITL** (H27): HOL blocking reduction by 46-58%.
+8. **Snapshot staleness safe zone <5ms for KV-util** (H29): QD is always Immediate (fresh).
+9. **Fitness normalization compresses differences** (H15): Use raw metrics.
+10. **Cost-benefit ratio naturally adapts** (PR #447): `cache_saving / (cache_saving + queue_delay)`.
+11. **Combined pathological policies are super-additive** (H24): Routing + scheduling anti-patterns interact nonlinearly.
+12. **Prefix-affinity non-generalization** (#400): PA doesn't generalize across models with synthetic tokens — real token IDs needed.
+13. **Weighted scoring creates virtual RR** (H4): At high rate with constant tokens, PendingRequests tracking makes weighted scoring equivalent to RR.
+14. **Queue-depth and kv-utilization are redundant when KV abundant** (#377): Both track correlated signals.
+
+### Literature and Industry Context
+- **Power-of-d-choices (P2C)**: Pick d random instances, route to least-loaded. With d=2, max load is O(ln ln n / ln d) vs O(ln n / ln ln n) for random. Near-JSQ performance with O(1) state reads.
+- **Join-Shortest-Queue (JSQ)**: Optimal for homogeneous servers. LL approximates JSQ but has implementation issues (H4).
+- **vLLM scheduling**: Continuous batching, iteration-level scheduling, chunked prefill. FCFS within batch, preemption for KV pressure.
+- **SGLang RadixAttention**: Prefix-tree-based KV reuse. Routes to instance with longest prefix match. Key insight: treats prefix cache as a scheduling signal, not just a memory optimization.
+- **llm-d**: Kubernetes-native distributed inference. Default routing: `pa:3,qd:2,kv:2`. SLO-aware admission. Flow-based routing for session affinity.
+- **Orca**: Iteration-level scheduling (vs request-level). Selective batching for prefill vs decode.
+- **S-LORA**: Adapter-aware routing. Routes to instance with cached adapter. Relevant for LoRA serving.
+- **Distserve/Splitwise**: Prefill-decode disaggregation. Separate prefill and decode phases to different instance types. Reduces interference.
+
+### What to Test at Multiple Load Levels
+Any strategy must be evaluated at:
+- **Low load** (rate=50, ρ≈0.22): Baseline where all policies converge
+- **Moderate load** (rate=120, ρ≈0.52): Where cache-aware routing should start helping
+- **High load** (rate=200, ρ≈0.87): Where RR currently dominates
+- **Overloaded** (rate=300, ρ≈1.3): Where throughput matters most
+
+## Strategies Explored
+
+### Iteration 0: PR #447 Baseline (Adaptive v0)
+- **Strategy**: SLO-aware per-request weight profiles with cost-benefit and SLO-headroom scorers
+- **Key mechanisms**: Per-SLO scorer pipeline, cost-benefit nonlinear scorer, SLO-headroom scorer, KV thrashing avoidance, quadratic attention (beta3)
+- **Results**: Combined TTFT p99 = 57.79ms (9.4% WORSE than RR's 52.82ms)
+- **Verdict**: REFUTED. The cost-benefit scorer correctly backs off cache at high load, but SLO profiles add complexity without benefit. The overhead of non-uniform routing is worse than RR's perfect balance.
+
+---
+
+## Iteration Log
+
+### Iteration 1: Research Phase (3 ideas, 9 judge reviews)
+
+**Idea 1 (LGRR — Load-Guarded Round-Robin + Cache Swap)**
+- Verdict: REJECTED. Breaks RR's zero-variance invariant. Positional bias. Effect size too small at 256-token prefix (0-3% predicted).
+- Key learnings: RR wins via uniformity; any deviation must be strictly justified. Break-even is ~391 tokens (decode step), not 923 (prefill step).
+
+**Idea 2 (CA-P2C — Cache-Aware Power-of-2-Choices)**
+- Verdict: IMPROVED but needs corrections. Cache hit rate is ~100% for prefix-group (not 50%). Multi-turn needs SessionID hashing. LOAD_EPSILON must be dynamic.
+- Key learnings: P2C is the right foundation. Hash-based candidate selection gives deterministic cache affinity. Two-level optimization (routing + scheduling) is the novel contribution.
+
+**Idea 3 (HCAR — Holistic Cache-Aware Router) — IMPLEMENTED & TESTED**
+- Strategy: Content-hash P2C + dynamic epsilon (physics-derived)
+- Predicted: 60-70% TTFT p99 reduction on RAG workloads at N=8
+- **Actual results (6 policies × 4 workloads × 3 seeds):**
+
+| Workload | HCAR | RR | Static-Default | CH | vs RR | vs Static |
+|----------|------|----|----|----|----|-----|
+| RAG (4096-token, 8 inst) | **139.98ms** | 296.29ms | **127.65ms** | 198.27ms | **+52.7%** | -9.7% |
+| Agentic (2048-token, 8 inst) | **113.66ms** | 137.36ms | **97.14ms** | 105.23ms | **+17.3%** | -17.0% |
+| Prefix-std (256-token, 4 inst) | 58.10ms | **38.30ms** | 46.45ms | 821.72ms | **-51.7%** | -25.1% |
+| Independent (no prefix, 8 inst) | 57.46ms | **39.54ms** | 48.37ms | 62.13ms | **-45.3%** | -18.8% |
+| **Combined** | **92.30ms** | 127.87ms | **79.90ms** | 296.84ms | **+27.8%** | **-15.5%** |
+
+**VERDICT: PARTIALLY CONFIRMED.**
+- HCAR dominates RR on long-prefix workloads (RAG: 52.7%, Agentic: 17.3%)
+- HCAR LOSES to static-default (pa:3,qd:2,kv:2) across ALL workloads
+- HCAR LOSES to RR on short-prefix and no-prefix workloads
+
+**Critical discovery: P2C's 2-candidate constraint misses good cache hits.**
+The full N-way scan in weighted scoring provides better cache coverage than P2C's 2-candidate selection. At N=8, this means HCAR misses 6/8 instances that might have better cache+load combinations. The next strategy must combine full-scan cache awareness WITH dynamic epsilon.
+
+### Iteration 1 Key Insights (Experimental)
+1. **Full-scan weighted scoring is already very good**: Static `pa:3,qd:2,kv:2` beats HCAR, RR, LL, and CH on combined metrics
+2. **P2C's 2-candidate constraint is the bottleneck**: Not the dynamic epsilon formula (which is correct) — the problem is seeing only 2 of N instances
+3. **RAG workloads are the sweet spot**: 4096-token shared prefix creates massive cache benefit (52.7% vs RR). This is the production-relevant regime.
+4. **Consistent hashing is catastrophic at small N**: CH at N=4 with 256-token prefix = 821ms TTFT p99 (hash collisions create total load imbalance)
+5. **The static default is the real competitor**: Not RR. The next strategy must beat static-default's 79.90ms combined.
+6. **Consistent hashing baseline is the right comparator**: vLLM ships this. HCAR's advantage is specifically the load-gated fallback.
+7. **Decompose into phases**: Ship clean core (2 mechanisms), then layer on scheduling hints, SLO, offloading pressure as separate experiments.
+
+### Implementation Status (Iteration 1)
+- **Research**: COMPLETE (3 ideas × 3 judges = 9 reviews)
+- **Strategy chosen**: HCAR-core (P2C + content hash + physics-derived epsilon)
+- **Implementation**: PENDING — next step is Go implementation in iter-1 worktree
+- **Experiment**: PENDING — 7 configs × 5 workloads × 3 seeds = 105 runs
+
+### Required Implementation (HCAR-core)
+1. `sim/routing_hcar.go` — new RoutingPolicy template
+2. `sim/routing_hcar_test.go` — behavioral tests
+3. Consistent hashing baseline in `routing.go` (1 new case in factory)
+4. Register in `bundle.go` / `NewRoutingPolicy` factory
+5. CLI flag: `--routing-policy hcar` (or `--routing-policy consistent-hash`)
+6. Experiment: `hypotheses/h-hcar/run.sh` + `analyze.py`
