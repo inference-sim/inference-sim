@@ -1,0 +1,2696 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../macro-plan/">
+      
+      
+        <link rel="next" href="../hypothesis/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Micro Plan - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#task-n-componentfeature-name" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Micro Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpreting Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/experimentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experimentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../macro-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_9" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#task-n-componentfeature-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task N: [Component/Feature Name]
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#task-n-componentfeature-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task N: [Component/Feature Name]
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+  <h1>Micro Plan</h1>
+
+<p>You are operating inside a real repository with full code access.</p>
+<p>You are tasked with producing a PR-SPECIFIC IMPLEMENTATION PLAN that combines:
+1. Design rigor (behavioral contracts, architecture validation)
+2. Executable task breakdown (TDD, bite-sized steps, verifications)</p>
+<p>The source of work may be:
+- A section in an approved Macro Plan (e.g., "Phase 2, PR 4")
+- One or more GitHub issues (e.g., "#183, #189, #195")
+- A design document (e.g., "docs/plans/2026-02-18-hardening-design.md")
+- A feature request or bug report description</p>
+<p>This plan has TWO AUDIENCES:
+1) A human reviewer who validates behavioral correctness
+2) Automated agents (via executing-plans skill) who execute the tasks</p>
+<p>The plan must be comprehensive enough that agents can implement WITHOUT
+additional codebase exploration.</p>
+<p>======================================================================
+DOCUMENT HEADER (REQUIRED)
+======================================================================</p>
+<p>Every plan MUST start with this exact header format:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gh"># [PR Title] Implementation Plan</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="k">&gt; </span><span class="ge">**For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="gs">**Goal:**</span> [One sentence a non-contributor could understand — what capability does this PR add? Avoid type names, package paths, or implementation jargon.]
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="gs">**The problem today:**</span> [2-3 sentences explaining what&#39;s missing or broken without this PR. What can&#39;t users or the system do? Why does it matter?]
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="gs">**What this PR adds:**</span> [Numbered list of 2-4 concrete capabilities, each explained in plain language with a brief example. E.g., &quot;Decision traces — a log of every routing decision: &#39;request_42 was sent to instance_2 because it had the highest score of 0.87&#39;&quot;]
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="gs">**Why this matters:**</span> [1-2 sentences connecting this PR to the broader project vision. How does this enable downstream work?]
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="gs">**Architecture:**</span> [2-3 sentences about the technical approach — packages, key types, integration points. Implementation jargon is OK here since the motivation is already established above.]
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="gs">**Source:**</span> [Link to the source of work. Examples:
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>Macro plan: &quot;Phase 2, PR 4 in docs/plans/macro-plan.md&quot;
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>Issues: &quot;GitHub issues <span class="ni">#183</span>, <span class="ni">#189</span>, <span class="ni">#195</span>, <span class="ni">#196</span>, <span class="ni">#197</span>, <span class="ni">#198</span>, <span class="ni">#199</span>, <span class="ni">#200</span>&quot;
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>Design doc: &quot;docs/plans/2026-02-18-hardening-design.md&quot;
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>Feature request: &quot;GitHub issue <span class="ni">#42</span>&quot;]
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="gs">**Closes:**</span> [Issue numbers this PR will close on merge, using GitHub closing keywords.
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>  Omit if the source is a macro plan section with no linked issues.
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>  Examples:
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>&quot;Fixes <span class="ni">#183</span>, fixes <span class="ni">#189</span>, fixes <span class="ni">#195</span>&quot;
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>&quot;Closes <span class="ni">#42</span>&quot;
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">  </span><span class="k">-</span><span class="w"> </span>&quot;N/A — source is macro plan, no linked issues&quot;]
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="gs">**Behavioral Contracts:**</span> See Part 1, Section B below
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>---
+</code></pre></div>
+<p>The header has TWO audiences reading in order:
+1. A human reviewer who needs to understand WHY before HOW (Goal → Problem → What → Why)
+2. An implementing agent who needs the technical approach (Architecture)</p>
+<p>======================================================================
+PHASE 0 — COMPONENT CONTEXT
+======================================================================</p>
+<p>Identify this PR's place in the system architecture:</p>
+<p>1) Which building block is being added or modified?
+2) What are the adjacent blocks it interacts with?
+3) What invariants does this PR touch?
+4) What state ownership changes (if any)?
+5) Construction Site Audit: For every struct this PR adds fields to,
+   grep for ALL places that struct is constructed (struct literals,
+   factory functions). List each site with file:line. If there are
+   multiple construction sites, the plan MUST either:
+   a) Add a canonical constructor and refactor all sites, OR
+   b) Update every site explicitly (list each in a task)</p>
+<p>Then inspect ONLY the relevant parts of the repository.</p>
+<p>List confirmed facts (with file:line citations).
+Flag anything from the source document (macro plan, design doc, or
+issue description) that doesn't match current code as a DEVIATION —
+these must be resolved before implementation begins.</p>
+<p>======================================================================
+OUTPUT FORMAT (STRICT)
+======================================================================</p>
+<p>--- PART 1: Design Validation (Human Review, target &lt;120 lines) ---</p>
+<p>A) Executive Summary (5-10 lines)
+   - What this PR builds (plain language, not type/package names)
+   - Where it fits in the system (what comes before it, what depends on it)
+   - Adjacent blocks it interacts with
+   - Any DEVIATION flags from Phase 0</p>
+<p>B) Behavioral Contracts (Phase 1)
+   - 3-15 named contracts (BC-1, BC-2, ...)
+   - Format: GIVEN / WHEN / THEN / MECHANISM
+   - Grouped: positive contracts, negative contracts, error handling</p>
+<p>C) Component Interaction (Phase 2)
+   - Component diagram (text)
+   - API contracts
+   - State changes and ownership</p>
+<p>D) Deviation Log (Phase 3)
+   - Compare micro plan vs source document
+   - Table: | Source Says | Micro Does | Reason |</p>
+<p>E) Review Guide (Phase 7-B)
+   - The tricky part
+   - What to scrutinize
+   - What's safe to skim
+   - Known debt</p>
+<p>--- PART 2: Executable Implementation (Agent Execution) ---</p>
+<p>F) Implementation Overview (Phase 4 summary)
+   - Files to create/modify (one-line each)
+   - Key decisions
+   - Confirmation: no dead code, all paths exercisable</p>
+<p>G) Task Breakdown (Phase 4 detailed)
+   - 6-12 tasks in TDD format (see Phase 4 template below)
+   - Continuous execution (no pause points between tasks)
+   - Each task: test → fail → implement → pass → lint → commit</p>
+<p>H) Test Strategy (Phase 6)
+   - Map contracts to tasks/tests
+   - Golden dataset update strategy
+   - Shared test infrastructure usage</p>
+<p>I) Risk Analysis (Phase 7-A)
+   - Risks with likelihood/impact/mitigation</p>
+<p>--- PART 3: Quality Assurance ---</p>
+<p>J) Sanity Checklist (Phase 8)
+   - Pre-implementation verification
+   - All items from Phase 8 template</p>
+<p>--- APPENDIX: File-Level Implementation Details ---</p>
+<p>K) Detailed specifications
+   - Complete function signatures with doc comments
+   - Struct definitions
+   - Event execution logic
+   - Metric aggregation rules
+   - RNG subsystem usage
+   - Any behavioral subtleties (file:line citations)</p>
+<p>======================================================================
+PHASE 1 — BEHAVIORAL CONTRACTS (Human-Reviewable)
+======================================================================</p>
+<p>This defines what this PR guarantees. Use named contracts (BC-1, BC-2, ...)
+that can be referenced in tests, reviews, and future PRs.</p>
+<p>For each contract:</p>
+<p>BC-N: <Name>
+  - GIVEN <precondition>
+  - WHEN <action>
+  - THEN <observable outcome>
+  - MECHANISM: <one sentence explaining how> (optional but recommended)</p>
+<p>Group contracts into:</p>
+<p>1) Behavioral Contracts (what MUST happen)
+   - Normal operation
+   - Edge cases
+   - Backward compatibility</p>
+<p>2) Negative Contracts (what MUST NOT happen)
+   - Invariant violations this PR could cause
+   - Cross-boundary state leaks
+   - Performance regressions</p>
+<p>3) Error Handling Contracts
+   - What happens on invalid input
+   - What happens on resource exhaustion
+   - Panic vs error return vs log-and-continue (be explicit)</p>
+<p>TARGET: 3-15 contracts per PR. Pure refactoring PRs with no new behavior
+may have as few as 3. More than 15 means the PR may be too large.</p>
+<p>No vague wording. "Should" is banned — use "MUST" or "MUST NOT."</p>
+<p>THEN CLAUSE QUALITY GATE:
+Every THEN clause must describe OBSERVABLE BEHAVIOR, not internal
+structure. The THEN clause directly becomes the test assertion — a
+structural THEN produces a structural test.</p>
+<p>Check each THEN clause against this filter:
+- Does it contain a concrete type name? → Rewrite to describe behavior
+  BAD:  "THEN it returns a <em>ConstantPriority"
+  GOOD: "THEN it returns a policy that computes 0.0 for any request"
+- Does it reference an internal field? → Rewrite to describe output
+  BAD:  "THEN the router's scoreCache has 3 entries"
+  GOOD: "THEN the next routing decision uses cached affinity"
+- Does it reproduce a formula? → Rewrite to describe ordering/outcome
+  BAD:  "THEN score equals 0.6</em>cacheHit + 0.4*(1-load)"
+  GOOD: "THEN instances with higher cache hit rates rank higher"
+- Does it survive a refactor? → If renaming a struct or changing an
+  internal algorithm would invalidate this THEN, it is structural</p>
+<p>======================================================================
+PHASE 2 — COMPONENT INTERACTION (Human-Reviewable)
+======================================================================</p>
+<p>Describe this PR's building block and how it connects to the system.
+This is the "box-and-arrow" view, NOT the file-level view.</p>
+<p>1) Component Diagram (text-based)
+   - This PR's component and its responsibility
+   - Adjacent components (existing or new)
+   - Data flow direction between them
+   - What crosses each boundary (types, not implementations)</p>
+<p>2) API Contracts
+   - New interfaces or types (signature + one-line semantics)
+   - Method preconditions and postconditions
+   - Failure modes and how callers handle them</p>
+<p>3) State Changes
+   - New mutable state and its owner
+   - State lifecycle (created when, destroyed when, accessed by whom)</p>
+<p>4) Extension Friction Assessment
+   - For the main new type/field this PR adds, count: how many files
+     must change to add ONE more field of the same kind?
+   - If &gt;3 files, document whether this is acceptable or whether a
+     structural improvement should happen first/concurrently
+   - This is not a blocker — it's awareness for the reviewer</p>
+<p>TARGET: under 40 lines. Infrastructure PRs that introduce multiple
+interacting types may go up to 60 lines with justification.
+Beyond 60 lines, the PR scope is likely too broad.</p>
+<p>======================================================================
+PHASE 3 — DEVIATION LOG
+======================================================================</p>
+<p>Compare this micro plan against the source document (macro plan section,
+design doc, or issue description).</p>
+<p>For each difference:</p>
+<table>
+<thead>
+<tr>
+<th>Source Says</th>
+<th>Micro Plan Does</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Categories of deviation:
+- SIMPLIFICATION: Source specified more than needed at this stage
+- CORRECTION: Source was wrong about existing code or behavior
+- DEFERRAL: Feature moved to a later PR (explain why)
+- ADDITION: Something the source missed
+- SCOPE_CHANGE: Issue description expanded or narrowed during investigation</p>
+<p>If there are zero deviations, state "No deviations from source document."</p>
+<p>======================================================================
+PHASE 4 — EXECUTABLE TASK BREAKDOWN
+======================================================================</p>
+<p>Break implementation into 6-12 tasks following TDD principles.
+Each task is completable in one focused session (~30-45 minutes).</p>
+<p><strong>Execution is continuous</strong> — all tasks run sequentially without pausing
+for human input. Execution only stops on test failure, lint failure, or
+build error. Group tasks into logical sections (e.g., core types,
+integration, edge cases) for readability, but these are NOT pause points.</p>
+<p>TASK TEMPLATE:</p>
+<h3 id="task-n-componentfeature-name">Task N: [Component/Feature Name]<a class="headerlink" href="#task-n-componentfeature-name" title="Permanent link">&para;</a></h3>
+<p><strong>Contracts Implemented:</strong> BC-X, BC-Y (reference Phase 1)</p>
+<p><strong>Files:</strong>
+- Create: <code>exact/path/to/file.go</code>
+- Modify: <code>exact/path/to/existing.go:123-145</code> (line range if known)
+- Test: <code>exact/path/to/test_file.go</code></p>
+<p><strong>Step 1: Write failing test for [specific contract]</strong></p>
+<p>Context: [1-2 sentences explaining what we're testing and why]</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">// Complete test code here</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1">// Include setup, execution, assertions</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestComponent_Scenario_Behavior</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="c1">// GIVEN [precondition from contract]</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="c1">// WHEN [action from contract]</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="c1">// THEN [expected outcome from contract]</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nx">assert</span><span class="p">.</span><span class="nx">Equal</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="nx">expected</span><span class="p">,</span><span class="w"> </span><span class="nx">actual</span><span class="p">)</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>Step 2: Run test to verify it fails</strong></p>
+<p>Run: <code>go test ./path/to/package/... -run TestComponent_Scenario -v</code>
+Expected: FAIL with "[expected error message]"</p>
+<p><strong>Step 3: Implement minimal code to satisfy contract</strong></p>
+<p>Context: [1-2 sentences about the implementation approach]</p>
+<p>In <code>path/to/file.go</code>:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1">// Complete implementation code</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1">// Include type definitions, method signatures, logic</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="kd">type</span><span class="w"> </span><span class="nx">Component</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nx">field1</span><span class="w"> </span><span class="nx">Type1</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nx">field2</span><span class="w"> </span><span class="nx">Type2</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">}</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Component</span><span class="p">)</span><span class="w"> </span><span class="nx">Method</span><span class="p">(</span><span class="nx">param</span><span class="w"> </span><span class="nx">Type</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">ReturnType</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="c1">// implementation</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Step 4: Run test to verify it passes</strong></p>
+<p>Run: <code>go test ./path/to/package/... -run TestComponent_Scenario -v</code>
+Expected: PASS</p>
+<p><strong>Step 5: Run lint check</strong></p>
+<p>Run: <code>golangci-lint run ./path/to/package/...</code>
+Expected: No new issues (pre-existing issues OK, don't fix them)</p>
+<p><strong>Step 6: Commit with contract reference</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>add<span class="w"> </span>path/to/file.go<span class="w"> </span>path/to/test_file.go
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(package): implement Component.Method (BC-X, BC-Y)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="s2">- Add Component type with Method</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="s2">- Implement contract BC-X: [brief description]</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="s2">- Implement contract BC-Y: [brief description]</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="s2">Co-Authored-By: Claude &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<p>REPEAT TASK TEMPLATE for each task (6-12 total).</p>
+<p>IMPORTANT TASK DESIGN RULES:</p>
+<ol>
+<li>
+<p><strong>Each task implements 1-3 related contracts</strong> - don't split single
+   contracts across tasks, don't pack unrelated contracts together</p>
+</li>
+<li>
+<p><strong>Complete code in every step</strong> - no "add validation" or "implement logic"
+   without showing the exact code</p>
+</li>
+<li>
+<p><strong>Exact commands with expected output</strong> - agent should know if verification
+   succeeded or failed</p>
+</li>
+<li>
+<p><strong>Reference shared test infrastructure</strong> - use existing helpers from
+   shared packages (e.g., sim/internal/testutil), don't duplicate</p>
+</li>
+<li>
+<p><strong>Golden dataset updates</strong> - if task changes output format or metrics,
+   include step to update testdata/goldendataset.json with regeneration command</p>
+</li>
+<li>
+<p><strong>Dependency ordering</strong> - tasks must be ordered so each can build on
+   previous completed work</p>
+</li>
+<li>
+<p><strong>No dead code</strong> - every struct field, every method, every parameter must
+   be used by the end of the task or a subsequent task in this PR</p>
+</li>
+<li>
+<p><strong>Commit messages</strong> - use conventional commits format with contract references
+   (feat/fix/refactor/test/docs)</p>
+</li>
+<li>
+<p><strong>Behavioral assertions only</strong> - every assertion in a test must
+   verify OBSERVABLE BEHAVIOR, not internal structure. Apply the
+   refactor survival test: "Would this test still pass if the
+   implementation were completely rewritten but the behavior preserved?"</p>
+</li>
+</ol>
+<p>PROHIBITED assertion patterns (structural — these break on refactor):
+   - Type assertions: <code>policy.(*ConcreteType)</code> — test behavior instead
+   - Internal field access: <code>obj.internalField</code> — test through public API
+   - Exact formula reproduction: <code>assert.Equal(score, 0.6*cache + 0.4*load)</code>
+     — test the ranking/ordering outcome instead
+   - Implementation count: <code>assert.Equal(len(obj.items), 3)</code> — test
+     what the items produce, not how many there are</p>
+<p>REQUIRED assertion patterns (behavioral — these survive refactor):
+   - Observable output: <code>assert.Equal(policy.Compute(req, clock), 0.0)</code>
+   - Behavioral outcome: <code>assert.Equal(decision.TargetInstance, 1)</code>
+   - Invariant verification: <code>assert.Equal(completed+queued+running+dropped, injected)</code>
+   - Ordering/ranking: <code>assert.True(scoreA &gt; scoreB)</code> when contract says
+     A should rank higher than B</p>
+<ol>
+<li>
+<p><strong>THEN clauses must be behavioral</strong> - if a behavioral contract's
+    THEN clause contains a concrete type name, internal field name, or
+    implementation detail, rewrite the THEN clause BEFORE writing the
+    test. The THEN clause drives the assertion; a structural THEN
+    produces a structural test.</p>
+<p>BAD:  "THEN it returns a *ConstantPriority"
+GOOD: "THEN it returns a policy that computes 0.0 for any request"</p>
+<p>BAD:  "THEN the router's scoreCache has 3 entries"
+GOOD: "THEN the next routing decision uses cached scores (latency &lt; uncached)"</p>
+<p>BAD:  "THEN the score equals 0.6<em>cacheHit + 0.4</em>(1-load)"
+GOOD: "THEN instances with higher cache hit rates score higher than
+       instances with lower cache hit rates, all else being equal"</p>
+</li>
+</ol>
+<p>======================================================================
+PHASE 5 — REMOVED (Merged into Phase 4 Task Verification)
+======================================================================</p>
+<p>Exercisability is proven by the task-level verification steps.
+No separate section needed.</p>
+<p>======================================================================
+PHASE 6 — TEST STRATEGY
+======================================================================</p>
+<p>Map contracts to tasks and tests:</p>
+<table>
+<thead>
+<tr>
+<th>Contract</th>
+<th>Task</th>
+<th>Test Type</th>
+<th>Test Name / Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BC-1</td>
+<td>Task 1</td>
+<td>Unit</td>
+<td>TestFoo_GivenX_ThenY</td>
+</tr>
+<tr>
+<td>BC-2</td>
+<td>Task 1</td>
+<td>Unit</td>
+<td>TestFoo_GivenZ_ThenW</td>
+</tr>
+<tr>
+<td>BC-3</td>
+<td>Task 2</td>
+<td>Golden</td>
+<td>TestCluster_SingleInstance_MatchesGolden</td>
+</tr>
+<tr>
+<td>...</td>
+<td>...</td>
+<td>...</td>
+<td>...</td>
+</tr>
+</tbody>
+</table>
+<p>Test types:
+- Unit: specific function/method behavior
+- Integration: cross-component or CLI-level
+- Golden: regression against known-good output (testdata/goldendataset.json)
+- Invariant: system law that must hold regardless of output values (see req 6)
+- Failure: error paths, panics, edge cases
+- Benchmark: performance-sensitive paths (optional)</p>
+<p>Additional requirements:</p>
+<ol>
+<li>
+<p><strong>Shared test infrastructure</strong>: Use existing helpers from shared test
+   packages (e.g., sim/internal/testutil). If new helpers are needed, add
+   them to the shared package in an early task — not duplicated locally.</p>
+</li>
+<li>
+<p><strong>Golden dataset updates</strong>: If this PR changes output format or adds new
+   metrics, document:</p>
+</li>
+<li>Which task updates the golden dataset</li>
+<li>Exact regeneration command</li>
+<li>
+<p>How to verify the update is correct (compare key metrics)</p>
+</li>
+<li>
+<p><strong>Lint requirements</strong>: <code>golangci-lint run ./...</code> must pass with zero new
+   issues. Pre-existing issues are acceptable; do not fix unrelated lint
+   warnings (scope creep).</p>
+</li>
+<li>
+<p><strong>Test naming convention</strong>: Use BDD-style names that describe the scenario:
+   <code>TestType_Scenario_Behavior</code> (e.g., <code>TestTokenBucket_CapacityExceeded_RejectsRequest</code>)</p>
+</li>
+<li>
+<p><strong>Test isolation</strong>: Each test must be independently runnable (no order
+   dependencies). Use table-driven tests for multiple scenarios of the same behavior.</p>
+</li>
+<li>
+<p><strong>Invariant tests alongside golden tests (MANDATORY)</strong>: Golden dataset
+   tests are characterization tests — they capture <em>what the code does</em>, not
+   <em>what the code should do</em>. If the code has a bug when the golden dataset
+   is generated, the test encodes the bug as the expected value. This has
+   happened: issue #183 found that the codellama golden dataset expected 499
+   completions because one request was silently dropped — a bug that the
+   golden test perpetuated instead of catching.</p>
+</li>
+</ol>
+<p><strong>Rule:</strong> Every golden dataset test MUST be paired with at least one
+   invariant test that verifies a system law derived from the <em>specification</em>
+   (not from running the code). Invariant tests answer "is the code correct?"
+   while golden tests answer "did the code change?"</p>
+<p>Key invariants for this simulator (derived from CLAUDE.md):
+   - <strong>Request conservation:</strong> completed + still_queued + still_running + dropped_unservable = injected
+   - <strong>KV block conservation:</strong> allocated_blocks + free_blocks = total_blocks
+   - <strong>Clock monotonicity:</strong> simulation clock never decreases
+   - <strong>Causality:</strong> arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time
+   - <strong>Determinism:</strong> same seed produces byte-identical output across runs</p>
+<p>When adding a golden test, ask: "If this golden value were wrong, would
+   any other test catch it?" If the answer is no, add an invariant test.
+   If this PR touches request lifecycle, KV cache, or metrics, at least one
+   invariant test MUST be added or extended.</p>
+<p>======================================================================
+PHASE 7 — RISK ANALYSIS &amp; REVIEW GUIDE
+======================================================================</p>
+<p>PART A: Risks</p>
+<p>For each risk:
+- Risk description
+- Likelihood (low/medium/high)
+- Impact (low/medium/high)
+- Mitigation (specific test or design choice)
+- Which task mitigates the risk</p>
+<p>PART B: Review Guide (for the human reviewer)</p>
+<p>In 5-10 lines, tell the reviewer:</p>
+<p>1) THE TRICKY PART: What's the most subtle or error-prone aspect?
+2) WHAT TO SCRUTINIZE: Which contract(s) are hardest to verify?
+3) WHAT'S SAFE TO SKIM: Which parts are mechanical/boilerplate?
+4) KNOWN DEBT: Any pre-existing issues encountered but not fixed?</p>
+<p>This section exists because human attention is scarce.
+Direct it to where it matters most.</p>
+<p>======================================================================
+PHASE 8 — DESIGN SANITY CHECKLIST
+======================================================================</p>
+<p>Before implementation, verify:</p>
+<p><strong>Plan-specific checks:</strong>
+- [ ] No unnecessary abstractions.
+- [ ] No feature creep beyond PR scope.
+- [ ] No unexercised flags or interfaces.
+- [ ] No partial implementations.
+- [ ] No breaking changes without explicit contract updates.
+- [ ] No hidden global state impact.
+- [ ] All new code will pass golangci-lint.
+- [ ] Shared test helpers used from existing shared test package (not duplicated locally).
+- [ ] CLAUDE.md updated if: new files/packages added, file organization
+      changed, plan milestone completed, new CLI flags added.
+- [ ] No stale references left in CLAUDE.md.
+- [ ] Documentation DRY: If this PR modifies a canonical source (docs/contributing/standards/rules.md, docs/contributing/standards/invariants.md, docs/contributing/standards/principles.md, docs/contributing/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the CLAUDE.md File Organization tree.
+- [ ] Deviation log reviewed — no unresolved deviations.
+- [ ] Each task produces working, testable code (no scaffolding).
+- [ ] Task dependencies are correctly ordered.
+- [ ] All contracts are mapped to specific tasks.
+- [ ] Golden dataset regeneration documented (if needed).
+- [ ] Construction site audit completed (Phase 0, item 5) — all struct
+      construction sites listed and covered by tasks.
+- [ ] If this PR is part of a macro plan, the macro plan status is updated.</p>
+<p><strong>Antipattern rules (full details in docs/contributing/standards/rules.md):</strong>
+- [ ] R1: No silent <code>continue</code>/<code>return</code> dropping data
+- [ ] R2: Map keys sorted before float accumulation or ordered output
+- [ ] R3: Every new CLI flag validated (zero, negative, NaN, Inf)
+- [ ] R4: All struct construction sites audited for new fields
+- [ ] R5: Resource allocation loops handle mid-loop failure with rollback
+- [ ] R6: No <code>logrus.Fatalf</code> or <code>os.Exit</code> in <code>sim/</code> packages
+- [ ] R7: Invariant tests alongside any golden tests
+- [ ] R8: No exported mutable maps
+- [ ] R9: <code>*float64</code> for YAML fields where zero is valid
+- [ ] R10: YAML strict parsing (<code>KnownFields(true)</code>)
+- [ ] R11: Division by runtime-derived denominators guarded
+- [ ] R12: Golden dataset regenerated if output changed
+- [ ] R13: New interfaces work for 2+ implementations
+- [ ] R14: No method spans multiple module responsibilities
+- [ ] R15: Stale PR references resolved
+- [ ] R16: Config params grouped by module
+- [ ] R17: Routing scorer signals documented for freshness tier
+- [ ] R18: CLI flag values not silently overwritten by defaults.yaml
+- [ ] R19: Unbounded retry/requeue loops have circuit breakers
+- [ ] R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)</p>
+<p>======================================================================
+APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS
+======================================================================</p>
+<p>This section has NO LENGTH LIMIT. It should contain everything needed
+to implement the PR without further codebase exploration.</p>
+<p>For each file to be created or modified, provide:</p>
+<p><strong>File: <code>exact/path/to/file.go</code></strong></p>
+<p><strong>Purpose:</strong> [1-2 sentences]</p>
+<p><strong>Complete Implementation:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// Package documentation</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">package</span><span class="w"> </span><span class="nx">name</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="kn">import</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="c1">// all imports</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">)</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1">// Complete type definitions with doc comments</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="c1">// Complete function implementations</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1">// Complete test code</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="c1">// Include all struct fields, all methods, all parameters</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="c1">// Behavioral notes:</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="c1">// - [Any subtlety, e.g., &quot;horizon boundary: requests at exactly</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="c1">//    horizon time are NOT completed&quot;]</span>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="c1">// - [Citation: existing behavior to preserve, with file:line]</span>
+</code></pre></div>
+<p><strong>Key Implementation Notes:</strong>
+- RNG usage: [Which subsystem from PartitionedRNG? e.g., "SubsystemRouter"]
+- Metrics: [What metrics are collected? Where aggregated?]
+- Event ordering: [Priority? Timestamp? Secondary tie-breaking?]
+- State mutation: [What gets modified? Who owns it?]
+- Error handling: [Panic, return error, log-and-continue?]</p>
+<hr />
+<p>Include this level of detail for EVERY file touched by this PR.</p>
+<p>======================================================================
+EXECUTION HANDOFF
+======================================================================</p>
+<p>After creating the plan, the workflow continues with:</p>
+<p><strong>Option 1: Subagent-Driven Development (in current session)</strong>
+- Invoke superpowers:subagent-driven-development
+- Fresh subagent per task
+- Code review between tasks
+- Fast iteration</p>
+<p><strong>Option 2: Worktree with executing-plans (recommended for complex PRs)</strong>
+- Create isolated worktree (superpowers:using-git-worktrees)
+- Continue in same session (.worktrees/) or open new session (sibling directory)
+- Invoke superpowers:executing-plans with this plan
+- Continuous execution (stops only on failure)
+- Invoke commit-commands:commit-push-pr when complete</p>
+<p>======================================================================
+QUALITY BAR
+======================================================================</p>
+<p>This plan must:
+- Survive expert review (behavioral contracts are sound)
+- Survive systems-level scrutiny (architecture is correct)
+- Eliminate dead code (all code exercisable immediately)
+- Reduce implementation bugs (TDD, explicit verifications)
+- Stay strictly within source document scope (deviations justified)
+- Pass golangci-lint with zero new issues
+- Enable automated execution (complete code, exact commands)
+- Map every contract to a task (traceability)</p>
+<p>======================================================================
+LINTING REQUIREMENTS
+======================================================================</p>
+<p>This project uses golangci-lint for static analysis.
+Version is pinned in CI (see .github/workflows/ci.yml).</p>
+<p>Local verification (run before submitting PR):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...
+</code></pre></div></p>
+<p>Rules:
+1. All NEW code must pass lint with zero issues.
+2. Do not fix pre-existing lint issues in unrelated code (scope creep).
+3. If a lint rule seems wrong, document why and discuss before disabling.</p>
+<p>======================================================================</p>
+<p>Think carefully.
+Inspect deeply.
+Design defensively.
+Break into executable tasks.
+Verify every step.
+Direct the reviewer's attention wisely.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../macro-plan/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Macro Plan">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Macro Plan
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../hypothesis/" class="md-footer__link md-footer__link--next" aria-label="Next: Hypothesis">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Hypothesis
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

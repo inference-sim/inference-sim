@@ -1,0 +1,4102 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../macro-planning/">
+      
+      
+        <link rel="next" href="../convergence/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Hypothesis Experiments - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#hypothesis-experiment-process" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Hypothesis Experiments
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpreting Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/experimentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experimentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../macro-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-Step Process
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-0-create-isolated-worktree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 0: Create Isolated Worktree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-1-select-and-classify-hypothesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Select and Classify Hypothesis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-design-experiment-design-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Design Experiment + Design Review
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Design Experiment + Design Review">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#design-review-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design Review Perspectives
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-human-approval-of-experiment-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Human Approval of Experiment Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-implement-experiment-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Implement Experiment Code
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-code-review-5-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Code Review (5 perspectives)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 5: Code Review (5 perspectives)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#code-review-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Review Perspectives
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-6-run-experiments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6: Run Experiments
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-7-analyze-and-document-findingsmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7: Analyze and Document FINDINGS.md
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-8-findings-review-10-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8: FINDINGS Review (10 perspectives)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 8: FINDINGS Review (10 perspectives)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#findings-review-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FINDINGS Review Perspectives
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-9-self-audit-6-dimensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 9: Self-Audit (6 dimensions)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-10-verification-gate-commit-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 10: Verification Gate + Commit + PR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#universal-convergence-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Universal Convergence Protocol
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallel-execution-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallel Execution Mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Parallel Execution Mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coordination-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coordination Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consolidation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consolidation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#two-track-issue-filing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two-Track Issue Filing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Two-Track Issue Filing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#immediate-track-file-as-soon-as-discovered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Immediate Track (file as soon as discovered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-convergence-track-file-after-convergence-pr-creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-Convergence Track (file AFTER convergence + PR creation)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quality-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quality Gates
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quality Gates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pre-execution-gates-check-before-running-experiments-step-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-Execution Gates (check BEFORE running experiments — Step 5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-round-gates-check-after-each-findings-review-round-step-8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Round Gates (check after each FINDINGS Review round — Step 8)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#final-gates-check-before-pr-step-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Final Gates (check before PR — Step 10)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-pr-gates-check-after-pr-creation-step-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-PR Gates (check after PR creation — Step 10)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-to-run-experiments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Run Experiments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generating-hypotheses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generating Hypotheses
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Generating Hypotheses">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sources-of-hypotheses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sources of hypotheses
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-makes-a-good-hypothesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What makes a good hypothesis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#anti-patterns-in-hypothesis-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anti-patterns in hypothesis generation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-propose-a-new-hypothesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to propose a new hypothesis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#issue-taxonomy-after-convergence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue Taxonomy (after convergence)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#promotion-of-confirmed-hypotheses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Promotion of Confirmed Hypotheses
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Promotion of Confirmed Hypotheses">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-to-promote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to promote
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-a-promoted-test-looks-like" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a promoted test looks like
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-iterate-until-convergence-not-fixed-rounds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Iterate Until Convergence (Not Fixed Rounds)?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Iterate Until Convergence (Not Fixed Rounds)?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-internal-agents-beat-external-llms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why internal agents beat external LLMs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-workflow-evolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix: Workflow Evolution
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-Step Process
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-0-create-isolated-worktree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 0: Create Isolated Worktree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-1-select-and-classify-hypothesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Select and Classify Hypothesis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-design-experiment-design-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Design Experiment + Design Review
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Design Experiment + Design Review">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#design-review-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design Review Perspectives
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-human-approval-of-experiment-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Human Approval of Experiment Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-implement-experiment-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Implement Experiment Code
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-code-review-5-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Code Review (5 perspectives)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 5: Code Review (5 perspectives)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#code-review-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Review Perspectives
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-6-run-experiments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6: Run Experiments
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-7-analyze-and-document-findingsmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7: Analyze and Document FINDINGS.md
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-8-findings-review-10-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8: FINDINGS Review (10 perspectives)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 8: FINDINGS Review (10 perspectives)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#findings-review-perspectives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FINDINGS Review Perspectives
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-9-self-audit-6-dimensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 9: Self-Audit (6 dimensions)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-10-verification-gate-commit-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 10: Verification Gate + Commit + PR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#universal-convergence-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Universal Convergence Protocol
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallel-execution-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallel Execution Mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Parallel Execution Mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coordination-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coordination Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consolidation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consolidation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#two-track-issue-filing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two-Track Issue Filing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Two-Track Issue Filing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#immediate-track-file-as-soon-as-discovered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Immediate Track (file as soon as discovered)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-convergence-track-file-after-convergence-pr-creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-Convergence Track (file AFTER convergence + PR creation)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quality-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quality Gates
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quality Gates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pre-execution-gates-check-before-running-experiments-step-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-Execution Gates (check BEFORE running experiments — Step 5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-round-gates-check-after-each-findings-review-round-step-8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Round Gates (check after each FINDINGS Review round — Step 8)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#final-gates-check-before-pr-step-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Final Gates (check before PR — Step 10)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-pr-gates-check-after-pr-creation-step-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-PR Gates (check after PR creation — Step 10)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-to-run-experiments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Run Experiments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generating-hypotheses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generating Hypotheses
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Generating Hypotheses">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sources-of-hypotheses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sources of hypotheses
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-makes-a-good-hypothesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What makes a good hypothesis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#anti-patterns-in-hypothesis-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anti-patterns in hypothesis generation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-propose-a-new-hypothesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to propose a new hypothesis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#issue-taxonomy-after-convergence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue Taxonomy (after convergence)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#promotion-of-confirmed-hypotheses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Promotion of Confirmed Hypotheses
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Promotion of Confirmed Hypotheses">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-to-promote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to promote
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-a-promoted-test-looks-like" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a promoted test looks like
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-iterate-until-convergence-not-fixed-rounds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Iterate Until Convergence (Not Fixed Rounds)?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Iterate Until Convergence (Not Fixed Rounds)?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-internal-agents-beat-external-llms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why internal agents beat external LLMs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-workflow-evolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix: Workflow Evolution
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="hypothesis-experiment-process">Hypothesis Experiment Process<a class="headerlink" href="#hypothesis-experiment-process" title="Permanent link">&para;</a></h1>
+<p><strong>Status:</strong> Active (v2.0 — updated 2026-02-23)</p>
+<p>This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see <a href="../standards/experiments/">docs/contributing/standards/experiments.md</a>. For the FINDINGS.md template, see <a href="../templates/hypothesis/">docs/contributing/templates/hypothesis.md</a>. For experiment status and coverage gaps, see <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">hypotheses/README.md</a>.</p>
+<hr />
+<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
+<p>This workflow uses the following Claude Code skills. Each has a manual alternative for contributors without AI tools.</p>
+<table>
+<thead>
+<tr>
+<th>Skill</th>
+<th>Purpose</th>
+<th>Used In</th>
+<th>Manual Alternative</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>superpowers:using-git-worktrees</code></td>
+<td>Create isolated workspace</td>
+<td>Step 0</td>
+<td><code>git worktree add .worktrees/h-&lt;name&gt; -b h-&lt;name&gt;</code></td>
+</tr>
+<tr>
+<td><code>convergence-review</code></td>
+<td>Dispatch parallel perspectives and enforce convergence</td>
+<td>Steps 2, 5, 8</td>
+<td>Sequential manual checklists (one per perspective) using the checklist sections below</td>
+</tr>
+<tr>
+<td><code>commit-commands:commit-push-pr</code></td>
+<td>Commit, push, create PR</td>
+<td>Step 10</td>
+<td>Standard git commands (<code>git add</code>, <code>git commit</code>, <code>git push</code>, <code>gh pr create</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>For external contributors without AI review infrastructure:</strong> Submit your experiment artifacts via PR. Maintainers will run the review protocols on your behalf. You can also conduct reviews manually by having people review with the perspective checklists documented in each gate.</p>
+<hr />
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│ Step 0: Create Worktree          │ (Isolated workspace)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>└──────────┬───────────────────────┘
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>           │
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>           ▼
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│ Step 1: Select &amp; Classify        │ (Family, VV&amp;UQ, type)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>└──────────┬───────────────────────┘
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>           │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>           ▼
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│ Step 2: Design + Design Review   │ (5 perspectives → convergence)
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>└──────────┬───────────────────────┘
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>           │
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>           ▼
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│ Step 3: Human Approval           │ (Approve design before implementation)
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>└──────────┬───────────────────────┘
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>           │
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>           ▼
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>│ Step 4: Implement                │ (run.sh + analyze.py using harness)
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>└──────────┬───────────────────────┘
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>           │
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>           ▼
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│ Step 5: Code Review              │ (5 perspectives → convergence)
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>└──────────┬───────────────────────┘
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>           │
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>           ▼
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│ Step 6: Run Experiments          │ (Execute across seeds)
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>└──────────┬───────────────────────┘
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>           │
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>           ▼
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>│ Step 7: Analyze &amp; Document       │ (FINDINGS.md)
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>└──────────┬───────────────────────┘
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>           │
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>           ▼
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>│ Step 8: FINDINGS Review          │ (10 perspectives → convergence)
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>└──────────┬───────────────────────┘  ↑ (iterate rounds until convergence)
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>           │
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>           ▼
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>│ Step 9: Self-Audit               │ (6 dimensions, no agent)
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>└──────────┬───────────────────────┘
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>           │
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>           ▼
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>┌──────────────────────────────────┐
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>│ Step 10: Verify + Commit + PR    │ (verification gate, commit-push-pr)
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>└──────────────────────────────────┘
+</code></pre></div>
+<p><strong>Key insights:</strong>
+1. <strong>Three review gates</strong> at different lifecycle stages — each catches issues the others cannot
+2. <strong>Human gate before implementation</strong> (Step 3) — prevents wasted experiment runs
+3. <strong>Universal convergence protocol</strong> — same rules for all three gates
+4. <strong>Self-audit</strong> — catches substance issues that pattern-matching agents miss</p>
+<hr />
+<h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0. Worktree</strong></td>
+<td><code>/superpowers:using-git-worktrees h-&lt;name&gt;</code></td>
+</tr>
+<tr>
+<td><strong>1. Classify</strong></td>
+<td>Choose family, VV&amp;UQ category, type from <a href="../standards/experiments/">experiments.md</a></td>
+</tr>
+<tr>
+<td><strong>2. Design</strong></td>
+<td>ED-1–ED-6 compliance, then 5-perspective Design Review</td>
+</tr>
+<tr>
+<td><strong>3. Human gate</strong></td>
+<td>Present design for approval — pause until approved</td>
+</tr>
+<tr>
+<td><strong>4. Implement</strong></td>
+<td><code>run.sh</code> + <code>analyze.py</code> using <code>hypotheses/lib/</code> harness</td>
+</tr>
+<tr>
+<td><strong>5. Code Review</strong></td>
+<td>5-perspective code review → convergence</td>
+</tr>
+<tr>
+<td><strong>6. Run</strong></td>
+<td>Execute <code>./run.sh</code> across required seeds</td>
+</tr>
+<tr>
+<td><strong>7. Document</strong></td>
+<td>Write FINDINGS.md using <a href="../templates/hypothesis/">template</a></td>
+</tr>
+<tr>
+<td><strong>8. FINDINGS Review</strong></td>
+<td>10-perspective review → convergence (iterate rounds)</td>
+</tr>
+<tr>
+<td><strong>9. Self-audit</strong></td>
+<td>6 dimensions of deliberate critical thinking</td>
+</tr>
+<tr>
+<td><strong>10. Commit + PR</strong></td>
+<td>Verification gate (if code fixes) + <code>/commit-commands:commit-push-pr</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="step-by-step-process">Step-by-Step Process<a class="headerlink" href="#step-by-step-process" title="Permanent link">&para;</a></h2>
+<h3 id="step-0-create-isolated-worktree">Step 0: Create Isolated Worktree<a class="headerlink" href="#step-0-create-isolated-worktree" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Main repo (inference-sim)</p>
+<p>Create an isolated workspace BEFORE any work begins.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>/superpowers:using-git-worktrees h-&lt;hypothesis-name&gt;
+</code></pre></div>
+<p>This creates <code>.worktrees/h-&lt;name&gt;/</code> with a new branch. All subsequent steps happen in the worktree.</p>
+<p><strong>Manual alternative:</strong> <code>git worktree add .worktrees/h-&lt;name&gt; -b h-&lt;name&gt; &amp;&amp; cd .worktrees/h-&lt;name&gt;</code></p>
+<hr />
+<h3 id="step-1-select-and-classify-hypothesis">Step 1: Select and Classify Hypothesis<a class="headerlink" href="#step-1-select-and-classify-hypothesis" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree</p>
+<ol>
+<li><strong>Select hypothesis</strong> — from <code>docs/plans/research.md</code>, coverage gaps in <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">hypotheses/README.md</a>, or a new observation</li>
+<li><strong>Classify:</strong></li>
+<li>(a) Which <strong>family</strong>? (See <a href="../standards/experiments/">experiments.md</a> for the 6 families and sentence patterns)</li>
+<li>(b) <strong>Verification</strong>, <strong>Validation</strong>, or <strong>UQ</strong>? (Determines evidence requirements)</li>
+<li>(c) <strong>Deterministic</strong> or <strong>statistical</strong>? If statistical, which subtype (dominance, monotonicity, equivalence, Pareto)?</li>
+</ol>
+<p>The family determines design rules; the VV&amp;UQ category determines evidence requirements.</p>
+<p><strong>Tip:</strong> Pose the hypothesis WITHOUT reading the code first. Code-grounded hypotheses test implementation, not behavior. See <a href="#generating-hypotheses">Generating Hypotheses</a> below.</p>
+<hr />
+<h3 id="step-2-design-experiment-design-review">Step 2: Design Experiment + Design Review<a class="headerlink" href="#step-2-design-experiment-design-review" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree</p>
+<p><strong>Design the experiment</strong> following ED-1 through ED-6 (see <a href="../standards/experiments/">experiments.md</a>):
+- ED-1: Controlled comparison (vary exactly one dimension)
+- ED-2: Rate awareness (run at target rate AND where effect should vanish)
+- ED-3: Precondition verification (in script, not just prose)
+- ED-4: Workload seed independence
+- ED-5: Reproducibility (everything from <code>run.sh</code> alone)
+- ED-6: Config diff against referenced experiments</p>
+<p>Then run the <strong>5-perspective Design Review</strong> using the <a href="#universal-convergence-protocol">universal convergence protocol</a>.</p>
+<p><strong>Primary mechanism (Claude Code):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>/convergence-review h-design
+</code></pre></div></p>
+<p><strong>Manual alternative:</strong> Launch all 5 perspectives as parallel Task agents (or review sequentially with each checklist below), then apply the convergence protocol.</p>
+<h4 id="design-review-perspectives">Design Review Perspectives<a class="headerlink" href="#design-review-perspectives" title="Permanent link">&para;</a></h4>
+<p><strong>Perspective 1 — Hypothesis Quality:</strong>
+- Is the hypothesis behavioral, testable, and diagnostic?
+- Does it follow the family-specific sentence pattern from experiments.md?
+- Is the diagnostic clause present ("If this fails, it would indicate...")?
+- Is it correctly classified (family, VV&amp;UQ category, type)?</p>
+<p><strong>Perspective 2 — Experiment Design Rigor (ED-1–ED-6):</strong>
+- Is exactly one dimension varied? (ED-1)
+- Is there a rate where the effect should vanish, to confirm mechanism dependence? (ED-2)
+- Are preconditions verified in the script? (ED-3)
+- Is seed handling correct? (ED-4)
+- Is the experiment reproducible from <code>run.sh</code> alone? (ED-5)
+- If reusing calibration from a prior experiment, is the config diff documented? (ED-6)</p>
+<p><strong>Perspective 3 — Parameter Calibration:</strong>
+- Are parameters computed analytically from known coefficients (alpha/beta), not guessed?
+- Are capacity estimates matched to the actual workload mode (CLI defaults vs workload-spec YAML)?
+- Is the operating point correct for the intended effect? (e.g., near saturation for queueing effects, sub-saturation for baseline)</p>
+<p><strong>Perspective 4 — Control Completeness:</strong>
+- Does every proposed mechanism have a planned control experiment? (RCV-4)
+- Does each control isolate exactly one variable?
+- Is the baseline configuration clearly defined?</p>
+<p><strong>Perspective 5 — DES and Domain Fit:</strong>
+- Will the experiment create the conditions needed for the hypothesis to be testable?
+- Are there DES-specific subtleties (event ordering, clock granularity, alpha overhead) that could confound results?
+- Is the experiment duration sufficient? Is the warmup period adequate?</p>
+<p><strong>Cross-gate regression:</strong> If a later gate (Code Review, FINDINGS Review) discovers a design-level flaw (e.g., confounding variable, wrong operating point), the workflow loops back to Step 2 for re-design, re-convergence, and re-approval.</p>
+<hr />
+<h3 id="step-3-human-approval-of-experiment-design">Step 3: Human Approval of Experiment Design<a class="headerlink" href="#step-3-human-approval-of-experiment-design" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree (after Design Review convergence)</p>
+<p>Present the experiment design for human approval. The human reviews:
+- Hypothesis classification (family, VV&amp;UQ, type)
+- Experiment design (ED-1–ED-6 compliance)
+- Parameter choices (computed from coefficients, not guessed)
+- Planned controls (one per proposed mechanism)
+- Expected outcomes and diagnostic implications</p>
+<p><strong>This is a hard gate.</strong> Do not proceed to implementation until the human approves. Do not say "I'll proceed unless you stop me." The pause is the point.</p>
+<p><strong>In parallel mode:</strong> Each hypothesis gets its own independent human approval. The team lead presents each design; the human approves each independently.</p>
+<hr />
+<h3 id="step-4-implement-experiment-code">Step 4: Implement Experiment Code<a class="headerlink" href="#step-4-implement-experiment-code" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree (after human approval)</p>
+<p>Create <code>hypotheses/&lt;name&gt;/run.sh</code> and <code>hypotheses/&lt;name&gt;/analyze.py</code>.</p>
+<p><strong>Harness requirements (mandatory):</strong>
+- <code>run.sh</code> MUST source <code>hypotheses/lib/harness.sh</code> and use <code>blis_run</code> for every simulation call
+- Every <code>blis_run</code> call MUST have an appropriate timeout tier (<code>TIMEOUT_QUICK</code>/<code>TIMEOUT_STANDARD</code>/<code>TIMEOUT_EXTENDED</code>)
+- If using <code>--total-kv-blocks</code>, call <code>preflight_kv_check</code> with max expected input tokens
+- <code>analyze.py</code> MUST import <code>analyze_helpers</code> and use <code>parse_blis_output</code> (handles timeouts gracefully)</p>
+<p><strong>Reference comment:</strong> If reusing calibration from a prior experiment, include <code># Reference: hypotheses/&lt;name&gt;/run.sh</code> with the file path.</p>
+<hr />
+<h3 id="step-5-code-review-5-perspectives">Step 5: Code Review (5 perspectives)<a class="headerlink" href="#step-5-code-review-5-perspectives" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree (after implementation, BEFORE running experiments)</p>
+<p><strong>Every <code>run.sh</code> and <code>analyze.py</code> must be code-reviewed BEFORE running experiments.</strong> This is non-negotiable. Three of four major bugs in PR #310 would have been caught by code review before a single experiment ran.</p>
+<p><strong>Cross-gate regression:</strong> If this gate discovers a design-level flaw (e.g., confounding variable, wrong operating point), loop back to <a href="#step-2-design-experiment--design-review">Step 2</a> for re-design, re-convergence, and re-approval. The experiment-wide limit of 2 cross-gate regressions applies (see <a href="#step-8-findings-review-10-perspectives">Step 8</a> for the circuit breaker).</p>
+<p>Run the <strong>5-perspective Code Review</strong> using the <a href="#universal-convergence-protocol">universal convergence protocol</a>.</p>
+<p><strong>Primary mechanism (Claude Code):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>/convergence-review h-code hypotheses/&lt;name&gt;/
+</code></pre></div></p>
+<p><strong>Manual alternative:</strong> Launch all 5 perspectives as parallel Task agents (or review sequentially with each checklist below), then apply the convergence protocol.</p>
+<h4 id="code-review-perspectives">Code Review Perspectives<a class="headerlink" href="#code-review-perspectives" title="Permanent link">&para;</a></h4>
+<p><strong>Perspective 1 — Parser–Output Format Agreement:</strong>
+- For every regex or field extraction in <code>analyze.py</code>, verify the pattern matches the actual output format in the simulator code
+- <code>cmd/root.go</code> — what text does the CLI print? (e.g., <code>"Preemption Rate: %.4f"</code>)
+- <code>sim/metrics_utils.go</code> — what JSON fields exist?
+- Match every regex in <code>analyze.py</code> against the format string in the producer code
+- <strong>Silent defaults</strong>: Verify that when a regex matches nothing, <code>analyze.py</code> emits a warning to stderr rather than silently defaulting to 0</p>
+<p><strong>Perspective 2 — CLI Flag Correctness:</strong>
+- For every flag in <code>run.sh</code>, verify the flag name and value match <code>cmd/root.go</code> defaults and help text
+- Check for typos that strict parsing would reject
+- Cross-reference every CLI flag against <code>cmd/root.go</code> flag definitions</p>
+<p><strong>Perspective 3 — YAML Field Validation:</strong>
+- Verify workload YAML field names against <code>sim/workload/spec.go</code> struct tags
+- <code>KnownFields(true)</code> will reject typos at runtime, but catching them at review saves a failed experiment run</p>
+<p><strong>Perspective 4 — Config Diff (ED-6):</strong>
+- If the experiment reuses calibration from a prior experiment, diff every CLI flag and YAML field between the two experiments
+- Explicitly list differences
+- Verify the <code># Reference:</code> comment in <code>run.sh</code> points to the correct file</p>
+<p><strong>Perspective 5 — Seed and Determinism:</strong>
+- Verify <code>--seed</code> is passed correctly and workload YAML <code>seed:</code> field doesn't conflict
+- Verify seeds vary across runs as intended (ED-4)
+- Check that <code>run.sh</code> builds the binary and is fully self-contained (ED-5)</p>
+<p><strong>Evidence: what code review catches</strong></p>
+<table>
+<thead>
+<tr>
+<th>Bug</th>
+<th>Round discovered</th>
+<th>Would code review have caught it?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>YAML <code>input_dist</code> vs <code>input_distribution</code> (H5)</td>
+<td>Round 1 run failure</td>
+<td><strong>Yes</strong> — cross-ref against <code>spec.go</code> struct tags</td>
+</tr>
+<tr>
+<td>Analyzer regex <code>Preemptions?: (\d+)</code> vs actual <code>Preemption Rate: 0.1750</code> (H10)</td>
+<td>Round 4</td>
+<td><strong>Yes</strong> — cross-ref against <code>cmd/root.go</code> format string</td>
+</tr>
+<tr>
+<td>H10 routing policy mismatch with H8</td>
+<td>Round 2</td>
+<td><strong>Yes</strong> — ED-6 config diff</td>
+</tr>
+<tr>
+<td>H5 bucket cap=500 &lt; mean_input=512</td>
+<td>Round 2</td>
+<td><strong>Possibly</strong> — first-principles check on parameters</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="step-6-run-experiments">Step 6: Run Experiments<a class="headerlink" href="#step-6-run-experiments" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree (after Code Review convergence)</p>
+<p>Execute experiments across required seeds:
+- <strong>Deterministic experiments:</strong> Single seed sufficient (determinism is the point)
+- <strong>Statistical experiments:</strong> Minimum 3 seeds (42, 123, 456) for each configuration
+- Verify reproducibility: running <code>./run.sh</code> twice produces identical output (ED-5)</p>
+<hr />
+<h3 id="step-7-analyze-and-document-findingsmd">Step 7: Analyze and Document FINDINGS.md<a class="headerlink" href="#step-7-analyze-and-document-findingsmd" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree (after experiments complete)</p>
+<ol>
+<li><strong>Analyze</strong> — produce comparison tables, compute effect sizes</li>
+<li><strong>Verify root cause</strong> — trace every causal claim through code (RCV-1, RCV-2, RCV-3)</li>
+<li><strong>Document FINDINGS.md</strong> — use the <a href="../templates/hypothesis/">template</a>. All sections must be present and non-empty.</li>
+<li><strong>Update <code>hypotheses/README.md</code></strong> — add a row to the "Validated Hypotheses" table and update "Coverage by Family" if needed</li>
+</ol>
+<hr />
+<h3 id="step-8-findings-review-10-perspectives">Step 8: FINDINGS Review (10 perspectives)<a class="headerlink" href="#step-8-findings-review-10-perspectives" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree (after FINDINGS.md documented)</p>
+<p>Run the <strong>10-perspective FINDINGS Review</strong> using the <a href="#universal-convergence-protocol">universal convergence protocol</a>.</p>
+<p><strong>Primary mechanism (Claude Code):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>/convergence-review h-findings hypotheses/&lt;name&gt;/FINDINGS.md
+</code></pre></div></p>
+<p><strong>Manual alternative:</strong> Launch all 10 as parallel Task agents (each receives the FINDINGS.md path and its specific focus area), then apply the convergence protocol.</p>
+<p><strong>Cross-gate regression:</strong> If this gate discovers a design-level flaw (e.g., confounding variable not identified in design), loop back to <a href="#step-2-design-experiment--design-review">Step 2</a> for re-design, re-convergence, and re-approval. Maximum 2 cross-gate regressions per experiment (across all gates combined) — if the design still has fundamental issues after 2 regressions, suspend the experiment and escalate for a re-scoping decision.</p>
+<h4 id="findings-review-perspectives">FINDINGS Review Perspectives<a class="headerlink" href="#findings-review-perspectives" title="Permanent link">&para;</a></h4>
+<p><strong>Reviewer 1 — Code Verifier:</strong>
+- READ the actual source files cited in the FINDINGS.md. Verify every <code>file:line</code> citation against current code.
+- Does the code at the cited location actually produce the claimed behavior?
+- Are there off-by-one errors in line citations? (Acceptable: ±2 lines. Flag: &gt;2 lines off.)
+- Does the mechanism explanation match what the code does, not just what it's named?</p>
+<p><strong>Reviewer 2 — Experiment Designer:</strong>
+- Are there confounding variables? Is exactly one dimension varied? (ED-1)
+- Was the experiment run at a rate where the effect should vanish, to confirm mechanism dependence? (ED-2)
+- Are experiment preconditions verified in the script (e.g., queue depth &gt; batch size for SJF tests)? (ED-3)
+- Is workload seed handling correct? Does <code>--seed</code> on the CLI properly vary across runs? (ED-4)
+- Is the experiment reproducible from <code>run.sh</code> alone — binary built, seeds documented, no manual steps? (ED-5)
+- Is the config diff against referenced experiments documented? (ED-6)
+- Are there missing control experiments or confound matrix cells?
+- Are parameters properly calibrated? (e.g., bucket cap vs mean input)
+- Cross-reference every CLI flag in <code>run.sh</code> against <code>cmd/root.go</code> flag definitions.
+- Cross-reference every YAML field name against <code>sim/workload/spec.go</code> struct tags.</p>
+<p><strong>Reviewer 3 — Statistical Rigor:</strong>
+- Are "surprises" computed from first principles? (RCV-2)
+- Is the sample size adequate (seeds, operating points)?
+- Are claims properly scoped (not over-generalized from narrow evidence)?
+- Is the evidence quality table complete and honest?
+- Do per-seed effect sizes meet the legacy thresholds (&gt;20% for dominance, &lt;5% for equivalence)?
+- Is the status classification consistent with the data? (e.g., "Confirmed" requires &gt;20% in ALL seeds.)</p>
+<p><strong>Reviewer 4 — Control Experiment Auditor:</strong>
+- Does every proposed mechanism (RCV-3) have a corresponding control experiment (RCV-4)?
+- Were control experiments actually EXECUTED, not just proposed? Look for conditional language ("one would test", "could be confirmed by") vs past tense with data ("the control showed 0.0% difference"). Verify that control results appear in the Results section with actual numbers, not just in Root Cause Analysis as narrative.
+- Does each control isolate exactly one variable? Diff the CLI flags between treatment and control runs in <code>run.sh</code> — the control should differ by exactly one flag or parameter.
+- Do the control results confirm or refute the proposed mechanism?
+- Do the control experiment results in the Evidence Quality table accurately reflect the current round (not stale text from a prior round)?
+- Does the mechanism explain the direction using experimental evidence, not just code-reading claims?</p>
+<p><strong>Reviewer 5 — Standards Compliance:</strong>
+- Are ALL FINDINGS.md sections present and non-empty? (per <code>docs/contributing/templates/hypothesis.md</code>)
+- Is the hypothesis correctly classified (family, VV&amp;UQ category, type)?
+- Does the Devil's Advocate section (RCV-5) argue both directions convincingly?
+- Are scope and limitations (RCV-6) complete — operating point, dependencies, what was NOT tested, generalizability, UQ?
+- Does the standards audit correctly check findings against <code>docs/contributing/standards/rules.md</code> and <code>docs/contributing/standards/invariants.md</code>?
+- Are any new rules or invariants warranted by the findings?</p>
+<p><strong>Reviewer 6 — Substance and Logic:</strong>
+- Are there logical errors in the conclusions?
+- Are there mathematical mistakes in effect size calculations or statistical claims?
+- Does the evidence actually support the claims? (Not just "the numbers are close enough")
+- Are alternative explanations adequately considered?</p>
+<p><strong>Reviewer 7 — DES Mechanism Expert:</strong>
+- Are there event-ordering subtleties that could explain the results differently?
+- Are assumptions about DES timing correct (alpha overhead, step quantization, clock granularity)?
+- Could the result be an artifact of the simulation architecture rather than the modeled system behavior?</p>
+<p><strong>Reviewer 8 — Reproducibility and Robustness:</strong>
+- Can <code>run.sh</code> reproduce the results from scratch on a clean checkout?
+- Are results fragile to small parameter variations? (Would ±10% on key parameters change the conclusion?)
+- Are all intermediate files generated by the script, not checked in as stale artifacts?</p>
+<p><strong>Reviewer 9 — Cross-Experiment Consistency:</strong>
+- Do the findings contradict any prior experiment results? If so, is the contradiction acknowledged and explained?
+- Are references to prior experiments accurate? (Check specific claims against referenced FINDINGS.md files)
+- Are there stale references to prior rounds that should have been updated?</p>
+<p><strong>Reviewer 10 — User Guidance and Actionability:</strong>
+- Are the "Implications for Users" practical and specific enough to act on?
+- Are proposed issues (bugs, enhancements, follow-up hypotheses) well-scoped?
+- Would a BLIS user reading this FINDINGS.md understand what to do differently?</p>
+<p>The overlap between reviewers is intentional — different perspectives checking the same FINDINGS.md catch different issues. Evidence from PR #385: Reviewer 1 (code) and Reviewer 3 (rigor) both caught H19's stale evidence quality row; Reviewer 2 (design) caught H16's sub-threshold seed; Reviewer 4 (control) caught H21's unexecuted control experiments.</p>
+<hr />
+<h3 id="step-9-self-audit-6-dimensions">Step 9: Self-Audit (6 dimensions)<a class="headerlink" href="#step-9-self-audit-6-dimensions" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree (after FINDINGS Review convergence)</p>
+<blockquote>
+<p><strong>For Claude:</strong> This is NOT an agent pass. Stop, think critically, and answer each question from your own reasoning. Do NOT dispatch agents.</p>
+</blockquote>
+<p><strong>Why this step exists:</strong> In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues. Automated review perspectives check structure; this step checks substance.</p>
+<p><strong>Self-audit dimensions — think through each one:</strong></p>
+<ol>
+<li><strong>Logic bugs in analyzer code:</strong> Trace through <code>analyze.py</code> mentally. Are there edge cases where regex parsing silently defaults to 0? Could integer vs float conversion produce wrong results?</li>
+<li><strong>Results determinism/reproducibility:</strong> Would running <code>./run.sh</code> again produce identical output? Are there any non-deterministic dependencies (timestamps, system load, file ordering)?</li>
+<li><strong>FINDINGS.md internal consistency:</strong> Does the Status match the data in the Results section? Does the Devil's Advocate section actually argue against the conclusion? Are all per-seed values consistent with the summary?</li>
+<li><strong>Cross-experiment contradictions:</strong> Do these findings contradict any known BLIS behavior documented in prior experiments or MEMORY.md? If so, is the contradiction explained?</li>
+<li><strong>User guidance practicality:</strong> Would a BLIS user know what to do with these findings? Are the implications actionable?</li>
+<li><strong>Issue filing completeness:</strong> For each actionable finding, is there a clear issue to file? Are there findings that need issues but don't have them planned?</li>
+</ol>
+<p><strong>Fix all issues found. Then proceed to Step 10.</strong></p>
+<hr />
+<h3 id="step-10-verification-gate-commit-pr">Step 10: Verification Gate + Commit + PR<a class="headerlink" href="#step-10-verification-gate-commit-pr" title="Permanent link">&para;</a></h3>
+<p><strong>Context:</strong> Worktree (after self-audit)</p>
+<p><strong>If the experiment discovered code fixes</strong> (e.g., #386 KV livelock, #387 conservation test update), run the verification gate before committing:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>go<span class="w"> </span>build<span class="w"> </span>./...<span class="w">          </span><span class="c1"># Build passes</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...<span class="w"> </span>-count<span class="o">=</span><span class="m">1</span><span class="w">  </span><span class="c1"># All tests pass</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...<span class="w"> </span><span class="c1"># Zero lint issues</span>
+</code></pre></div>
+<p><strong>Commit and PR:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>/commit-commands:commit-push-pr
+</code></pre></div>
+<p>The PR description should include:
+- Hypothesis sentence and status
+- Key findings (1-3 bullet points)
+- <code>Fixes #NNN</code> for any issues this experiment addresses</p>
+<p><strong>Manual alternative:</strong> Standard git commands (<code>git add</code>, <code>git commit</code>, <code>git push</code>, <code>gh pr create</code>).</p>
+<p><strong>Post-PR issue filing:</strong> See <a href="#two-track-issue-filing">Two-Track Issue Filing</a> below.</p>
+<hr />
+<h2 id="universal-convergence-protocol">Universal Convergence Protocol<a class="headerlink" href="#universal-convergence-protocol" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>Canonical source:</strong> <a href="../convergence/"><code>docs/contributing/convergence.md</code></a>. If this section diverges, convergence.md is authoritative.</p>
+</blockquote>
+<p>All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See <a href="../convergence/"><code>docs/contributing/convergence.md</code></a> for the full protocol, severity definitions, agent failure handling, and expected convergence rates.</p>
+<blockquote>
+<p><strong>Executable implementation:</strong> The <code>convergence-review</code> skill automates this protocol. Invoke with <code>/convergence-review &lt;gate-type&gt; [artifact-path] [--model opus|sonnet|haiku]</code>.</p>
+</blockquote>
+<hr />
+<h2 id="parallel-execution-mode">Parallel Execution Mode<a class="headerlink" href="#parallel-execution-mode" title="Permanent link">&para;</a></h2>
+<p>The #385/#390 pattern: run N hypothesis experiments simultaneously with a team lead coordinating.</p>
+<h3 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Team lead creates worktree:</strong> <code>.worktrees/h-&lt;batch-name&gt;/</code></li>
+<li><strong>Team lead builds binary once:</strong> <code>go build -o simulation_worker main.go</code> (agents reference this shared binary)</li>
+<li><strong>Team lead creates team</strong> with N hypothesis agents, each assigned to <code>hypotheses/&lt;name&gt;/</code></li>
+<li>Each agent runs the full pipeline independently (Steps 1-9)</li>
+</ol>
+<h3 id="coordination-rules">Coordination Rules<a class="headerlink" href="#coordination-rules" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Each agent creates files ONLY in its own <code>hypotheses/&lt;name&gt;/</code> directory — no file conflicts</li>
+<li><strong>README.md updates are deferred</strong> to the team lead's consolidation step (not done by individual agents)</li>
+<li><strong>Team lead MUST independently run convergence review</strong> for each experiment. Do NOT delegate convergence assessment to the same agent that ran the experiment. Evidence from #390: agents self-reported "Round 1 convergence" but actual independent review found 3 CRITICAL + 18 IMPORTANT issues.</li>
+<li><strong>Step 3 is a synchronization point.</strong> All agents pause at Step 3 until the human has reviewed and approved each design independently. The team lead should batch-present all designs for human review to minimize idle time.</li>
+<li>Solo mode is the degenerate case (team size = 1)</li>
+</ul>
+<h3 id="consolidation">Consolidation<a class="headerlink" href="#consolidation" title="Permanent link">&para;</a></h3>
+<p>After all agents complete:
+1. Team lead reviews all proposed issues for deduplication
+2. Team lead updates <code>hypotheses/README.md</code> with all new experiments
+3. Cross-experiment consistency check across all N experiments
+4. Single PR via <code>commit-push-pr</code> skill</p>
+<hr />
+<h2 id="two-track-issue-filing">Two-Track Issue Filing<a class="headerlink" href="#two-track-issue-filing" title="Permanent link">&para;</a></h2>
+<h3 id="immediate-track-file-as-soon-as-discovered">Immediate Track (file as soon as discovered)<a class="headerlink" href="#immediate-track-file-as-soon-as-discovered" title="Permanent link">&para;</a></h3>
+<p><strong>Only for bugs that affect experiment validity:</strong>
+- Simulator panics or crashes during experiment
+- Conservation violations (INV-1) discovered during analysis
+- Livelock or infinite loops (R19) preventing experiment completion
+- Data loss or silent failures affecting measured metrics</p>
+<p>Example: #386 (KV livelock) was filed immediately because it caused infinite preempt-requeue cycles.</p>
+<h3 id="post-convergence-track-file-after-convergence-pr-creation">Post-Convergence Track (file AFTER convergence + PR creation)<a class="headerlink" href="#post-convergence-track-file-after-convergence-pr-creation" title="Permanent link">&para;</a></h3>
+<p><strong>For all findings-derived issues:</strong>
+- Bugs found but not affecting current experiment validity
+- Enhancements, design limitations, new hypotheses
+- Standards updates (new rules, invariants)
+- Promotion to Go test suite</p>
+<p><strong>Why issues come last:</strong> Findings can change across rounds (H10 went from "untested" to "confirmed" between Rounds 3-4). Filing issues before convergence risks creating wrong issues. File once, file right.</p>
+<p>See <a href="#issue-taxonomy-after-convergence">Issue Taxonomy</a> for the complete filing guide.</p>
+<hr />
+<h2 id="quality-gates">Quality Gates<a class="headerlink" href="#quality-gates" title="Permanent link">&para;</a></h2>
+<h3 id="pre-execution-gates-check-before-running-experiments-step-5">Pre-Execution Gates (check BEFORE running experiments — Step 5)<a class="headerlink" href="#pre-execution-gates-check-before-running-experiments-step-5" title="Permanent link">&para;</a></h3>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>run.sh</code> sources <code>hypotheses/lib/harness.sh</code> and uses <code>blis_run</code> for every simulation call</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every <code>blis_run</code> call has an appropriate timeout tier (<code>TIMEOUT_QUICK</code>/<code>TIMEOUT_STANDARD</code>/<code>TIMEOUT_EXTENDED</code>)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> KV safety pre-flight: if experiment uses <code>--total-kv-blocks</code>, call <code>preflight_kv_check</code> with max expected input tokens</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>analyze.py</code> imports <code>analyze_helpers</code> and uses <code>parse_blis_output</code> (handles timeouts gracefully)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>run.sh</code> flags verified against <code>cmd/root.go</code> help text</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>analyze.py</code> regexes verified against actual output format strings in <code>cmd/root.go</code> and <code>sim/metrics_utils.go</code></li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Workload YAML field names verified against <code>sim/workload/spec.go</code> struct tags</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Config diff against referenced experiments documented (ED-6)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Code Review (5 perspectives) converged</li>
+</ul>
+<h3 id="per-round-gates-check-after-each-findings-review-round-step-8">Per-Round Gates (check after each FINDINGS Review round — Step 8)<a class="headerlink" href="#per-round-gates-check-after-each-findings-review-round-step-8" title="Permanent link">&para;</a></h3>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every causal claim cites <code>file:line</code> (RCV-1)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every "surprise" has a first-principles calculation (RCV-2)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Root cause explains mechanism AND direction (RCV-3)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> All reviewer assessments completed and all CRITICAL/IMPORTANT items addressed</li>
+</ul>
+<h3 id="final-gates-check-before-pr-step-10">Final Gates (check before PR — Step 10)<a class="headerlink" href="#final-gates-check-before-pr-step-10" title="Permanent link">&para;</a></h3>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Hypothesis classified (deterministic or statistical + subtype)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Experiment design follows ED-1 through ED-6</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> If reusing prior calibration data, config diff documented (ED-6)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Results reproducible via <code>./run.sh</code></li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>FINDINGS Review converged</strong>: zero CRITICAL and zero IMPORTANT items across all 10 reviewers in the current round</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Self-audit completed (6 dimensions)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> All review feedback addressed or explicitly acknowledged as open</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Findings classified per the findings table (including resolution type)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Standards audit completed</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Promotion assessment completed (see <a href="#promotion-of-confirmed-hypotheses">Promotion of Confirmed Hypotheses</a>)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>hypotheses/README.md</code> updated with new experiment row(s) and coverage changes</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> If code fixes involved: <code>go build</code>, <code>go test</code>, <code>golangci-lint</code> all pass</li>
+</ul>
+<h3 id="post-pr-gates-check-after-pr-creation-step-10">Post-PR Gates (check after PR creation — Step 10)<a class="headerlink" href="#post-pr-gates-check-after-pr-creation-step-10" title="Permanent link">&para;</a></h3>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Issues filed per <a href="#issue-taxonomy-after-convergence">Issue Taxonomy</a> — one per actionable finding</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Each issue has correct label (<code>bug</code>, <code>enhancement</code>, <code>hypothesis</code>, <code>design</code>, or <code>standards</code>)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Each issue references the PR number</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> No issues filed for "documented here" findings with no action needed</li>
+</ul>
+<hr />
+<h2 id="when-to-run-experiments">When to Run Experiments<a class="headerlink" href="#when-to-run-experiments" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Validating that a new feature works as designed (post-PR confirmation)</li>
+<li>Testing intuitive claims about system behavior (from <code>docs/plans/research.md</code>)</li>
+<li>Investigating unexpected behavior observed during development</li>
+<li>Exploring design tradeoffs between configurations</li>
+<li>Filling coverage gaps identified in the <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">family coverage table</a></li>
+</ul>
+<hr />
+<h2 id="generating-hypotheses">Generating Hypotheses<a class="headerlink" href="#generating-hypotheses" title="Permanent link">&para;</a></h2>
+<p>Hypotheses can come from <strong>internal</strong> sources (your own experiments and development) or <strong>external</strong> sources (user questions, literature, analytical models). This section provides structured guidance for generating good hypotheses. See also <a href="../standards/experiments/">experiments.md</a> for family-specific sentence patterns.</p>
+<h3 id="sources-of-hypotheses">Sources of hypotheses<a class="headerlink" href="#sources-of-hypotheses" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>How it works</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>User intuition</strong></td>
+<td>"I think X should be better than Y because of Z"</td>
+<td>"SJF should reduce TTFT for mixed workloads because short jobs finish first"</td>
+</tr>
+<tr>
+<td><strong>Coverage gaps</strong></td>
+<td>Check the <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">family coverage table</a> for untested families</td>
+<td>Workload/arrival family has 0 experiments → "Gamma sampler should match theoretical CV"</td>
+</tr>
+<tr>
+<td><strong>Experiment findings</strong></td>
+<td>Surprises and open questions from completed experiments spawn follow-up hypotheses</td>
+<td>H10's maybeOffload finding → "test at GPU=1500 for preemption-path offload"</td>
+</tr>
+<tr>
+<td><strong>Bug reports</strong></td>
+<td>"This behavior seems wrong" → formalize as a testable claim</td>
+<td>H12: preemption panic → "conservation should hold even under preemption pressure"</td>
+</tr>
+<tr>
+<td><strong>Analytical models</strong></td>
+<td>Divergence between theory and simulation → "does the DES match M/M/k under matching assumptions?"</td>
+<td>"Under Poisson arrivals, queue length should match M/M/k within 5%"</td>
+</tr>
+<tr>
+<td><strong>Literature / external</strong></td>
+<td>Published results about inference serving systems</td>
+<td>"Prefix caching should reduce TTFT proportional to prefix length (as in vLLM literature)"</td>
+</tr>
+<tr>
+<td><strong>Design docs</strong></td>
+<td>Claims made in design documents that have never been validated</td>
+<td>"The composable scorer framework should produce Pareto-optimal configurations"</td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-makes-a-good-hypothesis">What makes a good hypothesis<a class="headerlink" href="#what-makes-a-good-hypothesis" title="Permanent link">&para;</a></h3>
+<p>A good hypothesis is <strong>behavioral</strong> (about observable system behavior), <strong>testable</strong> (with a clear experiment), and <strong>diagnostic</strong> (failure points to something worth investigating).</p>
+<table>
+<thead>
+<tr>
+<th>Criterion</th>
+<th>Good</th>
+<th>Bad</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Behavioral</strong></td>
+<td>"Burst smoothing should reduce tail latency"</td>
+<td>"The token bucket decrements currentTokens correctly"</td>
+</tr>
+<tr>
+<td><strong>Testable</strong></td>
+<td>"TTFT should decrease monotonically as prefix_length increases"</td>
+<td>"The system should be fast"</td>
+</tr>
+<tr>
+<td><strong>Diagnostic</strong></td>
+<td>"If this fails, it indicates the cache eviction path has a bug"</td>
+<td>"If this fails, something is wrong"</td>
+</tr>
+<tr>
+<td><strong>Conceptual</strong></td>
+<td>"Tiered storage should reduce preemptions"</td>
+<td>"tiered.go:224 should delete the hash"</td>
+</tr>
+<tr>
+<td><strong>Intuitive</strong></td>
+<td>"More instances should roughly halve latency under saturation"</td>
+<td>"The event queue should process 2x events"</td>
+</tr>
+</tbody>
+</table>
+<h3 id="anti-patterns-in-hypothesis-generation">Anti-patterns in hypothesis generation<a class="headerlink" href="#anti-patterns-in-hypothesis-generation" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Anti-pattern</th>
+<th>Problem</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Code-grounded hypothesis</strong></td>
+<td>Tests implementation, not behavior. Prevents discovery of design gaps.</td>
+<td>Pose the hypothesis WITHOUT reading the code first.</td>
+</tr>
+<tr>
+<td><strong>Unfalsifiable hypothesis</strong></td>
+<td>"The system should work correctly" — no way to fail</td>
+<td>Specify a concrete metric and direction: "TTFT P99 should be lower for A than B"</td>
+</tr>
+<tr>
+<td><strong>Hypothesis that tests the obvious</strong></td>
+<td>"More resources should improve performance" — trivially true</td>
+<td>Add a diagnostic clause: "...and the improvement should be proportional to the resource increase (not sub-linear due to contention)"</td>
+</tr>
+<tr>
+<td><strong>Hypothesis with no failure action</strong></td>
+<td>Confirmation and refutation both lead to "ok, noted"</td>
+<td>Every hypothesis should specify: "If this fails, investigate X"</td>
+</tr>
+<tr>
+<td><strong>Over-scoped hypothesis</strong></td>
+<td>"The entire system should be correct under all configurations"</td>
+<td>Decompose by family: scheduler invariant + structural model + robustness are separate experiments</td>
+</tr>
+</tbody>
+</table>
+<h3 id="how-to-propose-a-new-hypothesis">How to propose a new hypothesis<a class="headerlink" href="#how-to-propose-a-new-hypothesis" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Check coverage</strong>: Read the <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">family coverage table</a>. Prioritize families with low coverage.</li>
+<li><strong>Choose a family</strong>: Which domain does your claim target? (See <a href="../standards/experiments/">experiments.md</a> for the 6 families.)</li>
+<li><strong>Write the sentence</strong>: Use the family-specific pattern from experiments.md.</li>
+<li><strong>Add the diagnostic clause</strong>: "If this fails, it would indicate..."</li>
+<li><strong>Check for redundancy</strong>: Search existing hypotheses in <code>docs/plans/research.md</code> and on GitHub: <a href="https://github.com/inference-sim/inference-sim/labels/hypothesis">issues labeled <code>hypothesis</code></a>.</li>
+<li><strong>File as a GitHub issue</strong>: Use the <a href="https://github.com/inference-sim/inference-sim/issues/new?template=hypothesis.md">Hypothesis Proposal issue template</a> on GitHub (click "New Issue" → "Hypothesis Proposal"). This template has fields for family, VV&amp;UQ category, diagnostic value, and experiment design.</li>
+</ol>
+<p>External contributors should file a GitHub issue using the Hypothesis Proposal template. Maintainers will triage, prioritize, and run the review protocol.</p>
+<hr />
+<h2 id="issue-taxonomy-after-convergence">Issue Taxonomy (after convergence)<a class="headerlink" href="#issue-taxonomy-after-convergence" title="Permanent link">&para;</a></h2>
+<p>After convergence and PR creation, walk the findings classification table in FINDINGS.md and file one GitHub issue per actionable finding. Not every hypothesis produces issues — a clean confirmation (like H13) may produce none.</p>
+<p><strong>Issue types and labels:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Issue Type</th>
+<th>Label</th>
+<th>When to file</th>
+<th>Title format</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bug</strong></td>
+<td><code>--label bug</code></td>
+<td>Code defect discovered during experiment</td>
+<td><code>bug: &lt;component&gt; — &lt;defect&gt;</code></td>
+<td><code>bug: sim/simulator.go — preempt() panics on empty RunningBatch</code> (H12)</td>
+</tr>
+<tr>
+<td><strong>Enhancement</strong></td>
+<td><code>--label enhancement</code></td>
+<td>New feature, rule, or documentation improvement needed</td>
+<td><code>enhancement: &lt;area&gt; — &lt;improvement&gt;</code></td>
+<td><code>enhancement: CLI — document token-bucket per-input-token cost model</code> (H5)</td>
+</tr>
+<tr>
+<td><strong>New hypothesis</strong></td>
+<td><code>--label hypothesis</code></td>
+<td>Follow-up experiment spawned by current findings</td>
+<td><code>hypothesis: &lt;claim to test&gt;</code></td>
+<td><code>hypothesis: test tiered KV at GPU=1500 blocks to trigger preemption-path offload</code> (H10)</td>
+</tr>
+<tr>
+<td><strong>Design limitation</strong></td>
+<td><code>--label design</code></td>
+<td>System works as coded but has undocumented behavioral limitation</td>
+<td><code>design: &lt;limitation&gt;</code></td>
+<td><code>design: no burst-smoothing sweet spot under Gamma CV&gt;3</code> (H5)</td>
+</tr>
+<tr>
+<td><strong>Standards update</strong></td>
+<td><code>--label standards</code></td>
+<td>New rule or invariant discovered that should be added</td>
+<td><code>standards: &lt;rule/invariant&gt;</code></td>
+<td><code>standards: R17 signal freshness — routing signals have tiered staleness</code> (H3)</td>
+</tr>
+<tr>
+<td><strong>Promotion</strong></td>
+<td><code>--label promotion</code></td>
+<td>Confirmed hypothesis finding promoted to Go test suite</td>
+<td><code>enhancement: promote &lt;hypothesis&gt; &lt;finding&gt; to Go test suite</code></td>
+<td><code>enhancement: promote H-Overload conservation under 10x to Go test suite</code> (#337)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Mapping from resolution type to expected issues:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Resolution</th>
+<th>Expected issues</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Clean confirmation</td>
+<td>Usually none. Optionally: promotion to Go test suite, standards update confirming existing rules.</td>
+</tr>
+<tr>
+<td>Confirmation with wrong mechanism</td>
+<td>Enhancement: update documentation with correct mechanism.</td>
+</tr>
+<tr>
+<td>Confirmation with bug discovery</td>
+<td>Bug: one per code defect. Enhancement: if detector/tooling needs improvement.</td>
+</tr>
+<tr>
+<td>Partial confirmation with surprise</td>
+<td>New hypothesis: follow-up experiments to investigate surprise.</td>
+</tr>
+<tr>
+<td>Refuted — system design flaw</td>
+<td>Design: architectural limitation. Enhancement: proposed fix.</td>
+</tr>
+<tr>
+<td>Refuted — mechanism not plausible</td>
+<td>Design: document the limitation. Enhancement: update CLI help or user docs if misleading.</td>
+</tr>
+<tr>
+<td>Refuted — wrong mental model</td>
+<td>Usually none. Optionally: enhancement if CLI help text is misleading.</td>
+</tr>
+<tr>
+<td>Inconclusive — parameter-dependent</td>
+<td>New hypothesis: test at different parameters.</td>
+</tr>
+<tr>
+<td>Converged to open question</td>
+<td>New hypothesis: specific experiment or tooling to resolve.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Issue body template:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="gu">## Context</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>Discovered in hypothesis experiment &lt;name&gt; (PR <span class="ni">#NNN</span>).
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="gu">## Finding</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>&lt;One-paragraph description from FINDINGS.md&gt;
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="gu">## Evidence</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>&lt;Key data point or code reference&gt;
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="gu">## Proposed action</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>&lt;What should be done — fix, new experiment, documentation update&gt;
+</code></pre></div>
+<p><strong>What NOT to file:</strong>
+- Issues for findings that are "documented here" with no action needed
+- Duplicate issues for findings already covered by existing open issues
+- Issues for scope limitations that are acknowledged in FINDINGS.md (these are future work, not bugs)</p>
+<hr />
+<h2 id="promotion-of-confirmed-hypotheses">Promotion of Confirmed Hypotheses<a class="headerlink" href="#promotion-of-confirmed-hypotheses" title="Permanent link">&para;</a></h2>
+<p>After convergence, assess whether any confirmed findings should be promoted from bash-script experiments to the Go test suite and/or formal invariants. Hypothesis experiments run as bash scripts are NOT in CI — a regression would not be caught by <code>go test ./...</code>.</p>
+<h3 id="when-to-promote">When to promote<a class="headerlink" href="#when-to-promote" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Promote to</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Confirmed deterministic hypothesis</td>
+<td><strong>Go test</strong> (regression protection in CI)</td>
+<td>Deterministic properties are exact — they can be encoded as pass/fail tests.</td>
+</tr>
+<tr>
+<td>Deterministic invariant aspect of a statistical hypothesis</td>
+<td><strong>Go test</strong> for the invariant aspect</td>
+<td>Statistical hypotheses often contain deterministic sub-claims (e.g., conservation holds across all configs).</td>
+</tr>
+<tr>
+<td>New invariant discovered</td>
+<td><strong><code>docs/contributing/standards/invariants.md</code></strong> entry</td>
+<td>Codify as a formal system property with verification strategy.</td>
+</tr>
+<tr>
+<td>New rule discovered</td>
+<td><strong><code>docs/contributing/standards/rules.md</code></strong> entry</td>
+<td>Codify as an antipattern check for PR reviews.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-a-promoted-test-looks-like">What a promoted test looks like<a class="headerlink" href="#what-a-promoted-test-looks-like" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1">// TestClusterConservation_AcrossPolicyCombinations tests INV-1 at cluster level.</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1">// Promoted from hypothesis H12 (hypotheses/h12-conservation/).</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestClusterConservation_AcrossPolicyCombinations</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nx">configs</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="p">[]</span><span class="kd">struct</span><span class="p">{</span><span class="w"> </span><span class="nx">routing</span><span class="p">,</span><span class="w"> </span><span class="nx">scheduler</span><span class="p">,</span><span class="w"> </span><span class="nx">admission</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">}{</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;round-robin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;fcfs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;always-admit&quot;</span><span class="p">},</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;least-loaded&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;fcfs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;always-admit&quot;</span><span class="p">},</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;weighted&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;priority-fcfs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;token-bucket&quot;</span><span class="p">},</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">        </span><span class="c1">// ... all 10 H12 configurations</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">cfg</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">configs</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Run</span><span class="p">(</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">routing</span><span class="o">+</span><span class="s">&quot;/&quot;</span><span class="o">+</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">scheduler</span><span class="o">+</span><span class="s">&quot;/&quot;</span><span class="o">+</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">admission</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">            </span><span class="c1">// Run cluster simulation</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">            </span><span class="c1">// Assert: injected == completed + still_queued + still_running</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">        </span><span class="p">})</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="p">}</span>
+</code></pre></div>
+<p>The bash experiment remains as the full reproducible artifact with analysis. The Go test is the CI-integrated regression guard.</p>
+<hr />
+<h2 id="why-iterate-until-convergence-not-fixed-rounds">Why Iterate Until Convergence (Not Fixed Rounds)?<a class="headerlink" href="#why-iterate-until-convergence-not-fixed-rounds" title="Permanent link">&para;</a></h2>
+<p>Evidence from PR #310 (H5, H10, H13):</p>
+<table>
+<thead>
+<tr>
+<th>Round</th>
+<th>What happened</th>
+<th>What was caught</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1</strong></td>
+<td>Initial experiments</td>
+<td>Wrong root causes for H5 and H10</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>Code + external review</td>
+<td>Corrected math (H5), identified mechanism (H10), designed confound matrix</td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td>Confound matrix + calibrated bucket</td>
+<td>H5 burst-smoothing mechanism refuted, H10 analyzer bug masked preemptions</td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td>Corrected analyzer</td>
+<td>H10 confirmed — preemptions DO occur, cache hits INCREASE</td>
+</tr>
+</tbody>
+</table>
+<p>H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H10 required Round 4 due to an analyzer bug. Fixed round counts would have either stopped too early (missing the H10 bug) or forced unnecessary work (H13 didn't need Round 2).</p>
+<h3 id="why-internal-agents-beat-external-llms">Why internal agents beat external LLMs<a class="headerlink" href="#why-internal-agents-beat-external-llms" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>External (<code>/review-plan</code>)</th>
+<th>Internal (Task agent)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read source files</td>
+<td>No</td>
+<td>Yes — verifies every citation</td>
+</tr>
+<tr>
+<td>Cross-ref regexes against format strings</td>
+<td>No</td>
+<td>Yes — catches analyzer bugs</td>
+</tr>
+<tr>
+<td>Check YAML fields against struct tags</td>
+<td>No</td>
+<td>Yes — catches typos</td>
+</tr>
+<tr>
+<td>Run <code>grep</code> to verify claims</td>
+<td>No</td>
+<td>Yes — can search for executed vs proposed controls</td>
+</tr>
+<tr>
+<td>API reliability</td>
+<td>Fragile (auth, timeouts, rate limits)</td>
+<td>Reliable (same process)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Standards: <a href="../standards/experiments/">docs/contributing/standards/experiments.md</a></li>
+<li>Template: <a href="../templates/hypothesis/">docs/contributing/templates/hypothesis.md</a></li>
+<li>Hypothesis catalog: <a href="../../plans/research/">docs/plans/research.md</a></li>
+<li>Validated experiments: <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">hypotheses/README.md</a></li>
+<li>PR workflow (structural inspiration): <a href="../pr-workflow/">docs/contributing/pr-workflow.md</a></li>
+</ul>
+<hr />
+<h2 id="appendix-workflow-evolution">Appendix: Workflow Evolution<a class="headerlink" href="#appendix-workflow-evolution" title="Permanent link">&para;</a></h2>
+<p><strong>v1.0 (PR #310):</strong> Three external LLM reviews per round, no design gate, no code review gate, ad-hoc git commands.
+<strong>v2.0 (2026-02-23, #392):</strong> Three review gates (Design 5, Code 5, FINDINGS 10) with universal convergence protocol, human approval gate, self-audit, verification gate, parallel execution, two-track issue filing, explicit worktree/commit skill integration. Structural alignment with PR workflow v3.0.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../macro-planning/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Macro Planning">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Macro Planning
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../convergence/" class="md-footer__link md-footer__link--next" aria-label="Next: Convergence Protocol">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Convergence Protocol
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

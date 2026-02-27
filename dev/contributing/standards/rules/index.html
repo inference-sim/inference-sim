@@ -1,0 +1,2947 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../../convergence/">
+      
+      
+        <link rel="next" href="../invariants/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Antipattern Rules (R1-R20) - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#blis-antipattern-rules" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Antipattern Rules (R1-R20)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpreting Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/experimentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experimentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../macro-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#priority-tiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Priority Tiers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#r1-no-silent-data-loss" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R1: No silent data loss
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r2-sort-map-keys-before-float-accumulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R2: Sort map keys before float accumulation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r3-validate-all-numeric-cli-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R3: Validate ALL numeric CLI flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r4-construction-site-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R4: Construction site audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r5-transactional-state-mutation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R5: Transactional state mutation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r6-no-logrusfatalf-in-library-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R6: No logrus.Fatalf in library code
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r7-invariant-tests-alongside-golden-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R7: Invariant tests alongside golden tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r8-no-exported-mutable-maps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R8: No exported mutable maps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r9-pointer-types-for-yaml-zero-value-ambiguity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R9: Pointer types for YAML zero-value ambiguity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r10-strict-yaml-parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R10: Strict YAML parsing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r11-guard-division-in-runtime-computation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R11: Guard division in runtime computation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r12-golden-dataset-regenerated-when-output-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R12: Golden dataset regenerated when output changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r13-interfaces-accommodate-multiple-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R13: Interfaces accommodate multiple implementations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r14-no-multi-module-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R14: No multi-module methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r15-resolve-stale-pr-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R15: Resolve stale PR references
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r16-group-configuration-by-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R16: Group configuration by module
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r17-document-signal-freshness-for-routing-inputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R17: Document signal freshness for routing inputs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r18-cli-flag-precedence-over-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R18: CLI flag precedence over defaults
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r19-livelock-protection-for-unbounded-retry-loops" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R19: Livelock protection for unbounded retry loops
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r20-degenerate-input-handling-in-detectors-and-analyzers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R20: Degenerate input handling in detectors and analyzers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rule-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule Lifecycle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rule Lifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lifecycle-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle States
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-consolidate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Consolidate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarterly-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quarterly Review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current State
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#priority-tiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Priority Tiers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#r1-no-silent-data-loss" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R1: No silent data loss
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r2-sort-map-keys-before-float-accumulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R2: Sort map keys before float accumulation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r3-validate-all-numeric-cli-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R3: Validate ALL numeric CLI flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r4-construction-site-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R4: Construction site audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r5-transactional-state-mutation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R5: Transactional state mutation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r6-no-logrusfatalf-in-library-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R6: No logrus.Fatalf in library code
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r7-invariant-tests-alongside-golden-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R7: Invariant tests alongside golden tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r8-no-exported-mutable-maps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R8: No exported mutable maps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r9-pointer-types-for-yaml-zero-value-ambiguity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R9: Pointer types for YAML zero-value ambiguity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r10-strict-yaml-parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R10: Strict YAML parsing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r11-guard-division-in-runtime-computation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R11: Guard division in runtime computation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r12-golden-dataset-regenerated-when-output-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R12: Golden dataset regenerated when output changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r13-interfaces-accommodate-multiple-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R13: Interfaces accommodate multiple implementations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r14-no-multi-module-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R14: No multi-module methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r15-resolve-stale-pr-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R15: Resolve stale PR references
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r16-group-configuration-by-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R16: Group configuration by module
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r17-document-signal-freshness-for-routing-inputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R17: Document signal freshness for routing inputs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r18-cli-flag-precedence-over-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R18: CLI flag precedence over defaults
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r19-livelock-protection-for-unbounded-retry-loops" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R19: Livelock protection for unbounded retry loops
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r20-degenerate-input-handling-in-detectors-and-analyzers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R20: Degenerate input handling in detectors and analyzers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rule-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule Lifecycle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rule Lifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lifecycle-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle States
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-consolidate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Consolidate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarterly-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quarterly Review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current State
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="blis-antipattern-rules">BLIS Antipattern Rules<a class="headerlink" href="#blis-antipattern-rules" title="Permanent link">&para;</a></h1>
+<p>Every rule traces to a real bug, design failure, or hypothesis finding. Rules are enforced at three checkpoints:
+- <strong>PR template</strong> — checklist before merge
+- <strong>Micro-plan Phase 8</strong> — checklist before implementation
+- <strong>Self-audit Step 4.75</strong> — deliberate critical thinking before commit</p>
+<p>For the full process, see <a href="../../pr-workflow/">docs/contributing/pr-workflow.md</a>.</p>
+<h2 id="priority-tiers">Priority Tiers<a class="headerlink" href="#priority-tiers" title="Permanent link">&para;</a></h2>
+<p>New contributors: focus on <strong>Critical</strong> rules first. These protect correctness — violating them produces wrong results or crashes. <strong>Important</strong> rules protect code quality and maintainability. <strong>Hygiene</strong> rules keep the codebase clean over time.</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Rules</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Critical</strong> (correctness)</td>
+<td>R1, R4, R5, R6, R11, R19</td>
+<td>Violations produce silent data loss, panics, conservation invariant breaks, or infinite loops</td>
+</tr>
+<tr>
+<td><strong>Important</strong> (quality)</td>
+<td>R2, R3, R7, R8, R9, R10, R13, R14, R17, R18, R20</td>
+<td>Violations produce non-determinism, validation gaps, silent misconfig, interface debt, or undetected anomalies</td>
+</tr>
+<tr>
+<td><strong>Hygiene</strong> (maintenance)</td>
+<td>R12, R15, R16</td>
+<td>Violations produce stale references, config sprawl, or misleading test baselines</td>
+</tr>
+</tbody>
+</table>
+<p>All 20 rules apply to every PR. The tiers help you prioritize during review — check Critical rules first.</p>
+<h2 id="rules">Rules<a class="headerlink" href="#rules" title="Permanent link">&para;</a></h2>
+<h3 id="r1-no-silent-data-loss">R1: No silent data loss<a class="headerlink" href="#r1-no-silent-data-loss" title="Permanent link">&para;</a></h3>
+<p>Every error path must either return an error, panic with context, or increment a counter. A <code>continue</code> or early <code>return</code> that silently drops a request, metric, or allocation is a correctness bug.</p>
+<p><strong>Evidence:</strong> Issue #183 — a KV allocation failure silently dropped a request. The golden test perpetuated the bug for months because it captured "499 completions" as the expected value.</p>
+<p><strong>Additional evidence:</strong> H14 hypothesis experiment — HOL blocking detector silently returns 0 instead of flagging the most extreme imbalance case when <code>always-busiest</code> routes all traffic to one instance (bug #291).</p>
+<p><strong>Check:</strong> For every <code>continue</code> or early <code>return</code> in new code, verify the error is propagated, counted, or documented as safe.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 9.</p>
+<hr />
+<h3 id="r2-sort-map-keys-before-float-accumulation">R2: Sort map keys before float accumulation<a class="headerlink" href="#r2-sort-map-keys-before-float-accumulation" title="Permanent link">&para;</a></h3>
+<p>Go map iteration is non-deterministic. Any <code>for k, v := range someMap</code> that feeds a running sum (<code>total += v</code>) or determines output ordering must sort keys first. Unsorted iteration violates the determinism invariant (INV-6).</p>
+<p><strong>Evidence:</strong> Five sites iterated Go maps to accumulate floats or determine output ordering, violating determinism.</p>
+<p><strong>Check:</strong> For every <code>range</code> over a map, check if the loop body accumulates floats or produces ordered output. If so, sort keys first.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 3.</p>
+<hr />
+<h3 id="r3-validate-all-numeric-cli-flags">R3: Validate ALL numeric CLI flags<a class="headerlink" href="#r3-validate-all-numeric-cli-flags" title="Permanent link">&para;</a></h3>
+<p>Every numeric flag (<code>--rate</code>, <code>--fitness-weights</code>, <code>--kv-cpu-blocks</code>, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).</p>
+<p><strong>Evidence:</strong> <code>--rate 0</code> caused an infinite loop deep in the simulation. <code>--snapshot-refresh-interval</code> was added without validation (#281).</p>
+<p><strong>Check:</strong> For every new CLI flag, add validation in <code>cmd/root.go</code> with <code>logrus.Fatalf</code> for invalid values.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 6.</p>
+<hr />
+<h3 id="r4-construction-site-audit">R4: Construction site audit<a class="headerlink" href="#r4-construction-site-audit" title="Permanent link">&para;</a></h3>
+<p>Before adding a field to a struct, find every place that struct is constructed as a literal. If there are multiple sites, either add a canonical constructor or update every site. Missing a site causes silent field-zero bugs.</p>
+<p><strong>Evidence:</strong> Issue #181 — adding <code>InstanceID</code> to per-request metrics required changes in 4 files. Three construction sites for <code>RequestMetrics</code> existed, and one was missed initially.</p>
+<p><strong>Check:</strong> <code>grep 'StructName{' across the codebase</code>. List every site. Update all or refactor to canonical constructor.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 0 + Phase 8, self-audit dimension 8.</p>
+<hr />
+<h3 id="r5-transactional-state-mutation">R5: Transactional state mutation<a class="headerlink" href="#r5-transactional-state-mutation" title="Permanent link">&para;</a></h3>
+<p>Any loop that allocates resources (blocks, slots, counters) must handle mid-loop failure by rolling back all mutations from previous iterations. A partial allocation that returns <code>false</code> without cleanup violates conservation invariants.</p>
+<p><strong>Evidence:</strong> KV block allocation (<code>AllocateKVBlocks</code>) had a mid-loop failure path that didn't roll back previously allocated blocks, violating KV conservation (INV-4).</p>
+<p><strong>Additional evidence:</strong> H12 hypothesis experiment — preemption loop in <code>sim/simulator.go:383</code> accesses <code>RunningBatch.Requests[len-1]</code> without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).</p>
+<p><strong>Check:</strong> For every loop that mutates state, verify the failure path rolls back all mutations.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 9.</p>
+<hr />
+<h3 id="r6-no-logrusfatalf-in-library-code">R6: No logrus.Fatalf in library code<a class="headerlink" href="#r6-no-logrusfatalf-in-library-code" title="Permanent link">&para;</a></h3>
+<p>The <code>sim/</code> package tree must never terminate the process — return errors so callers can handle them. Only <code>cmd/</code> may terminate. This enables embedding, testing, and adapters.</p>
+<p><strong>Evidence:</strong> Library code that called <code>logrus.Fatalf</code> prevented test isolation and made the simulator non-embeddable.</p>
+<p><strong>Check:</strong> <code>grep -r 'logrus.Fatal\|os.Exit' sim/</code> must return zero results.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8.</p>
+<hr />
+<h3 id="r7-invariant-tests-alongside-golden-tests">R7: Invariant tests alongside golden tests<a class="headerlink" href="#r7-invariant-tests-alongside-golden-tests" title="Permanent link">&para;</a></h3>
+<p>Golden tests (comparing against known-good output) are regression freezes, not correctness checks. If a bug exists when the golden values are captured, the golden test perpetuates the bug. Every subsystem that has golden tests must also have invariant tests that verify conservation laws, causality, and determinism.</p>
+<p><strong>Evidence:</strong> Issue #183 — the codellama golden dataset expected 499 completions because one request was silently dropped. A conservation invariant test would have caught it on day one.</p>
+<p><strong>Check:</strong> For every golden test, ask: "If this expected value were wrong, would any other test catch it?" If no, add an invariant test.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 6 + Phase 8, self-audit dimension 7.</p>
+<hr />
+<h3 id="r8-no-exported-mutable-maps">R8: No exported mutable maps<a class="headerlink" href="#r8-no-exported-mutable-maps" title="Permanent link">&para;</a></h3>
+<p>Validation lookup maps (e.g., <code>validRoutingPolicies</code>) must be unexported. Expose through <code>IsValid*()</code> accessor functions. Exported maps allow callers to mutate global state, breaking encapsulation and enabling hard-to-trace bugs.</p>
+<p><strong>Evidence:</strong> Exported mutable maps were found during hardening audit — callers could silently add entries to validation maps.</p>
+<p><strong>Check:</strong> <code>grep -r 'var [A-Z].*map\[' sim/</code> must return zero mutable map results.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8.</p>
+<hr />
+<h3 id="r9-pointer-types-for-yaml-zero-value-ambiguity">R9: Pointer types for YAML zero-value ambiguity<a class="headerlink" href="#r9-pointer-types-for-yaml-zero-value-ambiguity" title="Permanent link">&para;</a></h3>
+<p>YAML config structs must use <code>*float64</code> (pointer) for fields where zero is a valid user-provided value, to distinguish "not set" (nil) from "set to zero" (0.0). Using bare <code>float64</code> causes silent misconfiguration when users intentionally set a value to zero.</p>
+<p><strong>Evidence:</strong> YAML fields with bare <code>float64</code> couldn't distinguish "user set this to 0" from "user didn't set this."</p>
+<p><strong>Check:</strong> For every new YAML config field where zero is meaningful, use a pointer type.</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
+<hr />
+<h3 id="r10-strict-yaml-parsing">R10: Strict YAML parsing<a class="headerlink" href="#r10-strict-yaml-parsing" title="Permanent link">&para;</a></h3>
+<p>Use <code>yaml.KnownFields(true)</code> or equivalent strict parsing for all YAML config loading. Typos in field names must cause parse errors, not silent acceptance of malformed config.</p>
+<p><strong>Evidence:</strong> YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration.</p>
+<p><strong>Check:</strong> Every <code>yaml.Unmarshal</code> or decoder usage must enable strict/known-fields mode.</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
+<hr />
+<h3 id="r11-guard-division-in-runtime-computation">R11: Guard division in runtime computation<a class="headerlink" href="#r11-guard-division-in-runtime-computation" title="Permanent link">&para;</a></h3>
+<p>Any division where the denominator derives from runtime state (batch size, block count, request count, bandwidth) must guard against zero. CLI validation (R3) catches input zeros at the boundary; this rule catches intermediate zeros that arise during simulation.</p>
+<p><strong>Evidence:</strong> <code>utilization = usedBlocks / totalBlocks</code> when no blocks are configured; <code>avgLatency = sum / count</code> when count is zero.</p>
+<p><strong>Check:</strong> For every division, verify the denominator is either (a) guarded by an explicit zero check, or (b) proven non-zero by a documented invariant.</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
+<hr />
+<h3 id="r12-golden-dataset-regenerated-when-output-changes">R12: Golden dataset regenerated when output changes<a class="headerlink" href="#r12-golden-dataset-regenerated-when-output-changes" title="Permanent link">&para;</a></h3>
+<p>When a PR changes output format, metrics, or default behavior, the golden dataset must be regenerated and the regeneration command documented. Golden tests that pass with stale expected values provide false confidence.</p>
+<p><strong>Evidence:</strong> Present in CONTRIBUTING.md and PR template but not in CLAUDE.md's numbered rules — an inconsistency this consolidation resolves.</p>
+<p><strong>Check:</strong> If <code>go test ./sim/... -run Golden</code> fails after your changes, regenerate and document the command.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8.</p>
+<hr />
+<h3 id="r13-interfaces-accommodate-multiple-implementations">R13: Interfaces accommodate multiple implementations<a class="headerlink" href="#r13-interfaces-accommodate-multiple-implementations" title="Permanent link">&para;</a></h3>
+<p>New interfaces must accommodate at least two implementations (even if only one exists today). No methods that only make sense for one backend.</p>
+<p><strong>Evidence:</strong> <code>KVStore</code> interface has methods exposing block-level semantics. A distributed KV cache like LMCache thinks in tokens and layers, not blocks. The interface encodes vLLM's implementation model rather than an abstract behavioral contract.</p>
+<p><strong>Check:</strong> For every new interface, ask: "Could a second backend implement this without dummy methods?"</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
+<p><em>Previously: principle in CLAUDE.md "Interface design" section. Promoted to numbered rule for checkability.</em></p>
+<hr />
+<h3 id="r14-no-multi-module-methods">R14: No multi-module methods<a class="headerlink" href="#r14-no-multi-module-methods" title="Permanent link">&para;</a></h3>
+<p>No method should span multiple module responsibilities (scheduling + latency estimation + metrics in one function). Extract each concern into its module's interface.</p>
+<p><strong>Evidence:</strong> <code>Simulator.Step()</code> is 134 lines mixing scheduling, latency estimation, token generation, completion, and metrics. Impossible to swap the latency model without modifying this method.</p>
+<p><strong>Check:</strong> If a method touches &gt;1 module's concern, extract each concern.</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
+<p><em>Previously: principle in CLAUDE.md "Interface design" section. Promoted to numbered rule for checkability.</em></p>
+<hr />
+<h3 id="r15-resolve-stale-pr-references">R15: Resolve stale PR references<a class="headerlink" href="#r15-resolve-stale-pr-references" title="Permanent link">&para;</a></h3>
+<p>After completing a PR, grep for references to that PR number (<code>planned for PR N</code>, <code>TODO.*PR N</code>) in the codebase. Resolve all stale references.</p>
+<p><strong>Evidence:</strong> Multiple stale comments referencing completed PRs accumulated over time, misleading future developers about what was implemented vs planned.</p>
+<p><strong>Check:</strong> <code>grep -rn 'planned for PR\|TODO.*PR' --include='*.go' --include='*.md'</code> for the current PR number.</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
+<hr />
+<h3 id="r16-group-configuration-by-module">R16: Group configuration by module<a class="headerlink" href="#r16-group-configuration-by-module" title="Permanent link">&para;</a></h3>
+<p>Configuration parameters must be grouped by module — not added to a monolithic config struct mixing unrelated concerns. Each module's config should be independently specifiable and validatable.</p>
+<p><strong>Evidence:</strong> <code>SimConfig</code> previously combined hardware identity, model parameters, simulation parameters, and policy choices in 23 flat fields. Resolved in #350: <code>SimConfig</code> now embeds 6 module-scoped sub-configs (<code>KVCacheConfig</code>, <code>BatchConfig</code>, <code>LatencyCoeffs</code>, <code>ModelHardwareConfig</code>, <code>PolicyConfig</code>, <code>WorkloadConfig</code>). Factory signatures accept the narrowest sub-config (e.g., <code>NewKVStore(KVCacheConfig)</code>).</p>
+<p><strong>Check:</strong> New config parameters go into the appropriate sub-config in <code>sim/config.go</code>, not directly into <code>SimConfig</code>.</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
+<p><em>Previously: principle in CLAUDE.md "Configuration design" section. Promoted to numbered rule for checkability.</em></p>
+<hr />
+<h3 id="r17-document-signal-freshness-for-routing-inputs">R17: Document signal freshness for routing inputs<a class="headerlink" href="#r17-document-signal-freshness-for-routing-inputs" title="Permanent link">&para;</a></h3>
+<p>Routing snapshot signals have different freshness guarantees due to DES event ordering. Scorer authors must understand which signals are synchronously fresh and which are stale. Any scorer intended for high-rate routing must either use a synchronously-fresh signal or be combined with one that does.</p>
+<p><strong>Evidence:</strong> H3 hypothesis experiment (#279) — kv-utilization scorer produced 200x worse distribution uniformity than queue-depth at rate=5000. See issues #282, #283.</p>
+<p><strong>Freshness hierarchy:</strong>
+- <strong>Tier 1 — Synchronously fresh (cluster-owned):</strong> PendingRequests
+- <strong>Tier 2 — Stale within tick (instance-owned):</strong> QueueDepth, BatchSize
+- <strong>Tier 3 — Stale across batch steps (instance-owned):</strong> KVUtilization, CacheHitRate</p>
+<p><strong>Check:</strong> When writing a new scorer, identify which snapshot fields it reads and their freshness tier. If using only Tier 3 signals, document why or combine with a Tier 1 scorer.</p>
+<p><strong>Enforced:</strong> Design review, scorer implementation review.</p>
+<hr />
+<h3 id="r18-cli-flag-precedence-over-defaults">R18: CLI flag precedence over defaults<a class="headerlink" href="#r18-cli-flag-precedence-over-defaults" title="Permanent link">&para;</a></h3>
+<p>When the CLI binary loads default values from <code>defaults.yaml</code>, it must not silently overwrite user-provided flag values. Always check <code>cmd.Flags().Changed("&lt;flag&gt;")</code> before applying a default. A user who explicitly passes <code>--total-kv-blocks 50</code> must get 50, not the model's default of 132,139.</p>
+<p><strong>Evidence:</strong> H9 hypothesis experiment — <code>GetCoefficients()</code> unconditionally overwrote <code>totalKVBlocks</code> with the model default, silently destroying the CLI flag value. The entire H9 Experiment 3 (cache capacity independence) produced invalid results. Bug #285, fix cbb0de7.</p>
+<p><strong>Check:</strong> For every assignment from <code>defaults.yaml</code> to a CLI-parsed variable, verify <code>cmd.Flags().Changed()</code> is checked first. Grep for <code>GetCoefficients</code> and <code>defaults.yaml</code> assignment patterns.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 6.</p>
+<hr />
+<h3 id="r19-livelock-protection-for-unbounded-retry-loops">R19: Livelock protection for unbounded retry loops<a class="headerlink" href="#r19-livelock-protection-for-unbounded-retry-loops" title="Permanent link">&para;</a></h3>
+<p>Loops where the exit condition depends on resource availability that may never be satisfied (e.g., preempt → requeue → schedule → preempt) must have a circuit breaker: maximum iteration count, progress assertion, or bounded retry with error escalation. An infinite loop in a deterministic simulator is indistinguishable from a hang.</p>
+<p><strong>Evidence:</strong> H8 hypothesis experiment — with total KV blocks below ~1000 (insufficient for any single request), the preempt-requeue cycle ran indefinitely with no termination condition, no max-retry limit, and no progress check.</p>
+<p><strong>Check:</strong> For every loop that retries an operation after a resource failure, verify there is an explicit bound or progress check. Pay special attention to preemption, eviction, and reallocation loops.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 4.</p>
+<hr />
+<h3 id="r20-degenerate-input-handling-in-detectors-and-analyzers">R20: Degenerate input handling in detectors and analyzers<a class="headerlink" href="#r20-degenerate-input-handling-in-detectors-and-analyzers" title="Permanent link">&para;</a></h3>
+<p>Anomaly detectors and metric analyzers must explicitly handle degenerate inputs: empty sample sets, single-instance concentration, all-zero distributions, and cross-class comparisons. The degenerate case is often the most important one to detect — a detector that returns "no anomaly" when all traffic hits one instance is worse than useless.</p>
+<p><strong>Evidence:</strong> H14 hypothesis experiment — two detector failures: (1) HOL blocking detector requires ≥2 instances with samples, but <code>always-busiest</code> routes ALL traffic to one instance, leaving 3 empty — detector returns 0 for the most extreme HOL case (bug #291). (2) Priority inversion detector uses a 2x threshold that conflates workload heterogeneity with scheduling unfairness — 7,463 false positives with normal configs (bug #292).</p>
+<p><strong>Check:</strong> For every detector or analyzer, identify what happens when one or more inputs are empty, zero, or maximally skewed. Write tests for these degenerate cases.</p>
+<p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 9.</p>
+<hr />
+<h2 id="quick-reference-checklist">Quick Reference Checklist<a class="headerlink" href="#quick-reference-checklist" title="Permanent link">&para;</a></h2>
+<p>For PR authors — check each rule before submitting:</p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R1:</strong> No silent <code>continue</code>/<code>return</code> dropping data</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R2:</strong> Map keys sorted before float accumulation or ordered output</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R3:</strong> Every new CLI flag validated (zero, negative, NaN, Inf)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R4:</strong> All struct construction sites audited for new fields</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R5:</strong> Resource allocation loops handle mid-loop failure with rollback</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R6:</strong> No <code>logrus.Fatalf</code> or <code>os.Exit</code> in <code>sim/</code> packages</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R7:</strong> Invariant tests alongside any golden tests</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R8:</strong> No exported mutable maps</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R9:</strong> <code>*float64</code> for YAML fields where zero is valid</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R10:</strong> YAML strict parsing (<code>KnownFields(true)</code>)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R11:</strong> Division by runtime-derived denominators guarded</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R12:</strong> Golden dataset regenerated if output changed</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R13:</strong> New interfaces work for 2+ implementations</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R14:</strong> No method spans multiple module responsibilities</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R15:</strong> Stale PR references resolved</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R16:</strong> Config params grouped by module</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R17:</strong> Routing scorer signals documented for freshness tier</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R18:</strong> CLI flag values not silently overwritten by defaults.yaml</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R19:</strong> Unbounded retry/requeue loops have circuit breakers</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R20:</strong> Detectors and analyzers handle degenerate inputs (empty, skewed, zero)</li>
+</ul>
+<hr />
+<h2 id="rule-lifecycle">Rule Lifecycle<a class="headerlink" href="#rule-lifecycle" title="Permanent link">&para;</a></h2>
+<p>Rules are born from real bugs and live as long as they prevent real bugs. As the codebase evolves, some rules may become automated, consolidated, or no longer applicable.</p>
+<h3 id="lifecycle-states">Lifecycle States<a class="headerlink" href="#lifecycle-states" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Active</strong></td>
+<td>Rule prevents a class of bugs that can still occur</td>
+<td>Check in every PR review</td>
+</tr>
+<tr>
+<td><strong>Automated</strong></td>
+<td>Rule is enforced by CI (linter, test, build)</td>
+<td>Note the enforcement mechanism; keep for documentation but skip manual checks</td>
+</tr>
+<tr>
+<td><strong>Consolidated</strong></td>
+<td>Rule merged into a broader rule</td>
+<td>Redirect to the parent rule; remove from checklist</td>
+</tr>
+<tr>
+<td><strong>Retired</strong></td>
+<td>The class of bugs is no longer possible (e.g., the vulnerable code path was removed)</td>
+<td>Move to a "Retired Rules" appendix with rationale</td>
+</tr>
+</tbody>
+</table>
+<h3 id="when-to-consolidate">When to Consolidate<a class="headerlink" href="#when-to-consolidate" title="Permanent link">&para;</a></h3>
+<p>If two rules address the same root principle and checking one always catches the other, consolidate them. Example: if a linter rule were added that caught all R2 violations (unsorted map iteration), R2 could move to "Automated" state.</p>
+<h3 id="quarterly-review">Quarterly Review<a class="headerlink" href="#quarterly-review" title="Permanent link">&para;</a></h3>
+<p>Every ~10 PRs or quarterly (whichever comes first), scan the rule list:
+1. Can any rule be automated by a linter or CI check?
+2. Are any two rules always checked together and catching the same class of bugs?
+3. Has the code path that motivated any rule been removed?</p>
+<p>File an issue for each proposed state change. Do not retire rules silently.</p>
+<h3 id="current-state">Current State<a class="headerlink" href="#current-state" title="Permanent link">&para;</a></h3>
+<p>All 20 rules (R1-R20) are <strong>Active</strong> as of 2026-02-26. No rules have been automated, consolidated, or retired.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../convergence/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Convergence Protocol">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Convergence Protocol
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../invariants/" class="md-footer__link md-footer__link--next" aria-label="Next: System Invariants (INV-1-8)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                System Invariants (INV-1-8)
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

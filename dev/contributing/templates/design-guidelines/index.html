@@ -1,0 +1,3715 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../../standards/experiments/">
+      
+      
+        <link rel="next" href="../macro-plan/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Design Guidelines - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#blis-design-guidelines-principles-for-robust-simulation-design-and-modular-extension" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Design Guidelines
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpreting Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/experimentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experimentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../macro-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R20)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_9" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-purpose-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Purpose &amp; Scope
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Purpose &amp; Scope">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#relationship-to-existing-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relationship to Existing Docs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-des-design-foundations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. DES Design Foundations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. DES Design Foundations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-model-scoping-banks-et-al" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Model Scoping (Banks et al.)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-event-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Event Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-state-vs-statistics-separation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 State vs. Statistics Separation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-verification-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 Verification and Validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25-randomness-as-first-class-concern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 Randomness as First-Class Concern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#26-des-design-review-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 DES Design Review Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-design-doc-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Design Doc Guidelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Design Doc Guidelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-the-staleness-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 The Staleness Test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-four-design-doc-species" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Four Design Doc Species
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-required-sections-all-species" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Required Sections (All Species)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-prohibited-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Prohibited Content
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-abstraction-levels-across-document-tiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 Abstraction Levels Across Document Tiers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-module-architecture-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Module Architecture Principles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Module Architecture Principles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-two-layer-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Two-Layer Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-domain-module-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Domain Module Map
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-module-contract-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Module Contract Template
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-real-system-correspondence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Real-System Correspondence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-the-touch-point-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 The Touch-Point Rule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46-parallel-development-enablement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 Parallel Development Enablement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-extension-framework" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Extension Framework
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Extension Framework">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-extension-taxonomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Extension Taxonomy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-recipe-policy-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Recipe: Policy Template
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-recipe-subsystem-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Recipe: Subsystem Module
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-recipe-backend-swap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Recipe: Backend Swap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-recipe-tier-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Recipe: Tier Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-extension-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 Extension Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-anti-patterns-with-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Anti-Patterns with Evidence
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Anti-Patterns with Evidence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-design-doc-anti-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Design Doc Anti-Patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-module-architecture-anti-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Module Architecture Anti-Patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-des-specific-anti-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 DES-Specific Anti-Patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-the-meta-lesson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 The Meta-Lesson
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-purpose-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Purpose &amp; Scope
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Purpose &amp; Scope">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#relationship-to-existing-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relationship to Existing Docs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-des-design-foundations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. DES Design Foundations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. DES Design Foundations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-model-scoping-banks-et-al" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Model Scoping (Banks et al.)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-event-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Event Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-state-vs-statistics-separation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 State vs. Statistics Separation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-verification-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 Verification and Validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25-randomness-as-first-class-concern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 Randomness as First-Class Concern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#26-des-design-review-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 DES Design Review Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-design-doc-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Design Doc Guidelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Design Doc Guidelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-the-staleness-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 The Staleness Test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-four-design-doc-species" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Four Design Doc Species
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-required-sections-all-species" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Required Sections (All Species)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-prohibited-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Prohibited Content
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-abstraction-levels-across-document-tiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 Abstraction Levels Across Document Tiers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-module-architecture-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Module Architecture Principles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Module Architecture Principles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-two-layer-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Two-Layer Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-domain-module-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Domain Module Map
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-module-contract-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Module Contract Template
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-real-system-correspondence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Real-System Correspondence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-the-touch-point-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 The Touch-Point Rule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46-parallel-development-enablement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 Parallel Development Enablement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-extension-framework" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Extension Framework
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Extension Framework">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-extension-taxonomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Extension Taxonomy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-recipe-policy-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Recipe: Policy Template
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-recipe-subsystem-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Recipe: Subsystem Module
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-recipe-backend-swap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Recipe: Backend Swap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-recipe-tier-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Recipe: Tier Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-extension-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 Extension Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-anti-patterns-with-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Anti-Patterns with Evidence
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Anti-Patterns with Evidence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-design-doc-anti-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Design Doc Anti-Patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-module-architecture-anti-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Module Architecture Anti-Patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-des-specific-anti-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 DES-Specific Anti-Patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-the-meta-lesson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 The Meta-Lesson
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="blis-design-guidelines-principles-for-robust-simulation-design-and-modular-extension">BLIS Design Guidelines: Principles for Robust Simulation Design and Modular Extension<a class="headerlink" href="#blis-design-guidelines-principles-for-robust-simulation-design-and-modular-extension" title="Permanent link">&para;</a></h1>
+<p><strong>Date:</strong> 2026-02-18
+<strong>Status:</strong> Draft (pending review)
+<strong>Species:</strong> System Overview</p>
+<h2 id="1-purpose-scope">1. Purpose &amp; Scope<a class="headerlink" href="#1-purpose-scope" title="Permanent link">&para;</a></h2>
+<p>This document serves two audiences:
+1. <strong>Design doc authors</strong> (human or Claude) — guidance on writing design docs that stay durable and useful across the project lifecycle
+2. <strong>Module developers</strong> — guidance on extending BLIS with new modules that fit the architecture and enable parallel development</p>
+<p><strong>What this document IS:</strong>
+- A target architecture specification that BLIS will be refactored toward
+- A set of principles grounded in DES methodology and project experience (12 completed PRs, 20+ issues)
+- A reference for evaluating whether a design doc or a new module meets BLIS's quality bar</p>
+<p><strong>What this document is NOT:</strong>
+- Not an implementation plan (refactoring happens in separate PRs, each following <code>docs/contributing/pr-workflow.md</code>)
+- Not a replacement for CLAUDE.md (which captures engineering rules and code-level patterns)
+- Not a replacement for the micro-plan template (which captures PR-level planning structure)</p>
+<h3 id="relationship-to-existing-docs">Relationship to Existing Docs<a class="headerlink" href="#relationship-to-existing-docs" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Design Guidelines (this doc)          ← Principles, target architecture, extension framework
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    ↓ informs
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>┌─────────────────────────────────────────────────┐
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│  Design Docs  ←→  Macro Plan                    │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│       ↓                ↓                        │
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│  Micro Plans     Micro Plans                    │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│       ↓                ↓                        │
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│  CLAUDE.md (updated by each PR)                 │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>└─────────────────────────────────────────────────┘
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Large multi-PR feature</td>
+<td>Design doc → Macro plan → Micro plans per PR</td>
+</tr>
+<tr>
+<td>Single-PR feature</td>
+<td>Design doc → Micro plan directly</td>
+</tr>
+<tr>
+<td>Refactoring / bug fix</td>
+<td>Issue or design doc → Micro plan directly</td>
+</tr>
+<tr>
+<td>Macro plan PR</td>
+<td>Macro plan section → Micro plan</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key distinction:</strong> This document describes the <em>target state</em> and <em>design principles</em>. CLAUDE.md describes the <em>current state</em> and <em>implementation rules</em>. Where they diverge, this document is aspirational and CLAUDE.md is authoritative for today's code.</p>
+<hr />
+<h2 id="2-des-design-foundations">2. DES Design Foundations<a class="headerlink" href="#2-des-design-foundations" title="Permanent link">&para;</a></h2>
+<p>BLIS is a discrete-event simulator. Design docs for BLIS should be informed by established DES methodology (Banks et al., <em>Discrete-Event System Simulation</em>; Misra, <em>Distributed Discrete-Event Simulation</em>, 1986).</p>
+<p><strong>Core Principle: Abstraction must be justified.</strong> Every state variable, event type, and random input should be defensible in terms of the questions the simulator will answer — not fidelity for its own sake.</p>
+<h3 id="21-model-scoping-banks-et-al">2.1 Model Scoping (Banks et al.)<a class="headerlink" href="#21-model-scoping-banks-et-al" title="Permanent link">&para;</a></h3>
+<p>Before including a component in BLIS, evaluate it against these six criteria:</p>
+<ol>
+<li>Will including it significantly affect the accuracy of results for the target analysis questions?</li>
+<li>What level of accuracy is actually required for the analysis to be useful?</li>
+<li>Can the component's data requirements be satisfied (alpha/beta coefficients, hardware specs, workload traces)?</li>
+<li>What is the cost of inclusion — code complexity, maintenance burden, configuration surface?</li>
+<li>What breaks if we omit it? (Sensitivity analysis — if removing it changes results by &lt;5%, defer it)</li>
+<li>What is the simplest version that answers the same questions? (Start coarse, refine only with evidence)</li>
+</ol>
+<p>These criteria operationalize "YAGNI" for simulation design. Example: the PR12 pre-design chose synchronous transfer latency over event-based transfers because it answered the same questions with ~100 fewer LOC.</p>
+<h3 id="22-event-design">2.2 Event Design<a class="headerlink" href="#22-event-design" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Events must be <strong>minimal and atomic</strong> — each event corresponds to exactly one state change.</li>
+<li>Classify new events as <strong>exogenous</strong> (arrivals, environment changes — driven by workload input) or <strong>endogenous</strong> (completions, scheduling decisions, scaling actions — driven by internal state transitions). This classification must appear in design docs.</li>
+<li>New events must specify their <strong>priority constant</strong> for tie-breaking within BLIS's <code>(timestamp, priority, seqID)</code> ordering scheme.</li>
+</ul>
+<h3 id="23-state-vs-statistics-separation">2.3 State vs. Statistics Separation<a class="headerlink" href="#23-state-vs-statistics-separation" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>State variables</strong> evolve the system (queues, caches, clocks, request lifecycle) — they are inputs to event handlers.</li>
+<li><strong>Statistics</strong> are derived from state trajectories (TTFT distributions, throughput, utilization) — they are outputs for analysis.</li>
+<li>These must be decoupled. A module that mixes state mutation and metric computation in the same method is violating this principle.</li>
+</ul>
+<h3 id="24-verification-and-validation">2.4 Verification and Validation<a class="headerlink" href="#24-verification-and-validation" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Verification</strong>: the code correctly implements the conceptual model (behavioral tests, invariant tests, golden tests).</li>
+<li><strong>Validation</strong>: the model accurately represents real-system behavior (calibration against real servers, sensitivity analysis, comparison with published benchmarks).</li>
+<li>A verified simulator can be an invalid model. (BLIS issue #183: golden tests verified the code did what it did, but an invariant test would have caught the dropped request.)</li>
+<li>Design docs must specify both: how will correctness be verified (which invariants?) AND how will fidelity be validated (against what real-system data?).</li>
+</ul>
+<h3 id="25-randomness-as-first-class-concern">2.5 Randomness as First-Class Concern<a class="headerlink" href="#25-randomness-as-first-class-concern" title="Permanent link">&para;</a></h3>
+<ul>
+<li>All randomness flows through <code>PartitionedRNG</code> with named subsystems.</li>
+<li>New modules that introduce randomness must declare their subsystem name and justify that their random draws don't interfere with existing streams.</li>
+<li>Design docs should consider whether the feature enables <strong>common random numbers</strong> experiments (paired comparison of two configurations using the same random stream).</li>
+</ul>
+<h3 id="26-des-design-review-checklist">2.6 DES Design Review Checklist<a class="headerlink" href="#26-des-design-review-checklist" title="Permanent link">&para;</a></h3>
+<p>Every BLIS design doc must answer these questions:</p>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Principle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>What analysis questions does this design help answer?</td>
+<td>Model scoping</td>
+</tr>
+<tr>
+<td>What is modeled, simplified, and deliberately omitted? (Table format)</td>
+<td>Model scoping</td>
+</tr>
+<tr>
+<td>What events are introduced or modified? Exogenous or endogenous?</td>
+<td>Event design</td>
+</tr>
+<tr>
+<td>How do new events interact with existing tie-breaking rules?</td>
+<td>Event design</td>
+</tr>
+<tr>
+<td>What new state is introduced? Who owns it?</td>
+<td>State/statistics separation</td>
+</tr>
+<tr>
+<td>What new metrics are derived? Collected incrementally or on demand?</td>
+<td>State/statistics separation</td>
+</tr>
+<tr>
+<td>How will correctness be verified? (Which invariants?)</td>
+<td>Verification</td>
+</tr>
+<tr>
+<td>How will fidelity be validated? (Against what data?)</td>
+<td>Validation</td>
+</tr>
+<tr>
+<td>Does this introduce new randomness? Which PartitionedRNG subsystem?</td>
+<td>Randomness</td>
+</tr>
+<tr>
+<td>What is the simplest version that answers the same questions?</td>
+<td>Model scoping</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-design-doc-guidelines">3. Design Doc Guidelines<a class="headerlink" href="#3-design-doc-guidelines" title="Permanent link">&para;</a></h2>
+<h3 id="31-the-staleness-test">3.1 The Staleness Test<a class="headerlink" href="#31-the-staleness-test" title="Permanent link">&para;</a></h3>
+<p>Before including any content in a design doc, apply this test:</p>
+<blockquote>
+<p><em>"If the implementation changes this detail during micro-planning, will the design doc silently mislead future readers?"</em></p>
+</blockquote>
+<ul>
+<li><strong>Durable content</strong> (include): invariants, modeling decisions, fidelity trade-offs, extension points described behaviorally, decision rationale with alternatives considered.</li>
+<li><strong>Fragile content</strong> (exclude): Go struct field lists, method implementations, file paths with line numbers, specific parameter names.</li>
+</ul>
+<p>The dividing line: <strong>describe what crosses a boundary and why, not how the boundary is implemented.</strong></p>
+<h3 id="32-four-design-doc-species">3.2 Four Design Doc Species<a class="headerlink" href="#32-four-design-doc-species" title="Permanent link">&para;</a></h3>
+<p>Not all design docs serve the same purpose. Choose the right species based on scope:</p>
+<table>
+<thead>
+<tr>
+<th>Species</th>
+<th>When to Use</th>
+<th>Structure</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Decision Record</strong></td>
+<td>Single-PR architectural choices that need trade-off analysis</td>
+<td>Numbered decisions, each with Problem / Decision / Rationale / Alternatives</td>
+<td>PR12 pre-design (9 decisions)</td>
+</tr>
+<tr>
+<td><strong>Specification</strong></td>
+<td>New subsystem with precise behavioral requirements</td>
+<td>Behavioral contracts, math/formulas, input/output schemas, validation criteria</td>
+<td>Workload generator design</td>
+</tr>
+<tr>
+<td><strong>Problem Analysis</strong></td>
+<td>Refactoring motivated by identified friction or bugs</td>
+<td>Extension scenario analysis, antipattern catalog with evidence, phased fix plan</td>
+<td>Hardening design</td>
+</tr>
+<tr>
+<td><strong>System Overview</strong></td>
+<td>Multi-PR feature spanning multiple modules</td>
+<td>Concept model, module interactions, invariants, phased roadmap</td>
+<td>Evolutionary policy optimization design</td>
+</tr>
+</tbody>
+</table>
+<p>A design doc should declare its species at the top so readers know what to expect.</p>
+<h3 id="33-required-sections-all-species">3.3 Required Sections (All Species)<a class="headerlink" href="#33-required-sections-all-species" title="Permanent link">&para;</a></h3>
+<p>Every BLIS design doc, regardless of species, must include:</p>
+<ol>
+<li><strong>Motivation</strong> — What problem does this solve? What can't users do today? (2-5 sentences, no jargon)</li>
+<li><strong>Scope</strong> — What's in, what's explicitly out, what's deferred to later</li>
+<li><strong>Modeling Decisions</strong> — What is modeled, simplified, and omitted (table format per Section 2.1)</li>
+<li><strong>Invariants</strong> — What must always hold after this design is implemented? What must never happen? (Named: INV-1, INV-2, ...)</li>
+<li><strong>Decisions with Trade-offs</strong> — For each non-obvious choice: what alternatives were considered, why this one won, what breaks if it's wrong</li>
+<li><strong>Extension Points</strong> — Where do future extensions plug in? What is the default behavior? What would a non-default look like?</li>
+<li><strong>Validation Strategy</strong> — How will correctness be verified (invariants) and fidelity be validated (calibration, comparison)?</li>
+<li><strong>DES Checklist</strong> — Completed checklist from Section 2.6</li>
+</ol>
+<h3 id="34-prohibited-content">3.4 Prohibited Content<a class="headerlink" href="#34-prohibited-content" title="Permanent link">&para;</a></h3>
+<p>Do NOT include in design docs (with rationale from project experience):</p>
+<table>
+<thead>
+<tr>
+<th>Content</th>
+<th>Why Not</th>
+<th>What to Write Instead</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Go struct definitions with field lists</td>
+<td>Diverged within 2 PRs in the original design doc — "aspirational signatures"</td>
+<td>Describe what data crosses the boundary and its semantics</td>
+</tr>
+<tr>
+<td>Method implementations</td>
+<td>Changed during micro-planning in every PR</td>
+<td>Describe the behavioral contract (GIVEN/WHEN/THEN)</td>
+</tr>
+<tr>
+<td>File paths with line numbers</td>
+<td>Stale after any refactoring</td>
+<td>Name the module and its responsibility</td>
+</tr>
+<tr>
+<td>Specific parameter/field names</td>
+<td>Renamed during implementation</td>
+<td>Describe the concept ("load metric combining queue depth and batch size")</td>
+</tr>
+<tr>
+<td>Interface signatures in Go syntax</td>
+<td>Froze prematurely in original design doc; actual interfaces were simpler</td>
+<td>Describe the interface's contract: single method? what it observes? what it returns?</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Exception:</strong> Decision Records (species 1) may include brief code snippets when the decision IS about a specific implementation choice (e.g., "use <code>math.Ceil</code> not integer division"). Keep these minimal.</p>
+<h3 id="35-abstraction-levels-across-document-tiers">3.5 Abstraction Levels Across Document Tiers<a class="headerlink" href="#35-abstraction-levels-across-document-tiers" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Content Type</th>
+<th>Design Doc</th>
+<th>Macro Plan</th>
+<th>Micro Plan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>System invariants</td>
+<td>Define (named: INV-1, ...)</td>
+<td>Reference</td>
+<td>Refine to GIVEN/WHEN/THEN</td>
+</tr>
+<tr>
+<td>Modeling decisions (modeled/simplified/omitted)</td>
+<td>Define with justification</td>
+<td>Summarize</td>
+<td>N/A</td>
+</tr>
+<tr>
+<td>Module boundaries (behavioral)</td>
+<td>Define contract</td>
+<td>Reference + annotate per-PR</td>
+<td>Implement</td>
+</tr>
+<tr>
+<td>Interface signatures (Go code)</td>
+<td>No</td>
+<td>Frozen post-freeze PR</td>
+<td>Full code</td>
+</tr>
+<tr>
+<td>File paths</td>
+<td>No</td>
+<td>Inventory + per-PR</td>
+<td>Exact <code>file:line</code></td>
+</tr>
+<tr>
+<td>Fidelity trade-offs</td>
+<td>Define with alternatives</td>
+<td>Reference</td>
+<td>Deviation log if changed</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-module-architecture-principles">4. Module Architecture Principles<a class="headerlink" href="#4-module-architecture-principles" title="Permanent link">&para;</a></h2>
+<h3 id="41-two-layer-architecture">4.1 Two-Layer Architecture<a class="headerlink" href="#41-two-layer-architecture" title="Permanent link">&para;</a></h3>
+<p>BLIS is organized as two layers:</p>
+<p><strong>Layer 1: Simulation Kernel</strong> — domain-agnostic DES infrastructure
+- Event queue (min-heap with deterministic tie-breaking)
+- Clock management (next-event time advance)
+- Randomness (PartitionedRNG with named subsystems)
+- Statistics collection (accumulators decoupled from state)
+- Experiment control (seed, horizon, configuration)</p>
+<p><strong>Layer 2: Domain Modules</strong> — inference-platform-specific model logic, each behind an interface</p>
+<p>The kernel provides the execution substrate. Domain modules define <em>what</em> is being simulated. The kernel never contains inference-specific logic; domain modules never manage the event queue or clock directly.</p>
+<h3 id="42-domain-module-map">4.2 Domain Module Map<a class="headerlink" href="#42-domain-module-map" title="Permanent link">&para;</a></h3>
+<p>BLIS models an extensible distributed inference platform — not any single system. llm-d, vLLM, SGLang, Mooncake, and LMCache are all target systems whose behaviors should be expressible through BLIS's module composition.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>                    ┌──────────────────────────────────────────────┐
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>                    │            Cluster Orchestrator              │
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                    │  (shared clock, event dispatch, aggregation) │
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>                    └──────┬──────────┬──────────┬────────────────┘
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>                           │          │          │
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>                    ┌──────▼───┐ ┌────▼────┐ ┌───▼──────┐
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>                    │ Admission│ │ Router  │ │AutoScaler│
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>                    │ Policy   │ │ Policy  │ │ Policy   │
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>                    └──────────┘ └────┬────┘ └──────────┘
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>                                      │
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>              ┌───────────────────────┬┴──────────────────────┐
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>              │                       │                       │
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>        ┌─────▼──────┐        ┌──────▼──────┐        ┌──────▼──────┐
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>        │ Instance 0  │        │ Instance 1  │        │ Instance N  │
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>        │┌───────────┐│        │             │        │             │
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>        ││ Scheduler  ││        │   . . .     │        │   . . .     │
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>        │├───────────┤│        │             │        │             │
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>        ││ Latency   ││        └─────────────┘        └─────────────┘
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>        ││ Model     ││
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>        │├───────────┤│
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>        ││ KV Cache  ││
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>        ││ Manager   ││
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>        │├───────────┤│
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>        ││ Batch     ││
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>        ││ Formation ││
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>        │└───────────┘│
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>        └─────────────┘
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Responsibility</th>
+<th>Interface Today</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Admission</strong></td>
+<td>Accept/reject requests at cluster entry</td>
+<td><code>AdmissionPolicy</code> (single method)</td>
+<td>Implemented, frozen</td>
+</tr>
+<tr>
+<td><strong>Router</strong></td>
+<td>Select target instance for admitted requests</td>
+<td><code>RoutingPolicy</code> (single method)</td>
+<td>Implemented, frozen</td>
+</tr>
+<tr>
+<td><strong>Scheduler</strong></td>
+<td>Order queued requests within an instance</td>
+<td><code>InstanceScheduler</code> (single method)</td>
+<td>Implemented, frozen</td>
+</tr>
+<tr>
+<td><strong>Priority</strong></td>
+<td>Compute request priority for scheduler</td>
+<td><code>PriorityPolicy</code> (single method)</td>
+<td>Implemented, frozen</td>
+</tr>
+<tr>
+<td><strong>KV Cache Manager</strong></td>
+<td>Allocate/release/cache KV blocks</td>
+<td><code>KVStore</code> (11 methods)</td>
+<td>Implemented</td>
+</tr>
+<tr>
+<td><strong>AutoScaler</strong></td>
+<td>Add/remove instances based on load signals</td>
+<td><code>AutoScalePolicy</code> (planned)</td>
+<td>Target — PR11</td>
+</tr>
+<tr>
+<td><strong>Latency Model</strong></td>
+<td>Estimate step execution time</td>
+<td><code>LatencyModel</code> (5 methods)</td>
+<td>Implemented — <code>NewLatencyModel</code> factory</td>
+</tr>
+<tr>
+<td><strong>Batch Formation</strong></td>
+<td>Select requests from queue for next step</td>
+<td><code>BatchFormation</code> (1 method: <code>FormBatch</code>)</td>
+<td>Implemented — <code>NewBatchFormation</code> factory</td>
+</tr>
+<tr>
+<td><strong>Workload Generator</strong></td>
+<td>Produce request streams from specs/traces</td>
+<td><code>GenerateRequests()</code> function</td>
+<td>Implemented</td>
+</tr>
+<tr>
+<td><strong>Trace Recorder</strong></td>
+<td>Record decisions for analysis</td>
+<td><code>SimulationTrace</code></td>
+<td>Implemented</td>
+</tr>
+<tr>
+<td><strong>Metrics Collector</strong></td>
+<td>Aggregate per-request and system-level metrics</td>
+<td><code>CollectRawMetrics()</code> function</td>
+<td>Implemented</td>
+</tr>
+</tbody>
+</table>
+<p><strong>"Target" means:</strong> the module exists as embedded logic today but lacks an interface boundary. Refactoring PRs will extract the interface. The guidelines define what that interface contract should look like.</p>
+<h3 id="43-module-contract-template">4.3 Module Contract Template<a class="headerlink" href="#43-module-contract-template" title="Permanent link">&para;</a></h3>
+<p>Every module (current or target) is defined by this contract:</p>
+<ol>
+<li><strong>Observes</strong> — what state does this module read? (Its inputs)</li>
+<li><strong>Controls</strong> — what decisions does this module make? (Its outputs)</li>
+<li><strong>Owns</strong> — what mutable state does this module exclusively manage?</li>
+<li><strong>Invariants</strong> — what must always hold for this module?</li>
+<li><strong>Events</strong> — what events does this module produce or consume? (Exogenous/endogenous classification)</li>
+<li><strong>Extension friction</strong> — how many files must change to add one more variant of this module?</li>
+</ol>
+<p>Example — Router module contract:</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Observes</strong></td>
+<td>Request metadata (tokens, prefix, SLO class, tenant), per-instance snapshots (queue depth, batch size, KV utilization, cache hit rate, pending requests), cluster clock</td>
+</tr>
+<tr>
+<td><strong>Controls</strong></td>
+<td>Target instance selection, priority hint for downstream scheduler</td>
+</tr>
+<tr>
+<td><strong>Owns</strong></td>
+<td>No mutable state (stateless policy; any affinity tracking is internal to the policy instance)</td>
+</tr>
+<tr>
+<td><strong>Invariants</strong></td>
+<td>Must select from non-empty snapshot list. Must return a valid instance ID. Selection must be deterministic given same inputs and RNG state.</td>
+</tr>
+<tr>
+<td><strong>Events</strong></td>
+<td>Consumes: <code>AdmissionDecisionEvent</code> (admitted=true). Produces: <code>RoutingDecisionEvent</code>.</td>
+</tr>
+<tr>
+<td><strong>Extension friction</strong></td>
+<td>3 files to add a new routing algorithm (policy file, bundle.go registration, cmd/root.go validation message)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="44-real-system-correspondence">4.4 Real-System Correspondence<a class="headerlink" href="#44-real-system-correspondence" title="Permanent link">&para;</a></h3>
+<p>BLIS modules map to real inference system components, but the mapping is many-to-many — BLIS must be able to express behaviors from multiple real systems:</p>
+<table>
+<thead>
+<tr>
+<th>BLIS Module</th>
+<th>llm-d</th>
+<th>vLLM</th>
+<th>SGLang</th>
+<th>Mooncake</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Router</td>
+<td>Endpoint Picker</td>
+<td>N/A (single-instance)</td>
+<td>N/A (single-instance)</td>
+<td>Global scheduler</td>
+</tr>
+<tr>
+<td>Scheduler</td>
+<td>N/A (engine-internal)</td>
+<td><code>Scheduler</code> class</td>
+<td><code>Scheduler</code> class</td>
+<td>Prefill/decode scheduler</td>
+</tr>
+<tr>
+<td>KV Cache Manager</td>
+<td>N/A (engine-internal)</td>
+<td><code>BlockManager</code></td>
+<td><code>RadixCache</code></td>
+<td>Distributed KV pool</td>
+</tr>
+<tr>
+<td>Latency Model</td>
+<td>N/A (real latency)</td>
+<td>N/A (real latency)</td>
+<td>N/A (real latency)</td>
+<td>N/A (real latency)</td>
+</tr>
+<tr>
+<td>AutoScaler</td>
+<td>HPA / custom</td>
+<td>N/A</td>
+<td>N/A</td>
+<td>N/A</td>
+</tr>
+<tr>
+<td>Batch Formation</td>
+<td>N/A (engine-internal)</td>
+<td>Continuous batching</td>
+<td>Chunked prefill</td>
+<td>Disaggregated batching</td>
+</tr>
+</tbody>
+</table>
+<p>The design implication: module interfaces must be <strong>abstract enough</strong> to express all these variants, but <strong>concrete enough</strong> to capture the behavioral differences that matter for analysis. The modeling decisions table (Section 2.1) determines where on this spectrum each module sits.</p>
+<h3 id="45-the-touch-point-rule">4.5 The Touch-Point Rule<a class="headerlink" href="#45-the-touch-point-rule" title="Permanent link">&para;</a></h3>
+<p>When a design doc introduces a new module boundary, it must specify the expected touch-point count for adding one more variant. The following are <strong>reference targets</strong> based on what works well in the current codebase:</p>
+<table>
+<thead>
+<tr>
+<th>Extension Type</th>
+<th>Reference Target</th>
+<th>Current Reality</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>New policy template</td>
+<td>~3 files</td>
+<td>3 files (meets target)</td>
+</tr>
+<tr>
+<td>New KV cache tier</td>
+<td>~4 files</td>
+<td>4-5 files (acceptable)</td>
+</tr>
+<tr>
+<td>New config parameter</td>
+<td>~2 files</td>
+<td>2 files (meets target — post-#381)</td>
+</tr>
+<tr>
+<td>New observable metric</td>
+<td>~3 files</td>
+<td>6 files (exceeds — known friction)</td>
+</tr>
+<tr>
+<td>New latency model backend</td>
+<td>~2 files</td>
+<td>2 files (meets target)</td>
+</tr>
+<tr>
+<td>New batch formation strategy</td>
+<td>~2 files</td>
+<td>2 files (meets target)</td>
+</tr>
+</tbody>
+</table>
+<p>If a design exceeds the reference target, the design doc must acknowledge the friction and explain whether it's acceptable (justified complexity) or whether structural improvement should happen first or concurrently. The goal is <strong>awareness, not rigidity</strong> — some modules genuinely require more touch points, but that should be a conscious choice, not an accident.</p>
+<h3 id="46-parallel-development-enablement">4.6 Parallel Development Enablement<a class="headerlink" href="#46-parallel-development-enablement" title="Permanent link">&para;</a></h3>
+<p>Module boundaries enable parallel development when:</p>
+<ol>
+<li><strong>Interfaces are stable</strong> — frozen after a designated PR (as done with policy interfaces after PR8)</li>
+<li><strong>Contracts are testable independently</strong> — each module can be tested with mock implementations of adjacent modules</li>
+<li><strong>No shared mutable state</strong> — modules communicate through defined inputs/outputs, not through shared globals or reaching through struct fields</li>
+<li><strong>Bridge types at boundaries</strong> — when two modules in different packages need shared types, bridge types live in the lower-level package (e.g., <code>RouterState</code> in <code>sim/</code> not <code>sim/cluster/</code>)</li>
+</ol>
+<p>A design doc for a new module must demonstrate that two developers could work on different implementations of that module's interface simultaneously, with only behavioral contract tests to keep them aligned.</p>
+<hr />
+<h2 id="5-extension-framework">5. Extension Framework<a class="headerlink" href="#5-extension-framework" title="Permanent link">&para;</a></h2>
+<h3 id="51-extension-taxonomy">5.1 Extension Taxonomy<a class="headerlink" href="#51-extension-taxonomy" title="Permanent link">&para;</a></h3>
+<p>There are four fundamentally different ways to extend BLIS:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>What It Is</th>
+<th>Example</th>
+<th>Scope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Policy Template</strong></td>
+<td>New algorithm behind an existing interface</td>
+<td>New routing algorithm (e.g., power-of-two-choices)</td>
+<td>Single file + registration</td>
+</tr>
+<tr>
+<td><strong>Subsystem Module</strong></td>
+<td>New module with its own interface, events, and state</td>
+<td>AutoScaler, P/D disaggregation</td>
+<td>New interface + integration</td>
+</tr>
+<tr>
+<td><strong>Backend Swap</strong></td>
+<td>Alternative implementation of an internal module</td>
+<td>SGLang latency model alongside vLLM, RadixCache alongside block-based KV</td>
+<td>New implementation behind existing interface</td>
+</tr>
+<tr>
+<td><strong>Tier Composition</strong></td>
+<td>Layering an existing module with additional behavior</td>
+<td>NVMe KV tier wrapping GPU+CPU tiers, network latency wrapping base latency</td>
+<td>Decorator/delegation over existing module</td>
+</tr>
+</tbody>
+</table>
+<p>Understanding which type an extension is determines which recipe to follow.</p>
+<h3 id="52-recipe-policy-template">5.2 Recipe: Policy Template<a class="headerlink" href="#52-recipe-policy-template" title="Permanent link">&para;</a></h3>
+<p><em>Adding a new algorithm behind a frozen interface.</em></p>
+<p>This is the lightest extension type. The interface already exists, the factory already exists, the CLI integration pattern is established.</p>
+<p><strong>Prerequisites:</strong> The target policy interface must exist and be stable.</p>
+<p><strong>Contract the new template must satisfy:</strong>
+- Implements the interface (single method)
+- Deterministic given same inputs and RNG state
+- No side effects beyond its owned state (if stateful)
+- Handles edge cases defined by the interface (e.g., empty snapshot list for routing policies)</p>
+<p><strong>Steps:</strong> Documented in CLAUDE.md "Adding New Policy Templates" — these guidelines don't duplicate, they reference.</p>
+<p><strong>Parallel development:</strong> Multiple policy templates for the same interface can be developed simultaneously by different contributors with zero coordination, since they share only the interface contract.</p>
+<h3 id="53-recipe-subsystem-module">5.3 Recipe: Subsystem Module<a class="headerlink" href="#53-recipe-subsystem-module" title="Permanent link">&para;</a></h3>
+<p><em>Adding an entirely new module with its own behavioral contract.</em></p>
+<p>This is the most architecturally significant extension type. Examples: AutoScaler (PR11), framework adapters (PR15).</p>
+<p><strong>Design doc must define:</strong></p>
+<ol>
+<li><strong>Module contract</strong> (per Section 4.3 template — observes, controls, owns, invariants, events, extension friction)</li>
+<li><strong>Interface design</strong> — prefer single-method interfaces where possible. If multiple methods are needed, justify each one. The interface must be testable with a mock.</li>
+<li><strong>Event integration</strong> — what new event types are added to the cluster event queue? What are their priority constants? How do they interact with existing events?</li>
+<li><strong>State ownership</strong> — what new mutable state does this module introduce? Who creates it, who reads it, who mutates it? No shared mutable state across module boundaries.</li>
+<li><strong>Failure modes</strong> — what happens when the module fails? (Error return? Panic? Graceful degradation?) Which error handling boundary applies? (See CLAUDE.md Engineering Principles)</li>
+<li><strong>Default behavior</strong> — what does BLIS do when this module is not configured? (A no-op default must exist so existing workflows are unaffected)</li>
+<li><strong>Configuration surface</strong> — what CLI flags / YAML config does this add? Validated how?</li>
+</ol>
+<p><strong>Design doc must demonstrate:</strong>
+- The module can be tested in isolation with mocked dependencies
+- Adding the module doesn't change behavior of existing tests (no-op default)
+- The extension friction for adding a second implementation is within reference targets from Section 4.5</p>
+<p><strong>Parallel development:</strong> Once the interface is agreed and frozen, the module implementation and its integration into the cluster orchestrator can proceed independently.</p>
+<h3 id="54-recipe-backend-swap">5.4 Recipe: Backend Swap<a class="headerlink" href="#54-recipe-backend-swap" title="Permanent link">&para;</a></h3>
+<p><em>Alternative implementation of an internal module that currently has no interface.</em></p>
+<p>This is the extension type that requires refactoring first. Examples: SGLang latency model, continuous-vs-chunked batching.</p>
+<p><strong>Two-phase approach:</strong></p>
+<p><strong>Phase A — Extract interface (refactoring PR):</strong>
+- Identify the hardcoded logic (e.g., <code>Step()</code> calling the blackbox latency estimator directly)
+- Define an interface that captures the behavioral contract of the existing implementation
+- Extract the existing implementation behind the new interface
+- Verify: all existing tests pass, no behavior change, the factory returns the existing implementation by default</p>
+<p><strong>Phase B — Add alternative (extension PR):</strong>
+- Implement the new backend behind the extracted interface
+- Add configuration to select between backends (CLI flag or YAML)
+- Add behavioral tests for the new backend
+- Verify: existing tests still pass when default backend is selected</p>
+<p><strong>Design doc must cover both phases.</strong> Phase A is often the harder design challenge — getting the interface abstraction right so that it accommodates both the existing and new backends without over-generalizing.</p>
+<p><strong>Key principle:</strong> The interface should capture <strong>what</strong> the module does (behavioral contract), not <strong>how</strong> one particular backend does it. If the interface has methods that only make sense for one backend, it's too specific.</p>
+<p><strong>Parallel development:</strong> After Phase A merges, multiple backends can be developed simultaneously.</p>
+<h3 id="55-recipe-tier-composition">5.5 Recipe: Tier Composition<a class="headerlink" href="#55-recipe-tier-composition" title="Permanent link">&para;</a></h3>
+<p><em>Layering additional behavior onto an existing module via delegation.</em></p>
+<p>This is the pattern used by <code>TieredKVCache</code> (wraps <code>KVCacheState</code>) and could be used for network latency (wraps base latency model), caching layers, or monitoring wrappers.</p>
+<p><strong>Design doc must define:</strong>
+- Which existing interface is being composed
+- What new behavior the wrapper adds (offloading, caching, monitoring, latency injection)
+- How metrics aggregate across tiers (the wrapper must expose the same metrics interface as the inner module, combining results appropriately)
+- How configuration selects the composition (e.g., <code>--kv-cpu-blocks &gt; 0</code> triggers tiered wrapping)</p>
+<p><strong>Key principle:</strong> The wrapper must satisfy the same interface contract as the inner module. Any caller that works with the inner module must work identically with the wrapper (Liskov substitution).</p>
+<p><strong>Parallel development:</strong> Wrappers are naturally parallelizable — different tiers or decorators can be developed independently as long as they compose through the same interface.</p>
+<h3 id="56-extension-checklist">5.6 Extension Checklist<a class="headerlink" href="#56-extension-checklist" title="Permanent link">&para;</a></h3>
+<p>Before submitting a design doc for any extension, verify:</p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Extension type identified (policy template / subsystem module / backend swap / tier composition)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Correct recipe followed</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Module contract defined (observes / controls / owns / invariants / events / friction)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> No-op default exists (existing behavior unchanged when extension not configured)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Interface testable with mocks (no concrete dependencies leaked through interface)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Parallel development path described (what can proceed independently after interface freeze?)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Touch-point count specified for adding one more variant</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> DES checklist from Section 2.6 completed</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> New randomness declared (PartitionedRNG subsystem name)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Event priority constants assigned (if new events introduced)</li>
+</ul>
+<hr />
+<h2 id="6-anti-patterns-with-evidence">6. Anti-Patterns with Evidence<a class="headerlink" href="#6-anti-patterns-with-evidence" title="Permanent link">&para;</a></h2>
+<p>Every anti-pattern in this section traces to a real bug, a real friction point, or a real design doc failure from BLIS's development history.</p>
+<h3 id="61-design-doc-anti-patterns">6.1 Design Doc Anti-Patterns<a class="headerlink" href="#61-design-doc-anti-patterns" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Anti-Pattern</th>
+<th>What Happened</th>
+<th>Lesson</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>The Type Catalog</strong></td>
+<td>The original design doc contained ~600 lines of Go struct definitions. Within 2 PRs, <code>RouterState</code> went from a 5-section struct to <code>Snapshots + Clock</code>. <code>InstanceScheduler</code> went from 3 methods to 1. The macro plan called these "aspirational signatures that diverged during implementation."</td>
+<td>Describe module boundaries behaviorally, not as Go types. Types change; contracts persist.</td>
+</tr>
+<tr>
+<td><strong>Fidelity for Its Own Sake</strong></td>
+<td>The original design doc specified <code>ShadowKVModel</code> with <code>PrefixHashes</code>, <code>EstimatedUtilization</code>, <code>EvictionQueue</code> — none of which were needed for the analysis questions BLIS answers today.</td>
+<td>Apply Banks et al.'s six model scoping criteria. If you can't name the analysis question a component answers, defer it.</td>
+</tr>
+<tr>
+<td><strong>Silent Staleness</strong></td>
+<td>The design doc's <code>RoutingDecision</code> struct had 8 fields. The implemented version has 4. No mechanism flagged the divergence. Meanwhile, micro-plan deviation logs caught discrepancies with the macro plan because there was an explicit comparison step.</td>
+<td>Higher-level docs need an explicit freshness mechanism. Design docs should version their decisions and mark which are implemented (e.g., a Decision Status column: Proposed / Implemented / Superseded).</td>
+</tr>
+<tr>
+<td><strong>Missing Trade-off Rationale</strong></td>
+<td>Several design doc decisions had no alternatives listed. When implementation revealed a better approach, there was no record of why the original choice was made.</td>
+<td>Every non-obvious decision must list alternatives considered and why they were rejected. This is what makes the PR12 pre-design valuable — each of its 9 decisions has explicit rationale.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="62-module-architecture-anti-patterns">6.2 Module Architecture Anti-Patterns<a class="headerlink" href="#62-module-architecture-anti-patterns" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Anti-Pattern</th>
+<th>What Happened</th>
+<th>Lesson</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Shotgun Surgery</strong></td>
+<td>Adding <code>InstanceID</code> to per-request metrics (#181) required changes in 4 files. Three construction sites for <code>RequestMetrics</code> existed, and one was missed initially.</td>
+<td>Use canonical constructors. Design docs for new types must specify whether a canonical constructor is needed.</td>
+</tr>
+<tr>
+<td><strong>Destructive Read</strong></td>
+<td><code>KVStore.PendingTransferLatency()</code> both queried and cleared the accumulated latency. Callers couldn't distinguish "no latency" from "already consumed." Identified as blocking LMCache integration.</td>
+<td>Query methods must be pure. If a method needs to both query and clear state, provide separate <code>Get()</code> and <code>Consume()</code> methods.</td>
+</tr>
+<tr>
+<td><strong>Interface Leaking Implementation</strong></td>
+<td><code>KVStore</code> interface has 11 methods, several exposing block-level semantics. A distributed KV cache like LMCache doesn't think in blocks — it thinks in tokens and layers. The interface encodes vLLM's implementation model, not the abstract behavioral contract. (#246)</td>
+<td>Design interfaces around the behavioral contract (allocate space, check cache, release space), not around one implementation's data model.</td>
+</tr>
+<tr>
+<td><strong>Monolith Method</strong></td>
+<td><code>Simulator.Step()</code> was 152 lines mixing 4 concerns. Decomposed into named phase methods (<code>scheduleBatch</code>, <code>executeBatchStep</code>, <code>processCompletions</code>, <code>scheduleNextStep</code>).</td>
+<td>Each module's logic should be callable through its interface. When a method contains logic for multiple modules, extract each into its module's interface method.</td>
+</tr>
+<tr>
+<td><strong>Config Mixing Concerns</strong></td>
+<td><code>SimConfig</code> combined 23 fields from 8 concerns. Decomposed into 6 embedded sub-configs with canonical constructors (<code>NewKVCacheConfig</code>, etc.). Adding a field now touches 2 files; the compiler catches all call sites.</td>
+<td>Group configuration by module. Each module's config should be independently specifiable and validatable.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="63-des-specific-anti-patterns">6.3 DES-Specific Anti-Patterns<a class="headerlink" href="#63-des-specific-anti-patterns" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Anti-Pattern</th>
+<th>What Happened</th>
+<th>Lesson</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Golden Tests Without Invariant Tests</strong></td>
+<td>The golden dataset test for codellama expected 499 completions. The code silently dropped one request on KV allocation failure (#183). The golden test encoded the bug as the expected value for months.</td>
+<td>Golden tests answer "did the output change?" Invariant tests answer "is the output correct?" Both are needed (Banks et al.: verification ≠ validation).</td>
+</tr>
+<tr>
+<td><strong>Non-Deterministic Map Iteration</strong></td>
+<td>Five sites iterated Go maps to accumulate floats or determine output ordering. Go map iteration is randomized, violating the determinism invariant.</td>
+<td>All randomness must flow through PartitionedRNG. Map iteration is a hidden source of non-determinism. Sort keys before any iteration that affects output.</td>
+</tr>
+<tr>
+<td><strong>Mixing Exogenous and Endogenous</strong></td>
+<td>The cluster workload generator (exogenous) was tightly coupled to the cluster simulator (endogenous). Impossible to replay the same workload through different configurations without re-generating. PR10 decoupled them.</td>
+<td>Exogenous inputs must be separable from endogenous logic. This enables the fundamental simulation experiment: same input, different configuration, compare results.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="64-the-meta-lesson">6.4 The Meta-Lesson<a class="headerlink" href="#64-the-meta-lesson" title="Permanent link">&para;</a></h3>
+<p>All these anti-patterns share one root cause: <strong>the design was expressed in terms of implementation rather than behavior.</strong> When a design doc specifies Go structs instead of behavioral contracts, the implementation becomes the specification. When a module boundary is defined by its internal data model instead of its observable behavior, the boundary can't accommodate a second implementation.</p>
+<blockquote>
+<p><strong>Describe what a module does and what it guarantees, not how it's built.</strong></p>
+</blockquote>
+<p>If a design doc follows this principle, its content stays durable, its modules stay extensible, its interfaces accommodate multiple backends, and parallel development is naturally enabled — because contributors agree on behavior, not on implementation.</p>
+<hr />
+<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Banks, J., Carson, J. S., Nelson, B. L., &amp; Nicol, D. M. <em>Discrete-Event System Simulation</em> (5th ed.). Pearson. — Foundational text on DES methodology, model scoping, input modeling, output analysis, V&amp;V.</li>
+<li>Misra, J. "Distributed Discrete-Event Simulation." <em>Computing Surveys</em>, Vol. 18, No. 1, March 1986. — Formal correctness proofs for DES, causal ordering, simulation as formal property.</li>
+<li>BLIS Issue #183 — Golden dataset encoded a silently-dropped request. Conservation invariant test would have caught it on day one.</li>
+<li>BLIS PR12 Pre-Design (<code>docs/plans/archive/pr12-architectural-predesign.md</code>) — Gold standard for decision records: 9 decisions, each with trade-off analysis.</li>
+<li>BLIS Hardening Design (<code>docs/plans/archive/2026-02-18-hardening-antipattern-refactoring-design.md</code>) — Extension scenario analysis identifying friction points for autoscaling, LMCache, heterogeneous HW, new engines.</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../standards/experiments/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Experiment Standards">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Experiment Standards
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../macro-plan/" class="md-footer__link md-footer__link--next" aria-label="Next: Macro Plan">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Macro Plan
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
