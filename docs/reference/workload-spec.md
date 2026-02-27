@@ -64,7 +64,7 @@ Used for `input_distribution` and `output_distribution`:
 |------|-----------|
 | `gaussian` | `mean`, `std_dev`, `min`, `max` |
 | `exponential` | `mean` |
-| `pareto_lognormal` | `mean`, `sigma`, `alpha` |
+| `pareto_lognormal` | `alpha`, `xm`, `mu`, `sigma`, `mix_weight` |
 | `constant` | `value` |
 | `empirical` | inline `params` map (key=token count, value=probability) |
 
