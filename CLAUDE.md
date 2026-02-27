@@ -291,6 +291,10 @@ inference-sim/
 │   │   ├── configuration.md   # Configuration reference
 │   │   ├── models.md          # Supported models catalog
 │   │   └── workload-spec.md   # Workload spec YAML schema
+│   ├── methodology/           # Research methodology documentation
+│   │   ├── index.md           # Methodology overview
+│   │   ├── strategy-evolution.md # Strategy Evolution methodology guide
+│   │   └── principles.md     # Discovered principles catalog (30 principles)
 │   ├── contributing/          # Contributor documentation
 │   │   ├── index.md           # Contributing landing page
 │   │   ├── extension-recipes.md # Step-by-step extension guides
