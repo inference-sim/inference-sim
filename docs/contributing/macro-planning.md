@@ -2,7 +2,7 @@
 
 **Status:** Active (v1.0 — updated 2026-02-26)
 
-This document describes the process for creating a macro-level implementation plan (multi-PR feature). For the macro plan template, see [docs/templates/macro-plan.md](../templates/macro-plan.md).
+This document describes the process for creating a macro-level implementation plan (multi-PR feature). For the macro plan template, see [docs/templates/macro-plan.md](templates/macro-plan.md).
 
 ## When a Macro Plan is Needed
 
@@ -25,7 +25,7 @@ This document describes the process for creating a macro-level implementation pl
 
 ## Macro Plan Review Perspectives (8)
 
-For each perspective, check every item. Classify findings as CRITICAL / IMPORTANT / SUGGESTION per the [convergence protocol](convergence.md). Section references below refer to [design-guidelines.md](../templates/design-guidelines.md) and [macro-plan template](../templates/macro-plan.md) unless otherwise noted.
+For each perspective, check every item. Classify findings as CRITICAL / IMPORTANT / SUGGESTION per the [convergence protocol](convergence.md). Section references below refer to [design-guidelines.md](templates/design-guidelines.md) and [macro-plan template](templates/macro-plan.md) unless otherwise noted.
 
 **Perspective 1 — Objective Clarity:**
 - Are 3-7 crisp objectives defined?
@@ -91,7 +91,7 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 
 ## References
 
-- Template: [docs/templates/macro-plan.md](../templates/macro-plan.md)
-- Design guidelines: [docs/templates/design-guidelines.md](../templates/design-guidelines.md)
+- Template: [docs/templates/macro-plan.md](templates/macro-plan.md)
+- Design guidelines: [docs/templates/design-guidelines.md](templates/design-guidelines.md)
 - Convergence protocol: [docs/process/convergence.md](convergence.md)
-- Standards: [docs/standards/rules.md](../standards/rules.md)
+- Standards: [docs/standards/rules.md](standards/rules.md)

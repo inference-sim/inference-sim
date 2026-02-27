@@ -322,7 +322,7 @@ Evidence: H10's "28% TTFT improvement" is specific to GPU=2100 blocks near the p
 
 ## Iterative Review Protocol
 
-> **Canonical source:** [`docs/process/convergence.md`](../process/convergence.md). If this section diverges, convergence.md is authoritative.
+> **Canonical source:** [`docs/process/convergence.md`](../convergence.md). If this section diverges, convergence.md is authoritative.
 
 Every hypothesis experiment iterates until convergence (max 10 rounds per gate) through three review gates, each using the universal convergence protocol:
 

@@ -2,7 +2,7 @@
 
 This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see [Cluster Architecture](architecture.md).
 
-> **Canonical sources:** System invariants (INV-1 through INV-8) are defined in [`docs/standards/invariants.md`](../standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
+> **Canonical sources:** System invariants (INV-1 through INV-8) are defined in [`docs/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
 
 ## Overview
 
@@ -204,7 +204,7 @@ OutputTokenProcessingTime = alpha2
 - Coefficients are trained offline via Bayesian optimization against real vLLM measurements
 - Pre-trained coefficients for common model/GPU combinations are shipped in `defaults.yaml`
 
-See [Configuration Reference: Coefficient Calibration](configuration.md#coefficient-calibration) for the training process.
+See [Configuration Reference: Coefficient Calibration](../reference/configuration.md#coefficient-calibration) for the training process.
 
 ### Roofline Model (Analytical)
 
@@ -232,7 +232,7 @@ This is architecturally correct for vLLM, where CPU post-processing (tokenizatio
 
 ## Scheduling Policies
 
-Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance. To add a new scheduling policy, see [Extension Recipes](../extension-recipes.md).
+Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance. To add a new scheduling policy, see [Extension Recipes](../contributing/extension-recipes.md).
 
 | Policy | Ordering Rule | Use Case |
 |--------|---------------|----------|

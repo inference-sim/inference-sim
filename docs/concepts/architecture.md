@@ -2,7 +2,7 @@
 
 This page describes how BLIS simulates multi-instance inference serving clusters. For single-instance simulation internals, see [Core Engine](core-engine.md).
 
-> **Canonical sources:** Signal freshness (INV-7) is defined in [`docs/standards/invariants.md`](../standards/invariants.md). If signal freshness descriptions here diverge, `invariants.md` is authoritative.
+> **Canonical sources:** Signal freshness (INV-7) is defined in [`docs/standards/invariants.md`](../contributing/standards/invariants.md). If signal freshness descriptions here diverge, `invariants.md` is authoritative.
 
 ## Overview
 
@@ -57,7 +57,7 @@ Admission is the first gate in the online routing pipeline. Every incoming reque
 
 **Token bucket** rate-limits by consuming tokens proportional to input length: each request consumes tokens equal to its input token count, tokens refill at a constant rate, and requests are rejected when the bucket has insufficient tokens. Capacity and refill rate are configured via `--token-bucket-capacity` and `--token-bucket-refill-rate`.
 
-Rejected requests are counted in the output metrics but do not enter the routing pipeline. To add a new admission policy, see [Extension Recipes](../extension-recipes.md). See [Configuration Reference](configuration.md#admission-policy) for flag details.
+Rejected requests are counted in the output metrics but do not enter the routing pipeline. To add a new admission policy, see [Extension Recipes](../contributing/extension-recipes.md). See [Configuration Reference](../reference/configuration.md#admission-policy) for flag details.
 
 ## Routing Pipeline
 
@@ -86,7 +86,7 @@ The routing decision follows this pipeline:
 4. **Sum:** Weighted scores are summed across scorers for each instance
 5. **Select:** The instance with the highest total score is chosen (argmax)
 
-Default weights: `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity). Note: weights are normalized to sum to 1.0 before scoring, so only weight ratios matter — `prefix-affinity:3,queue-depth:2` is identical to `prefix-affinity:30,queue-depth:20`. To add a new scorer, see [Extension Recipes](../extension-recipes.md).
+Default weights: `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity). Note: weights are normalized to sum to 1.0 before scoring, so only weight ratios matter — `prefix-affinity:3,queue-depth:2` is identical to `prefix-affinity:30,queue-depth:20`. To add a new scorer, see [Extension Recipes](../contributing/extension-recipes.md).
 
 ![Scoring Pipeline](diagrams/scoringpipeline.png)
 

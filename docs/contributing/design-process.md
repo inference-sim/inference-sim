@@ -2,7 +2,7 @@
 
 **Status:** Active (v1.0 — updated 2026-02-26)
 
-This document describes the process for writing a BLIS design document. For the design document template itself, see [docs/templates/design-guidelines.md](../templates/design-guidelines.md).
+This document describes the process for writing a BLIS design document. For the design document template itself, see [docs/templates/design-guidelines.md](templates/design-guidelines.md).
 
 ## When a Design Doc is Needed
 
@@ -14,7 +14,7 @@ This document describes the process for writing a BLIS design document. For the 
 
 ## Steps
 
-1. **Identify the extension type** — policy template, subsystem module, backend swap, or tier composition (see [design guidelines](../templates/design-guidelines.md) Section 5)
+1. **Identify the extension type** — policy template, subsystem module, backend swap, or tier composition (see [design guidelines](templates/design-guidelines.md) Section 5)
 2. **Choose the design doc species** — decision record, specification, problem analysis, or system overview (Section 3.2)
 3. **Complete the DES checklist** (Section 2.6) — model scoping, event design, state/statistics, V&V, randomness
 4. **Write the design doc** per the template's required sections (Section 3.3): motivation, scope, modeling decisions, invariants, decisions with trade-offs, extension points, validation strategy
@@ -24,7 +24,7 @@ This document describes the process for writing a BLIS design document. For the 
 
 ## Design Review Perspectives (8)
 
-For each perspective, check every item. Classify findings as CRITICAL / IMPORTANT / SUGGESTION per the [convergence protocol](convergence.md). Section references below refer to [design-guidelines.md](../templates/design-guidelines.md) unless otherwise noted.
+For each perspective, check every item. Classify findings as CRITICAL / IMPORTANT / SUGGESTION per the [convergence protocol](convergence.md). Section references below refer to [design-guidelines.md](templates/design-guidelines.md) unless otherwise noted.
 
 **Perspective 1 — Motivation & Scoping:**
 - Are the analysis questions clear and specific?
@@ -87,6 +87,6 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 
 ## References
 
-- Template: [docs/templates/design-guidelines.md](../templates/design-guidelines.md)
+- Template: [docs/templates/design-guidelines.md](templates/design-guidelines.md)
 - Convergence protocol: [docs/process/convergence.md](convergence.md)
-- Standards: [docs/standards/rules.md](../standards/rules.md), [docs/standards/invariants.md](../standards/invariants.md)
+- Standards: [docs/standards/rules.md](standards/rules.md), [docs/standards/invariants.md](standards/invariants.md)

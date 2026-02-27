@@ -5,7 +5,7 @@ Every rule traces to a real bug, design failure, or hypothesis finding. Rules ar
 - **Micro-plan Phase 8** — checklist before implementation
 - **Self-audit Step 4.75** — deliberate critical thinking before commit
 
-For the full process, see [docs/process/pr-workflow.md](../process/pr-workflow.md).
+For the full process, see [docs/process/pr-workflow.md](../pr-workflow.md).
 
 ## Priority Tiers
 
