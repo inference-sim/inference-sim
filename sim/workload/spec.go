@@ -273,10 +273,16 @@ func validateDistSpec(prefix string, d *DistSpec) error {
 	return nil
 }
 
+// maxCohortPopulation caps per-cohort population to prevent OOM from YAML input.
+const maxCohortPopulation = 100_000
+
 func validateCohort(c *CohortSpec, idx int) error {
 	prefix := fmt.Sprintf("cohort[%d]", idx)
 	if c.Population <= 0 {
 		return fmt.Errorf("%s: population must be positive, got %d", prefix, c.Population)
+	}
+	if c.Population > maxCohortPopulation {
+		return fmt.Errorf("%s: population %d exceeds maximum %d", prefix, c.Population, maxCohortPopulation)
 	}
 	if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
 		return err
@@ -302,11 +308,17 @@ func validateCohort(c *CohortSpec, idx int) error {
 		}
 	}
 	if c.Spike != nil {
+		if c.Spike.StartTimeUs < 0 {
+			return fmt.Errorf("%s: spike start_time_us must be non-negative, got %d", prefix, c.Spike.StartTimeUs)
+		}
 		if c.Spike.DurationUs <= 0 {
 			return fmt.Errorf("%s: spike duration_us must be > 0, got %d", prefix, c.Spike.DurationUs)
 		}
 	}
 	if c.Drain != nil {
+		if c.Drain.StartTimeUs < 0 {
+			return fmt.Errorf("%s: drain start_time_us must be non-negative, got %d", prefix, c.Drain.StartTimeUs)
+		}
 		if c.Drain.RampDurationUs <= 0 {
 			return fmt.Errorf("%s: drain ramp_duration_us must be > 0, got %d", prefix, c.Drain.RampDurationUs)
 		}

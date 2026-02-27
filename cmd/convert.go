@@ -115,8 +115,11 @@ var convertInfPerfCmd = &cobra.Command{
 	},
 }
 
-// writeSpecToStdout marshals a WorkloadSpec to YAML and writes to stdout.
+// writeSpecToStdout validates and marshals a WorkloadSpec to YAML on stdout.
 func writeSpecToStdout(spec *workload.WorkloadSpec) {
+	if err := spec.Validate(); err != nil {
+		logrus.Fatalf("generated spec is invalid: %v", err)
+	}
 	data, err := yaml.Marshal(spec)
 	if err != nil {
 		logrus.Fatalf("YAML marshal failed: %v", err)

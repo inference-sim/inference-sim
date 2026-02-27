@@ -629,3 +629,37 @@ func TestGenerateRequests_EmptyModel_DefaultsToEmpty(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateRequests_ZeroAggregateRate_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		}},
+	}
+	_, err := GenerateRequests(spec, math.MaxInt64, 0)
+	if err == nil {
+		t.Fatal("expected error for zero aggregate_rate")
+	}
+}
+
+func TestGenerateRequests_NaNAggregateRate_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: math.NaN(),
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		}},
+	}
+	_, err := GenerateRequests(spec, math.MaxInt64, 0)
+	if err == nil {
+		t.Fatal("expected error for NaN aggregate_rate")
+	}
+}

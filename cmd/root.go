@@ -220,10 +220,12 @@ var runCmd = &cobra.Command{
 				simulationHorizon = spec.Horizon
 			}
 		} else if workloadType == "traces" {
-			// CSV trace path → synthesize v2 spec
+			// CSV trace path → synthesize v2 spec (lossy conversion)
 			if tracesWorkloadFilePath == "" {
 				logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")
 			}
+			logrus.Warn("--workload traces uses lossy CSV conversion (averaged token lengths, constant arrival). " +
+				"For faithful trace replay, use --workload-spec with a trace v2 YAML file instead.")
 			var err error
 			spec, err = workload.SynthesizeFromCSVTrace(tracesWorkloadFilePath, simulationHorizon)
 			if err != nil {

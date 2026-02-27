@@ -1,10 +1,6 @@
 package workload
 
-import (
-	"fmt"
-
-	"github.com/sirupsen/logrus"
-)
+import "fmt"
 
 // DistributionParams holds the legacy CLI parameters for distribution-based
 // workload generation. Maps directly to the old GuideLLMConfig fields.
@@ -90,9 +86,8 @@ func SynthesizeFromPreset(presetName string, preset PresetConfig, rate float64, 
 // lengths are replaced by aggregate statistics (mean lengths, constant rate).
 // For faithful trace replay preserving per-request fidelity, use --workload-spec
 // with a trace v2 YAML file (LoadTraceV2 + ReplayTraceV2Requests).
+// R6: no logging — callers should warn about lossy conversion.
 func SynthesizeFromCSVTrace(path string, horizon int64) (*WorkloadSpec, error) {
-	logrus.Warn("--workload traces uses lossy CSV conversion (averaged token lengths, constant arrival). " +
-		"For faithful trace replay, use --workload-spec with a trace v2 YAML file instead.")
 	spec, err := ConvertCSVTrace(path, horizon)
 	if err != nil {
 		return nil, fmt.Errorf("synthesizing from CSV trace: %w", err)
