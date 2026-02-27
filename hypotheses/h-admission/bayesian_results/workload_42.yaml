@@ -1,0 +1,29 @@
+version: "2"
+seed: 42
+category: language
+aggregate_rate: 2000
+clients:
+  - id: critical
+    slo_class: critical
+    rate_fraction: 0.33
+    prefix_group: shared-prompt
+    prefix_length: 512
+    arrival: {process: poisson}
+    input_distribution: {type: gaussian, params: {mean: 256, std_dev: 100, min: 64, max: 512}}
+    output_distribution: {type: exponential, params: {mean: 128, min: 16, max: 1024}}
+  - id: standard
+    slo_class: standard
+    rate_fraction: 0.34
+    prefix_group: shared-prompt
+    prefix_length: 512
+    arrival: {process: poisson}
+    input_distribution: {type: gaussian, params: {mean: 256, std_dev: 100, min: 64, max: 512}}
+    output_distribution: {type: exponential, params: {mean: 128, min: 16, max: 1024}}
+  - id: sheddable
+    slo_class: sheddable
+    rate_fraction: 0.33
+    prefix_group: shared-prompt
+    prefix_length: 512
+    arrival: {process: poisson}
+    input_distribution: {type: gaussian, params: {mean: 256, std_dev: 100, min: 64, max: 512}}
+    output_distribution: {type: exponential, params: {mean: 128, min: 16, max: 1024}}
