@@ -100,9 +100,9 @@ clients:
 |------|-----------|----------|
 | `gaussian` | `mean`, `std_dev`, `min`, `max` | Normal distribution, clamped to range |
 | `exponential` | `mean` | Right-skewed, long tail |
-| `pareto_lognormal` | `mean`, `sigma`, `alpha` | Heavy-tailed (models real production traffic) |
+| `pareto_lognormal` | `alpha`, `xm`, `mu`, `sigma`, `mix_weight` | Heavy-tailed (Pareto-LogNormal mixture) |
 | `constant` | `value` | Fixed token count (useful for controlled experiments) |
-| `empirical` | `file` | Sample from a recorded distribution |
+| `empirical` | `params` | Inline key-value map (token count → probability) |
 
 ## SLO Classes
 

@@ -162,7 +162,7 @@ BLIS supports four workload specification modes, in order of precedence:
 |------|---------|-------------|
 | **Workload-spec YAML** | `--workload-spec <path>` | Multi-client workload with per-client distributions. Highest priority. |
 | **CLI distribution** | `--workload distribution` (default) | Single-client Gaussian distribution controlled by CLI flags. |
-| **Preset** | `--workload <name>` | Named preset from `defaults.yaml` (chatbot, summarization, etc.). |
+| **Preset** | `--workload <name>` | Named preset from `defaults.yaml`: `chatbot`, `contentgen`, `summarization`, `multidoc`. |
 | **CSV traces** | `--workload traces` | Replay recorded traces from a CSV file. |
 
 ### Distribution Mode Flags

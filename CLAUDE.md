@@ -148,9 +148,11 @@ Full details: see [`docs/contributing/standards/principles.md`](docs/contributin
 
 ### Current Implementation Focus
 
-Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`). PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache) completed. Default weighted routing profile: `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity).
+Composable Scorer Framework completed: PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache). Default weighted routing profile: `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity).
 
 Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + SLO tiers), W0-2 (binary rename + converters), W0-3 (cohort population dynamics), W0-4 (legacy retirement). All workload generation now flows through `sim/workload/GenerateRequests()`. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant. CLI binary renamed from `simulation_worker` to `blis`.
+
+Recent work: MkDocs documentation site (#450), roofline auto-fetch flag (#435), metrics substrate fixes (#458), cross-cutting documentation audit (#460).
 
 ### Extension Recipes
 
@@ -164,10 +166,10 @@ Step-by-step guides for adding policies, scorers, latency model backends, KV tie
 
 ### CI/CD
 
-GitHub Actions CI runs on all PRs to main (`.github/workflows/ci.yml`):
-- `go build ./...` - Build verification
-- `golangci-lint run ./...` - Static analysis (v2.9.0)
-- `go test ./...` - Test suite
+GitHub Actions CI runs on all PRs to main:
+
+- `.github/workflows/ci.yml` — Build verification (`go build ./...`), static analysis (`golangci-lint run ./...`, v2.9.0), test suite (`go test ./...`)
+- `.github/workflows/docs.yml` — MkDocs site: PR validation (build-only), deploy on push to main, versioned on tag
 
 Run lint locally before pushing: `golangci-lint run ./...`
 
@@ -226,8 +228,10 @@ inference-sim/
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
 │   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/); HardwareCalib includes MemoryGiB (reserved for future KV capacity auto-calculation)
-│   ├── workload_config.go     # CSV trace loading and distribution-based workload generation
-│   └── internal/testutil/     # Shared test infrastructure (golden dataset loading)
+│   └── internal/              # Shared internal packages
+│       ├── hash/              # Block-level hashing for prefix cache
+│       ├── testutil/          # Shared test infrastructure (golden dataset loading)
+│       └── util/              # General utility functions
 ├── sim/kv/                    # KV cache implementations (PKG-1)
 │   ├── cache.go               # KVCacheState (single-tier GPU)
 │   ├── tiered.go              # TieredKVCache (GPU+CPU offload/reload)
@@ -317,7 +321,8 @@ inference-sim/
 │   │   └── templates/         # Artifact templates (micro-plan, macro-plan, design-guidelines, hypothesis)
 │   └── plans/                 # Active implementation plans (excluded from MkDocs)
 │       └── archive/           # Completed design docs (architectural reference)
-└── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
+├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
+└── mkdocs.yml                 # MkDocs Material site configuration
 ```
 
 ### Latency Estimation
