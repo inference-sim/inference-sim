@@ -421,7 +421,53 @@ Key: PA:QD ratio is the sole dominant parameter. Admission thresholds don't matt
 
 PA creates effective session affinity: 8 sessions × 8 instances → near-1:1 mapping.
 
-### New Components Implemented (Iterations 6-17)
+### Iteration 18: Bursty Arrivals — STRONGEST RESULT (+65%)
+
+Gamma CV=2.0 at rate=2000: compound achieves 174ms (+65% vs RR's 496ms). Static baseline ≈ RR under bursts (502ms).
+Principle #13: Bursty arrivals amplify admission control benefit.
+
+### Iteration 19: Instance Scaling — Advantage Grows at Small Scale
+
+| N | Rate | RR | Compound | vs RR |
+|---|------|-----|---------|-------|
+| 4 | 1000 | 1461ms | 242ms | **+83.5%** |
+| 8 | 2000 | 463ms | 141ms | **+69.6%** |
+| 16 | 4000 | 266ms | 130ms | **+51.2%** |
+
+Principle #14: Compound advantage scales inversely with cluster size.
+
+## Final Summary: 19 Iterations, 1000+ Experiments, 14 Principles
+
+### The Definitive Strategy
+
+**At high load (ρ > 0.8)**: `prefix-affinity:4, queue-depth:3` + SLO-gated admission + SLO-class priority + PriorityFCFS
+- **Poisson at rate=2000**: 132ms P99 (+55% vs RR)
+- **Bursty Gamma CV=2.0**: 174ms P99 (+65% vs RR)
+- **Small clusters (N=4)**: 242ms P99 (+83.5% vs RR)
+
+**At moderate load (ρ < 0.8)**: `prefix-affinity:3, queue-depth:2` (no kv-utilization)
+- 65ms P99 (+11% vs RR) — KV-pressure-invariant, staleness-immune
+
+**Under KV pressure**: Drop kv-utilization scorer (principle #6)
+
+### The 14 Principles of Optimal LLM Inference Routing
+
+1. Orthogonal signals > pre-combined signals (iter 4)
+2. Full N-way scan > P2C (iter 1)
+3. PA scorer self-corrects on miss (iter 2)
+4. Uniform routing > SLO-differentiated routing (iter 5)
+5. Routing dominates scheduling at moderate load (iter 3/5)
+6. KV-utilization scorer is counterproductive under pressure (iter 6/8)
+7. Regime-dependent adaptation (iter 8/10)
+8. Approximate routing degrades under KV pressure (iter 6, llm-d blog)
+9. Admission control is the 3rd lever at high load (iter 11)
+10. PA:QD ratio is the dominant parameter; safety rule ≤1.33 (iter 13/14)
+11. Goodput > P99 as primary metric (iter 14)
+12. Staleness immunity from signal independence (iter 16)
+13. Bursty arrivals amplify admission benefit (iter 18)
+14. Compound advantage scales inversely with cluster size (iter 19)
+
+### New Components Implemented (Iterations 6-19)
 - `SLOClassPriority` — per-SLO-class base scores (critical=10, standard=5, batch=1)
 - `kv-pressure` scorer — FreeKVBlocks-based differentiation
 - `KVAdaptiveScoring` — parameterized dual-profile routing with configurable thresholds
