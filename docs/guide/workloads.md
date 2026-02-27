@@ -102,7 +102,7 @@ clients:
 | `exponential` | `mean` | Right-skewed, long tail |
 | `pareto_lognormal` | `mean`, `sigma`, `alpha` | Heavy-tailed (models real production traffic) |
 | `constant` | `value` | Fixed token count (useful for controlled experiments) |
-| `empirical` | `file` | Sample from a recorded distribution |
+| `empirical` | `params` | Inline key-value map (token count → probability) |
 
 ## SLO Classes
 
