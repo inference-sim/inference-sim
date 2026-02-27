@@ -225,6 +225,30 @@ The full N-way scan in weighted scoring provides better cache coverage than P2C'
 
 **Remaining experiment**: Need rate=600-1000 or N=4 to force saturation. The scheduling benefit appears only when queues are non-trivially deep.
 
+**Second batch** (N=4, rates 200-400, mixed-SLO): Still identical across all cache-aware policies. Even N=4 at rate=400 doesn't saturate because cache hits reduce prefill from 82ms to 9ms.
+
+**Third batch** (N=4, decode-dominated, output mean=1024, mixed-SLO):
+
+| Rate | RR | Static-Default | Adaptive+SLO-Priority | SJF |
+|------|-----|------|------|------|
+| 100 | 67.31ms | **51.36ms** | 53.03ms | **51.36ms** |
+| 150 | 70.25ms | **57.60ms** | 60.75ms | **57.60ms** |
+| 200 | 73.52ms | **65.38ms** | 68.77ms | **65.38ms** |
+
+**Critical discovery**: Adaptive+SLO priority is 3-5% WORSE than static-default! Per-SLO routing profiles FRAGMENT cache affinity — routing different SLO classes to different instances reduces per-instance cache hit rate. The uniform static-default maintains maximum cache affinity for ALL request types.
+
+### Iteration 5 Accumulated Insights
+1. **SLO-differentiated routing HURTS performance** by fragmenting cache affinity
+2. **SLO-class priority has zero effect** because routing keeps queues short
+3. **SJF = static-default** because effective token counts converge after caching
+4. **Static pa:3,qd:2,kv:2 is provably optimal** for the composable scorer framework:
+   - Orthogonal signals (PA=cache, QD=load) maximize argmax information
+   - PA self-corrects to 0 on cache miss → no dynamic switching needed
+   - Uniform application to all SLO classes preserves maximum cache affinity
+   - 3:2:2 ratio balances cache exploitation vs load balance
+5. **Cache-aware routing eliminates queueing** → scheduling becomes irrelevant
+6. **The framework IS the strategy** — the composable scorer architecture with orthogonal dimensions is the optimal design. No per-request adaptation, SLO profiling, or scheduling tricks improve upon it.
+
 4. **Next direction**: Scheduling-layer optimization to compound the routing benefit. PriorityFCFS with cache-aware priority should create HOL-blocking reduction (H27 analog)
 
 ### Iteration 3: Scheduling Co-optimization (CPAR) — NULL RESULT
