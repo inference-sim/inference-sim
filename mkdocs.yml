@@ -93,6 +93,10 @@ nav:
       - Configuration: reference/configuration.md
       - Supported Models: reference/models.md
       - Workload Spec Schema: reference/workload-spec.md
+  - Methodology:
+      - methodology/index.md
+      - Strategy Evolution: methodology/strategy-evolution.md
+      - Discovered Principles: methodology/principles.md
   - Contributing:
       - contributing/index.md
       - Extension Recipes: contributing/extension-recipes.md
