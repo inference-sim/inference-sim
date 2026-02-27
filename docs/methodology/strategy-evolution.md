@@ -11,13 +11,13 @@ In systems with multiple interacting policy layers — routing, scheduling, memo
 Strategy Evolution discovers optimal configurations through disciplined experimentation: human-guided mechanism design combined with machine-guided parameter optimization, organized into iterative cycles with rigorous measurement and cumulative principle extraction.
 
 ```mermaid
-flowchart LR
-    P1[Phase 1\nProblem\nFraming] --> P2[Phase 2\nMulti-Judge\nResearch]
-    P2 --> P3[Phase 3\nImplement &\nMeasure]
-    P3 --> P4[Phase 4\nBayesian\nOptimization]
-    P4 --> P5[Phase 5\nAblation &\nPrinciples]
+flowchart TD
+    P1["Phase 1<br/>Problem Framing"] --> P2["Phase 2<br/>Multi-Judge Research"]
+    P2 --> P3["Phase 3<br/>Implement & Measure"]
+    P3 --> P4["Phase 4<br/>Bayesian Optimization"]
+    P4 --> P5["Phase 5<br/>Ablation & Principles"]
     P5 -->|Iterate| P2
-    P5 -->|Converged| Done[Definitive\nStrategy +\nPrinciples]
+    P5 -->|Converged| Done["Definitive Strategy<br/>+ Principles"]
 ```
 
 ---
@@ -105,15 +105,15 @@ Once a mechanism proves directionally correct, optimize its parameters:
 
 ```mermaid
 flowchart TD
-    A[Define parameter ranges\nin strategy YAML] --> B[Bayesian optimizer\nselects next point]
-    B --> C[Run simulator\n3 seeds × N params]
-    C --> D{Constraint\nviolation?}
-    D -->|Yes| E[Add penalty\nto objective]
-    D -->|No| F[Record metric]
-    E --> G[Update GP\nsurrogate model]
+    A["Define parameter ranges<br/>in strategy YAML"] --> B["Bayesian optimizer<br/>selects next point"]
+    B --> C["Run simulator<br/>3 seeds x N params"]
+    C --> D{"Constraint<br/>violation?"}
+    D -->|Yes| E["Add penalty<br/>to objective"]
+    D -->|No| F["Record metric"]
+    E --> G["Update GP<br/>surrogate model"]
     F --> G
     G -->|Budget remaining| B
-    G -->|Budget exhausted| H[Extract best\nparameters]
+    G -->|Budget exhausted| H["Extract best<br/>parameters"]
 ```
 
 This separates **mechanism design** (human creativity) from **parameter tuning** (machine search). Every strategy gets the benefit of optimization, so comparisons are fair.
@@ -161,7 +161,7 @@ Stress-test winning strategies:
 
 Every few iterations, distill findings into **numbered principles** — concise, falsifiable statements grounded in experimental evidence. These constrain future iterations and prevent re-learning the same lessons.
 
-See [Discovered Principles](principles.md) for the full catalog.
+A principles catalog documenting findings from the BLIS strategy evolution experiments is planned for a future release.
 
 ---
 
@@ -176,13 +176,21 @@ The following Claude Code skills were used throughout the process:
 | `/convergence-review` (design gate) | 2 | Multi-perspective design review (5 judges) |
 | `/convergence-review` (h-findings gate) | 5 | Multi-perspective findings review (10 judges) |
 | `/review-plan` | 2, 3 | Send plans to external LLMs for technical review |
-| `/hypothesis-test` | 3 | Structured experiment: scaffold → run → analyze → findings |
+| `/hypothesis-experiment` | 3 | Structured experiment: scaffold → run → analyze → findings |
 | `/test-driven-development` | 3 | TDD for new policy implementations |
 | `/executing-plans` | 3 | Step-by-step implementation with review gates |
 | `/verification-before-completion` | 3, 5 | Confirm results before claiming success |
 | `/code-review` | 5 | Post-implementation quality audit |
 | `/commit-push-pr` | 5 | Clean git integration after validation |
 | `/dispatching-parallel-agents` | 3 | Parallel hypothesis execution across tracks |
+
+!!! info "Where to Get These Skills"
+    These skills are [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugins. To install them:
+
+    - **`/brainstorming`, `/test-driven-development`, `/executing-plans`, `/verification-before-completion`, `/dispatching-parallel-agents`, `/code-review`, `/commit-push-pr`**: Install the [superpowers](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add superpowers`
+    - **`/convergence-review`, `/hypothesis-experiment`**: Project-local skills defined in this repository's `.claude/skills/` directory. Available automatically when Claude Code is run from the repo root.
+    - **`/research-ideas`, `/review-plan`**: Install the [research-ideas](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add research-ideas`
+    - **`/pr-review-toolkit:review-pr`**: Install the [pr-review-toolkit](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add pr-review-toolkit`
 
 **Non-skill tools:**
 
@@ -245,4 +253,4 @@ gantt
 ```
 
 !!! note "Experimental Configurations"
-    The winning strategies described above were discovered during Strategy Evolution experiments using custom configurations. Some components (SLO-gated admission, SLO-tiered priority as compound strategies) are not yet available as standard BLIS policy templates. The current BLIS default (`pa:3,qd:2,kv:2`) is maintained for llm-d parity. See RP-7 in the [principles catalog](principles.md) for the regime-dependent recommendation.
+    The winning strategies described above were discovered during Strategy Evolution experiments using custom configurations. Some components (SLO-gated admission, SLO-tiered priority as compound strategies) are not yet available as standard BLIS policy templates. The current BLIS default (`pa:3,qd:2,kv:2`) is maintained for llm-d parity. The regime-dependent recommendation (normal KV: `pa:3,qd:2,kv:2`; under pressure: `pa:3,qd:2`; high load with admission: `pa:4,qd:3`) will be documented in the forthcoming principles catalog.
