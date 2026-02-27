@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LinearRegression
+from scipy.optimize import nnls
 
 from evaluation import (
     compute_mape,
@@ -27,42 +27,63 @@ _TARGET_COL = "step.duration_us"
 
 
 class BlackboxBaseline:
-    """Re-trained 3-coefficient linear regression matching BLIS blackbox model.
+    """Re-trained 3-coefficient non-negative linear model matching BLIS blackbox.
 
     StepTime = beta0 + beta1 * batch.prefill_tokens + beta2 * batch.decode_tokens
 
-    This mirrors sim/latency/latency.go:23-38 (BlackboxLatencyModel.StepTime),
-    where batch.prefill_tokens corresponds to cacheMissTokens and
-    batch.decode_tokens corresponds to decodeTokens.
+    All three coefficients are constrained to be >= 0 via NNLS (non-negative
+    least squares). The intercept is modelled as a third feature (ones column)
+    so that the non-negativity constraint applies uniformly to all betas.
+
+    Column normalization is applied before NNLS to avoid scale mismatch between
+    the ones column (~1) and token columns (~0-2048), then coefficients are
+    rescaled to original units.
     """
 
     def __init__(self) -> None:
-        self._model: LinearRegression | None = None
+        self._coeffs: np.ndarray | None = None  # [beta0, beta1, beta2]
 
     def fit(self, train_df: pd.DataFrame) -> BlackboxBaseline:
-        """Train on step-level data. Uses sklearn LinearRegression."""
-        X = train_df[_FEATURE_COLS].values
-        y = train_df[_TARGET_COL].values
-        self._model = LinearRegression()
-        self._model.fit(X, y)
+        """Train on step-level data using column-normalized NNLS.
+
+        Constructs A = [ones, prefill_tokens, decode_tokens], normalizes each
+        column by its L2 norm, solves NNLS, then rescales coefficients back.
+        """
+        X = train_df[_FEATURE_COLS].to_numpy(dtype=np.float64)
+        y = train_df[_TARGET_COL].to_numpy(dtype=np.float64)
+
+        # Build design matrix: [ones, prefill, decode]
+        ones = np.ones((X.shape[0], 1), dtype=np.float64)
+        A = np.hstack([ones, X])
+
+        # Column-normalize to fix conditioning
+        col_norms = np.linalg.norm(A, axis=0)
+        col_norms[col_norms == 0] = 1.0  # guard against zero columns
+        A_normed = A / col_norms
+
+        # Solve NNLS on normalized problem
+        x_normed, _ = nnls(A_normed, y)
+
+        # Rescale coefficients back to original units
+        self._coeffs = x_normed / col_norms
         return self
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
         """Predict step.duration_us from batch features."""
-        if self._model is None:
+        if self._coeffs is None:
             raise RuntimeError("BlackboxBaseline.predict() called before fit()")
-        X = df[_FEATURE_COLS].values
-        return self._model.predict(X)
+        X = df[_FEATURE_COLS].to_numpy(dtype=np.float64)
+        return self._coeffs[0] + X @ self._coeffs[1:]
 
     @property
     def coefficients(self) -> dict:
         """Return {"beta0": intercept, "beta1": prefill_coeff, "beta2": decode_coeff}."""
-        if self._model is None:
+        if self._coeffs is None:
             raise RuntimeError("BlackboxBaseline.coefficients accessed before fit()")
         return {
-            "beta0": float(self._model.intercept_),
-            "beta1": float(self._model.coef_[0]),
-            "beta2": float(self._model.coef_[1]),
+            "beta0": float(self._coeffs[0]),
+            "beta1": float(self._coeffs[1]),
+            "beta2": float(self._coeffs[2]),
         }
 
 
