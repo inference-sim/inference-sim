@@ -83,6 +83,8 @@ func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPoli
 		return NewTokenBucket(capacity, refillRate)
 	case "reject-all":
 		return &RejectAll{}
+	case "slo-gated":
+		return NewSLOGatedAdmission(DefaultSLOGatedConfig())
 	default:
 		panic(fmt.Sprintf("unhandled admission policy %q", name))
 	}
