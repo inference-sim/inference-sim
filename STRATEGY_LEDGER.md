@@ -270,6 +270,24 @@ The degradation under KV pressure appears to be from PA-driven LOAD imbalance (n
 
 **Key remaining question**: Why does static-default degrade under KV pressure when KV utilization stays low? The llm-d blog's finding about approximate vs precise routing suggests the answer: the `PrefixCacheIndex` (approximate) diverges from actual KV state under block pressure, causing phantom cache hits that route to suboptimal instances.
 
+### Iteration 8: BREAKTHROUGH — `pa:3,qd:2` (no kv-util) is optimal!
+
+| KV Blocks | RR | pa:3,qd:2,kv:2 | **pa:3,qd:2** | pa:2,qd:2,kv:5 |
+|-----------|-----|------|------|------|
+| 132K | 73.5ms | 68.4ms | **65.5ms** (+11%) | 76.7ms |
+| 5000 | 73.5ms | 91.9ms | **65.5ms** (+11%) | 76.7ms |
+
+**REMOVING the kv-utilization scorer improves performance by 4% AND makes the strategy KV-pressure-immune!**
+
+Root cause: kv-util penalizes instances with cached content (high utilization from cached blocks) → disrupts PA's cache affinity → routes requests to uncached instances → full prefill → worse TTFT.
+
+`pa:3,qd:2` is KV-invariant (65.45ms at BOTH 132K and 5000 blocks) because:
+- PA correctly concentrates on cached instances (cache hits save 36ms+ prefill)
+- QD prevents load imbalance (pushes back when queues form)
+- No KV signal to disrupt the optimal PA-QD balance
+
+**The kv-utilization scorer is COUNTERPRODUCTIVE for prefix-cache-aware routing.**
+
 ### New Components Implemented (Iterations 6-7)
 - `SLOClassPriority` — per-SLO-class base scores (critical=10, standard=5, batch=1)
 - `kv-pressure` scorer — FreeKVBlocks-based differentiation
