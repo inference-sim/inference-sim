@@ -143,6 +143,119 @@ func TestPriorityPolicy_Compute_NoSideEffects(t *testing.T) {
 	}
 }
 
+// TestSLOTieredPriority_CriticalHigherThanSheddable verifies SLO differentiation.
+func TestSLOTieredPriority_CriticalHigherThanSheddable(t *testing.T) {
+	policy := &SLOTieredPriority{
+		BaseCritical: 10.0, BaseStandard: 5.0, BaseSheddable: 1.0,
+		AgeWeight: 1e-5, ThresholdStandard: 100000, ThresholdSheddable: 200000,
+	}
+	clock := int64(100000) // 100ms — within sheddable grace period
+
+	tests := []struct {
+		name     string
+		sloClass string
+		wantGt   string // this request's priority should be > wantGt's
+	}{
+		{"critical > standard", "critical", "standard"},
+		{"standard > sheddable", "standard", "sheddable"},
+		{"critical > sheddable", "critical", "sheddable"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reqHigh := &Request{ID: "high", ArrivalTime: 0, SLOClass: tc.sloClass}
+			reqLow := &Request{ID: "low", ArrivalTime: 0, SLOClass: tc.wantGt}
+			pHigh := policy.Compute(reqHigh, clock)
+			pLow := policy.Compute(reqLow, clock)
+			if pHigh <= pLow {
+				t.Errorf("%s: priority %f should be > %f", tc.name, pHigh, pLow)
+			}
+		})
+	}
+}
+
+// TestSLOTieredPriority_EmptySLOClassDefaultsToStandard verifies safe default.
+func TestSLOTieredPriority_EmptySLOClassDefaultsToStandard(t *testing.T) {
+	policy := &SLOTieredPriority{
+		BaseCritical: 10.0, BaseStandard: 5.0, BaseSheddable: 1.0,
+		AgeWeight: 1e-5, ThresholdStandard: 100000, ThresholdSheddable: 200000,
+	}
+	clock := int64(50000) // 50ms — before any threshold
+
+	empty := &Request{ID: "empty", ArrivalTime: 0, SLOClass: ""}
+	standard := &Request{ID: "std", ArrivalTime: 0, SLOClass: "standard"}
+
+	pEmpty := policy.Compute(empty, clock)
+	pStd := policy.Compute(standard, clock)
+	if pEmpty != pStd {
+		t.Errorf("empty SLOClass priority (%f) should equal standard (%f)", pEmpty, pStd)
+	}
+}
+
+// TestSLOTieredPriority_SheddableGracePeriod verifies threshold mechanism.
+func TestSLOTieredPriority_SheddableGracePeriod(t *testing.T) {
+	policy := &SLOTieredPriority{
+		BaseCritical: 10.0, BaseStandard: 5.0, BaseSheddable: 1.0,
+		AgeWeight: 1e-5, ThresholdStandard: 0, ThresholdSheddable: 200000,
+	}
+	req := &Request{ID: "shed", ArrivalTime: 0, SLOClass: "sheddable"}
+
+	// Before threshold: priority should equal base score (no urgency)
+	pBefore := policy.Compute(req, 100000) // 100ms < 200ms threshold
+	if pBefore != 1.0 {
+		t.Errorf("before threshold: got %f, want 1.0 (base only)", pBefore)
+	}
+
+	// After threshold: urgency should kick in
+	pAfter := policy.Compute(req, 300000) // 300ms > 200ms threshold
+	if pAfter <= 1.0 {
+		t.Errorf("after threshold: got %f, should be > 1.0 (base + urgency)", pAfter)
+	}
+
+	// Urgency should be monotonically increasing after threshold
+	pLater := policy.Compute(req, 500000) // 500ms
+	if pLater <= pAfter {
+		t.Errorf("urgency not increasing: %f at 500ms should be > %f at 300ms", pLater, pAfter)
+	}
+}
+
+// TestSLOTieredPriority_StarvationCeiling verifies sheddable eventually overtakes critical.
+func TestSLOTieredPriority_StarvationCeiling(t *testing.T) {
+	policy := &SLOTieredPriority{
+		BaseCritical: 10.0, BaseStandard: 5.0, BaseSheddable: 1.0,
+		AgeWeight: 1e-5, ThresholdStandard: 100000, ThresholdSheddable: 200000,
+	}
+
+	// Old sheddable request vs fresh critical request
+	oldShed := &Request{ID: "old-shed", ArrivalTime: 0, SLOClass: "sheddable"}
+	freshCrit := &Request{ID: "fresh-crit", ArrivalTime: 2000000, SLOClass: "critical"}
+
+	// At clock=2s, old sheddable has been waiting 2s, fresh critical just arrived
+	// Sheddable urgency = 1e-5 * (2000000 - 200000) = 18.0
+	// Sheddable total = 1.0 + 18.0 = 19.0
+	// Critical total = 10.0 + 0 = 10.0
+	clock := int64(2000000)
+	pShed := policy.Compute(oldShed, clock)
+	pCrit := policy.Compute(freshCrit, clock)
+
+	if pShed <= pCrit {
+		t.Errorf("old sheddable (%f) should eventually overtake fresh critical (%f)", pShed, pCrit)
+	}
+}
+
+// TestSLOTieredPriority_FactoryCreation verifies NewPriorityPolicy("slo-tiered").
+func TestSLOTieredPriority_FactoryCreation(t *testing.T) {
+	policy := NewPriorityPolicy("slo-tiered")
+	crit := &Request{ID: "c", ArrivalTime: 0, SLOClass: "critical"}
+	shed := &Request{ID: "s", ArrivalTime: 0, SLOClass: "sheddable"}
+	clock := int64(50000)
+
+	pCrit := policy.Compute(crit, clock)
+	pShed := policy.Compute(shed, clock)
+	if pCrit <= pShed {
+		t.Errorf("factory slo-tiered: critical (%f) should be > sheddable (%f)", pCrit, pShed)
+	}
+}
+
 // TestInvertedSLO_OlderRequestsGetLowerPriority verifies BC-5.
 func TestInvertedSLO_OlderRequestsGetLowerPriority(t *testing.T) {
 	policy := NewPriorityPolicy("inverted-slo")

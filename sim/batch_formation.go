@@ -52,9 +52,50 @@ type BatchResult struct {
 	PreemptionHappened bool
 }
 
+// SLOPreemptionConfig controls SLO-aware preemption ordering.
+// When Enabled, preemptForTokens evicts the lowest-priority request in the batch
+// instead of the batch tail. This protects critical requests from preemption
+// when KV pressure forces eviction, at the cost of O(n) search per preemption.
+var SLOPreemptionConfig = struct {
+	Enabled bool
+}{
+	Enabled: false,
+}
+
+// SLOPrefillConfig controls per-SLO-class chunked prefill thresholds.
+// When Enabled, critical requests use CriticalThreshold and sheddable use SheddableThreshold.
+// Other classes use the global PrefillTokenThreshold from BatchContext.
+// Disabled by default (zero value = use global threshold for all).
+var SLOPrefillConfig = struct {
+	Enabled            bool
+	CriticalThreshold  int64 // lower = more aggressive chunking for critical (better TTFT)
+	SheddableThreshold int64 // higher = fewer chunks for sheddable (better throughput, 0=no chunking)
+}{
+	Enabled:            false,
+	CriticalThreshold:  128,
+	SheddableThreshold: 0, // 0 means no chunking (process entire prefill in one step)
+}
+
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
 type VLLMBatchFormation struct {
 	latencyModel LatencyModel
+}
+
+// effectivePrefillThreshold returns the chunked prefill threshold for a request.
+// When SLOPrefillConfig is enabled, returns per-class thresholds.
+// Otherwise returns the global ctx.PrefillTokenThreshold.
+func effectivePrefillThreshold(req *Request, globalThreshold int64) int64 {
+	if !SLOPrefillConfig.Enabled {
+		return globalThreshold
+	}
+	switch req.SLOClass {
+	case "critical":
+		return SLOPrefillConfig.CriticalThreshold
+	case "sheddable", "batch", "background":
+		return SLOPrefillConfig.SheddableThreshold
+	default: // "", "standard"
+		return globalThreshold
+	}
 }
 
 func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
@@ -79,10 +120,11 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			break
 		}
 		numNewTokens := util.Len64(req.InputTokens) - req.ProgressIndex
-		// Chunked prefill for running requests
+		// Chunked prefill for running requests (SLO-aware threshold)
 		if numNewTokens > 0 {
-			if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
-				numNewTokens = ctx.PrefillTokenThreshold
+			threshold := effectivePrefillThreshold(req, ctx.PrefillTokenThreshold)
+			if 0 < threshold && threshold < numNewTokens {
+				numNewTokens = threshold
 			}
 			numNewTokens = min(numNewTokens, tokenBudget)
 
@@ -113,8 +155,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.InputTokens)
 		numNewTokens := util.Len64(next.InputTokens) - util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
 
-		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
-			numNewTokens = ctx.PrefillTokenThreshold
+		threshold := effectivePrefillThreshold(next, ctx.PrefillTokenThreshold)
+		if 0 < threshold && threshold < numNewTokens {
+			numNewTokens = threshold
 		}
 		numNewTokens = min(numNewTokens, tokenBudget)
 		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
@@ -158,9 +201,25 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 
 			result.PreemptionHappened = true
 			preemptionDelay := v.latencyModel.PreemptionProcessingTime()
-			preemptedRequest := result.RunningBatch.Requests[len(result.RunningBatch.Requests)-1]
-			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", ctx.Now, preemptedRequest.ID)
-			result.RunningBatch.Requests = result.RunningBatch.Requests[:len(result.RunningBatch.Requests)-1]
+
+			// Select victim: lowest-priority (SLO-aware) or batch tail (default)
+			victimIdx := len(result.RunningBatch.Requests) - 1
+			if SLOPreemptionConfig.Enabled && len(result.RunningBatch.Requests) > 1 {
+				minPriority := result.RunningBatch.Requests[0].Priority
+				victimIdx = 0
+				for i := 1; i < len(result.RunningBatch.Requests); i++ {
+					if result.RunningBatch.Requests[i].Priority < minPriority {
+						minPriority = result.RunningBatch.Requests[i].Priority
+						victimIdx = i
+					}
+				}
+			}
+			preemptedRequest := result.RunningBatch.Requests[victimIdx]
+			logrus.Warnf("[tick %07d] preemption: evicting %s (priority=%.2f) to make room", ctx.Now, preemptedRequest.ID, preemptedRequest.Priority)
+			// Remove victim from batch (swap with last, then truncate)
+			last := len(result.RunningBatch.Requests) - 1
+			result.RunningBatch.Requests[victimIdx] = result.RunningBatch.Requests[last]
+			result.RunningBatch.Requests = result.RunningBatch.Requests[:last]
 
 			result.Preempted = append(result.Preempted, PreemptedRequest{
 				Request:         preemptedRequest,

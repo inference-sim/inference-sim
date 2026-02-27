@@ -1,0 +1,82 @@
+# Heavy multi-turn: higher rate, shorter think time, more rounds
+# Creates KV pressure from accumulated context across rounds
+
+version: "2"
+seed: 42
+category: "reasoning"
+aggregate_rate: 50.0
+num_requests: 100
+
+clients:
+  - id: "critical-sessions"
+    tenant_id: "tenant-premium"
+    slo_class: "critical"
+    rate_fraction: 0.20
+    streaming: true
+    arrival:
+      process: "gamma"
+      cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
+        mean: 256
+        std_dev: 80
+        min: 32
+        max: 1024
+    output_distribution:
+      type: "exponential"
+      params:
+        mean: 128
+    reasoning:
+      multi_turn:
+        max_rounds: 5
+        think_time_us: 500000
+        context_growth: "accumulate"
+
+  - id: "standard-sessions"
+    tenant_id: "tenant-normal"
+    slo_class: "standard"
+    rate_fraction: 0.50
+    arrival:
+      process: "gamma"
+      cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
+        mean: 256
+        std_dev: 80
+        min: 32
+        max: 1024
+    output_distribution:
+      type: "exponential"
+      params:
+        mean: 128
+    reasoning:
+      multi_turn:
+        max_rounds: 5
+        think_time_us: 500000
+        context_growth: "accumulate"
+
+  - id: "sheddable-sessions"
+    tenant_id: "tenant-free"
+    slo_class: "sheddable"
+    rate_fraction: 0.30
+    arrival:
+      process: "gamma"
+      cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
+        mean: 256
+        std_dev: 80
+        min: 32
+        max: 1024
+    output_distribution:
+      type: "exponential"
+      params:
+        mean: 128
+    reasoning:
+      multi_turn:
+        max_rounds: 5
+        think_time_us: 500000
+        context_growth: "accumulate"

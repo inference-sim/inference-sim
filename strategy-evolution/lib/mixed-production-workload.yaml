@@ -1,0 +1,99 @@
+# Mixed Production Workload for Strategy Evolution (v2)
+#
+# Design principle: SLO tiers and workload types are ORTHOGONAL.
+# All tiers share the same workload pattern (multi-turn, prefix-heavy,
+# several turns) — the SLO tier determines latency strictness, NOT
+# request shape. This forces strategies to use SLOClass metadata itself
+# rather than exploiting token-length differences as a proxy.
+#
+# Structure: 3 SLO tiers × same multi-turn pattern
+#   - Critical (20%):  Premium customers, strict TTFT/E2E targets
+#   - Standard (50%):  Normal customers, balanced latency/throughput
+#   - Sheddable (30%): Free tier / batch, best-effort
+#
+# All tiers: prefix_group="system-prompt", prefix_length=512,
+#   input ~ Gaussian(256, 100), output ~ Exponential(128)
+#   Bursty arrivals (gamma CV=2.0)
+#
+# What differentiates tiers: ONLY the slo_class field.
+# A strategy that doesn't read slo_class will treat all 3 identically.
+#
+# Rate: 2000 req/s aggregate across 8 instances (moderate contention)
+
+version: "2"
+seed: 42
+category: "language"
+aggregate_rate: 2000.0
+num_requests: 1000
+
+clients:
+  # --- Critical SLO tier (20% of traffic) ---
+  # Premium multi-turn chat sessions. Same workload as other tiers.
+  # Strategy must recognize slo_class="critical" and prioritize.
+  - id: "critical-multiturn"
+    tenant_id: "tenant-premium"
+    slo_class: "critical"
+    rate_fraction: 0.20
+    streaming: true
+    prefix_group: "system-prompt"
+    prefix_length: 512
+    arrival:
+      process: "gamma"
+      cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
+        mean: 256
+        std_dev: 100
+        min: 32
+        max: 2048
+    output_distribution:
+      type: "exponential"
+      params:
+        mean: 128
+
+  # --- Standard SLO tier (50% of traffic) ---
+  # Normal multi-turn chat sessions. Bulk of the traffic.
+  - id: "standard-multiturn"
+    tenant_id: "tenant-normal"
+    slo_class: "standard"
+    rate_fraction: 0.50
+    prefix_group: "system-prompt"
+    prefix_length: 512
+    arrival:
+      process: "gamma"
+      cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
+        mean: 256
+        std_dev: 100
+        min: 32
+        max: 2048
+    output_distribution:
+      type: "exponential"
+      params:
+        mean: 128
+
+  # --- Sheddable SLO tier (30% of traffic) ---
+  # Free-tier / batch multi-turn sessions. Same pattern, lowest priority.
+  - id: "sheddable-multiturn"
+    tenant_id: "tenant-free"
+    slo_class: "sheddable"
+    rate_fraction: 0.30
+    prefix_group: "system-prompt"
+    prefix_length: 512
+    arrival:
+      process: "gamma"
+      cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
+        mean: 256
+        std_dev: 100
+        min: 32
+        max: 2048
+    output_distribution:
+      type: "exponential"
+      params:
+        mean: 128

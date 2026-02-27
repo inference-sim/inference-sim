@@ -139,7 +139,8 @@ type observerFunc func(req *Request, targetInstance string)
 //
 // Available scorers: prefix-affinity (proportional prefix match ratio),
 // queue-depth (min-max normalization of EffectiveLoad),
-// kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)).
+// kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)),
+// slo-priority (SLO-class-aware load bias).
 // See sim/routing_scorers.go and sim/routing_prefix_scorer.go for implementations.
 //
 // Stateful scorers (prefix-affinity) register observers that update internal
@@ -150,6 +151,12 @@ type WeightedScoring struct {
 	scorers   []scorerFunc
 	weights   []float64 // normalized to sum to 1.0
 	observers []observerFunc
+	// sloPriorityBridge maps SLO class names to base priority scores.
+	// When non-nil, Route() sets RoutingDecision.Priority based on req.SLOClass,
+	// activating the cross-layer information path from router to scheduler.
+	// This allows the instance-level PriorityPolicy to use the router's SLO
+	// classification for initial queue ordering.
+	sloPriorityBridge map[string]float64
 }
 
 // Route implements RoutingPolicy for WeightedScoring.
@@ -192,11 +199,24 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		obs(req, snapshots[bestIdx].ID)
 	}
 
-	return NewRoutingDecisionWithScores(
+	decision := NewRoutingDecisionWithScores(
 		snapshots[bestIdx].ID,
 		fmt.Sprintf("weighted-scoring (score=%.3f)", bestScore),
 		scores,
 	)
+
+	// Set cross-layer priority hint from SLO class when bridge is configured
+	if ws.sloPriorityBridge != nil && req != nil {
+		sloClass := req.SLOClass
+		if sloClass == "" {
+			sloClass = "standard"
+		}
+		if pri, ok := ws.sloPriorityBridge[sloClass]; ok {
+			decision.Priority = pri
+		}
+	}
+
+	return decision
 }
 
 // PrefixAffinity routes requests with matching prefixes to the same instance (cache-aware).
@@ -273,6 +293,21 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 	return NewRoutingDecision(target.ID, fmt.Sprintf("always-busiest (load=%d)", maxLoad))
 }
 
+// SLOPriorityBridgeConfig holds the base scores for the router→scheduler priority bridge.
+// When Enabled is true, WeightedScoring.Route() sets RoutingDecision.Priority from SLO class.
+// Set via CLI flags.
+var SLOPriorityBridgeConfig = struct {
+	Enabled       bool
+	BaseCritical  float64
+	BaseStandard  float64
+	BaseSheddable float64
+}{
+	Enabled:       false,
+	BaseCritical:  10.0,
+	BaseStandard:  5.0,
+	BaseSheddable: 1.0,
+}
+
 // NewRoutingPolicy creates a routing policy by name.
 // Valid names are defined in validRoutingPolicies (bundle.go).
 // Empty string defaults to round-robin.
@@ -303,7 +338,17 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 			}
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
-		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
+		ws := &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
+		if SLOPriorityBridgeConfig.Enabled {
+			ws.sloPriorityBridge = map[string]float64{
+				"critical":   SLOPriorityBridgeConfig.BaseCritical,
+				"standard":   SLOPriorityBridgeConfig.BaseStandard,
+				"sheddable":  SLOPriorityBridgeConfig.BaseSheddable,
+				"batch":      SLOPriorityBridgeConfig.BaseSheddable,
+				"background": SLOPriorityBridgeConfig.BaseSheddable,
+			}
+		}
+		return ws
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string), blockSize: blockSize}
 	case "always-busiest":

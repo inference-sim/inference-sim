@@ -24,6 +24,17 @@ var validScorerNames = map[string]bool{
 	"queue-depth":     true,
 	"kv-utilization":  true,
 	"load-balance":    true,
+	"slo-priority":    true,
+}
+
+// SLOScorerConfig holds tunable parameters for the slo-priority scorer.
+// Set via CLI flags; zero values use defaults.
+var SLOScorerConfig = struct {
+	LoadBiasCritical  float64
+	LoadBiasSheddable float64
+}{
+	LoadBiasCritical:  0.9,
+	LoadBiasSheddable: 0.2,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.
@@ -108,6 +119,8 @@ func newScorerWithObserver(name string, blockSize int) (scorerFunc, observerFunc
 		return scoreKVUtilization, nil
 	case "load-balance":
 		return scoreLoadBalance, nil
+	case "slo-priority":
+		return newSLOPriorityScorer(SLOScorerConfig.LoadBiasCritical, SLOScorerConfig.LoadBiasSheddable), nil
 	default:
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}
@@ -161,6 +174,41 @@ func scoreKVUtilization(_ *Request, snapshots []RoutingSnapshot) map[string]floa
 		scores[snap.ID] = 1.0 - snap.KVUtilization
 	}
 	return scores
+}
+
+// scoreSLOPriority computes per-instance scores that vary by SLO class.
+// Critical requests strongly prefer low-load instances (fast TTFT).
+// Sheddable requests weakly prefer low-load instances (balanced with other scorers).
+// The load bias parameter controls the strength: higher bias = stronger load preference.
+//
+// For critical requests:  score = bias_critical * queueScore + (1-bias_critical) * 0.5
+// For sheddable requests: score = bias_sheddable * queueScore + (1-bias_sheddable) * 0.5
+// The 0.5 neutral term ensures that with low bias, the scorer has minimal influence
+// (letting other scorers like prefix-affinity dominate the routing decision).
+//
+// This is the first BLIS scorer to read req.SLOClass.
+func newSLOPriorityScorer(loadBiasCritical, loadBiasSheddable float64) scorerFunc {
+	return func(req *Request, snapshots []RoutingSnapshot) map[string]float64 {
+		// Compute load scores using the same min-max normalization as queue-depth
+		loadScores := scoreQueueDepth(req, snapshots)
+
+		// Determine SLO-based blend factor
+		bias := 0.5 // standard: balanced (scorer has moderate influence)
+		if req != nil {
+			switch req.SLOClass {
+			case "critical":
+				bias = loadBiasCritical // e.g., 0.9 = strongly prefer low-load
+			case "sheddable", "batch", "background":
+				bias = loadBiasSheddable // e.g., 0.2 = weakly prefer low-load
+			}
+		}
+
+		scores := make(map[string]float64, len(snapshots))
+		for _, snap := range snapshots {
+			scores[snap.ID] = bias*loadScores[snap.ID] + (1-bias)*0.5
+		}
+		return scores
+	}
 }
 
 // scoreLoadBalance computes per-instance load balance scores using inverse transform.

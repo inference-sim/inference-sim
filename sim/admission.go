@@ -60,6 +60,44 @@ func (tb *TokenBucket) Admit(req *Request, state *RouterState) (bool, string) {
 	return false, "insufficient tokens"
 }
 
+// SLOGatedAdmission selectively rejects sheddable requests during load spikes.
+// When average EffectiveLoad across instances exceeds LoadThreshold, sheddable
+// requests are rejected. Critical and standard requests are always admitted.
+// This is a non-zero-sum mechanism: reducing queue depth during bursts benefits
+// ALL tiers by shortening scheduling delay for everyone.
+type SLOGatedAdmission struct {
+	LoadThreshold float64 // average EffectiveLoad above which sheddable is rejected
+}
+
+// SLOGatedAdmissionConfig holds tunable parameters for slo-gated admission.
+var SLOGatedAdmissionConfig = struct {
+	LoadThreshold float64
+}{
+	LoadThreshold: 8.0,
+}
+
+func (s *SLOGatedAdmission) Admit(req *Request, state *RouterState) (bool, string) {
+	// Critical and standard always admitted
+	if req.SLOClass == "critical" || req.SLOClass == "standard" || req.SLOClass == "" {
+		return true, ""
+	}
+
+	// Compute average effective load across instances
+	if len(state.Snapshots) == 0 {
+		return true, ""
+	}
+	totalLoad := 0
+	for _, snap := range state.Snapshots {
+		totalLoad += snap.EffectiveLoad()
+	}
+	avgLoad := float64(totalLoad) / float64(len(state.Snapshots))
+
+	if avgLoad > s.LoadThreshold {
+		return false, fmt.Sprintf("slo-gated: sheddable rejected (avg_load=%.1f > threshold=%.1f)", avgLoad, s.LoadThreshold)
+	}
+	return true, ""
+}
+
 // RejectAll rejects all requests unconditionally (pathological template for testing).
 type RejectAll struct{}
 
@@ -83,6 +121,8 @@ func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPoli
 		return NewTokenBucket(capacity, refillRate)
 	case "reject-all":
 		return &RejectAll{}
+	case "slo-gated":
+		return &SLOGatedAdmission{LoadThreshold: SLOGatedAdmissionConfig.LoadThreshold}
 	default:
 		panic(fmt.Sprintf("unhandled admission policy %q", name))
 	}
