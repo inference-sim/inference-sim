@@ -139,4 +139,4 @@ From the simulations above, find the minimum instance count where `ttft_p99_ms <
 - **[Routing Policies](../guide/routing.md)** — deep dive into scorer composition and signal freshness
 - **[KV Cache & Memory](../guide/kv-cache.md)** — tune KV blocks, prefix caching, and chunked prefill
 - **[Interpreting Results](../guide/results.md)** — understand all output fields and common patterns
-- **[Hypothesis Experimentation](../guide/experimentation.md)** — run rigorous experiments with the `/hypothesis-test` skill
+- **[Hypothesis Experimentation](../guide/experimentation.md)** — run rigorous experiments with the `/hypothesis-experiment` skill

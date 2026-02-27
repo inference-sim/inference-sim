@@ -96,7 +96,7 @@ All routing policies produce equivalent results (within 5%) at low utilization. 
 
 ### Alpha Overhead
 
-BLIS models non-GPU overhead (tokenization, API serialization) as `alpha` coefficients that add to per-request TTFT and E2E but do NOT advance the simulation clock. This means:
+BLIS models non-GPU overhead (tokenization, API serialization) as `alpha` coefficients. Alpha queueing time (alpha0 + alpha1 × inputLen) delays request enqueue, creating an event gap, but does not occupy the GPU. Alpha output processing time (alpha2) adds to TTFT/E2E metrics but does not affect step scheduling. This means:
 
 - Simulated E2E > theoretical M/M/k E2E (especially at high load)
 - The divergence is 28-71% at ρ ≥ 0.5 but only 0.3-3.3% at ρ ≤ 0.3

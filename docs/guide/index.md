@@ -12,7 +12,7 @@ Task-oriented guides for using BLIS effectively. Each guide covers a specific fe
 | [Workload Specifications](workloads.md) | Defining multi-client traffic patterns with YAML |
 | [Cluster Simulation](cluster.md) | Running multi-instance simulations with admission and routing |
 | [Interpreting Results](results.md) | Understanding JSON output, metrics, anomaly counters, and fitness scores |
-| [Hypothesis Experimentation](experimentation.md) | Running rigorous, reproducible experiments with the `/hypothesis-test` skill |
+| [Hypothesis Experimentation](experimentation.md) | Running rigorous, reproducible experiments with the `/hypothesis-experiment` skill |
 
 ## Reading Paths
 

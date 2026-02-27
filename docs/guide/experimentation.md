@@ -37,12 +37,12 @@ The most common experiment workflow for platform engineers:
   --routing-policy weighted --seed 42
 ```
 
-## The `/hypothesis-test` Skill
+## The `/hypothesis-experiment` Skill
 
-For structured hypothesis-driven research, BLIS includes a guided experimentation workflow via the `/hypothesis-test` Claude Code skill:
+For structured hypothesis-driven research, BLIS includes a guided experimentation workflow via the `/hypothesis-experiment` Claude Code skill:
 
 ```
-/hypothesis-test
+/hypothesis-experiment
 ```
 
 This skill guides you through:

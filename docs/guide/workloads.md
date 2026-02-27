@@ -86,7 +86,7 @@ clients:
 
 | Process | Behavior | DES Impact | Use When |
 |---------|----------|-----------|----------|
-| `poisson` | Memoryless, uniform inter-arrival times | Steady event stream | Default; matches typical web traffic |
+| `poisson` | Memoryless, exponentially distributed inter-arrival times | Steady event stream | Default; matches typical web traffic |
 | `gamma` | Bursty (CV > 1) or regular (CV < 1) inter-arrivals | Burst events create temporary overloads | Modeling real traffic with bursts |
 | `weibull` | Shape-controlled inter-arrival times | Similar to gamma, different tail behavior | Specific traffic shape matching |
 | `constant` | Fixed inter-arrival time (deterministic) | Perfectly regular event stream | Controlled experiments, debugging |
