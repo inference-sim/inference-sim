@@ -102,6 +102,9 @@ func (c *ClusterSimulator) Run() error {
 
 	// 1. Use pre-generated requests (all workload paths now pre-generate)
 	requests := c.preGeneratedRequests
+	if len(requests) == 0 {
+		logrus.Warn("[cluster] no requests provided — simulation will produce zero results")
+	}
 
 	// 2. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)

@@ -9,6 +9,12 @@ import (
 // testGenerateRequests replicates the exact algorithm from the old
 // generateRequestsFromDistribution using SubsystemWorkload RNG,
 // preserving byte-identical test request sequences during legacy retirement.
+//
+// INTENTIONAL DUPLICATION: an identical copy exists in sim/cluster/test_helpers_test.go.
+// Both use SubsystemWorkload (legacy) rather than SubsystemWorkloadGen (production).
+// This is deliberate: existing tests validate behavior against known sequences.
+// The RNG stream change is documented as a deviation in the PR description.
+// TODO: consolidate into sim/internal/testutil/ once golden dataset is regenerated.
 func testGenerateRequests(seed, horizon int64, rate float64,
 	numReqs, prefix, pMean, pStd, pMin, pMax, oMean, oStd, oMin, oMax int,
 ) []*Request {

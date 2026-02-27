@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -43,6 +44,10 @@ var convertCSVTraceCmd = &cobra.Command{
 	Use:   "csv-trace",
 	Short: "Convert legacy CSV trace file to v2 spec",
 	Run: func(cmd *cobra.Command, args []string) {
+		// R3: validate numeric CLI flags at the boundary
+		if csvTraceHorizon < 0 {
+			logrus.Fatalf("--horizon must be >= 0 (0 = no truncation), got %d", csvTraceHorizon)
+		}
 		spec, err := workload.ConvertCSVTrace(csvTracePath, csvTraceHorizon)
 		if err != nil {
 			logrus.Fatalf("CSV trace conversion failed: %v", err)
@@ -64,6 +69,13 @@ var convertPresetCmd = &cobra.Command{
 	Use:   "preset",
 	Short: "Convert a named workload preset to v2 spec",
 	Run: func(cmd *cobra.Command, args []string) {
+		// R3: validate numeric CLI flags at the boundary
+		if presetRate <= 0 || math.IsNaN(presetRate) || math.IsInf(presetRate, 0) {
+			logrus.Fatalf("--rate must be a finite value > 0, got %v", presetRate)
+		}
+		if presetNumRequests <= 0 {
+			logrus.Fatalf("--num-requests must be > 0, got %d", presetNumRequests)
+		}
 		wl := loadPresetWorkload(presetDefaultsPath, presetName)
 		if wl == nil {
 			logrus.Fatalf("Unknown preset %q. Check defaults.yaml for available workloads.", presetName)

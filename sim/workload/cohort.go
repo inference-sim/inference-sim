@@ -8,14 +8,19 @@ import (
 
 // ExpandCohorts transforms cohort population descriptions into explicit client specs.
 // Pure function: same (cohorts, seed) always produces identical output (INV-W3).
-// Each cohort derives an independent RNG sub-stream from seed and its index,
-// ensuring expansion is independent of other cohorts' presence or ordering.
+// Each cohort derives an independent RNG sub-stream from seed and its index.
+// Note: reordering cohorts in the input changes their index-derived seeds.
 func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 	var expanded []ClientSpec
 	for i, cohort := range cohorts {
-		// Derive independent RNG per cohort: seed XOR (index+1) ensures
-		// different streams for different cohorts at the same seed.
-		cohortSeed := seed ^ int64(i+1)
+		if cohort.Population <= 0 {
+			continue // R11: guard against div-by-zero when called without Validate()
+		}
+
+		// Derive independent RNG per cohort using multiplicative hash.
+		// Avoids XOR collision (seed=1^2 == seed=2^1) and zero-seed
+		// (seed==i+1 → XOR=0). Knuth multiplicative hash spreads entropy.
+		cohortSeed := seed*2654435761 + int64(i)
 		cohortRNG := rand.New(rand.NewSource(cohortSeed))
 
 		perMemberFraction := cohort.RateFraction / float64(cohort.Population)
@@ -59,12 +64,18 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 }
 
 // diurnalWindows creates 24 one-hour lifecycle windows with sinusoidal rate modulation.
+// Rate modulation is achieved by varying the active duration within each hour:
+// at peak hours the client is active for the full hour; at trough hours,
+// only for a fraction (1/R) of the hour. This produces discrete on/off
+// patterns within each hour (square-wave), not smooth inter-arrival rate
+// changes. For smooth diurnal profiles, use a RateMultiplier on ActiveWindow
+// (not yet implemented).
+//
 // Rate multiplier at hour h: baseRate * modulation(h), where modulation produces:
-//   - At peakHour: multiplier = 1.0 (full rate)
-//   - At troughHour: multiplier = 1/R (where R = peak_to_trough_ratio)
+//   - At peakHour: multiplier = 1.0 (full hour active)
+//   - At trough (peakHour ± 12): multiplier = 1/R (fraction of hour active)
 //
 // The formula: multiplier = (1 + cos(2π(h - peakHour)/24)) / 2 * (1 - 1/R) + 1/R
-// This smoothly varies between 1.0 at peak and 1/R at trough.
 func diurnalWindows(d *DiurnalSpec, rng *rand.Rand) []ActiveWindow {
 	_ = rng // reserved for future session-duration jitter
 

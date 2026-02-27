@@ -252,6 +252,12 @@ func ComposeSpecs(specs []*WorkloadSpec) (*WorkloadSpec, error) {
 	for _, s := range specs {
 		totalRate += s.AggregateRate
 	}
+	if math.IsNaN(totalRate) || math.IsInf(totalRate, 0) {
+		return nil, fmt.Errorf("compose: total aggregate rate is not finite: %f", totalRate)
+	}
+	if totalRate <= 0 {
+		return nil, fmt.Errorf("compose: total aggregate rate must be positive, got %f", totalRate)
+	}
 	merged.AggregateRate = totalRate
 
 	// Renormalize: each client's fraction is scaled by its spec's share of total rate.
