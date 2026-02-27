@@ -2396,7 +2396,7 @@
 <h2 id="5-onboarding-a-new-llmgpu">5. Onboarding a new LLM/GPU<a class="headerlink" href="#5-onboarding-a-new-llmgpu" title="Permanent link">&para;</a></h2>
 <h3 id="automatic-recommended-roofline-flag">Automatic (recommended): <code>--roofline</code> flag<a class="headerlink" href="#automatic-recommended-roofline-flag" title="Permanent link">&para;</a></h3>
 <p>The simplest way to run roofline mode is with the <code>--roofline</code> flag, which auto-resolves the model config:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./simulation_worker<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span>--roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span>--roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
 </code></pre></div>
 <p>The flag automatically:
 1. Checks <code>model_configs/</code> for an existing <code>config.json</code> (previously fetched)

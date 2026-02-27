@@ -3641,7 +3641,7 @@
 <h3 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h3>
 <ol>
 <li><strong>Team lead creates worktree:</strong> <code>.worktrees/h-&lt;batch-name&gt;/</code></li>
-<li><strong>Team lead builds binary once:</strong> <code>go build -o simulation_worker main.go</code> (agents reference this shared binary)</li>
+<li><strong>Team lead builds binary once:</strong> <code>go build -o blis main.go</code> (agents reference this shared binary)</li>
 <li><strong>Team lead creates team</strong> with N hypothesis agents, each assigned to <code>hypotheses/&lt;name&gt;/</code></li>
 <li>Each agent runs the full pipeline independently (Steps 1-9)</li>
 </ol>
