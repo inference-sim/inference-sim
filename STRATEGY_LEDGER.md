@@ -357,7 +357,49 @@ Compound at KV=132K = KV=5000 = 141ms. Strategy is KV-invariant at this workload
 
 Key: PA:QD ratio is the sole dominant parameter. Admission thresholds don't matter at this workload (queues stay below threshold). More PA needs proportionally more QD — pa:4,qd:2 is catastrophic (933ms).
 
-### New Components Implemented (Iterations 6-13)
+### Iteration 14: Predictive TTFT-Budget Admission — Bayesian Confirms pa:4,qd:3
+
+**Predictive admission (physics-informed per-request TTFT estimation)**: Failed at default params — BudgetSheddable=300ms too loose, admits everything (627ms P99). The circularity problem (estimate at admission ≠ actual TTFT after queue growth) makes predictive admission harder than reactive.
+
+**Bayesian PA:QD sweep (24 configs × 2 seeds)**: Confirmed pa:4,qd:3 as globally optimal (131.8ms, 69.3% goodput). Critical safety rule: PA:QD ≤ 1.33 — pa:4,qd:2 causes 3570ms cascade failure.
+
+**Adopted GOODPUT as primary metric** (per GPT-4o review): requests completing within SLO / total arriving. Fair comparison when strategies have different completion rates.
+
+### Iteration 15: Epoch-Based Online Weight Adaptation
+
+**Strategy**: First online learning approach — continuously adapts PA:QD weights using admission rejection rate as learning signal.
+
+**Implementation**: `EpochAdaptiveScoring` + `RejectionObserver` interface for cross-layer admission→routing feedback. Multiplicative weight updates (GPT-4o review fix for bang-bang oscillation). Dual-signal disambiguation (Opus review fix for single-signal ambiguity).
+
+**Result**: Without feedback: 162ms (at initial pa:3,qd:2). With feedback wired: identical 162ms — adaptation magnitude too small to observe at 2000 requests. Infrastructure is in place; needs longer runs or more aggressive step sizes for observable adaptation.
+
+**3 expert reviews identified**:
+- Opus: Single-signal ambiguity is fundamental — both too-much-PA and too-much-QD produce high rejection (FIXED with dual-signal)
+- GPT-4o: Bang-bang controller oscillates, needs multiplicative/proportional updates (FIXED)
+- Gemini: KubeCon demo = split-screen load ramp with auto-adjusting weight gauges
+
+## Summary of All 15 Iterations
+
+| Iter | Strategy | TTFT P99 | Goodput | Key Finding |
+|------|----------|----------|---------|-------------|
+| 1 | HCAR (P2C) | 140ms (RAG) | — | Full N-scan > 2-candidate P2C |
+| 2 | Dynamic weights | = default | — | PA scorer self-corrects |
+| 3 | Scheduling co-opt | = default | — | Routing keeps queues short |
+| 4 | Cost-benefit scorer | 147-314ms | — | Pre-mixing destroys orthogonality |
+| 5 | SLO profiling | -3% to -5% | — | Fragments cache affinity |
+| 6 | KV pressure baseline | RR wins | — | Default FAILS under KV pressure |
+| 7 | KV-adaptive threshold | = default | — | Threshold doesn't fire |
+| 8 | **pa:3,qd:2 (no kv)** | **65ms** | — | **KV scorer counterproductive** |
+| 9 | CPU offloading | -27% | — | Same KV penalty |
+| 10 | Final comparison | Regime-dep | — | Normal: kv:2 helps. Pressure: drop kv |
+| 11 | **SLO-gated admission** | **141ms** | **70%** | **Admission = breakthrough 3rd lever** |
+| 12 | Compound + KV | 141ms | 70% | KV-invariant at this workload |
+| 13 | **Bayesian optimization** | **132ms** | **69%** | **pa:4,qd:3 is Bayesian-optimal** |
+| 14 | Predictive admission | 627ms (fails) | 100% | Circularity defeats prediction |
+| 14b | **Bayesian PA:QD sweep** | **132ms** | **69%** | **PA:QD ≤ 1.33 safety rule** |
+| 15 | Epoch-adaptive | 162ms | 69% | Online learning infra built |
+
+### New Components Implemented (Iterations 6-15)
 - `SLOClassPriority` — per-SLO-class base scores (critical=10, standard=5, batch=1)
 - `kv-pressure` scorer — FreeKVBlocks-based differentiation
 - `KVAdaptiveScoring` — parameterized dual-profile routing with configurable thresholds
