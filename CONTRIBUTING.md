@@ -6,7 +6,7 @@ This guide covers the engineering standards that keep BLIS (Blackbox Inference S
 
 ```bash
 # Build
-go build -o simulation_worker main.go
+go build -o blis main.go
 
 # Test
 go test ./...

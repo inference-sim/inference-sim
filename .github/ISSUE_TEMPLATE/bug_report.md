@@ -12,7 +12,7 @@ What is wrong? Be specific about the incorrect behavior.
 
 **CLI command to reproduce**
 ```bash
-./simulation_worker run --model <model> [flags]
+./blis run --model <model> [flags]
 ```
 
 **Expected behavior**

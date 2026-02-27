@@ -20,10 +20,10 @@
 **Configurations compared:**
 
 - **Blackbox mode** (Configs B-RR, B-LL, B-W): Default latency model using alpha/beta regression coefficients from `defaults.yaml`. Alpha=[1601.35, 3.51, 1805.54], Beta=[6910.42, 17.67, 2.84] (llama-3.1-8b, H100, TP=2).
-  - CLI: `./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --num-instances 4 --routing-policy {round-robin,least-loaded,weighted} --workload-spec workload.yaml --seed {42,123,456} --total-kv-blocks 132139`
+  - CLI: `./blis run --model meta-llama/llama-3.1-8b-instruct --num-instances 4 --routing-policy {round-robin,least-loaded,weighted} --workload-spec workload.yaml --seed {42,123,456} --total-kv-blocks 132139`
 
 - **Roofline mode** (Configs R-RR, R-LL, R-W): Analytical FLOPs/bandwidth latency model via `roofline_step.go`. Activated by CLI fallback when alpha/beta are all zeros and `--model-config-folder` is provided. Alpha=[0,0,0], StepTime from roofline.
-  - CLI: `./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --num-instances 4 --routing-policy {round-robin,least-loaded,weighted} --workload-spec workload.yaml --seed {42,123,456} --model-config-folder model_configs/llama-3.1-8b-instruct --hardware-config hardware_config.json --hardware H100 --tp 2 --total-kv-blocks 132139`
+  - CLI: `./blis run --model meta-llama/llama-3.1-8b-instruct --num-instances 4 --routing-policy {round-robin,least-loaded,weighted} --workload-spec workload.yaml --seed {42,123,456} --model-config-folder model_configs/llama-3.1-8b-instruct --hardware-config hardware_config.json --hardware H100 --tp 2 --total-kv-blocks 132139`
 
 **Controlled variables:**
 - Model: llama-3.1-8b-instruct
@@ -42,7 +42,7 @@
 **Round 2 — Alpha=0 Control (RCV-4):**
 
 - **Alpha=0 blackbox** (Configs A0-RR, A0-LL, A0-W): Blackbox latency model with explicit alpha=0 and real beta. Isolates the effect of alpha overhead on P99 ranking divergence. Alpha=[0,0,0], Beta=[6910.42, 17.67, 2.84].
-  - CLI: `./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --num-instances 4 --routing-policy {round-robin,least-loaded,weighted} --workload-spec workload.yaml --seed {42,123,456} --total-kv-blocks 132139 --alpha-coeffs 0,0,0 --beta-coeffs 6910.420479880494,17.67057489844186,2.8377471109943855`
+  - CLI: `./blis run --model meta-llama/llama-3.1-8b-instruct --num-instances 4 --routing-policy {round-robin,least-loaded,weighted} --workload-spec workload.yaml --seed {42,123,456} --total-kv-blocks 132139 --alpha-coeffs 0,0,0 --beta-coeffs 6910.420479880494,17.67057489844186,2.8377471109943855`
   - Rationale: If alpha=0 blackbox P99 rankings match roofline, then alpha overhead is confirmed as the P99 divergence mechanism. If they still differ, the step-time model difference (beta regression vs roofline FLOPs) also contributes.
 
 **Total runs:** Experiment 1: 3 policies x 2 modes x 3 seeds = 18. Experiment 2: 3 policies x 1 mode x 3 seeds = 9. Total = 27.

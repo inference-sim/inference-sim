@@ -53,7 +53,7 @@ func msConfig(horizon int64) SimConfig {
 		LatencyCoeffs:       NewLatencyCoeffs(msBeta(), msAlpha()),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "test-gpu", 1, false),
 		PolicyConfig:        NewPolicyConfig("constant", "fcfs"),
-		WorkloadConfig:      NewWorkloadConfig(nil, ""),
+		WorkloadConfig:      NewWorkloadConfig(),
 	}
 }
 

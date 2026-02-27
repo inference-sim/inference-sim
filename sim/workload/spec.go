@@ -39,15 +39,55 @@ func UpgradeV1ToV2(spec *WorkloadSpec) {
 // WorkloadSpec is the top-level workload configuration.
 // Loaded from YAML via LoadWorkloadSpec(path).
 type WorkloadSpec struct {
-	Version       string       `yaml:"version"`
-	Seed          int64        `yaml:"seed"`
-	Category      string       `yaml:"category"`
-	Clients       []ClientSpec `yaml:"clients"`
-	AggregateRate float64      `yaml:"aggregate_rate"`
-	Horizon       int64        `yaml:"horizon,omitempty"`
-	NumRequests   int64        `yaml:"num_requests,omitempty"` // 0 = unlimited (use horizon only)
+	Version       string        `yaml:"version"`
+	Seed          int64         `yaml:"seed"`
+	Category      string        `yaml:"category"`
+	Clients       []ClientSpec  `yaml:"clients"`
+	Cohorts       []CohortSpec  `yaml:"cohorts,omitempty"`
+	AggregateRate float64       `yaml:"aggregate_rate"`
+	Horizon       int64         `yaml:"horizon,omitempty"`
+	NumRequests   int64         `yaml:"num_requests,omitempty"` // 0 = unlimited (use horizon only)
 	ServeGenData  *ServeGenDataSpec  `yaml:"servegen_data,omitempty"`
 	InferencePerf *InferencePerfSpec `yaml:"inference_perf,omitempty"`
+}
+
+// CohortSpec describes a population of clients that share arrival behavior
+// and token distributions. Expanded into explicit ClientSpecs before generation.
+type CohortSpec struct {
+	ID           string      `yaml:"id"`
+	Population   int         `yaml:"population"`
+	TenantID     string      `yaml:"tenant_id,omitempty"`
+	SLOClass     string      `yaml:"slo_class,omitempty"`
+	Model        string      `yaml:"model,omitempty"`
+	Arrival      ArrivalSpec `yaml:"arrival"`
+	InputDist    DistSpec    `yaml:"input_distribution"`
+	OutputDist   DistSpec    `yaml:"output_distribution"`
+	PrefixGroup  string      `yaml:"prefix_group,omitempty"`
+	Streaming    bool        `yaml:"streaming,omitempty"`
+	RateFraction float64     `yaml:"rate_fraction"`
+	Diurnal      *DiurnalSpec `yaml:"diurnal,omitempty"`
+	Spike        *SpikeSpec   `yaml:"spike,omitempty"`
+	Drain        *DrainSpec   `yaml:"drain,omitempty"`
+}
+
+// DiurnalSpec configures sinusoidal rate modulation over a 24-hour cycle.
+// Trough is placed at PeakHour ± 12 by the cosine formula.
+type DiurnalSpec struct {
+	PeakHour          int     `yaml:"peak_hour"`            // 0-23
+	PeakToTroughRatio float64 `yaml:"peak_to_trough_ratio"` // >= 1.0
+}
+
+// SpikeSpec configures a traffic spike as a lifecycle window.
+// Clients are active during [StartTimeUs, StartTimeUs+DurationUs).
+type SpikeSpec struct {
+	StartTimeUs int64 `yaml:"start_time_us"`
+	DurationUs  int64 `yaml:"duration_us"`
+}
+
+// DrainSpec configures a linear ramp-down to zero rate.
+type DrainSpec struct {
+	StartTimeUs    int64 `yaml:"start_time_us"`
+	RampDurationUs int64 `yaml:"ramp_duration_us"`
 }
 
 // ClientSpec defines a single client's workload behavior.
@@ -168,14 +208,19 @@ func (s *WorkloadSpec) Validate() error {
 	if !validCategories[s.Category] {
 		return fmt.Errorf("unknown category %q; valid: language, multimodal, reasoning", s.Category)
 	}
-	if s.AggregateRate <= 0 {
-		return fmt.Errorf("aggregate_rate must be positive, got %f", s.AggregateRate)
+	if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
+		return err
 	}
-	if len(s.Clients) == 0 && s.ServeGenData == nil {
-		return fmt.Errorf("at least one client or servegen_data path required")
+	if len(s.Clients) == 0 && s.ServeGenData == nil && len(s.Cohorts) == 0 {
+		return fmt.Errorf("at least one client, cohort, or servegen_data path required")
 	}
 	for i, c := range s.Clients {
 		if err := validateClient(&c, i); err != nil {
+			return err
+		}
+	}
+	for i, c := range s.Cohorts {
+		if err := validateCohort(&c, i); err != nil {
 			return err
 		}
 	}
@@ -187,8 +232,8 @@ func validateClient(c *ClientSpec, idx int) error {
 	if !validSLOClasses[c.SLOClass] {
 		return fmt.Errorf("%s: unknown slo_class %q; valid: critical, standard, sheddable, batch, background, or empty", prefix, c.SLOClass)
 	}
-	if c.RateFraction <= 0 {
-		return fmt.Errorf("%s: rate_fraction must be positive, got %f", prefix, c.RateFraction)
+	if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
+		return err
 	}
 	if !validArrivalProcesses[c.Arrival.Process] {
 		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
@@ -223,6 +268,59 @@ func validateDistSpec(prefix string, d *DistSpec) error {
 	for name, val := range d.Params {
 		if math.IsNaN(val) || math.IsInf(val, 0) {
 			return fmt.Errorf("%s.params.%s must be a finite number, got %f", prefix, name, val)
+		}
+	}
+	return nil
+}
+
+// maxCohortPopulation caps per-cohort population to prevent OOM from YAML input.
+const maxCohortPopulation = 100_000
+
+func validateCohort(c *CohortSpec, idx int) error {
+	prefix := fmt.Sprintf("cohort[%d]", idx)
+	if c.Population <= 0 {
+		return fmt.Errorf("%s: population must be positive, got %d", prefix, c.Population)
+	}
+	if c.Population > maxCohortPopulation {
+		return fmt.Errorf("%s: population %d exceeds maximum %d", prefix, c.Population, maxCohortPopulation)
+	}
+	if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
+		return err
+	}
+	if !validSLOClasses[c.SLOClass] {
+		return fmt.Errorf("%s: unknown slo_class %q; valid: critical, standard, sheddable, batch, background, or empty", prefix, c.SLOClass)
+	}
+	if !validArrivalProcesses[c.Arrival.Process] {
+		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
+	}
+	if err := validateDistSpec(prefix+".input_distribution", &c.InputDist); err != nil {
+		return err
+	}
+	if err := validateDistSpec(prefix+".output_distribution", &c.OutputDist); err != nil {
+		return err
+	}
+	if c.Diurnal != nil {
+		if math.IsNaN(c.Diurnal.PeakToTroughRatio) || math.IsInf(c.Diurnal.PeakToTroughRatio, 0) || c.Diurnal.PeakToTroughRatio < 1.0 {
+			return fmt.Errorf("%s: diurnal peak_to_trough_ratio must be a finite number >= 1.0, got %f", prefix, c.Diurnal.PeakToTroughRatio)
+		}
+		if c.Diurnal.PeakHour < 0 || c.Diurnal.PeakHour > 23 {
+			return fmt.Errorf("%s: diurnal peak_hour must be 0-23, got %d", prefix, c.Diurnal.PeakHour)
+		}
+	}
+	if c.Spike != nil {
+		if c.Spike.StartTimeUs < 0 {
+			return fmt.Errorf("%s: spike start_time_us must be non-negative, got %d", prefix, c.Spike.StartTimeUs)
+		}
+		if c.Spike.DurationUs <= 0 {
+			return fmt.Errorf("%s: spike duration_us must be > 0, got %d", prefix, c.Spike.DurationUs)
+		}
+	}
+	if c.Drain != nil {
+		if c.Drain.StartTimeUs < 0 {
+			return fmt.Errorf("%s: drain start_time_us must be non-negative, got %d", prefix, c.Drain.StartTimeUs)
+		}
+		if c.Drain.RampDurationUs <= 0 {
+			return fmt.Errorf("%s: drain ramp_duration_us must be > 0, got %d", prefix, c.Drain.RampDurationUs)
 		}
 	}
 	return nil

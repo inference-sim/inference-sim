@@ -12,7 +12,7 @@
 # ============================================================================
 #
 #   # Prefix-affinity dominant (requests cluster onto cached instances)
-#   ./simulation_worker run \
+#   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "prefix-affinity:5,queue-depth:1" \
@@ -20,7 +20,7 @@
 #     --trace-level decisions --summarize-trace
 #
 #   # Load-only (no prefix awareness — requests spread uniformly)
-#   ./simulation_worker run \
+#   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
 #     --routing-scorers "queue-depth:1" \
@@ -28,7 +28,7 @@
 #     --trace-level decisions --summarize-trace
 #
 #   # Default profile (balanced llm-d parity)
-#   ./simulation_worker run \
+#   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
 #     --workload-spec examples/prefix-affinity-demo.yaml \

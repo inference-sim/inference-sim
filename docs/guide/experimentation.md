@@ -4,10 +4,10 @@ This guide covers using BLIS as a platform for rigorous, reproducible experiment
 
 ```bash
 # Quick example: compare chunked prefill vs no chunked prefill
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --rate 100 --num-requests 500 --long-prefill-token-threshold 0
 
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --rate 100 --num-requests 500 --long-prefill-token-threshold 256
 ```
 
@@ -32,7 +32,7 @@ The most common experiment workflow for platform engineers:
 
 ```bash
 # Example: Will 8 instances of LLaMA 3.1 8B handle 400 req/s at TTFT p99 < 500ms?
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 8 --rate 400 --num-requests 2000 \
   --routing-policy weighted --seed 42
 ```

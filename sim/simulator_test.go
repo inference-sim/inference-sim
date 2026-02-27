@@ -47,20 +47,13 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 				BatchConfig:         NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 				LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
-				WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
-					Rate:               tc.Rate / 1e6,
-					NumRequests:         tc.NumRequests,
-					PrefixTokens:       tc.PrefixTokens,
-					PromptTokens:       tc.PromptTokens,
-					PromptTokensStdDev: tc.PromptTokensStdev,
-					PromptTokensMin:    tc.PromptTokensMin,
-					PromptTokensMax:    tc.PromptTokensMax,
-					OutputTokens:       tc.OutputTokens,
-					OutputTokensStdDev: tc.OutputTokensStdev,
-					OutputTokensMin:    tc.OutputTokensMin,
-					OutputTokensMax:    tc.OutputTokensMax,
-				}, ""),
 			})
+
+			requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
+				tc.NumRequests, tc.PrefixTokens,
+				tc.PromptTokens, tc.PromptTokensStdev, tc.PromptTokensMin, tc.PromptTokensMax,
+				tc.OutputTokens, tc.OutputTokensStdev, tc.OutputTokensMin, tc.OutputTokensMax)
+			injectRequests(sim, requests)
 
 			// Run simulation
 			sim.Run()
@@ -165,11 +158,6 @@ func TestSimulator_WorkloadRNG_NotNil(t *testing.T) {
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, false),
-		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
-			Rate: 10.0 / 1e6, NumRequests: 10,
-			PromptTokens: 100, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 200,
-			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-		}, ""),
 	})
 
 	rng := sim.WorkloadRNG()
@@ -192,15 +180,24 @@ func TestSimulator_DeterministicWorkload(t *testing.T) {
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, false),
-		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
-			Rate: 10.0 / 1e6, NumRequests: 50,
-			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-		}, ""),
 	}
 
+	requests := testGenerateRequests(42, math.MaxInt64, 10.0/1e6, 50,
+		0, 100, 20, 10, 200, 50, 10, 10, 100)
+
 	sim1 := mustNewSimulator(t, cfg)
+	for _, req := range requests {
+		sim1.InjectArrival(req)
+	}
+
+	// Re-generate identical requests for sim2 (same seed, same params)
+	requests2 := testGenerateRequests(42, math.MaxInt64, 10.0/1e6, 50,
+		0, 100, 20, 10, 200, 50, 10, 10, 100)
+
 	sim2 := mustNewSimulator(t, cfg)
+	for _, req := range requests2 {
+		sim2.InjectArrival(req)
+	}
 
 	sim1.Run()
 	sim2.Run()
@@ -308,9 +305,9 @@ func TestNewSimulator_NilLatencyModel_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestNewSimulator_NoWorkload_EmptyQueue verifies that a SimConfig with no workload
-// (both GuideLLMConfig nil and TracesWorkloadFilePath empty) creates a simulator
-// with an empty EventQueue and runs to completion with zero results.
+// TestNewSimulator_NoWorkload_EmptyQueue verifies that a SimConfig with no injected
+// requests creates a simulator with an empty EventQueue and runs to completion
+// with zero results.
 func TestNewSimulator_NoWorkload_EmptyQueue(t *testing.T) {
 	sim := mustNewSimulator(t, newTestSimConfig())
 
@@ -489,14 +486,12 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation", "H100", 1, false),
-		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
-			Rate: 10.0 / 1e6, NumRequests: 50,
-			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-		}, ""),
 	}
 
 	sim := mustNewSimulator(t, cfg)
+	requests := testGenerateRequests(99, math.MaxInt64, 10.0/1e6, 50,
+		0, 100, 20, 10, 200, 50, 10, 10, 100)
+	injectRequests(sim, requests)
 	sim.Run()
 
 	// Three-term equation: injected == completed + queued + running
@@ -613,14 +608,12 @@ func TestSimulator_Causality_FullChain_ArrivalToCompletion(t *testing.T) {
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-causality", "H100", 1, false),
-		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
-			Rate: 5.0 / 1e6, NumRequests: 30,
-			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-		}, ""),
 	}
 
 	sim := mustNewSimulator(t, cfg)
+	requests := testGenerateRequests(77, math.MaxInt64, 5.0/1e6, 30,
+		0, 100, 20, 10, 200, 50, 10, 10, 100)
+	injectRequests(sim, requests)
 	sim.Run()
 
 	if sim.Metrics.CompletedRequests == 0 {
@@ -671,14 +664,12 @@ func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-monotonicity", "H100", 1, false),
-		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
-			Rate: 10.0 / 1e6, NumRequests: 20,
-			PromptTokens: 50, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 100,
-			OutputTokens: 20, OutputTokensStdDev: 5, OutputTokensMin: 5, OutputTokensMax: 40,
-		}, ""),
 	}
 
 	sim := mustNewSimulator(t, cfg)
+	requests := testGenerateRequests(55, math.MaxInt64, 10.0/1e6, 20,
+		0, 50, 10, 10, 100, 20, 5, 5, 40)
+	injectRequests(sim, requests)
 
 	prevClock := int64(0)
 	eventCount := 0
@@ -716,21 +707,22 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-determinism", "H100", 1, false),
-		WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
-			Rate: 5.0 / 1e6, NumRequests: 20,
-			PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-			OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-		}, ""),
 	}
 
 	// Run 1
 	sim1 := mustNewSimulator(t, cfg)
+	requests1 := testGenerateRequests(42, math.MaxInt64, 5.0/1e6, 20,
+		0, 100, 20, 10, 200, 50, 10, 10, 100)
+	injectRequests(sim1, requests1)
 	sim1.Run()
 	f1 := t.TempDir() + "/run1.json"
 	sim1.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f1)
 
 	// Run 2
 	sim2 := mustNewSimulator(t, cfg)
+	requests2 := testGenerateRequests(42, math.MaxInt64, 5.0/1e6, 20,
+		0, 100, 20, 10, 200, 50, 10, 10, 100)
+	injectRequests(sim2, requests2)
 	sim2.Run()
 	f2 := t.TempDir() + "/run2.json"
 	sim2.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f2)
@@ -791,14 +783,12 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 				BatchConfig:         NewBatchConfig(256, 2048, 0),
 				LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-kv-conservation", "H100", 1, false),
-				WorkloadConfig: NewWorkloadConfig(&GuideLLMConfig{
-					Rate: 5.0 / 1e6, NumRequests: 20,
-					PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-					OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-				}, ""),
 			}
 
 			sim := mustNewSimulator(t, cfg)
+			requests := testGenerateRequests(42, math.MaxInt64, 5.0/1e6, 20,
+				0, 100, 20, 10, 200, 50, 10, 10, 100)
+			injectRequests(sim, requests)
 			sim.Run()
 
 			if sim.KVCache.UsedBlocks() != 0 {

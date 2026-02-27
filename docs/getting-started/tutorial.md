@@ -19,7 +19,7 @@ This means for 500 req/s, you need at minimum `ceil(500/57) ≈ 9` instances. Le
 ## Step 2: Baseline — Single Instance
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --rate 50 --num-requests 200
 ```
@@ -32,17 +32,17 @@ Run simulations at increasing instance counts for 500 req/s:
 
 ```bash
 # 4 instances (~228 req/s capacity → heavily overloaded)
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --rate 500 --num-requests 2000
 
 # 8 instances (~456 req/s capacity → near saturation)
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 8 --rate 500 --num-requests 2000
 
 # 12 instances (~684 req/s capacity → comfortable headroom)
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 12 --rate 500 --num-requests 2000
 ```
@@ -76,19 +76,19 @@ With 12 instances at 500 req/s, compare routing strategies:
 
 ```bash
 # Round-robin (baseline)
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy round-robin
 
 # Weighted (default profile)
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy weighted
 
 # Least-loaded
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy least-loaded
@@ -97,7 +97,7 @@ With 12 instances at 500 req/s, compare routing strategies:
 For prefix-heavy workloads (like RAG with shared system prompts), try the prefix-affinity-dominant profile:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy weighted \
@@ -110,7 +110,7 @@ For prefix-heavy workloads (like RAG with shared system prompts), try the prefix
 For automated comparison across many configurations, use fitness evaluation:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy weighted \

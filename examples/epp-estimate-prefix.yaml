@@ -35,7 +35,7 @@
 # Usage:
 # ============================================================================
 #
-#   ./simulation_worker run \
+#   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 \
 #     --policy-config examples/epp-estimate-prefix.yaml \

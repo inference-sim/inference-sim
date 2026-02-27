@@ -10,13 +10,13 @@
 ```bash
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
-go build -o simulation_worker main.go
+go build -o blis main.go
 ```
 
 ## Verify the Build
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --num-requests 10
+./blis run --model meta-llama/llama-3.1-8b-instruct --num-requests 10
 ```
 
 You should see JSON output on stdout containing fields like `ttft_mean_ms`, `e2e_mean_ms`, and `responses_per_sec`. This confirms BLIS is working correctly.

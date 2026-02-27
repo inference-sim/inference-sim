@@ -5,7 +5,7 @@ Run your first BLIS simulation in 30 seconds.
 ## Single-Instance Simulation
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct
+./blis run --model meta-llama/llama-3.1-8b-instruct
 ```
 
 This runs 100 requests through a single inference instance using pre-trained coefficients for LLaMA 3.1 8B on an H100 GPU with TP=2.
@@ -38,7 +38,7 @@ The JSON output on stdout contains:
 Scale to 4 instances with routing:
 
 ```bash
-./simulation_worker run \
+./blis run \
   --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 \
   --routing-policy weighted \
@@ -51,16 +51,16 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
 
 ```bash
 # Higher traffic rate
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --rate 500 --num-requests 2000
 
 # With decision tracing (see where each request was routed)
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 
 # With roofline mode (no pre-trained coefficients needed)
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --roofline --hardware H100 --tp 2 \
   --num-instances 4 --rate 100 --num-requests 500
 ```

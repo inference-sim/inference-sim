@@ -4,7 +4,7 @@ This guide covers running multi-instance BLIS simulations — the full pipeline 
 
 ```bash
 # Quick example: 4-instance cluster with tracing
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 ```
@@ -39,11 +39,11 @@ The `--tp` flag sets the tensor parallelism degree for all instances. TP affects
 
 ```bash
 # TP=2: 2 GPUs per instance
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --tp 2 --rate 100 --num-requests 500
 
 # TP=4: 4 GPUs per instance (lower latency, fewer KV blocks per GPU)
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 2 --tp 4 --rate 100 --num-requests 500
 ```
 
@@ -68,7 +68,7 @@ At sub-saturation (rate=100): scaling effect vanishes (1.06x).
 Rate-limit incoming traffic with token bucket admission:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --rate 500 --num-requests 2000 \
   --admission-policy token-bucket \
   --token-bucket-capacity 10000 --token-bucket-refill-rate 1000
@@ -90,7 +90,7 @@ These add simulated delays to the admission and routing pipeline, modeling gRPC 
 Log every routing decision for offline analysis:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace --counterfactual-k 3
 ```

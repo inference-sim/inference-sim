@@ -4,7 +4,7 @@ This guide covers how to define the traffic patterns BLIS simulates — from sim
 
 ```bash
 # Quick example: workload-spec YAML
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --workload-spec examples/multiturn-chat-demo.yaml
 ```
 
@@ -24,7 +24,7 @@ BLIS supports four modes, in order of precedence:
 The simplest way to generate traffic:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --rate 100 --num-requests 500 \
   --prompt-tokens 512 --prompt-tokens-stdev 256 \
   --output-tokens 256 --output-tokens-stdev 128

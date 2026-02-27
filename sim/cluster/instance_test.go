@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -8,8 +9,9 @@ import (
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
-// newTestSimConfigWithWorkload creates a SimConfig for instance tests with workload.
-func newTestSimConfigWithWorkload(guideLLMConfig *sim.GuideLLMConfig) sim.SimConfig {
+// newTestSimConfig creates a SimConfig without workload for instance tests.
+// All workload generation now happens externally — requests are passed via InjectRequest.
+func newTestSimConfig() sim.SimConfig {
 	return sim.SimConfig{
 		Horizon:             math.MaxInt64,
 		Seed:                42,
@@ -17,29 +19,12 @@ func newTestSimConfigWithWorkload(guideLLMConfig *sim.GuideLLMConfig) sim.SimCon
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false),
-		WorkloadConfig:      sim.NewWorkloadConfig(guideLLMConfig, ""),
 	}
 }
 
 // newTestInstanceSimConfig creates a SimConfig without workload for instance tests.
 func newTestInstanceSimConfig() sim.SimConfig {
-	return sim.SimConfig{
-		Horizon:             math.MaxInt64,
-		Seed:                42,
-		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, false),
-	}
-}
-
-// smallWorkload returns a small GuideLLMConfig for tests.
-func smallWorkload(numRequests int) *sim.GuideLLMConfig {
-	return &sim.GuideLLMConfig{
-		Rate: 10.0 / 1e6, NumRequests: numRequests,
-		PromptTokens: 100, PromptTokensStdDev: 10, PromptTokensMin: 10, PromptTokensMax: 200,
-		OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-	}
+	return newTestSimConfig()
 }
 
 // === Equivalence Tests (Critical for BC-1) ===
@@ -66,21 +51,16 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
-					WorkloadConfig: sim.NewWorkloadConfig(&sim.GuideLLMConfig{
-						Rate:               tc.Rate / 1e6,
-						NumRequests:         tc.NumRequests,
-						PrefixTokens:       tc.PrefixTokens,
-						PromptTokens:       tc.PromptTokens,
-						PromptTokensStdDev: tc.PromptTokensStdev,
-						PromptTokensMin:    tc.PromptTokensMin,
-						PromptTokensMax:    tc.PromptTokensMax,
-						OutputTokens:       tc.OutputTokens,
-						OutputTokensStdDev: tc.OutputTokensStdev,
-						OutputTokensMin:    tc.OutputTokensMin,
-						OutputTokensMax:    tc.OutputTokensMax,
-					}, ""),
 				},
 			)
+
+			requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
+				tc.NumRequests, tc.PrefixTokens,
+				tc.PromptTokens, tc.PromptTokensStdev, tc.PromptTokensMin, tc.PromptTokensMax,
+				tc.OutputTokens, tc.OutputTokensStdev, tc.OutputTokensMin, tc.OutputTokensMax)
+			for _, req := range requests {
+				instance.InjectRequest(req)
+			}
 
 			instance.Run()
 
@@ -125,21 +105,16 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
-					WorkloadConfig: sim.NewWorkloadConfig(&sim.GuideLLMConfig{
-						Rate:               tc.Rate / 1e6,
-						NumRequests:         tc.NumRequests,
-						PrefixTokens:       tc.PrefixTokens,
-						PromptTokens:       tc.PromptTokens,
-						PromptTokensStdDev: tc.PromptTokensStdev,
-						PromptTokensMin:    tc.PromptTokensMin,
-						PromptTokensMax:    tc.PromptTokensMax,
-						OutputTokens:       tc.OutputTokens,
-						OutputTokensStdDev: tc.OutputTokensStdev,
-						OutputTokensMin:    tc.OutputTokensMin,
-						OutputTokensMax:    tc.OutputTokensMax,
-					}, ""),
 				},
 			)
+
+			requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
+				tc.NumRequests, tc.PrefixTokens,
+				tc.PromptTokens, tc.PromptTokensStdev, tc.PromptTokensMin, tc.PromptTokensMax,
+				tc.OutputTokens, tc.OutputTokensStdev, tc.OutputTokensMin, tc.OutputTokensMax)
+			for _, req := range requests {
+				instance.InjectRequest(req)
+			}
 
 			instance.Run()
 			m := instance.Metrics()
@@ -178,17 +153,31 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 
 // TestInstanceSimulator_Determinism verifies same seed produces identical results.
 func TestInstanceSimulator_Determinism(t *testing.T) {
-	cfg := newTestSimConfigWithWorkload(&sim.GuideLLMConfig{
-		Rate: 10.0 / 1e6, NumRequests: 50,
-		PromptTokens: 100, PromptTokensStdDev: 20, PromptTokensMin: 10, PromptTokensMax: 200,
-		OutputTokens: 50, OutputTokensStdDev: 10, OutputTokensMin: 10, OutputTokensMax: 100,
-	})
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
 
 	instance1 := NewInstanceSimulator(InstanceID("run1"), cfg)
 	instance2 := NewInstanceSimulator(InstanceID("run2"), cfg)
 
+	// Inject identical requests into both instances
+	requests := newTestRequests(20)
+	for i, req := range requests {
+		r1 := *req
+		r1.ID = fmt.Sprintf("request_%d", i)
+		instance1.InjectRequest(&r1)
+
+		r2 := *req
+		r2.ID = fmt.Sprintf("request_%d", i)
+		instance2.InjectRequest(&r2)
+	}
+
 	instance1.Run()
 	instance2.Run()
+
+	// Verify non-trivial: at least some requests completed
+	if instance1.Metrics().CompletedRequests == 0 {
+		t.Fatal("Determinism test vacuous: no requests completed in instance1")
+	}
 
 	if instance1.Metrics().CompletedRequests != instance2.Metrics().CompletedRequests {
 		t.Errorf("Determinism broken: completed_requests %d vs %d",
@@ -207,7 +196,7 @@ func TestInstanceSimulator_Determinism(t *testing.T) {
 // === Accessor Behavior Tests ===
 
 func TestInstanceSimulator_ID_ReturnsConstructorValue(t *testing.T) {
-	cfg := newTestSimConfigWithWorkload(smallWorkload(5))
+	cfg := newTestSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 1000
 	instance := NewInstanceSimulator(InstanceID("replica-0"), cfg)
@@ -218,7 +207,15 @@ func TestInstanceSimulator_ID_ReturnsConstructorValue(t *testing.T) {
 }
 
 func TestInstanceSimulator_Clock_AdvancesWithSimulation(t *testing.T) {
-	instance := NewInstanceSimulator(InstanceID("test"), newTestSimConfigWithWorkload(smallWorkload(10)))
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	instance := NewInstanceSimulator(InstanceID("test"), cfg)
+
+	// Inject requests before Run (workload is now external)
+	for i, req := range newTestRequests(5) {
+		req.ID = fmt.Sprintf("request_%d", i)
+		instance.InjectRequest(req)
+	}
 
 	instance.Run()
 
@@ -232,7 +229,15 @@ func TestInstanceSimulator_Clock_AdvancesWithSimulation(t *testing.T) {
 }
 
 func TestInstanceSimulator_Metrics_DelegatesCorrectly(t *testing.T) {
-	instance := NewInstanceSimulator(InstanceID("test"), newTestSimConfigWithWorkload(smallWorkload(10)))
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	instance := NewInstanceSimulator(InstanceID("test"), cfg)
+
+	// Inject requests before Run (workload is now external)
+	for i, req := range newTestRequests(5) {
+		req.ID = fmt.Sprintf("request_%d", i)
+		instance.InjectRequest(req)
+	}
 
 	instance.Run()
 
@@ -245,7 +250,7 @@ func TestInstanceSimulator_Metrics_DelegatesCorrectly(t *testing.T) {
 }
 
 func TestInstanceSimulator_Horizon_ReturnsConstructorValue(t *testing.T) {
-	cfg := newTestSimConfigWithWorkload(smallWorkload(5))
+	cfg := newTestSimConfig()
 	cfg.Horizon = 5000000
 	cfg.TotalKVBlocks = 1000
 	instance := NewInstanceSimulator(InstanceID("test"), cfg)
@@ -258,7 +263,7 @@ func TestInstanceSimulator_Horizon_ReturnsConstructorValue(t *testing.T) {
 // === Edge Case Tests ===
 
 func TestInstanceSimulator_EmptyID_Valid(t *testing.T) {
-	cfg := newTestSimConfigWithWorkload(smallWorkload(5))
+	cfg := newTestSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 1000
 	instance := NewInstanceSimulator(InstanceID(""), cfg)
@@ -269,7 +274,7 @@ func TestInstanceSimulator_EmptyID_Valid(t *testing.T) {
 }
 
 func TestInstanceSimulator_ZeroRequests(t *testing.T) {
-	cfg := newTestSimConfigWithWorkload(smallWorkload(0))
+	cfg := newTestSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 1000
 	instance := NewInstanceSimulator(InstanceID("test"), cfg)
@@ -282,7 +287,7 @@ func TestInstanceSimulator_ZeroRequests(t *testing.T) {
 }
 
 func TestInstanceSimulator_RunOnce_PanicsOnSecondCall(t *testing.T) {
-	cfg := newTestSimConfigWithWorkload(smallWorkload(5))
+	cfg := newTestSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 1000
 	instance := NewInstanceSimulator(InstanceID("test"), cfg)

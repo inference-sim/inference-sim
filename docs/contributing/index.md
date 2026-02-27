@@ -6,7 +6,7 @@ Welcome to the BLIS contributor guide. This section covers engineering standards
 
 ```bash
 # Build
-go build -o simulation_worker main.go
+go build -o blis main.go
 
 # Test
 go test ./...

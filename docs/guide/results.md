@@ -4,7 +4,7 @@ This guide covers how to read BLIS output — from the primary JSON metrics to a
 
 ```bash
 # Quick example: run with all diagnostic output enabled
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --rate 200 --num-requests 1000 \
   --trace-level decisions --summarize-trace \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
@@ -107,7 +107,7 @@ BLIS models non-GPU overhead (tokenization, API serialization) as `alpha` coeffi
 For detailed analysis, save per-request data:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --rate 100 --num-requests 500 --results-path results.json
 ```
 

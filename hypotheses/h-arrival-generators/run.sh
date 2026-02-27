@@ -26,12 +26,12 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BINARY="$REPO_ROOT/simulation_worker"
+BINARY="$REPO_ROOT/blis"
 
 # Build if needed
 if [[ "${1:-}" == "--rebuild" ]] || [[ ! -x "$BINARY" ]]; then
-    echo "Building simulation_worker..."
-    (cd "$REPO_ROOT" && go build -o simulation_worker main.go)
+    echo "Building blis..."
+    (cd "$REPO_ROOT" && go build -o blis main.go)
 fi
 
 MODEL="meta-llama/llama-3.1-8b-instruct"

@@ -13,7 +13,7 @@ Describe what's missing or limiting. What can't users or researchers do today?
 **Proposed solution**
 Describe the capability you'd like. Include a CLI example if applicable:
 ```bash
-./simulation_worker run --model <model> --new-flag <value>
+./blis run --model <model> --new-flag <value>
 ```
 
 **Which components are affected?**

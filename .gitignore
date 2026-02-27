@@ -51,7 +51,7 @@ data/
 model_configs/
 
 # binaries
-simulation_worker
+blis
 
 # results
 results/

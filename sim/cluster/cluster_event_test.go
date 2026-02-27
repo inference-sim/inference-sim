@@ -157,7 +157,7 @@ func TestClusterEventPriorities(t *testing.T) {
 // buildRouterState must produce a RouterState with one snapshot per instance and the current clock.
 func TestBuildRouterState_PopulatesSnapshots(t *testing.T) {
 	config := newTestDeploymentConfig(3)
-	cs := NewClusterSimulator(config, newTestWorkload(1), "")
+	cs := NewClusterSimulator(config, newTestRequests(1))
 
 	state := buildRouterState(cs)
 
@@ -189,7 +189,7 @@ func (p *priorityHintPolicy) Route(req *sim.Request, state *sim.RouterState) sim
 // when a routing policy returns a non-zero Priority, it is applied to the request.
 func TestRoutingDecisionEvent_PriorityHint_Applied(t *testing.T) {
 	config := newTestDeploymentConfig(2)
-	cs := NewClusterSimulator(config, newTestWorkload(5), "")
+	cs := NewClusterSimulator(config, newTestRequests(5))
 
 	// Replace routing policy with priority hint stub
 	cs.routingPolicy = &priorityHintPolicy{hint: 42.0}
@@ -212,7 +212,7 @@ func TestRoutingDecisionEvent_PriorityHint_Applied(t *testing.T) {
 // when Priority is 0, req.Priority is not modified by the routing event.
 func TestRoutingDecisionEvent_PriorityHint_ZeroDoesNotOverride(t *testing.T) {
 	config := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(config, newTestWorkload(3), "")
+	cs := NewClusterSimulator(config, newTestRequests(3))
 
 	// Use default round-robin (returns Priority: 0)
 	mustRun(t, cs)

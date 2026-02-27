@@ -29,9 +29,8 @@ type DeploymentConfig struct {
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
-// GuideLLMConfig and TracesWorkloadFilePath are accessible but should be
-// zero-valued: cluster mode generates workload centrally and injects
-// requests via InjectRequestOnline.
+// WorkloadConfig is an empty struct: cluster mode generates workload centrally
+// and injects requests via InjectRequestOnline.
 func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
 	return d.SimConfig
 }

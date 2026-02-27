@@ -34,11 +34,11 @@ func TestClusterSimulator_HorizonTooSmall_WarnsAtStartup(t *testing.T) {
 	config.Horizon = 100
 	config.AdmissionLatency = 200
 	config.RoutingLatency = 300
-	workload := newTestWorkload(10)
+	workload := newTestRequests(10)
 
 	// WHEN the cluster simulator is constructed
 	output := captureLogOutput(func() {
-		NewClusterSimulator(config, workload, "")
+		NewClusterSimulator(config, workload)
 	})
 
 	// THEN a warning about horizon being too small MUST be logged
@@ -53,11 +53,11 @@ func TestClusterSimulator_HorizonSufficient_NoWarning(t *testing.T) {
 	config.Horizon = 10000
 	config.AdmissionLatency = 200
 	config.RoutingLatency = 300
-	workload := newTestWorkload(10)
+	workload := newTestRequests(10)
 
 	// WHEN the cluster simulator is constructed
 	output := captureLogOutput(func() {
-		NewClusterSimulator(config, workload, "")
+		NewClusterSimulator(config, workload)
 	})
 
 	// THEN no horizon warning MUST be logged
@@ -71,9 +71,9 @@ func TestClusterSimulator_AllRejected_WarnsAfterRun(t *testing.T) {
 	config := newTestDeploymentConfig(1)
 	config.Horizon = 100000
 	config.AdmissionPolicy = "reject-all"
-	workload := newTestWorkload(5)
+	workload := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, workload)
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {
@@ -92,9 +92,9 @@ func TestClusterSimulator_ZeroCompletions_WarnsAfterRun(t *testing.T) {
 	// GIVEN a cluster with horizon too short for any request to finish
 	config := newTestDeploymentConfig(1)
 	config.Horizon = 1 // 1 tick — admits but can't finish
-	workload := newTestWorkload(5)
+	workload := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, workload)
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {
@@ -113,9 +113,9 @@ func TestClusterSimulator_NormalOperation_NoPostSimWarning(t *testing.T) {
 	// GIVEN a properly configured cluster that will complete requests
 	config := newTestDeploymentConfig(1)
 	config.Horizon = 1000000
-	workload := newTestWorkload(2)
+	workload := newTestRequests(2)
 
-	cs := NewClusterSimulator(config, workload, "")
+	cs := NewClusterSimulator(config, workload)
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {

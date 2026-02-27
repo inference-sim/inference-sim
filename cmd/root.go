@@ -103,8 +103,8 @@ var (
 
 // rootCmd is the base command for the CLI
 var rootCmd = &cobra.Command{
-	Use:   "inference-sim",
-	Short: "Discrete-event simulator for inference platforms",
+	Use:   "blis",
+	Short: "BLIS — Blackbox Inference Simulator for LLM serving systems",
 }
 
 // check if all values in the coefficients list is 0 (default)
@@ -303,83 +303,96 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		// Workload configuration
-		var guideLLMConfig *sim.GuideLLMConfig
+		// Workload configuration — all paths synthesize a v2 WorkloadSpec
+		// and generate requests via workload.GenerateRequests (BC-10).
+		var spec *workload.WorkloadSpec
 		var preGeneratedRequests []*sim.Request
 
-		// --workload-spec takes precedence over --workload if set
 		if workloadSpecPath != "" {
-			spec, err := workload.LoadWorkloadSpec(workloadSpecPath)
+			// --workload-spec takes precedence over --workload
+			var err error
+			spec, err = workload.LoadWorkloadSpec(workloadSpecPath)
 			if err != nil {
 				logrus.Fatalf("Failed to load workload spec: %v", err)
 			}
-			if err := spec.Validate(); err != nil {
-				logrus.Fatalf("Invalid workload spec: %v", err)
-			}
-			// Apply CLI --seed override: when explicitly passed, CLI seed controls
-			// workload generation (R18: CLI flag precedence, INV-6a: seed supremacy).
-			// When --seed is not passed, the YAML seed is used (backward compatible).
+			// Apply CLI --seed override (R18: CLI flag precedence)
 			if cmd.Flags().Changed("seed") {
 				logrus.Infof("CLI --seed %d overrides workload-spec seed %d", seed, spec.Seed)
 				spec.Seed = seed
 			} else {
 				logrus.Infof("Using workload-spec seed %d (CLI --seed not specified)", spec.Seed)
 			}
-			// Apply spec horizon as default; CLI --horizon flag overrides via Changed().
 			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
 				simulationHorizon = spec.Horizon
 			}
-
-			// Resolve maxRequests: spec.NumRequests as default, CLI --num-requests overrides
-			maxRequests := spec.NumRequests
-			if cmd.Flags().Changed("num-requests") {
-				maxRequests = int64(numRequests)
+		} else if workloadType == "traces" {
+			// CSV trace path → synthesize v2 spec (lossy conversion)
+			if tracesWorkloadFilePath == "" {
+				logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")
 			}
-
-			// BC-7: Guard against unbounded generation
-			if maxRequests <= 0 && simulationHorizon == math.MaxInt64 {
-				logrus.Fatalf("--workload-spec requires either num_requests (in YAML or --num-requests) or --horizon to bound generation")
-			}
-
-			reqs, err := workload.GenerateRequests(spec, simulationHorizon, maxRequests)
+			logrus.Warn("--workload traces uses lossy CSV conversion (averaged token lengths, constant arrival). " +
+				"For faithful trace replay, use --workload-spec with a trace v2 YAML file instead.")
+			var err error
+			spec, err = workload.SynthesizeFromCSVTrace(tracesWorkloadFilePath, simulationHorizon)
 			if err != nil {
-				logrus.Fatalf("Failed to generate workload: %v", err)
+				logrus.Fatalf("Failed to convert CSV trace: %v", err)
 			}
-			preGeneratedRequests = reqs
-			// Set a placeholder GuideLLMConfig to satisfy constructor validation.
-			// The actual requests come from preGeneratedRequests.
-			guideLLMConfig = sim.NewGuideLLMConfig(spec.AggregateRate/1e6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-			logrus.Infof("Generated %d requests from workload spec", len(reqs))
-		} else if workloadType == "distribution" { // if workloadType distribution, use args.
-			// Validate rate (prevents infinite loop: int64(1/0) → MinInt64 → unbounded loop)
+			spec.Seed = seed
+		} else if workloadType == "distribution" {
+			// Distribution mode → synthesize v2 spec from CLI flags
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
 			}
-			// error handling for prompt and output lengths
 			if promptTokensMean > promptTokensMax || promptTokensMean < promptTokensMin || promptTokensStdev > promptTokensMax || promptTokensStdev < promptTokensMin {
 				logrus.Fatalf("prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]")
 			}
 			if outputTokensMean > outputTokensMax || outputTokensMean < outputTokensMin || outputTokensStdev > outputTokensMax || outputTokensStdev < outputTokensMin {
 				logrus.Fatalf("output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]")
 			}
-			guideLLMConfig = sim.NewGuideLLMConfig(
-				rate/1e6, numRequests,
-				prefixTokens, promptTokensMean,
-				promptTokensStdev, promptTokensMin, promptTokensMax,
-				outputTokensMean, outputTokensStdev,
-				outputTokensMin, outputTokensMax,
-			)
-		} else if workloadType != "traces" { // use default workload types
+			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
+				Rate: rate, NumRequests: numRequests, PrefixTokens: prefixTokens,
+				PromptTokensMean: promptTokensMean, PromptTokensStdDev: promptTokensStdev,
+				PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
+				OutputTokensMean: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
+				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax,
+			})
+			spec.Seed = seed
+		} else {
+			// Preset name (chatbot, summarization, etc.) → synthesize v2 spec
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
 			}
-			guideLLMConfig = GetWorkloadConfig(defaultsFilePath, workloadType, rate/1e6, numRequests)
-			if guideLLMConfig == nil {
-				logrus.Fatalf("Undefined workload. Use one among (chatbot, summarization, contentgen, multidoc)")
+			wl := loadPresetWorkload(defaultsFilePath, workloadType)
+			if wl == nil {
+				logrus.Fatalf("Undefined workload %q. Use one among (chatbot, summarization, contentgen, multidoc) or --workload-spec", workloadType)
 			}
-		} else { // read from CSV
-			guideLLMConfig = nil
+			spec = workload.SynthesizeFromPreset(workloadType, workload.PresetConfig{
+				PrefixTokens: wl.PrefixTokens,
+				PromptTokensMean: wl.PromptTokensMean, PromptTokensStdev: wl.PromptTokensStdev,
+				PromptTokensMin: wl.PromptTokensMin, PromptTokensMax: wl.PromptTokensMax,
+				OutputTokensMean: wl.OutputTokensMean, OutputTokensStdev: wl.OutputTokensStdev,
+				OutputTokensMin: wl.OutputTokensMin, OutputTokensMax: wl.OutputTokensMax,
+			}, rate, numRequests)
+			spec.Seed = seed
 		}
+
+		// Resolve maxRequests: spec.NumRequests as default, CLI --num-requests overrides
+		maxRequests := spec.NumRequests
+		if cmd.Flags().Changed("num-requests") {
+			maxRequests = int64(numRequests)
+		}
+
+		// Guard against unbounded generation
+		if maxRequests <= 0 && simulationHorizon == math.MaxInt64 {
+			logrus.Fatalf("Workload requires either num_requests or --horizon to bound generation")
+		}
+
+		reqs, err := workload.GenerateRequests(spec, simulationHorizon, maxRequests)
+		if err != nil {
+			logrus.Fatalf("Failed to generate workload: %v", err)
+		}
+		preGeneratedRequests = reqs
+		logrus.Infof("Generated %d requests via unified workload pipeline", len(reqs))
 
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
@@ -398,10 +411,6 @@ var runCmd = &cobra.Command{
 		}
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
-		}
-
-		if workloadType == "traces" && tracesWorkloadFilePath == "" {
-			logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")
 		}
 
 		// Load policy bundle if specified (BC-6: CLI flags override YAML values)
@@ -558,10 +567,7 @@ var runCmd = &cobra.Command{
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
 		}
-		cs := cluster.NewClusterSimulator(config, guideLLMConfig, tracesWorkloadFilePath)
-		if len(preGeneratedRequests) > 0 {
-			cs.SetPreGeneratedRequests(preGeneratedRequests)
-		}
+		cs := cluster.NewClusterSimulator(config, preGeneratedRequests)
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Simulation failed: %v", err)
 		}

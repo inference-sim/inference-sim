@@ -4,7 +4,7 @@ This guide covers KV cache allocation, prefix caching, tiered GPU+CPU offload, a
 
 ```bash
 # Quick example: simulate with reduced KV blocks to observe preemptions
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --total-kv-blocks 5000 --rate 50 --num-requests 200
 ```
 
@@ -29,7 +29,7 @@ When requests share common prefixes (e.g., system prompts in RAG), BLIS can reus
 Prefix caching is automatic when using the `prefix-affinity` scorer with `weighted` routing:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-scorers "prefix-affinity:3,queue-depth:1" \
   --prefix-tokens 512 --rate 100 --num-requests 500
@@ -53,7 +53,7 @@ For a workload with max 7,000 input tokens and block size 16: `ceil(7000/16) = 4
 BLIS models tiered KV cache with GPU→CPU offloading:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --kv-cpu-blocks 50000 \
   --kv-offload-threshold 0.9 \
   --kv-transfer-bandwidth 100.0 \
@@ -74,7 +74,7 @@ Long prefill sequences can cause **head-of-line (HOL) blocking** — a 2,048-tok
 Chunked prefill splits long prefills into smaller chunks:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --long-prefill-token-threshold 256 \
   --rate 100 --num-requests 500
 ```
@@ -101,7 +101,7 @@ Preemption rates spike non-linearly as KV blocks decrease past a threshold. The 
 # Sweep KV blocks to find the cliff
 for blocks in 100000 50000 20000 10000 5000 3000; do
   echo "=== blocks=$blocks ==="
-  ./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+  ./blis run --model meta-llama/llama-3.1-8b-instruct \
     --total-kv-blocks $blocks --rate 50 --num-requests 200 2>/dev/null \
     | grep -E "preemption_count|completed_requests"
 done

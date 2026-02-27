@@ -23,14 +23,9 @@ func TestClusterSimulator_PendingRequests_DrainsToZeroAfterProcessing(t *testing
 		RoutingPolicy:        "weighted",
 		RoutingScorerConfigs: sim.DefaultScorerConfigs(),
 	}
-	workload := &sim.GuideLLMConfig{
-		Rate: 2.0 / 1e6, NumRequests: 6,
-		PromptTokens: 16, OutputTokens: 8,
-		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
-		PromptTokensMin: 16, PromptTokensMax: 16,
-		OutputTokensMin: 8, OutputTokensMax: 8,
-	}
-	cs := NewClusterSimulator(config, workload, "")
+	requests := testGenerateRequests(42, 10000000, 2.0/1e6, 6,
+		0, 16, 0, 16, 16, 8, 0, 8, 8)
+	cs := NewClusterSimulator(config, requests)
 
 	mustRun(t, cs)
 
@@ -87,14 +82,7 @@ func TestClusterSimulator_PendingRequests_VisibleInRoutingState(t *testing.T) {
 		}
 	}
 
-	cs := NewClusterSimulator(config, &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, NumRequests: 0,
-		PromptTokens: 16, OutputTokens: 8,
-		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
-		PromptTokensMin: 16, PromptTokensMax: 16,
-		OutputTokensMin: 8, OutputTokensMax: 8,
-	}, "")
-	cs.SetPreGeneratedRequests(reqs)
+	cs := NewClusterSimulator(config, reqs)
 
 	mustRun(t, cs)
 
@@ -166,14 +154,7 @@ func TestClusterSimulator_PendingRequests_CausalDecrement(t *testing.T) {
 		}
 	}
 
-	cs := NewClusterSimulator(config, &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, NumRequests: 0,
-		PromptTokens: 16, OutputTokens: 8,
-		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
-		PromptTokensMin: 16, PromptTokensMax: 16,
-		OutputTokensMin: 8, OutputTokensMax: 8,
-	}, "")
-	cs.SetPreGeneratedRequests(reqs)
+	cs := NewClusterSimulator(config, reqs)
 
 	mustRun(t, cs)
 
@@ -237,14 +218,7 @@ func TestClusterSimulator_PendingRequests_CounterfactualIncludesPending(t *testi
 		}
 	}
 
-	cs := NewClusterSimulator(config, &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, NumRequests: 0,
-		PromptTokens: 16, OutputTokens: 8,
-		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
-		PromptTokensMin: 16, PromptTokensMax: 16,
-		OutputTokensMin: 8, OutputTokensMax: 8,
-	}, "")
-	cs.SetPreGeneratedRequests(reqs)
+	cs := NewClusterSimulator(config, reqs)
 
 	mustRun(t, cs)
 

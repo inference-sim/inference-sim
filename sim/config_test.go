@@ -59,9 +59,8 @@ func TestNewPolicyConfig_FieldEquivalence(t *testing.T) {
 }
 
 func TestNewWorkloadConfig_FieldEquivalence(t *testing.T) {
-	glm := &GuideLLMConfig{Rate: 1.0, NumRequests: 100}
-	got := NewWorkloadConfig(glm, "/path/to/trace.csv")
-	want := WorkloadConfig{GuideLLMConfig: glm, TracesWorkloadFilePath: "/path/to/trace.csv"}
+	got := NewWorkloadConfig()
+	want := WorkloadConfig{}
 	assert.Equal(t, want, got)
 }
 
@@ -69,9 +68,4 @@ func TestNewKVCacheConfig_ZeroValues_NoDefaults(t *testing.T) {
 	// BC-4: Zero-value arguments must NOT inject non-zero defaults
 	got := NewKVCacheConfig(0, 0, 0, 0, 0, 0)
 	assert.Equal(t, KVCacheConfig{}, got)
-}
-
-func TestNewWorkloadConfig_NilGuideLLM(t *testing.T) {
-	got := NewWorkloadConfig(nil, "")
-	assert.Equal(t, WorkloadConfig{}, got)
 }

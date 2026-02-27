@@ -15,7 +15,7 @@ Add a `--roofline` boolean CLI flag. When set, BLIS automatically resolves both 
 
 **Desired UX:**
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --roofline --hardware H100 --tp 1
+./blis run --model meta-llama/llama-3.1-8b-instruct --roofline --hardware H100 --tp 1
 ```
 
 ## Design

@@ -4,7 +4,7 @@ This guide covers analytical step time estimation using the roofline model — B
 
 ```bash
 # Quick example: roofline mode with auto-fetch
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --roofline --hardware H100 --tp 2 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
@@ -24,7 +24,7 @@ This guide covers analytical step time estimation using the roofline model — B
 The simplest way to use roofline mode:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --roofline --hardware H100 --tp 2
 ```
 
@@ -37,7 +37,7 @@ For gated models (e.g., LLaMA), set `HF_TOKEN`:
 
 ```bash
 export HF_TOKEN=your_token_here
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model meta-llama/llama-3.1-8b-instruct \
   --roofline --hardware H100 --tp 2
 ```
 
@@ -46,7 +46,7 @@ export HF_TOKEN=your_token_here
 For full control, provide configs explicitly:
 
 ```bash
-./simulation_worker run --model my-custom-model \
+./blis run --model my-custom-model \
   --model-config-folder ./my-model-configs/ \
   --hardware-config ./my-hardware-config.json \
   --hardware H100 --tp 4

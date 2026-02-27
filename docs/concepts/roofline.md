@@ -57,7 +57,7 @@ The final step time is the sum of independent phases and overheads:
 The simplest way to run roofline mode is with the `--roofline` flag, which auto-resolves the model config:
 
 ```bash
-./simulation_worker run --model meta-llama/llama-3.1-8b-instruct --roofline --hardware H100 --tp 1
+./blis run --model meta-llama/llama-3.1-8b-instruct --roofline --hardware H100 --tp 1
 ```
 
 The flag automatically:

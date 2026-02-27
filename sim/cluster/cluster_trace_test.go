@@ -20,14 +20,9 @@ func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 		NumInstances: 2,
 		TraceLevel:   "none",
 	}
-	workload := &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, NumRequests: 3,
-		PromptTokens: 10, OutputTokens: 5,
-		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
-		PromptTokensMin: 10, PromptTokensMax: 10,
-		OutputTokensMin: 5, OutputTokensMax: 5,
-	}
-	cs := NewClusterSimulator(config, workload, "")
+	requests := testGenerateRequests(42, 1000000, 1.0/1e6, 3,
+		0, 10, 0, 10, 10, 5, 0, 5, 5)
+	cs := NewClusterSimulator(config, requests)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -52,14 +47,9 @@ func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 		TraceLevel:      "decisions",
 		CounterfactualK: 0,
 	}
-	workload := &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, NumRequests: 5,
-		PromptTokens: 10, OutputTokens: 5,
-		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
-		PromptTokensMin: 10, PromptTokensMax: 10,
-		OutputTokensMin: 5, OutputTokensMax: 5,
-	}
-	cs := NewClusterSimulator(config, workload, "")
+	requests := testGenerateRequests(42, 10000000, 1.0/1e6, 5,
+		0, 10, 0, 10, 10, 5, 0, 5, 5)
+	cs := NewClusterSimulator(config, requests)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -100,14 +90,9 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 		TraceLevel:           "decisions",
 		CounterfactualK:      2,
 	}
-	workload := &sim.GuideLLMConfig{
-		Rate: 1.0 / 1e6, NumRequests: 3,
-		PromptTokens: 10, OutputTokens: 5,
-		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
-		PromptTokensMin: 10, PromptTokensMax: 10,
-		OutputTokensMin: 5, OutputTokensMax: 5,
-	}
-	cs := NewClusterSimulator(config, workload, "")
+	requests := testGenerateRequests(42, 10000000, 1.0/1e6, 3,
+		0, 10, 0, 10, 10, 5, 0, 5, 5)
+	cs := NewClusterSimulator(config, requests)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -143,14 +128,9 @@ func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
 		TokenBucketRefillRate: 0.000001, // near-zero refill
 		TraceLevel:            "decisions",
 	}
-	workload := &sim.GuideLLMConfig{
-		Rate: 5.0 / 1e6, NumRequests: 10,
-		PromptTokens: 10, OutputTokens: 5,
-		PromptTokensStdDev: 0, OutputTokensStdDev: 0,
-		PromptTokensMin: 10, PromptTokensMax: 10,
-		OutputTokensMin: 5, OutputTokensMax: 5,
-	}
-	cs := NewClusterSimulator(config, workload, "")
+	requests := testGenerateRequests(42, 5000000, 5.0/1e6, 10,
+		0, 10, 0, 10, 10, 5, 0, 5, 5)
+	cs := NewClusterSimulator(config, requests)
 
 	// WHEN run
 	mustRun(t, cs)
