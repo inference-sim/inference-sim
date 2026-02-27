@@ -2409,21 +2409,70 @@
 </ul>
 <h3 id="adding-a-new-gpu">Adding a new GPU<a class="headerlink" href="#adding-a-new-gpu" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Refer to NVIDIA datasheets for GPU specs (for example, <a href="https://www.nvidia.com/en-us/data-center/h100/">datasheet for H100</a>) and add an entry to <code>hardware_config.json</code> as follows:</li>
+<li>Refer to NVIDIA datasheets for GPU specs (for example, <a href="https://www.nvidia.com/en-us/data-center/h100/">datasheet for H100</a>) and add an entry to <code>hardware_config.json</code>:</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>&lt;GPU_name&gt;: {
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>        &quot;TFlopsEff&quot;:        &lt;Peak TFLOPS from datasheet&gt;,      
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        &quot;BwEffTBs&quot;:         &lt;Peak BW from datasheet&gt;,
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        &quot;BwEffConstant&quot;:    0.72,
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>        &quot;TOverheadMicros&quot;:  500.0,
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        &quot;perLayerOverhead&quot;: 20.0,
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        &quot;mfuPrefill&quot;:       0.65,
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        &quot;mfuDecode&quot;:        0.12,
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>        &quot;allReduceLatency&quot;: 20.0
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    }
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="nt">&quot;&lt;GPU_name&gt;&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">        </span><span class="nt">&quot;TFlopsPeak&quot;</span><span class="p">:</span><span class="w">        </span><span class="mf">989.5</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">        </span><span class="nt">&quot;BwPeakTBs&quot;</span><span class="p">:</span><span class="w">         </span><span class="mf">3.35</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">        </span><span class="nt">&quot;BwEffConstant&quot;</span><span class="p">:</span><span class="w">     </span><span class="mf">0.72</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">        </span><span class="nt">&quot;TOverheadMicros&quot;</span><span class="p">:</span><span class="w">   </span><span class="mf">500.0</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">        </span><span class="nt">&quot;perLayerOverhead&quot;</span><span class="p">:</span><span class="w">  </span><span class="mf">20.0</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">        </span><span class="nt">&quot;mfuPrefill&quot;</span><span class="p">:</span><span class="w">        </span><span class="mf">0.65</span><span class="p">,</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">        </span><span class="nt">&quot;mfuDecode&quot;</span><span class="p">:</span><span class="w">         </span><span class="mf">0.12</span><span class="p">,</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">        </span><span class="nt">&quot;allReduceLatency&quot;</span><span class="p">:</span><span class="w">  </span><span class="mf">20.0</span><span class="p">,</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">        </span><span class="nt">&quot;MemoryGiB&quot;</span><span class="p">:</span><span class="w">         </span><span class="mf">80.0</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="p">}</span>
 </code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TFlopsPeak</code></td>
+<td>Peak BF16 TFLOPS from GPU datasheet</td>
+</tr>
+<tr>
+<td><code>BwPeakTBs</code></td>
+<td>Peak HBM bandwidth in TB/s from GPU datasheet</td>
+</tr>
+<tr>
+<td><code>BwEffConstant</code></td>
+<td>Fraction of peak BW achieved in practice (0-1)</td>
+</tr>
+<tr>
+<td><code>TOverheadMicros</code></td>
+<td>Per-step overhead in microseconds</td>
+</tr>
+<tr>
+<td><code>perLayerOverhead</code></td>
+<td>CPU scheduling overhead per transformer layer in microseconds</td>
+</tr>
+<tr>
+<td><code>mfuPrefill</code></td>
+<td>Static MFU for prefill (used when MFU database is unavailable)</td>
+</tr>
+<tr>
+<td><code>mfuDecode</code></td>
+<td>Static MFU for decode (used when MFU database is unavailable)</td>
+</tr>
+<tr>
+<td><code>allReduceLatency</code></td>
+<td>All-reduce latency in microseconds (multi-GPU TP)</td>
+</tr>
+<tr>
+<td><code>MemoryGiB</code></td>
+<td>GPU memory capacity in GiB (reserved for future KV capacity auto-calculation)</td>
+</tr>
+</tbody>
+</table>
 <blockquote>
-<p>Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in <code>hardware_config.json</code>. </p>
+<p>Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in <code>hardware_config.json</code>.</p>
 </blockquote>
 
 
