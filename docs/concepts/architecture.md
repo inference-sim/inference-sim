@@ -2,7 +2,7 @@
 
 This page describes how BLIS simulates multi-instance inference serving clusters. For single-instance simulation internals, see [Core Engine](core-engine.md).
 
-> **Canonical sources:** Signal freshness (INV-7) is defined in [`docs/standards/invariants.md`](../contributing/standards/invariants.md). If signal freshness descriptions here diverge, `invariants.md` is authoritative.
+> **Canonical sources:** Signal freshness (INV-7) is defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If signal freshness descriptions here diverge, `invariants.md` is authoritative.
 
 ## Overview
 

@@ -32,9 +32,9 @@ This document describes the complete workflow for implementing a PR from any sou
 
 **Update this section when templates change. All examples below reference these versions.**
 
-- **Design guidelines:** `docs/templates/design-guidelines.md` — DES foundations, module architecture, extension framework. Read before writing any design doc or macro plan.
-- **Macro-planning template:** `docs/templates/macro-plan.md` (updated 2026-02-18 — aligned with design guidelines)
-- **Micro-planning template:** `docs/templates/micro-plan.md` (updated 2026-02-18)
+- **Design guidelines:** `docs/contributing/templates/design-guidelines.md` — DES foundations, module architecture, extension framework. Read before writing any design doc or macro plan.
+- **Macro-planning template:** `docs/contributing/templates/macro-plan.md` (updated 2026-02-18 — aligned with design guidelines)
+- **Micro-planning template:** `docs/contributing/templates/micro-plan.md` (updated 2026-02-18)
 - **Active macro plan:** `docs/plans/2026-02-19-weighted-scoring-macro-plan.md` (scorer framework)
 - **Archived design docs:** `docs/plans/archive/` (completed design docs for reference)
 
@@ -70,7 +70,7 @@ This workflow requires the following Claude Code skills to be available:
 **Alternative workflows:**
 If skills are unavailable, you can implement each step manually:
 - Step 1: Use `git worktree add ../repo-prN -b prN-name` directly
-- Step 2: Follow `docs/templates/micro-plan.md` template manually
+- Step 2: Follow `docs/contributing/templates/micro-plan.md` template manually
 - Step 2.5/4.5: Manual code review or skip automated review
 - Step 4: Implement tasks manually following plan; on failure, debug manually
 - Step 4.75: Self-audit is always available (no skill required — just critical thinking)
@@ -144,7 +144,7 @@ If skills are unavailable, you can implement each step manually:
 | Step | Command |
 |------|---------|
 | **1. Create worktree** | `/superpowers:using-git-worktrees pr<N>-<name>` |
-| **2. Create plan** | `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/templates/micro-plan.md and @<source-document>` |
+| **2. Create plan** | `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/contributing/templates/micro-plan.md and @<source-document>` |
 | **2.5. Review plan** | `/pr-review-toolkit:review-pr` then `/convergence-review pr-plan docs/plans/pr<N>-<name>-plan.md` |
 | **3. Human review plan** | Review contracts, tasks, appendix, then approve to proceed |
 | **4. Execute plan** | `/superpowers:executing-plans @docs/plans/pr<N>-<name>-plan.md` |
@@ -162,7 +162,7 @@ If skills are unavailable, you can implement each step manually:
 # (shell cwd already switched — continue directly)
 
 # Step 2: Create plan
-/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/contributing/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 # Step 2.5: Review plan (two-stage)
 /pr-review-toolkit:review-pr
@@ -256,7 +256,7 @@ If skills are unavailable, you can implement each step manually:
 
 **Invocation (simplified):**
 ```
-/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/templates/micro-plan.md and @<source-document>
+/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/contributing/templates/micro-plan.md and @<source-document>
 ```
 
 The `<source-document>` can be any of:
@@ -267,18 +267,18 @@ The `<source-document>` can be any of:
 **Examples:**
 ```
 # From macro plan section:
-/superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR6 in @docs/plans/pr6-routing-policy-plan.md using @docs/contributing/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 # From design document:
-/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
+/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/contributing/templates/micro-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
 
 # From GitHub issues:
-/superpowers:writing-plans for issues #183 #189 #195 in @docs/plans/kv-bugfix-plan.md using @docs/templates/micro-plan.md
+/superpowers:writing-plans for issues #183 #189 #195 in @docs/plans/kv-bugfix-plan.md using @docs/contributing/templates/micro-plan.md
 ```
 
 **What Happens:**
 - Claude reads the source document (macro plan section, design doc, or issue descriptions)
-- Claude reads `docs/templates/micro-plan.md` as the template
+- Claude reads `docs/contributing/templates/micro-plan.md` as the template
 - Claude inspects the codebase (Phase 0: Component Context)
 - Claude creates behavioral contracts (Phase 1)
 - Claude breaks implementation into 6-12 TDD tasks (Phase 4)
@@ -313,7 +313,7 @@ Fix any issues found, then proceed to Stage 2.
 /convergence-review pr-plan docs/plans/pr<N>-<name>-plan.md
 ```
 
-The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/convergence.md](convergence.md) for the protocol rules.
+The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/contributing/convergence.md](convergence.md) for the protocol rules.
 
 **Why two stages?** `review-pr` does a holistic sweep that catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed.
 
@@ -401,7 +401,7 @@ Verify the plan is complete, internally consistent, and implementation-ready.
 - Flag tasks that modify the same file and could conflict.
 
 **Check 2: Template Completeness**
-- Verify all sections from `docs/templates/micro-plan.md` are present and non-empty:
+- Verify all sections from `docs/contributing/templates/micro-plan.md` are present and non-empty:
   - Header (Goal, Architecture, Source Reference)
   - Part 1: A) Executive Summary, B) Behavioral Contracts, C) Component Interaction, D) Deviation Log, E) Review Guide
   - Part 2: F) Implementation Overview, G) Task Breakdown, H) Test Strategy, I) Risk Analysis
@@ -576,7 +576,7 @@ Fix any issues found, then proceed to Stage 2.
 /convergence-review pr-code
 ```
 
-The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/process/convergence.md](convergence.md) for the protocol rules.
+The `convergence-review` skill dispatches all 10 perspectives in parallel, tallies findings independently, and enforces the re-run gate. See [docs/contributing/convergence.md](convergence.md) for the protocol rules.
 
 **Why two stages?** `review-pr` does a holistic sweep that catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds.
 
@@ -612,7 +612,7 @@ Find bugs, logic errors, silent failures, and convention violations.
 
 **Prompt:**
 ```
-/pr-review-toolkit:review-pr Also check: (1) any new error paths that use `continue` or early `return` — do they clean up partial state? (2) any map iteration that accumulates floats — are keys sorted? (3) any struct field added — are all construction sites updated? (4) does library code (sim/) call logrus.Fatalf anywhere in new code? (5) any exported mutable maps — should they be unexported with IsValid*() accessors? (6) any YAML config fields using float64 instead of *float64 where zero is valid? (7) any division where the denominator derives from runtime state without a zero guard? (8) any new interface with methods only meaningful for one implementation? (9) any method >50 lines spanning multiple concerns (scheduling + latency + metrics)? (10) any changes to docs/standards/ files — are CLAUDE.md working copies updated to match?
+/pr-review-toolkit:review-pr Also check: (1) any new error paths that use `continue` or early `return` — do they clean up partial state? (2) any map iteration that accumulates floats — are keys sorted? (3) any struct field added — are all construction sites updated? (4) does library code (sim/) call logrus.Fatalf anywhere in new code? (5) any exported mutable maps — should they be unexported with IsValid*() accessors? (6) any YAML config fields using float64 instead of *float64 where zero is valid? (7) any division where the denominator derives from runtime state without a zero guard? (8) any new interface with methods only meaningful for one implementation? (9) any method >50 lines spanning multiple concerns (scheduling + latency + metrics)? (10) any changes to docs/contributing/standards/ files — are CLAUDE.md working copies updated to match?
 ```
 
 **Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling os.Exit, exported mutable maps, YAML zero-value ambiguity, division by zero in runtime computation, leaky interfaces, monolith methods, documentation drift.
@@ -738,7 +738,7 @@ gh issue create --title "Bug: <concise description>" --body "<location, impact, 
 
 #### Convergence Protocol
 
-**Canonical source:** [docs/process/convergence.md](convergence.md). The same protocol applies to all review gates (PR plan, PR code, hypothesis design/code/FINDINGS).
+**Canonical source:** [docs/contributing/convergence.md](convergence.md). The same protocol applies to all review gates (PR plan, PR code, hypothesis design/code/FINDINGS).
 
 In summary: run all perspectives as a parallel round. If zero CRITICAL and zero IMPORTANT across all reviewers, the round converged. If any CRITICAL or IMPORTANT from any reviewer, fix all issues and re-run the **entire** round. Max 10 rounds per gate. Hard gate — no exceptions.
 
@@ -792,7 +792,7 @@ Wait for user approval before proceeding to Step 4.75.
 7. **Test epistemology (R7, R12):** For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)
 8. **Construction site uniqueness (R4):** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
 9. **Error path completeness (R1, R5):** For every error/failure path in new code, what happens to partially-mutated state? Does every `continue` or early `return` clean up what was started? Is there a counter or log so the failure is observable?
-10. **Documentation DRY (source-of-truth map):** Does this PR modify content that exists as a working copy elsewhere? Check the source-of-truth map in `docs/standards/principles.md`. If a canonical source was updated (rules.md, invariants.md, principles.md, extension-recipes.md), verify all working copies listed in the map are also updated. If a new file or section was added, verify it appears in the File Organization tree. If a hypothesis experiment was completed, verify `hypotheses/README.md` is updated.
+10. **Documentation DRY (source-of-truth map):** Does this PR modify content that exists as a working copy elsewhere? Check the source-of-truth map in `docs/contributing/standards/principles.md`. If a canonical source was updated (rules.md, invariants.md, principles.md, extension-recipes.md), verify all working copies listed in the map are also updated. If a new file or section was added, verify it appears in the File Organization tree. If a hypothesis experiment was completed, verify `hypotheses/README.md` is updated.
 
 **Fix all issues found. Then wait for user approval before Step 5.**
 
@@ -907,7 +907,7 @@ Not all PRs need the same level of review. Use these objective criteria to selec
 |-------|-------------|-------|--------|
 | `commit-commands:clean_gone` | **Step 1** - Pre-cleanup of stale branches | None | Removed stale branches |
 | `using-git-worktrees` | **Step 1** - Create isolated workspace FIRST | Branch name | Worktree directory path |
-| `writing-plans` | **Step 2** - Create implementation plan from source document | Source document (macro plan/design doc/issues) + `docs/templates/micro-plan.md` | Plan file with contracts + tasks |
+| `writing-plans` | **Step 2** - Create implementation plan from source document | Source document (macro plan/design doc/issues) + `docs/contributing/templates/micro-plan.md` | Plan file with contracts + tasks |
 | `pr-review-toolkit:review-pr` | **Step 2.5/4.5** - Holistic cross-cutting pre-pass | Plan file or current diff | Issues list with severity |
 | `convergence-review` | **Step 2.5** - Dispatch 10 parallel perspectives + enforce convergence | Gate type + plan file path | Converged/not-converged with findings |
 | `executing-plans` | **Step 4** - Execute plan tasks continuously | Plan file path | Implemented code + commits |
@@ -932,7 +932,7 @@ Not all PRs need the same level of review. Use these objective criteria to selec
 # (continue directly — no new session needed)
 
 # Step 2: Create plan (source = macro plan section)
-/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR8 in @docs/plans/pr8-routing-state-and-policy-bundle-plan.md using @docs/contributing/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 # Output: Plan created at docs/plans/pr8-routing-state-and-policy-bundle-plan.md
 
@@ -986,7 +986,7 @@ Not all PRs need the same level of review. Use these objective criteria to selec
 /superpowers:using-git-worktrees hardening-antipatterns
 
 # Step 2: Create plan (source = design document, not macro plan)
-/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
+/superpowers:writing-plans for hardening PR in @docs/plans/hardening-plan.md using @docs/contributing/templates/micro-plan.md and @docs/plans/2026-02-18-hardening-antipattern-refactoring-design.md
 
 # Step 2.5: Plan review (two-stage, same as Example A)
 /pr-review-toolkit:review-pr
@@ -1067,14 +1067,14 @@ claude -p "Read .review/*.md files. Produce a consolidated summary sorted by sev
 
 **Solution:** The simplified invocation with @ references handles this automatically:
 ```bash
-/superpowers:writing-plans for PR6 in @docs/plans/pr6-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR6 in @docs/plans/pr6-plan.md using @docs/contributing/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 ```
 
 Claude reads the full macro plan and extracts PR6 context (architecture, dependencies, etc.) automatically.
 
 **If still too generic:** Add specific guidance in the invocation:
 ```bash
-/superpowers:writing-plans for PR6 in @docs/plans/pr6-plan.md using @docs/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
+/superpowers:writing-plans for PR6 in @docs/plans/pr6-plan.md using @docs/contributing/templates/micro-plan.md and @docs/plans/2026-02-11-macro-implementation-plan-v2.md
 
 Pay special attention to:
 - Integration with existing SnapshotProvider (see sim/cluster/snapshot.go)

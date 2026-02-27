@@ -2,7 +2,7 @@
 
 This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see [Cluster Architecture](architecture.md).
 
-> **Canonical sources:** System invariants (INV-1 through INV-8) are defined in [`docs/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
+> **Canonical sources:** System invariants (INV-1 through INV-8) are defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
 
 ## Overview
 

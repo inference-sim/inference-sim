@@ -2,7 +2,7 @@
 
 **Status:** Active (v2.0 — updated 2026-02-23)
 
-This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/standards/experiments.md](standards/experiments.md). For the FINDINGS.md template, see [docs/templates/hypothesis.md](templates/hypothesis.md). For experiment status and coverage gaps, see [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md).
+This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/contributing/standards/experiments.md](standards/experiments.md). For the FINDINGS.md template, see [docs/contributing/templates/hypothesis.md](templates/hypothesis.md). For experiment status and coverage gaps, see [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md).
 
 ---
 
@@ -357,11 +357,11 @@ Run the **10-perspective FINDINGS Review** using the [universal convergence prot
 - Does the mechanism explain the direction using experimental evidence, not just code-reading claims?
 
 **Reviewer 5 — Standards Compliance:**
-- Are ALL FINDINGS.md sections present and non-empty? (per `docs/templates/hypothesis.md`)
+- Are ALL FINDINGS.md sections present and non-empty? (per `docs/contributing/templates/hypothesis.md`)
 - Is the hypothesis correctly classified (family, VV&UQ category, type)?
 - Does the Devil's Advocate section (RCV-5) argue both directions convincingly?
 - Are scope and limitations (RCV-6) complete — operating point, dependencies, what was NOT tested, generalizability, UQ?
-- Does the standards audit correctly check findings against `docs/standards/rules.md` and `docs/standards/invariants.md`?
+- Does the standards audit correctly check findings against `docs/contributing/standards/rules.md` and `docs/contributing/standards/invariants.md`?
 - Are any new rules or invariants warranted by the findings?
 
 **Reviewer 6 — Substance and Logic:**
@@ -446,9 +446,9 @@ The PR description should include:
 
 ## Universal Convergence Protocol
 
-> **Canonical source:** [`docs/process/convergence.md`](convergence.md). If this section diverges, convergence.md is authoritative.
+> **Canonical source:** [`docs/contributing/convergence.md`](convergence.md). If this section diverges, convergence.md is authoritative.
 
-All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See [`docs/process/convergence.md`](convergence.md) for the full protocol, severity definitions, agent failure handling, and expected convergence rates.
+All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See [`docs/contributing/convergence.md`](convergence.md) for the full protocol, severity definitions, agent failure handling, and expected convergence rates.
 
 > **Executable implementation:** The `convergence-review` skill automates this protocol. Invoke with `/convergence-review <gate-type> [artifact-path] [--model opus|sonnet|haiku]`.
 
@@ -673,8 +673,8 @@ After convergence, assess whether any confirmed findings should be promoted from
 |-----------|-----------|-----|
 | Confirmed deterministic hypothesis | **Go test** (regression protection in CI) | Deterministic properties are exact — they can be encoded as pass/fail tests. |
 | Deterministic invariant aspect of a statistical hypothesis | **Go test** for the invariant aspect | Statistical hypotheses often contain deterministic sub-claims (e.g., conservation holds across all configs). |
-| New invariant discovered | **`docs/standards/invariants.md`** entry | Codify as a formal system property with verification strategy. |
-| New rule discovered | **`docs/standards/rules.md`** entry | Codify as an antipattern check for PR reviews. |
+| New invariant discovered | **`docs/contributing/standards/invariants.md`** entry | Codify as a formal system property with verification strategy. |
+| New rule discovered | **`docs/contributing/standards/rules.md`** entry | Codify as an antipattern check for PR reviews. |
 
 ### What a promoted test looks like
 
@@ -728,11 +728,11 @@ H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H
 
 ## References
 
-- Standards: [docs/standards/experiments.md](standards/experiments.md)
-- Template: [docs/templates/hypothesis.md](templates/hypothesis.md)
+- Standards: [docs/contributing/standards/experiments.md](standards/experiments.md)
+- Template: [docs/contributing/templates/hypothesis.md](templates/hypothesis.md)
 - Hypothesis catalog: [docs/plans/research.md](../plans/research.md)
 - Validated experiments: [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md)
-- PR workflow (structural inspiration): [docs/process/pr-workflow.md](pr-workflow.md)
+- PR workflow (structural inspiration): [docs/contributing/pr-workflow.md](pr-workflow.md)
 
 ---
 

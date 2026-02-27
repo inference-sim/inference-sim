@@ -150,7 +150,7 @@ Per-instance policies that control request ordering within the wait queue. Maps 
 | `--scheduler` | string | "fcfs" | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
 | `--priority-policy` | string | "constant" | Priority policy: `constant`, `slo-based`, `inverted-slo`. |
 
-See [Core Engine: Scheduling](core-engine.md#scheduling-policies) for policy details.
+See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 
 ## Workload Configuration
 

@@ -1,8 +1,8 @@
 # Hypothesis Experiments
 
-> **Canonical source:** [`docs/process/hypothesis.md`](../docs/process/hypothesis.md). If this step list diverges, hypothesis.md is authoritative.
+> **Canonical source:** [`docs/contributing/hypothesis.md`](../docs/contributing/hypothesis.md). If this step list diverges, hypothesis.md is authoritative.
 
-This directory contains validated hypothesis experiments for BLIS. Each hypothesis follows the methodology described in `docs/process/hypothesis.md`, with hypotheses drawn from the catalog in `docs/plans/research.md`:
+This directory contains validated hypothesis experiments for BLIS. Each hypothesis follows the methodology described in `docs/contributing/hypothesis.md`, with hypotheses drawn from the catalog in `docs/plans/research.md`:
 
 0. **Create isolated worktree** — `.worktrees/h-<name>` using worktree skill
 1. **Select and classify hypothesis** — family, VV&UQ category, type
@@ -79,7 +79,7 @@ cd hypotheses/h3-signal-freshness
 
 Scripts are self-contained — they build the binary, run all experiment variants, and print analysis to stdout. Requires Go 1.24+ and Python 3 (standard library only — no pip packages needed).
 
-**To contribute a new experiment:** See `docs/process/hypothesis.md` for the full process, `docs/templates/hypothesis.md` for the FINDINGS.md template, and `docs/standards/experiments.md` for rigor requirements. To propose without implementing, file a [Hypothesis Proposal issue](https://github.com/inference-sim/inference-sim/issues/new?template=hypothesis.md).
+**To contribute a new experiment:** See `docs/contributing/hypothesis.md` for the full process, `docs/contributing/templates/hypothesis.md` for the FINDINGS.md template, and `docs/contributing/standards/experiments.md` for rigor requirements. To propose without implementing, file a [Hypothesis Proposal issue](https://github.com/inference-sim/inference-sim/issues/new?template=hypothesis.md).
 
 ## Coverage by Family
 

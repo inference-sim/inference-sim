@@ -44,7 +44,7 @@ Store the resolved model in a variable `REVIEW_MODEL` and use it in all Task dis
 
 ## Convergence Protocol (non-negotiable)
 
-> **Canonical source:** [docs/process/convergence.md](../../../docs/process/convergence.md). The rules below are a self-contained copy for skill execution; convergence.md is authoritative if they diverge.
+> **Canonical source:** [docs/contributing/convergence.md](../../../docs/contributing/convergence.md). The rules below are a self-contained copy for skill execution; convergence.md is authoritative if they diverge.
 
 These rules are identical across all gates. No exceptions. No shortcuts.
 

@@ -2,7 +2,7 @@
 
 Reference file for the hypothesis-experiment skill. Contains exact prompts for all 20 reviewer perspectives across the three review gates.
 
-**Canonical source:** `docs/process/hypothesis.md` (v2.0). If prompts here diverge from hypothesis.md, the process doc is authoritative.
+**Canonical source:** `docs/contributing/hypothesis.md` (v2.0). If prompts here diverge from hypothesis.md, the process doc is authoritative.
 
 **Usage**: Launch each perspective as a parallel Task agent:
 ```
@@ -27,7 +27,7 @@ HYPOTHESIS AND DESIGN:
 
 YOUR FOCUS: Hypothesis Quality
 - Is the hypothesis behavioral, testable, and diagnostic?
-- Does it follow the family-specific sentence pattern from docs/standards/experiments.md?
+- Does it follow the family-specific sentence pattern from docs/contributing/standards/experiments.md?
 - Is the diagnostic clause present ("If this fails, it would indicate...")?
 - Is it correctly classified (family, VV&UQ category, type)?
 - Is the hypothesis conceptual (not code-grounded)? It should NOT reference specific files/lines.
@@ -311,11 +311,11 @@ You are reviewing a FINDINGS.md for a BLIS hypothesis experiment.
 FINDINGS FILE: <path to FINDINGS.md>
 
 YOUR FOCUS: Standards Compliance
-- Are ALL FINDINGS.md sections present and non-empty? (per docs/templates/hypothesis.md)
+- Are ALL FINDINGS.md sections present and non-empty? (per docs/contributing/templates/hypothesis.md)
 - Is the hypothesis correctly classified (family, VV&UQ, type)?
 - Does the Devil's Advocate section argue both directions convincingly? (RCV-5)
 - Are Scope and Limitations complete? (RCV-6) Operating point, dependencies, what was NOT tested, generalizability, UQ
-- Does the Standards Audit check against docs/standards/rules.md and docs/standards/invariants.md?
+- Does the Standards Audit check against docs/contributing/standards/rules.md and docs/contributing/standards/invariants.md?
 - Are any new rules or invariants warranted?
 
 Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.

@@ -16,7 +16,7 @@ This document serves two audiences:
 - A reference for evaluating whether a design doc or a new module meets BLIS's quality bar
 
 **What this document is NOT:**
-- Not an implementation plan (refactoring happens in separate PRs, each following `docs/process/pr-workflow.md`)
+- Not an implementation plan (refactoring happens in separate PRs, each following `docs/contributing/pr-workflow.md`)
 - Not a replacement for CLAUDE.md (which captures engineering rules and code-level patterns)
 - Not a replacement for the micro-plan template (which captures PR-level planning structure)
 

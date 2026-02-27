@@ -19,7 +19,7 @@ PREREQUISITE — DESIGN GUIDELINES
 
 Before writing a macro plan, read and internalize:
 
-- `docs/templates/design-guidelines.md` — BLIS design guidelines
+- `docs/contributing/templates/design-guidelines.md` — BLIS design guidelines
   covering DES foundations, module architecture, and extension framework.
 
 The macro plan must be consistent with these guidelines. Specifically:
@@ -498,7 +498,7 @@ Quality bar:
 - Must withstand expert review.
 - Must be realistic and implementable.
 - Concept model must be simple enough to explain verbally in 2 minutes.
-- Consistent with design guidelines (docs/templates/design-guidelines.md).
+- Consistent with design guidelines (docs/contributing/templates/design-guidelines.md).
 - Every building block has a module contract.
 - Every PR has an extension type.
 - Every modeling decision traces to an analysis question.

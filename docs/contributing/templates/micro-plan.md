@@ -531,7 +531,7 @@ Before implementation, verify:
 - [ ] CLAUDE.md updated if: new files/packages added, file organization
       changed, plan milestone completed, new CLI flags added.
 - [ ] No stale references left in CLAUDE.md.
-- [ ] Documentation DRY: If this PR modifies a canonical source (docs/standards/rules.md, docs/standards/invariants.md, docs/standards/principles.md, docs/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the CLAUDE.md File Organization tree.
+- [ ] Documentation DRY: If this PR modifies a canonical source (docs/contributing/standards/rules.md, docs/contributing/standards/invariants.md, docs/contributing/standards/principles.md, docs/contributing/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the CLAUDE.md File Organization tree.
 - [ ] Deviation log reviewed — no unresolved deviations.
 - [ ] Each task produces working, testable code (no scaffolding).
 - [ ] Task dependencies are correctly ordered.
@@ -541,7 +541,7 @@ Before implementation, verify:
       construction sites listed and covered by tasks.
 - [ ] If this PR is part of a macro plan, the macro plan status is updated.
 
-**Antipattern rules (full details in docs/standards/rules.md):**
+**Antipattern rules (full details in docs/contributing/standards/rules.md):**
 - [ ] R1: No silent `continue`/`return` dropping data
 - [ ] R2: Map keys sorted before float accumulation or ordered output
 - [ ] R3: Every new CLI flag validated (zero, negative, NaN, Inf)

@@ -9,9 +9,9 @@ disable-model-invocation: true
 
 You are running the hypothesis experiment workflow for hypothesis **$ARGUMENTS**.
 
-**Canonical source:** `docs/process/hypothesis.md` (v2.0). Read it NOW before proceeding.
-**Standards:** `docs/standards/experiments.md` (ED-1–ED-6, RCV-1–RCV-6).
-**Template:** `docs/templates/hypothesis.md` (FINDINGS.md structure).
+**Canonical source:** `docs/contributing/hypothesis.md` (v2.0). Read it NOW before proceeding.
+**Standards:** `docs/contributing/standards/experiments.md` (ED-1–ED-6, RCV-1–RCV-6).
+**Template:** `docs/contributing/templates/hypothesis.md` (FINDINGS.md structure).
 **Review prompts:** See [review-prompts.md](review-prompts.md) for exact agent dispatch prompts.
 
 ---
@@ -56,7 +56,7 @@ All subsequent steps happen in the worktree. Set your working directory there.
 
 1. **Check coverage gaps**: Read `hypotheses/README.md` for the coverage table
 2. **Classify the hypothesis**:
-   - **Family**: Which of the 6 families? (See `docs/standards/experiments.md`)
+   - **Family**: Which of the 6 families? (See `docs/contributing/standards/experiments.md`)
    - **VV&UQ**: Verification, Validation, or UQ?
    - **Type**: Deterministic or Statistical? If statistical: dominance, monotonicity, equivalence, or Pareto?
 3. **Write the hypothesis sentence** using the family-specific pattern from experiments.md
@@ -70,7 +70,7 @@ All subsequent steps happen in the worktree. Set your working directory there.
 
 ### 2a: Design the Experiment
 
-Follow ED-1 through ED-6 (see `docs/standards/experiments.md`):
+Follow ED-1 through ED-6 (see `docs/contributing/standards/experiments.md`):
 - ED-1: Controlled comparison (vary exactly ONE dimension)
 - ED-2: Rate awareness (run where effect expected AND where it should vanish)
 - ED-3: Precondition verification (in script, not just prose)
@@ -190,7 +190,7 @@ After Code Review converges:
 2. **Trace every causal claim through code** (RCV-1: cite `file:line`)
 3. **Compute expected values from first principles** for any "surprises" (RCV-2)
 4. **Check mechanism AND direction** (RCV-3)
-5. **Write FINDINGS.md** using `docs/templates/hypothesis.md` — ALL sections must be non-empty
+5. **Write FINDINGS.md** using `docs/contributing/templates/hypothesis.md` — ALL sections must be non-empty
 6. **Update `hypotheses/README.md`** — add row to the validated hypotheses table
 
 ---
