@@ -1,0 +1,60 @@
+{
+  "description": "llm-d parity baseline on ORTHOGONAL mixed production workload (v2)",
+  "design_principle": "SLO tiers and workload types are orthogonal. All tiers share identical multi-turn prefix-heavy pattern. SLO class is the ONLY differentiator.",
+  "config": {
+    "routing_policy": "weighted",
+    "routing_scorers": "prefix-affinity:3,queue-depth:2,kv-utilization:2",
+    "scheduler": "fcfs",
+    "priority_policy": "constant",
+    "admission_policy": "always-admit",
+    "kv_cpu_blocks": 44000,
+    "kv_offload_threshold": 0.9,
+    "long_prefill_token_threshold": 256,
+    "num_instances": 8,
+    "model": "meta-llama/llama-3.1-8b-instruct"
+  },
+  "workload": "mixed-production-workload.yaml v2 (aggregate_rate=2000, num_requests=1000, 3 SLO tiers x same pattern)",
+  "results": {
+    "seed_42": {
+      "ttft_p99_ms": 237.9,
+      "e2e_p99_ms": 5423.5,
+      "throughput_tps": 19062,
+      "scheduling_delay_p99_ms": 174.7,
+      "preemption_count": 0,
+      "slo_ttft_p99_ms": {"critical": 233.1, "standard": 238.2, "sheddable": 242.2},
+      "slo_differentiation_pct": 3.9
+    },
+    "seed_43": {
+      "ttft_p99_ms": 267.2,
+      "e2e_p99_ms": 5365.1,
+      "throughput_tps": 16673,
+      "scheduling_delay_p99_ms": 198.9,
+      "preemption_count": 0,
+      "slo_ttft_p99_ms": {"critical": 255.7, "standard": 271.1, "sheddable": 264.7},
+      "slo_differentiation_pct": 6.0
+    },
+    "seed_44": {
+      "ttft_p99_ms": 302.3,
+      "e2e_p99_ms": 5486.1,
+      "throughput_tps": 15859,
+      "scheduling_delay_p99_ms": 233.5,
+      "preemption_count": 0,
+      "slo_ttft_p99_ms": {"critical": 317.5, "standard": 303.6, "sheddable": 287.5},
+      "slo_differentiation_pct": 10.4
+    },
+    "mean": {
+      "ttft_p99_ms": 269.1,
+      "e2e_p99_ms": 5424.9,
+      "throughput_tps": 17198,
+      "scheduling_delay_p99_ms": 202.4,
+      "slo_differentiation_pct": 6.8,
+      "note": "~7% SLO gap is noise — baseline has NO SLO-aware mechanism"
+    }
+  },
+  "targets": {
+    "ttft_p99_ms": "<229 (>15% improvement over 269.1ms mean)",
+    "throughput_tps": ">18058 (>5% improvement over 17198 mean)",
+    "critical_ttft_p99_ms": "significantly lower than sheddable (>30% gap = genuine differentiation)",
+    "slo_differentiation": ">30% gap between critical and sheddable TTFT P99"
+  }
+}

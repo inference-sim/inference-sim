@@ -1,0 +1,84 @@
+name: "slo-gated-priority-cascade"
+description: "SLO-tiered priority + SLO-aware routing + priority bridge + priority-fcfs"
+
+fixed_args:
+  - "--num-instances"
+  - "8"
+  - "--routing-policy"
+  - "weighted"
+  - "--scheduler"
+  - "priority-fcfs"
+  - "--priority-policy"
+  - "slo-tiered"
+  - "--slo-priority-bridge"
+  - "--kv-cpu-blocks"
+  - "44000"
+  - "--kv-offload-threshold"
+  - "0.9"
+  - "--long-prefill-token-threshold"
+  - "256"
+  - "--model"
+  - "meta-llama/llama-3.1-8b-instruct"
+
+parameters:
+  - name: "base_critical"
+    flag: "--slo-base-critical"
+    type: "real"
+    low: 5.0
+    high: 20.0
+
+  - name: "base_sheddable"
+    flag: "--slo-base-sheddable"
+    type: "real"
+    low: 0.0
+    high: 5.0
+
+  - name: "age_weight"
+    flag: "--slo-age-weight"
+    type: "real"
+    low: 0.000001
+    high: 0.0001
+    prior: "log-uniform"
+
+  - name: "threshold_sheddable"
+    flag: "--slo-threshold-sheddable"
+    type: "integer"
+    low: 50000
+    high: 500000
+
+  - name: "bias_critical"
+    flag: "--slo-scorer-bias-critical"
+    type: "real"
+    low: 0.5
+    high: 1.0
+
+  - name: "bias_sheddable"
+    flag: "--slo-scorer-bias-sheddable"
+    type: "real"
+    low: 0.0
+    high: 0.5
+
+  - name: "slo_scorer_weight"
+    flag: "--routing-scorers"
+    type: "categorical"
+    categories:
+      - "prefix-affinity:3,slo-priority:1,queue-depth:2"
+      - "prefix-affinity:3,slo-priority:2,queue-depth:2"
+      - "prefix-affinity:3,slo-priority:3,queue-depth:2"
+      - "prefix-affinity:3,slo-priority:4,queue-depth:1"
+
+workload_spec: "strategy-evolution/lib/mixed-production-workload.yaml"
+
+objective:
+  metric: "ttft_p99_ms"
+  direction: "min"
+
+constraints:
+  - metric: "throughput_tps"
+    direction: "max"
+    threshold: 15000
+    weight: 10
+  - metric: "dropped"
+    direction: "min"
+    threshold: 0
+    weight: 1000

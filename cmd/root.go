@@ -76,6 +76,25 @@ var (
 	priorityPolicy string // Priority policy name
 	scheduler      string // Scheduler name
 
+	// SLO-tiered priority parameters (strategy-evolution)
+	sloPriorityBaseCritical  float64
+	sloPriorityBaseStandard  float64
+	sloPriorityBaseSheddable float64
+	sloPriorityAgeWeight     float64
+	sloPriorityThreshStd     int64
+	sloPriorityThreshShed    int64
+	sloScorerBiasCritical    float64
+	sloScorerBiasSheddable   float64
+	sloPriorityBridgeEnabled bool
+	// Load-adaptive priority parameters
+	loadAdaptiveLowThreshold  int
+	loadAdaptiveHighThreshold int
+	sloGatedLoadThreshold     float64
+	// SLO-aware prefill parameters
+	sloPrefillEnabled          bool
+	sloPrefillCriticalThresh   int64
+	sloPrefillSheddableThresh  int64
+
 	// Policy bundle config (PR8)
 	policyConfigPath string // Path to YAML policy configuration file
 
@@ -534,6 +553,37 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
+		// Wire SLO-tiered priority parameters into package-level configs
+		if priorityPolicy == "slo-tiered" || priorityPolicy == "load-adaptive" {
+			sim.SLOTieredPriorityConfig.BaseCritical = sloPriorityBaseCritical
+			sim.SLOTieredPriorityConfig.BaseStandard = sloPriorityBaseStandard
+			sim.SLOTieredPriorityConfig.BaseSheddable = sloPriorityBaseSheddable
+			sim.SLOTieredPriorityConfig.AgeWeight = sloPriorityAgeWeight
+			sim.SLOTieredPriorityConfig.ThresholdStandard = sloPriorityThreshStd
+			sim.SLOTieredPriorityConfig.ThresholdSheddable = sloPriorityThreshShed
+		}
+		if priorityPolicy == "load-adaptive" {
+			sim.LoadAdaptivePriorityConfig.BaseCritical = sloPriorityBaseCritical
+			sim.LoadAdaptivePriorityConfig.BaseStandard = sloPriorityBaseStandard
+			sim.LoadAdaptivePriorityConfig.BaseSheddable = sloPriorityBaseSheddable
+			sim.LoadAdaptivePriorityConfig.AgeWeight = sloPriorityAgeWeight
+			sim.LoadAdaptivePriorityConfig.ThresholdStandard = sloPriorityThreshStd
+			sim.LoadAdaptivePriorityConfig.ThresholdSheddable = sloPriorityThreshShed
+			sim.LoadAdaptivePriorityConfig.LowLoadThreshold = loadAdaptiveLowThreshold
+			sim.LoadAdaptivePriorityConfig.HighLoadThreshold = loadAdaptiveHighThreshold
+		}
+		// Wire SLO scorer and bridge configs (independent of priority policy choice)
+		sim.SLOScorerConfig.LoadBiasCritical = sloScorerBiasCritical
+		sim.SLOScorerConfig.LoadBiasSheddable = sloScorerBiasSheddable
+		sim.SLOPriorityBridgeConfig.Enabled = sloPriorityBridgeEnabled
+		sim.SLOPriorityBridgeConfig.BaseCritical = sloPriorityBaseCritical
+		sim.SLOPriorityBridgeConfig.BaseStandard = sloPriorityBaseStandard
+		sim.SLOPriorityBridgeConfig.BaseSheddable = sloPriorityBaseSheddable
+		sim.SLOGatedAdmissionConfig.LoadThreshold = sloGatedLoadThreshold
+		sim.SLOPrefillConfig.Enabled = sloPrefillEnabled
+		sim.SLOPrefillConfig.CriticalThreshold = sloPrefillCriticalThresh
+		sim.SLOPrefillConfig.SheddableThreshold = sloPrefillSheddableThresh
+
 		// Unified cluster path (used for all values of numInstances)
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
@@ -749,8 +799,25 @@ func init() {
 	runCmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: prefix-affinity:3,queue-depth:2,kv-utilization:2")
 
 	// Priority and scheduler config (PR7)
-	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
+	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo, slo-tiered")
 	runCmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
+
+	// SLO-tiered priority parameters
+	runCmd.Flags().Float64Var(&sloPriorityBaseCritical, "slo-base-critical", 10.0, "SLO-tiered: base priority for critical class")
+	runCmd.Flags().Float64Var(&sloPriorityBaseStandard, "slo-base-standard", 5.0, "SLO-tiered: base priority for standard class")
+	runCmd.Flags().Float64Var(&sloPriorityBaseSheddable, "slo-base-sheddable", 1.0, "SLO-tiered: base priority for sheddable class")
+	runCmd.Flags().Float64Var(&sloPriorityAgeWeight, "slo-age-weight", 1e-5, "SLO-tiered: shared age escalation rate (per μs)")
+	runCmd.Flags().Int64Var(&sloPriorityThreshStd, "slo-threshold-standard", 100000, "SLO-tiered: standard urgency activation threshold (μs)")
+	runCmd.Flags().Int64Var(&sloPriorityThreshShed, "slo-threshold-sheddable", 200000, "SLO-tiered: sheddable urgency activation threshold (μs)")
+	runCmd.Flags().Float64Var(&sloScorerBiasCritical, "slo-scorer-bias-critical", 0.9, "SLO-priority scorer: load bias for critical (0=cache, 1=load)")
+	runCmd.Flags().Float64Var(&sloScorerBiasSheddable, "slo-scorer-bias-sheddable", 0.2, "SLO-priority scorer: load bias for sheddable (0=cache, 1=load)")
+	runCmd.Flags().BoolVar(&sloPriorityBridgeEnabled, "slo-priority-bridge", false, "Enable router→scheduler SLO priority bridge")
+	runCmd.Flags().IntVar(&loadAdaptiveLowThreshold, "load-adaptive-low", 2, "Load-adaptive: queue depth below which gap=0 (FCFS)")
+	runCmd.Flags().IntVar(&loadAdaptiveHighThreshold, "load-adaptive-high", 15, "Load-adaptive: queue depth above which gap=full")
+	runCmd.Flags().Float64Var(&sloGatedLoadThreshold, "slo-gated-threshold", 8.0, "SLO-gated admission: avg load threshold for sheddable rejection")
+	runCmd.Flags().BoolVar(&sloPrefillEnabled, "slo-prefill", false, "Enable per-SLO chunked prefill thresholds")
+	runCmd.Flags().Int64Var(&sloPrefillCriticalThresh, "slo-prefill-critical", 128, "Chunked prefill threshold for critical (lower = more aggressive)")
+	runCmd.Flags().Int64Var(&sloPrefillSheddableThresh, "slo-prefill-sheddable", 0, "Chunked prefill threshold for sheddable (0 = no chunking)")
 
 	// Policy bundle config (PR8)
 	runCmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")

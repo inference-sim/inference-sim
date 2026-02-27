@@ -52,9 +52,40 @@ type BatchResult struct {
 	PreemptionHappened bool
 }
 
+// SLOPrefillConfig controls per-SLO-class chunked prefill thresholds.
+// When Enabled, critical requests use CriticalThreshold and sheddable use SheddableThreshold.
+// Other classes use the global PrefillTokenThreshold from BatchContext.
+// Disabled by default (zero value = use global threshold for all).
+var SLOPrefillConfig = struct {
+	Enabled            bool
+	CriticalThreshold  int64 // lower = more aggressive chunking for critical (better TTFT)
+	SheddableThreshold int64 // higher = fewer chunks for sheddable (better throughput, 0=no chunking)
+}{
+	Enabled:            false,
+	CriticalThreshold:  128,
+	SheddableThreshold: 0, // 0 means no chunking (process entire prefill in one step)
+}
+
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
 type VLLMBatchFormation struct {
 	latencyModel LatencyModel
+}
+
+// effectivePrefillThreshold returns the chunked prefill threshold for a request.
+// When SLOPrefillConfig is enabled, returns per-class thresholds.
+// Otherwise returns the global ctx.PrefillTokenThreshold.
+func effectivePrefillThreshold(req *Request, globalThreshold int64) int64 {
+	if !SLOPrefillConfig.Enabled {
+		return globalThreshold
+	}
+	switch req.SLOClass {
+	case "critical":
+		return SLOPrefillConfig.CriticalThreshold
+	case "sheddable", "batch", "background":
+		return SLOPrefillConfig.SheddableThreshold
+	default: // "", "standard"
+		return globalThreshold
+	}
 }
 
 func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
@@ -79,10 +110,11 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			break
 		}
 		numNewTokens := util.Len64(req.InputTokens) - req.ProgressIndex
-		// Chunked prefill for running requests
+		// Chunked prefill for running requests (SLO-aware threshold)
 		if numNewTokens > 0 {
-			if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
-				numNewTokens = ctx.PrefillTokenThreshold
+			threshold := effectivePrefillThreshold(req, ctx.PrefillTokenThreshold)
+			if 0 < threshold && threshold < numNewTokens {
+				numNewTokens = threshold
 			}
 			numNewTokens = min(numNewTokens, tokenBudget)
 
@@ -113,8 +145,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.InputTokens)
 		numNewTokens := util.Len64(next.InputTokens) - util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
 
-		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
-			numNewTokens = ctx.PrefillTokenThreshold
+		threshold := effectivePrefillThreshold(next, ctx.PrefillTokenThreshold)
+		if 0 < threshold && threshold < numNewTokens {
+			numNewTokens = threshold
 		}
 		numNewTokens = min(numNewTokens, tokenBudget)
 		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()

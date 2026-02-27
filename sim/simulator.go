@@ -360,6 +360,11 @@ func (sim *Simulator) scheduleBatch(now int64) {
 	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
 	sim.KVCache.SetClock(now)
 
+	// Update load-adaptive priority policy with current queue depth (no-op for non-adaptive policies)
+	if lap, ok := sim.priorityPolicy.(*LoadAdaptivePriority); ok {
+		lap.SetQueueDepth(sim.WaitQ.Len())
+	}
+
 	// Assign priorities to queued requests and order queue per scheduler policy
 	for _, req := range sim.WaitQ.Items() {
 		req.Priority = sim.priorityPolicy.Compute(req, now)

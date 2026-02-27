@@ -1,0 +1,73 @@
+# Multiple prefix groups: each SLO tier has its own system prompt
+# Tests whether prefix-affinity routing creates SLO-correlated instance clusters
+
+version: "2"
+seed: 42
+category: "language"
+aggregate_rate: 2000.0
+num_requests: 1000
+
+clients:
+  - id: "critical-assistant"
+    tenant_id: "tenant-premium"
+    slo_class: "critical"
+    rate_fraction: 0.20
+    streaming: true
+    prefix_group: "premium-assistant"
+    prefix_length: 512
+    arrival:
+      process: "gamma"
+      cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
+        mean: 256
+        std_dev: 100
+        min: 32
+        max: 2048
+    output_distribution:
+      type: "exponential"
+      params:
+        mean: 128
+
+  - id: "standard-chatbot"
+    tenant_id: "tenant-normal"
+    slo_class: "standard"
+    rate_fraction: 0.50
+    prefix_group: "standard-chatbot"
+    prefix_length: 512
+    arrival:
+      process: "gamma"
+      cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
+        mean: 256
+        std_dev: 100
+        min: 32
+        max: 2048
+    output_distribution:
+      type: "exponential"
+      params:
+        mean: 128
+
+  - id: "sheddable-batch"
+    tenant_id: "tenant-free"
+    slo_class: "sheddable"
+    rate_fraction: 0.30
+    prefix_group: "batch-processor"
+    prefix_length: 512
+    arrival:
+      process: "gamma"
+      cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
+        mean: 256
+        std_dev: 100
+        min: 32
+        max: 2048
+    output_distribution:
+      type: "exponential"
+      params:
+        mean: 128

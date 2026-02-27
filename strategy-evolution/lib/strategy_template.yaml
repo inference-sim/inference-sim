@@ -1,0 +1,59 @@
+# Strategy Configuration Template
+# Each strategy defines its mechanism + tunable parameters
+# The optimizer sweeps the parameter space to find optimal settings
+
+name: "strategy-name"
+description: "One-line description of the core mechanism"
+
+# Fixed CLI args that define the mechanism (not tuned)
+fixed_args:
+  - "--num-instances"
+  - "8"
+  - "--routing-policy"
+  - "weighted"
+  - "--num-requests"
+  - "500"
+  - "--model"
+  - "meta-llama/llama-3.1-8b-instruct"
+  # Add strategy-specific fixed flags here
+
+# Tunable parameters with search ranges
+parameters:
+  - name: "offload_threshold"
+    flag: "--kv-offload-threshold"
+    type: "real"
+    low: 0.5
+    high: 0.99
+    prior: "uniform"
+
+  - name: "cpu_blocks_ratio"
+    flag: "--kv-cpu-blocks"
+    type: "integer"
+    low: 10000
+    high: 100000
+
+  - name: "prefill_threshold"
+    flag: "--long-prefill-token-threshold"
+    type: "integer"
+    low: 64
+    high: 512
+
+# Workload spec (path to YAML or inline)
+workload_spec: "workload.yaml"
+
+# Primary optimization objective
+objective:
+  metric: "ttft_p99_ms"
+  direction: "min"
+
+# Constraints (secondary objectives that must be satisfied)
+constraints:
+  - metric: "throughput_tps"
+    direction: "max"
+    threshold: 5000    # minimum acceptable throughput
+    weight: 10
+
+  - metric: "dropped"
+    direction: "min"
+    threshold: 0       # no dropped requests
+    weight: 1000
