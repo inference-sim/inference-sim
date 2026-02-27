@@ -26,6 +26,11 @@ type DeploymentConfig struct {
 
 	// Snapshot staleness configuration (H3 experiment)
 	SnapshotRefreshInterval int64 // microseconds, 0 = Immediate (default)
+
+	// Precise KV routing: when enabled, wires KV cache eviction callbacks to the
+	// router-side PrefixCacheIndex, keeping it synchronized with actual instance state.
+	// This eliminates phantom cache hits from approximate LRU divergence.
+	PreciseKVRouting bool
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.

@@ -123,6 +123,11 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 
 	if !admitted {
 		cs.rejectedRequests++
+		// Notify routing policy of rejection (if it implements RejectionObserver).
+		// Used by EpochAdaptiveScoring for online weight adaptation.
+		if observer, ok := cs.routingPolicy.(sim.RejectionObserver); ok {
+			observer.RecordRejection()
+		}
 		return
 	}
 	heap.Push(&cs.clusterEvents, clusterEventEntry{

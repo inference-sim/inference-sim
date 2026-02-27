@@ -19,6 +19,9 @@ type RoutingSnapshot struct {
 	FreeKVBlocks    int64
 	CacheHitRate    float64
 	PendingRequests int // Requests routed to this instance but not yet in queue
+	// Tiered KV cache state (zero for single-tier GPU-only configurations)
+	PendingTransferLatency int64   // Accumulated CPU→GPU reload latency (ticks)
+	KVThrashingRate        float64 // Fraction of reloads that are thrashing (offload→reload < 1000 ticks)
 }
 
 // EffectiveLoad returns the total effective load on this instance:
@@ -150,7 +153,19 @@ type WeightedScoring struct {
 	scorers   []scorerFunc
 	weights   []float64 // normalized to sum to 1.0
 	observers []observerFunc
+	prefixIdx *PrefixCacheIndex // shared index for precise KV routing wiring (nil if no prefix-affinity)
 }
+
+// PrefixIndex returns the shared PrefixCacheIndex used by the prefix-affinity scorer.
+// Returns nil if no prefix-affinity scorer is configured.
+// Used by cluster-level wiring for precise KV routing (eviction callback).
+func (ws *WeightedScoring) PrefixIndex() *PrefixCacheIndex { return ws.prefixIdx }
+
+// DisableObservers removes all post-routing observers. Used when precise KV routing
+// replaces the observer-driven PrefixCacheIndex with actual KV event callbacks.
+// Without this, the observer would immediately re-add hashes that eviction callbacks
+// just removed, defeating the precision.
+func (ws *WeightedScoring) DisableObservers() { ws.observers = nil }
 
 // Route implements RoutingPolicy for WeightedScoring.
 func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecision {
@@ -293,17 +308,202 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		if len(scorerConfigs) == 0 {
 			scorerConfigs = DefaultScorerConfigs()
 		}
+		// Create shared PrefixCacheIndex if prefix-affinity is configured.
+		// This allows cluster-level wiring for precise KV routing.
+		var sharedIdx *PrefixCacheIndex
+		bs := int(blockSize)
+		if bs <= 0 {
+			bs = 16
+		}
+		for _, cfg := range scorerConfigs {
+			if cfg.Name == "prefix-affinity" {
+				sharedIdx = NewPrefixCacheIndex(bs, defaultLRUCapacity)
+				break
+			}
+		}
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize))
-			scorers[i] = scorer
-			if obs != nil {
-				observers = append(observers, obs)
+			if cfg.Name == "prefix-affinity" && sharedIdx != nil {
+				scorer, obs := newPrefixAffinityScorerWithIndex(sharedIdx)
+				scorers[i] = scorer
+				if obs != nil {
+					observers = append(observers, obs)
+				}
+			} else {
+				scorer, obs := newScorerWithObserver(cfg.Name, bs)
+				scorers[i] = scorer
+				if obs != nil {
+					observers = append(observers, obs)
+				}
 			}
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
-		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
+		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers, prefixIdx: sharedIdx}
+	case "epoch-adaptive":
+		bs := int(blockSize)
+		if bs <= 0 {
+			bs = 16
+		}
+		cfg := DefaultEpochAdaptiveConfig()
+		prefixIdx := NewPrefixCacheIndex(bs, defaultLRUCapacity)
+
+		// Build initial scorer
+		initConfigs := []ScorerConfig{
+			{Name: "prefix-affinity", Weight: cfg.InitialPA},
+			{Name: "queue-depth", Weight: cfg.InitialQD},
+		}
+		initScorers := make([]scorerFunc, len(initConfigs))
+		var initObservers []observerFunc
+		for i, sc := range initConfigs {
+			if sc.Name == "prefix-affinity" {
+				scorer, obs := newPrefixAffinityScorerWithIndex(prefixIdx)
+				initScorers[i] = scorer
+				if obs != nil {
+					initObservers = append(initObservers, obs)
+				}
+			} else {
+				scorer, obs := newScorerWithObserver(sc.Name, bs)
+				initScorers[i] = scorer
+				if obs != nil {
+					initObservers = append(initObservers, obs)
+				}
+			}
+		}
+
+		return &EpochAdaptiveScoring{
+			currentPA: cfg.InitialPA,
+			currentQD: cfg.InitialQD,
+			scorer: &WeightedScoring{
+				scorers:   initScorers,
+				weights:   normalizeScorerWeights(initConfigs),
+				observers: initObservers,
+			},
+			prefixIdx: prefixIdx,
+			config:    cfg,
+		}
+	case "kv-adaptive":
+		// Build normal and pressure profiles from config.
+		// Both share the same PrefixCacheIndex so cache state is consistent.
+		kvCfg := DefaultKVAdaptiveConfig()
+		normalConfigs := []ScorerConfig{
+			{Name: "prefix-affinity", Weight: kvCfg.NormalPAWeight},
+			{Name: "queue-depth", Weight: kvCfg.NormalQDWeight},
+			{Name: "kv-utilization", Weight: kvCfg.NormalKVWeight},
+		}
+		pressureConfigs := []ScorerConfig{
+			{Name: "prefix-affinity", Weight: kvCfg.PressurePAWeight},
+			{Name: "queue-depth", Weight: kvCfg.PressureQDWeight},
+			{Name: "kv-utilization", Weight: kvCfg.PressureKVWeight},
+		}
+		// Shared PrefixCacheIndex for both profiles
+		bs := int(blockSize)
+		if bs <= 0 {
+			bs = 16
+		}
+		sharedIdx := NewPrefixCacheIndex(bs, defaultLRUCapacity)
+
+		buildProfile := func(configs []ScorerConfig) *WeightedScoring {
+			scorers := make([]scorerFunc, len(configs))
+			var observers []observerFunc
+			for i, cfg := range configs {
+				if cfg.Name == "prefix-affinity" {
+					scorer, obs := newPrefixAffinityScorerWithIndex(sharedIdx)
+					scorers[i] = scorer
+					if obs != nil {
+						observers = append(observers, obs)
+					}
+				} else {
+					scorer, obs := newScorerWithObserver(cfg.Name, bs)
+					scorers[i] = scorer
+					if obs != nil {
+						observers = append(observers, obs)
+					}
+				}
+			}
+			return &WeightedScoring{
+				scorers:   scorers,
+				weights:   normalizeScorerWeights(configs),
+				observers: observers,
+			}
+		}
+
+		return &KVAdaptiveScoring{
+			normalProfile:   buildProfile(normalConfigs),
+			pressureProfile: buildProfile(pressureConfigs),
+			threshold:       kvCfg.KVThreshold,
+			config:          kvCfg,
+		}
+	case "adaptive-weighted":
+		cfg := DefaultAdaptiveConfig()
+
+		// Shared PrefixCacheIndex: all SLO pipelines that include prefix-affinity
+		// share the same cache index so routing decisions from any SLO class update
+		// the same cache state. This is correct: the physical KV cache is shared
+		// across all request types on each instance.
+		prefixIdx := NewPrefixCacheIndex(int(blockSize), defaultLRUCapacity)
+
+		profiles := cfg.SLOProfiles
+		if profiles == nil {
+			profiles = DefaultSLOProfiles()
+		}
+
+		// Build a scorer pipeline for each SLO class
+		pipelines := make(map[string]*sloScorerPipeline, len(profiles))
+		var observers []observerFunc
+		observerRegistered := false // only register PA observer once (shared index)
+
+		// Beta coefficients for cost-benefit and slo-headroom scorers.
+		// Default: llama-3.1-8b H100 TP=2 with quadratic attention.
+		betaCoeffs := cfg.BetaCoeffs
+		if betaCoeffs == nil {
+			betaCoeffs = []float64{6910.42, 17.67, 2.84, 0.004}
+		}
+
+		for sloClass, profile := range profiles {
+			p := &sloScorerPipeline{
+				scorers:         make([]scorerFunc, len(profile.Scorers)),
+				maxLoadHeadroom: profile.MaxLoadHeadroom,
+			}
+			for i, sc := range profile.Scorers {
+				switch sc.Name {
+				case "prefix-affinity":
+					scorer, obs := newPrefixAffinityScorerWithIndex(prefixIdx)
+					p.scorers[i] = scorer
+					if obs != nil && !observerRegistered {
+						observers = append(observers, obs)
+						observerRegistered = true
+					}
+				case "cost-benefit":
+					p.scorers[i] = newCostBenefitScorer(prefixIdx, betaCoeffs)
+				case "slo-headroom":
+					p.scorers[i] = newSLOHeadroomScorer(betaCoeffs)
+				default:
+					scorer, obs := newScorerWithObserver(sc.Name, int(blockSize))
+					p.scorers[i] = scorer
+					if obs != nil {
+						observers = append(observers, obs)
+					}
+				}
+			}
+			p.weights = normalizeScorerWeights(profile.Scorers)
+			pipelines[sloClass] = p
+		}
+
+		// The "standard" pipeline doubles as the default for empty/unknown SLO classes
+		defaultPipeline := pipelines["standard"]
+		if defaultPipeline == nil {
+			// Fallback: build a balanced pipeline
+			defaultPipeline = pipelines[""]
+		}
+
+		return &AdaptiveWeightedScoring{
+			pipelines:       pipelines,
+			defaultPipeline: defaultPipeline,
+			observers:       observers,
+			config:          cfg,
+			prefixIdx:       prefixIdx,
+		}
 	case "prefix-affinity":
 		return &PrefixAffinity{prefixMap: make(map[string]string), blockSize: blockSize}
 	case "always-busiest":

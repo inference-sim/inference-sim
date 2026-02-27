@@ -44,6 +44,9 @@ func NewPrefixCacheIndex(blockSize int, lruCapacity int) *PrefixCacheIndex {
 	}
 }
 
+// BlockSize returns the number of tokens per KV cache block.
+func (idx *PrefixCacheIndex) BlockSize() int { return idx.blockSize }
+
 // ComputeBlockHashes returns hierarchical block hashes for a token sequence.
 // Each block hash incorporates the previous block's hash, creating prefix-semantic
 // hashes: two requests sharing the first K blocks produce identical hashes for those K blocks.
@@ -85,6 +88,19 @@ func (idx *PrefixCacheIndex) RecordBlocks(hashes []string, instanceID string) {
 	for _, h := range hashes {
 		cache.touch(h)
 	}
+}
+
+// RemoveBlock removes a specific block hash from an instance's cache.
+// Called by the precise KV routing eviction callback when the actual KV cache
+// evicts a cached block. This keeps the router-side index synchronized with
+// real instance state, eliminating phantom cache hits.
+// No-op if the instance or hash does not exist.
+func (idx *PrefixCacheIndex) RemoveBlock(hash string, instanceID string) {
+	cache, exists := idx.instances[instanceID]
+	if !exists {
+		return
+	}
+	delete(cache.hashes, hash)
 }
 
 // InstanceBlockCount returns the number of cached blocks for an instance.

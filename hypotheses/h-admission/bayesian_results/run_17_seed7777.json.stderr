@@ -1,0 +1,6 @@
+time="2026-02-27T01:04:42-05:00" level=warning msg="Finding default values of TP for model=meta-llama/llama-3.1-8b-instruct\n"
+time="2026-02-27T01:04:42-05:00" level=warning msg="Using default tp=2"
+time="2026-02-27T01:04:42-05:00" level=warning msg="Finding default values of hardware for model=meta-llama/llama-3.1-8b-instruct\n"
+time="2026-02-27T01:04:42-05:00" level=warning msg="Using default GPU=H100"
+time="2026-02-27T01:04:42-05:00" level=warning msg="Finding default values of vLLM version for model=meta-llama/llama-3.1-8b-instruct\n"
+time="2026-02-27T01:04:42-05:00" level=warning msg="Using default vLLM version=vllm/vllm-openai:v0.8.4"

@@ -23,7 +23,10 @@ var validScorerNames = map[string]bool{
 	"prefix-affinity": true,
 	"queue-depth":     true,
 	"kv-utilization":  true,
+	"kv-pressure":     true,
 	"load-balance":    true,
+	"cost-benefit":    true,
+	"slo-headroom":    true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.
@@ -106,8 +109,28 @@ func newScorerWithObserver(name string, blockSize int) (scorerFunc, observerFunc
 		return scoreQueueDepth, nil
 	case "kv-utilization":
 		return scoreKVUtilization, nil
+	case "kv-pressure":
+		return scoreKVPressure, nil
 	case "load-balance":
 		return scoreLoadBalance, nil
+	case "cost-benefit":
+		// The cost-benefit scorer needs a PrefixCacheIndex for cache-match queries
+		// and beta coefficients for cache-saving estimation. Uses default llama-3.1-8b
+		// H100 TP=2 coefficients. The PrefixCacheIndex is independent per-scorer
+		// (each scorer that needs cache state gets its own index + observer).
+		prefixIdx := NewPrefixCacheIndex(blockSize, defaultLRUCapacity)
+		betaCoeffs := []float64{6910.42, 17.67, 2.84}
+		scorer := newCostBenefitScorer(prefixIdx, betaCoeffs)
+		obs := func(req *Request, targetInstance string) {
+			if req != nil && len(req.InputTokens) > 0 {
+				hashes := prefixIdx.ComputeBlockHashes(req.InputTokens)
+				prefixIdx.RecordBlocks(hashes, targetInstance)
+			}
+		}
+		return scorer, obs
+	case "slo-headroom":
+		betaCoeffs := []float64{6910.42, 17.67, 2.84}
+		return newSLOHeadroomScorer(betaCoeffs), nil
 	default:
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}
@@ -159,6 +182,54 @@ func scoreKVUtilization(_ *Request, snapshots []RoutingSnapshot) map[string]floa
 	scores := make(map[string]float64, len(snapshots))
 	for _, snap := range snapshots {
 		scores[snap.ID] = 1.0 - snap.KVUtilization
+	}
+	return scores
+}
+
+// scoreKVPressure computes per-instance KV memory pressure scores using FreeKVBlocks.
+// Unlike scoreKVUtilization (which uses the 0-1 utilization ratio), this scorer uses
+// the ABSOLUTE free block count for finer-grained differentiation under memory stress.
+//
+// score = min(freeBlocks / referenceBlocks, 1.0)
+//
+// Where referenceBlocks is the maximum FreeKVBlocks observed across all instances.
+// This creates relative scoring: the instance with the most free blocks scores 1.0,
+// and others score proportionally. Under uniform allocation (all instances equal free
+// blocks), all score 1.0 — identical to kv-utilization.
+//
+// The advantage over kv-utilization: at KV pressure (e.g., 3% free on instance A vs
+// 10% free on instance B), kv-util scores are 0.97 vs 0.90 — barely different.
+// kv-pressure scores are 0.3 vs 1.0 — dramatic differentiation where it matters.
+//
+// This models the "precise KV-aware routing" approach described in the llm-d blog
+// ("KV-Cache Wins You Can See"): using real-time free-block counts from each instance
+// rather than approximate hash-based cache estimation.
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: FreeKVBlocks (same refresh mode as KVUtilization — Periodic when
+//	snapshot-refresh-interval > 0, Immediate otherwise).
+func scoreKVPressure(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
+	scores := make(map[string]float64, len(snapshots))
+	var maxFree int64
+	for _, snap := range snapshots {
+		if snap.FreeKVBlocks > maxFree {
+			maxFree = snap.FreeKVBlocks
+		}
+	}
+	if maxFree <= 0 {
+		// All instances at zero free blocks — equal pressure
+		for _, snap := range snapshots {
+			scores[snap.ID] = 0.0
+		}
+		return scores
+	}
+	for _, snap := range snapshots {
+		score := float64(snap.FreeKVBlocks) / float64(maxFree)
+		if score > 1.0 {
+			score = 1.0
+		}
+		scores[snap.ID] = score
 	}
 	return scores
 }

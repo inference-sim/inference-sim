@@ -58,9 +58,9 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 // Valid policy name registries. Unexported to prevent external mutation.
 // Used by Validate(), factory functions, and ValidatePolicyName().
 var (
-	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true}
-	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "prefix-affinity": true, "always-busiest": true}
-	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
+	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "slo-gated": true, "predictive-slo": true}
+	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "adaptive-weighted": true, "kv-adaptive": true, "epoch-adaptive": true, "prefix-affinity": true, "always-busiest": true}
+	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true, "slo-class": true}
 	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
 )
 
