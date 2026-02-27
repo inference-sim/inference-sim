@@ -307,6 +307,58 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
 		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
+	case "kv-adaptive":
+		// Build normal and pressure profiles from config.
+		// Both share the same PrefixCacheIndex so cache state is consistent.
+		kvCfg := DefaultKVAdaptiveConfig()
+		normalConfigs := []ScorerConfig{
+			{Name: "prefix-affinity", Weight: kvCfg.NormalPAWeight},
+			{Name: "queue-depth", Weight: kvCfg.NormalQDWeight},
+			{Name: "kv-utilization", Weight: kvCfg.NormalKVWeight},
+		}
+		pressureConfigs := []ScorerConfig{
+			{Name: "prefix-affinity", Weight: kvCfg.PressurePAWeight},
+			{Name: "queue-depth", Weight: kvCfg.PressureQDWeight},
+			{Name: "kv-utilization", Weight: kvCfg.PressureKVWeight},
+		}
+		// Shared PrefixCacheIndex for both profiles
+		bs := int(blockSize)
+		if bs <= 0 {
+			bs = 16
+		}
+		sharedIdx := NewPrefixCacheIndex(bs, defaultLRUCapacity)
+
+		buildProfile := func(configs []ScorerConfig) *WeightedScoring {
+			scorers := make([]scorerFunc, len(configs))
+			var observers []observerFunc
+			for i, cfg := range configs {
+				if cfg.Name == "prefix-affinity" {
+					scorer, obs := newPrefixAffinityScorerWithIndex(sharedIdx)
+					scorers[i] = scorer
+					if obs != nil {
+						observers = append(observers, obs)
+					}
+				} else {
+					scorer, obs := newScorerWithObserver(cfg.Name, bs)
+					scorers[i] = scorer
+					if obs != nil {
+						observers = append(observers, obs)
+					}
+				}
+			}
+			return &WeightedScoring{
+				scorers:   scorers,
+				weights:   normalizeScorerWeights(configs),
+				observers: observers,
+			}
+		}
+
+		return &KVAdaptiveScoring{
+			normalProfile:   buildProfile(normalConfigs),
+			pressureProfile: buildProfile(pressureConfigs),
+			threshold:       kvCfg.KVThreshold,
+			config:          kvCfg,
+		}
 	case "adaptive-weighted":
 		cfg := DefaultAdaptiveConfig()
 
