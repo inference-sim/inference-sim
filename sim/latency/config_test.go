@@ -408,6 +408,22 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 	}
 }
 
+func TestValidateRooflineConfig_NaNMemoryGiB_ReturnsError(t *testing.T) {
+	// NaN != 0 is true in IEEE 754, so NaN passes the outer guard and must
+	// be caught by the inner math.IsNaN check. This test covers that path.
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: math.NaN()}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for NaN MemoryGiB, got nil")
+	}
+	if !strings.Contains(err.Error(), "MemoryGiB") {
+		t.Errorf("error should mention MemoryGiB, got: %v", err)
+	}
+}
+
 func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	// GIVEN valid ModelConfig and HardwareCalib
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
