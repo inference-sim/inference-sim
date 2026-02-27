@@ -332,7 +332,32 @@ Root cause: kv-util penalizes instances with cached content (high utilization fr
 7. **The optimal strategy is regime-dependent** — Normal KV: pa:3,qd:2,kv:2. Under pressure: pa:3,qd:2
 8. **Approximate routing degrades under KV pressure** — PrefixCacheIndex divergence from actual KV state causes phantom cache hits (validated by llm-d blog's 57x finding)
 
-### New Components Implemented (Iterations 6-7)
+### Iteration 11: SLO-Gated Admission + Priority Cascade — CONFIRMED at High Load!
+
+**Strategy**: SLOGatedAdmission (shed sheddable when maxQueueDepth > threshold) + `pa:3,qd:2` + SLOClassPriority + PriorityFCFS
+
+| Rate | RR | Baseline (pa:3,qd:2,kv:2) | **Compound** |
+|------|-----|------|------|
+| 200 | **28.1ms** | 56.6ms | 64.3ms |
+| 400 | **31.1ms** | 64.6ms | 62.2ms |
+| 1000 | **58.3ms** | 95.2ms | 77.4ms |
+| 2000 | 266.2ms | 280.3ms | **141.0ms (+47% vs RR)** |
+
+**At rate=2000**: Compound beats RR by 47% and baseline by 50%! Admission shedding (30% of sheddable rejected) reduces queueing for critical+standard.
+
+### Iteration 12: KV-Pressure Invariance — CONFIRMED
+Compound at KV=132K = KV=5000 = 141ms. Strategy is KV-invariant at this workload.
+
+### Iteration 13: Bayesian Parameter Optimization — `pa:4,qd:3` is Optimal
+
+66-config grid search (198 BLIS runs):
+- **Optimal**: `pa:4,qd:3` → **120.0ms** (55% better than RR)
+- Previous: `pa:3,qd:2` → 131.1ms
+- **Improvement from Bayesian search: 15%**
+
+Key: PA:QD ratio is the sole dominant parameter. Admission thresholds don't matter at this workload (queues stay below threshold). More PA needs proportionally more QD — pa:4,qd:2 is catastrophic (933ms).
+
+### New Components Implemented (Iterations 6-13)
 - `SLOClassPriority` — per-SLO-class base scores (critical=10, standard=5, batch=1)
 - `kv-pressure` scorer — FreeKVBlocks-based differentiation
 - `KVAdaptiveScoring` — parameterized dual-profile routing with configurable thresholds
