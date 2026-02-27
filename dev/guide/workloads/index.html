@@ -1424,6 +1424,8 @@
       
         
       
+        
+      
     
     
     
@@ -1495,6 +1497,34 @@
     
   
     Strategy Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../methodology/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovered Principles
   
 
     
@@ -2445,8 +2475,8 @@
 </tr>
 <tr>
 <td><code>pareto_lognormal</code></td>
-<td><code>mean</code>, <code>sigma</code>, <code>alpha</code></td>
-<td>Heavy-tailed (models real production traffic)</td>
+<td><code>alpha</code>, <code>xm</code>, <code>mu</code>, <code>sigma</code>, <code>mix_weight</code></td>
+<td>Heavy-tailed (Pareto-LogNormal mixture)</td>
 </tr>
 <tr>
 <td><code>constant</code></td>
@@ -2455,8 +2485,8 @@
 </tr>
 <tr>
 <td><code>empirical</code></td>
-<td><code>file</code></td>
-<td>Sample from a recorded distribution</td>
+<td><code>params</code></td>
+<td>Inline key-value map (token count → probability)</td>
 </tr>
 </tbody>
 </table>
