@@ -49,10 +49,10 @@ go test -cover ./...
 
 BLIS follows a layered design document hierarchy. Each tier has a specific abstraction level and audience:
 
-- **Design guidelines** (`docs/templates/design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
+- **Design guidelines** (`docs/contributing/templates/design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
 - **Design docs** (per-feature): Behavioral specifications written per the guidelines. Describe what modules do and why, never how they're implemented. Four species: decision record, specification, problem analysis, system overview.
-- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/templates/macro-plan.md`. May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
-- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/templates/micro-plan.md`.
+- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/contributing/templates/macro-plan.md`. May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
+- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/contributing/templates/micro-plan.md`.
 
 **The abstraction rule:** Design docs describe *what a module does and what it guarantees*. Macro plans describe *what to build and in what order*. Micro plans describe *how to implement each piece*. Go struct definitions, method implementations, and file:line references belong only in micro plans.
 
@@ -62,7 +62,7 @@ BLIS follows a layered design document hierarchy. Each tier has a specific abstr
 
 ### BDD/TDD Development
 
-> **Canonical source:** [`docs/standards/principles.md`](docs/standards/principles.md) (BDD/TDD section). If this section diverges, principles.md is authoritative.
+> **Canonical source:** [`docs/contributing/standards/principles.md`](docs/contributing/standards/principles.md) (BDD/TDD section). If this section diverges, principles.md is authoritative.
 
 This project follows BDD/TDD practices. When implementing features:
 
@@ -70,12 +70,12 @@ This project follows BDD/TDD practices. When implementing features:
 2. **Implement tests before code**: Tests verify contracts hold
 3. **Use table-driven tests**: Go's table-driven test pattern for comprehensive coverage
 4. **Test laws, not just values**: Golden tests answer "did the output change?" but not "is the output correct?" Every golden test should have a companion invariant test that verifies a law the system must satisfy (conservation, causality, monotonicity)
-5. **Refactor survival test**: Before accepting a test, ask: "Would this test still pass if the implementation were completely rewritten but the behavior preserved?" If no, the test is structural — rewrite it to assert observable behavior instead of internal structure. See `docs/standards/principles.md` BDD/TDD section for prohibited/required assertion patterns.
+5. **Refactor survival test**: Before accepting a test, ask: "Would this test still pass if the implementation were completely rewritten but the behavior preserved?" If no, the test is structural — rewrite it to assert observable behavior instead of internal structure. See `docs/contributing/standards/principles.md` BDD/TDD section for prohibited/required assertion patterns.
 6. **THEN clauses drive test quality**: A structural THEN clause produces a structural test. If a contract's THEN clause contains a concrete type name or internal field name, rewrite the THEN clause to describe observable behavior before writing the test.
 
 ### PR Workflow
 
-Diligently follow the workflow in docs/process/pr-workflow.md. Before I approve any plan, validate it: 1) Check every task's dependencies — can each task actually start given what comes before it? 2) Verify all sections from the template are present and non-empty. 3) Read the executive summary as if you're a new team member — is it clear and human-readable? 4) Flag any tasks that seem under-specified for implementation. List all issues found.
+Diligently follow the workflow in docs/contributing/pr-workflow.md. Before I approve any plan, validate it: 1) Check every task's dependencies — can each task actually start given what comes before it? 2) Verify all sections from the template are present and non-empty. 3) Read the executive summary as if you're a new team member — is it clear and human-readable? 4) Flag any tasks that seem under-specified for implementation. List all issues found.
 
 For new features that introduce module boundaries or modify the architecture, a design doc (per the design guidelines) should exist before micro-planning begins. For smaller changes (bug fixes, new policy templates behind existing interfaces), a design doc is optional — proceed directly to micro-planning.
 
@@ -85,9 +85,9 @@ During PR reviews, check all Antipattern Prevention rules (1-20) below. Pay spec
 
 ### Key Invariants to Maintain
 
-> **Canonical source:** [`docs/standards/invariants.md`](docs/standards/invariants.md). If this section diverges, invariants.md is authoritative.
+> **Canonical source:** [`docs/contributing/standards/invariants.md`](docs/contributing/standards/invariants.md). If this section diverges, invariants.md is authoritative.
 
-Full details (verification strategies, evidence): see [`docs/standards/invariants.md`](docs/standards/invariants.md).
+Full details (verification strategies, evidence): see [`docs/contributing/standards/invariants.md`](docs/contributing/standards/invariants.md).
 
 - **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
 - **INV-2 Request lifecycle**: Requests transition queued → running → completed; not completed before horizon remain in current state
@@ -95,14 +95,14 @@ Full details (verification strategies, evidence): see [`docs/standards/invariant
 - **INV-4 KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
 - **INV-5 Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
 - **INV-6 Determinism**: Same seed must produce byte-identical stdout across runs. Wall-clock timing goes to stderr.
-- **INV-7 Signal freshness**: Routing snapshot signals have tiered freshness — PendingRequests (synchronous) vs KVUtilization (stale across batch steps). See `docs/standards/invariants.md` for the full hierarchy.
+- **INV-7 Signal freshness**: Routing snapshot signals have tiered freshness — PendingRequests (synchronous) vs KVUtilization (stale across batch steps). See `docs/contributing/standards/invariants.md` for the full hierarchy.
 - **INV-8 Work-conserving**: After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while work is waiting.
 
 ### Engineering Principles
 
-> **Canonical source:** [`docs/standards/principles.md`](docs/standards/principles.md). If this section diverges, principles.md is authoritative.
+> **Canonical source:** [`docs/contributing/standards/principles.md`](docs/contributing/standards/principles.md). If this section diverges, principles.md is authoritative.
 
-Full details: see [`docs/standards/principles.md`](docs/standards/principles.md).
+Full details: see [`docs/contributing/standards/principles.md`](docs/contributing/standards/principles.md).
 
 **Separation of concerns:** `sim/` is a library (never terminates). Cluster-level policies see global state via `*RouterState`. Instance-level policies see only local data. Dependency direction: `cmd/ → sim/cluster/ → sim/`.
 
@@ -118,9 +118,9 @@ Full details: see [`docs/standards/principles.md`](docs/standards/principles.md)
 
 ### Antipattern Prevention
 
-> **Canonical source:** [`docs/standards/rules.md`](docs/standards/rules.md). If this section diverges, rules.md is authoritative.
+> **Canonical source:** [`docs/contributing/standards/rules.md`](docs/contributing/standards/rules.md). If this section diverges, rules.md is authoritative.
 
-20 rules, each tracing to a real bug. Full details (evidence, checks, enforcement): see [`docs/standards/rules.md`](docs/standards/rules.md).
+20 rules, each tracing to a real bug. Full details (evidence, checks, enforcement): see [`docs/contributing/standards/rules.md`](docs/contributing/standards/rules.md).
 
 | # | Rule | One-sentence summary |
 |---|------|---------------------|
@@ -154,7 +154,7 @@ Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + S
 
 ### Extension Recipes
 
-Step-by-step guides for adding policies, scorers, latency model backends, KV tiers, trace records, and per-request metrics: see `docs/extension-recipes.md`.
+Step-by-step guides for adding policies, scorers, latency model backends, KV tiers, trace records, and per-request metrics: see `docs/contributing/extension-recipes.md`.
 
 ### Code Style
 
@@ -196,11 +196,12 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --roofline)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
-│   └── default_config.go      # defaults.yaml loading
+│   ├── hfconfig.go            # HuggingFace config resolution chain (--roofline auto-fetch, caching)
+│   └── default_config.go      # defaults.yaml loading (includes GetHFRepo for HF repo name mapping)
 ├── sim/                       # Core single-instance simulator
 │   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16)
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
@@ -266,28 +267,56 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-├── model_configs/             # HuggingFace config.json files
+├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files
 ├── hypotheses/                # Hypothesis experiment artifacts (run.sh, analyze.py, FINDINGS.md)
 ├── testdata/goldendataset.json # Golden dataset for regression tests
 ├── docs/
-│   ├── standards/             # Canonical rules, invariants, principles, experiment standards
-│   ├── process/               # Activity workflows (PR, design, macro-plan, hypothesis)
-│   ├── templates/             # Artifact templates (micro-plan, macro-plan, design-guidelines, hypothesis)
-│   ├── design/                # Public-facing design documentation
-│   │   ├── README.md          # Documentation index
+│   ├── getting-started/       # New user onboarding
+│   │   ├── index.md           # What is BLIS?
+│   │   ├── installation.md    # Build from source
+│   │   ├── quickstart.md      # First simulation
+│   │   └── tutorial.md        # Capacity planning walkthrough
+│   ├── guide/                 # Task-oriented user guides
+│   │   ├── index.md           # Guide overview
+│   │   ├── routing.md         # Routing policies
+│   │   ├── kv-cache.md        # KV cache & memory management
+│   │   ├── roofline.md        # Roofline mode
+│   │   ├── workloads.md       # Workload specifications
+│   │   ├── cluster.md         # Cluster simulation
+│   │   ├── results.md         # Interpreting results
+│   │   └── experimentation.md # Hypothesis-driven experimentation
+│   ├── concepts/              # Architecture and design documentation
+│   │   ├── index.md           # Concepts overview
+│   │   ├── glossary.md        # Concepts glossary
 │   │   ├── architecture.md    # Cluster architecture
 │   │   ├── core-engine.md     # Core DES engine
-│   │   ├── concepts.md        # Concepts glossary
-│   │   ├── configuration.md   # Configuration reference
 │   │   ├── roofline.md        # Roofline step time estimation
 │   │   └── diagrams/          # Architecture diagrams (PNG + Excalidraw source)
-│   ├── plans/                 # Active implementation plans
-│   │   └── archive/           # Completed design docs (architectural reference)
-│   └── extension-recipes.md   # Step-by-step extension guides
-└── CONTRIBUTING.md            # Contributor guide (references docs/standards/)
+│   ├── reference/             # Configuration and model reference
+│   │   ├── index.md           # Reference overview
+│   │   ├── configuration.md   # Configuration reference
+│   │   ├── models.md          # Supported models catalog
+│   │   └── workload-spec.md   # Workload spec YAML schema
+│   ├── methodology/           # Research methodology documentation
+│   │   ├── index.md           # Methodology overview
+│   │   ├── strategy-evolution.md # Strategy Evolution methodology guide
+│   │   └── principles.md     # Discovered principles catalog (30 principles)
+│   ├── contributing/          # Contributor documentation
+│   │   ├── index.md           # Contributing landing page
+│   │   ├── extension-recipes.md # Step-by-step extension guides
+│   │   ├── pr-workflow.md     # PR development workflow
+│   │   ├── design-process.md  # Design document process
+│   │   ├── macro-planning.md  # Macro-level planning process
+│   │   ├── hypothesis.md      # Hypothesis experiment process
+│   │   ├── convergence.md     # Universal Convergence Protocol
+│   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
+│   │   └── templates/         # Artifact templates (micro-plan, macro-plan, design-guidelines, hypothesis)
+│   └── plans/                 # Active implementation plans (excluded from MkDocs)
+│       └── archive/           # Completed design docs (architectural reference)
+└── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
 ```
 
 ### Latency Estimation
@@ -301,6 +330,7 @@ Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) b
 2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `sim/latency/roofline.go`
    - Requires HuggingFace `config.json` in `model_configs/`
    - Requires `hardware_config.json` with GPU specs
+   - **`--roofline` flag**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./blis run --model <name> --roofline --hardware <GPU> --tp <N>`
 
 ### Key Data Flow
 
@@ -315,24 +345,25 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 
 ### Standards (what rules apply)
 
-- `docs/standards/rules.md`: **20 antipattern rules** (R1-R20) — each with evidence, checks, enforcement locations
-- `docs/standards/invariants.md`: **8 system invariants** (INV-1 through INV-8) — with verification strategies
-- `docs/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
-- `docs/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/process/hypothesis.md`), findings classification
+- `docs/contributing/standards/rules.md`: **20 antipattern rules** (R1-R20) — each with evidence, checks, enforcement locations
+- `docs/contributing/standards/invariants.md`: **8 system invariants** (INV-1 through INV-8) — with verification strategies
+- `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
+- `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/contributing/convergence.md`), findings classification
 
 ### Process (how to do each activity)
 
-- `docs/process/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
-- `docs/process/design.md`: Design document creation process
-- `docs/process/macro-plan.md`: Macro-level (multi-PR) planning process
-- `docs/process/hypothesis.md`: End-to-end hypothesis experiment process (Steps 0-10, three review gates, convergence protocol)
+- `docs/contributing/pr-workflow.md`: End-to-end PR workflow (worktree → plan → review → implement → audit → commit)
+- `docs/contributing/design-process.md`: Design document creation process
+- `docs/contributing/macro-planning.md`: Macro-level (multi-PR) planning process
+- `docs/contributing/hypothesis.md`: End-to-end hypothesis experiment process (Steps 0-10, three review gates)
+- `docs/contributing/convergence.md`: Universal Convergence Protocol (used by all review gates across PR, hypothesis, design, and macro-plan workflows)
 
 ### Templates (what to produce)
 
-- `docs/templates/design-guidelines.md`: **BLIS Design Guidelines** — DES foundations, module architecture, extension framework. **Start here when designing anything new.**
-- `docs/templates/macro-plan.md`: Template for macro-level planning (multi-PR features)
-- `docs/templates/micro-plan.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts
-- `docs/templates/hypothesis.md`: Template for hypothesis experiment artifacts
+- `docs/contributing/templates/design-guidelines.md`: **BLIS Design Guidelines** — DES foundations, module architecture, extension framework. **Start here when designing anything new.**
+- `docs/contributing/templates/macro-plan.md`: Template for macro-level planning (multi-PR features)
+- `docs/contributing/templates/micro-plan.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts
+- `docs/contributing/templates/hypothesis.md`: Template for hypothesis experiment artifacts
 
 ### Per-Feature Plans
 

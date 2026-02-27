@@ -30,6 +30,9 @@ go.work.sum
 # worktrees
 .worktrees/
 
+# MkDocs build output
+site/
+
 # Editor/IDE
 # .idea/
 # .vscode/
@@ -40,8 +43,12 @@ __pycache__/*
 # data files
 *.json
 !testdata/goldendataset.json
+!hardware_config.json
 data/
 *.txt
+
+# auto-fetched HuggingFace model configs (downloaded by --roofline)
+model_configs/
 
 # binaries
 blis
@@ -54,6 +61,9 @@ largesweep/
 !examples/*.yaml
 !defaults.yaml
 !hypotheses/**/*.yaml
+
+# MkDocs symlink (created at build time, not committed — see C3 in PR #440)
+docs/contributing.md
 
 # uv files
 .python-version

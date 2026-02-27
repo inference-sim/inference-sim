@@ -2,7 +2,7 @@
 
 Reference file for the convergence-review skill. Contains exact prompts for the 20 PR review perspectives across plan review and code review gates.
 
-**Canonical source:** `docs/process/pr-workflow.md` (v3.0). If prompts here diverge from pr-workflow.md, the process doc is authoritative.
+**Canonical source:** `docs/contributing/pr-workflow.md` (v3.0). If prompts here diverge from pr-workflow.md, the process doc is authoritative.
 
 **Dispatch pattern:** Launch each perspective as a parallel Task agent:
 ```
@@ -83,7 +83,7 @@ Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (
 For each task, verify it can actually start given what comes before it. Trace the dependency chain: what files does each task create/modify? Does any task require a file or type that hasn't been created yet?
 
 **Check 2 — Template Completeness:**
-Verify all sections from `docs/templates/micro-plan.md` are present and non-empty: Header, Part 1 (A-E), Part 2 (F-I), Part 3 (J), Appendix.
+Verify all sections from `docs/contributing/templates/micro-plan.md` are present and non-empty: Header, Part 1 (A-E), Part 2 (F-I), Part 3 (J), Appendix.
 
 **Check 3 — Executive Summary Clarity:**
 Read the executive summary as if you're a new team member. Is the scope clear without reading the rest?
@@ -211,7 +211,7 @@ Review this diff for code quality. Check all of these:
 (7) Any division where the denominator derives from runtime state without a zero guard? (R11)
 (8) Any new interface with methods only meaningful for one implementation? (R13)
 (9) Any method >50 lines spanning multiple concerns (scheduling + latency + metrics)? (R14)
-(10) Any changes to docs/standards/ files — are CLAUDE.md working copies updated? (DRY)
+(10) Any changes to docs/contributing/standards/ files — are CLAUDE.md working copies updated? (DRY)
 
 DIFF:
 <paste git diff output>
