@@ -25,4 +25,5 @@ type HardwareCalib struct {
 	MfuPrefill       float64 `json:"mfuPrefill"`
 	MfuDecode        float64 `json:"mfuDecode"`
 	AllReduceLatency float64 `json:"allReduceLatency"`
+	MemoryGiB        float64 `json:"MemoryGiB"` // GPU memory capacity in GiB
 }

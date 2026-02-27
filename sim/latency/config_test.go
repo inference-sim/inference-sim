@@ -332,7 +332,7 @@ func TestGetModelConfig_StandardFieldsTakePrecedenceOverFallbacks(t *testing.T) 
 }
 
 func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
 
 	tests := []struct {
 		name  string
@@ -390,6 +390,7 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 		BwEffConstant: 0.7,
 		MfuPrefill:    0.5,
 		MfuDecode:     math.NaN(),
+		MemoryGiB:     math.Inf(-1),
 	}
 
 	// WHEN ValidateRooflineConfig is called
@@ -400,17 +401,49 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 		t.Fatal("expected error for NaN/Inf hardware fields, got nil")
 	}
 	errMsg := err.Error()
-	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "MfuDecode"} {
+	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "MfuDecode", "MemoryGiB"} {
 		if !strings.Contains(errMsg, field) {
 			t.Errorf("error should mention %s, got: %v", field, errMsg)
 		}
 	}
 }
 
+func TestValidateRooflineConfig_NaNMemoryGiB_ReturnsError(t *testing.T) {
+	// NaN != 0 is true in IEEE 754, so NaN passes the outer guard and must
+	// be caught by the inner math.IsNaN check. This test covers that path.
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: math.NaN()}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for NaN MemoryGiB, got nil")
+	}
+	if !strings.Contains(err.Error(), "MemoryGiB") {
+		t.Errorf("error should mention MemoryGiB, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_NegativeMemoryGiB_ReturnsError(t *testing.T) {
+	// A plain negative value (not -Inf) exercises the hc.MemoryGiB < 0 branch,
+	// which is distinct from the math.IsInf path tested by NaNInfFields.
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: -80.0}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for negative MemoryGiB, got nil")
+	}
+	if !strings.Contains(err.Error(), "MemoryGiB") {
+		t.Errorf("error should mention MemoryGiB, got: %v", err)
+	}
+}
+
 func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	// GIVEN valid ModelConfig and HardwareCalib
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
 
 	// WHEN ValidateRooflineConfig is called
 	err := latency.ValidateRooflineConfig(mc, hc)
@@ -426,7 +459,7 @@ func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
-		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
 		"", "", 1, true,
 	)
 
@@ -447,7 +480,7 @@ func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
-		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
 		"", "", 0, true,
 	)
 
@@ -460,5 +493,49 @@ func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "TP") {
 		t.Errorf("error should mention TP, got: %v", err)
+	}
+}
+
+// R7 companion invariant: every GPU in hardware_config.json must have positive MemoryGiB.
+// Survives refactoring — any GPU with valid memory passes regardless of exact value.
+func TestGetHWConfig_AllGPUs_HavePositiveMemoryGiB(t *testing.T) {
+	hwConfigPath := filepath.Join("..", "..", "hardware_config.json")
+	for _, gpu := range []string{"H100", "A100-SXM", "A100-80"} {
+		cfg, err := latency.GetHWConfig(hwConfigPath, gpu)
+		if err != nil {
+			t.Fatalf("GPU %q: %v", gpu, err)
+		}
+		if cfg.MemoryGiB <= 0 {
+			t.Errorf("GPU %q: MemoryGiB must be > 0, got %v", gpu, cfg.MemoryGiB)
+		}
+	}
+}
+
+func TestGetHWConfig_MemoryGiB_ParsedFromRealConfig(t *testing.T) {
+	// GIVEN the real hardware_config.json in the repo root
+	hwConfigPath := filepath.Join("..", "..", "hardware_config.json")
+
+	tests := []struct {
+		name string
+		gpu  string
+	}{
+		{"H100", "H100"},
+		{"A100-SXM", "A100-SXM"},
+		{"A100-80 alias (BC-14)", "A100-80"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// WHEN GetHWConfig is called for the GPU
+			cfg, err := latency.GetHWConfig(hwConfigPath, tt.gpu)
+
+			// THEN it succeeds and MemoryGiB is 80.0
+			if err != nil {
+				t.Fatalf("unexpected error for GPU %q: %v", tt.gpu, err)
+			}
+			if cfg.MemoryGiB != 80.0 {
+				t.Errorf("expected MemoryGiB=80.0 for %q, got %v", tt.gpu, cfg.MemoryGiB)
+			}
+		})
 	}
 }

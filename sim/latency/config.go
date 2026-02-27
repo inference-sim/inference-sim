@@ -281,6 +281,14 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuDecode must be a valid positive number, got %v", hc.MfuDecode))
 	}
 
+	// MemoryGiB is optional (0 = no auto-calculation).
+	// When set, it must be a valid positive number.
+	if hc.MemoryGiB != 0 {
+		if math.IsNaN(hc.MemoryGiB) || math.IsInf(hc.MemoryGiB, 0) || hc.MemoryGiB < 0 {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.MemoryGiB must be > 0 and finite when set, got %v", hc.MemoryGiB))
+		}
+	}
+
 	if len(problems) > 0 {
 		return fmt.Errorf("invalid roofline config: %s", strings.Join(problems, "; "))
 	}

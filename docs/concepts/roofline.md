@@ -74,19 +74,34 @@ Alternatively, download the `config.json` manually:
 
 ### Adding a new GPU
 
-* Refer to NVIDIA datasheets for GPU specs (for example, [datasheet for H100](https://www.nvidia.com/en-us/data-center/h100/)) and add an entry to `hardware_config.json` as follows:
+* Refer to NVIDIA datasheets for GPU specs (for example, [datasheet for H100](https://www.nvidia.com/en-us/data-center/h100/)) and add an entry to `hardware_config.json`:
 
-```
-<GPU_name>: {
-		"TFlopsEff":        <Peak TFLOPS from datasheet>,      
-		"BwEffTBs":         <Peak BW from datasheet>,
-        "BwEffConstant":    0.72,
-		"TOverheadMicros":  500.0,
-		"perLayerOverhead": 20.0,
-		"mfuPrefill":       0.65,
-		"mfuDecode":        0.12,
-		"allReduceLatency": 20.0
-	}
+```json
+{
+    "<GPU_name>": {
+        "TFlopsPeak":        989.5,
+        "BwPeakTBs":         3.35,
+        "BwEffConstant":     0.72,
+        "TOverheadMicros":   500.0,
+        "perLayerOverhead":  20.0,
+        "mfuPrefill":        0.65,
+        "mfuDecode":         0.12,
+        "allReduceLatency":  20.0,
+        "MemoryGiB":         80.0
+    }
+}
 ```
 
-> Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`. 
+| Field | Description |
+|-------|-------------|
+| `TFlopsPeak` | Peak BF16 TFLOPS from GPU datasheet |
+| `BwPeakTBs` | Peak HBM bandwidth in TB/s from GPU datasheet |
+| `BwEffConstant` | Fraction of peak BW achieved in practice (0-1) |
+| `TOverheadMicros` | Per-step overhead in microseconds |
+| `perLayerOverhead` | CPU scheduling overhead per transformer layer in microseconds |
+| `mfuPrefill` | Static MFU for prefill (used when MFU database is unavailable) |
+| `mfuDecode` | Static MFU for decode (used when MFU database is unavailable) |
+| `allReduceLatency` | All-reduce latency in microseconds (multi-GPU TP) |
+| `MemoryGiB` | GPU memory capacity in GiB (reserved for future KV capacity auto-calculation) |
+
+> Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.
