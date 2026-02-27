@@ -174,6 +174,33 @@ The full N-way scan in weighted scoring provides better cache coverage than P2C'
 2. **74.15ms combined is 40.5% better than RR**: This is already a strong result for cache-heavy workloads
 3. **The remaining gap (vs RR on no-cache workloads) is intrinsic**: Weighted scoring's argmax on fresh snapshots creates slightly more variance than RR's perfect uniformity
 4. **Next direction**: Scheduling-layer optimization to compound the routing benefit. PriorityFCFS with cache-aware priority should create HOL-blocking reduction (H27 analog)
+
+### Iteration 3: Scheduling Co-optimization (CPAR) — NULL RESULT
+
+**Strategy**: Cache-Priority Amplified Routing — WeightedScoring sets RoutingDecision.Priority = PA match ratio for the chosen instance. PriorityFCFS scheduler + PreserveRoutingPriority policy + optional chunked prefill.
+
+**Research**: 3 ideas × 3 judges. All approved the approach. Opus found the Priority feedback loop (fixed with RoutingPriorityHint field).
+
+**Result**:
+
+| Config | RAG TTFT p99 | INDEP TTFT p99 | vs Baseline |
+|--------|-------------|----------------|-------------|
+| baseline-rr | 296.29ms | 39.54ms | — |
+| baseline-weighted | **127.65ms** | 48.37ms | baseline |
+| +priority (scheduling co-opt) | **127.65ms** | 48.37ms | **+0.0%** (byte-identical) |
+| +chunked (threshold=256) | 535.39ms | 80.91ms | **-319%** (4.2x WORSE) |
+| +both (priority + chunked) | 535.34ms | 80.91ms | **-319%** |
+
+**Findings**:
+1. **Priority scheduling has zero effect**: Router already separates cache-hit and cache-miss traffic via PA scorer. Instance A gets cache-hits, instance B gets cache-misses → nothing for the scheduler to reorder. The "two-level optimization" only helps when routing is IMPERFECT.
+2. **Chunked prefill is COUNTERPRODUCTIVE for long prefixes in blackbox mode**: BLIS's beta0=6910μs per-step overhead is paid PER CHUNK. A 4224-token prefill becomes 17×11.4ms=194ms (chunked) vs 82ms (single step). This is a simulator artifact — real vLLM amortizes the per-step overhead across the batch.
+3. **Routing dominance**: At ρ=0.51, the weighted scorer has enough headroom to perfectly separate cache workloads. Scheduling adds no value when routing is effective.
+4. **The compound effect is NOT super-additive**: It's actually negative because chunked prefill's per-chunk beta0 overhead dominates.
+
+**Key learning**: The static weighted scorer `pa:3,qd:2,kv:2` is already the optimal strategy in BLIS's current physics. To beat it, we need to either:
+- (a) Test at HIGHER utilization (ρ>0.85) where routing is forced to mix traffic → scheduling benefit appears
+- (b) Fix the chunked prefill overhead model to match vLLM's batch-amortized behavior
+- (c) Change the WORKLOAD characteristics (more prefix groups, higher request heterogeneity) to create mixed-traffic instances
 6. **Consistent hashing baseline is the right comparator**: vLLM ships this. HCAR's advantage is specifically the load-gated fallback.
 7. **Decompose into phases**: Ship clean core (2 mechanisms), then layer on scheduling hints, SLO, offloading pressure as separate experiments.
 
