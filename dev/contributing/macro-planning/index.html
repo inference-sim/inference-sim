@@ -1739,17 +1739,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2277,17 +2266,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2336,7 +2314,7 @@
 <li><strong>Define module contracts per PR boundary</strong> — what does each PR guarantee to the next?</li>
 <li><strong>Identify frozen interfaces</strong> — which interfaces are stable (can be developed against in parallel)?</li>
 <li><strong>Identify flexible internals</strong> — which implementation details may change during micro-planning?</li>
-<li><strong>Convergence review</strong> — <code>/convergence-review macro-plan &lt;plan-path&gt;</code> dispatches 8 parallel perspectives and enforces convergence (see <a href="../convergence/">docs/contributing/convergence.md</a>). Manual alternative: review against each perspective checklist below.</li>
+<li><strong>Convergence review</strong> — Run all 8 perspectives in parallel (or sequentially), applying the <a href="../convergence/">convergence protocol</a>. Fix CRITICAL and IMPORTANT findings, re-run until convergence.</li>
 <li><strong>Human review</strong> — approve before micro-planning begins for any PR in the plan</li>
 </ol>
 <h2 id="macro-plan-review-perspectives-8">Macro Plan Review Perspectives (8)<a class="headerlink" href="#macro-plan-review-perspectives-8" title="Permanent link">&para;</a></h2>
@@ -2389,23 +2367,10 @@
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> No Go struct definitions or method implementations (those belong in micro plans)</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Extension friction assessed for each new module boundary</li>
 </ul>
-<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Skill</th>
-<th>Purpose</th>
-<th>Manual Alternative</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>convergence-review</code></td>
-<td>Dispatch parallel review perspectives (Step 7)</td>
-<td>Review against each perspective checklist above</td>
-</tr>
-</tbody>
-</table>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p><code>/convergence-review macro-plan &lt;plan-path&gt;</code> dispatches all 8 perspectives and enforces convergence automatically. See <a href="../../guide/skills-and-plugins/">Skills &amp; Plugins</a>.</p>
+</div>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Template: <a href="../templates/macro-plan/">docs/contributing/templates/macro-plan.md</a></li>

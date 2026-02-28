@@ -1711,17 +1711,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2277,17 +2266,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2335,7 +2313,7 @@
 <li><strong>Complete the DES checklist</strong> (Section 2.6) — model scoping, event design, state/statistics, V&amp;V, randomness</li>
 <li><strong>Write the design doc</strong> per the template's required sections (Section 3.3): motivation, scope, modeling decisions, invariants, decisions with trade-offs, extension points, validation strategy</li>
 <li><strong>Apply the staleness test</strong> (Section 3.1) — would this content mislead if the implementation changes?</li>
-<li><strong>Convergence review</strong> — <code>/convergence-review design &lt;design-doc-path&gt;</code> dispatches 8 parallel perspectives and enforces convergence (see <a href="../convergence/">docs/contributing/convergence.md</a>). Manual alternative: review against each perspective checklist below.</li>
+<li><strong>Convergence review</strong> — Run all 8 perspectives in parallel (or sequentially), applying the <a href="../convergence/">convergence protocol</a>. Fix CRITICAL and IMPORTANT findings, re-run until convergence.</li>
 <li><strong>Human review</strong> — approve before macro/micro planning begins</li>
 </ol>
 <h2 id="design-review-perspectives-8">Design Review Perspectives (8)<a class="headerlink" href="#design-review-perspectives-8" title="Permanent link">&para;</a></h2>
@@ -2385,23 +2363,10 @@
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every non-obvious decision has alternatives listed with rationale</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Validation strategy specified (which invariants? against what real-system data?)</li>
 </ul>
-<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Skill</th>
-<th>Purpose</th>
-<th>Manual Alternative</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>convergence-review</code></td>
-<td>Dispatch parallel review perspectives (Step 6)</td>
-<td>Review against each perspective checklist above</td>
-</tr>
-</tbody>
-</table>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p><code>/convergence-review design &lt;design-doc-path&gt;</code> dispatches all 8 perspectives and enforces convergence automatically. See <a href="../../guide/skills-and-plugins/">Skills &amp; Plugins</a>.</p>
+</div>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Template: <a href="../templates/design-guidelines/">docs/contributing/templates/design-guidelines.md</a></li>
