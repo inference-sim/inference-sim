@@ -2373,7 +2373,7 @@
 <p><strong>Update documentation</strong>: CLAUDE.md file organization, README policy lists</p>
 </li>
 </ol>
-<p><strong>Important:</strong> For load-based routing, use <code>snap.EffectiveLoad()</code> — never compute <code>QueueDepth + BatchSize + PendingRequests</code> inline. This ensures all routing policies use the same formula.</p>
+<p><strong>Important:</strong> For load-based routing, use <code>snap.EffectiveLoad()</code> — never compute <code>QueueDepth + BatchSize + InFlightRequests</code> inline. This ensures all routing policies use the same formula.</p>
 <p>Examples:
 - See <code>RejectAll</code> in <code>sim/admission.go</code> for a simple admission template (constant return)
 - See <code>newPrefixAffinityScorer</code> in <code>sim/routing_prefix_scorer.go</code> for a stateful scorer with observer-based state updates (the prefix-affinity scorer uses a router-side <code>PrefixCacheIndex</code> to track per-instance block hash history)</p>

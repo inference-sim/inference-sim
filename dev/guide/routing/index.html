@@ -2484,7 +2484,7 @@
 </tr>
 <tr>
 <td><code>queue-depth</code></td>
-<td>Effective load: <code>QueueDepth + BatchSize + PendingRequests</code> (min-max normalized)</td>
+<td>Effective load: <code>QueueDepth + BatchSize + InFlightRequests</code> (min-max normalized)</td>
 <td>queue-scorer</td>
 </tr>
 <tr>
@@ -2535,21 +2535,15 @@
 <tbody>
 <tr>
 <td><strong>Router-local</strong></td>
-<td>PendingRequests, prefix cache index</td>
-<td>Router increments/decrements PendingRequests on route/ack; prefix cache updated after each routing decision</td>
+<td>InFlightRequests, prefix cache index</td>
+<td>Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision</td>
 <td>Always fresh — router owns this state</td>
 </tr>
 <tr>
-<td><strong>Instance-reported (Immediate mode)</strong></td>
-<td>QueueDepth, BatchSize</td>
-<td>Instance-internal state (scheduler queue, running batch)</td>
-<td>In BLIS's default config, read directly from instance memory at routing time — an <strong>idealized simplification</strong>. In production, these would have reporting latency. See <a href="https://github.com/inference-sim/inference-sim/issues/463">#463</a> for planned realistic staleness.</td>
-</tr>
-<tr>
-<td><strong>Periodic</strong></td>
-<td>KVUtilization, FreeKVBlocks, CacheHitRate</td>
-<td>Instance-internal KV cache state</td>
-<td>Cached and refreshed on a timer (<code>--snapshot-refresh-interval</code>). Models the real-world latency of polling GPU memory state.</td>
+<td><strong>Instance-reported (Immediate/Periodic)</strong></td>
+<td>QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate</td>
+<td>Instance-internal state (scheduler queue, running batch, KV cache)</td>
+<td>When <code>--snapshot-refresh-interval=0</code> (default): Immediate (read from instance at routing time). When <code>&gt;0</code>: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single <code>/metrics</code> endpoint.</td>
 </tr>
 </tbody>
 </table>

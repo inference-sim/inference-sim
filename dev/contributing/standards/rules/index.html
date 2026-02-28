@@ -2967,10 +2967,9 @@
 <p>Routing snapshot signals have different freshness guarantees due to DES event ordering. Scorer authors must understand which signals are synchronously fresh and which are stale. Any scorer intended for high-rate routing must either use a synchronously-fresh signal or be combined with one that does.</p>
 <p><strong>Evidence:</strong> H3 hypothesis experiment (#279) — kv-utilization scorer produced 200x worse distribution uniformity than queue-depth at rate=5000. See issues #282, #283.</p>
 <p><strong>Freshness hierarchy:</strong>
-- <strong>Tier 1 — Synchronously fresh (cluster-owned):</strong> PendingRequests
-- <strong>Tier 2 — Stale within tick (instance-owned):</strong> QueueDepth, BatchSize
-- <strong>Tier 3 — Stale across batch steps (instance-owned):</strong> KVUtilization, CacheHitRate</p>
-<p><strong>Check:</strong> When writing a new scorer, identify which snapshot fields it reads and their freshness tier. If using only Tier 3 signals, document why or combine with a Tier 1 scorer.</p>
+- <strong>Synchronous (cluster-owned):</strong> InFlightRequests — always fresh (gateway counter)
+- <strong>Immediate/Periodic (instance-owned):</strong> QueueDepth, BatchSize, KVUtilization, CacheHitRate — Immediate when <code>--snapshot-refresh-interval=0</code>, Periodic when <code>&gt;0</code></p>
+<p><strong>Check:</strong> When writing a new scorer, identify which snapshot fields it reads and their freshness. If using only Periodic signals, document why or combine with a synchronous scorer (InFlightRequests via EffectiveLoad).</p>
 <p><strong>Enforced:</strong> Design review, scorer implementation review.</p>
 <hr />
 <h3 id="r18-cli-flag-precedence-over-defaults">R18: CLI flag precedence over defaults<a class="headerlink" href="#r18-cli-flag-precedence-over-defaults" title="Permanent link">&para;</a></h3>

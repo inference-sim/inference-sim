@@ -2399,52 +2399,59 @@
 - Stateful scorers with non-deterministic internal state</p>
 <hr />
 <h2 id="inv-7-signal-freshness-hierarchy">INV-7: Signal Freshness Hierarchy<a class="headerlink" href="#inv-7-signal-freshness-hierarchy" title="Permanent link">&para;</a></h2>
-<p><strong>Statement:</strong> Routing snapshot signals have tiered freshness due to DES event ordering. Cluster events at tick T drain before instance events at tick T.</p>
+<p><strong>Statement:</strong> Routing snapshot signals have tiered freshness due to DES event ordering and configurable staleness.</p>
 <table>
 <thead>
 <tr>
 <th>Signal</th>
 <th>Owner</th>
-<th>Freshness</th>
+<th>Freshness (interval=0)</th>
+<th>Freshness (interval&gt;0)</th>
 <th>Updated By</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>PendingRequests</td>
+<td>InFlightRequests</td>
 <td>Cluster</td>
 <td>Synchronous</td>
-<td><code>RoutingDecisionEvent.Execute()</code></td>
+<td>Synchronous</td>
+<td><code>RoutingDecisionEvent.Execute()</code> (increment), completion detection (decrement)</td>
 </tr>
 <tr>
 <td>QueueDepth</td>
 <td>Instance</td>
-<td>Stale within tick</td>
+<td>Immediate</td>
+<td>Periodic</td>
 <td><code>QueuedEvent.Execute()</code></td>
 </tr>
 <tr>
 <td>BatchSize</td>
 <td>Instance</td>
-<td>Stale within tick</td>
+<td>Immediate</td>
+<td>Periodic</td>
 <td><code>StepEvent.Execute()</code></td>
 </tr>
 <tr>
 <td>KVUtilization</td>
 <td>Instance</td>
-<td>Stale across batch steps</td>
-<td><code>FormBatch()</code> -&gt; <code>AllocateKVBlocks()</code></td>
+<td>Immediate</td>
+<td>Periodic</td>
+<td><code>FormBatch()</code> → <code>AllocateKVBlocks()</code></td>
 </tr>
 <tr>
 <td>CacheHitRate</td>
 <td>Instance</td>
-<td>Stale across batch steps</td>
+<td>Immediate</td>
+<td>Periodic</td>
 <td><code>FormBatch()</code></td>
 </tr>
 </tbody>
 </table>
-<p><strong>Design implication:</strong> <code>EffectiveLoad()</code> = <code>QueueDepth + BatchSize + PendingRequests</code> compensates for Tier 2 staleness by including the Tier 1 PendingRequests term. KVUtilization has no analogous compensation.</p>
-<p><strong>Verification:</strong> H3 hypothesis experiment (<code>hypotheses/h3-signal-freshness/</code>).</p>
-<p><strong>Evidence:</strong> Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth.</p>
+<p><strong>Design implication:</strong> When <code>--snapshot-refresh-interval &gt; 0</code>, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same <code>/metrics</code> endpoint. <code>InFlightRequests</code> remains synchronous (gateway-local counter, not Prometheus-sourced).</p>
+<p><code>EffectiveLoad()</code> = <code>QueueDepth + BatchSize + InFlightRequests</code>. The synchronous <code>InFlightRequests</code> term compensates for Periodic staleness in the other two terms.</p>
+<p><strong>Verification:</strong> H3 hypothesis experiment (<code>hypotheses/h3-signal-freshness/</code>), H29 (<code>hypotheses/h29-snapshot-staleness/</code>).</p>
+<p><strong>Evidence:</strong> Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth. Issue #463: unified Prometheus staleness model.</p>
 <hr />
 <h2 id="inv-8-work-conserving-property">INV-8: Work-Conserving Property<a class="headerlink" href="#inv-8-work-conserving-property" title="Permanent link">&para;</a></h2>
 <p><strong>Statement:</strong> After every step completion, if <code>WaitQ.Len() &gt; 0</code>, a <code>StepEvent</code> must exist in the event queue. The simulator must not idle while there is work waiting.</p>

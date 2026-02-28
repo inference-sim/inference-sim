@@ -2723,7 +2723,7 @@
 </tr>
 </tbody>
 </table>
-<p><strong>Effective load</strong> is defined as <code>QueueDepth + BatchSize + PendingRequests</code>, where <code>PendingRequests</code> counts requests that have been routed to an instance but not yet enqueued (the queueing event hasn't fired yet). This prevents routing pile-on at high arrival rates.</p>
+<p><strong>Effective load</strong> is defined as <code>QueueDepth + BatchSize + InFlightRequests</code>, where <code>InFlightRequests</code> counts requests that have been dispatched to an instance but not yet completed. This tracks the full dispatch-to-response lifecycle, matching real HTTP router behavior (llm-d, Envoy).</p>
 <h3 id="weighted-scoring-policy">Weighted Scoring Policy<a class="headerlink" href="#weighted-scoring-policy" title="Permanent link">&para;</a></h3>
 <p>The <code>weighted</code> routing policy composes multiple scorers into a single routing decision. This is the recommended policy for production-like simulations and matches the architecture of real-world inference routers like llm-d's Endpoint Picker.</p>
 <p>The routing decision follows this pipeline:</p>
@@ -2782,7 +2782,7 @@
 <p>Key properties:
 - Per-instance LRU with bounded capacity (default: 10,000 blocks)
 - Hierarchical block hashing: each block's hash chains with the prior block's hash for semantic prefix matching
-- Updated synchronously after each routing decision (Tier 1 freshness)
+- Updated synchronously after each routing decision (synchronous freshness)
 - Score = proportion of request's block hashes found in the instance's cache index</p>
 <h2 id="signal-freshness">Signal Freshness<a class="headerlink" href="#signal-freshness" title="Permanent link">&para;</a></h2>
 <p>Routing decisions depend on instance state signals with different freshness guarantees. Understanding freshness tiers is important for interpreting simulation results under high load.</p>
@@ -2798,26 +2798,20 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>Tier 1</strong> (router-local, always fresh)</td>
-<td>PendingRequests, prefix cache index</td>
-<td>Router increments/decrements PendingRequests on route/ack; prefix cache updated after each routing decision</td>
+<td><strong>Synchronous</strong> (router-local)</td>
+<td>InFlightRequests, prefix cache index</td>
+<td>Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision</td>
 <td>None — router owns this state</td>
 </tr>
 <tr>
-<td><strong>Tier 2</strong> (instance-reported, idealized)</td>
-<td>QueueDepth, BatchSize</td>
-<td>Instance-internal state that BLIS reads directly from instance memory at routing time — an idealized simplification of real systems where these would be reported with latency. See <a href="https://github.com/inference-sim/inference-sim/issues/463">#463</a> for planned realistic staleness.</td>
-<td>Current within the tick (idealized)</td>
-</tr>
-<tr>
-<td><strong>Tier 3</strong> (periodic, stale)</td>
-<td>KVUtilization, FreeKVBlocks, CacheHitRate</td>
-<td>Refreshed after configurable <code>SnapshotRefreshInterval</code></td>
-<td>Potentially stale across multiple steps</td>
+<td><strong>Immediate/Periodic</strong> (instance-reported)</td>
+<td>QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate</td>
+<td>When <code>--snapshot-refresh-interval=0</code>: Immediate (read from instance at routing time). When <code>&gt;0</code>: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single <code>/metrics</code> endpoint (#463).</td>
+<td>Immediate: current within tick. Periodic: stale up to interval.</td>
 </tr>
 </tbody>
 </table>
-<p>The <code>--snapshot-refresh-interval</code> flag controls how frequently Tier 3 signals are re-read from instances. Setting it to 0 (default) makes Tier 2 and Tier 3 signals synchronous. Non-zero values introduce realistic staleness for Tier 3 signals that affects routing quality under load.</p>
+<p>The <code>--snapshot-refresh-interval</code> flag controls how frequently Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) are re-read from instances. Setting it to 0 (default) makes all signals Immediate. Non-zero values introduce realistic staleness matching real vLLM Prometheus scrape intervals.</p>
 <h2 id="counterfactual-regret">Counterfactual Regret<a class="headerlink" href="#counterfactual-regret" title="Permanent link">&para;</a></h2>
 <p>When decision tracing is enabled (<code>--trace-level decisions</code>), BLIS computes counterfactual regret for each routing decision. This measures how much better an alternative routing choice could have been.</p>
 <p><strong>Computation:</strong>
@@ -2888,13 +2882,13 @@
 <li>If rejected: request counted, pipeline ends</li>
 <li>If admitted: proceed to routing (with optional <code>--admission-latency</code> delay)</li>
 <li><strong>RoutingDecisionEvent:</strong> Routing policy selects target instance</li>
-<li>PendingRequests for target instance incremented</li>
+<li>InFlightRequests for target instance incremented</li>
 <li>Request injected into target instance's wait queue (with optional <code>--routing-latency</code> delay)</li>
 <li><strong>QueuedEvent:</strong> Fired by target instance when request enters its queue</li>
-<li>PendingRequests decremented (request is now fully absorbed)</li>
 <li>If no StepEvent exists, one is scheduled (work-conserving)</li>
 <li><strong>Per-instance processing:</strong> Request follows the single-instance lifecycle (see <a href="../core-engine/">Core Engine</a>)</li>
-<li><strong>Completion:</strong> Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level</li>
+<li><strong>Completion/Drop:</strong> InFlightRequests decremented when request completes or is dropped as unservable</li>
+<li><strong>Metrics:</strong> Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level</li>
 </ol>
 
 
