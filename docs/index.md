@@ -1,6 +1,6 @@
 # BLIS — Blackbox Inference Simulator
 
-A discrete-event simulator for LLM inference serving systems. BLIS models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by trained performance coefficients or analytical roofline estimates.
+A discrete-event simulator for LLM inference serving systems. BLIS models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by pluggable latency models (data-driven coefficients, analytical roofline, or custom backends).
 
 The simulator is CPU-only, deterministic, and designed for **capacity planning**, **policy optimization research**, and **performance prediction** across model/GPU/TP configurations without requiring real GPUs.
 
@@ -23,13 +23,13 @@ go build -o blis main.go
 - **Deterministic execution** — same seed produces byte-identical output across runs
 - **KV-cache modeling** with prefix caching and tiered GPU+CPU offload
 - **Chunked prefill and preemption-aware batch formation**
-- **Two latency estimation modes**: blackbox (data-driven) and roofline (analytical)
+- **Pluggable latency models** — blackbox (data-driven coefficients) and roofline (analytical FLOPs/bandwidth), with an extensible interface for custom backends
 - **Multi-instance cluster simulation** with shared-clock event loop
-- **Pluggable routing policies**: round-robin, least-loaded, weighted-scoring, prefix-affinity
-- **Admission control**, **priority policies**, and **instance schedulers**
-- **ServeGen-informed workload generation** with multi-client traffic classes
+- **Pluggable routing policies** — round-robin, least-loaded, and composable weighted-scoring with prefix-affinity, queue-depth, and KV-utilization scorers
+- **Admission control**, **priority policies**, and **instance schedulers** — each a pluggable policy axis
+- **Canonical workload specification** — multi-client YAML DSL with Poisson/Gamma/Weibull/constant arrival processes, 5 distribution types, SLO classes (critical/standard/sheddable/batch/background), prefix groups, cohort dynamics, multimodal, reasoning multi-turn, and composable specs via `blis compose`
+- **Rich metrics pipeline** — per-request, per-instance, and cluster-level metrics including TTFT/ITL/E2E distributions, KV cache diagnostics, anomaly detection (priority inversions, HOL blocking), SLO attainment, Jain fairness index, and multi-objective fitness evaluation
 - **Decision tracing and counterfactual analysis** with top-k regret computation
-- **Fitness evaluation** with weighted multi-objective scoring
 - **Hypothesis experimentation framework** for rigorous, reproducible experiments
 
 ---
@@ -51,8 +51,8 @@ Admission and Routing apply in cluster mode (multi-instance). Single-instance mo
 | Section | What You'll Find |
 |---------|-----------------|
 | [Getting Started](getting-started/index.md) | What is BLIS, installation, quick start, capacity planning tutorial |
-| [User Guide](guide/index.md) | Task-oriented guides: routing, KV cache, roofline, workloads, cluster, results, experimentation |
 | [Concepts](concepts/index.md) | System architecture, core engine, glossary, roofline estimation |
+| [User Guide](guide/index.md) | Task-oriented guides: routing, admission, scheduling, latency models, KV cache, workloads, cluster, metrics, experimentation |
 | [Reference](reference/index.md) | Configuration reference, supported models, workload spec schema |
 | [Contributing](contributing/index.md) | Extension recipes, PR workflow, standards, templates |
 
