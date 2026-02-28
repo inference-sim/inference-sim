@@ -7,7 +7,6 @@ Reusable research methodologies developed and validated through BLIS experiments
 | Page | Description |
 |------|-------------|
 | [Strategy Evolution](strategy-evolution.md) | Iterative policy discovery through simulation: 5-phase methodology with multi-judge review, Bayesian parameter optimization, and cumulative principle extraction |
-| [Discovered Principles](principles.md) | Catalog of 30 principles discovered across strategy evolution experiments, with source iteration and experimental evidence for each. |
 
 ## When to Use Strategy Evolution
 

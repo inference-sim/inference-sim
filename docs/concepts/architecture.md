@@ -69,7 +69,6 @@ Routing selects which instance receives an admitted request. The routing policy 
 |--------|---------------|
 | `round-robin` | Cyclic instance assignment |
 | `least-loaded` | Instance with minimum effective load |
-| `prefix-affinity` | Deterministic prefix hash mapping with least-loaded fallback |
 | `always-busiest` | Instance with maximum load (for pathological testing) |
 
 **Effective load** is defined as `QueueDepth + BatchSize + PendingRequests`, where `PendingRequests` counts requests that have been routed to an instance but not yet enqueued (the queueing event hasn't fired yet). This prevents routing pile-on at high arrival rates.
@@ -125,11 +124,11 @@ Routing decisions depend on instance state signals with different freshness guar
 
 | Tier | Signals | Update Mechanism | Staleness |
 |------|---------|------------------|-----------|
-| **Tier 1** (synchronous, always fresh) | PendingRequests, prefix cache index | Updated immediately after routing decision | None |
-| **Tier 2** (synchronous, point-in-time) | QueueDepth, BatchSize | Read from current instance state during routing | Current within the tick |
+| **Tier 1** (router-local, always fresh) | PendingRequests, prefix cache index | Router increments/decrements PendingRequests on route/ack; prefix cache updated after each routing decision | None — router owns this state |
+| **Tier 2** (instance-reported, idealized) | QueueDepth, BatchSize | Instance-internal state that BLIS reads directly from instance memory at routing time — an idealized simplification of real systems where these would be reported with latency. See [#463](https://github.com/inference-sim/inference-sim/issues/463) for planned realistic staleness. | Current within the tick (idealized) |
 | **Tier 3** (periodic, stale) | KVUtilization, FreeKVBlocks, CacheHitRate | Refreshed after configurable `SnapshotRefreshInterval` | Potentially stale across multiple steps |
 
-The `--snapshot-refresh-interval` flag controls how frequently Tier 3 signals are re-read from instances. Setting it to 0 (default) makes all signals synchronous. Non-zero values introduce realistic staleness that affects routing quality under load.
+The `--snapshot-refresh-interval` flag controls how frequently Tier 3 signals are re-read from instances. Setting it to 0 (default) makes Tier 2 and Tier 3 signals synchronous. Non-zero values introduce realistic staleness for Tier 3 signals that affects routing quality under load.
 
 ## Counterfactual Regret
 

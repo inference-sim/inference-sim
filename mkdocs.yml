@@ -73,21 +73,24 @@ nav:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quickstart.md
       - "Tutorial: Capacity Planning": getting-started/tutorial.md
-  - User Guide:
-      - guide/index.md
-      - Routing Policies: guide/routing.md
-      - KV Cache & Memory: guide/kv-cache.md
-      - Roofline Mode: guide/roofline.md
-      - Workload Specifications: guide/workloads.md
-      - Cluster Simulation: guide/cluster.md
-      - Interpreting Results: guide/results.md
-      - Hypothesis Experimentation: guide/experimentation.md
   - Concepts:
       - concepts/index.md
       - Glossary: concepts/glossary.md
       - Cluster Architecture: concepts/architecture.md
       - Core Engine: concepts/core-engine.md
       - Roofline Estimation: concepts/roofline.md
+  - User Guide:
+      - guide/index.md
+      - Routing Policies: guide/routing.md
+      - Admission Control: guide/admission.md
+      - Scheduling & Priority: guide/scheduling.md
+      - Latency Models: guide/latency-models.md
+      - KV Cache & Memory: guide/kv-cache.md
+      - Workload Specifications: guide/workloads.md
+      - Cluster Simulation: guide/cluster.md
+      - Metrics & Results: guide/results.md
+      - Hypothesis Experimentation: guide/experimentation.md
+      - Skills & Plugins: guide/skills-and-plugins.md
   - Reference:
       - reference/index.md
       - Configuration: reference/configuration.md
@@ -96,7 +99,6 @@ nav:
   - Methodology:
       - methodology/index.md
       - Strategy Evolution: methodology/strategy-evolution.md
-      - Discovered Principles: methodology/principles.md
   - Contributing:
       - contributing/index.md
       - Extension Recipes: contributing/extension-recipes.md
