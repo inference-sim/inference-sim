@@ -209,7 +209,7 @@ inference-sim/
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
 │   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor, event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording, observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon()). All workload generation external via InjectArrival().
 │   ├── admission.go           # AdmissionPolicy interface (accepts *RouterState), AlwaysAdmit, TokenBucket, RejectAll, NewAdmissionPolicy factory
-│   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() for canonical load calculation), RoutingDecision (with Priority hint), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), PrefixAffinity, AlwaysBusiest templates, NewRoutingPolicy factory
+│   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() for canonical load calculation), RoutingDecision (with Priority hint), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), AlwaysBusiest templates, NewRoutingPolicy factory
 │   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs, IsValidScorer, DefaultScorerConfigs, newScorerWithObserver factory
 │   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer (proportional prefix matching)
 │   ├── prefix_cache_index.go  # PrefixCacheIndex: per-instance LRU of hierarchical block hashes
@@ -287,12 +287,15 @@ inference-sim/
 │   ├── guide/                 # Task-oriented user guides
 │   │   ├── index.md           # Guide overview
 │   │   ├── routing.md         # Routing policies
+│   │   ├── admission.md       # Admission control
+│   │   ├── scheduling.md      # Scheduling & priority
+│   │   ├── latency-models.md  # Latency models (blackbox + roofline)
 │   │   ├── kv-cache.md        # KV cache & memory management
-│   │   ├── roofline.md        # Roofline mode
 │   │   ├── workloads.md       # Workload specifications
 │   │   ├── cluster.md         # Cluster simulation
-│   │   ├── results.md         # Interpreting results
-│   │   └── experimentation.md # Hypothesis-driven experimentation
+│   │   ├── results.md         # Metrics & results
+│   │   ├── experimentation.md # Hypothesis-driven experimentation
+│   │   └── skills-and-plugins.md # Claude Code skills & plugins
 │   ├── concepts/              # Architecture and design documentation
 │   │   ├── index.md           # Concepts overview
 │   │   ├── glossary.md        # Concepts glossary
