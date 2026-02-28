@@ -111,4 +111,4 @@ BLIS is work-conserving (INV-8): it never idles while requests wait. After every
 
 - [Cluster Architecture](../concepts/architecture.md) — internal mechanics of the shared-clock event loop
 - [Routing Policies](routing.md) — scorer composition and signal freshness
-- [Interpreting Results](results.md) — understanding trace summaries and per-SLO metrics
+- [Metrics & Results](results.md) — understanding trace summaries and per-SLO metrics

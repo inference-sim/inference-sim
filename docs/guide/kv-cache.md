@@ -114,4 +114,4 @@ done
 
 - [Core Engine: KV Cache](../concepts/core-engine.md#kv-cache-management) — internal mechanics
 - [Configuration Reference](../reference/configuration.md#kv-cache-configuration) — all KV cache flags
-- [Interpreting Results](results.md) — understanding preemption rate, cache hit rate, KV thrashing
+- [Metrics & Results](results.md) — understanding preemption rate, cache hit rate, KV thrashing

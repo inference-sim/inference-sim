@@ -101,4 +101,4 @@ The `/convergence-review` skill automates this process. Zero CRITICAL + zero IMP
 
 - [Hypothesis Process](../contributing/hypothesis.md) — full 10-step process for contributors
 - [Experiment Standards](../contributing/standards/experiments.md) — rigor requirements (ED-1 through ED-6, RCV-1 through RCV-6)
-- [Interpreting Results](results.md) — understanding the metrics your experiments produce
+- [Metrics & Results](results.md) — understanding the metrics your experiments produce
