@@ -313,7 +313,7 @@ func TestPrefixAffinityScorer_INV1_INV2_Conformance(t *testing.T) {
 
 // TestPrefixAffinityScorer_NonWeightedPolicies_Unchanged verifies BC-8 (INV-5).
 func TestPrefixAffinityScorer_NonWeightedPolicies_Unchanged(t *testing.T) {
-	policies := []string{"round-robin", "least-loaded", "prefix-affinity", "always-busiest"}
+	policies := []string{"round-robin", "least-loaded", "always-busiest"}
 	snapshots := []RoutingSnapshot{
 		{ID: "inst_0", QueueDepth: 10, BatchSize: 5},
 		{ID: "inst_1", QueueDepth: 2, BatchSize: 1},
