@@ -10,15 +10,23 @@ In systems with multiple interacting policy layers — routing, scheduling, memo
 
 Strategy Evolution discovers optimal configurations through disciplined experimentation: human-guided mechanism design combined with machine-guided parameter optimization, organized into iterative cycles with rigorous measurement and cumulative principle extraction.
 
+The central idea: **a strategy is a hypothesis bundle.** Every candidate mechanism is formulated as a set of testable predictions — a main hypothesis, ablation hypotheses, controls, and robustness checks — all designed before any code is written. Prediction errors, not just fitness scores, are the primary signal for learning.
+
 ```mermaid
 flowchart TD
-    P1["Phase 1<br/>Problem Framing"] --> P2["Phase 2<br/>Multi-Judge Research"]
-    P2 --> P3["Phase 3<br/>Implement & Measure"]
+    P1["Phase 1<br/>Problem Framing"] --> P2["Phase 2<br/>Hypothesis Bundle Design"]
+    P2 --> P3["Phase 3<br/>Implement & Verify"]
     P3 --> P4["Phase 4<br/>Bayesian Optimization"]
-    P4 --> P5["Phase 5<br/>Ablation & Principles"]
+    P4 --> P5["Phase 5<br/>Principles & Iteration"]
     P5 -->|Iterate| P2
     P5 -->|Converged| Done["Definitive Strategy<br/>+ Principles"]
+
+    style P2 fill:#e1f5fe
+    style P3 fill:#e8f5e9
+    style P5 fill:#fff3e0
 ```
+
+For detailed examples of hypothesis bundles drawn from PR #452 and PR #447, see **[Hypothesis Bundles in Practice](hypothesis-bundles.md)**.
 
 ---
 
@@ -39,9 +47,13 @@ Write a precise problem statement (`problem.md`) that specifies:
 
 ---
 
-## Phase 2: Multi-Judge Research
+## Phase 2: Hypothesis Bundle Design
 
-For each iteration, generate 2–3 candidate strategies. Each must be:
+Phase 2 is the heart of Strategy Evolution. Each iteration generates candidate strategies and formulates the winner as a **hypothesis bundle** — a set of testable predictions designed before any code is written.
+
+### Step 2a: Generate and review candidates
+
+Generate 2–3 candidate strategies. Each must be:
 
 1. **A parameterized template** — the mechanism defines *what* the strategy does; tunable parameters control *how aggressively*
 2. **Self-critiqued** — identify weaknesses before external review
@@ -53,6 +65,7 @@ sequenceDiagram
     participant J1 as Judge 1 (Claude)
     participant J2 as Judge 2 (GPT-4o)
     participant J3 as Judge 3 (Gemini)
+
     A->>A: Generate 2-3 candidates + self-critique
     par Multi-judge review
         A->>J1: Candidate designs
@@ -70,38 +83,125 @@ sequenceDiagram
     - **GPT-4o** caught a bang-bang oscillation problem in an online learning controller
     - **Gemini** caught a numerical instability in hyperbolic starvation protection
 
-**Artifacts produced:** `research.md`, `iter<N>-strategy.yaml`
+### Step 2b: Decompose winner into hypothesis bundle
+
+After selecting the winning strategy, decompose it into a **hypothesis bundle** — a set of testable, falsifiable predictions:
+
+```mermaid
+flowchart LR
+    S["Selected Strategy"]
+
+    S --> HM["H-main<br/>Mechanism claim +<br/>predicted effect size"]
+    S --> HA["H-ablation<br/>One per component:<br/>isolate contribution"]
+    S --> HSA["H-super-additivity<br/>Compound effect vs<br/>sum of parts"]
+    S --> HC["H-control-negative<br/>Condition where effect<br/>should vanish"]
+    S --> HR["H-robustness<br/>Generalization<br/>boundaries"]
+
+    style HM fill:#c8e6c9
+    style HA fill:#ffecb3
+    style HSA fill:#ffecb3
+    style HC fill:#e1bee7
+    style HR fill:#bbdefb
+```
+
+| Arm | What it tests | Purpose |
+|-----|--------------|---------|
+| **H-main** | Mechanism's predicted effect + causal explanation | Does the strategy work, and *why*? |
+| **H-ablation-{component}** | Each component's individual contribution | Which parts matter? Are any redundant? |
+| **H-super-additivity** | Whether compound effect exceeds sum of parts | Do components interact? |
+| **H-control-negative** | Where the effect should vanish | Confirms mechanism specificity |
+| **H-robustness** | Generalization across workloads, resources, scale | Where does the strategy break? |
+
+Each arm follows the [hypothesis experiment workflow](../contributing/hypothesis.md): experiment design standards (ED-1 through ED-6), convergence-gated review, formal controls, FINDINGS documentation. Every arm includes a **diagnostic clause** ("if this fails, it indicates...") that directs investigation when predictions don't match outcomes.
+
+!!! warning "Pre-commit ablation, don't bolt it on"
+    Ablation hypotheses are designed HERE, before any code is written. This prevents confirmation bias — you predict each component's contribution before seeing whether the compound strategy works. If you can't articulate what removing a component should do, you don't understand the mechanism well enough to implement it.
+
+For a complete worked example of a hypothesis bundle, see **[Hypothesis Bundles in Practice — Scheduling Example](hypothesis-bundles.md#example-scheduling-track-iteration-1-pr-452)**.
+
+### Step 2c: Design Review
+
+Run the **5-perspective Design Review** on the hypothesis bundle using the [universal convergence protocol](../contributing/convergence.md).
+
+```
+/convergence-review h-design
+```
+
+The review covers the full bundle — not just H-main, but all ablation, control, and robustness arms.
+
+### Step 2d: Human approval gate
+
+Present the hypothesis bundle for human approval. The human reviews: H-main predictions, ablation predictions, control designs, and robustness boundaries.
+
+**This is a hard gate.** Do not proceed to implementation until the human approves.
+
+**Artifacts produced:** `research.md`, `iter<N>-bundle.yaml`, Design Review convergence log
 
 ---
 
-## Phase 3: Implement and Measure
+## Phase 3: Implement and Verify
 
-Each iteration follows a tight loop:
+Implement the strategy code AND the experiment code for the full hypothesis bundle, then execute, analyze, and review — all before moving to parameter optimization.
 
-1. **Implement** the strategy (new policy code, CLI flags, or configuration)
-2. **Run** the simulator across 3+ random seeds
-3. **Measure** primary and secondary metrics
-4. **Record** results in the **ledger** — one row per iteration
-5. **Write findings** documenting what worked, what didn't, and opportunities
+```mermaid
+flowchart TD
+    A["3a: Implement strategy code"]
+    B["3b: Implement experiment code"]
+    C["3c: Code Review<br/>(5 perspectives)"]
+    D["3d: Execute all arms<br/>(parallel, 3+ seeds)"]
+    E["3e: Compare predictions<br/>to outcomes"]
+    F["3f: Document FINDINGS.md"]
+    G["3g: FINDINGS Review<br/>(10 perspectives)"]
+    H["3h: Self-audit<br/>(6 dimensions)"]
+    I["3i: Record in ledger"]
+
+    A --> B --> C --> D --> E --> F --> G --> H --> I
+
+    style C fill:#fff3e0
+    style E fill:#e8f5e9
+    style G fill:#fff3e0
+```
+
+**3a — Implement strategy.** New policy code, CLI flags, or configuration.
+
+**3b — Implement experiments.** For each hypothesis arm, create `run.sh` (sources shared harness) and `analyze.py`. All arms share one `run.sh` — they are independent and can execute in parallel.
+
+**3c — Code Review.** 5-perspective review on all experiment code BEFORE running experiments (`/convergence-review h-code`).
+
+**3d — Execute.** Run all hypothesis arms across 3+ seeds.
+
+**3e — Compare predictions to outcomes.** For each arm, record:
+
+- What was **predicted** (from the bundle design in Phase 2)
+- What was **observed** (from the experiment)
+- Whether the prediction was **confirmed** (direction correct AND exceeds threshold), **partially confirmed** (direction correct, magnitude falls short), or **refuted** (direction wrong or magnitude negligible <5%)
+- If refuted: what the **discrepancy reveals** about the causal model
+
+**3f — Document FINDINGS.** Write `FINDINGS.md` using the [hypothesis template](../contributing/templates/hypothesis.md). The prediction-vs-outcome comparison is a required section.
+
+**3g — FINDINGS Review.** 10-perspective review using the [convergence protocol](../contributing/convergence.md) (`/convergence-review h-findings`).
+
+**3h — Self-audit.** Six dimensions of critical self-review.
+
+**3i — Record in ledger.** One row per iteration, including prediction accuracy.
 
 !!! warning "The Ledger is the Single Source of Truth"
     Never delete rows. Failed approaches are as valuable as successes. The ledger prevents revisiting failed approaches and makes the full exploration path auditable.
 
-**Ledger format:**
+**Extended ledger format:**
 
-| Iter | Strategy | TTFT P99 Δ% | Throughput Δ% | Key Mechanism | Status |
-|------|----------|-------------|---------------|---------------|--------|
-| 0 | Baseline | — | — | FCFS + constant priority | Measured |
-| 1 | SLO-Gated Priority | -50.8% | ~0% | Priority cascade + bridge | Default params |
-| 1-opt | (Bayesian optimized) | -51.0% | ~0% | Same, optimized params | Compute floor |
+| Iter | Strategy | TTFT P99 Δ% | Throughput Δ% | Key Mechanism | Prediction Accuracy | Status |
+|------|----------|-------------|---------------|---------------|-------------------|--------|
+| 0 | Baseline | — | — | FCFS + constant priority | — | Measured |
+| 1 | SLO-Gated Priority | -50.8% | ~0% | Priority cascade | H-main confirmed; H-zero-sum refuted (zero-sum) | Bundle verified |
 
-**Artifacts produced:** `ledger.md`, `iter<N>-findings.md`
+**Artifacts produced:** `ledger.md`, `iter<N>-FINDINGS.md`, convergence logs
 
 ---
 
 ## Phase 4: Bayesian Parameter Optimization
 
-Once a mechanism proves directionally correct, optimize its parameters:
+Once a mechanism's H-main is **confirmed** in Phase 3, optimize its parameters. Mechanisms whose H-main was refuted skip this phase — their prediction errors are analyzed for principles instead.
 
 ```mermaid
 flowchart TD
@@ -116,7 +216,7 @@ flowchart TD
     G -->|Budget exhausted| H["Extract best<br/>parameters"]
 ```
 
-This separates **mechanism design** (human creativity) from **parameter tuning** (machine search). Every strategy gets the benefit of optimization, so comparisons are fair.
+This separates **mechanism design** (human creativity + hypothesis testing) from **parameter tuning** (machine search). Every strategy gets the benefit of optimization, so comparisons are fair.
 
 **Strategy YAML format:**
 
@@ -150,47 +250,121 @@ constraints:
 
 ---
 
-## Phase 5: Ablation, Robustness, and Principle Extraction
+## Phase 5: Principle Extraction and Iteration
 
-Stress-test winning strategies:
+Extract principles from the iteration's results and decide whether to iterate.
 
-- **Workload robustness** — non-orthogonal SLO distributions, asymmetric traffic mixes, multi-prefix groups, multi-turn sessions
-- **Resource pressure** — reduced KV cache blocks, CPU offloading, instance scaling (4/8/16)
-- **Arrival patterns** — Poisson vs bursty Gamma, rate sweeps from sub-saturation to overload
-- **Ablation** — remove each component individually to quantify contribution and test for super-additivity
+### Principle extraction
 
-Every few iterations, distill findings into **numbered principles** — concise, falsifiable statements grounded in experimental evidence. These constrain future iterations and prevent re-learning the same lessons.
+Distill findings into **numbered principles** — concise, falsifiable statements grounded in experimental evidence. Principles come from two sources:
 
-A principles catalog documenting findings from the BLIS strategy evolution experiments is planned for a future release.
+1. **Confirmed predictions** — the mechanism works as theorized (e.g., RP-1: "Orthogonal signals > pre-combined signals")
+2. **Prediction errors** — the most valuable source. When a prediction fails, the discrepancy reveals something about the system that wasn't understood (e.g., S6: "Scheduling is zero-sum at saturation")
+
+```mermaid
+flowchart TD
+    subgraph "Phase 3 outputs"
+        C["Confirmed predictions"]
+        R["Refuted predictions"]
+    end
+
+    C --> P1["New principle<br/>(mechanism verified)"]
+    R --> D["Discrepancy analysis"]
+    D --> P2["New principle<br/>(causal model corrected)"]
+    D --> RD["Redesign<br/>(next iteration)"]
+
+    P1 --> PC["Principles Catalog"]
+    P2 --> PC
+
+    PC -->|Constrains| Next["Phase 2<br/>(next iteration)"]
+
+    style R fill:#ffcdd2
+    style D fill:#fff3e0
+    style P2 fill:#c8e6c9
+```
+
+Principles function as **hard constraints** on subsequent iterations:
+
+- **RP-1** (orthogonality) prevented building a combined cache-load scorer in iterations 5–19
+- **RP-6** (KV-util counterproductive) eliminated KV-utilization from all subsequent strategies
+- **S6** (scheduling is zero-sum) redirected effort from scheduler optimization to admission control
+- **RP-10** (PA:QD safety rule) prevented ratio violations in Bayesian search bounds
+
+When a new iteration proposes a mechanism that contradicts an existing principle, it must either provide experimental evidence that the principle doesn't hold in the new regime, or redesign to work within the principle's constraints.
+
+### Fast-fail rules
+
+| Condition | Action |
+|-----------|--------|
+| **H-main refuted** | H-main refutation still requires a minimum 5-perspective FINDINGS Review to confirm the refutation is genuine (not an analyzer bug). After verification, skip ablation arms. Record refutation + diagnostic. Iterate. |
+| **H-main confirmed, single dominant component (>80% of effect)** | Simplify strategy to that component. Iterate. |
+| **H-control-negative fails** (effect appears when it shouldn't) | Mechanism is confounded. Redesign before continuing. |
+
+### Stopping criterion
+
+Stop when multiple consecutive iterations produce null or marginal results — you have found the basin of the optimal strategy. The [principles catalog](principles.md) is the durable output.
+
+---
+
+## Practical Considerations
+
+### Bundle size management
+
+The number of hypothesis arms scales with strategy complexity (see the [Bundle Size Guide](hypothesis-bundles.md#bundle-size-guide) for detailed breakdowns). Three mitigations keep this manageable:
+
+1. **Tiered review depth.** H-main gets the full 10-perspective FINDINGS review. Ablation arms get a 5-perspective review. Byte-identical controls get a spot-check that the treatment was active, then automatic validation.
+
+2. **Parallel execution.** Hypothesis arms are independent. Use [parallel execution mode](../contributing/hypothesis.md#parallel-execution-mode). All arms must use the same seed set for valid comparison.
+
+3. **Fast-fail.** If H-main is refuted (after FINDINGS review confirms the refutation), skip remaining arms.
+
+### When to use the full bundle vs. a lighter iteration
+
+| Iteration type | Required arms | Optional arms |
+|---|---|---|
+| New compound mechanism (≥2 components) | H-main, all H-ablation, H-super-additivity, H-control-negative | H-robustness |
+| Component removal/simplification | H-main, H-control-negative, H-ablation for removed component | H-robustness |
+| Single-component mechanism | H-main, H-control-negative | H-robustness |
+| Parameter-only change (same active components, only numeric values change) | H-main only | Proceed directly to Bayesian optimization |
+| Robustness sweep (post-confirmation) | H-robustness arms only | — |
+
+### How Strategy Evolution connects to existing workflows
+
+| Skill / Process | Role in Strategy Evolution |
+|---|---|
+| `/research-ideas` | Generates candidate strategies (Step 2a) |
+| `/hypothesis-experiment` | Guided Steps 0-10 experiment workflow (project skill) |
+| `/hypothesis-test` | Experiment scaffolding: run.sh, analyze.py templates (sdlc-plugins) |
+| `/convergence-review` | Gates Design Review, Code Review, FINDINGS Review |
+| `/brainstorming` | Explores solution space before committing to candidates |
+| [Hypothesis experiment process](../contributing/hypothesis.md) | Defines the detailed per-arm workflow |
 
 ---
 
 ## Skills and Tools Inventory
 
-The following Claude Code skills were used throughout the process:
-
 | Skill | Phase | Purpose |
 |-------|-------|---------|
-| `/research-ideas` | 2 | Structured idea generation with iterative external LLM review |
-| `/brainstorming` | 2 | Explore solution space before committing to an approach |
-| `/convergence-review` (design gate) | 2 | Multi-perspective design review (5 judges) |
-| `/convergence-review` (h-findings gate) | 5 | Multi-perspective findings review (10 judges) |
-| `/review-plan` | 2, 3 | Send plans to external LLMs for technical review |
-| `/hypothesis-experiment` | 3 | Structured experiment: scaffold → run → analyze → findings |
-| `/test-driven-development` | 3 | TDD for new policy implementations |
-| `/executing-plans` | 3 | Step-by-step implementation with review gates |
-| `/verification-before-completion` | 3, 5 | Confirm results before claiming success |
-| `/code-review` | 5 | Post-implementation quality audit |
+| `/research-ideas` | 2a | Structured idea generation with iterative external LLM review |
+| `/brainstorming` | 2a | Explore solution space before committing to an approach |
+| `/review-plan` | 2a | Send candidate designs to external LLMs for technical review |
+| `/convergence-review` (h-design) | 2c | 5-perspective design review on hypothesis bundle |
+| `/hypothesis-experiment` | 3b | Guided Steps 0-10 experiment workflow (project skill) |
+| `/hypothesis-test` | 3b | Experiment scaffolding: run.sh, analyze.py templates (sdlc-plugins) |
+| `/test-driven-development` | 3a | TDD for new policy implementations |
+| `/convergence-review` (h-code) | 3c | 5-perspective code review on experiment code |
+| `/convergence-review` (h-findings) | 3g | 10-perspective findings review |
+| `/verification-before-completion` | 3h | Confirm results before claiming success |
+| `/dispatching-parallel-agents` | 3d | Parallel hypothesis arm execution |
 | `/commit-push-pr` | 5 | Clean git integration after validation |
-| `/dispatching-parallel-agents` | 3 | Parallel hypothesis execution across tracks |
 
 !!! info "Where to Get These Skills"
     These skills are [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugins. To install them:
 
-    - **`/brainstorming`, `/test-driven-development`, `/executing-plans`, `/verification-before-completion`, `/dispatching-parallel-agents`, `/code-review`, `/commit-push-pr`**: Install the [superpowers](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add superpowers`
+    - **`/brainstorming`, `/test-driven-development`, `/verification-before-completion`, `/dispatching-parallel-agents`, `/commit-push-pr`**: Install the [superpowers](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add superpowers`
     - **`/convergence-review`, `/hypothesis-experiment`**: Project-local skills defined in this repository's `.claude/skills/` directory. Available automatically when Claude Code is run from the repo root.
+    - **`/hypothesis-test`**: Install the [sdlc-plugins](https://github.com/inference-sim/sdlc-plugins) plugin — `claude plugins add sdlc-plugins`
     - **`/research-ideas`, `/review-plan`**: Install the [research-ideas](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add research-ideas`
-    - **`/pr-review-toolkit:review-pr`**: Install the [pr-review-toolkit](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add pr-review-toolkit`
 
 **Non-skill tools:**
 
@@ -198,7 +372,7 @@ The following Claude Code skills were used throughout the process:
 |------|-------|---------|
 | `optimize.py` + scikit-optimize | 4 | Bayesian optimization harness (`gp_minimize`) |
 | `strategy_template.yaml` | 4 | Parameterized strategy configuration format |
-| `ledger.md` | All | Single source of truth (1 row per iteration) |
+| `ledger.md` | All | Single source of truth (1 row per iteration, with prediction accuracy) |
 | Git worktrees | All | Isolation per experiment track |
 
 ---
@@ -207,13 +381,19 @@ The following Claude Code skills were used throughout the process:
 
 1. **Write `problem.md`** — baseline, workload, success criteria, constraints, prior knowledge. Design the workload to prevent shortcutting.
 
-2. **Build the measurement harness** — deterministic simulator or benchmark that accepts parameterized configuration, produces machine-parseable metrics, and runs fast enough for 100–200 evaluations.
+2. **Build the measurement harness** — deterministic simulator or benchmark that accepts parameterized configuration, produces machine-parseable metrics, and runs fast enough for 100–200 evaluations. For noisy real-system benchmarks, increase seed count and evaluation budget proportionally.
 
-3. **Start the ledger** — `ledger.md` with baseline row. One row per iteration. Never delete rows.
+3. **Start the ledger** — `ledger.md` with baseline row. One row per iteration with a prediction accuracy column. Never delete rows.
 
-4. **Run the loop** — Research → Select → Implement → Measure → Record → Optimize → Ablate → Principles → Repeat.
+4. **Run the loop** — for each iteration:
+    - Generate 2-3 candidates with multi-judge review (Phase 2a)
+    - Decompose winner into a hypothesis bundle with predictions, ablation, controls, and robustness checks (Phase 2b)
+    - Convergence-gated Design Review + human approval (Phase 2c-2d)
+    - Implement strategy + experiments, Code Review, execute all arms, compare predictions to outcomes, FINDINGS Review (Phase 3)
+    - Bayesian optimization for confirmed mechanisms (Phase 4)
+    - Extract principles from both confirmed predictions and prediction errors (Phase 5)
 
-5. **Know when to stop** — when multiple consecutive iterations produce null or marginal results, you have found the basin of the optimal strategy.
+5. **Know when to stop** — when multiple consecutive iterations produce null or marginal results, you have found the basin of the optimal strategy. The [principles catalog](principles.md) is the durable output.
 
 ---
 
@@ -228,7 +408,7 @@ Strategy Evolution was applied in parallel on two complementary problem spaces:
 | Key discovery | Priority is zero-sum; admission is non-zero-sum | KV-utilization scorer is counterproductive |
 | Winning strategy | SLO-tiered priority + no-chunk prefill | `pa:4,qd:3` + SLO-gated admission |
 
-Both tracks independently discovered that **SLO-gated admission control is the breakthrough "third lever"** and converged on `prefix-affinity` + `queue-depth` as the optimal signal pair.
+Both tracks converged on **SLO-gated admission control as the breakthrough "third lever"** and on `prefix-affinity` + `queue-depth` as the optimal signal pair.
 
 ```mermaid
 gantt
@@ -253,4 +433,4 @@ gantt
 ```
 
 !!! note "Experimental Configurations"
-    The winning strategies described above were discovered during Strategy Evolution experiments using custom configurations. Some components (SLO-gated admission, SLO-tiered priority as compound strategies) are not yet available as standard BLIS policy templates. The current BLIS default (`pa:3,qd:2,kv:2`) is maintained for llm-d parity. The regime-dependent recommendation (normal KV: `pa:3,qd:2,kv:2`; under pressure: `pa:3,qd:2`; high load with admission: `pa:4,qd:3`) will be documented in the forthcoming principles catalog.
+    The winning strategies described above were discovered during Strategy Evolution experiments using custom configurations. Some components (SLO-gated admission, SLO-tiered priority as compound strategies) are not yet available as standard BLIS policy templates. The current BLIS default (`pa:3,qd:2,kv:2`) is maintained for llm-d parity. The regime-dependent recommendation (normal KV: `pa:3,qd:2,kv:2`; under pressure: `pa:3,qd:2`; high load with admission: `pa:4,qd:3`) will be documented in the [principles catalog](principles.md) (currently in draft).

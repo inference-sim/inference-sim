@@ -6,7 +6,8 @@ Reusable research methodologies developed and validated through BLIS experiments
 
 | Page | Description |
 |------|-------------|
-| [Strategy Evolution](strategy-evolution.md) | Iterative policy discovery through simulation: 5-phase methodology with multi-judge review, Bayesian parameter optimization, and cumulative principle extraction |
+| [Strategy Evolution](strategy-evolution.md) | Iterative policy discovery through simulation: hypothesis-bundle-driven methodology with multi-judge review, convergence-gated verification, Bayesian parameter optimization, and cumulative principle extraction |
+| [Hypothesis Bundles in Practice](hypothesis-bundles.md) | Detailed examples of hypothesis bundles from PR #452 (scheduling) and PR #447 (routing), prediction error analysis, bundle sizing, and writing guidelines |
 
 ## When to Use Strategy Evolution
 
@@ -19,8 +20,8 @@ Strategy Evolution is the right approach when:
 
 ## Relationship to Other Processes
 
-Strategy Evolution builds on existing BLIS processes:
+Strategy Evolution integrates existing BLIS processes:
 
-- **[Hypothesis Experiments](../contributing/hypothesis.md)** — Strategy Evolution's Phase 3 uses the hypothesis experiment framework for structured measurement
-- **[Convergence Protocol](../contributing/convergence.md)** — Multi-judge review in Phase 2 follows the convergence protocol
-- **[PR Workflow](../contributing/pr-workflow.md)** — Implementation of winning strategies follows the standard PR workflow
+- **[Hypothesis Experiments](../contributing/hypothesis.md)** — Each strategy iteration is formulated as a hypothesis bundle. The hypothesis experiment framework provides the per-arm workflow (experiment design standards, review gates, convergence protocol).
+- **[Convergence Protocol](../contributing/convergence.md)** — Three convergence-gated review stages per iteration: Design Review (5 perspectives), Code Review (5 perspectives), FINDINGS Review (10 perspectives).
+- **[PR Workflow](../contributing/pr-workflow.md)** — Implementation of winning strategies follows the standard PR workflow.

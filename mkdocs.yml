@@ -99,6 +99,7 @@ nav:
   - Methodology:
       - methodology/index.md
       - Strategy Evolution: methodology/strategy-evolution.md
+      - Hypothesis Bundles: methodology/hypothesis-bundles.md
   - Contributing:
       - contributing/index.md
       - Extension Recipes: contributing/extension-recipes.md
