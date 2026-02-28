@@ -8,8 +8,8 @@
 # dimension you choose matters enormously because different metrics
 # update at different speeds:
 #
-#   - queue-depth:  uses EffectiveLoad (QueueDepth + BatchSize + PendingRequests)
-#                   PendingRequests updates INSTANTLY when a request is routed,
+#   - queue-depth:  uses EffectiveLoad (QueueDepth + BatchSize + InFlightRequests)
+#                   InFlightRequests updates INSTANTLY when a request is routed,
 #                   so the next routing decision immediately sees the change.
 #                   Result: even load distribution, low tail latency.
 #

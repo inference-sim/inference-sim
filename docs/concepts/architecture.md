@@ -71,7 +71,7 @@ Routing selects which instance receives an admitted request. The routing policy 
 | `least-loaded` | Instance with minimum effective load |
 | `always-busiest` | Instance with maximum load (for pathological testing) |
 
-**Effective load** is defined as `QueueDepth + BatchSize + PendingRequests`, where `PendingRequests` counts requests that have been routed to an instance but not yet enqueued (the queueing event hasn't fired yet). This prevents routing pile-on at high arrival rates.
+**Effective load** is defined as `QueueDepth + BatchSize + InFlightRequests`, where `InFlightRequests` counts requests that have been dispatched to an instance but not yet completed. This tracks the full dispatch-to-response lifecycle, matching real HTTP router behavior (llm-d, Envoy).
 
 ### Weighted Scoring Policy
 
@@ -124,11 +124,10 @@ Routing decisions depend on instance state signals with different freshness guar
 
 | Tier | Signals | Update Mechanism | Staleness |
 |------|---------|------------------|-----------|
-| **Tier 1** (router-local, always fresh) | PendingRequests, prefix cache index | Router increments/decrements PendingRequests on route/ack; prefix cache updated after each routing decision | None — router owns this state |
-| **Tier 2** (instance-reported, idealized) | QueueDepth, BatchSize | Instance-internal state that BLIS reads directly from instance memory at routing time — an idealized simplification of real systems where these would be reported with latency. See [#463](https://github.com/inference-sim/inference-sim/issues/463) for planned realistic staleness. | Current within the tick (idealized) |
-| **Tier 3** (periodic, stale) | KVUtilization, FreeKVBlocks, CacheHitRate | Refreshed after configurable `SnapshotRefreshInterval` | Potentially stale across multiple steps |
+| **Synchronous** (router-local) | InFlightRequests, prefix cache index | Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision | None — router owns this state |
+| **Immediate/Periodic** (instance-reported) | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate | When `--snapshot-refresh-interval=0`: Immediate (read from instance at routing time). When `>0`: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single `/metrics` endpoint (#463). | Immediate: current within tick. Periodic: stale up to interval. |
 
-The `--snapshot-refresh-interval` flag controls how frequently Tier 3 signals are re-read from instances. Setting it to 0 (default) makes Tier 2 and Tier 3 signals synchronous. Non-zero values introduce realistic staleness for Tier 3 signals that affects routing quality under load.
+The `--snapshot-refresh-interval` flag controls how frequently Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) are re-read from instances. Setting it to 0 (default) makes all signals Immediate. Non-zero values introduce realistic staleness matching real vLLM Prometheus scrape intervals.
 
 ## Counterfactual Regret
 
@@ -191,10 +190,10 @@ A complete request lifecycle through the cluster pipeline:
    - If rejected: request counted, pipeline ends
    - If admitted: proceed to routing (with optional `--admission-latency` delay)
 4. **RoutingDecisionEvent:** Routing policy selects target instance
-   - PendingRequests for target instance incremented
+   - InFlightRequests for target instance incremented
    - Request injected into target instance's wait queue (with optional `--routing-latency` delay)
 5. **QueuedEvent:** Fired by target instance when request enters its queue
-   - PendingRequests decremented (request is now fully absorbed)
    - If no StepEvent exists, one is scheduled (work-conserving)
+6. **Completion/Drop:** InFlightRequests decremented when request completes or is dropped as unservable
 6. **Per-instance processing:** Request follows the single-instance lifecycle (see [Core Engine](core-engine.md))
 7. **Completion:** Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level

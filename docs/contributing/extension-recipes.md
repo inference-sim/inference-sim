@@ -25,7 +25,7 @@ To add a new policy template (e.g., a new routing algorithm):
 
 4. **Update documentation**: CLAUDE.md file organization, README policy lists
 
-**Important:** For load-based routing, use `snap.EffectiveLoad()` — never compute `QueueDepth + BatchSize + PendingRequests` inline. This ensures all routing policies use the same formula.
+**Important:** For load-based routing, use `snap.EffectiveLoad()` — never compute `QueueDepth + BatchSize + InFlightRequests` inline. This ensures all routing policies use the same formula.
 
 Examples:
 - See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)

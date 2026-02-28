@@ -119,9 +119,9 @@ func newScorerWithObserver(name string, blockSize int) (scorerFunc, observerFunc
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: EffectiveLoad() = QueueDepth (Tier 2: stale within tick) +
-//	       BatchSize (Tier 2) + PendingRequests (Tier 1: synchronous).
-//	The Tier 1 PendingRequests term compensates for Tier 2 staleness.
+//	Reads: EffectiveLoad() = QueueDepth (Periodic when interval>0, else Immediate) +
+//	       BatchSize (same) + InFlightRequests (synchronous).
+//	The synchronous InFlightRequests term compensates for Periodic staleness.
 func scoreQueueDepth(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
 	minLoad, maxLoad := math.MaxInt, 0
@@ -151,9 +151,9 @@ func scoreQueueDepth(_ *Request, snapshots []RoutingSnapshot) map[string]float64
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: KVUtilization (Tier 3: stale across batch steps).
-//	WARNING: At high request rates, this signal can be significantly stale.
-//	Pair with a Tier 1 scorer (e.g., queue-depth) for load-aware routing.
+//	Reads: KVUtilization (Periodic when interval>0, else Immediate).
+//	WARNING: At high request rates with large intervals, this signal can be significantly stale.
+//	Pair with a load-aware scorer (e.g., queue-depth) for robust routing.
 //	See H3 experiment: 200x worse distribution uniformity at rate=5000.
 func scoreKVUtilization(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
@@ -169,7 +169,7 @@ func scoreKVUtilization(_ *Request, snapshots []RoutingSnapshot) map[string]floa
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: EffectiveLoad() — same as scoreQueueDepth (Tier 1+2 composite).
+//	Reads: EffectiveLoad() — same as scoreQueueDepth (synchronous + Periodic composite).
 func scoreLoadBalance(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
 	for _, snap := range snapshots {

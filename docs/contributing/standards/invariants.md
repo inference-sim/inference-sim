@@ -68,21 +68,23 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ## INV-7: Signal Freshness Hierarchy
 
-**Statement:** Routing snapshot signals have tiered freshness due to DES event ordering. Cluster events at tick T drain before instance events at tick T.
+**Statement:** Routing snapshot signals have tiered freshness due to DES event ordering and configurable staleness.
 
-| Signal | Owner | Freshness | Updated By |
-|--------|-------|-----------|------------|
-| PendingRequests | Cluster | Synchronous | `RoutingDecisionEvent.Execute()` |
-| QueueDepth | Instance | Stale within tick | `QueuedEvent.Execute()` |
-| BatchSize | Instance | Stale within tick | `StepEvent.Execute()` |
-| KVUtilization | Instance | Stale across batch steps | `FormBatch()` -> `AllocateKVBlocks()` |
-| CacheHitRate | Instance | Stale across batch steps | `FormBatch()` |
+| Signal | Owner | Freshness (interval=0) | Freshness (interval>0) | Updated By |
+|--------|-------|------------------------|------------------------|------------|
+| InFlightRequests | Cluster | Synchronous | Synchronous | `RoutingDecisionEvent.Execute()` (increment), completion detection (decrement) |
+| QueueDepth | Instance | Immediate | Periodic | `QueuedEvent.Execute()` |
+| BatchSize | Instance | Immediate | Periodic | `StepEvent.Execute()` |
+| KVUtilization | Instance | Immediate | Periodic | `FormBatch()` → `AllocateKVBlocks()` |
+| CacheHitRate | Instance | Immediate | Periodic | `FormBatch()` |
 
-**Design implication:** `EffectiveLoad()` = `QueueDepth + BatchSize + PendingRequests` compensates for Tier 2 staleness by including the Tier 1 PendingRequests term. KVUtilization has no analogous compensation.
+**Design implication:** When `--snapshot-refresh-interval > 0`, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same `/metrics` endpoint. `InFlightRequests` remains synchronous (gateway-local counter, not Prometheus-sourced).
 
-**Verification:** H3 hypothesis experiment (`hypotheses/h3-signal-freshness/`).
+`EffectiveLoad()` = `QueueDepth + BatchSize + InFlightRequests`. The synchronous `InFlightRequests` term compensates for Periodic staleness in the other two terms.
 
-**Evidence:** Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth.
+**Verification:** H3 hypothesis experiment (`hypotheses/h3-signal-freshness/`), H29 (`hypotheses/h29-snapshot-staleness/`).
+
+**Evidence:** Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth. Issue #463: unified Prometheus staleness model.
 
 ---
 
