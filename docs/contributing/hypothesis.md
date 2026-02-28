@@ -558,6 +558,7 @@ Hypotheses can come from **internal** sources (your own experiments and developm
 | **Analytical models** | Divergence between theory and simulation → "does the DES match M/M/k under matching assumptions?" | "Under Poisson arrivals, queue length should match M/M/k within 5%" |
 | **Literature / external** | Published results about inference serving systems | "Prefix caching should reduce TTFT proportional to prefix length (as in vLLM literature)" |
 | **Design docs** | Claims made in design documents that have never been validated | "The composable scorer framework should produce Pareto-optimal configurations" |
+| **Strategy Evolution** | Each strategy iteration produces a [hypothesis bundle](../methodology/hypothesis-bundles.md) — a main hypothesis plus ablation, control, and robustness arms | "SLO-tiered priority will reduce critical TTFT P99 by >30%" + ablation arms for each component |
 
 ### What makes a good hypothesis
 

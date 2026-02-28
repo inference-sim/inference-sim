@@ -311,6 +311,7 @@ inference-sim/
 │   ├── methodology/           # Research methodology documentation
 │   │   ├── index.md           # Methodology overview
 │   │   ├── strategy-evolution.md # Strategy Evolution methodology guide
+│   │   ├── hypothesis-bundles.md # Hypothesis bundle examples and writing guide
 │   │   └── principles.md     # Discovered principles catalog (30 principles)
 │   ├── contributing/          # Contributor documentation
 │   │   ├── index.md           # Contributing landing page
