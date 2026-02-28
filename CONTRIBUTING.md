@@ -157,13 +157,15 @@ For hypothesis experiments, see [Running or Contributing Hypothesis Experiments]
 
 The lightest path. For bug fixes, docs updates, and single-PR changes that don't introduce new module boundaries.
 
-1. **Create worktree** — `/superpowers:using-git-worktrees fix-<name>`
-2. **Write micro plan** — `/superpowers:writing-plans` using `@docs/contributing/templates/micro-plan.md`
-3. **Review plan** — `/pr-review-toolkit:review-pr` then `/convergence-review pr-plan <plan-path>`
+1. **Create worktree** — `git worktree add .worktrees/fix-<name> -b fix-<name>`
+2. **Write micro plan** — follow [`docs/contributing/templates/micro-plan.md`](docs/contributing/templates/micro-plan.md) with behavioral contracts and TDD tasks
+3. **Review plan** — review from 10 perspectives using the [convergence protocol](docs/contributing/convergence.md)
 4. **Human approval** — review contracts and tasks, approve to proceed
-5. **Implement** — `/superpowers:executing-plans @<plan-path>`
-6. **Review code** — `/pr-review-toolkit:review-pr` then `/convergence-review pr-code`
-7. **Self-audit + commit** — deliberate critical thinking, then `/commit-commands:commit-push-pr`
+5. **Implement** — execute TDD tasks from the plan
+6. **Review code** — review from 10 perspectives using the convergence protocol
+7. **Self-audit + commit** — deliberate critical thinking, then commit and push
+
+> **Automation:** With Claude Code, use `/superpowers:using-git-worktrees`, `/superpowers:writing-plans` (with `@docs/contributing/templates/micro-plan-prompt.md`), `/convergence-review pr-plan`, `/superpowers:executing-plans`, `/convergence-review pr-code`, and `/commit-commands:commit-push-pr`. See [Skills & Plugins](docs/guide/skills-and-plugins.md).
 
 Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
@@ -172,9 +174,11 @@ Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow
 For adding a routing policy, admission policy, scorer, scheduler, priority policy, or tier composition — anything behind an existing interface.
 
 1. **Identify extension type** — see [Adding New Components](#adding-new-components) below
-2. **Create worktree** — `/superpowers:using-git-worktrees <extension-name>`
-3. **Write micro plan** — `/superpowers:writing-plans` using `@docs/contributing/templates/micro-plan.md` and `@docs/contributing/extension-recipes.md`
+2. **Create worktree** — `git worktree add .worktrees/<extension-name> -b <extension-name>`
+3. **Write micro plan** — follow [`docs/contributing/templates/micro-plan.md`](docs/contributing/templates/micro-plan.md) and [`docs/contributing/extension-recipes.md`](docs/contributing/extension-recipes.md)
 4. **Follow steps 3–7 from Bug Fix** (review → approve → implement → review → commit)
+
+> **Automation:** With Claude Code, use `/superpowers:writing-plans` (with `@docs/contributing/templates/micro-plan-prompt.md` and `@docs/contributing/extension-recipes.md`).
 
 No design doc needed for policy templates. For tier compositions, a design doc is recommended — see the extension type table in [Adding New Components](#adding-new-components). Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
@@ -183,9 +187,9 @@ No design doc needed for policy templates. For tier compositions, a design doc i
 The full pipeline for features that introduce new module boundaries, new interfaces, or span multiple PRs.
 
 **Phase 1 — Idea to Design:**
-1. **Explore approaches** — discuss design options with Claude, settle on an approach
+1. **Explore approaches** — discuss design options, settle on an approach
 2. **Write design doc** — following [`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md)
-3. **Review design** — `/convergence-review design <path>` (8 perspectives)
+3. **Review design** — review from 8 perspectives using the [convergence protocol](docs/contributing/convergence.md)
 4. **Human approval** — review design doc before planning begins
 
 Full process: [`docs/contributing/design-process.md`](docs/contributing/design-process.md)
@@ -193,7 +197,7 @@ Full process: [`docs/contributing/design-process.md`](docs/contributing/design-p
 **Phase 2 — Design to Macro Plan** (skip if single-PR):
 
 5. **Write macro plan** — decompose into PRs following [`docs/contributing/templates/macro-plan.md`](docs/contributing/templates/macro-plan.md)
-6. **Review macro plan** — `/convergence-review macro-plan <path>` (8 perspectives)
+6. **Review macro plan** — review from 8 perspectives using the convergence protocol
 7. **Human approval** — review PR decomposition and module contracts
 
 Full process: [`docs/contributing/macro-planning.md`](docs/contributing/macro-planning.md)

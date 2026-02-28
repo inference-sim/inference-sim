@@ -2,7 +2,7 @@
 
 Reference file for the convergence-review skill. Contains exact prompts for the 20 PR review perspectives across plan review and code review gates.
 
-**Canonical source:** `docs/contributing/pr-workflow.md` (v3.0). If prompts here diverge from pr-workflow.md, the process doc is authoritative.
+**Canonical source:** `docs/contributing/pr-workflow.md` (v4.0). After the human-first rewrite, pr-workflow.md contains the same checklist content in human-readable format; this file preserves the agent dispatch format. Content is aligned; format differs intentionally. If checklist *content* diverges, pr-workflow.md is authoritative.
 
 **Dispatch pattern:** Launch each perspective as a parallel Task agent:
 ```
@@ -83,7 +83,7 @@ Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (
 For each task, verify it can actually start given what comes before it. Trace the dependency chain: what files does each task create/modify? Does any task require a file or type that hasn't been created yet?
 
 **Check 2 — Template Completeness:**
-Verify all sections from `docs/contributing/templates/micro-plan.md` are present and non-empty: Header, Part 1 (A-E), Part 2 (F-I), Part 3 (J), Appendix.
+Verify all sections from `docs/contributing/templates/micro-plan-prompt.md` are present and non-empty: Header, Part 1 (A-E), Part 2 (F-I), Part 3 (J), Appendix.
 
 **Check 3 — Executive Summary Clarity:**
 Read the executive summary as if you're a new team member. Is the scope clear without reading the rest?

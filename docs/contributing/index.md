@@ -46,9 +46,11 @@ See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/C
 
 ## Templates
 
-| Template | Purpose |
-|----------|---------|
-| [Design Guidelines](templates/design-guidelines.md) | DES foundations, module architecture, extension framework |
-| [Macro Plan](templates/macro-plan.md) | Multi-PR feature decomposition |
-| [Micro Plan](templates/micro-plan.md) | Single-PR implementation with TDD tasks |
-| [Hypothesis](templates/hypothesis.md) | Experiment FINDINGS.md structure |
+| Template | Purpose | Agent Prompt |
+|----------|---------|--------------|
+| [Design Guidelines](templates/design-guidelines.md) | DES foundations, module architecture, extension framework | N/A (reference material) |
+| [Macro Plan](templates/macro-plan.md) | Multi-PR feature decomposition | [`macro-plan-prompt.md`](templates/macro-plan-prompt.md) |
+| [Micro Plan](templates/micro-plan.md) | Single-PR implementation with TDD tasks | [`micro-plan-prompt.md`](templates/micro-plan-prompt.md) |
+| [Hypothesis](templates/hypothesis.md) | Experiment FINDINGS.md structure | N/A (template is audience-neutral) |
+
+Templates describe the output format (what sections to include and why). Agent prompts contain LLM-specific instructions for generating those artifacts. Claude Code skills reference the prompt files automatically.
