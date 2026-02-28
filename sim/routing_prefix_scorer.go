@@ -13,7 +13,7 @@ const defaultLRUCapacity = 10000
 //
 //	Reads: No RoutingSnapshot fields — uses router-side PrefixCacheIndex only.
 //	The cache index is synchronously updated by the observer after each routing
-//	decision, making this scorer effectively Tier 1 (always fresh).
+//	decision, making this scorer effectively synchronous (always fresh).
 //
 // Both the scorer and observer share the same PrefixCacheIndex via closure.
 // The blockSize should match the simulation's KV cache block size.

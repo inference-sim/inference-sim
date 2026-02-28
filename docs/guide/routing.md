@@ -31,7 +31,7 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | Scorer | What It Measures | llm-d Equivalent |
 |--------|-----------------|------------------|
 | `prefix-affinity` | Proportional prefix match ratio via router-side block hash cache | prefix-scorer |
-| `queue-depth` | Effective load: `QueueDepth + BatchSize + PendingRequests` (min-max normalized) | queue-scorer |
+| `queue-depth` | Effective load: `QueueDepth + BatchSize + InFlightRequests` (min-max normalized) | queue-scorer |
 | `kv-utilization` | Inverse KV utilization: `1 - KVUtilization` | kv-cache-utilization-scorer |
 | `load-balance` | Inverse transform: `1 / (1 + effectiveLoad)` | BLIS-native (no llm-d equivalent) |
 
@@ -66,9 +66,8 @@ BLIS models three signal freshness tiers:
 
 | Tier | Signals | Source | Freshness |
 |------|---------|--------|-----------|
-| **Router-local** | PendingRequests, prefix cache index | Router increments/decrements PendingRequests on route/ack; prefix cache updated after each routing decision | Always fresh — router owns this state |
-| **Instance-reported (Immediate mode)** | QueueDepth, BatchSize | Instance-internal state (scheduler queue, running batch) | In BLIS's default config, read directly from instance memory at routing time — an **idealized simplification**. In production, these would have reporting latency. See [#463](https://github.com/inference-sim/inference-sim/issues/463) for planned realistic staleness. |
-| **Periodic** | KVUtilization, FreeKVBlocks, CacheHitRate | Instance-internal KV cache state | Cached and refreshed on a timer (`--snapshot-refresh-interval`). Models the real-world latency of polling GPU memory state. |
+| **Router-local** | InFlightRequests, prefix cache index | Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision | Always fresh — router owns this state |
+| **Instance-reported (Immediate/Periodic)** | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate | Instance-internal state (scheduler queue, running batch, KV cache) | When `--snapshot-refresh-interval=0` (default): Immediate (read from instance at routing time). When `>0`: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single `/metrics` endpoint. |
 
 !!! info "DES semantics of 'Immediate' mode"
     "Immediate" means "re-read from the instance object at query time" — NOT "perfectly synchronized with the simulation clock." At the same clock tick, cluster events are processed before instance events (determinism rule). So a routing decision at time T sees QueueDepth that hasn't yet processed instance events at time T. This is a determinism mechanism (INV-6), not a freshness guarantee.

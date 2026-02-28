@@ -12,13 +12,13 @@ type AdmissionRecord struct {
 
 // CandidateScore captures a counterfactual candidate instance with its score and state.
 type CandidateScore struct {
-	InstanceID      string
-	Score           float64
-	QueueDepth      int
-	BatchSize       int
-	PendingRequests int
-	KVUtilization   float64
-	FreeKVBlocks    int64
+	InstanceID       string
+	Score            float64
+	QueueDepth       int
+	BatchSize        int
+	InFlightRequests int
+	KVUtilization    float64
+	FreeKVBlocks     int64
 }
 
 // RoutingRecord captures a single routing policy decision with optional counterfactual analysis.

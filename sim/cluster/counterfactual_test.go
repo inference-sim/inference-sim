@@ -80,29 +80,29 @@ func TestComputeCounterfactual_NilScores_UsesLoadFallback(t *testing.T) {
 	}
 }
 
-func TestComputeCounterfactual_NilScores_IncludesPendingRequests(t *testing.T) {
-	// GIVEN nil scores and instances where PendingRequests breaks the tie (#175)
+func TestComputeCounterfactual_NilScores_IncludesInFlightRequests(t *testing.T) {
+	// GIVEN nil scores and instances where InFlightRequests breaks the tie (#175)
 	snapshots := []sim.RoutingSnapshot{
-		{ID: "i_0", QueueDepth: 5, BatchSize: 3, PendingRequests: 4}, // load=12, score=-12
-		{ID: "i_1", QueueDepth: 5, BatchSize: 3, PendingRequests: 0}, // load=8,  score=-8
+		{ID: "i_0", QueueDepth: 5, BatchSize: 3, InFlightRequests: 4}, // load=12, score=-12
+		{ID: "i_1", QueueDepth: 5, BatchSize: 3, InFlightRequests: 0}, // load=8,  score=-8
 	}
 
 	// WHEN computing counterfactual with nil scores, chosen is i_0
 	candidates, regret := computeCounterfactual("i_0", nil, snapshots, 2)
 
-	// THEN i_1 ranks first (lower load including PendingRequests)
+	// THEN i_1 ranks first (lower load including InFlightRequests)
 	if len(candidates) != 2 {
 		t.Fatalf("expected 2 candidates, got %d", len(candidates))
 	}
 	if candidates[0].InstanceID != "i_1" {
 		t.Errorf("first candidate: got %s, want i_1 (lower total load)", candidates[0].InstanceID)
 	}
-	// THEN PendingRequests is captured in the CandidateScore record
-	if candidates[0].PendingRequests != 0 {
-		t.Errorf("candidate i_1 PendingRequests: got %d, want 0", candidates[0].PendingRequests)
+	// THEN InFlightRequests is captured in the CandidateScore record
+	if candidates[0].InFlightRequests != 0 {
+		t.Errorf("candidate i_1 InFlightRequests: got %d, want 0", candidates[0].InFlightRequests)
 	}
-	if candidates[1].PendingRequests != 4 {
-		t.Errorf("candidate i_0 PendingRequests: got %d, want 4", candidates[1].PendingRequests)
+	if candidates[1].InFlightRequests != 4 {
+		t.Errorf("candidate i_0 InFlightRequests: got %d, want 4", candidates[1].InFlightRequests)
 	}
 
 	// THEN regret = best(-8) - chosen(-12) = 4

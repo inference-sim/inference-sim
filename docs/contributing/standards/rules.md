@@ -230,11 +230,10 @@ Routing snapshot signals have different freshness guarantees due to DES event or
 **Evidence:** H3 hypothesis experiment (#279) — kv-utilization scorer produced 200x worse distribution uniformity than queue-depth at rate=5000. See issues #282, #283.
 
 **Freshness hierarchy:**
-- **Tier 1 — Synchronously fresh (cluster-owned):** PendingRequests
-- **Tier 2 — Stale within tick (instance-owned):** QueueDepth, BatchSize
-- **Tier 3 — Stale across batch steps (instance-owned):** KVUtilization, CacheHitRate
+- **Synchronous (cluster-owned):** InFlightRequests — always fresh (gateway counter)
+- **Immediate/Periodic (instance-owned):** QueueDepth, BatchSize, KVUtilization, CacheHitRate — Immediate when `--snapshot-refresh-interval=0`, Periodic when `>0`
 
-**Check:** When writing a new scorer, identify which snapshot fields it reads and their freshness tier. If using only Tier 3 signals, document why or combine with a Tier 1 scorer.
+**Check:** When writing a new scorer, identify which snapshot fields it reads and their freshness. If using only Periodic signals, document why or combine with a synchronous scorer (InFlightRequests via EffectiveLoad).
 
 **Enforced:** Design review, scorer implementation review.
 

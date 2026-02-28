@@ -26,7 +26,7 @@ func copyScores(scores map[string]float64) map[string]float64 {
 //
 // When scores is non-nil (from WeightedScoring), candidates are ranked by policy scores.
 // When scores is nil (RoundRobin, LeastLoaded), a synthetic load-based score is used:
-// -(QueueDepth + BatchSize + PendingRequests), so lower-load instances rank higher (#175).
+// -(QueueDepth + BatchSize + InFlightRequests), so lower-load instances rank higher (#175).
 //
 // Returns top-k candidates sorted by score descending and regret (≥ 0).
 func computeCounterfactual(chosenID string, scores map[string]float64, snapshots []sim.RoutingSnapshot, k int) ([]trace.CandidateScore, float64) {
@@ -76,13 +76,13 @@ func computeCounterfactual(chosenID string, scores map[string]float64, snapshots
 	result := make([]trace.CandidateScore, n)
 	for i := 0; i < n; i++ {
 		result[i] = trace.CandidateScore{
-			InstanceID:      all[i].snap.ID,
-			Score:           all[i].score,
-			QueueDepth:      all[i].snap.QueueDepth,
-			BatchSize:       all[i].snap.BatchSize,
-			PendingRequests: all[i].snap.PendingRequests,
-			KVUtilization:   all[i].snap.KVUtilization,
-			FreeKVBlocks:    all[i].snap.FreeKVBlocks,
+			InstanceID:       all[i].snap.ID,
+			Score:            all[i].score,
+			QueueDepth:       all[i].snap.QueueDepth,
+			BatchSize:        all[i].snap.BatchSize,
+			InFlightRequests: all[i].snap.InFlightRequests,
+			KVUtilization:    all[i].snap.KVUtilization,
+			FreeKVBlocks:     all[i].snap.FreeKVBlocks,
 		}
 	}
 

@@ -458,7 +458,7 @@
       "y": 320,
       "width": 140,
       "height": 60,
-      "text": "Routing Snapshots\n\nQueueDepth, BatchSize\nKVUtilization\nPendingRequests",
+      "text": "Routing Snapshots\n\nQueueDepth, BatchSize\nKVUtilization\nInFlightRequests",
       "fontSize": 10,
       "fontFamily": 1,
       "textAlign": "center",

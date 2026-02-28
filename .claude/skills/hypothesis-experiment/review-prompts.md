@@ -354,7 +354,7 @@ YOUR FOCUS: DES Mechanism Analysis
   - Step quantization: step time is per-batch
   - Clock: microsecond ticks
 - Could the result be a simulation artifact rather than modeled system behavior?
-- Are routing snapshot freshness assumptions correct? (INV-7: PendingRequests = synchronous, KVUtilization = stale)
+- Are routing snapshot freshness assumptions correct? (INV-7: InFlightRequests = synchronous, QueueDepth/BatchSize/KVUtilization = Periodic when interval>0)
 
 Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
 Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.

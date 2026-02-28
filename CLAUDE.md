@@ -95,7 +95,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-4 KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
 - **INV-5 Causality**: `arrival_time <= enqueue_time <= schedule_time <= completion_time`
 - **INV-6 Determinism**: Same seed must produce byte-identical stdout across runs. Wall-clock timing goes to stderr.
-- **INV-7 Signal freshness**: Routing snapshot signals have tiered freshness — PendingRequests (synchronous) vs KVUtilization (stale across batch steps). See `docs/contributing/standards/invariants.md` for the full hierarchy.
+- **INV-7 Signal freshness**: Routing snapshot signals have tiered freshness — InFlightRequests (synchronous) vs QueueDepth/BatchSize/KVUtilization (Periodic when `--snapshot-refresh-interval > 0`, Immediate when 0). See `docs/contributing/standards/invariants.md` for the full hierarchy.
 - **INV-8 Work-conserving**: After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while work is waiting.
 
 ### Engineering Principles

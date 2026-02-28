@@ -22,17 +22,17 @@ type ClusterSimulator struct {
 	aggregatedMetrics *sim.Metrics
 
 	// Online routing pipeline fields
-	clusterEvents      ClusterEventQueue
-	seqCounter         int64
-	admissionLatency   int64
-	routingLatency     int64
-	admissionPolicy    sim.AdmissionPolicy
-	snapshotProvider   SnapshotProvider
-	routingPolicy      sim.RoutingPolicy
-	rejectedRequests       int // EC-2: count of requests rejected by admission policy
-	trace                  *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
-	preGeneratedRequests   []*sim.Request // Pre-generated requests (all workload paths unified)
-	pendingRequests        map[string]int // instance ID → routed-but-not-queued count (#170)
+	clusterEvents        ClusterEventQueue
+	seqCounter           int64
+	admissionLatency     int64
+	routingLatency       int64
+	admissionPolicy      sim.AdmissionPolicy
+	snapshotProvider     SnapshotProvider
+	routingPolicy        sim.RoutingPolicy
+	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
+	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
+	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
+	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -77,7 +77,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
 		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
 		trace:                simTrace,
-		pendingRequests:      make(map[string]int, config.NumInstances),
+		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}
 
 	// Startup warning: horizon too small for pipeline (BC-1)
@@ -155,36 +155,55 @@ func (c *ClusterSimulator) Run() error {
 			if c.clock > c.config.Horizon {
 				break
 			}
-			instID := string(c.instances[instanceIdx].ID())
-			ev := c.instances[instanceIdx].ProcessNextEvent()
-			// Causal decrement: QueuedEvent is the definitive moment a request
-			// enters the WaitQ, meaning it was absorbed from pending (#178).
-			// This replaces the fragile QueueDepth before/after heuristic.
-			//
-			// Preemption safety (#192): preemption re-enqueues via direct
-			// WaitQ.PrependFront() in preempt() (sim/simulator.go), NOT via
-			// QueuedEvent. Therefore preemption cannot trigger a false decrement here.
-			if _, ok := ev.(*sim.QueuedEvent); ok {
-				if c.pendingRequests[instID] > 0 {
-					c.pendingRequests[instID]--
-				} else {
-					logrus.Debugf("QueuedEvent for %s but pendingRequests already 0 (no-op)", instID)
+			inst := c.instances[instanceIdx]
+			instID := string(inst.ID())
+
+			// Snapshot counters BEFORE processing the event
+			completedBefore := inst.Metrics().CompletedRequests
+			droppedBefore := inst.Metrics().DroppedUnservable
+
+			ev := inst.ProcessNextEvent()
+			_ = ev // Event type no longer used for decrement
+
+			// Completion-based decrement (#463, BC-3, BC-7): InFlightRequests tracks the full
+			// dispatch-to-completion window. Decrement by the number of newly completed OR
+			// dropped-unservable requests. DroppedUnservable requests never reach CompletedRequests
+			// but still exit the in-flight window (they were rejected during EnqueueRequest).
+			completedAfter := inst.Metrics().CompletedRequests
+			droppedAfter := inst.Metrics().DroppedUnservable
+			delta := (completedAfter - completedBefore) + (droppedAfter - droppedBefore)
+			if delta > 0 {
+				c.inFlightRequests[instID] -= delta
+				if c.inFlightRequests[instID] < 0 {
+					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d) — bookkeeping bug",
+						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore)
+					c.inFlightRequests[instID] = 0
 				}
 			}
 		}
 	}
 
-	// 4. Post-simulation invariant: all pending requests should have drained
-	for instID, pending := range c.pendingRequests {
-		if pending != 0 {
-			logrus.Warnf("post-simulation: pendingRequests[%s] = %d, expected 0 — possible bookkeeping bug", instID, pending)
-		}
-	}
-
-	// 5. Finalize all instances
+	// 4. Finalize all instances (populates StillQueued/StillRunning)
 	for _, inst := range c.instances {
 		inst.Finalize()
 	}
+
+	// 5. Post-simulation invariant: inFlightRequests should match StillQueued + StillRunning
+	// MUST be after Finalize() — StillQueued/StillRunning are zero until Finalize populates them.
+	// NOTE: A mismatch can occur legitimately if requests were routed near the horizon but their
+	// ArrivalEvent/QueuedEvent hadn't fired yet (request is in the instance event queue, not in
+	// WaitQ or RunningBatch). This is an edge case, not a bookkeeping bug.
+	for _, inst := range c.instances {
+		instID := string(inst.ID())
+		inflight := c.inFlightRequests[instID]
+		m := inst.Metrics()
+		expectedInFlight := m.StillQueued + m.StillRunning
+		if inflight != expectedInFlight {
+			logrus.Warnf("post-simulation: inFlightRequests[%s] = %d, expected %d (StillQueued=%d + StillRunning=%d) — may indicate bookkeeping bug or requests in event pipeline at horizon",
+				instID, inflight, expectedInFlight, m.StillQueued, m.StillRunning)
+		}
+	}
+
 	c.aggregatedMetrics = c.aggregateMetrics()
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)

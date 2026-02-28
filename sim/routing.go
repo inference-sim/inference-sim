@@ -5,25 +5,26 @@ import (
 )
 
 // RoutingSnapshot is a lightweight view of instance state for policy decisions.
-// Populated by ClusterSimulator from cluster.InstanceSnapshot when building RouterState
-// (used by both AdmissionPolicy and RoutingPolicy).
+// Populated by CachedSnapshotProvider reading InstanceSimulator query methods,
+// with InFlightRequests injected by buildRouterState() at the cluster level.
+// Used by both AdmissionPolicy and RoutingPolicy.
 // Timestamp is intentionally excluded: snapshot freshness is managed by
 // CachedSnapshotProvider and is not a policy concern.
 type RoutingSnapshot struct {
-	ID              string
-	QueueDepth      int
-	BatchSize       int
-	KVUtilization   float64
-	FreeKVBlocks    int64
-	CacheHitRate    float64
-	PendingRequests int // Requests routed to this instance but not yet in queue
+	ID               string
+	QueueDepth       int
+	BatchSize        int
+	KVUtilization    float64
+	FreeKVBlocks     int64
+	CacheHitRate     float64
+	InFlightRequests int // Requests dispatched to this instance but not yet completed
 }
 
 // EffectiveLoad returns the total effective load on this instance:
-// QueueDepth + BatchSize + PendingRequests.
+// QueueDepth + BatchSize + InFlightRequests.
 // Used by routing policies and counterfactual scoring for consistent load calculations.
 func (s RoutingSnapshot) EffectiveLoad() int {
-	return s.QueueDepth + s.BatchSize + s.PendingRequests
+	return s.QueueDepth + s.BatchSize + s.InFlightRequests
 }
 
 // NewRoutingSnapshot creates a RoutingSnapshot with the given instance ID.
@@ -99,8 +100,8 @@ func (rr *RoundRobin) Route(req *Request, state *RouterState) RoutingDecision {
 	return NewRoutingDecision(target.ID, fmt.Sprintf("round-robin[%d]", rr.counter-1))
 }
 
-// LeastLoaded routes requests to the instance with minimum (QueueDepth + BatchSize + PendingRequests).
-// PendingRequests prevents pile-on at high request rates where multiple routing decisions
+// LeastLoaded routes requests to the instance with minimum (QueueDepth + BatchSize + InFlightRequests).
+// InFlightRequests prevents pile-on at high request rates where multiple routing decisions
 // occur at the same timestamp before instance events process (#175).
 // Ties are broken by first occurrence in snapshot order (lowest index).
 type LeastLoaded struct{}
@@ -163,7 +164,7 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		dimScores := scorer(req, snapshots)
 		for _, snap := range snapshots {
 			s := dimScores[snap.ID]
-			// Clamp to [0,1] per INV-1
+			// Clamp to [0,1] per scorer contract
 			if s < 0 {
 				s = 0
 			}
@@ -197,7 +198,7 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	)
 }
 
-// AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + PendingRequests).
+// AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + InFlightRequests).
 // Pathological template for testing load imbalance detection.
 // Ties broken by first occurrence in snapshot order (lowest index).
 type AlwaysBusiest struct{}

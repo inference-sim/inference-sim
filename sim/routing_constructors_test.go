@@ -84,7 +84,7 @@ func TestNewRoutingSnapshot_Fields(t *testing.T) {
 	if snap.CacheHitRate != 0.0 {
 		t.Errorf("CacheHitRate = %f, want 0.0", snap.CacheHitRate)
 	}
-	if snap.PendingRequests != 0 {
-		t.Errorf("PendingRequests = %d, want 0", snap.PendingRequests)
+	if snap.InFlightRequests != 0 {
+		t.Errorf("InFlightRequests = %d, want 0", snap.InFlightRequests)
 	}
 }

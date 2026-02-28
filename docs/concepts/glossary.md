@@ -50,7 +50,7 @@ Total time from request arrival to final token completion. Computed as `TTFT + s
 
 ### Effective Load
 
-A routing signal computed as `QueueDepth + BatchSize + PendingRequests`. Represents the total work visible at an instance, including requests that have been routed but not yet enqueued. Used by least-loaded routing and load-balance scoring. See [Cluster Architecture: Routing Pipeline](architecture.md#routing-pipeline).
+A routing signal computed as `QueueDepth + BatchSize + InFlightRequests`. Because `InFlightRequests` tracks the full dispatch-to-completion window, it overlaps with `QueueDepth` and `BatchSize` — this intentional double-counting combines stale Prometheus signals with the synchronous gateway counter. Used by least-loaded routing and load-balance scoring. See [Cluster Architecture: Routing Pipeline](architecture.md#routing-pipeline).
 
 ### Fitness Score
 

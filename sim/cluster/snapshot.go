@@ -35,15 +35,18 @@ func DefaultObservabilityConfig() ObservabilityConfig {
 
 // newObservabilityConfig creates an ObservabilityConfig based on the refresh interval.
 // If interval is 0, all fields use Immediate mode (default behavior).
-// If interval > 0, KVUtilization uses Periodic mode with the given interval.
+// If interval > 0, all fields use Periodic mode with the given interval,
+// matching real vLLM Prometheus endpoint behavior where all gauges share the
+// same scrape interval.
 func newObservabilityConfig(refreshInterval int64) ObservabilityConfig {
 	if refreshInterval <= 0 {
 		return DefaultObservabilityConfig()
 	}
+	periodic := FieldConfig{Mode: Periodic, Interval: refreshInterval}
 	return ObservabilityConfig{
-		QueueDepth:    FieldConfig{Mode: Immediate},
-		BatchSize:     FieldConfig{Mode: Immediate},
-		KVUtilization: FieldConfig{Mode: Periodic, Interval: refreshInterval},
+		QueueDepth:    periodic,
+		BatchSize:     periodic,
+		KVUtilization: periodic,
 	}
 }
 
@@ -89,8 +92,8 @@ func NewCachedSnapshotProvider(instances map[InstanceID]*InstanceSimulator, conf
 }
 
 // Snapshot returns a RoutingSnapshot, refreshing fields based on their configured mode.
-// PendingRequests is NOT set here — it is injected by buildRouterState() which has
-// access to the cluster-level pending request tracking.
+// InFlightRequests is NOT set here — it is injected by buildRouterState() which has
+// access to the cluster-level in-flight request tracking.
 func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.RoutingSnapshot {
 	inst := p.instances[id]
 	snap := p.cache[id]
