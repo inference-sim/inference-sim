@@ -22,17 +22,17 @@ type ClusterSimulator struct {
 	aggregatedMetrics *sim.Metrics
 
 	// Online routing pipeline fields
-	clusterEvents      ClusterEventQueue
-	seqCounter         int64
-	admissionLatency   int64
-	routingLatency     int64
-	admissionPolicy    sim.AdmissionPolicy
-	snapshotProvider   SnapshotProvider
-	routingPolicy      sim.RoutingPolicy
-	rejectedRequests       int // EC-2: count of requests rejected by admission policy
-	trace                  *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
-	preGeneratedRequests   []*sim.Request // Pre-generated requests (all workload paths unified)
-	inFlightRequests        map[string]int // instance ID → dispatched-but-not-completed count (#463)
+	clusterEvents        ClusterEventQueue
+	seqCounter           int64
+	admissionLatency     int64
+	routingLatency       int64
+	admissionPolicy      sim.AdmissionPolicy
+	snapshotProvider     SnapshotProvider
+	routingPolicy        sim.RoutingPolicy
+	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
+	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
+	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
+	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -77,7 +77,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
 		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
 		trace:                simTrace,
-		inFlightRequests:      make(map[string]int, config.NumInstances),
+		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}
 
 	// Startup warning: horizon too small for pipeline (BC-1)
@@ -176,7 +176,7 @@ func (c *ClusterSimulator) Run() error {
 				c.inFlightRequests[instID] -= delta
 				if c.inFlightRequests[instID] < 0 {
 					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d) — bookkeeping bug",
-					instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore)
+						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore)
 					c.inFlightRequests[instID] = 0
 				}
 			}

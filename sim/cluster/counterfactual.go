@@ -76,13 +76,13 @@ func computeCounterfactual(chosenID string, scores map[string]float64, snapshots
 	result := make([]trace.CandidateScore, n)
 	for i := 0; i < n; i++ {
 		result[i] = trace.CandidateScore{
-			InstanceID:      all[i].snap.ID,
-			Score:           all[i].score,
-			QueueDepth:      all[i].snap.QueueDepth,
-			BatchSize:       all[i].snap.BatchSize,
+			InstanceID:       all[i].snap.ID,
+			Score:            all[i].score,
+			QueueDepth:       all[i].snap.QueueDepth,
+			BatchSize:        all[i].snap.BatchSize,
 			InFlightRequests: all[i].snap.InFlightRequests,
-			KVUtilization:   all[i].snap.KVUtilization,
-			FreeKVBlocks:    all[i].snap.FreeKVBlocks,
+			KVUtilization:    all[i].snap.KVUtilization,
+			FreeKVBlocks:     all[i].snap.FreeKVBlocks,
 		}
 	}
 

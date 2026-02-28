@@ -11,12 +11,12 @@ import (
 // Timestamp is intentionally excluded: snapshot freshness is managed by
 // CachedSnapshotProvider and is not a policy concern.
 type RoutingSnapshot struct {
-	ID              string
-	QueueDepth      int
-	BatchSize       int
-	KVUtilization   float64
-	FreeKVBlocks    int64
-	CacheHitRate    float64
+	ID               string
+	QueueDepth       int
+	BatchSize        int
+	KVUtilization    float64
+	FreeKVBlocks     int64
+	CacheHitRate     float64
 	InFlightRequests int // Requests dispatched to this instance but not yet completed
 }
 
