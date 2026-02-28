@@ -62,14 +62,14 @@ This document describes the complete workflow for implementing a PR from any sou
 
 ### Step 1: Create an Isolated Workspace
 
-Create a git worktree BEFORE any work begins. This ensures the main worktree stays clean, the plan is committed on a feature branch, and you can work on multiple PRs in parallel.
+Create a git worktree BEFORE any work begins:
 
 ```bash
 git worktree add .worktrees/pr<N>-<feature-name> -b pr<N>-<feature-name>
 cd .worktrees/pr<N>-<feature-name>
 ```
 
-**Why first?** Create isolated workspace BEFORE any work begins. This ensures:
+**Why first?** This ensures:
 - Main worktree stays clean (no uncommitted plans or code)
 - Plan document committed on feature branch (not main)
 - Complete isolation for entire PR lifecycle (planning + implementation)
@@ -101,7 +101,7 @@ The source of work can be a macro plan section, a design document, one or more G
 
 ### Step 2.5: Review the Plan
 
-Review the plan from 10 targeted perspectives, applying the [convergence protocol](convergence.md). Run all 10 perspectives in parallel as a single round. If any perspective finds CRITICAL or IMPORTANT issues, fix them all and re-run the entire round. Repeat until a round produces zero CRITICAL and zero IMPORTANT findings.
+Review the plan from 10 targeted perspectives, applying the [convergence protocol](convergence.md): run all perspectives in parallel as one round; if zero CRITICAL and zero IMPORTANT across all reviewers, the round converged; otherwise fix and re-run the entire round. Max 10 rounds per gate. Hard gate — no exceptions. See [convergence.md](convergence.md) for full rules.
 
 **Two-stage review:**
 
@@ -231,7 +231,7 @@ Execute all tasks sequentially. Stop only on test failure, lint failure, or buil
 
 ### Step 4.5: Review the Code
 
-Review the implementation from 10 targeted perspectives, applying the [convergence protocol](convergence.md). Same two-stage structure as Step 2.5.
+Review the implementation from 10 targeted perspectives, applying the [convergence protocol](convergence.md): zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same two-stage structure as Step 2.5.
 
 **Two-stage review:**
 
@@ -325,6 +325,10 @@ Review passes naturally surface pre-existing bugs in surrounding code. These are
 gh issue create --title "Bug: <concise description>" --body "<location, impact, discovery context>" --label bug
 ```
 
+**Label guide:** Use `bug` for code defects, `design` for design limitations, `enhancement` for feature gaps, `hardening` for correctness/invariant issues. Every issue must have at least one label — unlabeled issues are invisible in filtered views.
+
+**After filing:** Reference the issue number in the PR description under a "Discovered Issues" section so reviewers know it was found and tracked.
+
 **Why not fix in-PR?**
 - **Scope creep** — muddies the diff, makes review harder, risks introducing regressions in unrelated code
 - **Attribution** — the fix deserves its own tests and its own commit history
@@ -343,7 +347,7 @@ git status                # Working tree status
 
 Report: build exit code, test pass/fail counts, lint issue count, working tree status. Wait for user approval before proceeding.
 
-**Why a skill instead of prose?** In PR9, the manual "run these commands" instruction was easy to skip or half-execute. The skill makes verification non-optional and evidence-based.
+**Why a gate instead of informal checking?** In PR9, the manual "run these commands" instruction was easy to skip or half-execute. Making verification a formal gate with expected output makes it non-optional and evidence-based.
 
 !!! tip "Automation"
     `/superpowers:verification-before-completion` enforces running these commands and confirming output before making any success claims.
@@ -367,7 +371,7 @@ Stop, think critically, and answer each question below from your own reasoning. 
 7. **Test epistemology (R7, R12):** For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)
 8. **Construction site uniqueness (R4):** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
 9. **Error path completeness (R1, R5):** For every error/failure path in new code, what happens to partially-mutated state? Does every `continue` or early `return` clean up what was started? Is there a counter or log so the failure is observable?
-10. **Documentation DRY (source-of-truth map):** Does this PR modify content that exists as a working copy elsewhere? Check the source-of-truth map in `docs/contributing/standards/principles.md`. If a canonical source was updated, verify all working copies listed in the map are also updated.
+10. **Documentation DRY (source-of-truth map):** Does this PR modify content that exists as a working copy elsewhere? Check the source-of-truth map in `docs/contributing/standards/principles.md`. If a canonical source was updated (rules.md, invariants.md, principles.md, extension-recipes.md), verify all working copies listed in the map are also updated. If a new file or section was added, verify it appears in the File Organization tree. If a hypothesis experiment was completed, verify `hypotheses/README.md` is updated.
 
 **Why no agent?** Agents are good at pattern-matching (finding style violations, checking structure). They're bad at stepping back and asking "does this actually make sense?" That requires the kind of critical thinking that only happens when you deliberately pause and reflect.
 

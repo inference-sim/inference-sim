@@ -8,6 +8,8 @@ This template defines the output format for a macro-level implementation plan. U
 
 **Prerequisite:** Before writing a macro plan, read [design-guidelines.md](design-guidelines.md) — it covers DES foundations, module architecture, and the extension framework. The macro plan must be consistent with these guidelines.
 
+**For comprehensive guidance:** The [detailed prompt version](macro-plan-prompt.md) contains analytical frameworks (Banks et al. model scoping criteria), constraints (concept model 80-line limit, mandatory validation when cost-of-being-wrong ≥ 3 PRs), and worked examples for each section.
+
 ---
 
 ## Abstraction Level Rule
