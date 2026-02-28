@@ -65,14 +65,7 @@ At sub-saturation (rate=100): scaling effect vanishes (1.06x).
 
 ## Admission Control
 
-Rate-limit incoming traffic with token bucket admission:
-
-```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --num-instances 4 --rate 500 --num-requests 2000 \
-  --admission-policy token-bucket \
-  --token-bucket-capacity 10000 --token-bucket-refill-rate 1000
-```
+For rate-limiting and traffic shaping policies, see the [Admission Control](admission.md) page.
 
 ## Admission and Routing Latency
 
