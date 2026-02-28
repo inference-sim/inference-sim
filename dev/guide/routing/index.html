@@ -14,7 +14,7 @@
         <link rel="prev" href="../">
       
       
-        <link rel="next" href="../kv-cache/">
+        <link rel="next" href="../admission/">
       
       
         
@@ -266,6 +266,28 @@
   
   
   
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
     
   
   
@@ -279,28 +301,6 @@
     
   
   User Guide
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../concepts/" class="md-tabs__link">
-          
-  
-  
-    
-  
-  Concepts
 
         </a>
       </li>
@@ -616,6 +616,202 @@
       
   
   
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -625,6 +821,12 @@
       
         
           
+        
+      
+        
+      
+        
+      
         
       
         
@@ -657,7 +859,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
           <div class="md-nav__link md-nav__container">
@@ -679,14 +881,14 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_3">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -823,16 +1025,33 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#instance-level-scheduling" class="md-nav__link">
+    <nav class="md-nav" aria-label="Signal Freshness">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-signals-have-different-staleness" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Instance-Level Scheduling
+        Why Signals Have Different Staleness
       
     </span>
   </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#staleness-impact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Staleness Impact
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -885,14 +1104,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../kv-cache/" class="md-nav__link">
+      <a href="../admission/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    KV Cache & Memory
+    Admission Control
   
 
     
@@ -913,14 +1132,70 @@
   
   
     <li class="md-nav__item">
-      <a href="../roofline/" class="md-nav__link">
+      <a href="../scheduling/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Roofline Mode
+    Scheduling & Priority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../latency-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Latency Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
   
 
     
@@ -1004,7 +1279,7 @@
   <span class="md-ellipsis">
     
   
-    Interpreting Results
+    Metrics & Results
   
 
     
@@ -1046,90 +1321,6 @@
 
               
             
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-      
-        
-          
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
-        
-          
-          <div class="md-nav__link md-nav__container">
-            <a href="../../concepts/" class="md-nav__link ">
-              
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Concepts
-  
-
-    
-  </span>
-  
-  
-
-            </a>
-            
-              
-              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
-                <span class="md-nav__icon md-icon"></span>
-              </label>
-            
-          </div>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Concepts
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-            
               
                 
   
@@ -1137,98 +1328,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/glossary/" class="md-nav__link">
+      <a href="../skills-and-plugins/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Glossary
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/architecture/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cluster Architecture
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/core-engine/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
+    Skills & Plugins
   
 
     
@@ -1430,8 +1537,6 @@
       
         
       
-        
-      
     
     
     
@@ -1503,34 +1608,6 @@
     
   
     Strategy Evolution
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../methodology/principles/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Discovered Principles
   
 
     
@@ -2264,16 +2341,33 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#instance-level-scheduling" class="md-nav__link">
+    <nav class="md-nav" aria-label="Signal Freshness">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-signals-have-different-staleness" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Instance-Level Scheduling
+        Why Signals Have Different Staleness
       
     </span>
   </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#staleness-impact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Staleness Impact
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2331,7 +2425,7 @@
 
 
 <h1 id="routing-policies">Routing Policies<a class="headerlink" href="#routing-policies" title="Permanent link">&para;</a></h1>
-<p>This guide covers how BLIS distributes incoming requests across instances in cluster mode. For single-instance simulation, routing is not applicable.</p>
+<p>This guide covers how BLIS distributes incoming requests across instances in cluster mode. For single-instance simulation, routing is not applicable. For instance-level request ordering, see <a href="../scheduling/">Scheduling &amp; Priority</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Quick example: compare round-robin vs weighted routing</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
@@ -2361,11 +2455,6 @@
 <td><strong>Weighted</strong></td>
 <td><code>weighted</code></td>
 <td>Composable multi-scorer pipeline (default: llm-d parity)</td>
-</tr>
-<tr>
-<td><strong>Prefix-affinity</strong></td>
-<td><code>prefix-affinity</code></td>
-<td>Route to the instance most likely to have matching KV cache</td>
 </tr>
 <tr>
 <td><strong>Always-busiest</strong></td>
@@ -2410,82 +2499,70 @@
 </tr>
 </tbody>
 </table>
+<div class="admonition note">
+<p class="admonition-title">Prefix-affinity is a scorer, not a standalone policy</p>
+<p>The <code>prefix-affinity</code> scorer operates within the <code>weighted</code> routing pipeline, composed with load-balancing scorers. It uses a router-side <code>PrefixCacheIndex</code> with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.</p>
+</div>
 <h3 id="default-profile">Default Profile<a class="headerlink" href="#default-profile" title="Permanent link">&para;</a></h3>
 <p>When <code>--routing-scorers</code> is not specified, the default profile is:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>prefix-affinity:3, queue-depth:2, kv-utilization:2
 </code></pre></div>
 <p>This matches the llm-d Endpoint Picker scoring pipeline. Weights are relative — only ratios matter. <code>[3, 2, 2]</code> behaves identically to <code>[0.43, 0.29, 0.29]</code>.</p>
 <h2 id="signal-freshness">Signal Freshness<a class="headerlink" href="#signal-freshness" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>Canonical source:</strong> Signal freshness tiers are specified in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a> (INV-7). The descriptions below provide additional user-facing context; <code>invariants.md</code> is authoritative if they diverge.</p>
+</blockquote>
 <div class="admonition warning">
-<p class="admonition-title">Not all signals update at the same speed</p>
-<p>Different scorer signals update through different mechanisms, which matters at high request rates.</p>
+<p class="admonition-title">Not all routing signals are equally fresh</p>
+<p>In production inference serving systems (e.g., llm-d), the router is a separate process from the inference engines. Some signals are maintained at the router level, while others require periodic reporting from instances. BLIS models this asymmetry.</p>
 </div>
-<p>BLIS models three signal update modes (defined in <code>ObservabilityConfig</code>):</p>
+<h3 id="why-signals-have-different-staleness">Why Signals Have Different Staleness<a class="headerlink" href="#why-signals-have-different-staleness" title="Permanent link">&para;</a></h3>
+<p>Different signals originate from different places in the system:</p>
+<ul>
+<li><strong>Router-local signals</strong> are maintained by the router itself — they're always current because the router controls them directly.</li>
+<li><strong>Instance-internal signals</strong> live on the inference engine and must be communicated to the router — they're inherently stale by the reporting interval.</li>
+</ul>
+<p>BLIS models three signal freshness tiers:</p>
 <table>
 <thead>
 <tr>
-<th>Mode</th>
+<th>Tier</th>
 <th>Signals</th>
-<th>Update Behavior</th>
+<th>Source</th>
+<th>Freshness</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Immediate</strong></td>
+<td><strong>Router-local</strong></td>
+<td>PendingRequests, prefix cache index</td>
+<td>Router increments/decrements PendingRequests on route/ack; prefix cache updated after each routing decision</td>
+<td>Always fresh — router owns this state</td>
+</tr>
+<tr>
+<td><strong>Instance-reported (Immediate mode)</strong></td>
 <td>QueueDepth, BatchSize</td>
-<td>Read from instance state at routing time — always fresh</td>
+<td>Instance-internal state (scheduler queue, running batch)</td>
+<td>In BLIS's default config, read directly from instance memory at routing time — an <strong>idealized simplification</strong>. In production, these would have reporting latency. See <a href="https://github.com/inference-sim/inference-sim/issues/463">#463</a> for planned realistic staleness.</td>
 </tr>
 <tr>
 <td><strong>Periodic</strong></td>
-<td>KVUtilization</td>
-<td>Cached and refreshed on a timer (<code>--snapshot-refresh-interval</code>)</td>
-</tr>
-<tr>
-<td><strong>Injected</strong></td>
-<td>PendingRequests</td>
-<td>Incremented immediately at routing time by the cluster simulator</td>
+<td>KVUtilization, FreeKVBlocks, CacheHitRate</td>
+<td>Instance-internal KV cache state</td>
+<td>Cached and refreshed on a timer (<code>--snapshot-refresh-interval</code>). Models the real-world latency of polling GPU memory state.</td>
 </tr>
 </tbody>
 </table>
-<p>At 5,000 req/s with 4 instances, ~45 routing decisions occur between KV utilization updates (~9ms step time). If using <code>kv-utilization:1</code> alone, all 45 decisions see the same stale utilization → severe load imbalance (3x worse TTFT p99).</p>
+<div class="admonition info">
+<p class="admonition-title">DES semantics of 'Immediate' mode</p>
+<p>"Immediate" means "re-read from the instance object at query time" — NOT "perfectly synchronized with the simulation clock." At the same clock tick, cluster events are processed before instance events (determinism rule). So a routing decision at time T sees QueueDepth that hasn't yet processed instance events at time T. This is a determinism mechanism (INV-6), not a freshness guarantee.</p>
+</div>
+<h3 id="staleness-impact">Staleness Impact<a class="headerlink" href="#staleness-impact" title="Permanent link">&para;</a></h3>
+<p>At 5,000 req/s with 4 instances, ~45 routing decisions occur between KV utilization updates (~9ms step time). If using <code>kv-utilization:1</code> alone, all 45 decisions see the same stale utilization — severe load imbalance (3x worse TTFT p99).</p>
 <div class="admonition tip">
 <p class="admonition-title">Safe zone for <code>--snapshot-refresh-interval</code></p>
 <p>Below <strong>5ms</strong> (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354%. The default composite profile (<code>prefix-affinity:3, queue-depth:2, kv-utilization:2</code>) is inherently resilient — queue-depth's Immediate signal corrects stale KV signals, mitigating ~99% of the effect.</p>
 </div>
-<h2 id="instance-level-scheduling">Instance-Level Scheduling<a class="headerlink" href="#instance-level-scheduling" title="Permanent link">&para;</a></h2>
-<p>Routing decides <em>which instance</em> receives a request. Scheduling decides <em>what order</em> requests are processed within an instance:</p>
-<table>
-<thead>
-<tr>
-<th>Scheduler</th>
-<th>Strategy</th>
-<th>Flag Value</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>FCFS</strong></td>
-<td>First-Come-First-Served (default)</td>
-<td><code>--scheduler fcfs</code></td>
-</tr>
-<tr>
-<td><strong>Priority-FCFS</strong></td>
-<td>Sort by priority (descending), then FCFS</td>
-<td><code>--scheduler priority-fcfs</code></td>
-</tr>
-<tr>
-<td><strong>SJF</strong></td>
-<td>Shortest Job First — sort by input token count</td>
-<td><code>--scheduler sjf</code></td>
-</tr>
-<tr>
-<td><strong>Reverse-priority</strong></td>
-<td>Pathological — lowest priority first (for testing)</td>
-<td><code>--scheduler reverse-priority</code></td>
-</tr>
-</tbody>
-</table>
-<p>Scheduling interacts with routing: SJF can starve long prompts, Priority-FCFS interacts with SLO classes, and scheduler choice compounds with routing policy choice.</p>
 <h2 id="when-to-use-which-policy">When to Use Which Policy<a class="headerlink" href="#when-to-use-which-policy" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2508,7 +2585,7 @@
 </tr>
 <tr>
 <td>Mixed SLO classes</td>
-<td><code>weighted</code> default + <code>--scheduler priority-fcfs</code> + <code>--priority-policy slo-based</code></td>
+<td><code>weighted</code> default + <a href="../scheduling/">priority scheduling</a></td>
 <td>Routing distributes load; scheduling prioritizes critical requests</td>
 </tr>
 <tr>
@@ -2526,9 +2603,11 @@
 <p>This runs 5 configurations and shows TTFT p99, target distribution, and throughput for each. See <code>examples/routing-comparison.sh</code> for the full script.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
 <ul>
+<li><a href="../scheduling/">Scheduling &amp; Priority</a> — instance-level request ordering</li>
+<li><a href="../admission/">Admission Control</a> — the gate before routing</li>
 <li><a href="../../concepts/architecture/">Cluster Architecture</a> — how the routing pipeline works internally</li>
 <li><a href="../../reference/configuration/#routing-policy">Configuration Reference</a> — all routing flags</li>
-<li><a href="../results/">Interpreting Results</a> — understanding trace summaries and regret analysis</li>
+<li><a href="../results/">Metrics &amp; Results</a> — understanding trace summaries and regret analysis</li>
 </ul>
 
 
@@ -2582,13 +2661,13 @@
         
         
           
-          <a href="../kv-cache/" class="md-footer__link md-footer__link--next" aria-label="Next: KV Cache &amp; Memory">
+          <a href="../admission/" class="md-footer__link md-footer__link--next" aria-label="Next: Admission Control">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                KV Cache & Memory
+                Admission Control
               </div>
             </div>
             <div class="md-footer__button md-icon">
