@@ -20,7 +20,7 @@ This document describes the process for creating a macro-level implementation pl
 4. **Define module contracts per PR boundary** — what does each PR guarantee to the next?
 5. **Identify frozen interfaces** — which interfaces are stable (can be developed against in parallel)?
 6. **Identify flexible internals** — which implementation details may change during micro-planning?
-7. **Convergence review** — `/convergence-review macro-plan <plan-path>` dispatches 8 parallel perspectives and enforces convergence (see [docs/contributing/convergence.md](convergence.md)). Manual alternative: review against each perspective checklist below.
+7. **Convergence review** — Run all 8 perspectives in parallel (or sequentially), applying the [convergence protocol](convergence.md). Fix CRITICAL and IMPORTANT findings, re-run until convergence.
 8. **Human review** — approve before micro-planning begins for any PR in the plan
 
 ## Macro Plan Review Perspectives (8)
@@ -83,11 +83,8 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 - [ ] No Go struct definitions or method implementations (those belong in micro plans)
 - [ ] Extension friction assessed for each new module boundary
 
-## Prerequisites
-
-| Skill | Purpose | Manual Alternative |
-|-------|---------|--------------------|
-| `convergence-review` | Dispatch parallel review perspectives (Step 7) | Review against each perspective checklist above |
+!!! tip "Automation"
+    `/convergence-review macro-plan <plan-path>` dispatches all 8 perspectives and enforces convergence automatically. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 ## References
 
