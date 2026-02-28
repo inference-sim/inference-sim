@@ -24,8 +24,10 @@ type DeploymentConfig struct {
 	TraceLevel      string // "none" (default), "decisions"
 	CounterfactualK int    // number of counterfactual candidates, default 0
 
-	// Snapshot staleness configuration (H3 experiment)
-	SnapshotRefreshInterval int64 // microseconds, 0 = Immediate (default)
+	// Snapshot staleness configuration (H3 experiment, unified in #463)
+	// When > 0, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization)
+	// use Periodic refresh with this interval (microseconds). 0 = Immediate (default).
+	SnapshotRefreshInterval int64
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.

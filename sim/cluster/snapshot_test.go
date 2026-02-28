@@ -183,6 +183,34 @@ func TestSnapshotProvider_DefaultConfig_AllImmediate(t *testing.T) {
 	}
 }
 
+// TestNewObservabilityConfig_NonZeroInterval_AllFieldsPeriodic verifies BC-1:
+// GIVEN a non-zero refresh interval
+// WHEN newObservabilityConfig is called
+// THEN all three fields (QueueDepth, BatchSize, KVUtilization) use Periodic mode
+// with the same interval.
+func TestNewObservabilityConfig_NonZeroInterval_AllFieldsPeriodic(t *testing.T) {
+	config := newObservabilityConfig(5000) // 5ms
+
+	fields := []struct {
+		name string
+		fc   FieldConfig
+	}{
+		{"QueueDepth", config.QueueDepth},
+		{"BatchSize", config.BatchSize},
+		{"KVUtilization", config.KVUtilization},
+	}
+	for _, f := range fields {
+		t.Run(f.name, func(t *testing.T) {
+			if f.fc.Mode != Periodic {
+				t.Errorf("Mode = %d, want Periodic (%d)", f.fc.Mode, Periodic)
+			}
+			if f.fc.Interval != 5000 {
+				t.Errorf("Interval = %d, want 5000", f.fc.Interval)
+			}
+		})
+	}
+}
+
 // TestCachedSnapshotProvider_ImmediateAlwaysReadsLive verifies Immediate mode
 // re-reads from the instance on every Snapshot() call.
 func TestCachedSnapshotProvider_ImmediateAlwaysReadsLive(t *testing.T) {
