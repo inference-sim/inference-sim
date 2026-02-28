@@ -113,7 +113,7 @@ The prefix-affinity scorer maintains a lightweight approximate cache of per-inst
 Key properties:
 - Per-instance LRU with bounded capacity (default: 10,000 blocks)
 - Hierarchical block hashing: each block's hash chains with the prior block's hash for semantic prefix matching
-- Updated synchronously after each routing decision (Tier 1 freshness)
+- Updated synchronously after each routing decision (synchronous freshness)
 - Score = proportion of request's block hashes found in the instance's cache index
 
 ## Signal Freshness
