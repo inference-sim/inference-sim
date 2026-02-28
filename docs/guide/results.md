@@ -1,4 +1,4 @@
-# Interpreting Results
+# Metrics & Results
 
 This guide covers how to read BLIS output — from the primary JSON metrics to anomaly counters, KV cache diagnostics, per-SLO breakdowns, fitness scores, and trace summaries.
 

@@ -1,6 +1,6 @@
 # Routing Policies
 
-This guide covers how BLIS distributes incoming requests across instances in cluster mode. For single-instance simulation, routing is not applicable.
+This guide covers how BLIS distributes incoming requests across instances in cluster mode. For single-instance simulation, routing is not applicable. For instance-level request ordering, see [Scheduling & Priority](scheduling.md).
 
 ```bash
 # Quick example: compare round-robin vs weighted routing
@@ -16,7 +16,6 @@ This guide covers how BLIS distributes incoming requests across instances in clu
 | **Round-robin** | `round-robin` | Cyclic assignment — request N goes to instance N % k |
 | **Least-loaded** | `least-loaded` | Send to the instance with lowest `EffectiveLoad` |
 | **Weighted** | `weighted` | Composable multi-scorer pipeline (default: llm-d parity) |
-| **Prefix-affinity** | `prefix-affinity` | Route to the instance most likely to have matching KV cache |
 | **Always-busiest** | `always-busiest` | Pathological template — sends to the most loaded instance (for testing) |
 
 ## Weighted Scoring (Composable Pipeline)
@@ -36,6 +35,9 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | `kv-utilization` | Inverse KV utilization: `1 - KVUtilization` | kv-cache-utilization-scorer |
 | `load-balance` | Inverse transform: `1 / (1 + effectiveLoad)` | BLIS-native (no llm-d equivalent) |
 
+!!! note "Prefix-affinity is a scorer, not a standalone policy"
+    The `prefix-affinity` scorer operates within the `weighted` routing pipeline, composed with load-balancing scorers. It uses a router-side `PrefixCacheIndex` with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.
+
 ### Default Profile
 
 When `--routing-scorers` is not specified, the default profile is:
@@ -48,34 +50,35 @@ This matches the llm-d Endpoint Picker scoring pipeline. Weights are relative �
 
 ## Signal Freshness
 
-!!! warning "Not all signals update at the same speed"
-    Different scorer signals update through different mechanisms, which matters at high request rates.
+> **Canonical source:** Signal freshness tiers are specified in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md) (INV-7). The descriptions below provide additional user-facing context; `invariants.md` is authoritative if they diverge.
 
-BLIS models three signal update modes (defined in `ObservabilityConfig`):
+!!! warning "Not all routing signals are equally fresh"
+    In production inference serving systems (e.g., llm-d), the router is a separate process from the inference engines. Some signals are maintained at the router level, while others require periodic reporting from instances. BLIS models this asymmetry.
 
-| Mode | Signals | Update Behavior |
-|------|---------|----------------|
-| **Immediate** | QueueDepth, BatchSize | Read from instance state at routing time — always fresh |
-| **Periodic** | KVUtilization | Cached and refreshed on a timer (`--snapshot-refresh-interval`) |
-| **Injected** | PendingRequests | Incremented immediately at routing time by the cluster simulator |
+### Why Signals Have Different Staleness
 
-At 5,000 req/s with 4 instances, ~45 routing decisions occur between KV utilization updates (~9ms step time). If using `kv-utilization:1` alone, all 45 decisions see the same stale utilization → severe load imbalance (3x worse TTFT p99).
+Different signals originate from different places in the system:
+
+- **Router-local signals** are maintained by the router itself — they're always current because the router controls them directly.
+- **Instance-internal signals** live on the inference engine and must be communicated to the router — they're inherently stale by the reporting interval.
+
+BLIS models three signal freshness tiers:
+
+| Tier | Signals | Source | Freshness |
+|------|---------|--------|-----------|
+| **Router-local** | PendingRequests, prefix cache index | Router increments/decrements PendingRequests on route/ack; prefix cache updated after each routing decision | Always fresh — router owns this state |
+| **Instance-reported (Immediate mode)** | QueueDepth, BatchSize | Instance-internal state (scheduler queue, running batch) | In BLIS's default config, read directly from instance memory at routing time — an **idealized simplification**. In production, these would have reporting latency. See [#463](https://github.com/inference-sim/inference-sim/issues/463) for planned realistic staleness. |
+| **Periodic** | KVUtilization, FreeKVBlocks, CacheHitRate | Instance-internal KV cache state | Cached and refreshed on a timer (`--snapshot-refresh-interval`). Models the real-world latency of polling GPU memory state. |
+
+!!! info "DES semantics of 'Immediate' mode"
+    "Immediate" means "re-read from the instance object at query time" — NOT "perfectly synchronized with the simulation clock." At the same clock tick, cluster events are processed before instance events (determinism rule). So a routing decision at time T sees QueueDepth that hasn't yet processed instance events at time T. This is a determinism mechanism (INV-6), not a freshness guarantee.
+
+### Staleness Impact
+
+At 5,000 req/s with 4 instances, ~45 routing decisions occur between KV utilization updates (~9ms step time). If using `kv-utilization:1` alone, all 45 decisions see the same stale utilization — severe load imbalance (3x worse TTFT p99).
 
 !!! tip "Safe zone for `--snapshot-refresh-interval`"
     Below **5ms** (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354%. The default composite profile (`prefix-affinity:3, queue-depth:2, kv-utilization:2`) is inherently resilient — queue-depth's Immediate signal corrects stale KV signals, mitigating ~99% of the effect.
-
-## Instance-Level Scheduling
-
-Routing decides *which instance* receives a request. Scheduling decides *what order* requests are processed within an instance:
-
-| Scheduler | Strategy | Flag Value |
-|-----------|----------|-----------|
-| **FCFS** | First-Come-First-Served (default) | `--scheduler fcfs` |
-| **Priority-FCFS** | Sort by priority (descending), then FCFS | `--scheduler priority-fcfs` |
-| **SJF** | Shortest Job First — sort by input token count | `--scheduler sjf` |
-| **Reverse-priority** | Pathological — lowest priority first (for testing) | `--scheduler reverse-priority` |
-
-Scheduling interacts with routing: SJF can starve long prompts, Priority-FCFS interacts with SLO classes, and scheduler choice compounds with routing policy choice.
 
 ## When to Use Which Policy
 
@@ -83,7 +86,7 @@ Scheduling interacts with routing: SJF can starve long prompts, Priority-FCFS in
 |----------|-------------------|-----|
 | Uniform traffic, no prefix sharing | `least-loaded` or `weighted` with `queue-depth:1` | Load balance is the only signal that matters |
 | RAG with shared system prompts | `weighted` with `prefix-affinity:3,queue-depth:1` | Prefix affinity maximizes KV cache reuse |
-| Mixed SLO classes | `weighted` default + `--scheduler priority-fcfs` + `--priority-policy slo-based` | Routing distributes load; scheduling prioritizes critical requests |
+| Mixed SLO classes | `weighted` default + [priority scheduling](scheduling.md) | Routing distributes load; scheduling prioritizes critical requests |
 | Low traffic (< 10 req/s) | Any | All policies produce equivalent results within 5% |
 
 ## Example: Comparing Policies
@@ -99,6 +102,8 @@ This runs 5 configurations and shows TTFT p99, target distribution, and throughp
 
 ## Further Reading
 
+- [Scheduling & Priority](scheduling.md) — instance-level request ordering
+- [Admission Control](admission.md) — the gate before routing
 - [Cluster Architecture](../concepts/architecture.md) — how the routing pipeline works internally
 - [Configuration Reference](../reference/configuration.md#routing-policy) — all routing flags
-- [Interpreting Results](results.md) — understanding trace summaries and regret analysis
+- [Metrics & Results](results.md) — understanding trace summaries and regret analysis

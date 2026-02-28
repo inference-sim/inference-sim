@@ -2,8 +2,6 @@ package sim
 
 import (
 	"fmt"
-
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // RoutingSnapshot is a lightweight view of instance state for policy decisions.
@@ -199,54 +197,6 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	)
 }
 
-// PrefixAffinity routes requests with matching prefixes to the same instance (cache-aware).
-// On cache miss, falls back to LeastLoaded. Maintains prefix-to-instance mapping.
-// Note: prefixMap grows with unique prefix count and is not evicted. This is acceptable
-// for finite-duration simulations; large-cardinality workloads will consume proportional memory.
-type PrefixAffinity struct {
-	prefixMap map[string]string // prefix hash → instance ID (unbounded; grows with unique prefix count)
-	blockSize int64             // KV cache block size for block-aligned prefix hashing
-}
-
-// Route implements RoutingPolicy for PrefixAffinity.
-// Uses block-aligned hierarchical hashing (same scheme as the weighted-scoring
-// prefix-affinity scorer) so requests sharing block-aligned prefixes route together.
-func (pa *PrefixAffinity) Route(req *Request, state *RouterState) RoutingDecision {
-	snapshots := state.Snapshots
-	if len(snapshots) == 0 {
-		panic("PrefixAffinity.Route: empty snapshots")
-	}
-
-	// Compute block-aligned prefix hashes; use the last (longest prefix) as affinity key
-	blockHashes := hash.ComputeBlockHashes(int(pa.blockSize), req.InputTokens)
-	var prefixHash string
-	if len(blockHashes) > 0 {
-		prefixHash = blockHashes[len(blockHashes)-1]
-	} else {
-		// Tokens shorter than one block: fall back to whole-input hash
-		prefixHash = hash.HashTokens(req.InputTokens)
-	}
-
-	// Check cache for existing mapping
-	if targetID, found := pa.prefixMap[prefixHash]; found {
-		// Verify target still in snapshots (instance may have been removed)
-		for _, snap := range snapshots {
-			if snap.ID == targetID {
-				return NewRoutingDecision(targetID, "prefix-affinity (cache-hit)")
-			}
-		}
-	}
-
-	// Cache miss or stale entry: fallback to LeastLoaded, passing state through
-	ll := &LeastLoaded{}
-	decision := ll.Route(req, state)
-
-	// Update cache with new mapping
-	pa.prefixMap[prefixHash] = decision.TargetInstance
-
-	return NewRoutingDecision(decision.TargetInstance, "prefix-affinity (cache-miss, fallback to least-loaded)")
-}
-
 // AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + PendingRequests).
 // Pathological template for testing load imbalance detection.
 // Ties broken by first occurrence in snapshot order (lowest index).
@@ -304,8 +254,6 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
 		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
-	case "prefix-affinity":
-		return &PrefixAffinity{prefixMap: make(map[string]string), blockSize: blockSize}
 	case "always-busiest":
 		return &AlwaysBusiest{}
 	default:

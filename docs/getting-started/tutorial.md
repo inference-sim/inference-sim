@@ -4,15 +4,19 @@ This tutorial walks through a complete capacity planning exercise: determining h
 
 **Scenario:** You're deploying LLaMA 3.1 8B on H100 GPUs with TP=2. Your SLO is TTFT p99 < 500ms. You need to find the minimum number of instances for 500 requests/second.
 
-## Step 1: Understand Instance Capacity
+## Step 1: Estimate Instance Capacity
 
-Before simulating, estimate the theoretical capacity of a single instance. BLIS uses beta coefficients to model step time:
+Before scaling up, measure the throughput of a single instance empirically. This works regardless of which [latency model](../guide/latency-models.md) you use (blackbox or roofline).
 
+Run a single instance at low load to establish the baseline service rate:
+
+```bash
+./blis run \
+  --model meta-llama/llama-3.1-8b-instruct \
+  --rate 10 --num-requests 50
 ```
-step_time ≈ beta0 + beta1 × cache_miss_tokens + beta2 × decode_tokens
-```
 
-For LLaMA 3.1 8B / H100 / TP=2, the default beta coefficients are `[6910.42, 17.67, 2.84]` (from `defaults.yaml`), giving a step time of approximately 9-17ms depending on batch composition. With a typical workload (512 input / 512 output tokens), a single instance can process roughly **57 requests/second**.
+Check the `responses_per_sec` value in the output — this is the single-instance throughput at low utilization. For LLaMA 3.1 8B / H100 / TP=2 with default workload (512 input / 512 output tokens), you'll see roughly **57 requests/second**.
 
 This means for 500 req/s, you need at minimum `ceil(500/57) ≈ 9` instances. Let's verify with simulation.
 
@@ -138,5 +142,5 @@ From the simulations above, find the minimum instance count where `ttft_p99_ms <
 
 - **[Routing Policies](../guide/routing.md)** — deep dive into scorer composition and signal freshness
 - **[KV Cache & Memory](../guide/kv-cache.md)** — tune KV blocks, prefix caching, and chunked prefill
-- **[Interpreting Results](../guide/results.md)** — understand all output fields and common patterns
+- **[Metrics & Results](../guide/results.md)** — understand all output fields and common patterns
 - **[Hypothesis Experimentation](../guide/experimentation.md)** — run rigorous experiments with the `/hypothesis-experiment` skill

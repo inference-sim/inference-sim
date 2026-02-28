@@ -28,19 +28,11 @@ Running these experiments on real GPUs costs thousands of dollars and takes days
 
 !!! warning "Setting expectations"
     - **Not a benchmark** — BLIS simulates serving behavior, it does not generate real GPU load
-    - **Not a load generator** — use tools like `inference-perf` or `genai-perf` for real traffic generation
-    - **Not cycle-accurate** — BLIS uses trained regression coefficients or analytical roofline estimates, not GPU microarchitecture simulation. It trades cycle-accuracy for speed and configurability
-    - **Homogeneous instances only** — all simulated instances share the same configuration (model, GPU, TP). Mixed-fleet modeling is not yet supported
+    - **Not primarily a load generator** — BLIS focuses on simulation. Real-mode traffic generation against OpenAI-compatible endpoints is available but experimental. For production load testing, use tools like `inference-perf` or `genai-perf`
 
-## Key Capabilities
+## Key Features
 
-- **Deterministic execution** — same seed produces byte-identical output across runs, enabling controlled experiments
-- **Two latency modes** — blackbox (data-driven coefficients) and roofline (analytical FLOPs/bandwidth)
-- **Pluggable policies** — routing, admission, scheduling, and priority policies are all configurable
-- **KV cache modeling** — block allocation, prefix caching, tiered GPU+CPU offload, chunked prefill
-- **Multi-client workloads** — model heterogeneous traffic with SLO classes, arrival processes, and token distributions
-- **Decision tracing** — log every routing decision with counterfactual regret analysis
-- **Hypothesis experimentation** — built-in framework for rigorous, reproducible experiments
+See the [Home page feature list](../index.md#key-features) for the full capabilities catalog, including the workload specification DSL, metrics pipeline, latency model backends, and policy framework.
 
 ## Next Steps
 

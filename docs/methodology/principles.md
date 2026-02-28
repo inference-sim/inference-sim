@@ -1,5 +1,8 @@
 # Discovered Principles
 
+!!! note "Draft — not in site navigation"
+    This page is intentionally excluded from the MkDocs navigation while the simulator stabilizes. The principles below were discovered in early Strategy Evolution experiments and may be revised as the simulator matures. Accessible by direct URL for reference.
+
 Principles extracted from 30 iterations of [Strategy Evolution](strategy-evolution.md) across two parallel experiment tracks: routing optimization (19 iterations) and scheduling optimization (11 iterations). Each principle is a concise, falsifiable statement grounded in experimental evidence.
 
 !!! warning "Simulation Context"

@@ -747,7 +747,7 @@ func TestClusterSimulator_RoutingPolicy_LeastLoaded(t *testing.T) {
 
 // TestClusterSimulator_AllRoutingPolicies_Smoke verifies all policies are exercisable.
 func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
-	policies := []string{"round-robin", "least-loaded", "weighted", "prefix-affinity"}
+	policies := []string{"round-robin", "least-loaded", "weighted"}
 
 	for _, policyName := range policies {
 		t.Run(policyName, func(t *testing.T) {
@@ -1057,7 +1057,6 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 		{"round-robin/fcfs/2inst", 2, "round-robin", nil, "fcfs", "constant", "always-admit"},
 		{"least-loaded/fcfs/3inst", 3, "least-loaded", nil, "fcfs", "constant", "always-admit"},
 		{"weighted/fcfs/2inst", 2, "weighted", sim.DefaultScorerConfigs(), "fcfs", "constant", "always-admit"},
-		{"prefix-affinity/fcfs/2inst", 2, "prefix-affinity", nil, "fcfs", "constant", "always-admit"},
 		{"round-robin/sjf/3inst", 3, "round-robin", nil, "sjf", "constant", "always-admit"},
 		{"round-robin/priority-fcfs/slo/2inst", 2, "round-robin", nil, "priority-fcfs", "slo-based", "always-admit"},
 		{"least-loaded/priority-fcfs/slo/3inst", 3, "least-loaded", nil, "priority-fcfs", "slo-based", "always-admit"},
@@ -1118,21 +1117,20 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 	}
 }
 
-// TestClusterSimulator_Determinism_PrefixAffinity_ByteIdentical verifies INV-6
-// for routing policies that use stateful scorers with internal maps (promoted from H13):
-// GIVEN identical config with prefix-affinity or weighted routing (includes prefix scorer)
+// TestClusterSimulator_Determinism_WeightedPrefixScorer_ByteIdentical verifies INV-6
+// for weighted routing with stateful scorers that use internal maps (promoted from H13):
+// GIVEN identical config with weighted routing (includes prefix-affinity scorer)
 // WHEN run twice with same seed
 // THEN per-request metrics JSON is byte-identical.
 //
 // This specifically targets the PrefixCacheIndex LRU which uses map iteration internally.
 // Non-deterministic map iteration in scoring or eviction would cause divergence here.
-func TestClusterSimulator_Determinism_PrefixAffinity_ByteIdentical(t *testing.T) {
+func TestClusterSimulator_Determinism_WeightedPrefixScorer_ByteIdentical(t *testing.T) {
 	policies := []struct {
 		name          string
 		routingPolicy string
 		scorerConfigs []sim.ScorerConfig
 	}{
-		{"prefix-affinity", "prefix-affinity", sim.DefaultScorerConfigs()},
 		{"weighted-default", "weighted", sim.DefaultScorerConfigs()},
 	}
 

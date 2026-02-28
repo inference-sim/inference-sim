@@ -9,7 +9,7 @@
 #
 # Available policies:
 #   admission: always-admit (default), token-bucket, reject-all
-#   routing:   round-robin (default), least-loaded, weighted, prefix-affinity, always-busiest
+#   routing:   round-robin (default), least-loaded, weighted, always-busiest
 #   priority:  constant (default), slo-based, inverted-slo
 #   scheduler: fcfs (default), priority-fcfs, sjf, reverse-priority
 #

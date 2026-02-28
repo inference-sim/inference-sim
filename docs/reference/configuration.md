@@ -122,7 +122,7 @@ Controls how admitted requests are assigned to instances. See [Cluster Architect
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--routing-policy` | string | "round-robin" | Policy name: `round-robin`, `least-loaded`, `weighted`, `prefix-affinity`, `always-busiest`. |
+| `--routing-policy` | string | "round-robin" | Policy name: `round-robin`, `least-loaded`, `weighted`, `always-busiest`. |
 | `--routing-latency` | int64 | 0 | Routing decision latency in microseconds. |
 | `--routing-scorers` | string | "" | Scorer configuration for `weighted` policy. Format: `name:weight,name:weight,...` |
 | `--snapshot-refresh-interval` | int64 | 0 | KV utilization snapshot refresh interval in microseconds. 0 = immediate refresh. |

@@ -1,6 +1,6 @@
 # Supported Models
 
-All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for blackbox mode. Models with a HuggingFace `config.json` in `model_configs/` additionally support [roofline mode](../guide/roofline.md).
+All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for blackbox mode. Models with a HuggingFace `config.json` in `model_configs/` additionally support [roofline mode](../guide/latency-models.md#roofline-mode-analytical).
 
 ## Dense Models
 
