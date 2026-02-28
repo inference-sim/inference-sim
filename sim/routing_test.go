@@ -152,15 +152,31 @@ func TestLeastLoaded_LoadBasedSelection(t *testing.T) {
 	}
 }
 
-// TestLeastLoaded_PendingRequests_BreaksTie verifies that PendingRequests is included
+// TestRoutingSnapshot_EffectiveLoad_IncludesInFlightRequests verifies BC-5:
+// GIVEN a RoutingSnapshot with QueueDepth=2, BatchSize=1, InFlightRequests=3
+// WHEN EffectiveLoad() is called
+// THEN the result is 6
+func TestRoutingSnapshot_EffectiveLoad_IncludesInFlightRequests(t *testing.T) {
+	snap := RoutingSnapshot{
+		ID:               "test",
+		QueueDepth:       2,
+		BatchSize:        1,
+		InFlightRequests: 3,
+	}
+	if got := snap.EffectiveLoad(); got != 6 {
+		t.Errorf("EffectiveLoad() = %d, want 6", got)
+	}
+}
+
+// TestLeastLoaded_InFlightRequests_BreaksTie verifies that InFlightRequests is included
 // in load calculation, preventing pile-on at high request rates (#175).
-func TestLeastLoaded_PendingRequests_BreaksTie(t *testing.T) {
+func TestLeastLoaded_InFlightRequests_BreaksTie(t *testing.T) {
 	policy := NewRoutingPolicy("least-loaded", nil, 16)
 
-	// GIVEN two instances with equal QueueDepth+BatchSize but different PendingRequests
+	// GIVEN two instances with equal QueueDepth+BatchSize but different InFlightRequests
 	snapshots := []RoutingSnapshot{
-		{ID: "instance_0", QueueDepth: 5, BatchSize: 3, PendingRequests: 4},
-		{ID: "instance_1", QueueDepth: 5, BatchSize: 3, PendingRequests: 0},
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 3, InFlightRequests: 4},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 3, InFlightRequests: 0},
 	}
 
 	// WHEN routing a request
@@ -368,15 +384,15 @@ func TestWeightedScoring_NilConfigs_UsesDefaults(t *testing.T) {
 	}
 }
 
-// TestWeightedScoring_PendingRequests_AffectsScorers verifies that PendingRequests
+// TestWeightedScoring_InFlightRequests_AffectsScorers verifies that InFlightRequests
 // affects queue-depth and load-balance scorers.
-func TestWeightedScoring_PendingRequests_AffectsScorers(t *testing.T) {
+func TestWeightedScoring_InFlightRequests_AffectsScorers(t *testing.T) {
 	policy := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "load-balance", Weight: 1.0}}, 16)
 
-	// GIVEN two instances with equal QueueDepth but different PendingRequests
+	// GIVEN two instances with equal QueueDepth but different InFlightRequests
 	snapshots := []RoutingSnapshot{
-		{ID: "instance_0", QueueDepth: 0, PendingRequests: 3},
-		{ID: "instance_1", QueueDepth: 0, PendingRequests: 0},
+		{ID: "instance_0", QueueDepth: 0, InFlightRequests: 3},
+		{ID: "instance_1", QueueDepth: 0, InFlightRequests: 0},
 	}
 
 	// WHEN routing a request
@@ -438,15 +454,15 @@ func TestAlwaysBusiest_RouteToHighestLoad(t *testing.T) {
 	}
 }
 
-// TestAlwaysBusiest_PendingRequests_IncludedInLoad verifies that PendingRequests
+// TestAlwaysBusiest_InFlightRequests_IncludedInLoad verifies that InFlightRequests
 // is included in AlwaysBusiest load calculation (#175).
-func TestAlwaysBusiest_PendingRequests_IncludedInLoad(t *testing.T) {
+func TestAlwaysBusiest_InFlightRequests_IncludedInLoad(t *testing.T) {
 	policy := NewRoutingPolicy("always-busiest", nil, 16)
 
-	// GIVEN two instances with equal QueueDepth+BatchSize but different PendingRequests
+	// GIVEN two instances with equal QueueDepth+BatchSize but different InFlightRequests
 	snapshots := []RoutingSnapshot{
-		{ID: "instance_0", QueueDepth: 5, BatchSize: 3, PendingRequests: 0},
-		{ID: "instance_1", QueueDepth: 5, BatchSize: 3, PendingRequests: 4},
+		{ID: "instance_0", QueueDepth: 5, BatchSize: 3, InFlightRequests: 0},
+		{ID: "instance_1", QueueDepth: 5, BatchSize: 3, InFlightRequests: 4},
 	}
 
 	req := &Request{ID: "r1"}

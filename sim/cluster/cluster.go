@@ -32,7 +32,7 @@ type ClusterSimulator struct {
 	rejectedRequests       int // EC-2: count of requests rejected by admission policy
 	trace                  *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests   []*sim.Request // Pre-generated requests (all workload paths unified)
-	pendingRequests        map[string]int // instance ID → routed-but-not-queued count (#170)
+	inFlightRequests        map[string]int // instance ID → dispatched-but-not-completed count (#463)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -77,7 +77,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
 		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
 		trace:                simTrace,
-		pendingRequests:      make(map[string]int, config.NumInstances),
+		inFlightRequests:      make(map[string]int, config.NumInstances),
 	}
 
 	// Startup warning: horizon too small for pipeline (BC-1)
@@ -165,19 +165,19 @@ func (c *ClusterSimulator) Run() error {
 			// WaitQ.PrependFront() in preempt() (sim/simulator.go), NOT via
 			// QueuedEvent. Therefore preemption cannot trigger a false decrement here.
 			if _, ok := ev.(*sim.QueuedEvent); ok {
-				if c.pendingRequests[instID] > 0 {
-					c.pendingRequests[instID]--
+				if c.inFlightRequests[instID] > 0 {
+					c.inFlightRequests[instID]--
 				} else {
-					logrus.Debugf("QueuedEvent for %s but pendingRequests already 0 (no-op)", instID)
+					logrus.Debugf("QueuedEvent for %s but inFlightRequests already 0 (no-op)", instID)
 				}
 			}
 		}
 	}
 
 	// 4. Post-simulation invariant: all pending requests should have drained
-	for instID, pending := range c.pendingRequests {
+	for instID, pending := range c.inFlightRequests {
 		if pending != 0 {
-			logrus.Warnf("post-simulation: pendingRequests[%s] = %d, expected 0 — possible bookkeeping bug", instID, pending)
+			logrus.Warnf("post-simulation: inFlightRequests[%s] = %d, expected 0 — possible bookkeeping bug", instID, pending)
 		}
 	}
 

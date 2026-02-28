@@ -92,8 +92,8 @@ func NewCachedSnapshotProvider(instances map[InstanceID]*InstanceSimulator, conf
 }
 
 // Snapshot returns a RoutingSnapshot, refreshing fields based on their configured mode.
-// PendingRequests is NOT set here — it is injected by buildRouterState() which has
-// access to the cluster-level pending request tracking.
+// InFlightRequests is NOT set here — it is injected by buildRouterState() which has
+// access to the cluster-level in-flight request tracking.
 func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.RoutingSnapshot {
 	inst := p.instances[id]
 	snap := p.cache[id]

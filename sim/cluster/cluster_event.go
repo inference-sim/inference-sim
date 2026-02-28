@@ -62,7 +62,7 @@ func buildRouterState(cs *ClusterSimulator) *sim.RouterState {
 	snapshots := make([]sim.RoutingSnapshot, len(cs.instances))
 	for i, inst := range cs.instances {
 		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
-		snap.PendingRequests = cs.pendingRequests[string(inst.ID())]
+		snap.InFlightRequests = cs.inFlightRequests[string(inst.ID())]
 		snapshots[i] = snap
 	}
 	return &sim.RouterState{
@@ -182,7 +182,7 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 		if string(inst.ID()) == decision.TargetInstance {
 			// Increment pending AFTER target validation — gives next routing decision
 			// visibility into this routing decision (#170)
-			cs.pendingRequests[decision.TargetInstance]++
+			cs.inFlightRequests[decision.TargetInstance]++
 			inst.InjectRequestOnline(e.request, e.time)
 			return
 		}

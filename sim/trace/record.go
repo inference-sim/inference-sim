@@ -16,7 +16,7 @@ type CandidateScore struct {
 	Score           float64
 	QueueDepth      int
 	BatchSize       int
-	PendingRequests int
+	InFlightRequests int
 	KVUtilization   float64
 	FreeKVBlocks    int64
 }

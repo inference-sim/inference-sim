@@ -121,8 +121,8 @@ func TestLoadBalanceOnly_EquivalentToLeastLoaded(t *testing.T) {
 			{ID: "c", QueueDepth: 7, BatchSize: 0},
 		},
 		{
-			{ID: "a", QueueDepth: 5, BatchSize: 5, PendingRequests: 3},
-			{ID: "b", QueueDepth: 5, BatchSize: 5, PendingRequests: 0},
+			{ID: "a", QueueDepth: 5, BatchSize: 5, InFlightRequests: 3},
+			{ID: "b", QueueDepth: 5, BatchSize: 5, InFlightRequests: 0},
 		},
 		{
 			{ID: "a", QueueDepth: 0, BatchSize: 0},
@@ -130,8 +130,8 @@ func TestLoadBalanceOnly_EquivalentToLeastLoaded(t *testing.T) {
 			{ID: "c", QueueDepth: 0, BatchSize: 0},
 		},
 		{
-			{ID: "a", QueueDepth: 100, BatchSize: 50, PendingRequests: 25},
-			{ID: "b", QueueDepth: 1, BatchSize: 0, PendingRequests: 0},
+			{ID: "a", QueueDepth: 100, BatchSize: 50, InFlightRequests: 25},
+			{ID: "b", QueueDepth: 1, BatchSize: 0, InFlightRequests: 0},
 		},
 	}
 
@@ -153,9 +153,9 @@ func TestLoadBalanceOnly_EquivalentToLeastLoaded(t *testing.T) {
 
 func TestScoreQueueDepth_MinMaxNormalization(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 10, BatchSize: 0, PendingRequests: 0}, // highest load
-		{ID: "b", QueueDepth: 5, BatchSize: 0, PendingRequests: 0},  // middle load
-		{ID: "c", QueueDepth: 0, BatchSize: 0, PendingRequests: 0},  // lowest load
+		{ID: "a", QueueDepth: 10, BatchSize: 0, InFlightRequests: 0}, // highest load
+		{ID: "b", QueueDepth: 5, BatchSize: 0, InFlightRequests: 0},  // middle load
+		{ID: "c", QueueDepth: 0, BatchSize: 0, InFlightRequests: 0},  // lowest load
 	}
 	scores := scoreQueueDepth(nil, snapshots)
 	// Monotonicity: lower load → higher score
@@ -176,11 +176,11 @@ func TestScoreQueueDepth_UniformLoad_AllScoreOne(t *testing.T) {
 	assert.Equal(t, 1.0, scores["b"])
 }
 
-func TestScoreQueueDepth_IncludesPendingRequests(t *testing.T) {
+func TestScoreQueueDepth_IncludesInFlightRequests(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 0, PendingRequests: 5}, // load=5
-		{ID: "b", QueueDepth: 5, PendingRequests: 0}, // load=5
-		{ID: "c", QueueDepth: 0, PendingRequests: 0}, // load=0 → best
+		{ID: "a", QueueDepth: 0, InFlightRequests: 5}, // load=5
+		{ID: "b", QueueDepth: 5, InFlightRequests: 0}, // load=5
+		{ID: "c", QueueDepth: 0, InFlightRequests: 0}, // load=0 → best
 	}
 	scores := scoreQueueDepth(nil, snapshots)
 	assert.Equal(t, scores["a"], scores["b"], "equal effective load → equal score")
