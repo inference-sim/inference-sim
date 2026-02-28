@@ -177,10 +177,10 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 		cs.trace.RecordRouting(record)
 	}
 
-	// Find target instance, increment pending count, and inject request
+	// Find target instance, increment in-flight count, and inject request
 	for _, inst := range cs.instances {
 		if string(inst.ID()) == decision.TargetInstance {
-			// Increment pending AFTER target validation — gives next routing decision
+			// Increment in-flight AFTER target validation — gives next routing decision
 			// visibility into this routing decision (#170)
 			cs.inFlightRequests[decision.TargetInstance]++
 			inst.InjectRequestOnline(e.request, e.time)

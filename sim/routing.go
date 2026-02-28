@@ -5,8 +5,9 @@ import (
 )
 
 // RoutingSnapshot is a lightweight view of instance state for policy decisions.
-// Populated by ClusterSimulator from cluster.InstanceSnapshot when building RouterState
-// (used by both AdmissionPolicy and RoutingPolicy).
+// Populated by CachedSnapshotProvider reading InstanceSimulator query methods,
+// with InFlightRequests injected by buildRouterState() at the cluster level.
+// Used by both AdmissionPolicy and RoutingPolicy.
 // Timestamp is intentionally excluded: snapshot freshness is managed by
 // CachedSnapshotProvider and is not a policy concern.
 type RoutingSnapshot struct {
@@ -163,7 +164,7 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		dimScores := scorer(req, snapshots)
 		for _, snap := range snapshots {
 			s := dimScores[snap.ID]
-			// Clamp to [0,1] per INV-1
+			// Clamp to [0,1] per scorer contract
 			if s < 0 {
 				s = 0
 			}

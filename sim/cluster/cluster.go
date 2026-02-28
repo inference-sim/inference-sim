@@ -175,7 +175,8 @@ func (c *ClusterSimulator) Run() error {
 			if delta > 0 {
 				c.inFlightRequests[instID] -= delta
 				if c.inFlightRequests[instID] < 0 {
-					logrus.Warnf("inFlightRequests[%s] went negative (%d) — bookkeeping bug", instID, c.inFlightRequests[instID])
+					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d) — bookkeeping bug",
+					instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore)
 					c.inFlightRequests[instID] = 0
 				}
 			}
