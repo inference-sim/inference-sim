@@ -3,7 +3,7 @@
 This template defines the output format for a macro-level implementation plan. Use this when a feature spans 2+ PRs and requires a dependency DAG between them.
 
 !!! note "For Claude Code users"
-    The macro-planning skill generates plans from this template automatically.
+    The `writing-plans` skill generates plans from this template automatically.
     The agent prompt version is at [`macro-plan-prompt.md`](macro-plan-prompt.md).
 
 **Prerequisite:** Before writing a macro plan, read [design-guidelines.md](design-guidelines.md) — it covers DES foundations, module architecture, and the extension framework. The macro plan must be consistent with these guidelines.
@@ -29,7 +29,11 @@ A macro plan describes **what to build and in what order**, not how to implement
 
 ## Sections
 
-### A) High-Level Objectives and Model Scoping
+### A) Executive Summary
+
+Under 15 lines. What this feature adds, why it matters, and how it fits in the system. This is the human-review core — a reviewer should understand the plan's scope from this section alone.
+
+### B) High-Level Objectives and Model Scoping
 
 - 3–7 crisp objectives
 - Explicit non-goals
@@ -39,7 +43,7 @@ A macro plan describes **what to build and in what order**, not how to implement
 |-----------|---------|------------|---------|---------------|
 | *(example)* Scaling latency | — | Fixed delay | — | Same steady-state throughput |
 
-### B) Concept Model
+### C) Concept Model
 
 Building blocks and their interactions. Each block uses the module contract template from [design-guidelines.md](design-guidelines.md) Section 4.3:
 
@@ -56,11 +60,13 @@ Include a **real-system correspondence** table mapping building blocks to llm-d 
 |----------------|-------|------|--------|-------|
 | *(example)* Router | EPP + routing filter | N/A | N/A | — |
 
-### C) Architectural Evolution
+The concept model must fit in under 80 lines.
+
+### D) Architectural Evolution
 
 Current architecture → target architecture. What new packages, interfaces, or event types are introduced?
 
-### D) PR Series (Ordered)
+### E) PR Series (Ordered)
 
 Each PR entry includes:
 - Scope and deliverables
@@ -69,31 +75,31 @@ Each PR entry includes:
 - Dependencies (which PRs must merge before this one starts)
 - Whether interfaces are frozen or flexible at this stage
 
-### E) Frozen Interfaces
+### F) Frozen Interfaces
 
 Interfaces that are stable and can be developed against in parallel. Only include signatures for code that has already been merged. Aspirations about unwritten code use behavioral descriptions, not Go syntax.
 
-### F) Dependency DAG
+### G) Dependency DAG
 
 Visual or tabular dependency graph showing which PRs can be parallelized and which are sequential.
 
-### G) Risk Register
+### H) Risk Register
 
 For each non-obvious architectural decision:
 - Risk description
 - Cost of being wrong (in PRs of rework)
-- Validation gate (if cost ≥ 3 PRs, validation is mandatory with specific success criteria)
+- **If cost-of-being-wrong ≥ 3 PRs, validation is MANDATORY** with specific success criteria and an abort plan
 - Abort plan (what changes if validation fails)
 
-### H) Cross-Cutting Infrastructure
+### I) Cross-Cutting Infrastructure
 
 Test infrastructure, documentation, and CI changes — each assigned to a specific PR. CLAUDE.md update ownership: the PR that causes the change updates it.
 
-### I) Extension Friction Assessment
+### J) Extension Friction Assessment
 
 For each new module boundary: how many files must change to add one more variant? Compare against reference targets in [design-guidelines.md](design-guidelines.md) Section 4.5.
 
-### J) Design Bug Prevention
+### K) Design Bug Prevention
 
 Checklist to prevent common macro-plan anti-patterns:
 
@@ -101,8 +107,10 @@ Checklist to prevent common macro-plan anti-patterns:
 - [ ] No documentation drift (CLAUDE.md updated in same PR that causes the change)
 - [ ] No test infrastructure duplication (shared packages created early)
 - [ ] No golden dataset staleness (regeneration steps included)
-- [ ] No DES-specific anti-patterns: Type Catalog trap, fidelity for its own sake, golden without invariant
+- [ ] No DES-specific anti-patterns: Type Catalog trap, fidelity for its own sake, golden without invariant, mixing exogenous and endogenous events
+- [ ] New events classified as exogenous (external arrivals) or endogenous (internal scheduling)
 - [ ] State vs statistics separation maintained (event-driven state vs aggregated statistics)
+- [ ] Model scoping applies Banks et al. criteria (what questions does this answer? what must be modeled vs simplified vs omitted?)
 
 ---
 

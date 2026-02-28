@@ -231,7 +231,7 @@ Execute all tasks sequentially. Stop only on test failure, lint failure, or buil
 
 ### Step 4.5: Review the Code
 
-Review the implementation from 10 targeted perspectives, applying the [convergence protocol](convergence.md): zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same two-stage structure as Step 2.5.
+Review the implementation from 10 targeted perspectives, applying the [convergence protocol](convergence.md): zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same two-stage structure as Step 2.5 (holistic pre-pass, then formal convergence), but the 10 perspectives differ: plan review checks design soundness; code review checks implementation quality.
 
 **Two-stage review:**
 
@@ -463,7 +463,10 @@ The workflow is the same regardless of source (macro plan, design doc, GitHub is
 
 ### Headless Mode for Reviews (Context Overflow Workaround)
 
-If multi-agent review passes hit "Prompt is too long" errors during consolidation, switch to headless mode: run each review agent as an isolated invocation that writes findings to a file, then consolidate in a lightweight final pass.
+If multi-agent review passes hit context overflow during consolidation, run each review as an isolated invocation that writes findings to a file, then consolidate in a lightweight final pass.
+
+!!! tip "Requires Claude Code"
+    This workaround uses the `claude` CLI tool. Contributors without Claude Code can run reviews manually using the perspective checklists in Steps 2.5 and 4.5.
 
 ```bash
 #!/bin/bash

@@ -30,6 +30,17 @@ Every plan starts with this header:
 
 ---
 
+## Phase 0: Component Context (before writing the plan)
+
+Before writing the plan, identify this PR's place in the system:
+
+1. Which building block is being added or modified?
+2. What are the adjacent blocks it interacts with?
+3. What invariants does this PR touch?
+4. **Construction Site Audit:** For every struct this PR adds fields to, grep for ALL places that struct is constructed. List each site. If there are multiple construction sites, the plan must either add a canonical constructor or update every site explicitly.
+
+---
+
 ## Part 1: Design Validation (target <120 lines)
 
 ### A) Executive Summary
@@ -166,10 +177,17 @@ Before implementation, verify:
 
 ## Appendix: File-Level Implementation Details
 
+**This section has NO LENGTH LIMIT.** It should contain everything needed to implement the PR without further codebase exploration.
+
 For each file to be created or modified, provide:
+
+**File: `exact/path/to/file.go`**
 
 - **Purpose:** 1–2 sentences
 - **Complete implementation:** All type definitions, function implementations, test code
-- **Key notes:** Event ordering (Priority? Timestamp? Secondary tie-breaking?), RNG subsystem usage, metrics collection, state mutation, error handling approach
-
-This section has no length limit. It should contain everything needed to implement the PR without further codebase exploration.
+- **Key implementation notes:**
+    - **Event ordering:** Priority? Timestamp? Secondary tie-breaking?
+    - **RNG usage:** Which subsystem from PartitionedRNG?
+    - **Metrics:** What metrics are collected? Where aggregated?
+    - **State mutation:** What gets modified? Who owns it?
+    - **Error handling:** Panic, return error, or log-and-continue?
