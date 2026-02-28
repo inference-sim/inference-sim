@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -176,6 +177,149 @@ func TestClusterSimulator_InFlightRequests_CounterfactualIncludesInFlight(t *tes
 	if !foundPending {
 		t.Error("expected at least one candidate with InFlightRequests > 0, " +
 			"but all were 0 — field may not be populated from cluster state")
+	}
+}
+
+// TestClusterSimulator_InFlightRequests_DrainsToZeroAfterCompletion verifies BC-4:
+// GIVEN a cluster with requests that all complete before horizon
+// WHEN simulation ends
+// THEN all inFlightRequests values are 0
+func TestClusterSimulator_InFlightRequests_DrainsToZeroAfterCompletion(t *testing.T) {
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:       10000000,
+			Seed:          42,
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+		},
+		NumInstances:         2,
+		RoutingPolicy:        "weighted",
+		RoutingScorerConfigs: sim.DefaultScorerConfigs(),
+	}
+	requests := testGenerateRequests(42, 10000000, 2.0/1e6, 6,
+		0, 16, 0, 16, 16, 8, 0, 8, 8)
+	cs := NewClusterSimulator(config, requests)
+
+	mustRun(t, cs)
+
+	for instID, inflight := range cs.inFlightRequests {
+		if inflight != 0 {
+			t.Errorf("instance %s: inFlightRequests = %d after completion, want 0", instID, inflight)
+		}
+	}
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests == 0 {
+		t.Error("no requests completed — test setup issue")
+	}
+}
+
+// TestClusterSimulator_InFlightRequests_DroppedUnservable_Decrements verifies BC-7:
+// GIVEN a cluster where TotalKVBlocks is too small for some requests
+// WHEN requests are routed and some are dropped as unservable
+// THEN inFlightRequests drains correctly (accounting for drops)
+func TestClusterSimulator_InFlightRequests_DroppedUnservable_Decrements(t *testing.T) {
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:       10000000,
+			Seed:          42,
+			KVCacheConfig: sim.NewKVCacheConfig(5, 16, 0, 0, 0, 0), // Very small — will force drops
+			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+		},
+		NumInstances: 1,
+	}
+	// Requests with large input that exceeds KV capacity
+	reqs := make([]*sim.Request, 3)
+	for i := range reqs {
+		reqs[i] = &sim.Request{
+			ID:           fmt.Sprintf("drop_req_%d", i),
+			ArrivalTime:  int64(i * 1000),
+			InputTokens:  make([]int, 200), // 200 tokens / 16 block_size = 13 blocks > 5 total
+			OutputTokens: make([]int, 8),
+			State:        sim.StateQueued,
+		}
+	}
+	cs := NewClusterSimulator(config, reqs)
+	mustRun(t, cs)
+
+	// All requests should be dropped as unservable
+	m := cs.AggregatedMetrics()
+	if m.DroppedUnservable == 0 {
+		t.Fatal("expected DroppedUnservable > 0 — test setup issue (KV blocks too large)")
+	}
+
+	// InFlightRequests must still drain to match expected
+	for _, inst := range cs.Instances() {
+		instID := string(inst.ID())
+		inflight := cs.inFlightRequests[instID]
+		im := inst.Metrics()
+		expected := im.StillQueued + im.StillRunning
+		if inflight != expected {
+			t.Errorf("instance %s: inFlightRequests=%d, expected %d (StillQueued=%d + StillRunning=%d)",
+				instID, inflight, expected, im.StillQueued, im.StillRunning)
+		}
+	}
+}
+
+// TestClusterSimulator_InFlightRequests_CompletionBasedDecrement verifies BC-3:
+// GIVEN requests routed with routing latency
+// WHEN a request enters the queue (QueuedEvent fires)
+// THEN InFlightRequests does NOT decrement (stays elevated)
+// AND InFlightRequests decrements only when the request completes
+func TestClusterSimulator_InFlightRequests_CompletionBasedDecrement(t *testing.T) {
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:       10000000,
+			Seed:          42,
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+		},
+		NumInstances:    1,
+		RoutingLatency:  100,
+		TraceLevel:      "decisions",
+		CounterfactualK: 1,
+	}
+	reqs := make([]*sim.Request, 4)
+	for i := range reqs {
+		reqs[i] = &sim.Request{
+			ID:           fmt.Sprintf("causal_req_%d", i),
+			ArrivalTime:  0,
+			InputTokens:  make([]int, 16),
+			OutputTokens: make([]int, 8),
+			State:        sim.StateQueued,
+		}
+	}
+	cs := NewClusterSimulator(config, reqs)
+	mustRun(t, cs)
+
+	// Key assertion: at least one routing decision sees InFlightRequests > QueueDepth + BatchSize
+	// This proves the in-flight window extends beyond queue absorption
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace")
+	}
+	foundElevated := false
+	for _, r := range tr.Routings {
+		for _, c := range r.Candidates {
+			if c.InFlightRequests > c.QueueDepth+c.BatchSize {
+				foundElevated = true
+				break
+			}
+		}
+	}
+	if !foundElevated {
+		t.Error("expected at least one routing decision where InFlightRequests > QueueDepth + BatchSize, " +
+			"proving the in-flight window extends beyond queue absorption")
+	}
+
+	// Post-simulation: must drain per BC-4
+	for instID, inflight := range cs.inFlightRequests {
+		if inflight != 0 {
+			t.Errorf("instance %s: inFlightRequests = %d, want 0", instID, inflight)
+		}
 	}
 }
 

@@ -155,36 +155,51 @@ func (c *ClusterSimulator) Run() error {
 			if c.clock > c.config.Horizon {
 				break
 			}
-			instID := string(c.instances[instanceIdx].ID())
-			ev := c.instances[instanceIdx].ProcessNextEvent()
-			// Causal decrement: QueuedEvent is the definitive moment a request
-			// enters the WaitQ, meaning it was absorbed from pending (#178).
-			// This replaces the fragile QueueDepth before/after heuristic.
-			//
-			// Preemption safety (#192): preemption re-enqueues via direct
-			// WaitQ.PrependFront() in preempt() (sim/simulator.go), NOT via
-			// QueuedEvent. Therefore preemption cannot trigger a false decrement here.
-			if _, ok := ev.(*sim.QueuedEvent); ok {
-				if c.inFlightRequests[instID] > 0 {
-					c.inFlightRequests[instID]--
-				} else {
-					logrus.Debugf("QueuedEvent for %s but inFlightRequests already 0 (no-op)", instID)
+			inst := c.instances[instanceIdx]
+			instID := string(inst.ID())
+
+			// Snapshot counters BEFORE processing the event
+			completedBefore := inst.Metrics().CompletedRequests
+			droppedBefore := inst.Metrics().DroppedUnservable
+
+			ev := inst.ProcessNextEvent()
+			_ = ev // Event type no longer used for decrement
+
+			// Completion-based decrement (#463, BC-3, BC-7): InFlightRequests tracks the full
+			// dispatch-to-completion window. Decrement by the number of newly completed OR
+			// dropped-unservable requests. DroppedUnservable requests never reach CompletedRequests
+			// but still exit the in-flight window (they were rejected during EnqueueRequest).
+			completedAfter := inst.Metrics().CompletedRequests
+			droppedAfter := inst.Metrics().DroppedUnservable
+			delta := (completedAfter - completedBefore) + (droppedAfter - droppedBefore)
+			if delta > 0 {
+				c.inFlightRequests[instID] -= delta
+				if c.inFlightRequests[instID] < 0 {
+					logrus.Warnf("inFlightRequests[%s] went negative (%d) — bookkeeping bug", instID, c.inFlightRequests[instID])
+					c.inFlightRequests[instID] = 0
 				}
 			}
 		}
 	}
 
-	// 4. Post-simulation invariant: all pending requests should have drained
-	for instID, pending := range c.inFlightRequests {
-		if pending != 0 {
-			logrus.Warnf("post-simulation: inFlightRequests[%s] = %d, expected 0 — possible bookkeeping bug", instID, pending)
-		}
-	}
-
-	// 5. Finalize all instances
+	// 4. Finalize all instances (populates StillQueued/StillRunning)
 	for _, inst := range c.instances {
 		inst.Finalize()
 	}
+
+	// 5. Post-simulation invariant: inFlightRequests should match StillQueued + StillRunning
+	// MUST be after Finalize() — StillQueued/StillRunning are zero until Finalize populates them.
+	for _, inst := range c.instances {
+		instID := string(inst.ID())
+		inflight := c.inFlightRequests[instID]
+		m := inst.Metrics()
+		expectedInFlight := m.StillQueued + m.StillRunning
+		if inflight != expectedInFlight {
+			logrus.Warnf("post-simulation: inFlightRequests[%s] = %d, expected %d (StillQueued=%d + StillRunning=%d) — bookkeeping bug",
+				instID, inflight, expectedInFlight, m.StillQueued, m.StillRunning)
+		}
+	}
+
 	c.aggregatedMetrics = c.aggregateMetrics()
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
