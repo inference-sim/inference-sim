@@ -19,7 +19,7 @@ This document describes the process for writing a BLIS design document. For the 
 3. **Complete the DES checklist** (Section 2.6) — model scoping, event design, state/statistics, V&V, randomness
 4. **Write the design doc** per the template's required sections (Section 3.3): motivation, scope, modeling decisions, invariants, decisions with trade-offs, extension points, validation strategy
 5. **Apply the staleness test** (Section 3.1) — would this content mislead if the implementation changes?
-6. **Convergence review** — `/convergence-review design <design-doc-path>` dispatches 8 parallel perspectives and enforces convergence (see [docs/contributing/convergence.md](convergence.md)). Manual alternative: review against each perspective checklist below.
+6. **Convergence review** — Run all 8 perspectives in parallel (or sequentially), applying the [convergence protocol](convergence.md). Fix CRITICAL and IMPORTANT findings, re-run until convergence.
 7. **Human review** — approve before macro/micro planning begins
 
 ## Design Review Perspectives (8)
@@ -79,11 +79,8 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 - [ ] Every non-obvious decision has alternatives listed with rationale
 - [ ] Validation strategy specified (which invariants? against what real-system data?)
 
-## Prerequisites
-
-| Skill | Purpose | Manual Alternative |
-|-------|---------|--------------------|
-| `convergence-review` | Dispatch parallel review perspectives (Step 6) | Review against each perspective checklist above |
+!!! tip "Automation"
+    `/convergence-review design <design-doc-path>` dispatches all 8 perspectives and enforces convergence automatically. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 ## References
 

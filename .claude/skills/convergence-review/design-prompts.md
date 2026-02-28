@@ -8,7 +8,7 @@ Reference file for the convergence-review skill. Contains exact prompts for desi
 - Design doc process: `docs/contributing/design-process.md`
 - Design guidelines: `docs/contributing/templates/design-guidelines.md`
 - Macro plan process: `docs/contributing/macro-planning.md`
-- Macro plan template: `docs/contributing/templates/macro-plan.md`
+- Macro plan template: `docs/contributing/templates/macro-plan-prompt.md`
 
 **Dispatch pattern:** Launch each perspective as a parallel Task agent:
 ```

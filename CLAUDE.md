@@ -51,8 +51,8 @@ BLIS follows a layered design document hierarchy. Each tier has a specific abstr
 
 - **Design guidelines** (`docs/contributing/templates/design-guidelines.md`): Target architecture, DES foundations, module contracts, extension framework. Read this first when designing a new feature or extending BLIS.
 - **Design docs** (per-feature): Behavioral specifications written per the guidelines. Describe what modules do and why, never how they're implemented. Four species: decision record, specification, problem analysis, system overview.
-- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/contributing/templates/macro-plan.md`. May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
-- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/contributing/templates/micro-plan.md`.
+- **Macro plans** (multi-PR features): PR decomposition with module contracts and extension types. Written per `docs/contributing/templates/macro-plan.md` (human template; agent prompt: `macro-plan-prompt.md`). May include frozen interface signatures (facts about merged code) but never method implementations (aspirations about unwritten code).
+- **Micro plans** (single PR): Full implementation detail with behavioral contracts, TDD tasks, exact code. Written per `docs/contributing/templates/micro-plan.md` (human template; agent prompt: `micro-plan-prompt.md`).
 
 **The abstraction rule:** Design docs describe *what a module does and what it guarantees*. Macro plans describe *what to build and in what order*. Micro plans describe *how to implement each piece*. Go struct definitions, method implementations, and file:line references belong only in micro plans.
 
@@ -321,7 +321,13 @@ inference-sim/
 │   │   ├── hypothesis.md      # Hypothesis experiment process
 │   │   ├── convergence.md     # Universal Convergence Protocol
 │   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
-│   │   └── templates/         # Artifact templates (micro-plan, macro-plan, design-guidelines, hypothesis)
+│   │   └── templates/         # Artifact templates + agent prompts
+│   │       ├── design-guidelines.md  # DES foundations, module architecture
+│   │       ├── macro-plan.md         # Multi-PR template (human-readable)
+│   │       ├── macro-plan-prompt.md  # Agent preamble for macro planning
+│   │       ├── micro-plan.md         # Single-PR template (human-readable)
+│   │       ├── micro-plan-prompt.md  # Agent preamble for writing-plans skill
+│   │       └── hypothesis.md         # Experiment FINDINGS.md template
 │   └── plans/                 # Active implementation plans (excluded from MkDocs)
 │       └── archive/           # Completed design docs (architectural reference)
 ├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
@@ -370,8 +376,8 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 ### Templates (what to produce)
 
 - `docs/contributing/templates/design-guidelines.md`: **BLIS Design Guidelines** — DES foundations, module architecture, extension framework. **Start here when designing anything new.**
-- `docs/contributing/templates/macro-plan.md`: Template for macro-level planning (multi-PR features)
-- `docs/contributing/templates/micro-plan.md`: Template for micro-level (per-PR) planning with TDD tasks and behavioral contracts
+- `docs/contributing/templates/macro-plan.md`: Human-readable template for macro-level planning (multi-PR features). **Agent prompt:** `macro-plan-prompt.md`
+- `docs/contributing/templates/micro-plan.md`: Human-readable template for micro-level (per-PR) planning with TDD tasks and behavioral contracts. **Agent prompt:** `micro-plan-prompt.md`
 - `docs/contributing/templates/hypothesis.md`: Template for hypothesis experiment artifacts
 
 ### Per-Feature Plans

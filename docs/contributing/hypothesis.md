@@ -1,22 +1,10 @@
 # Hypothesis Experiment Process
 
-**Status:** Active (v2.0 — updated 2026-02-23)
+**Status:** Active (v2.1 — updated 2026-02-27)
 
 This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/contributing/standards/experiments.md](standards/experiments.md). For the FINDINGS.md template, see [docs/contributing/templates/hypothesis.md](templates/hypothesis.md). For experiment status and coverage gaps, see [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md).
 
----
-
-## Prerequisites
-
-This workflow uses the following Claude Code skills. Each has a manual alternative for contributors without AI tools.
-
-| Skill | Purpose | Used In | Manual Alternative |
-|-------|---------|---------|--------------------|
-| `superpowers:using-git-worktrees` | Create isolated workspace | Step 0 | `git worktree add .worktrees/h-<name> -b h-<name>` |
-| `convergence-review` | Dispatch parallel perspectives and enforce convergence | Steps 2, 5, 8 | Sequential manual checklists (one per perspective) using the checklist sections below |
-| `commit-commands:commit-push-pr` | Commit, push, create PR | Step 10 | Standard git commands (`git add`, `git commit`, `git push`, `gh pr create`) |
-
-**For external contributors without AI review infrastructure:** Submit your experiment artifacts via PR. Maintainers will run the review protocols on your behalf. You can also conduct reviews manually by having people review with the perspective checklists documented in each gate.
+**For external contributors:** Submit your experiment artifacts via PR. Maintainers will run the review protocols on your behalf. You can also conduct reviews manually using the perspective checklists documented in each gate.
 
 ---
 
@@ -90,7 +78,7 @@ This workflow uses the following Claude Code skills. Each has a manual alternati
 
 | Step | Action |
 |------|--------|
-| **0. Worktree** | `/superpowers:using-git-worktrees h-<name>` |
+| **0. Worktree** | Create isolated workspace: `git worktree add .worktrees/h-<name> -b h-<name>` |
 | **1. Classify** | Choose family, VV&UQ category, type from [experiments.md](standards/experiments.md) |
 | **2. Design** | ED-1–ED-6 compliance, then 5-perspective Design Review |
 | **3. Human gate** | Present design for approval — pause until approved |
@@ -100,7 +88,7 @@ This workflow uses the following Claude Code skills. Each has a manual alternati
 | **7. Document** | Write FINDINGS.md using [template](templates/hypothesis.md) |
 | **8. FINDINGS Review** | 10-perspective review → convergence (iterate rounds) |
 | **9. Self-audit** | 6 dimensions of deliberate critical thinking |
-| **10. Commit + PR** | Verification gate (if code fixes) + `/commit-commands:commit-push-pr` |
+| **10. Commit + PR** | Verification gate (if code fixes), then commit, push, create PR |
 
 ---
 
@@ -110,15 +98,17 @@ This workflow uses the following Claude Code skills. Each has a manual alternati
 
 **Context:** Main repo (inference-sim)
 
-Create an isolated workspace BEFORE any work begins.
+Create an isolated workspace BEFORE any work begins:
 
-```
-/superpowers:using-git-worktrees h-<hypothesis-name>
+```bash
+git worktree add .worktrees/h-<hypothesis-name> -b h-<hypothesis-name>
+cd .worktrees/h-<hypothesis-name>
 ```
 
 This creates `.worktrees/h-<name>/` with a new branch. All subsequent steps happen in the worktree.
 
-**Manual alternative:** `git worktree add .worktrees/h-<name> -b h-<name> && cd .worktrees/h-<name>`
+!!! tip "Automation"
+    `/superpowers:using-git-worktrees h-<name>` creates the worktree and switches your shell into it. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 ---
 
@@ -150,14 +140,10 @@ The family determines design rules; the VV&UQ category determines evidence requi
 - ED-5: Reproducibility (everything from `run.sh` alone)
 - ED-6: Config diff against referenced experiments
 
-Then run the **5-perspective Design Review** using the [universal convergence protocol](#universal-convergence-protocol).
+Then run the **5-perspective Design Review** using the [universal convergence protocol](#universal-convergence-protocol). Review from each perspective below (in parallel or sequentially), then apply the convergence protocol.
 
-**Primary mechanism (Claude Code):**
-```
-/convergence-review h-design
-```
-
-**Manual alternative:** Launch all 5 perspectives as parallel Task agents (or review sequentially with each checklist below), then apply the convergence protocol.
+!!! tip "Automation"
+    `/convergence-review h-design` dispatches all 5 perspectives and enforces convergence. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 #### Design Review Perspectives
 
@@ -205,7 +191,7 @@ Present the experiment design for human approval. The human reviews:
 - Planned controls (one per proposed mechanism)
 - Expected outcomes and diagnostic implications
 
-**This is a hard gate.** Do not proceed to implementation until the human approves. Do not say "I'll proceed unless you stop me." The pause is the point.
+**This is a hard gate.** Wait for explicit approval before proceeding. Do not assume silence is consent — the pause is the point.
 
 **In parallel mode:** Each hypothesis gets its own independent human approval. The team lead presents each design; the human approves each independently.
 
@@ -235,14 +221,10 @@ Create `hypotheses/<name>/run.sh` and `hypotheses/<name>/analyze.py`.
 
 **Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable, wrong operating point), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. The experiment-wide limit of 2 cross-gate regressions applies (see [Step 8](#step-8-findings-review-10-perspectives) for the circuit breaker).
 
-Run the **5-perspective Code Review** using the [universal convergence protocol](#universal-convergence-protocol).
+Run the **5-perspective Code Review** using the [universal convergence protocol](#universal-convergence-protocol). Review from each perspective below (in parallel or sequentially), then apply the convergence protocol.
 
-**Primary mechanism (Claude Code):**
-```
-/convergence-review h-code hypotheses/<name>/
-```
-
-**Manual alternative:** Launch all 5 perspectives as parallel Task agents (or review sequentially with each checklist below), then apply the convergence protocol.
+!!! tip "Automation"
+    `/convergence-review h-code hypotheses/<name>/` dispatches all 5 perspectives and enforces convergence. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 #### Code Review Perspectives
 
@@ -309,14 +291,10 @@ Execute experiments across required seeds:
 
 **Context:** Worktree (after FINDINGS.md documented)
 
-Run the **10-perspective FINDINGS Review** using the [universal convergence protocol](#universal-convergence-protocol).
+Run the **10-perspective FINDINGS Review** using the [universal convergence protocol](#universal-convergence-protocol). Review from each perspective below (in parallel or sequentially), then apply the convergence protocol.
 
-**Primary mechanism (Claude Code):**
-```
-/convergence-review h-findings hypotheses/<name>/FINDINGS.md
-```
-
-**Manual alternative:** Launch all 10 as parallel Task agents (each receives the FINDINGS.md path and its specific focus area), then apply the convergence protocol.
+!!! tip "Automation"
+    `/convergence-review h-findings hypotheses/<name>/FINDINGS.md` dispatches all 10 perspectives and enforces convergence. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 **Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable not identified in design), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. Maximum 2 cross-gate regressions per experiment (across all gates combined) — if the design still has fundamental issues after 2 regressions, suspend the experiment and escalate for a re-scoping decision.
 
@@ -398,7 +376,7 @@ The overlap between reviewers is intentional — different perspectives checking
 
 **Context:** Worktree (after FINDINGS Review convergence)
 
-> **For Claude:** This is NOT an agent pass. Stop, think critically, and answer each question from your own reasoning. Do NOT dispatch agents.
+Review each dimension yourself using critical thinking — do not delegate to automated tools. This step requires the kind of deliberate reflection that only happens when you pause and think, not when you dispatch a tool.
 
 **Why this step exists:** In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues. Automated review perspectives check structure; this step checks substance.
 
@@ -429,8 +407,11 @@ golangci-lint run ./... # Zero lint issues
 
 **Commit and PR:**
 
-```
-/commit-commands:commit-push-pr
+```bash
+git add hypotheses/<name>/
+git commit -m "experiment(<name>): <hypothesis sentence> — <status>"
+git push -u origin <branch-name>
+gh pr create --title "experiment: <name>" --body "<hypothesis, findings, closing keywords>"
 ```
 
 The PR description should include:
@@ -438,7 +419,8 @@ The PR description should include:
 - Key findings (1-3 bullet points)
 - `Fixes #NNN` for any issues this experiment addresses
 
-**Manual alternative:** Standard git commands (`git add`, `git commit`, `git push`, `gh pr create`).
+!!! tip "Automation"
+    `/commit-commands:commit-push-pr` handles staging, committing, pushing, and PR creation in one command.
 
 **Post-PR issue filing:** See [Two-Track Issue Filing](#two-track-issue-filing) below.
 
@@ -450,7 +432,8 @@ The PR description should include:
 
 All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See [`docs/contributing/convergence.md`](convergence.md) for the full protocol, severity definitions, agent failure handling, and expected convergence rates.
 
-> **Executable implementation:** The `convergence-review` skill automates this protocol. Invoke with `/convergence-review <gate-type> [artifact-path] [--model opus|sonnet|haiku]`.
+!!! tip "Automation"
+    The `convergence-review` skill automates this protocol: `/convergence-review <gate-type> [artifact-path]`. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 ---
 
@@ -740,3 +723,4 @@ H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H
 
 **v1.0 (PR #310):** Three external LLM reviews per round, no design gate, no code review gate, ad-hoc git commands.
 **v2.0 (2026-02-23, #392):** Three review gates (Design 5, Code 5, FINDINGS 10) with universal convergence protocol, human approval gate, self-audit, verification gate, parallel execution, two-track issue filing, explicit worktree/commit skill integration. Structural alignment with PR workflow v3.0.
+**v2.1 (2026-02-27, #464):** Human-first rewrite. Manual steps primary; skills in admonition callouts. Prerequisites table removed (skills referenced inline per step). "For Claude" directives rewritten as universal process guidance.
