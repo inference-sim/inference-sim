@@ -50,6 +50,8 @@ This matches the llm-d Endpoint Picker scoring pipeline. Weights are relative â€
 
 ## Signal Freshness
 
+> **Canonical source:** Signal freshness tiers are specified in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md) (INV-7). The descriptions below provide additional user-facing context; `invariants.md` is authoritative if they diverge.
+
 !!! warning "Not all routing signals are equally fresh"
     In production inference serving systems (e.g., llm-d), the router is a separate process from the inference engines. Some signals are maintained at the router level, while others require periodic reporting from instances. BLIS models this asymmetry.
 

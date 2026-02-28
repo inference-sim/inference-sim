@@ -44,7 +44,7 @@ Rejected requests are counted in the output anomaly counters (`Rejected Requests
 
 - **Overload protection.** When the arrival rate significantly exceeds service capacity, unbounded queues grow without limit. Admission shedding keeps queue depth manageable.
 - **Cost control.** Limit total token throughput to match a token budget or downstream rate limit.
-- **Graceful degradation.** Shed excess load to protect SLO compliance for admitted requests. Under extreme overload, routing distributes load and scheduling orders within instances, but neither can reduce total queue depth -- admission is the lever that can.
+- **Graceful degradation.** Shed excess load to protect latency for admitted requests. Under extreme overload, routing distributes load and scheduling orders within instances, but neither can reduce total queue depth — admission is the lever that can. Note: the current admission policies are SLO-class-blind — all requests pay the same token cost regardless of `slo_class`. SLO-aware shedding (rejecting `batch` before `critical`) is not yet implemented.
 - **Testing rejection paths.** The `reject-all` policy verifies that rejection counting, trace recording, and conservation invariants hold when no requests are admitted.
 
 !!! tip "Admission is the third lever"
