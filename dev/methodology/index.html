@@ -1367,6 +1367,8 @@
       
         
       
+        
+      
     
     
     
@@ -1439,6 +1441,34 @@
     
   
     Strategy Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="hypothesis-bundles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Bundles
   
 
     
@@ -2179,7 +2209,11 @@
 <tbody>
 <tr>
 <td><a href="strategy-evolution/">Strategy Evolution</a></td>
-<td>Iterative policy discovery through simulation: 5-phase methodology with multi-judge review, Bayesian parameter optimization, and cumulative principle extraction</td>
+<td>Iterative policy discovery through simulation: hypothesis-bundle-driven methodology with multi-judge review, convergence-gated verification, Bayesian parameter optimization, and cumulative principle extraction</td>
+</tr>
+<tr>
+<td><a href="hypothesis-bundles/">Hypothesis Bundles in Practice</a></td>
+<td>Detailed examples of hypothesis bundles from PR #452 (scheduling) and PR #447 (routing), prediction error analysis, bundle sizing, and writing guidelines</td>
 </tr>
 </tbody>
 </table>
@@ -2192,11 +2226,11 @@
 <li>You need <strong>defensible results</strong> — not just "it works" but "here's why it works, here's the evidence, and here are the principles"</li>
 </ul>
 <h2 id="relationship-to-other-processes">Relationship to Other Processes<a class="headerlink" href="#relationship-to-other-processes" title="Permanent link">&para;</a></h2>
-<p>Strategy Evolution builds on existing BLIS processes:</p>
+<p>Strategy Evolution integrates existing BLIS processes:</p>
 <ul>
-<li><strong><a href="../contributing/hypothesis/">Hypothesis Experiments</a></strong> — Strategy Evolution's Phase 3 uses the hypothesis experiment framework for structured measurement</li>
-<li><strong><a href="../contributing/convergence/">Convergence Protocol</a></strong> — Multi-judge review in Phase 2 follows the convergence protocol</li>
-<li><strong><a href="../contributing/pr-workflow/">PR Workflow</a></strong> — Implementation of winning strategies follows the standard PR workflow</li>
+<li><strong><a href="../contributing/hypothesis/">Hypothesis Experiments</a></strong> — Each strategy iteration is formulated as a hypothesis bundle. The hypothesis experiment framework provides the per-arm workflow (experiment design standards, review gates, convergence protocol).</li>
+<li><strong><a href="../contributing/convergence/">Convergence Protocol</a></strong> — Three convergence-gated review stages per iteration: Design Review (5 perspectives), Code Review (5 perspectives), FINDINGS Review (10 perspectives).</li>
+<li><strong><a href="../contributing/pr-workflow/">PR Workflow</a></strong> — Implementation of winning strategies follows the standard PR workflow.</li>
 </ul>
 
 
