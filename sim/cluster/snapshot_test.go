@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -178,6 +179,30 @@ func TestSnapshotProvider_DefaultConfig_AllImmediate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.fc.Mode != Immediate {
 				t.Errorf("Mode = %d, want Immediate (%d)", tc.fc.Mode, Immediate)
+			}
+		})
+	}
+}
+
+// TestNewObservabilityConfig_ZeroAndNegativeInterval_AllImmediate verifies BC-2 and EC-1:
+// GIVEN zero or negative refresh intervals
+// WHEN newObservabilityConfig is called
+// THEN all fields use Immediate mode (backward-compatible default)
+func TestNewObservabilityConfig_ZeroAndNegativeInterval_AllImmediate(t *testing.T) {
+	for _, interval := range []int64{0, -1, -100} {
+		t.Run(fmt.Sprintf("interval=%d", interval), func(t *testing.T) {
+			config := newObservabilityConfig(interval)
+			for _, f := range []struct {
+				name string
+				fc   FieldConfig
+			}{
+				{"QueueDepth", config.QueueDepth},
+				{"BatchSize", config.BatchSize},
+				{"KVUtilization", config.KVUtilization},
+			} {
+				if f.fc.Mode != Immediate {
+					t.Errorf("%s: Mode = %d, want Immediate (%d)", f.name, f.fc.Mode, Immediate)
+				}
 			}
 		})
 	}

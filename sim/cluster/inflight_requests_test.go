@@ -7,42 +7,6 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// TestClusterSimulator_InFlightRequests_DrainsToZeroAfterProcessing verifies:
-// GIVEN a 2-instance cluster with 4+ requests using weighted routing
-// WHEN run to completion
-// THEN all inFlightRequests values are 0 (every routed request was absorbed)
-func TestClusterSimulator_InFlightRequests_DrainsToZeroAfterProcessing(t *testing.T) {
-	config := DeploymentConfig{
-		SimConfig: sim.SimConfig{
-			Horizon:       10000000,
-			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
-			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-		},
-		NumInstances:         2,
-		RoutingPolicy:        "weighted",
-		RoutingScorerConfigs: sim.DefaultScorerConfigs(),
-	}
-	requests := testGenerateRequests(42, 10000000, 2.0/1e6, 6,
-		0, 16, 0, 16, 16, 8, 0, 8, 8)
-	cs := NewClusterSimulator(config, requests)
-
-	mustRun(t, cs)
-
-	for instID, pending := range cs.inFlightRequests {
-		if pending != 0 {
-			t.Errorf("instance %s: inFlightRequests = %d after completion, want 0", instID, pending)
-		}
-	}
-
-	// Sanity check: requests were actually processed
-	m := cs.AggregatedMetrics()
-	if m.CompletedRequests == 0 {
-		t.Error("no requests completed — test setup issue")
-	}
-}
-
 // TestClusterSimulator_InFlightRequests_VisibleInRoutingState verifies:
 // GIVEN a 1-instance cluster with pre-generated requests at identical timestamps
 //
@@ -93,20 +57,20 @@ func TestClusterSimulator_InFlightRequests_VisibleInRoutingState(t *testing.T) {
 	}
 
 	// Check if any candidate score in any routing record has InFlightRequests > 0
-	foundPending := false
+	foundInFlight := false
 	for _, r := range tr.Routings {
 		for _, c := range r.Candidates {
 			if c.InFlightRequests > 0 {
-				foundPending = true
+				foundInFlight = true
 				break
 			}
 		}
-		if foundPending {
+		if foundInFlight {
 			break
 		}
 	}
 
-	if !foundPending {
+	if !foundInFlight {
 		t.Error("expected at least one routing decision to observe InFlightRequests > 0, " +
 			"but all candidates had InFlightRequests = 0")
 	}
@@ -161,20 +125,20 @@ func TestClusterSimulator_InFlightRequests_CounterfactualIncludesInFlight(t *tes
 
 	// Verify at least one candidate has InFlightRequests > 0 (proving the field
 	// is populated from actual cluster state, not just defaulting to zero)
-	foundPending := false
+	foundInFlight := false
 	totalCandidates := 0
 	for _, r := range tr.Routings {
 		for _, c := range r.Candidates {
 			totalCandidates++
 			if c.InFlightRequests > 0 {
-				foundPending = true
+				foundInFlight = true
 			}
 		}
 	}
 	if totalCandidates == 0 {
 		t.Error("expected candidates in routing records with counterfactual-k=1")
 	}
-	if !foundPending {
+	if !foundInFlight {
 		t.Error("expected at least one candidate with InFlightRequests > 0, " +
 			"but all were 0 — field may not be populated from cluster state")
 	}

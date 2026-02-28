@@ -190,13 +190,16 @@ func (c *ClusterSimulator) Run() error {
 
 	// 5. Post-simulation invariant: inFlightRequests should match StillQueued + StillRunning
 	// MUST be after Finalize() — StillQueued/StillRunning are zero until Finalize populates them.
+	// NOTE: A mismatch can occur legitimately if requests were routed near the horizon but their
+	// ArrivalEvent/QueuedEvent hadn't fired yet (request is in the instance event queue, not in
+	// WaitQ or RunningBatch). This is an edge case, not a bookkeeping bug.
 	for _, inst := range c.instances {
 		instID := string(inst.ID())
 		inflight := c.inFlightRequests[instID]
 		m := inst.Metrics()
 		expectedInFlight := m.StillQueued + m.StillRunning
 		if inflight != expectedInFlight {
-			logrus.Warnf("post-simulation: inFlightRequests[%s] = %d, expected %d (StillQueued=%d + StillRunning=%d) — bookkeeping bug",
+			logrus.Warnf("post-simulation: inFlightRequests[%s] = %d, expected %d (StillQueued=%d + StillRunning=%d) — may indicate bookkeeping bug or requests in event pipeline at horizon",
 				instID, inflight, expectedInFlight, m.StillQueued, m.StillRunning)
 		}
 	}

@@ -194,6 +194,6 @@ A complete request lifecycle through the cluster pipeline:
    - Request injected into target instance's wait queue (with optional `--routing-latency` delay)
 5. **QueuedEvent:** Fired by target instance when request enters its queue
    - If no StepEvent exists, one is scheduled (work-conserving)
-6. **Completion/Drop:** InFlightRequests decremented when request completes or is dropped as unservable
 6. **Per-instance processing:** Request follows the single-instance lifecycle (see [Core Engine](core-engine.md))
-7. **Completion:** Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level
+7. **Completion/Drop:** InFlightRequests decremented when request completes or is dropped as unservable
+8. **Metrics:** Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level
