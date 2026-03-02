@@ -318,9 +318,8 @@ func TestCalculateKVBlocks_Llama31_8B_H100_TP2_WithinTolerance(t *testing.T) {
 		HiddenAct:         "silu",
 	}
 
-	// Empirical baseline from capacity_planner.py formula with BLIS overhead
-	// constants (gpuMemUtil=0.9, activationDense=5.5GiB, nonTorchTPMulti=0.6GiB).
-	const expectedBlocks int64 = 59823
+	// Empirical baseline from defaults.yaml: Llama-3.1-8B / H100 / TP=2 = 132,139 blocks
+	const empirical int64 = 132139
 	const tolerance = 0.10
 
 	got, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
@@ -328,13 +327,13 @@ func TestCalculateKVBlocks_Llama31_8B_H100_TP2_WithinTolerance(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	deviation := math.Abs(float64(got)-float64(expectedBlocks)) / float64(expectedBlocks)
-	t.Logf("Llama-3.1-8B H100 TP=2: actual=%d expected=%d deviation=%.4f (%.2f%%)",
-		got, expectedBlocks, deviation, deviation*100)
+	deviation := math.Abs(float64(got)-float64(empirical)) / float64(empirical)
+	t.Logf("Llama-3.1-8B H100 TP=2: calculated=%d, empirical=%d, deviation=%.2f%%",
+		got, empirical, deviation*100)
 
 	if deviation > tolerance {
-		t.Errorf("result %d deviates from empirical %d by %.2f%% (tolerance: %.0f%%)",
-			got, expectedBlocks, deviation*100, tolerance*100)
+		t.Errorf("blocks=%d deviates %.1f%% from empirical %d (max 10%%)",
+			got, deviation*100, empirical)
 	}
 }
 
@@ -348,9 +347,8 @@ func TestCalculateKVBlocks_Llama31_8B_H100_TP4_WithinTolerance(t *testing.T) {
 		HiddenAct:         "silu",
 	}
 
-	// Empirical baseline from capacity_planner.py formula with BLIS overhead
-	// constants (gpuMemUtil=0.9, activationDense=5.5GiB, nonTorchTPMulti=0.6GiB).
-	const expectedBlocks int64 = 127304
+	// Empirical baseline from defaults.yaml: Llama-3.1-8B / H100 / TP=4 = 559,190 blocks
+	const empirical int64 = 559190
 	const tolerance = 0.10
 
 	got, err := latency.CalculateKVBlocks(mc, hc, 4, 16, params)
@@ -358,13 +356,13 @@ func TestCalculateKVBlocks_Llama31_8B_H100_TP4_WithinTolerance(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	deviation := math.Abs(float64(got)-float64(expectedBlocks)) / float64(expectedBlocks)
-	t.Logf("Llama-3.1-8B H100 TP=4: actual=%d expected=%d deviation=%.4f (%.2f%%)",
-		got, expectedBlocks, deviation, deviation*100)
+	deviation := math.Abs(float64(got)-float64(empirical)) / float64(empirical)
+	t.Logf("Llama-3.1-8B H100 TP=4: calculated=%d, empirical=%d, deviation=%.2f%%",
+		got, empirical, deviation*100)
 
 	if deviation > tolerance {
-		t.Errorf("result %d deviates from empirical %d by %.2f%% (tolerance: %.0f%%)",
-			got, expectedBlocks, deviation*100, tolerance*100)
+		t.Errorf("blocks=%d deviates %.1f%% from empirical %d (max 10%%)",
+			got, deviation*100, empirical)
 	}
 }
 
@@ -433,9 +431,8 @@ func TestCalculateKVBlocks_Mixtral_8x7B_H100_TP2_WithinTolerance(t *testing.T) {
 		HiddenAct:         "silu",
 	}
 
-	// Empirical baseline from capacity_planner.py formula with BLIS overhead
-	// constants (gpuMemUtil=0.9, activationMoE=8.0GiB, nonTorchTPMulti=0.6GiB).
-	const expectedBlocks int64 = 20382
+	// Empirical baseline from defaults.yaml: Mixtral-8x7B / H100 / TP=2 = 58,377 blocks
+	const empirical int64 = 58377
 	const tolerance = 0.20
 
 	got, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
@@ -443,13 +440,13 @@ func TestCalculateKVBlocks_Mixtral_8x7B_H100_TP2_WithinTolerance(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	deviation := math.Abs(float64(got)-float64(expectedBlocks)) / float64(expectedBlocks)
-	t.Logf("Mixtral-8x7B H100 TP=2: actual=%d expected=%d deviation=%.4f (%.2f%%)",
-		got, expectedBlocks, deviation, deviation*100)
+	deviation := math.Abs(float64(got)-float64(empirical)) / float64(empirical)
+	t.Logf("Mixtral-8x7B H100 TP=2: calculated=%d, empirical=%d, deviation=%.2f%%",
+		got, empirical, deviation*100)
 
 	if deviation > tolerance {
-		t.Errorf("result %d deviates from empirical %d by %.2f%% (tolerance: %.0f%%)",
-			got, expectedBlocks, deviation*100, tolerance*100)
+		t.Errorf("blocks=%d deviates %.1f%% from empirical %d (max 20%%)",
+			got, deviation*100, empirical)
 	}
 }
 

@@ -115,12 +115,15 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 	// --- Step 3: Per-block bytes ---
 	perBlockBytes := perTokenKVBytesPerGPU * blockSize
 
-	// --- Step 4: Available memory budget ---
-	totalAvailableGiB := hc.MemoryGiB * gpuMemUtil
+	// --- Step 4: Available memory budget (total across all TP GPUs) ---
+	// Reference: available_memory = gpu_mem * gpu_mem_util * gpu_count
+	totalAvailableGiB := hc.MemoryGiB * gpuMemUtil * float64(tp)
 
+	// Model weights: total model size (distributed across TP GPUs, but sum = total)
 	modelWeightBytes := computeModelWeightBytes(mc, params)
-	modelWeightGiB := float64(modelWeightBytes) / float64(gibToBytes) / float64(tp)
+	modelWeightGiB := float64(modelWeightBytes) / float64(gibToBytes)
 
+	// Activation memory: per-replica constant (dp=1 in BLIS), NOT multiplied by TP
 	var activationGiB float64
 	if params.IsMoE {
 		activationGiB = activationMemoryMoEGiB
@@ -128,20 +131,22 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 		activationGiB = activationMemoryDenseGiB
 	}
 
-	var nonTorchGiB float64
+	// Non-torch overhead: per-GPU (NCCL buffers, CUDA context) × number of GPUs
+	var nonTorchPerGPU float64
 	if tp == 1 {
-		nonTorchGiB = nonTorchMemoryTP1GiB
+		nonTorchPerGPU = nonTorchMemoryTP1GiB
 	} else {
-		nonTorchGiB = nonTorchMemoryTPMultiGiB
+		nonTorchPerGPU = nonTorchMemoryTPMultiGiB
 	}
+	nonTorchGiB := nonTorchPerGPU * float64(tp)
 
 	overheadGiB := modelWeightGiB + activationGiB + nonTorchGiB
 	if overheadGiB >= totalAvailableGiB {
 		return 0, fmt.Errorf(
-			"CalculateKVBlocks: model overhead (%.2f GiB: weights=%.2f + activation=%.2f + non-torch=%.2f) "+
-				"exceeds available GPU memory (%.2f GiB = %.2f GiB * %.1f%% utilization)",
+			"CalculateKVBlocks: model overhead (%.2f GiB = %.2f weights + %.2f activation + %.2f non-torch) "+
+				"exceeds available GPU memory (%.2f GiB = %.1f GiB × %.0f%% util × %d GPUs)",
 			overheadGiB, modelWeightGiB, activationGiB, nonTorchGiB,
-			totalAvailableGiB, hc.MemoryGiB, gpuMemUtil*100)
+			totalAvailableGiB, hc.MemoryGiB, gpuMemUtil*100, tp)
 	}
 
 	allocatableGiB := totalAvailableGiB - overheadGiB
