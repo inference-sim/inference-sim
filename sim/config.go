@@ -60,26 +60,26 @@ func NewLatencyCoeffs(betaCoeffs, alphaCoeffs []float64) LatencyCoeffs {
 
 // ModelHardwareConfig groups model identity and hardware specification.
 type ModelHardwareConfig struct {
-	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline mode)
-	HWConfig    HardwareCalib // GPU specifications (for roofline mode)
+	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline/crossmodel modes)
+	HWConfig    HardwareCalib // GPU specifications (for roofline/crossmodel modes)
 	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
 	GPU         string        // GPU type (e.g., "H100")
 	TP          int           // tensor parallelism degree
-	Roofline    bool          // true = analytical roofline mode, false = blackbox regression
+	Backend     string        // latency model backend: "" or "blackbox" (default), "roofline"
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
 // Parameter order matches struct field order.
 func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
-	model, gpu string, tp int, roofline bool) ModelHardwareConfig {
+	model, gpu string, tp int, backend string) ModelHardwareConfig {
 	return ModelHardwareConfig{
 		ModelConfig: modelConfig,
 		HWConfig:    hwConfig,
 		Model:       model,
 		GPU:         gpu,
 		TP:          tp,
-		Roofline:    roofline,
+		Backend:     backend,
 	}
 }
 

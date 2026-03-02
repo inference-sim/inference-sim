@@ -460,7 +460,7 @@ func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
 		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
-		"", "", 1, true,
+		"", "", 1, "roofline",
 	)
 
 	// WHEN NewLatencyModel is called (roofline validation happens here)
@@ -481,7 +481,7 @@ func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
 		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
-		"", "", 0, true,
+		"", "", 0, "roofline",
 	)
 
 	// WHEN NewLatencyModel is called (roofline validation happens here)

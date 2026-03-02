@@ -40,14 +40,14 @@ func TestNewLatencyCoeffs_FieldEquivalence(t *testing.T) {
 func TestNewModelHardwareConfig_FieldEquivalence(t *testing.T) {
 	mc := ModelConfig{NumLayers: 32}
 	hw := HardwareCalib{TFlopsPeak: 1000.0, MemoryGiB: 80.0}
-	got := NewModelHardwareConfig(mc, hw, "llama", "H100", 2, true)
+	got := NewModelHardwareConfig(mc, hw, "llama", "H100", 2, "roofline")
 	want := ModelHardwareConfig{
 		ModelConfig: mc,
 		HWConfig:    hw,
 		Model:       "llama",
 		GPU:         "H100",
 		TP:          2,
-		Roofline:    true,
+		Backend:     "roofline",
 	}
 	assert.Equal(t, want, got)
 }

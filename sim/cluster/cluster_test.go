@@ -21,7 +21,7 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, false),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, ""),
 		},
 		NumInstances: numInstances,
 	}
@@ -58,7 +58,7 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(500, 32, 0, 0, 0, 42),
 			BatchConfig:         sim.NewBatchConfig(128, 4096, 512),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 2, true),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 2, "roofline"),
 			PolicyConfig:        sim.NewPolicyConfig("slo-based", "priority-fcfs"),
 		},
 		NumInstances:    3,
@@ -136,7 +136,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, ""),
 				},
 				NumInstances: 1,
 			}
@@ -186,7 +186,7 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, false),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, ""),
 				},
 				NumInstances: 1,
 			}

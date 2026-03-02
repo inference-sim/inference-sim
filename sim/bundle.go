@@ -62,6 +62,7 @@ var (
 	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
 	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
 	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
+	validLatencyBackends   = map[string]bool{"": true, "blackbox": true, "roofline": true}
 )
 
 // IsValidAdmissionPolicy returns true if name is a recognized admission policy.
@@ -87,6 +88,12 @@ func ValidPriorityPolicyNames() []string { return validNamesList(validPriorityPo
 
 // ValidSchedulerNames returns sorted valid scheduler names (excluding empty).
 func ValidSchedulerNames() []string { return validNamesList(validSchedulers) }
+
+// IsValidLatencyBackend returns true if name is a recognized latency model backend.
+func IsValidLatencyBackend(name string) bool { return validLatencyBackends[name] }
+
+// ValidLatencyBackendNames returns sorted valid latency backend names (excluding empty).
+func ValidLatencyBackendNames() []string { return validNamesList(validLatencyBackends) }
 
 // validNamesList returns sorted non-empty keys from a validity map.
 func validNamesList(m map[string]bool) []string {

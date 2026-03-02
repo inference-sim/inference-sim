@@ -7,6 +7,7 @@ package latency
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
@@ -120,7 +121,7 @@ func validateCoeffs(name string, coeffs []float64) error {
 }
 
 // NewLatencyModel creates the appropriate LatencyModel based on config.
-// Returns RooflineLatencyModel if hw.Roofline is true, BlackboxLatencyModel otherwise.
+// Dispatches on hw.Backend: "roofline" → RooflineLatencyModel, "" or "blackbox" → BlackboxLatencyModel.
 // Returns error if coefficient slices are too short, contain NaN/Inf, or roofline config validation fails.
 func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
 	// Both implementations index alphaCoeffs[0..2]; validate upfront.
@@ -130,7 +131,8 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 	if err := validateCoeffs("AlphaCoeffs", coeffs.AlphaCoeffs); err != nil {
 		return nil, err
 	}
-	if hw.Roofline {
+	switch hw.Backend {
+	case "roofline":
 		if hw.TP <= 0 {
 			return nil, fmt.Errorf("latency model: roofline requires TP > 0, got %d", hw.TP)
 		}
@@ -143,16 +145,20 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			tp:          hw.TP,
 			alphaCoeffs: coeffs.AlphaCoeffs,
 		}, nil
+	case "", "blackbox":
+		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
+		if len(coeffs.BetaCoeffs) < 3 {
+			return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(coeffs.BetaCoeffs))
+		}
+		if err := validateCoeffs("BetaCoeffs", coeffs.BetaCoeffs); err != nil {
+			return nil, err
+		}
+		return &BlackboxLatencyModel{
+			betaCoeffs:  coeffs.BetaCoeffs,
+			alphaCoeffs: coeffs.AlphaCoeffs,
+		}, nil
+	default:
+		return nil, fmt.Errorf("latency model: unknown backend %q; valid options: %s",
+			hw.Backend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
 	}
-	// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
-	if len(coeffs.BetaCoeffs) < 3 {
-		return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(coeffs.BetaCoeffs))
-	}
-	if err := validateCoeffs("BetaCoeffs", coeffs.BetaCoeffs); err != nil {
-		return nil, err
-	}
-	return &BlackboxLatencyModel{
-		betaCoeffs:  coeffs.BetaCoeffs,
-		alphaCoeffs: coeffs.AlphaCoeffs,
-	}, nil
 }

@@ -13,7 +13,7 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
 	lm, err := MustNewLatencyModel(config.LatencyCoeffs, config.ModelHardwareConfig)
 	if err != nil {
@@ -71,7 +71,7 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, false),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
 	lm, err := MustNewLatencyModel(config.LatencyCoeffs, config.ModelHardwareConfig)
 	if err != nil {

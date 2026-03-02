@@ -325,3 +325,17 @@ func TestValidSchedulerNames_ReturnsAllNames(t *testing.T) {
 	assert.Contains(t, names, "sjf")
 	assert.Contains(t, names, "reverse-priority")
 }
+
+func TestIsValidLatencyBackend(t *testing.T) {
+	assert.True(t, IsValidLatencyBackend(""))
+	assert.True(t, IsValidLatencyBackend("blackbox"))
+	assert.True(t, IsValidLatencyBackend("roofline"))
+	assert.False(t, IsValidLatencyBackend("nonexistent"))
+}
+
+func TestValidLatencyBackendNames(t *testing.T) {
+	names := ValidLatencyBackendNames()
+	assert.Contains(t, names, "blackbox")
+	assert.Contains(t, names, "roofline")
+	assert.NotContains(t, names, "")
+}
