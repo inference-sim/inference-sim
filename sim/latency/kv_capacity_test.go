@@ -250,19 +250,20 @@ func TestCalculateKVBlocks_BudgetExceeded_ReturnError(t *testing.T) {
 }
 
 func TestCalculateKVBlocks_FloorZero_ReturnError(t *testing.T) {
-	// Use a tiny GPU memory that barely covers overhead, leaving near-zero
-	// allocatable space so floor division yields 0 blocks.
+	// Use the standard model/GPU config but set an enormous block size so
+	// that a single block exceeds the allocatable KV space. This exercises
+	// the floor-zero guard (BC-22) rather than the budget-exceeded guard.
 	mc := validDenseModelConfig()
 	hc := validHWConfig()
-	hc.MemoryGiB = 2.0 // Just enough to not trigger "exceeds" but too small for any blocks
 	params := validDenseKVParams()
 
-	_, err := latency.CalculateKVBlocks(mc, hc, 1, 16, params)
+	// blockSize = 10M tokens → one block is huge, floor division yields 0
+	_, err := latency.CalculateKVBlocks(mc, hc, 1, 10_000_000, params)
 	if err == nil {
 		t.Fatal("expected error for floor-zero blocks, got nil")
 	}
-	if !strings.Contains(err.Error(), "0 blocks") && !strings.Contains(err.Error(), "exceed") {
-		t.Errorf("expected error mentioning '0 blocks' or 'exceed', got: %v", err)
+	if !strings.Contains(err.Error(), "0 blocks") {
+		t.Errorf("expected error mentioning '0 blocks', got: %v", err)
 	}
 }
 
@@ -299,31 +300,10 @@ func TestCalculateKVBlocks_TPDivisibility_ReturnError(t *testing.T) {
 
 // --- Task 2: Empirical fidelity + invariant tests (BC-4, BC-5, KV-CAP-5) ---
 
-// llama31_8B_ModelConfig returns the exact Llama-3.1-8B architecture config
-// used in empirical fidelity tests.
-func llama31_8B_ModelConfig() sim.ModelConfig {
-	return sim.ModelConfig{
-		NumLayers:       32,
-		HiddenDim:       4096,
-		NumHeads:        32,
-		NumKVHeads:      8,
-		VocabSize:       128256,
-		BytesPerParam:   2,
-		IntermediateDim: 14336,
-	}
-}
-
-// h100HWConfig returns the H100 hardware config with 80 GiB memory.
-func h100HWConfig() sim.HardwareCalib {
-	return sim.HardwareCalib{
-		TFlopsPeak:    989.5,
-		BwPeakTBs:     3.35,
-		BwEffConstant: 0.72,
-		MfuPrefill:    0.65,
-		MfuDecode:     0.12,
-		MemoryGiB:     80.0,
-	}
-}
+// Aliases for fidelity tests — same config as validDenseModelConfig/validHWConfig
+// but named after the specific model/GPU for clarity in test output.
+func llama31_8B_ModelConfig() sim.ModelConfig { return validDenseModelConfig() }
+func h100HWConfig() sim.HardwareCalib         { return validHWConfig() }
 
 func TestCalculateKVBlocks_Llama31_8B_H100_TP2_WithinTolerance(t *testing.T) {
 	mc := llama31_8B_ModelConfig()

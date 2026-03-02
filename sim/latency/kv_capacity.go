@@ -30,7 +30,7 @@ const (
 
 // swiGLUActivations is the set of activation functions that use the SwiGLU
 // 3-matrix MLP pattern (gate + up + down). Empty string is accepted as a
-// default fallback. R8: unexported map; exposed via isSwiGLUActivation.
+// default fallback. R8: unexported map, accessed only within this file.
 var swiGLUActivations = map[string]bool{
 	"silu":   true,
 	"swiglu": true,
@@ -217,7 +217,7 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	finalNorm := hiddenDim
 
 	totalParams := embeddings + numLayers*perLayerParams + lmHead + finalNorm
-	return totalParams * int64(mc.BytesPerParam)
+	return int64(float64(totalParams) * mc.BytesPerParam)
 }
 
 // ExtractKVCapacityParamsFromFile reads a HuggingFace config.json file and
@@ -252,11 +252,24 @@ func ExtractKVCapacityParams(hf *HFConfig) KVCapacityParams {
 		return params
 	}
 
-	// Fallback MoE indicators: n_routed_experts, n_shared_experts, num_experts, num_experts_per_tok
-	for _, key := range []string{"n_routed_experts", "n_shared_experts", "num_experts", "num_experts_per_tok"} {
+	// Fallback MoE indicators: fields that represent total expert count can
+	// be used directly as NumLocalExperts. Fields like num_experts_per_tok
+	// represent activation count (e.g., 2 for Mixtral) and only signal MoE
+	// presence — they must NOT be used as the expert multiplier for weights.
+	for _, key := range []string{"n_routed_experts", "num_experts"} {
 		if v := hf.MustGetInt(key, 0); v > 1 {
 			params.IsMoE = true
 			params.NumLocalExperts = v
+			return params
+		}
+	}
+	// Activation-count or shared-expert fields: signal MoE but don't provide
+	// a reliable total expert count. Set IsMoE for activation memory but
+	// leave NumLocalExperts at 0 (computeModelWeightBytes skips MoE MLP
+	// multiplication when NumLocalExperts == 0).
+	for _, key := range []string{"n_shared_experts", "num_experts_per_tok"} {
+		if v := hf.MustGetInt(key, 0); v > 1 {
+			params.IsMoE = true
 			return params
 		}
 	}
