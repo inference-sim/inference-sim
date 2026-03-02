@@ -1,7 +1,10 @@
 package latency_test
 
 import (
+	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -274,5 +277,376 @@ func TestCalculateKVBlocks_TPDivisibility_ReturnError(t *testing.T) {
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "divisible") || !strings.Contains(errMsg, "TP") {
 		t.Errorf("expected error mentioning 'divisible' and 'TP', got: %v", err)
+	}
+}
+
+// --- Task 2: Empirical fidelity + invariant tests (BC-4, BC-5, KV-CAP-5) ---
+
+// llama31_8B_ModelConfig returns the exact Llama-3.1-8B architecture config
+// used in empirical fidelity tests.
+func llama31_8B_ModelConfig() sim.ModelConfig {
+	return sim.ModelConfig{
+		NumLayers:       32,
+		HiddenDim:       4096,
+		NumHeads:        32,
+		NumKVHeads:      8,
+		VocabSize:       128256,
+		BytesPerParam:   2,
+		IntermediateDim: 14336,
+	}
+}
+
+// h100HWConfig returns the H100 hardware config with 80 GiB memory.
+func h100HWConfig() sim.HardwareCalib {
+	return sim.HardwareCalib{
+		TFlopsPeak:    989.5,
+		BwPeakTBs:     3.35,
+		BwEffConstant: 0.72,
+		MfuPrefill:    0.65,
+		MfuDecode:     0.12,
+		MemoryGiB:     80.0,
+	}
+}
+
+func TestCalculateKVBlocks_Llama31_8B_H100_TP2_WithinTolerance(t *testing.T) {
+	mc := llama31_8B_ModelConfig()
+	hc := h100HWConfig()
+	params := latency.KVCapacityParams{
+		IsMoE:             false,
+		NumLocalExperts:   0,
+		TieWordEmbeddings: false,
+		HiddenAct:         "silu",
+	}
+
+	// Empirical baseline from capacity_planner.py formula with BLIS overhead
+	// constants (gpuMemUtil=0.9, activationDense=5.5GiB, nonTorchTPMulti=0.6GiB).
+	const expectedBlocks int64 = 59823
+	const tolerance = 0.10
+
+	got, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	deviation := math.Abs(float64(got)-float64(expectedBlocks)) / float64(expectedBlocks)
+	t.Logf("Llama-3.1-8B H100 TP=2: actual=%d expected=%d deviation=%.4f (%.2f%%)",
+		got, expectedBlocks, deviation, deviation*100)
+
+	if deviation > tolerance {
+		t.Errorf("result %d deviates from empirical %d by %.2f%% (tolerance: %.0f%%)",
+			got, expectedBlocks, deviation*100, tolerance*100)
+	}
+}
+
+func TestCalculateKVBlocks_Llama31_8B_H100_TP4_WithinTolerance(t *testing.T) {
+	mc := llama31_8B_ModelConfig()
+	hc := h100HWConfig()
+	params := latency.KVCapacityParams{
+		IsMoE:             false,
+		NumLocalExperts:   0,
+		TieWordEmbeddings: false,
+		HiddenAct:         "silu",
+	}
+
+	// Empirical baseline from capacity_planner.py formula with BLIS overhead
+	// constants (gpuMemUtil=0.9, activationDense=5.5GiB, nonTorchTPMulti=0.6GiB).
+	const expectedBlocks int64 = 127304
+	const tolerance = 0.10
+
+	got, err := latency.CalculateKVBlocks(mc, hc, 4, 16, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	deviation := math.Abs(float64(got)-float64(expectedBlocks)) / float64(expectedBlocks)
+	t.Logf("Llama-3.1-8B H100 TP=4: actual=%d expected=%d deviation=%.4f (%.2f%%)",
+		got, expectedBlocks, deviation, deviation*100)
+
+	if deviation > tolerance {
+		t.Errorf("result %d deviates from empirical %d by %.2f%% (tolerance: %.0f%%)",
+			got, expectedBlocks, deviation*100, tolerance*100)
+	}
+}
+
+func TestCalculateKVBlocks_Monotonicity_TP1ToTP2(t *testing.T) {
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+	blockSize := int64(16)
+
+	blocksTP1, err := latency.CalculateKVBlocks(mc, hc, 1, blockSize, params)
+	if err != nil {
+		t.Fatalf("TP=1 error: %v", err)
+	}
+
+	blocksTP2, err := latency.CalculateKVBlocks(mc, hc, 2, blockSize, params)
+	if err != nil {
+		t.Fatalf("TP=2 error: %v", err)
+	}
+
+	t.Logf("TP=1 blocks=%d, TP=2 blocks=%d", blocksTP1, blocksTP2)
+
+	if blocksTP2 <= blocksTP1 {
+		t.Errorf("monotonicity violation: TP=2 blocks (%d) should be greater than TP=1 blocks (%d)",
+			blocksTP2, blocksTP1)
+	}
+}
+
+func TestCalculateKVBlocks_Purity_SameInputsSameOutput(t *testing.T) {
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	result1, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("first call error: %v", err)
+	}
+
+	result2, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("second call error: %v", err)
+	}
+
+	if result1 != result2 {
+		t.Errorf("purity violation: same inputs produced different outputs: %d vs %d",
+			result1, result2)
+	}
+}
+
+// --- Task 3: MoE model tests (BC-9, BC-11, BC-13) ---
+
+func TestCalculateKVBlocks_Mixtral_8x7B_H100_TP2_WithinTolerance(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumLayers:       32,
+		HiddenDim:       4096,
+		NumHeads:        32,
+		NumKVHeads:      8,
+		VocabSize:       32000,
+		BytesPerParam:   2,
+		IntermediateDim: 14336,
+	}
+	hc := h100HWConfig()
+	params := latency.KVCapacityParams{
+		IsMoE:             true,
+		NumLocalExperts:   8,
+		TieWordEmbeddings: false,
+		HiddenAct:         "silu",
+	}
+
+	// Empirical baseline from capacity_planner.py formula with BLIS overhead
+	// constants (gpuMemUtil=0.9, activationMoE=8.0GiB, nonTorchTPMulti=0.6GiB).
+	const expectedBlocks int64 = 20382
+	const tolerance = 0.20
+
+	got, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	deviation := math.Abs(float64(got)-float64(expectedBlocks)) / float64(expectedBlocks)
+	t.Logf("Mixtral-8x7B H100 TP=2: actual=%d expected=%d deviation=%.4f (%.2f%%)",
+		got, expectedBlocks, deviation, deviation*100)
+
+	if deviation > tolerance {
+		t.Errorf("result %d deviates from empirical %d by %.2f%% (tolerance: %.0f%%)",
+			got, expectedBlocks, deviation*100, tolerance*100)
+	}
+}
+
+func TestCalculateKVBlocks_MoE_UsesHigherActivationConstant(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumLayers:       32,
+		HiddenDim:       4096,
+		NumHeads:        32,
+		NumKVHeads:      8,
+		VocabSize:       32000,
+		BytesPerParam:   2,
+		IntermediateDim: 14336,
+	}
+	hc := h100HWConfig()
+
+	denseParams := latency.KVCapacityParams{
+		IsMoE:             false,
+		NumLocalExperts:   0,
+		TieWordEmbeddings: false,
+		HiddenAct:         "silu",
+	}
+	moeParams := latency.KVCapacityParams{
+		IsMoE:             true,
+		NumLocalExperts:   8,
+		TieWordEmbeddings: false,
+		HiddenAct:         "silu",
+	}
+
+	denseBlocks, err := latency.CalculateKVBlocks(mc, hc, 2, 16, denseParams)
+	if err != nil {
+		t.Fatalf("dense error: %v", err)
+	}
+
+	moeBlocks, err := latency.CalculateKVBlocks(mc, hc, 2, 16, moeParams)
+	if err != nil {
+		t.Fatalf("MoE error: %v", err)
+	}
+
+	t.Logf("dense blocks=%d, MoE blocks=%d", denseBlocks, moeBlocks)
+
+	if moeBlocks >= denseBlocks {
+		t.Errorf("MoE model should produce fewer blocks than dense (MoE=%d >= dense=%d) "+
+			"due to higher activation constant and MLP weight multiplication",
+			moeBlocks, denseBlocks)
+	}
+}
+
+// --- Task 4: Tied embeddings + extraction tests (BC-12, BC-25) ---
+
+func TestCalculateKVBlocks_TiedEmbeddings_ProducesMoreBlocks(t *testing.T) {
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+
+	untiedParams := latency.KVCapacityParams{
+		IsMoE:             false,
+		NumLocalExperts:   0,
+		TieWordEmbeddings: false,
+		HiddenAct:         "silu",
+	}
+	tiedParams := latency.KVCapacityParams{
+		IsMoE:             false,
+		NumLocalExperts:   0,
+		TieWordEmbeddings: true,
+		HiddenAct:         "silu",
+	}
+
+	untiedBlocks, err := latency.CalculateKVBlocks(mc, hc, 2, 16, untiedParams)
+	if err != nil {
+		t.Fatalf("untied error: %v", err)
+	}
+
+	tiedBlocks, err := latency.CalculateKVBlocks(mc, hc, 2, 16, tiedParams)
+	if err != nil {
+		t.Fatalf("tied error: %v", err)
+	}
+
+	t.Logf("untied blocks=%d, tied blocks=%d", untiedBlocks, tiedBlocks)
+
+	if tiedBlocks <= untiedBlocks {
+		t.Errorf("tied embeddings should produce more blocks (less weight memory): tied=%d <= untied=%d",
+			tiedBlocks, untiedBlocks)
+	}
+}
+
+// writeTempConfigJSON writes a config.json to a temp dir and returns the file path.
+func writeTempConfigJSON(t *testing.T, data map[string]any) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatalf("marshal config.json: %v", err)
+	}
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("write config.json: %v", err)
+	}
+	return path
+}
+
+func TestExtractKVCapacityParams_DenseModel(t *testing.T) {
+	path := writeTempConfigJSON(t, map[string]any{
+		"hidden_act":           "silu",
+		"num_hidden_layers":    32,
+		"hidden_size":          4096,
+		"num_attention_heads":  32,
+		"num_key_value_heads":  8,
+		"intermediate_size":    14336,
+		"vocab_size":           128256,
+		"torch_dtype":          "bfloat16",
+		"tie_word_embeddings":  false,
+	})
+
+	params, err := latency.ExtractKVCapacityParamsFromFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if params.IsMoE {
+		t.Error("expected IsMoE=false for dense model")
+	}
+	if params.TieWordEmbeddings {
+		t.Error("expected TieWordEmbeddings=false")
+	}
+	if params.HiddenAct != "silu" {
+		t.Errorf("expected HiddenAct=%q, got %q", "silu", params.HiddenAct)
+	}
+}
+
+func TestExtractKVCapacityParams_MoEModel(t *testing.T) {
+	path := writeTempConfigJSON(t, map[string]any{
+		"hidden_act":           "silu",
+		"num_hidden_layers":    32,
+		"hidden_size":          4096,
+		"num_attention_heads":  32,
+		"num_key_value_heads":  8,
+		"intermediate_size":    14336,
+		"vocab_size":           32000,
+		"torch_dtype":          "bfloat16",
+		"num_local_experts":    8,
+		"num_experts_per_tok":  2,
+	})
+
+	params, err := latency.ExtractKVCapacityParamsFromFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !params.IsMoE {
+		t.Error("expected IsMoE=true for MoE model")
+	}
+	if params.NumLocalExperts != 8 {
+		t.Errorf("expected NumLocalExperts=8, got %d", params.NumLocalExperts)
+	}
+}
+
+func TestExtractKVCapacityParams_SingleExpert_ClassifiedAsDense(t *testing.T) {
+	path := writeTempConfigJSON(t, map[string]any{
+		"hidden_act":           "silu",
+		"num_hidden_layers":    32,
+		"hidden_size":          4096,
+		"num_attention_heads":  32,
+		"num_key_value_heads":  8,
+		"intermediate_size":    14336,
+		"vocab_size":           32000,
+		"torch_dtype":          "bfloat16",
+		"num_local_experts":    1,
+	})
+
+	params, err := latency.ExtractKVCapacityParamsFromFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if params.IsMoE {
+		t.Error("expected IsMoE=false for single-expert model (classified as dense)")
+	}
+}
+
+func TestExtractKVCapacityParams_TiedEmbeddings(t *testing.T) {
+	path := writeTempConfigJSON(t, map[string]any{
+		"hidden_act":           "silu",
+		"num_hidden_layers":    32,
+		"hidden_size":          4096,
+		"num_attention_heads":  32,
+		"num_key_value_heads":  8,
+		"intermediate_size":    14336,
+		"vocab_size":           128256,
+		"torch_dtype":          "bfloat16",
+		"tie_word_embeddings":  true,
+	})
+
+	params, err := latency.ExtractKVCapacityParamsFromFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !params.TieWordEmbeddings {
+		t.Error("expected TieWordEmbeddings=true")
 	}
 }
