@@ -249,6 +249,23 @@ func TestCalculateKVBlocks_BudgetExceeded_ReturnError(t *testing.T) {
 	}
 }
 
+func TestCalculateKVBlocks_FloorZero_ReturnError(t *testing.T) {
+	// Use a tiny GPU memory that barely covers overhead, leaving near-zero
+	// allocatable space so floor division yields 0 blocks.
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	hc.MemoryGiB = 2.0 // Just enough to not trigger "exceeds" but too small for any blocks
+	params := validDenseKVParams()
+
+	_, err := latency.CalculateKVBlocks(mc, hc, 1, 16, params)
+	if err == nil {
+		t.Fatal("expected error for floor-zero blocks, got nil")
+	}
+	if !strings.Contains(err.Error(), "0 blocks") && !strings.Contains(err.Error(), "exceed") {
+		t.Errorf("expected error mentioning '0 blocks' or 'exceed', got: %v", err)
+	}
+}
+
 func TestCalculateKVBlocks_NonSwiGLU_ReturnError(t *testing.T) {
 	mc := validDenseModelConfig()
 	hc := validHWConfig()

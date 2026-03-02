@@ -402,14 +402,16 @@ var runCmd = &cobra.Command{
 			if kvParamsErr != nil {
 				logrus.Warnf("--roofline: could not extract KV capacity params: %v; using current total-kv-blocks=%d", kvParamsErr, totalKVBlocks)
 			} else if hwConfig.MemoryGiB <= 0 {
-				logrus.Warnf("--roofline: GPU memory capacity not available in hardware config; using current total-kv-blocks=%d", totalKVBlocks)
+				logrus.Warnf("--roofline: GPU memory capacity not available in hardware config; using current total-kv-blocks=%d. "+
+					"Add MemoryGiB to hardware_config.json or pass --total-kv-blocks explicitly", totalKVBlocks)
 			} else {
 				autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, kvParams)
 				if calcErr != nil {
 					logrus.Warnf("--roofline: KV capacity auto-calculation failed: %v; using current total-kv-blocks=%d", calcErr, totalKVBlocks)
 				} else {
 					totalKVBlocks = autoBlocks
-					logrus.Infof("--roofline: auto-calculated total-kv-blocks=%d from model/hardware config", totalKVBlocks)
+					logrus.Infof("--roofline: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, block_size=%d, MoE=%v)",
+						totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, blockSizeTokens, kvParams.IsMoE)
 				}
 			}
 		}
