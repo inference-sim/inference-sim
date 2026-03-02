@@ -391,6 +391,29 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("--prefix-tokens must be >= 0, got %d", prefixTokens)
 		}
 
+		// KV capacity auto-calculation: derive total-kv-blocks from model + hardware
+		// when in roofline mode and the user hasn't explicitly set --total-kv-blocks.
+		// This overrides the defaults.yaml value (loaded above) with a more accurate
+		// estimate derived from actual model architecture and GPU memory capacity.
+		// R18: cmd.Flags().Changed() ensures CLI flags always take precedence.
+		if rooflineActive && !cmd.Flags().Changed("total-kv-blocks") {
+			hfPath := filepath.Join(modelConfigFolder, "config.json")
+			kvParams, kvParamsErr := latency.ExtractKVCapacityParamsFromFile(hfPath)
+			if kvParamsErr != nil {
+				logrus.Warnf("--roofline: could not extract KV capacity params: %v; using current total-kv-blocks=%d", kvParamsErr, totalKVBlocks)
+			} else if hwConfig.MemoryGiB <= 0 {
+				logrus.Warnf("--roofline: GPU memory capacity not available in hardware config; using current total-kv-blocks=%d", totalKVBlocks)
+			} else {
+				autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, kvParams)
+				if calcErr != nil {
+					logrus.Warnf("--roofline: KV capacity auto-calculation failed: %v; using current total-kv-blocks=%d", calcErr, totalKVBlocks)
+				} else {
+					totalKVBlocks = autoBlocks
+					logrus.Infof("--roofline: auto-calculated total-kv-blocks=%d from model/hardware config", totalKVBlocks)
+				}
+			}
+		}
+
 		// Workload configuration — all paths synthesize a v2 WorkloadSpec
 		// and generate requests via workload.GenerateRequests (BC-10).
 		var spec *workload.WorkloadSpec

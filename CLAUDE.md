@@ -240,6 +240,7 @@ inference-sim/
 │   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
 │   ├── crossmodel.go          # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
+│   ├── kv_capacity.go         # CalculateKVBlocks: auto-derive total KV cache blocks from model architecture + GPU memory; KVCapacityParams, ExtractKVCapacityParams, computeModelWeightBytes
 │   ├── config.go              # HFConfig, GetHWConfig(), GetModelConfig(), ValidateRooflineConfig(), parseHWConfig(), parseHFConfig()
 │   └── register.go            # init()-based registration of NewLatencyModelFunc into sim/
 ├── sim/cluster/               # Multi-replica cluster simulation
@@ -346,7 +347,8 @@ Three modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`)
 
 2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `sim/latency/roofline.go`
    - Requires HuggingFace `config.json` in `model_configs/`
-   - Requires `hardware_config.json` with GPU specs
+   - Requires `hardware_config.json` with GPU specs (including `MemoryGiB` for KV capacity auto-calculation)
+   - **KV capacity auto-calculation**: When an analytical backend (`roofline` or `crossmodel`) is active and `--total-kv-blocks` is not explicitly set, `CalculateKVBlocks()` (in `sim/latency/kv_capacity.go`) derives the block count from model architecture + GPU memory, matching the llm-d-benchmark `capacity_planner.py` reference formula. Supports dense and MoE models.
    - **`--latency-model roofline`**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./blis run --model <name> --latency-model roofline --hardware <GPU> --tp <N>`
 
 3. **Cross-model mode**: Physics-informed estimation via `sim/latency/crossmodel.go`
