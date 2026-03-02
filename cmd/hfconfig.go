@@ -44,19 +44,19 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 	baseDir := filepath.Dir(defaultsFile)
 	localDir, err := bundledModelConfigDir(model, baseDir)
 	if err != nil {
-		return "", fmt.Errorf("--roofline: invalid model name %q: %w", model, err)
+		return "", fmt.Errorf("--latency-model: invalid model name %q: %w", model, err)
 	}
 
 	// 2. Check model_configs/ for an existing config.json (bundled or previously fetched)
 	localPath := filepath.Join(localDir, hfConfigFile)
 	if data, err := os.ReadFile(localPath); err == nil {
 		if json.Valid(data) && isHFConfig(data) {
-			logrus.Infof("--roofline: using config from %s", localDir)
+			logrus.Infof("--latency-model: using config from %s", localDir)
 			return localDir, nil
 		}
 		// Don't delete — the file may be a user-provided config with non-standard
 		// field names. Fall through to HF fetch, which will overwrite if successful.
-		logrus.Warnf("--roofline: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size); trying HuggingFace fetch", localPath)
+		logrus.Warnf("--latency-model: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size); trying HuggingFace fetch", localPath)
 	}
 
 	// 3. Fetch from HuggingFace and write into model_configs/<short-name>/
@@ -64,7 +64,7 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 	hfRepo, err := GetHFRepo(model, defaultsFile)
 	if err != nil {
 		defaultsErr = err
-		logrus.Warnf("--roofline: could not read hf_repo from defaults: %v (HuggingFace fetch may fail due to case-sensitivity)", err)
+		logrus.Warnf("--latency-model: could not read hf_repo from defaults: %v (HuggingFace fetch may fail due to case-sensitivity)", err)
 	}
 	if hfRepo == "" {
 		hfRepo = model
@@ -72,13 +72,13 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 
 	fetchedDir, err := fetchHFConfigFunc(hfRepo, localDir)
 	if err == nil {
-		logrus.Infof("--roofline: fetched config for %s into %s", model, fetchedDir)
+		logrus.Infof("--latency-model: fetched config for %s into %s", model, fetchedDir)
 		return fetchedDir, nil
 	}
-	logrus.Warnf("--roofline: HF fetch failed for %s: %v", model, err)
+	logrus.Warnf("--latency-model: HF fetch failed for %s: %v", model, err)
 
 	errMsg := fmt.Sprintf(
-		"--roofline: could not find config.json for model %q.\n"+
+		"--latency-model: could not find config.json for model %q.\n"+
 			"  Tried: %s, HuggingFace (%s/%s).\n"+
 			"  Provide --model-config-folder explicitly",
 		model, localDir, hfBaseURL, hfRepo,
@@ -100,12 +100,12 @@ func resolveHardwareConfig(explicitPath, defaultsFile string) (string, error) {
 	defaultsDir := filepath.Dir(defaultsFile)
 	bundledPath := filepath.Join(defaultsDir, "hardware_config.json")
 	if _, err := os.Stat(bundledPath); err == nil {
-		logrus.Infof("--roofline: using bundled hardware config at %s", bundledPath)
+		logrus.Infof("--latency-model: using bundled hardware config at %s", bundledPath)
 		return bundledPath, nil
 	}
 
 	return "", fmt.Errorf(
-		"--roofline: bundled hardware config not found at %q. Provide --hardware-config explicitly",
+		"--latency-model: bundled hardware config not found at %q. Provide --hardware-config explicitly",
 		bundledPath,
 	)
 }

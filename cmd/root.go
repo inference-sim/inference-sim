@@ -49,8 +49,7 @@ var (
 	outputTokensStdev         int       // Stdev Output Token Count
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
-	rooflineActive            bool      // Runtime state: whether roofline step time is active (set by --roofline flag OR implicit detection)
-	rooflineFlag              bool      // CLI --roofline flag: auto-fetch HF config and resolve hardware config
+	latencyModelBackend string // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
 
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
@@ -136,8 +135,17 @@ var runCmd = &cobra.Command{
 		// Load alpha/beta coeffs from coefficients.yaml
 		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
 
-		// Default: Do not use Roofline estimates for step time
-		rooflineActive = false
+		// Validate --latency-model flag
+		if !sim.IsValidLatencyBackend(latencyModelBackend) {
+			logrus.Fatalf("unknown --latency-model %q; valid options: %s",
+				latencyModelBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+		}
+
+		// Local copy of CLI-provided backend. This may be mutated by implicit
+		// detection (backend = "roofline") but the package-level latencyModelBackend
+		// is NEVER mutated inside Run — Cobra sets it before Run and it persists
+		// cleanly across process-level reuse.
+		backend := latencyModelBackend
 
 		var modelConfig = sim.ModelConfig{}
 		var hwConfig = sim.HardwareCalib{}
@@ -150,29 +158,29 @@ var runCmd = &cobra.Command{
 		// hf_repo mapping in defaults.yaml preserves the original casing for API calls.
 		model = strings.ToLower(model)
 
-		// --roofline flag: auto-resolve model config and hardware config
-		if rooflineFlag {
+		// --latency-model roofline: auto-resolve model config and hardware config
+		if backend == "roofline" {
 			if gpu == "" {
-				logrus.Fatalf("--roofline requires --hardware (GPU type)")
+				logrus.Fatalf("--latency-model roofline requires --hardware (GPU type)")
 			}
 			if tensorParallelism <= 0 {
-				logrus.Fatalf("--roofline requires --tp > 0")
+				logrus.Fatalf("--latency-model roofline requires --tp > 0")
 			}
 
 			// Warn if user also provided explicit beta coefficients — roofline replaces
 			// step time estimation. Alpha coefficients are still used for queueing time
 			// and output token processing time.
 			if !AllZeros(betaCoeffs) {
-				logrus.Warnf("--roofline replaces --beta-coeffs with analytical step time estimation. " +
+				logrus.Warnf("--latency-model roofline replaces --beta-coeffs with analytical step time estimation. " +
 					"Alpha coefficients are still used for queueing time and output token processing")
 			}
 
-			// Log when explicit overrides interact with --roofline
+			// Log when explicit overrides interact with --latency-model roofline
 			if modelConfigFolder != "" {
-				logrus.Infof("--roofline: explicit --model-config-folder takes precedence over auto-resolution")
+				logrus.Infof("--latency-model: explicit --model-config-folder takes precedence over auto-resolution")
 			}
 			if hwConfigPath != "" {
-				logrus.Infof("--roofline: explicit --hardware-config takes precedence over auto-resolution")
+				logrus.Infof("--latency-model: explicit --hardware-config takes precedence over auto-resolution")
 			}
 
 			// Resolve model config folder (cache → HF fetch → bundled fallback)
@@ -189,14 +197,6 @@ var runCmd = &cobra.Command{
 			}
 			hwConfigPath = resolvedHW
 
-			// Explicitly activate roofline mode (design doc step 4).
-			// Do NOT rely on downstream "all coefficients zero" heuristic.
-			// Note (I10): When --roofline is set with explicit --alpha-coeffs/--beta-coeffs,
-			// SimConfig will contain both non-zero coefficients and roofline=true. This is
-			// intentional: rooflineActive controls the latency model factory, and the
-			// AllZeros() check at the implicit-detection block is guarded by !rooflineActive.
-			rooflineActive = true
-
 			// Load alpha coefficients and totalKVBlocks from defaults.yaml.
 			// Roofline replaces beta (step time) but still needs alpha
 			// (queueing time, output token processing) and KV cache capacity.
@@ -210,23 +210,23 @@ var runCmd = &cobra.Command{
 				defAlpha, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if AllZeros(alphaCoeffs) && !AllZeros(defAlpha) {
 					alphaCoeffs = defAlpha
-					logrus.Infof("--roofline: loaded alpha coefficients from defaults.yaml for queueing time estimation")
+					logrus.Infof("--latency-model: loaded alpha coefficients from defaults.yaml for queueing time estimation")
 				}
 				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 					totalKVBlocks = kvBlocks
-					logrus.Infof("--roofline: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
+					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
 				} else if !cmd.Flags().Changed("total-kv-blocks") {
-					logrus.Warnf("--roofline: no trained total-kv-blocks found for model=%s, GPU=%s, TP=%d; "+
+					logrus.Warnf("--latency-model: no trained total-kv-blocks found for model=%s, GPU=%s, TP=%d; "+
 						"using default %d. Consider setting --total-kv-blocks explicitly for accurate KV cache simulation",
 						model, gpu, tensorParallelism, totalKVBlocks)
 				}
 				if AllZeros(alphaCoeffs) {
-					logrus.Warnf("--roofline: no trained alpha coefficients found for model=%s, GPU=%s, TP=%d; "+
+					logrus.Warnf("--latency-model: no trained alpha coefficients found for model=%s, GPU=%s, TP=%d; "+
 						"queueing time and output token processing time will use zero alpha (may underestimate TTFT/ITL)",
 						model, gpu, tensorParallelism)
 				}
 			} else {
-				logrus.Warnf("--roofline: defaults file %s not found; alpha coefficients and total-kv-blocks not loaded. "+
+				logrus.Warnf("--latency-model: defaults file %s not found; alpha coefficients and total-kv-blocks not loaded. "+
 					"Queueing time estimation will use zero alpha coefficients", defaultsFilePath)
 			}
 		}
@@ -262,20 +262,28 @@ var runCmd = &cobra.Command{
 				totalKVBlocks = kvBlocks
 			}
 		}
-		// Load roofline model/hardware configs when roofline mode is active.
-		// Two activation paths: (1) explicit --roofline flag, (2) implicit detection
-		// when trained coefficients are all-zero and config paths are provided.
-		if !rooflineActive && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+		// Implicit roofline detection: when no backend explicitly selected AND
+		// trained coefficients are all-zero AND config paths are provided.
+		// Guard uses backend == "" (not != "roofline") so that --latency-model blackbox
+		// explicitly prevents implicit detection — respecting user intent.
+		if backend == "" && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
 			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
-				rooflineActive = true
+				backend = "roofline"
 			} else if len(modelConfigFolder) == 0 {
 				logrus.Fatalf("Please provide model config folder containing config.json for model=%v\n", model)
 			} else if len(hwConfigPath) == 0 {
 				logrus.Fatalf("Please provide hardware config path (e.g. hardware_config.json)\n")
 			}
 		}
-		if rooflineActive {
+		// Zero-coefficients safety guard: prevents silently running with zero step times
+		// when blackbox mode has no trained coefficients (would produce meaningless results).
+		if backend != "roofline" && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+			logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
+				"Provide --alpha-coeffs/--beta-coeffs, or use --latency-model roofline with --hardware and --tp",
+				model, gpu, tensorParallelism)
+		}
+		if backend == "roofline" {
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
 			mc, err := latency.GetModelConfig(hfPath)
 			if err != nil {
@@ -290,14 +298,14 @@ var runCmd = &cobra.Command{
 
 			// Warn about known roofline estimation limitations
 			if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
-				logrus.Warnf("--roofline: model reports %.0f byte(s)/param (possible quantization). "+
+				logrus.Warnf("--latency-model: model reports %.0f byte(s)/param (possible quantization). "+
 					"Roofline step time estimates may be inaccurate for quantized models",
 					modelConfig.BytesPerParam)
 			}
 			// Check for MoE model indicators in the raw HF config
 			if hfRawBytes, readErr := os.ReadFile(hfPath); readErr == nil {
 				if strings.Contains(string(hfRawBytes), `"num_local_experts"`) {
-					logrus.Warnf("--roofline: model appears to be MoE (Mixture-of-Experts). " +
+					logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
 						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
 				}
 			}
@@ -552,7 +560,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, rooflineActive),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,
@@ -725,7 +733,7 @@ func init() {
 	runCmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	runCmd.Flags().BoolVar(&rooflineFlag, "roofline", false, "Enable roofline mode with auto-fetch of HuggingFace config.json and bundled hardware config")
+	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline")
 
 	// GuideLLM-style distribution-based workload generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
