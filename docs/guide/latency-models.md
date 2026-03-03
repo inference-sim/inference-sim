@@ -9,7 +9,7 @@ The `LatencyModel` interface determines how BLIS estimates GPU step time for eac
 
 # Roofline mode — analytical estimation from model architecture
 ./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --roofline --hardware H100 --tp 2 \
+  --latency-model roofline --hardware H100 --tp 2 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
@@ -43,13 +43,13 @@ Pre-trained coefficient sets exist in `defaults.yaml` for common model/GPU/TP co
 
 Roofline mode computes step time analytically from model architecture (FLOPs, parameter count) and hardware specifications (compute throughput, memory bandwidth). It does not require pre-trained coefficients, making it suitable for new models.
 
-### The `--roofline` Flag
+### The `--latency-model roofline` Flag
 
 The simplest way to use roofline mode:
 
 ```bash
 ./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --roofline --hardware H100 --tp 2
+  --latency-model roofline --hardware H100 --tp 2
 ```
 
 This auto-resolves both required inputs:
@@ -62,7 +62,7 @@ For gated models (e.g., LLaMA), set `HF_TOKEN`:
 ```bash
 export HF_TOKEN=your_token_here
 ./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --roofline --hardware H100 --tp 2
+  --latency-model roofline --hardware H100 --tp 2
 ```
 
 ### Manual Configuration
@@ -82,9 +82,9 @@ Any model with a HuggingFace `config.json` can use roofline mode:
 
 1. Download `config.json` from HuggingFace
 2. Place it in `model_configs/<model-name>/config.json`
-3. Run with `--roofline --hardware <GPU> --tp <N>`
+3. Run with `--latency-model roofline --hardware <GPU> --tp <N>`
 
-Or let BLIS fetch it automatically with `--roofline`.
+Or let BLIS fetch it automatically with `--latency-model roofline`.
 
 ### Tensor Parallelism and Roofline
 

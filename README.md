@@ -106,7 +106,7 @@ You should see JSON output like:
 ### Roofline mode (analytical, no trained coefficients)
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct --roofline --hardware H100 --tp 2
+./blis run --model meta-llama/llama-3.1-8b-instruct --latency-model roofline --hardware H100 --tp 2
 ```
 
 ### Convert workload formats
@@ -150,11 +150,11 @@ BLIS has a comprehensive documentation site built with MkDocs Material:
 inference-sim/
 ├── main.go                 # CLI entry point
 ├── cmd/                    # CLI commands
-│   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, --roofline, etc.)
+│   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, --latency-model, etc.)
 │   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
 │   ├── convert.go          # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
 │   ├── compose.go          # `blis compose` for merging v2 specs
-│   ├── hfconfig.go         # HuggingFace config resolution (--roofline auto-fetch into model_configs/)
+│   ├── hfconfig.go         # HuggingFace config resolution (--latency-model auto-fetch into model_configs/)
 │   └── default_config.go   # defaults.yaml loading (includes GetHFRepo for HF repo mapping)
 ├── sim/                    # Core simulation engine
 │   ├── config.go           # Module-scoped sub-config types (R16)

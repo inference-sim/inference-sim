@@ -1,6 +1,8 @@
 # Design: `--roofline` Auto-Fetch Flag
 
-**Status:** Approved
+> **Superseded:** The `--roofline` boolean flag was replaced by `--latency-model roofline` (string enum) in PR #475 (issue #472). This design doc is retained as architectural reference for the auto-fetch resolution chain, which is unchanged. See `docs/plans/pr472a-latency-model-flag-plan.md` for the replacement design.
+
+**Status:** Approved (superseded by #475)
 **Issue:** #414
 **Type:** Specification
 **Date:** 2026-02-25

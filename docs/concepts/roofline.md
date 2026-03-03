@@ -52,12 +52,12 @@ The final step time is the sum of independent phases and overheads:
 
 ## 5. Onboarding a new LLM/GPU
 
-### Automatic (recommended): `--roofline` flag
+### Automatic (recommended): `--latency-model roofline`
 
-The simplest way to run roofline mode is with the `--roofline` flag, which auto-resolves the model config:
+The simplest way to run roofline mode is with `--latency-model roofline`, which auto-resolves the model config:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct --roofline --hardware H100 --tp 1
+./blis run --model meta-llama/llama-3.1-8b-instruct --latency-model roofline --hardware H100 --tp 1
 ```
 
 The flag automatically:

@@ -31,7 +31,7 @@ Red Hat AI (`redhatai/`) provides FP8, W4A16, and W8A8 quantized variants for ma
 
 ## Roofline-Only Models
 
-Any model with a HuggingFace `config.json` can use roofline mode via `--roofline` or `--model-config-folder`. The `--roofline` flag auto-fetches configs from HuggingFace on first use, caching them in `model_configs/`. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, and LLaMA 2 7B/70B.
+Any model with a HuggingFace `config.json` can use roofline mode via `--latency-model roofline` or `--model-config-folder`. The `--latency-model roofline` flag auto-fetches configs from HuggingFace on first use, caching them in `model_configs/`. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, and LLaMA 2 7B/70B.
 
 ## Adding a New Model
 
@@ -44,6 +44,6 @@ To add roofline support:
 
 1. Download the model's `config.json` from HuggingFace
 2. Place in `model_configs/<model-name>/config.json`
-3. Run with `--roofline --hardware <GPU> --tp <N>`
+3. Run with `--latency-model roofline --hardware <GPU> --tp <N>`
 
-Or let BLIS auto-fetch it with `--roofline`.
+Or let BLIS auto-fetch it with `--latency-model roofline`.
