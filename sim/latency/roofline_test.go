@@ -52,13 +52,15 @@ func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
 // testModelConfig returns a Llama-3.1-8B-like config for roofline tests.
 func testModelConfig() sim.ModelConfig {
 	return sim.ModelConfig{
-		NumLayers:       32,
-		HiddenDim:       4096,
-		NumHeads:        32,
-		NumKVHeads:      8,
-		VocabSize:       128256,
-		BytesPerParam:   2, // bfloat16
-		IntermediateDim: 14336,
+		NumLayers:        32,
+		HiddenDim:        4096,
+		NumHeads:         32,
+		NumKVHeads:       8,
+		VocabSize:        128256,
+		BytesPerParam:    2, // bfloat16
+		IntermediateDim:  14336,
+		NumLocalExperts:  0, // dense model
+		NumExpertsPerTok: 0,
 	}
 }
 

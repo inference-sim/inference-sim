@@ -128,15 +128,21 @@ func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
 	// Intermediate dim: Falcon/GLM use "ffn_hidden_size" instead of "intermediate_size".
 	intermediateDim := getIntWithFallbacks("intermediate_size", "ffn_hidden_size")
 
+	// MoE fields: 0 = dense model (zero-value safe)
+	numLocalExperts := getInt("num_local_experts")
+	numExpertsPerTok := getInt("num_experts_per_tok")
+
 	modelConfig := &sim.ModelConfig{
 		// From HFConfig.Raw
-		NumLayers:       getInt("num_hidden_layers"),
-		HiddenDim:       getInt("hidden_size"),
-		VocabSize:       getInt("vocab_size"),
-		IntermediateDim: intermediateDim,
-		NumHeads:        numHeads,
-		NumKVHeads:      numKVHeads,
-		BytesPerParam:   float64(bytesPerParam),
+		NumLayers:        getInt("num_hidden_layers"),
+		HiddenDim:        getInt("hidden_size"),
+		VocabSize:        getInt("vocab_size"),
+		IntermediateDim:  intermediateDim,
+		NumHeads:         numHeads,
+		NumKVHeads:       numKVHeads,
+		BytesPerParam:    float64(bytesPerParam),
+		NumLocalExperts:  numLocalExperts,
+		NumExpertsPerTok: numExpertsPerTok,
 	}
 	return modelConfig, nil
 }
