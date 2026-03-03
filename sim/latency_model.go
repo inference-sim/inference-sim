@@ -1,8 +1,8 @@
 package sim
 
 // LatencyModel estimates execution times for the DES step loop.
-// Two implementations exist in sim/latency/: BlackboxLatencyModel (alpha/beta regression)
-// and RooflineLatencyModel (analytical FLOPs/bandwidth).
+// Three implementations exist in sim/latency/: BlackboxLatencyModel (alpha/beta regression),
+// RooflineLatencyModel (analytical FLOPs/bandwidth), and CrossModelLatencyModel (physics-informed cross-model).
 // All time estimates are in microseconds (ticks).
 type LatencyModel interface {
 	// StepTime estimates the duration of one batch step given the running batch.

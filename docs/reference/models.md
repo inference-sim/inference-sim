@@ -29,9 +29,9 @@ All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for
 
 Red Hat AI (`redhatai/`) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, Qwen 2.5, and SmolLM3 3B (FP8 only). See [`defaults.yaml`](https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml) for the full list.
 
-## Roofline-Only Models
+## Roofline and Cross-Model Modes
 
-Any model with a HuggingFace `config.json` can use roofline mode via `--latency-model roofline` or `--model-config-folder`. The `--latency-model roofline` flag auto-fetches configs from HuggingFace on first use, caching them in `model_configs/`. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, and LLaMA 2 7B/70B.
+Any model with a HuggingFace `config.json` can use roofline mode (`--latency-model roofline`) or cross-model mode (`--latency-model crossmodel`). Both auto-fetch configs from HuggingFace on first use, caching them in `model_configs/`. Cross-model mode is MoE-aware and uses globally-fitted physics coefficients, making it the preferred choice for MoE models like Mixtral. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B, and Mixtral 8x7B.
 
 ## Adding a New Model
 

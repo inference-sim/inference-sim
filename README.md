@@ -1,6 +1,6 @@
 # Blackbox Inference Simulator (BLIS)
 
-A discrete-event simulator for LLM inference serving systems. BLIS models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by trained performance coefficients or analytical roofline estimates.
+A discrete-event simulator for LLM inference serving systems. BLIS models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by trained performance coefficients, analytical roofline estimates, or physics-informed cross-model prediction.
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across model/GPU/TP configurations without requiring real GPUs.
 
@@ -14,7 +14,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **HuggingFace config.json support** for model architecture
 - **Dense and MoE model support** (Mixtral, DeepSeek-MoE, etc.)
 - **vLLM deployment configuration** (TP, PP, EP, batch limits)
-- **Two latency estimation modes**: blackbox (data-driven) and roofline (analytical)
+- **Three latency estimation modes**: blackbox (data-driven), roofline (analytical), and cross-model (physics-informed, MoE-aware)
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`) or custom distributions
 - **Trace replay**: replay recorded request traces for deterministic testing
 - **Multi-instance cluster simulation** with shared-clock event loop
@@ -185,7 +185,8 @@ inference-sim/
 │   ├── tiered.go           # TieredKVCache (GPU+CPU)
 │   └── register.go         # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/            # Latency model implementations
-│   ├── latency.go          # BlackboxLatencyModel, RooflineLatencyModel, NewLatencyModel factory
+│   ├── latency.go          # BlackboxLatencyModel, RooflineLatencyModel, CrossModelLatencyModel, NewLatencyModel factory
+│   ├── crossmodel.go       # CrossModelLatencyModel: physics-informed step time from architecture features
 │   ├── roofline.go         # Analytical FLOPs/bandwidth latency estimation
 │   ├── config.go           # HFConfig, GetHWConfig, GetModelConfig, ValidateRooflineConfig
 │   └── register.go         # init()-based registration into sim/

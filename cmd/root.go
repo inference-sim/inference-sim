@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -231,6 +233,74 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// --latency-model crossmodel: auto-resolve model config and load global coefficients
+		if backend == "crossmodel" {
+			if gpu == "" {
+				logrus.Fatalf("--latency-model crossmodel requires --hardware (GPU type)")
+			}
+			if tensorParallelism <= 0 {
+				logrus.Fatalf("--latency-model crossmodel requires --tp > 0")
+			}
+
+			// Resolve model config folder (same auto-fetch chain as roofline)
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			modelConfigFolder = resolved
+
+			// Resolve hardware config (validates --hardware flag; crossmodel doesn't use HWConfig
+			// for step time but loading validates the GPU type for future use)
+			resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			hwConfigPath = resolvedHW
+
+			// Load crossmodel defaults from defaults.yaml (R18: use Flags().Changed, not AllZeros)
+			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
+				data, readErr := os.ReadFile(defaultsFilePath)
+				if readErr != nil {
+					logrus.Warnf("--latency-model crossmodel: failed to read %s: %v", defaultsFilePath, readErr)
+				} else {
+					var cfg Config
+					decoder := yaml.NewDecoder(bytes.NewReader(data))
+					decoder.KnownFields(true) // R10: strict YAML parsing
+					if yamlErr := decoder.Decode(&cfg); yamlErr != nil {
+						logrus.Fatalf("--latency-model crossmodel: failed to parse %s: %v", defaultsFilePath, yamlErr)
+					}
+					if cfg.CrossModelDefaults != nil {
+						if !cmd.Flags().Changed("beta-coeffs") {
+							betaCoeffs = cfg.CrossModelDefaults.BetaCoeffs
+							logrus.Infof("--latency-model: loaded crossmodel beta coefficients from defaults.yaml")
+						}
+						if !cmd.Flags().Changed("alpha-coeffs") {
+							alphaCoeffs = cfg.CrossModelDefaults.AlphaCoeffs
+							logrus.Infof("--latency-model: loaded crossmodel alpha coefficients from defaults.yaml")
+						}
+					}
+				}
+				// Also load KV blocks from per-model config if available
+				if vllmVersion == "" {
+					_, _, ver := GetDefaultSpecs(model)
+					if len(ver) > 0 {
+						vllmVersion = ver
+					}
+				}
+				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
+				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
+					totalKVBlocks = kvBlocks
+					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
+				}
+			}
+			// Validate crossmodel coefficients were loaded (catches missing file, missing section, etc.)
+			if !cmd.Flags().Changed("beta-coeffs") && (len(betaCoeffs) < 4 || AllZeros(betaCoeffs)) {
+				logrus.Fatalf("--latency-model crossmodel: no crossmodel_defaults found in %s and no --beta-coeffs provided. "+
+					"Add crossmodel_defaults to defaults.yaml or provide --beta-coeffs explicitly",
+					defaultsFilePath)
+			}
+		}
+
 		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
 			// GPU, TP, vLLM version configuration
 			hardware, tp, version := GetDefaultSpecs(model) // pick default config for tp, GPU, vllmVersion
@@ -278,12 +348,12 @@ var runCmd = &cobra.Command{
 		}
 		// Zero-coefficients safety guard: prevents silently running with zero step times
 		// when blackbox mode has no trained coefficients (would produce meaningless results).
-		if backend != "roofline" && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+		if backend != "roofline" && backend != "crossmodel" && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
 			logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
-				"Provide --alpha-coeffs/--beta-coeffs, or use --latency-model roofline with --hardware and --tp",
+				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, or use --latency-model crossmodel",
 				model, gpu, tensorParallelism)
 		}
-		if backend == "roofline" {
+		if backend == "roofline" || backend == "crossmodel" {
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
 			mc, err := latency.GetModelConfig(hfPath)
 			if err != nil {
@@ -302,11 +372,14 @@ var runCmd = &cobra.Command{
 					"Roofline step time estimates may be inaccurate for quantized models",
 					modelConfig.BytesPerParam)
 			}
-			// Check for MoE model indicators in the raw HF config
-			if hfRawBytes, readErr := os.ReadFile(hfPath); readErr == nil {
-				if strings.Contains(string(hfRawBytes), `"num_local_experts"`) {
-					logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
-						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
+			// Check for MoE model indicators in the raw HF config (roofline-only warning;
+			// crossmodel handles MoE explicitly via the beta2 dispatch term)
+			if backend == "roofline" {
+				if hfRawBytes, readErr := os.ReadFile(hfPath); readErr == nil {
+					if strings.Contains(string(hfRawBytes), `"num_local_experts"`) {
+						logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
+							"Roofline estimation assumes dense transformers and may overestimate MoE latency")
+					}
 				}
 			}
 		}
@@ -733,7 +806,7 @@ func init() {
 	runCmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline")
+	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline, crossmodel")
 
 	// GuideLLM-style distribution-based workload generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")

@@ -1706,4 +1706,11 @@ models:
   tensor_parallelism: 8
   total_kv_blocks: 1808703
   vllm_version: vllm/vllm-openai:v0.8.4
+crossmodel_defaults:
+  # Globally-fitted physics coefficients from training/ledger.md Iter 3.
+  # These are model-independent: architecture features from config.json scale the coefficients.
+  # β₀=per-layer overhead, β₁=KV bandwidth, β₂=MoE dispatch, β₃=TP sync barrier.
+  beta_coeffs: [116.110, 1226.868, 19.943, 9445.157]
+  # α₀=pre-scheduling fixed overhead, α₁=per-token preprocessing (≈0), α₂=per-output-token processing.
+  alpha_coeffs: [13732.0, 0.0, 860.6]
 version: 0.0.1

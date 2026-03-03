@@ -1,6 +1,6 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- blackbox (data-driven) and roofline (analytical) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships three backends -- blackbox (data-driven), roofline (analytical), and cross-model (physics-informed, MoE-aware) -- and the pluggable architecture supports adding custom backends.
 
 ```bash
 # Blackbox mode (default) — uses pre-trained coefficients
@@ -10,6 +10,11 @@ The `LatencyModel` interface determines how BLIS estimates GPU step time for eac
 # Roofline mode — analytical estimation from model architecture
 ./blis run --model meta-llama/llama-3.1-8b-instruct \
   --latency-model roofline --hardware H100 --tp 2 \
+  --num-instances 4 --rate 100 --num-requests 500
+
+# Cross-model mode — physics-informed estimation from config.json (MoE-aware)
+./blis run --model meta-llama/llama-3.1-8b-instruct \
+  --latency-model crossmodel --hardware H100 --tp 2 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
@@ -95,17 +100,45 @@ The `--tp` flag divides FLOPs and memory bandwidth across TP ranks:
 
 When choosing between TP and replication (more instances): TP reduces per-request latency, replication increases throughput. For capacity planning, simulate both configurations.
 
+## Cross-Model Mode (Physics-Informed)
+
+Cross-model mode estimates step time using 4 globally-fitted physics coefficients that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from `config.json` to scale a single coefficient set.
+
+```bash
+./blis run --model meta-llama/llama-3.1-8b-instruct \
+  --latency-model crossmodel --hardware H100 --tp 2
+```
+
+**StepTime formula:**
+
+```
+stepTime = β₀ × numLayers           # Per-layer CUDA kernel dispatch
+         + β₁ × dc × kvDimScaled    # KV cache bandwidth (decode only)
+         + β₂ × (pf+dc) × isMoE    # MoE expert routing (Mixtral, etc.)
+         + β₃ × isTP                # TP synchronization barrier
+```
+
+Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 1.0` if the model has expert routing, and `isTP = 1.0` if TP > 1.
+
+**Pre-trained coefficients** from real vLLM measurements across 4 architectures (7B-70B dense + 8x7B MoE) are stored in `crossmodel_defaults` in `defaults.yaml`. No per-model calibration needed.
+
+**MoE support:** Cross-model correctly handles Mixture-of-Experts models. The `β₂` term captures the per-token routing and expert dispatch overhead. The `num_local_experts` and `num_experts_per_tok` fields are parsed directly from the HuggingFace config.json.
+
+!!! warning "Dense model prefill limitation"
+    For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, **blackbox mode with trained coefficients** provides more accurate estimates because its `β₁` term explicitly models per-prefill-token cost.
+
 ## When to Use Which
 
-| Aspect | Blackbox (default) | Roofline |
-|--------|-------------------|----------|
-| **When to use** | Model has pre-trained coefficients in `defaults.yaml` | New model, no coefficients available, quick estimation |
-| **Data required** | `defaults.yaml` entry for model/GPU/TP | HuggingFace `config.json` + `hardware_config.json` |
-| **Accuracy** | Higher tail accuracy -- trained on real vLLM measurements | Good mean accuracy -- analytical estimation |
-| **Alpha overhead** | Full alpha modeling (queueing + output processing) | Alpha from coefficients; step time is analytical |
+| Aspect | Blackbox (default) | Roofline | Cross-Model |
+|--------|-------------------|----------|-------------|
+| **When to use** | Model has per-model coefficients in `defaults.yaml` | Quick estimation, no training data | New model from config.json, MoE models |
+| **Data required** | `defaults.yaml` entry for model/GPU/TP | HuggingFace `config.json` + `hardware_config.json` | HuggingFace `config.json` (global coefficients bundled) |
+| **Accuracy** | Highest (trained on real per-model measurements) | Good mean (analytical FLOPs/bandwidth) | Good mean across architectures (4 global coefficients) |
+| **MoE support** | Yes (if trained coefficients exist) | No (~4x overestimate) | Yes (explicit MoE term) |
+| **Alpha overhead** | Full alpha modeling | Alpha from coefficients; step is analytical | Full alpha modeling (same as blackbox) |
 
-!!! tip "Roofline for model fit, blackbox for SLO validation"
-    Use roofline for "can this model serve at this rate?" analysis -- mean latency rankings are equivalent across modes (H19 experiment confirmed weighted < RR = LL ordering is identical). Use blackbox with trained coefficients for tail latency (p99) estimation under load, where alpha overhead (~4.3ms/req) materially affects scheduling timelines and p99 results diverge between modes.
+!!! tip "Choosing the right mode"
+    **Blackbox** for models with trained coefficients (highest accuracy). **Cross-model** for new models or MoE models without per-model coefficients (global physics coefficients + config.json features). **Roofline** for quick analytical estimates of dense models when no coefficients are available at all.
 
 ## Pluggable Architecture
 

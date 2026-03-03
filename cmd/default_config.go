@@ -25,10 +25,18 @@ type Workload struct {
 // Config represents the full defaults.yaml structure.
 // All top-level sections must be listed to satisfy KnownFields(true) strict parsing (R10).
 type Config struct {
-	Models    []Model                  `yaml:"models"`
-	Defaults  map[string]DefaultConfig `yaml:"defaults"`
-	Version   string                   `yaml:"version"`
-	Workloads map[string]Workload      `yaml:"workloads"`
+	Models             []Model                  `yaml:"models"`
+	Defaults           map[string]DefaultConfig `yaml:"defaults"`
+	Version            string                   `yaml:"version"`
+	Workloads          map[string]Workload      `yaml:"workloads"`
+	CrossModelDefaults *CrossModelDefaults       `yaml:"crossmodel_defaults,omitempty"`
+}
+
+// CrossModelDefaults holds globally-fitted physics coefficients for cross-model latency estimation.
+// These are model-independent: a single set works across architectures via config.json features.
+type CrossModelDefaults struct {
+	BetaCoeffs  []float64 `yaml:"beta_coeffs"`
+	AlphaCoeffs []float64 `yaml:"alpha_coeffs"`
 }
 
 // Define the inner structure for default config given model

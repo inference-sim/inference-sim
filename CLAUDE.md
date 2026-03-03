@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by trained performance coefficients (alpha/beta) or analytical roofline estimates.
+BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by trained performance coefficients (alpha/beta), analytical roofline estimates, or physics-informed cross-model prediction.
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across model/GPU/TP configurations without requiring real GPUs.
 
@@ -237,7 +237,8 @@ inference-sim/
 │   ├── tiered.go              # TieredKVCache (GPU+CPU offload/reload)
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/               # Latency model implementations (PKG-2)
-│   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── crossmodel.go          # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
 │   ├── config.go              # HFConfig, GetHWConfig(), GetModelConfig(), ValidateRooflineConfig(), parseHWConfig(), parseHFConfig()
 │   └── register.go            # init()-based registration of NewLatencyModelFunc into sim/
@@ -337,7 +338,7 @@ inference-sim/
 
 ### Latency Estimation
 
-Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--model-config-folder` presence:
+Three modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--latency-model` flag:
 
 1. **Blackbox mode** (default): Uses trained alpha/beta coefficients from `defaults.yaml`
    - Alpha coefficients: queueing time estimation
@@ -348,12 +349,18 @@ Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) b
    - Requires `hardware_config.json` with GPU specs
    - **`--latency-model roofline`**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./blis run --model <name> --latency-model roofline --hardware <GPU> --tp <N>`
 
+3. **Cross-model mode**: Physics-informed estimation via `sim/latency/crossmodel.go`
+   - Uses 4 globally-fitted coefficients (per-layer overhead, KV bandwidth, MoE dispatch, TP sync) from `crossmodel_defaults` in `defaults.yaml`
+   - Derives architecture features from HuggingFace `config.json` (layer count, KV heads, head dimension, MoE expert count, TP degree)
+   - MoE-aware: correctly models sparse activation patterns (unlike roofline which overestimates ~4x for MoE)
+   - **`--latency-model crossmodel`**: Same auto-fetch chain as roofline. Usage: `./blis run --model <name> --latency-model crossmodel --hardware <GPU> --tp <N>`
+
 ### Key Data Flow
 
 ```
 Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
                                             ↓              ↓
-                                      KV Allocation   Latency Estimation (alpha/beta or roofline)
+                                      KV Allocation   Latency Estimation (alpha/beta, roofline, or cross-model)
 ```
 Note: Admission and Routing steps apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
 

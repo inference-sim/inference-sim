@@ -1,16 +1,18 @@
 package sim
 
 // ModelConfig holds model architecture parameters parsed from a HuggingFace config.json.
-// Used by the roofline latency model for FLOPs/bandwidth estimation.
+// Used by the roofline and cross-model latency models for step time estimation.
 // Parsing functions are in sim/latency/config.go.
 type ModelConfig struct {
-	NumLayers       int     `json:"num_hidden_layers"`
-	HiddenDim       int     `json:"hidden_size"`
-	NumHeads        int     `json:"num_attention_heads"`
-	NumKVHeads      int     `json:"num_key_value_heads"`
-	VocabSize       int     `json:"vocab_size"`
-	BytesPerParam   float64 `json:"bytes_per_param"`
-	IntermediateDim int     `json:"intermediate_size"`
+	NumLayers        int     `json:"num_hidden_layers"`
+	HiddenDim        int     `json:"hidden_size"`
+	NumHeads         int     `json:"num_attention_heads"`
+	NumKVHeads       int     `json:"num_key_value_heads"`
+	VocabSize        int     `json:"vocab_size"`
+	BytesPerParam    float64 `json:"bytes_per_param"`
+	IntermediateDim  int     `json:"intermediate_size"`
+	NumLocalExperts  int     `json:"num_local_experts"`   // 0 = dense model (MoE: number of experts)
+	NumExpertsPerTok int     `json:"num_experts_per_tok"` // 0 = dense model (MoE: active experts per token; parsed for future iteration, not yet consumed by crossmodel)
 }
 
 // HardwareCalib holds GPU hardware calibration parameters.

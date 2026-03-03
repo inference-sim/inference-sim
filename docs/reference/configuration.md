@@ -82,7 +82,7 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "" | Latency model backend: `blackbox` (default), `roofline`. When set to `roofline`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. |
+| `--latency-model` | string | "" | Latency model backend: `blackbox` (default), `roofline`, `crossmodel`. When set to `roofline` or `crossmodel`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
 
@@ -94,8 +94,9 @@ The latency model mode is selected based on available configuration:
 
 1. **Blackbox mode** (default): If coefficients are provided via CLI flags or loaded from `defaults.yaml`
 2. **Explicit roofline mode**: If `--latency-model roofline` is set with `--hardware` and `--tp`. Model config is auto-resolved: `model_configs/` (local) → HuggingFace fetch → error. Alpha coefficients and `total_kv_blocks` are loaded from `defaults.yaml` when available. Beta coefficients are replaced by analytical roofline computation. Note: `--latency-model blackbox` explicitly prevents implicit roofline detection (respecting user intent).
-3. **Implicit roofline mode**: If all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided
-4. **Error**: If no coefficients can be resolved and roofline inputs are incomplete
+3. **Explicit cross-model mode**: If `--latency-model crossmodel` is set with `--hardware` and `--tp`. Uses 4 globally-fitted physics coefficients from `crossmodel_defaults` in `defaults.yaml`. Architecture features derived from HuggingFace config.json. MoE-aware.
+4. **Implicit roofline mode**: If all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided
+5. **Error**: If no coefficients can be resolved and roofline inputs are incomplete
 
 ## Cluster Configuration
 
