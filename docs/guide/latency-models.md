@@ -124,6 +124,9 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 
 **MoE support:** Cross-model correctly handles Mixture-of-Experts models. The `β₂` term captures the per-token routing and expert dispatch overhead. The `num_local_experts` and `num_experts_per_tok` fields are parsed directly from the HuggingFace config.json.
 
+!!! warning "Dense model prefill limitation"
+    For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, **blackbox mode with trained coefficients** provides more accurate estimates because its `β₁` term explicitly models per-prefill-token cost.
+
 ## When to Use Which
 
 | Aspect | Blackbox (default) | Roofline | Cross-Model |

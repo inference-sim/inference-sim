@@ -215,6 +215,32 @@ func TestNewLatencyModel_CrossModelMode_MissingNumHeads(t *testing.T) {
 	assert.Contains(t, err.Error(), "NumHeads")
 }
 
+func TestNewLatencyModel_CrossModelMode_MissingHiddenDim(t *testing.T) {
+	// BC-12: factory rejects missing HiddenDim
+	mc := sim.ModelConfig{NumLayers: 32, HiddenDim: 0, NumHeads: 32, NumKVHeads: 8}
+	coeffs := sim.NewLatencyCoeffs(
+		[]float64{116, 1226, 19, 9445},
+		[]float64{13732, 0, 860},
+	)
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	_, err := NewLatencyModel(coeffs, hw)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "HiddenDim")
+}
+
+func TestNewLatencyModel_CrossModelMode_ZeroTP(t *testing.T) {
+	// BC-12: factory rejects TP=0
+	mc := testCrossModelConfig()
+	coeffs := sim.NewLatencyCoeffs(
+		[]float64{116, 1226, 19, 9445},
+		[]float64{13732, 0, 860},
+	)
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 0, "crossmodel")
+	_, err := NewLatencyModel(coeffs, hw)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "TP")
+}
+
 func TestNewLatencyModel_CrossModelMode_ShortBeta(t *testing.T) {
 	// BC-13: factory rejects short BetaCoeffs
 	mc := testCrossModelConfig()

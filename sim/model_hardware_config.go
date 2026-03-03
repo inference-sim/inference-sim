@@ -12,7 +12,7 @@ type ModelConfig struct {
 	BytesPerParam    float64 `json:"bytes_per_param"`
 	IntermediateDim  int     `json:"intermediate_size"`
 	NumLocalExperts  int     `json:"num_local_experts"`   // 0 = dense model (MoE: number of experts)
-	NumExpertsPerTok int     `json:"num_experts_per_tok"` // 0 = dense model (MoE: active experts per token)
+	NumExpertsPerTok int     `json:"num_experts_per_tok"` // 0 = dense model (MoE: active experts per token; parsed for future iteration, not yet consumed by crossmodel)
 }
 
 // HardwareCalib holds GPU hardware calibration parameters.
