@@ -61,7 +61,7 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
 
 # With roofline mode (no pre-trained coefficients needed)
 ./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --roofline --hardware H100 --tp 2 \
+  --latency-model roofline --hardware H100 --tp 2 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
