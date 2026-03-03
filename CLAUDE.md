@@ -350,7 +350,7 @@ Three modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`)
    - **`--latency-model roofline`**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./blis run --model <name> --latency-model roofline --hardware <GPU> --tp <N>`
 
 3. **Cross-model mode**: Physics-informed estimation via `sim/latency/crossmodel.go`
-   - Uses 4 globally-fitted coefficients (per-layer overhead, KV bandwidth, MoE dispatch, TP sync) from `crossmodel_defaults` in `defaults.yaml`
+   - Uses 7 globally-fitted coefficients — 4 beta (per-layer overhead, KV bandwidth, MoE dispatch, TP sync) + 3 alpha (pre-scheduling, per-token preprocessing, output processing) — from `crossmodel_defaults` in `defaults.yaml`
    - Derives architecture features from HuggingFace `config.json` (layer count, KV heads, head dimension, MoE expert count, TP degree)
    - MoE-aware: correctly models sparse activation patterns (unlike roofline which overestimates ~4x for MoE)
    - **`--latency-model crossmodel`**: Same auto-fetch chain as roofline. Usage: `./blis run --model <name> --latency-model crossmodel --hardware <GPU> --tp <N>`
