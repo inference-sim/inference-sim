@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by trained performance coefficients (alpha/beta) or analytical roofline estimates.
+BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by trained performance coefficients (alpha/beta), analytical roofline estimates, or physics-informed cross-model prediction.
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across model/GPU/TP configurations without requiring real GPUs.
 
@@ -360,7 +360,7 @@ Three modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`)
 ```
 Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
                                             ↓              ↓
-                                      KV Allocation   Latency Estimation (alpha/beta or roofline)
+                                      KV Allocation   Latency Estimation (alpha/beta, roofline, or cross-model)
 ```
 Note: Admission and Routing steps apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
 
