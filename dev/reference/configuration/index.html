@@ -3041,22 +3041,22 @@
 </thead>
 <tbody>
 <tr>
-<td><code>--roofline</code></td>
-<td>bool</td>
-<td>false</td>
-<td>Enable roofline mode with auto-fetch. Requires <code>--hardware</code> and <code>--tp</code>. Auto-resolves model config from <code>model_configs/</code> or HuggingFace, and hardware config from bundled <code>hardware_config.json</code>. Set <code>HF_TOKEN</code> env var for gated models.</td>
+<td><code>--latency-model</code></td>
+<td>string</td>
+<td>""</td>
+<td>Latency model backend: <code>blackbox</code> (default), <code>roofline</code>. When set to <code>roofline</code>, auto-fetches HuggingFace config.json and resolves hardware config. Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models.</td>
 </tr>
 <tr>
 <td><code>--model-config-folder</code></td>
 <td>string</td>
 <td>""</td>
-<td>Path to folder containing HuggingFace <code>config.json</code>. Overrides <code>--roofline</code> auto-resolution.</td>
+<td>Path to folder containing HuggingFace <code>config.json</code>. Overrides <code>--latency-model</code> auto-resolution.</td>
 </tr>
 <tr>
 <td><code>--hardware-config</code></td>
 <td>string</td>
 <td>""</td>
-<td>Path to <code>hardware_config.json</code> with GPU specifications. Overrides <code>--roofline</code> auto-resolution.</td>
+<td>Path to <code>hardware_config.json</code> with GPU specifications. Overrides <code>--latency-model</code> auto-resolution.</td>
 </tr>
 </tbody>
 </table>
@@ -3065,7 +3065,7 @@
 <p>The latency model mode is selected based on available configuration:</p>
 <ol>
 <li><strong>Blackbox mode</strong> (default): If coefficients are provided via CLI flags or loaded from <code>defaults.yaml</code></li>
-<li><strong>Explicit roofline mode</strong>: If <code>--roofline</code> is set with <code>--hardware</code> and <code>--tp</code>. Model config is auto-resolved: <code>model_configs/</code> (local) → HuggingFace fetch → error. Alpha coefficients and <code>total_kv_blocks</code> are loaded from <code>defaults.yaml</code> when available. Beta coefficients are replaced by analytical roofline computation.</li>
+<li><strong>Explicit roofline mode</strong>: If <code>--latency-model roofline</code> is set with <code>--hardware</code> and <code>--tp</code>. Model config is auto-resolved: <code>model_configs/</code> (local) → HuggingFace fetch → error. Alpha coefficients and <code>total_kv_blocks</code> are loaded from <code>defaults.yaml</code> when available. Beta coefficients are replaced by analytical roofline computation. Note: <code>--latency-model blackbox</code> explicitly prevents implicit roofline detection (respecting user intent).</li>
 <li><strong>Implicit roofline mode</strong>: If all coefficients are zero and all four of <code>--model-config-folder</code>, <code>--hardware-config</code>, <code>--hardware</code>, and <code>--tp</code> are provided</li>
 <li><strong>Error</strong>: If no coefficients can be resolved and roofline inputs are incomplete</li>
 </ol>
@@ -3500,7 +3500,7 @@
 <h3 id="resolution-process">Resolution Process<a class="headerlink" href="#resolution-process" title="Permanent link">&para;</a></h3>
 <p>When BLIS starts:</p>
 <ol>
-<li>If <code>--roofline</code> is set:</li>
+<li>If <code>--latency-model roofline</code> is set:</li>
 <li>Auto-resolve model config: check <code>model_configs/</code> for existing <code>config.json</code>, fetch from HuggingFace on miss (set <code>HF_TOKEN</code> for gated models)</li>
 <li>Auto-resolve hardware config from bundled <code>hardware_config.json</code></li>
 <li>Load alpha coefficients and <code>total_kv_blocks</code> from <code>defaults.yaml</code> (beta coefficients are replaced by roofline computation)</li>
@@ -3549,7 +3549,7 @@
 </tr>
 <tr>
 <td><strong>ModelHardwareConfig</strong></td>
-<td><code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code>, <code>--roofline</code>, <code>--model-config-folder</code>, <code>--hardware-config</code></td>
+<td><code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code>, <code>--latency-model</code>, <code>--model-config-folder</code>, <code>--hardware-config</code></td>
 </tr>
 <tr>
 <td><strong>PolicyConfig</strong></td>

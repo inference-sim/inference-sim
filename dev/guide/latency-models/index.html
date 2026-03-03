@@ -1074,10 +1074,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#the-roofline-flag" class="md-nav__link">
+  <a href="#the-latency-model-roofline-flag" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The --roofline Flag
+        The --latency-model roofline Flag
       
     </span>
   </a>
@@ -2319,10 +2319,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#the-roofline-flag" class="md-nav__link">
+  <a href="#the-latency-model-roofline-flag" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The --roofline Flag
+        The --latency-model roofline Flag
       
     </span>
   </a>
@@ -2428,7 +2428,7 @@
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Roofline mode — analytical estimation from model architecture</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <h2 id="blackbox-mode-default">Blackbox Mode (Default)<a class="headerlink" href="#blackbox-mode-default" title="Permanent link">&para;</a></h2>
@@ -2452,10 +2452,10 @@
 </div>
 <h2 id="roofline-mode-analytical">Roofline Mode (Analytical)<a class="headerlink" href="#roofline-mode-analytical" title="Permanent link">&para;</a></h2>
 <p>Roofline mode computes step time analytically from model architecture (FLOPs, parameter count) and hardware specifications (compute throughput, memory bandwidth). It does not require pre-trained coefficients, making it suitable for new models.</p>
-<h3 id="the-roofline-flag">The <code>--roofline</code> Flag<a class="headerlink" href="#the-roofline-flag" title="Permanent link">&para;</a></h3>
+<h3 id="the-latency-model-roofline-flag">The <code>--latency-model roofline</code> Flag<a class="headerlink" href="#the-latency-model-roofline-flag" title="Permanent link">&para;</a></h3>
 <p>The simplest way to use roofline mode:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
 </code></pre></div>
 <p>This auto-resolves both required inputs:</p>
 <ol>
@@ -2465,7 +2465,7 @@
 <p>For gated models (e.g., LLaMA), set <code>HF_TOKEN</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
 </code></pre></div>
 <h3 id="manual-configuration">Manual Configuration<a class="headerlink" href="#manual-configuration" title="Permanent link">&para;</a></h3>
 <p>For full control, provide configs explicitly:</p>
@@ -2479,9 +2479,9 @@
 <ol>
 <li>Download <code>config.json</code> from HuggingFace</li>
 <li>Place it in <code>model_configs/&lt;model-name&gt;/config.json</code></li>
-<li>Run with <code>--roofline --hardware &lt;GPU&gt; --tp &lt;N&gt;</code></li>
+<li>Run with <code>--latency-model roofline --hardware &lt;GPU&gt; --tp &lt;N&gt;</code></li>
 </ol>
-<p>Or let BLIS fetch it automatically with <code>--roofline</code>.</p>
+<p>Or let BLIS fetch it automatically with <code>--latency-model roofline</code>.</p>
 <h3 id="tensor-parallelism-and-roofline">Tensor Parallelism and Roofline<a class="headerlink" href="#tensor-parallelism-and-roofline" title="Permanent link">&para;</a></h3>
 <p>The <code>--tp</code> flag divides FLOPs and memory bandwidth across TP ranks:</p>
 <ul>
