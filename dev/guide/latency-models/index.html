@@ -1123,6 +1123,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#cross-model-mode-physics-informed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Model Mode (Physics-Informed)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-to-use-which" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2368,6 +2379,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#cross-model-mode-physics-informed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Model Mode (Physics-Informed)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-to-use-which" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2421,7 +2443,7 @@
 
 
 <h1 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h1>
-<p>The <code>LatencyModel</code> interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- blackbox (data-driven) and roofline (analytical) -- and the pluggable architecture supports adding custom backends.</p>
+<p>The <code>LatencyModel</code> interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships three backends -- blackbox (data-driven), roofline (analytical), and cross-model (physics-informed, MoE-aware) -- and the pluggable architecture supports adding custom backends.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Blackbox mode (default) — uses pre-trained coefficients</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
@@ -2430,6 +2452,11 @@
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Cross-model mode — physics-informed estimation from config.json (MoE-aware)</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span>--latency-model<span class="w"> </span>crossmodel<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <h2 id="blackbox-mode-default">Blackbox Mode (Default)<a class="headerlink" href="#blackbox-mode-default" title="Permanent link">&para;</a></h2>
 <p>Blackbox mode uses trained regression coefficients from <code>defaults.yaml</code>, fit offline via Bayesian optimization against real vLLM measurements.</p>
@@ -2489,6 +2516,24 @@
 <li>Higher TP reduces KV blocks per GPU (memory split across ranks)</li>
 </ul>
 <p>When choosing between TP and replication (more instances): TP reduces per-request latency, replication increases throughput. For capacity planning, simulate both configurations.</p>
+<h2 id="cross-model-mode-physics-informed">Cross-Model Mode (Physics-Informed)<a class="headerlink" href="#cross-model-mode-physics-informed" title="Permanent link">&para;</a></h2>
+<p>Cross-model mode estimates step time using 4 globally-fitted physics coefficients that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from <code>config.json</code> to scale a single coefficient set.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>crossmodel<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<p><strong>StepTime formula:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>stepTime = β₀ × numLayers           # Per-layer CUDA kernel dispatch
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>         + β₁ × dc × kvDimScaled    # KV cache bandwidth (decode only)
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>         + β₂ × (pf+dc) × isMoE    # MoE expert routing (Mixtral, etc.)
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>         + β₃ × isTP                # TP synchronization barrier
+</code></pre></div>
+<p>Where <code>kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6</code>, <code>isMoE = 1.0</code> if the model has expert routing, and <code>isTP = 1.0</code> if TP &gt; 1.</p>
+<p><strong>Pre-trained coefficients</strong> from real vLLM measurements across 4 architectures (7B-70B dense + 8x7B MoE) are stored in <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. No per-model calibration needed.</p>
+<p><strong>MoE support:</strong> Cross-model correctly handles Mixture-of-Experts models. The <code>β₂</code> term captures the per-token routing and expert dispatch overhead. The <code>num_local_experts</code> and <code>num_experts_per_tok</code> fields are parsed directly from the HuggingFace config.json.</p>
+<div class="admonition warning">
+<p class="admonition-title">Dense model prefill limitation</p>
+<p>For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, <strong>blackbox mode with trained coefficients</strong> provides more accurate estimates because its <code>β₁</code> term explicitly models per-prefill-token cost.</p>
+</div>
 <h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2496,34 +2541,45 @@
 <th>Aspect</th>
 <th>Blackbox (default)</th>
 <th>Roofline</th>
+<th>Cross-Model</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>When to use</strong></td>
-<td>Model has pre-trained coefficients in <code>defaults.yaml</code></td>
-<td>New model, no coefficients available, quick estimation</td>
+<td>Model has per-model coefficients in <code>defaults.yaml</code></td>
+<td>Quick estimation, no training data</td>
+<td>New model from config.json, MoE models</td>
 </tr>
 <tr>
 <td><strong>Data required</strong></td>
 <td><code>defaults.yaml</code> entry for model/GPU/TP</td>
 <td>HuggingFace <code>config.json</code> + <code>hardware_config.json</code></td>
+<td>HuggingFace <code>config.json</code> (global coefficients bundled)</td>
 </tr>
 <tr>
 <td><strong>Accuracy</strong></td>
-<td>Higher tail accuracy -- trained on real vLLM measurements</td>
-<td>Good mean accuracy -- analytical estimation</td>
+<td>Highest (trained on real per-model measurements)</td>
+<td>Good mean (analytical FLOPs/bandwidth)</td>
+<td>Good mean across architectures (4 global coefficients)</td>
+</tr>
+<tr>
+<td><strong>MoE support</strong></td>
+<td>Yes (if trained coefficients exist)</td>
+<td>No (~4x overestimate)</td>
+<td>Yes (explicit MoE term)</td>
 </tr>
 <tr>
 <td><strong>Alpha overhead</strong></td>
-<td>Full alpha modeling (queueing + output processing)</td>
-<td>Alpha from coefficients; step time is analytical</td>
+<td>Full alpha modeling</td>
+<td>Alpha from coefficients; step is analytical</td>
+<td>Full alpha modeling (same as blackbox)</td>
 </tr>
 </tbody>
 </table>
 <div class="admonition tip">
-<p class="admonition-title">Roofline for model fit, blackbox for SLO validation</p>
-<p>Use roofline for "can this model serve at this rate?" analysis -- mean latency rankings are equivalent across modes (H19 experiment confirmed weighted &lt; RR = LL ordering is identical). Use blackbox with trained coefficients for tail latency (p99) estimation under load, where alpha overhead (~4.3ms/req) materially affects scheduling timelines and p99 results diverge between modes.</p>
+<p class="admonition-title">Choosing the right mode</p>
+<p><strong>Blackbox</strong> for models with trained coefficients (highest accuracy). <strong>Cross-model</strong> for new models or MoE models without per-model coefficients (global physics coefficients + config.json features). <strong>Roofline</strong> for quick analytical estimates of dense models when no coefficients are available at all.</p>
 </div>
 <h2 id="pluggable-architecture">Pluggable Architecture<a class="headerlink" href="#pluggable-architecture" title="Permanent link">&para;</a></h2>
 <p>The <code>LatencyModel</code> interface (defined in <code>sim/latency_model.go</code>) has five methods:</p>
