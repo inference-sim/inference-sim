@@ -11,24 +11,28 @@
       
       
       
+        <link rel="prev" href="../scheduling/">
+      
+      
+        <link rel="next" href="../kv-cache/">
       
       
         
       
       
-      <link rel="icon" href="/assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
-        <title>BLIS — Blackbox Inference Simulator</title>
+        <title>Latency Models - BLIS — Blackbox Inference Simulator</title>
       
     
     
-      <link rel="stylesheet" href="/assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="/assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -47,7 +51,7 @@
       
     
     
-    <script>__md_scope=new URL("/",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -71,6 +75,11 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
+        
+        <a href="#latency-models" class="md-skip">
+          Skip to content
+        </a>
+      
     </div>
     <div data-md-component="announce">
       
@@ -85,7 +94,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="/." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -105,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              
+              Latency Models
             
           </span>
         </div>
@@ -218,7 +227,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="/." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -239,7 +248,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="/getting-started/" class="md-tabs__link">
+        <a href="../../getting-started/" class="md-tabs__link">
           
   
   
@@ -261,7 +270,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="/concepts/" class="md-tabs__link">
+        <a href="../../concepts/" class="md-tabs__link">
           
   
   
@@ -279,11 +288,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="/guide/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -305,7 +316,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="/reference/" class="md-tabs__link">
+        <a href="../../reference/" class="md-tabs__link">
           
   
   
@@ -327,7 +338,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="/methodology/" class="md-tabs__link">
+        <a href="../../methodology/" class="md-tabs__link">
           
   
   
@@ -349,7 +360,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="/contributing/" class="md-tabs__link">
+        <a href="../../contributing/" class="md-tabs__link">
           
   
   
@@ -385,7 +396,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="/." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -415,7 +426,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -473,7 +484,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="/getting-started/" class="md-nav__link ">
+            <a href="../../getting-started/" class="md-nav__link ">
               
   
   
@@ -517,7 +528,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -545,7 +556,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -573,7 +584,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/getting-started/tutorial/" class="md-nav__link">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
         
   
   
@@ -641,7 +652,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="/concepts/" class="md-nav__link ">
+            <a href="../../concepts/" class="md-nav__link ">
               
   
   
@@ -685,7 +696,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/concepts/glossary/" class="md-nav__link">
+      <a href="../../concepts/glossary/" class="md-nav__link">
         
   
   
@@ -713,7 +724,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/concepts/architecture/" class="md-nav__link">
+      <a href="../../concepts/architecture/" class="md-nav__link">
         
   
   
@@ -741,7 +752,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/concepts/core-engine/" class="md-nav__link">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
         
   
   
@@ -769,7 +780,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/concepts/roofline/" class="md-nav__link">
+      <a href="../../concepts/roofline/" class="md-nav__link">
         
   
   
@@ -801,6 +812,8 @@
       
   
   
+    
+  
   
   
     
@@ -834,22 +847,23 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="/guide/" class="md-nav__link ">
+            <a href="../" class="md-nav__link ">
               
   
   
@@ -867,13 +881,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -893,7 +907,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/guide/routing/" class="md-nav__link">
+      <a href="../routing/" class="md-nav__link">
         
   
   
@@ -921,7 +935,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/guide/admission/" class="md-nav__link">
+      <a href="../admission/" class="md-nav__link">
         
   
   
@@ -949,7 +963,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/guide/scheduling/" class="md-nav__link">
+      <a href="../scheduling/" class="md-nav__link">
         
   
   
@@ -974,10 +988,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="/guide/latency-models/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Latency Models
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -993,6 +1034,142 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#blackbox-mode-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Blackbox Mode (Default)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roofline-mode-analytical" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roofline Mode (Analytical)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Roofline Mode (Analytical)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-latency-model-roofline-flag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The --latency-model roofline Flag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-support-for-new-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding Support for New Models
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tensor-parallelism-and-roofline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tensor Parallelism and Roofline
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross-model-mode-physics-informed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Model Mode (Physics-Informed)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-to-use-which" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Use Which
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pluggable-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pluggable Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Further Reading
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1005,7 +1182,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/guide/kv-cache/" class="md-nav__link">
+      <a href="../kv-cache/" class="md-nav__link">
         
   
   
@@ -1033,7 +1210,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/guide/workloads/" class="md-nav__link">
+      <a href="../workloads/" class="md-nav__link">
         
   
   
@@ -1061,7 +1238,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/guide/cluster/" class="md-nav__link">
+      <a href="../cluster/" class="md-nav__link">
         
   
   
@@ -1089,7 +1266,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/guide/results/" class="md-nav__link">
+      <a href="../results/" class="md-nav__link">
         
   
   
@@ -1117,7 +1294,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/guide/experimentation/" class="md-nav__link">
+      <a href="../experimentation/" class="md-nav__link">
         
   
   
@@ -1145,7 +1322,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/guide/skills-and-plugins/" class="md-nav__link">
+      <a href="../skills-and-plugins/" class="md-nav__link">
         
   
   
@@ -1211,7 +1388,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="/reference/" class="md-nav__link ">
+            <a href="../../reference/" class="md-nav__link ">
               
   
   
@@ -1255,7 +1432,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/reference/configuration/" class="md-nav__link">
+      <a href="../../reference/configuration/" class="md-nav__link">
         
   
   
@@ -1283,7 +1460,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/reference/models/" class="md-nav__link">
+      <a href="../../reference/models/" class="md-nav__link">
         
   
   
@@ -1311,7 +1488,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/reference/workload-spec/" class="md-nav__link">
+      <a href="../../reference/workload-spec/" class="md-nav__link">
         
   
   
@@ -1375,7 +1552,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="/methodology/" class="md-nav__link ">
+            <a href="../../methodology/" class="md-nav__link ">
               
   
   
@@ -1419,7 +1596,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/methodology/strategy-evolution/" class="md-nav__link">
+      <a href="../../methodology/strategy-evolution/" class="md-nav__link">
         
   
   
@@ -1447,7 +1624,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/methodology/hypothesis-bundles/" class="md-nav__link">
+      <a href="../../methodology/hypothesis-bundles/" class="md-nav__link">
         
   
   
@@ -1523,7 +1700,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="/contributing/" class="md-nav__link ">
+            <a href="../../contributing/" class="md-nav__link ">
               
   
   
@@ -1567,7 +1744,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/extension-recipes/" class="md-nav__link">
+      <a href="../../contributing/extension-recipes/" class="md-nav__link">
         
   
   
@@ -1595,7 +1772,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/pr-workflow/" class="md-nav__link">
+      <a href="../../contributing/pr-workflow/" class="md-nav__link">
         
   
   
@@ -1623,7 +1800,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/design-process/" class="md-nav__link">
+      <a href="../../contributing/design-process/" class="md-nav__link">
         
   
   
@@ -1651,7 +1828,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/macro-planning/" class="md-nav__link">
+      <a href="../../contributing/macro-planning/" class="md-nav__link">
         
   
   
@@ -1679,7 +1856,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/hypothesis/" class="md-nav__link">
+      <a href="../../contributing/hypothesis/" class="md-nav__link">
         
   
   
@@ -1707,7 +1884,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/convergence/" class="md-nav__link">
+      <a href="../../contributing/convergence/" class="md-nav__link">
         
   
   
@@ -1799,7 +1976,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/standards/rules/" class="md-nav__link">
+      <a href="../../contributing/standards/rules/" class="md-nav__link">
         
   
   
@@ -1827,7 +2004,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/standards/invariants/" class="md-nav__link">
+      <a href="../../contributing/standards/invariants/" class="md-nav__link">
         
   
   
@@ -1855,7 +2032,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/standards/principles/" class="md-nav__link">
+      <a href="../../contributing/standards/principles/" class="md-nav__link">
         
   
   
@@ -1883,7 +2060,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/standards/experiments/" class="md-nav__link">
+      <a href="../../contributing/standards/experiments/" class="md-nav__link">
         
   
   
@@ -1983,7 +2160,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/templates/design-guidelines/" class="md-nav__link">
+      <a href="../../contributing/templates/design-guidelines/" class="md-nav__link">
         
   
   
@@ -2011,7 +2188,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/templates/macro-plan/" class="md-nav__link">
+      <a href="../../contributing/templates/macro-plan/" class="md-nav__link">
         
   
   
@@ -2039,7 +2216,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/templates/micro-plan/" class="md-nav__link">
+      <a href="../../contributing/templates/micro-plan/" class="md-nav__link">
         
   
   
@@ -2067,7 +2244,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/contributing/templates/hypothesis/" class="md-nav__link">
+      <a href="../../contributing/templates/hypothesis/" class="md-nav__link">
         
   
   
@@ -2120,6 +2297,132 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#blackbox-mode-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Blackbox Mode (Default)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roofline-mode-analytical" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roofline Mode (Analytical)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Roofline Mode (Analytical)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-latency-model-roofline-flag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The --latency-model roofline Flag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-support-for-new-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding Support for New Models
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tensor-parallelism-and-roofline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tensor Parallelism and Roofline
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross-model-mode-physics-informed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Model Mode (Physics-Informed)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-to-use-which" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Use Which
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pluggable-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pluggable Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Further Reading
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -2132,8 +2435,204 @@
               
               <article class="md-content__inner md-typeset">
                 
-  <h1>404 - Not found</h1>
+                  
 
+
+  
+  
+
+
+<h1 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h1>
+<p>The <code>LatencyModel</code> interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships three backends -- blackbox (data-driven), roofline (analytical), and cross-model (physics-informed, MoE-aware) -- and the pluggable architecture supports adding custom backends.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Blackbox mode (default) — uses pre-trained coefficients</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Roofline mode — analytical estimation from model architecture</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Cross-model mode — physics-informed estimation from config.json (MoE-aware)</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span>--latency-model<span class="w"> </span>crossmodel<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+</code></pre></div>
+<h2 id="blackbox-mode-default">Blackbox Mode (Default)<a class="headerlink" href="#blackbox-mode-default" title="Permanent link">&para;</a></h2>
+<p>Blackbox mode uses trained regression coefficients from <code>defaults.yaml</code>, fit offline via Bayesian optimization against real vLLM measurements.</p>
+<p><strong>Beta coefficients</strong> <code>[beta0, beta1, beta2]</code> estimate GPU step time:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>StepTime = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
+</code></pre></div>
+<ul>
+<li><code>beta0</code> -- fixed per-step overhead (microseconds)</li>
+<li><code>beta1</code> -- cost per prefill token (cache miss)</li>
+<li><code>beta2</code> -- cost per decode token</li>
+</ul>
+<p><strong>Alpha coefficients</strong> <code>[alpha0, alpha1, alpha2]</code> estimate CPU-side overhead:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>QueueingTime           = alpha0 + alpha1 * input_length
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>OutputTokenProcessingTime = alpha2
+</code></pre></div>
+<p>Pre-trained coefficient sets exist in <code>defaults.yaml</code> for common model/GPU/TP combinations (e.g., <code>meta-llama/llama-3.1-8b-instruct</code> on H100 with TP=2).</p>
+<div class="admonition note">
+<p class="admonition-title">Alpha overhead is non-blocking</p>
+<p>Alpha coefficients model CPU post-processing (tokenization, output serialization) that runs concurrently with GPU execution. Alpha time inflates TTFT and ITL metrics but does <strong>not</strong> block step scheduling -- the next batch step is scheduled at <code>now + stepTime</code> regardless of alpha overhead. This matches real vLLM's asynchronous post-processing pipeline.</p>
+</div>
+<h2 id="roofline-mode-analytical">Roofline Mode (Analytical)<a class="headerlink" href="#roofline-mode-analytical" title="Permanent link">&para;</a></h2>
+<p>Roofline mode computes step time analytically from model architecture (FLOPs, parameter count) and hardware specifications (compute throughput, memory bandwidth). It does not require pre-trained coefficients, making it suitable for new models.</p>
+<h3 id="the-latency-model-roofline-flag">The <code>--latency-model roofline</code> Flag<a class="headerlink" href="#the-latency-model-roofline-flag" title="Permanent link">&para;</a></h3>
+<p>The simplest way to use roofline mode:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<p>This auto-resolves both required inputs:</p>
+<ol>
+<li><strong>Model config</strong> -- checks <code>model_configs/</code> for a cached <code>config.json</code>, fetches from HuggingFace on miss</li>
+<li><strong>Hardware config</strong> -- uses the bundled <code>hardware_config.json</code></li>
+</ol>
+<p>For gated models (e.g., LLaMA), set <code>HF_TOKEN</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<h3 id="manual-configuration">Manual Configuration<a class="headerlink" href="#manual-configuration" title="Permanent link">&para;</a></h3>
+<p>For full control, provide configs explicitly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>my-custom-model<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--model-config-folder<span class="w"> </span>./my-model-configs/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--hardware-config<span class="w"> </span>./my-hardware-config.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">4</span>
+</code></pre></div>
+<h3 id="adding-support-for-new-models">Adding Support for New Models<a class="headerlink" href="#adding-support-for-new-models" title="Permanent link">&para;</a></h3>
+<p>Any model with a HuggingFace <code>config.json</code> can use roofline mode:</p>
+<ol>
+<li>Download <code>config.json</code> from HuggingFace</li>
+<li>Place it in <code>model_configs/&lt;model-name&gt;/config.json</code></li>
+<li>Run with <code>--latency-model roofline --hardware &lt;GPU&gt; --tp &lt;N&gt;</code></li>
+</ol>
+<p>Or let BLIS fetch it automatically with <code>--latency-model roofline</code>.</p>
+<h3 id="tensor-parallelism-and-roofline">Tensor Parallelism and Roofline<a class="headerlink" href="#tensor-parallelism-and-roofline" title="Permanent link">&para;</a></h3>
+<p>The <code>--tp</code> flag divides FLOPs and memory traffic across TP ranks:</p>
+<ul>
+<li>Higher TP reduces per-GPU step time (more parallelism)</li>
+<li>Higher TP reduces KV blocks per GPU (memory split across ranks)</li>
+</ul>
+<p>When choosing between TP and replication (more instances): TP reduces per-request latency, replication increases throughput. For capacity planning, simulate both configurations.</p>
+<h2 id="cross-model-mode-physics-informed">Cross-Model Mode (Physics-Informed)<a class="headerlink" href="#cross-model-mode-physics-informed" title="Permanent link">&para;</a></h2>
+<p>Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from <code>config.json</code> to scale a single coefficient set.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>crossmodel<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<p><strong>StepTime formula:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>stepTime = β₀ × numLayers           # Per-layer CUDA kernel dispatch
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>         + β₁ × dc × kvDimScaled    # KV cache bandwidth (decode only)
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>         + β₂ × (pf+dc) × isMoE    # MoE expert routing (Mixtral, etc.)
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>         + β₃ × isTP                # TP synchronization barrier
+</code></pre></div>
+<p>Where <code>kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6</code>, <code>isMoE = 1.0</code> if the model has expert routing, and <code>isTP = 1.0</code> if TP &gt; 1.</p>
+<p><strong>Pre-trained coefficients</strong> from real vLLM measurements across 4 architectures (7B-70B dense + 8x7B MoE) are stored in <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. No per-model calibration needed.</p>
+<p><strong>MoE support:</strong> Cross-model correctly handles Mixture-of-Experts models. The <code>β₂</code> term captures the per-token routing and expert dispatch overhead, activated when <code>num_local_experts &gt; 0</code> in the model's HuggingFace config.json. The MoE indicator is binary (MoE vs dense); the specific active expert count (<code>num_experts_per_tok</code>) is parsed for future refinement but not yet used in the formula.</p>
+<div class="admonition warning">
+<p class="admonition-title">Dense model prefill limitation</p>
+<p>For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, <strong>blackbox mode with trained coefficients</strong> provides more accurate estimates because its <code>β₁</code> term explicitly models per-prefill-token cost.</p>
+</div>
+<h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Blackbox (default)</th>
+<th>Roofline</th>
+<th>Cross-Model</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>When to use</strong></td>
+<td>Model has per-model coefficients in <code>defaults.yaml</code></td>
+<td>Quick estimation, no training data</td>
+<td>New model from config.json, MoE models</td>
+</tr>
+<tr>
+<td><strong>Data required</strong></td>
+<td><code>defaults.yaml</code> entry for model/GPU/TP</td>
+<td>HuggingFace <code>config.json</code> + <code>--hardware</code> + <code>--tp</code></td>
+<td>HuggingFace <code>config.json</code> + <code>--hardware</code> + <code>--tp</code> (global coefficients bundled)</td>
+</tr>
+<tr>
+<td><strong>Accuracy</strong></td>
+<td>Highest (trained on real per-model measurements)</td>
+<td>Good mean (analytical FLOPs/bandwidth)</td>
+<td>Good mean across architectures (7 global coefficients: 4 beta + 3 alpha)</td>
+</tr>
+<tr>
+<td><strong>MoE support</strong></td>
+<td>Yes (if trained coefficients exist)</td>
+<td>No (assumes dense transformers)</td>
+<td>Yes (explicit MoE dispatch term via <code>num_local_experts</code>)</td>
+</tr>
+<tr>
+<td><strong>Alpha overhead</strong></td>
+<td>Alpha from coefficients (queueing + output processing)</td>
+<td>Alpha from coefficients (same as blackbox)</td>
+<td>Alpha from coefficients (same as blackbox)</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition tip">
+<p class="admonition-title">Choosing the right mode</p>
+<p><strong>Blackbox</strong> for models with trained coefficients (highest accuracy). <strong>Cross-model</strong> for new models or MoE models without per-model coefficients (global physics coefficients + config.json features). <strong>Roofline</strong> for quick analytical estimates of dense models when no coefficients are available at all.</p>
+</div>
+<h2 id="pluggable-architecture">Pluggable Architecture<a class="headerlink" href="#pluggable-architecture" title="Permanent link">&para;</a></h2>
+<p>The <code>LatencyModel</code> interface (defined in <code>sim/latency_model.go</code>) has five methods:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>StepTime(batch)</code></td>
+<td>Duration of one batch step given the running batch</td>
+</tr>
+<tr>
+<td><code>QueueingTime(req)</code></td>
+<td>Arrival-to-queue delay for a request</td>
+</tr>
+<tr>
+<td><code>OutputTokenProcessingTime()</code></td>
+<td>Per-token post-processing time</td>
+</tr>
+<tr>
+<td><code>SchedulingProcessingTime()</code></td>
+<td>Scheduling overhead per request</td>
+</tr>
+<tr>
+<td><code>PreemptionProcessingTime()</code></td>
+<td>Preemption overhead per eviction</td>
+</tr>
+</tbody>
+</table>
+<p>All time estimates are in microseconds (ticks).</p>
+<p>New backends register via the <code>NewLatencyModelFunc</code> variable in <code>sim/latency_model.go</code>. The <code>sim/latency/register.go</code> file uses <code>init()</code> to wire the factory, breaking the import cycle between <code>sim/</code> (interface owner) and <code>sim/latency/</code> (implementation). To add a custom backend, implement the five methods and register your factory via <code>init()</code> in a sub-package. See <a href="../../contributing/extension-recipes/">Extension Recipes</a> for a step-by-step guide.</p>
+<h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../concepts/roofline/">Roofline Estimation</a> -- the mathematical model behind roofline step time calculation</li>
+<li><a href="../../reference/configuration/#roofline-mode">Configuration Reference</a> -- all roofline-related CLI flags</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
               </article>
             </div>
           
@@ -2151,6 +2650,44 @@
       
         <footer class="md-footer">
   
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../scheduling/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Scheduling &amp; Priority">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Scheduling & Priority
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../kv-cache/" class="md-footer__link md-footer__link--next" aria-label="Next: KV Cache &amp; Memory">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                KV Cache & Memory
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
     
   
   <div class="md-footer-meta md-typeset">
@@ -2178,10 +2715,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "/", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "/assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="/assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

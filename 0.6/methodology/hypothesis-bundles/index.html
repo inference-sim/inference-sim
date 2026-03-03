@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="../architecture/">
+        <link rel="prev" href="../strategy-evolution/">
       
       
-        <link rel="next" href="../roofline/">
+        <link rel="next" href="../../contributing/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>Core Engine - BLIS — Blackbox Inference Simulator</title>
+        <title>Hypothesis Bundles - BLIS — Blackbox Inference Simulator</title>
       
     
     
@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#core-engine" class="md-skip">
+        <a href="#hypothesis-bundles-in-practice" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Core Engine
+              Hypothesis Bundles
             
           </span>
         </div>
@@ -266,13 +266,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
           
   
   
@@ -334,11 +332,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../methodology/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -616,8 +616,6 @@
       
   
   
-    
-  
   
   
     
@@ -639,23 +637,22 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../" class="md-nav__link ">
+            <a href="../../concepts/" class="md-nav__link ">
               
   
   
@@ -673,13 +670,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -699,7 +696,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../glossary/" class="md-nav__link">
+      <a href="../../concepts/glossary/" class="md-nav__link">
         
   
   
@@ -727,7 +724,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../architecture/" class="md-nav__link">
+      <a href="../../concepts/architecture/" class="md-nav__link">
         
   
   
@@ -752,37 +749,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Core Engine
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
         
   
   
@@ -798,398 +768,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#event-queue" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Event Queue
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-phases" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step Phases
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Step Phases">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#phase-1-schedule-batch-schedulebatch" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 1: Schedule Batch (scheduleBatch)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-2-execute-batch-step-executebatchstep" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 2: Execute Batch Step (executeBatchStep)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-3-process-completions-processcompletions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 3: Process Completions (processCompletions)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#phase-4-schedule-next-step-schedulenextstep" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Phase 4: Schedule Next Step (scheduleNextStep)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#request-lifecycle" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Request Lifecycle
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Request Lifecycle">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#states" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        States
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#key-timestamps" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Key Timestamps
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#preemption" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Preemption
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#dropped-requests" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Dropped Requests
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#batch-formation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Batch Formation
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Batch Formation">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#two-phase-algorithm" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Two-Phase Algorithm
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#constraints" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Constraints
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#preemption-strategy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Preemption Strategy
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#kv-cache-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        KV Cache Management
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="KV Cache Management">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#single-tier-cache" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Single-Tier Cache
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tiered-cache-gpu-cpu" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tiered Cache (GPU + CPU)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#latency-models" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Latency Models
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Latency Models">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#blackbox-model-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Blackbox Model (Default)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#roofline-model-analytical" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Roofline Model (Analytical)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#alpha-overhead" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alpha Overhead
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#scheduling-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Scheduling Policies
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Scheduling Policies">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#priority-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Priority Policies
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Metrics
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Metrics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#per-request-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Per-Request Metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#aggregate-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Aggregate Metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#conservation-invariant-inv-1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Conservation Invariant (INV-1)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#determinism" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Determinism
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1202,7 +780,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../roofline/" class="md-nav__link">
+      <a href="../../concepts/roofline/" class="md-nav__link">
         
   
   
@@ -1776,6 +1354,8 @@
       
   
   
+    
+  
   
   
     
@@ -1793,22 +1373,23 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../methodology/" class="md-nav__link ">
+            <a href="../" class="md-nav__link ">
               
   
   
@@ -1826,13 +1407,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1852,7 +1433,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../methodology/strategy-evolution/" class="md-nav__link">
+      <a href="../strategy-evolution/" class="md-nav__link">
         
   
   
@@ -1877,10 +1458,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../methodology/hypothesis-bundles/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Bundles
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1896,6 +1504,326 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-a-hypothesis-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is a Hypothesis Bundle?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-scheduling-track-iteration-1-pr-452" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Scheduling Track, Iteration 1 (PR #452)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example: Scheduling Track, Iteration 1 (PR #452)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-scheduling-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The scheduling strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-scheduling-bundle-designed-at-phase-2-before-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The scheduling bundle (designed at Phase 2, before implementation)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The scheduling bundle (designed at Phase 2, before implementation)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#h-main-scheduling-mechanism-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-main — scheduling mechanism claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h-ablation-priority-scheduling-component-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-ablation-priority — scheduling component isolation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h-zero-sum-cluster-wide-side-effect-detection-application-specific-arm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-zero-sum — cluster-wide side-effect detection (application-specific arm)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h-control-negative-scheduling-mechanism-specificity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-control-negative — scheduling mechanism specificity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h-robustness-scheduling-generalization-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-robustness — scheduling generalization boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-actually-happened-and-what-hypothesis-bundles-would-have-caught-earlier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What actually happened (and what hypothesis bundles would have caught earlier)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-routing-track-iteration-6-pr-447" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Routing Track, Iteration 6 (PR #447)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example: Routing Track, Iteration 6 (PR #447)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-routing-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The routing strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-routing-bundle-arms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key routing bundle arms
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key routing bundle arms">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#h-main-routing-mechanism-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-main — routing mechanism claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h-ablation-kv-routing-signal-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-ablation-kv — routing signal isolation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h-control-negative-routing-regime-where-kv-util-should-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-control-negative — routing regime where kv-util should help
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-this-routing-bundle-would-have-revealed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this routing bundle would have revealed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-prediction-errors-matter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Prediction Errors Matter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bundle-size-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundle Size Guide
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bundle Size Guide">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#managing-bundle-cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Managing bundle cost
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-skip-the-full-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to skip the full bundle
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-good-hypothesis-arms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Good Hypothesis Arms
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Writing Good Hypothesis Arms">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-three-elements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The three elements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-mistakes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common mistakes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -2563,10 +2491,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#what-is-a-hypothesis-bundle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        What is a Hypothesis Bundle?
       
     </span>
   </a>
@@ -2574,33 +2502,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#event-queue" class="md-nav__link">
+  <a href="#example-scheduling-track-iteration-1-pr-452" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Event Queue
+        Example: Scheduling Track, Iteration 1 (PR #452)
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-phases" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step Phases
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Step Phases">
+    <nav class="md-nav" aria-label="Example: Scheduling Track, Iteration 1 (PR #452)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#phase-1-schedule-batch-schedulebatch" class="md-nav__link">
+  <a href="#the-scheduling-strategy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 1: Schedule Batch (scheduleBatch)
+        The scheduling strategy
       
     </span>
   </a>
@@ -2608,10 +2525,22 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-2-execute-batch-step-executebatchstep" class="md-nav__link">
+  <a href="#the-scheduling-bundle-designed-at-phase-2-before-implementation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 2: Execute Batch Step (executeBatchStep)
+        The scheduling bundle (designed at Phase 2, before implementation)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The scheduling bundle (designed at Phase 2, before implementation)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#h-main-scheduling-mechanism-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-main — scheduling mechanism claim
       
     </span>
   </a>
@@ -2619,10 +2548,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-3-process-completions-processcompletions" class="md-nav__link">
+  <a href="#h-ablation-priority-scheduling-component-isolation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 3: Process Completions (processCompletions)
+        H-ablation-priority — scheduling component isolation
       
     </span>
   </a>
@@ -2630,10 +2559,48 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-4-schedule-next-step-schedulenextstep" class="md-nav__link">
+  <a href="#h-zero-sum-cluster-wide-side-effect-detection-application-specific-arm" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 4: Schedule Next Step (scheduleNextStep)
+        H-zero-sum — cluster-wide side-effect detection (application-specific arm)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h-control-negative-scheduling-mechanism-specificity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-control-negative — scheduling mechanism specificity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h-robustness-scheduling-generalization-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-robustness — scheduling generalization boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-actually-happened-and-what-hypothesis-bundles-would-have-caught-earlier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What actually happened (and what hypothesis bundles would have caught earlier)
       
     </span>
   </a>
@@ -2646,22 +2613,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#request-lifecycle" class="md-nav__link">
+  <a href="#example-routing-track-iteration-6-pr-447" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Request Lifecycle
+        Example: Routing Track, Iteration 6 (PR #447)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Request Lifecycle">
+    <nav class="md-nav" aria-label="Example: Routing Track, Iteration 6 (PR #447)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#states" class="md-nav__link">
+  <a href="#the-routing-strategy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        States
+        The routing strategy
       
     </span>
   </a>
@@ -2669,10 +2636,22 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#key-timestamps" class="md-nav__link">
+  <a href="#key-routing-bundle-arms" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Key Timestamps
+        Key routing bundle arms
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key routing bundle arms">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#h-main-routing-mechanism-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H-main — routing mechanism claim
       
     </span>
   </a>
@@ -2680,10 +2659,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#preemption" class="md-nav__link">
+  <a href="#h-ablation-kv-routing-signal-isolation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Preemption
+        H-ablation-kv — routing signal isolation
       
     </span>
   </a>
@@ -2691,10 +2670,26 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dropped-requests" class="md-nav__link">
+  <a href="#h-control-negative-routing-regime-where-kv-util-should-help" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Dropped Requests
+        H-control-negative — routing regime where kv-util should help
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-this-routing-bundle-would-have-revealed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this routing bundle would have revealed
       
     </span>
   </a>
@@ -2707,22 +2702,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#batch-formation" class="md-nav__link">
+  <a href="#why-prediction-errors-matter" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Batch Formation
+        Why Prediction Errors Matter
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Batch Formation">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bundle-size-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundle Size Guide
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bundle Size Guide">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#two-phase-algorithm" class="md-nav__link">
+  <a href="#managing-bundle-cost" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Two-Phase Algorithm
+        Managing bundle cost
       
     </span>
   </a>
@@ -2730,21 +2736,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#constraints" class="md-nav__link">
+  <a href="#when-to-skip-the-full-bundle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Constraints
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#preemption-strategy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Preemption Strategy
+        When to skip the full bundle
       
     </span>
   </a>
@@ -2757,22 +2752,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#kv-cache-management" class="md-nav__link">
+  <a href="#writing-good-hypothesis-arms" class="md-nav__link">
     <span class="md-ellipsis">
       
-        KV Cache Management
+        Writing Good Hypothesis Arms
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="KV Cache Management">
+    <nav class="md-nav" aria-label="Writing Good Hypothesis Arms">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#single-tier-cache" class="md-nav__link">
+  <a href="#the-three-elements" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Single-Tier Cache
+        The three elements
       
     </span>
   </a>
@@ -2780,10 +2775,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tiered-cache-gpu-cpu" class="md-nav__link">
+  <a href="#common-mistakes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tiered Cache (GPU + CPU)
+        Common mistakes
       
     </span>
   </a>
@@ -2792,145 +2787,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#latency-models" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Latency Models
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Latency Models">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#blackbox-model-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Blackbox Model (Default)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#roofline-model-analytical" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Roofline Model (Analytical)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#alpha-overhead" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alpha Overhead
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#scheduling-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Scheduling Policies
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Scheduling Policies">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#priority-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Priority Policies
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Metrics
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Metrics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#per-request-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Per-Request Metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#aggregate-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Aggregate Metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#conservation-invariant-inv-1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Conservation Invariant (INV-1)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#determinism" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Determinism
-      
-    </span>
-  </a>
   
 </li>
       
@@ -2954,409 +2810,381 @@
   
 
 
-<h1 id="core-engine">Core Engine<a class="headerlink" href="#core-engine" title="Permanent link">&para;</a></h1>
-<p>This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see <a href="../architecture/">Cluster Architecture</a>.</p>
+<h1 id="hypothesis-bundles-in-practice">Hypothesis Bundles in Practice<a class="headerlink" href="#hypothesis-bundles-in-practice" title="Permanent link">&para;</a></h1>
+<p>This page provides detailed examples of hypothesis bundles drawn from real Strategy Evolution experiments. It accompanies the main <a href="../strategy-evolution/">Strategy Evolution</a> methodology page.</p>
+<div class="admonition note">
+<p class="admonition-title">Experimental Extensions</p>
+<p>The examples below describe experimental strategies (SLO-tiered priority, SLO-gated admission, per-SLO prefill thresholds) that were implemented as custom extensions during Strategy Evolution experiments. These are not yet available as standard BLIS policy templates. The examples illustrate the <em>methodology</em>, not current BLIS capabilities. See the <a href="../strategy-evolution/#results-how-two-tracks-converged">Experimental Configurations</a> note for details.</p>
+</div>
+<hr />
+<h2 id="what-is-a-hypothesis-bundle">What is a Hypothesis Bundle?<a class="headerlink" href="#what-is-a-hypothesis-bundle" title="Permanent link">&para;</a></h2>
+<p>A <strong>hypothesis bundle</strong> replaces the informal strategy description ("try mechanism X with parameters Y") with a falsification framework designed before implementation. It is a set of testable predictions that collectively define a strategy and its validation apparatus.</p>
+<p>Every bundle contains up to five canonical arm types. Compound mechanisms use all five; simpler iterations use subsets (see <a href="#when-to-skip-the-full-bundle">when to skip</a>). Bundles may also include <strong>application-specific arms</strong> beyond the canonical five — for example, H-zero-sum (side-effect detection on a different metric) as shown in the scheduling example below.</p>
+<pre class="mermaid"><code>flowchart LR
+    S["Selected Strategy"]
+
+    S --&gt; HM["H-main&lt;br/&gt;Does the mechanism work?&lt;br/&gt;What effect size? Why?"]
+    S --&gt; HA["H-ablation&lt;br/&gt;Which components matter?&lt;br/&gt;Are any redundant?"]
+    S --&gt; HSA["H-super-additivity&lt;br/&gt;Do components interact?&lt;br/&gt;Is compound &gt; sum of parts?"]
+    S --&gt; HC["H-control-negative&lt;br/&gt;Where should the effect vanish?&lt;br/&gt;Confirms mechanism specificity"]
+    S --&gt; HR["H-robustness&lt;br/&gt;Where does the strategy break?&lt;br/&gt;Generalization boundaries"]
+
+    style HM fill:#c8e6c9
+    style HA fill:#ffecb3
+    style HSA fill:#ffecb3
+    style HC fill:#e1bee7
+    style HR fill:#bbdefb</code></pre>
+<p>Every arm includes three elements:</p>
+<ol>
+<li><strong>Quantitative prediction</strong> — a specific metric and threshold (e.g., "&gt;30% TTFT P99 improvement")</li>
+<li><strong>Causal mechanism</strong> — WHY the prediction should hold (e.g., "because priority ordering allows critical requests to bypass the queue")</li>
+<li><strong>Diagnostic clause</strong> — what a failure would indicate (e.g., "if this fails, priority gaps are insufficient at this load")</li>
+</ol>
+<hr />
+<h2 id="example-scheduling-track-iteration-1-pr-452">Example: Scheduling Track, Iteration 1 (PR #452)<a class="headerlink" href="#example-scheduling-track-iteration-1-pr-452" title="Permanent link">&para;</a></h2>
+<p>The scheduling track of Strategy Evolution (PR #452, draft) explored SLO-aware scheduling strategies over 11 iterations, achieving -73.7% critical TTFT P99. Here is how iteration 1 — the SLO-tiered priority strategy — would be formulated as a hypothesis bundle.</p>
+<h3 id="the-scheduling-strategy">The scheduling strategy<a class="headerlink" href="#the-scheduling-strategy" title="Permanent link">&para;</a></h3>
+<p>SLO-tiered priority with base scores: critical=10, standard=5, sheddable=1. Piecewise-linear urgency thresholds prevent starvation. A priority bridge passes SLO hints from the router to the scheduler.</p>
+<h3 id="the-scheduling-bundle-designed-at-phase-2-before-implementation">The scheduling bundle (designed at Phase 2, before implementation)<a class="headerlink" href="#the-scheduling-bundle-designed-at-phase-2-before-implementation" title="Permanent link">&para;</a></h3>
+<h4 id="h-main-scheduling-mechanism-claim">H-main — scheduling mechanism claim<a class="headerlink" href="#h-main-scheduling-mechanism-claim" title="Permanent link">&para;</a></h4>
 <blockquote>
-<p><strong>Canonical sources:</strong> System invariants (INV-1 through INV-8) are defined in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a>. If invariant descriptions here diverge, <code>invariants.md</code> is authoritative.</p>
+<p>"SLO-tiered priority with base scores [critical=10, standard=5, sheddable=1] will reduce critical TTFT P99 by &gt;30% at rate=2000 req/s because priority ordering allows critical requests to be scheduled ahead of lower-priority requests when they contend in the wait queue.</p>
+<p><em>If this fails, it indicates priority gaps are insufficient to overcome queue depth at this load level.</em>"</p>
 </blockquote>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Each BLIS instance is a self-contained discrete event simulator. The engine maintains an event queue (min-heap), processes events in timestamp order, and advances a simulation clock. The core loop is:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>while events remain and clock &lt; horizon:
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    event = pop earliest event from queue
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    advance clock to event.timestamp
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    execute event (may produce new events)
-</code></pre></div>
-<p>The engine models the full vLLM inference pipeline: request arrival, queueing, batch formation, step execution, KV cache management, and latency estimation — all without real GPU hardware.</p>
-<h2 id="event-queue">Event Queue<a class="headerlink" href="#event-queue" title="Permanent link">&para;</a></h2>
-<p>The event queue is a min-heap ordered by event timestamp. Events represent state transitions in the simulation:</p>
-<table>
-<thead>
-<tr>
-<th>Event Type</th>
-<th>Trigger</th>
-<th>Effect</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>ArrivalEvent</code></td>
-<td>Request enters system</td>
-<td>Computes queueing delay (alpha overhead), schedules <code>QueuedEvent</code></td>
-</tr>
-<tr>
-<td><code>QueuedEvent</code></td>
-<td>Request enters wait queue</td>
-<td>Adds request to wait queue; if no <code>StepEvent</code> exists, schedules one (work-conserving)</td>
-</tr>
-<tr>
-<td><code>StepEvent</code></td>
-<td>Batch ready for execution</td>
-<td>Runs the 4-phase Step() cycle (see below)</td>
-</tr>
-<tr>
-<td><code>ScheduledEvent</code></td>
-<td>Request moves to running batch</td>
-<td>Timeline marker for tracing (scheduling delay recorded in <code>scheduleBatch</code>)</td>
-</tr>
-<tr>
-<td><code>PreemptionEvent</code></td>
-<td>KV cache eviction</td>
-<td>Timeline marker for tracing (preemption count recorded in <code>scheduleBatch</code>)</td>
-</tr>
-<tr>
-<td><code>RequestLeftEvent</code></td>
-<td>Request completes</td>
-<td>Timeline marker for tracing (E2E metrics recorded in <code>processCompletions</code>)</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Clock monotonicity (INV-3):</strong> The simulation clock never decreases. Events are processed in strictly non-decreasing timestamp order.</p>
-<p><strong>Work-conserving (INV-8):</strong> After every step completion, if the wait queue is non-empty, a <code>StepEvent</code> must exist in the event queue. The simulator never idles while work is waiting.</p>
-<p><img alt="Event Processing Loop" src="../diagrams/eventprocessingloop.png" /></p>
-<h2 id="step-phases">Step Phases<a class="headerlink" href="#step-phases" title="Permanent link">&para;</a></h2>
-<p>The <code>Step()</code> function is a 4-line orchestrator that delegates to four phases:</p>
-<h3 id="phase-1-schedule-batch-schedulebatch">Phase 1: Schedule Batch (<code>scheduleBatch</code>)<a class="headerlink" href="#phase-1-schedule-batch-schedulebatch" title="Permanent link">&para;</a></h3>
-<ol>
-<li>Assign priority scores to all queued requests via the priority policy</li>
-<li>Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-based)</li>
-<li>Invoke batch formation to select which requests enter the running batch</li>
-<li>Schedule <code>PreemptionEvent</code> for any evicted requests</li>
-<li>Schedule <code>ScheduledEvent</code> for any newly admitted requests</li>
-</ol>
-<h3 id="phase-2-execute-batch-step-executebatchstep">Phase 2: Execute Batch Step (<code>executeBatchStep</code>)<a class="headerlink" href="#phase-2-execute-batch-step-executebatchstep" title="Permanent link">&para;</a></h3>
-<ol>
-<li>Compute step time via the latency model based on batch composition</li>
-<li>For each request in the batch:</li>
-<li>If in prefill phase: advance the progress index through input tokens (respecting chunked prefill limits)</li>
-<li>If in decode phase: advance the progress index by one output token</li>
-<li>Record TTFT at the prefill-to-decode boundary</li>
-<li>Return the computed step time to Phase 4 for scheduling the next <code>StepEvent</code> (the clock itself advances only at the event-loop level when the next event is popped)</li>
-</ol>
-<h3 id="phase-3-process-completions-processcompletions">Phase 3: Process Completions (<code>processCompletions</code>)<a class="headerlink" href="#phase-3-process-completions-processcompletions" title="Permanent link">&para;</a></h3>
-<p>Identify completed requests (all output tokens generated), release their KV blocks, record E2E metrics, and schedule <code>RequestLeftEvent</code>. Note: TTFT is already recorded in Phase 2 at the prefill-to-decode boundary, so Phase 3 only handles E2E and completion bookkeeping. This separation (TTFT in Phase 2, E2E in Phase 3) is the "two-pass" design that ensures TTFT is recorded before E2E.</p>
-<h3 id="phase-4-schedule-next-step-schedulenextstep">Phase 4: Schedule Next Step (<code>scheduleNextStep</code>)<a class="headerlink" href="#phase-4-schedule-next-step-schedulenextstep" title="Permanent link">&para;</a></h3>
-<ol>
-<li>If the running batch still has requests, schedule the next <code>StepEvent</code> at <code>now + stepTime</code></li>
-<li>If the running batch is empty but the wait queue has requests, schedule the next <code>StepEvent</code> at <code>now + stepTime</code> (work-conserving)</li>
-<li>If both are empty, do nothing (next event will be a future arrival)</li>
-</ol>
-<h2 id="request-lifecycle">Request Lifecycle<a class="headerlink" href="#request-lifecycle" title="Permanent link">&para;</a></h2>
-<p>Requests follow a linear state machine with one exception (preemption):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>                      ┌─────────────────────────────────┐
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>                      │         Preemption               │
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                      │    (re-enqueue at front)         │
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>                      ▼                                  │
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  Arrival ──▶ Queued ──▶ Running ──▶ Completed
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>               │                        │
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>               │                        ▼
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>               │                   RequestLeft
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>               │
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  Arrival ──▶ DroppedUnservable
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>             (input too large for KV cache)
-</code></pre></div>
-<p><img alt="Request Lifecycle" src="../diagrams/requestlifecycle.png" /></p>
-<h3 id="states">States<a class="headerlink" href="#states" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>State</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Queued</strong></td>
-<td>In wait queue, not yet in running batch. Ordered by scheduling policy.</td>
-</tr>
-<tr>
-<td><strong>Running</strong></td>
-<td>In running batch, actively being processed. Progressing through prefill or decode.</td>
-</tr>
-<tr>
-<td><strong>Completed</strong></td>
-<td>All output tokens generated. KV blocks released. Metrics recorded.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="key-timestamps">Key Timestamps<a class="headerlink" href="#key-timestamps" title="Permanent link">&para;</a></h3>
-<p>These are the conceptual timestamps in a request's lifecycle. Some are stored as struct fields (e.g., <code>ArrivalTime</code>, <code>FirstTokenTime</code>), while others are computed at metric recording time.</p>
-<table>
-<thead>
-<tr>
-<th>Timestamp</th>
-<th>When Recorded</th>
-<th>Used For</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Arrival time</td>
-<td>Request creation</td>
-<td>E2E and scheduling delay baseline</td>
-</tr>
-<tr>
-<td>Enqueue time</td>
-<td>After alpha queueing delay</td>
-<td>Conceptual start of wait queue residence</td>
-</tr>
-<tr>
-<td>Schedule time</td>
-<td>Batch formation selects request</td>
-<td>Scheduling delay = time in wait queue</td>
-</tr>
-<tr>
-<td>First token time</td>
-<td>End of prefill phase</td>
-<td>TTFT = FirstTokenTime (stored on Request)</td>
-</tr>
-<tr>
-<td>Completion time</td>
-<td>All tokens generated</td>
-<td>E2E = FirstTokenTime + sum(ITLs)</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Causality invariant (INV-5):</strong> <code>arrival_time &lt;= enqueue_time &lt;= schedule_time &lt;= completion_time</code></p>
-<h3 id="preemption">Preemption<a class="headerlink" href="#preemption" title="Permanent link">&para;</a></h3>
-<p>When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch (tail-first eviction)
-2. Its KV blocks are freed
-3. It is re-enqueued at the front of the wait queue (not the back)
-4. A <code>PreemptionEvent</code> is recorded for tracing</p>
-<p>Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and their KV blocks are freed. However, the freed blocks' prefix hashes are preserved in the KV cache's free list — when the request is re-scheduled, prefix caching may find these blocks (if not yet evicted by LRU), reducing recomputation. This matches vLLM's "recompute" preemption mode.</p>
-<h3 id="dropped-requests">Dropped Requests<a class="headerlink" href="#dropped-requests" title="Permanent link">&para;</a></h3>
-<p>Requests whose input tokens require more KV blocks than the total cache capacity are dropped at enqueue time with a <code>DroppedUnservable</code> counter increment. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.</p>
-<h2 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h2>
-<p>BLIS models vLLM's continuous batching algorithm through the <code>VLLMBatchFormation</code> implementation.</p>
-<h3 id="two-phase-algorithm">Two-Phase Algorithm<a class="headerlink" href="#two-phase-algorithm" title="Permanent link">&para;</a></h3>
-<p><strong>Phase 1: Continuing Requests</strong>
-Process requests already in the running batch:
-- Apply chunked prefill limits (<code>--long-prefill-token-threshold</code>)
-- Allocate token budget for decode tokens
-- If KV allocation fails for a continuing request, preempt requests from the batch tail to free blocks</p>
-<p><strong>Phase 2: New Requests</strong>
-Dequeue requests from the wait queue:
-- Compute cached prefix blocks (prefix caching reduces allocation needs)
-- Allocate KV blocks for uncached prefix tokens being processed this step (bounded by chunked prefill threshold and remaining token budget)
-- Stop dequeuing when: max batch size reached (<code>--max-num-running-reqs</code>), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1</p>
-<h3 id="constraints">Constraints<a class="headerlink" href="#constraints" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Constraint</th>
-<th>Flag</th>
-<th>Effect</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Max batch size</td>
-<td><code>--max-num-running-reqs</code></td>
-<td>Limits number of concurrent requests in the running batch</td>
-</tr>
-<tr>
-<td>Token budget</td>
-<td><code>--max-num-scheduled-tokens</code></td>
-<td>Limits total new tokens across all running requests per step</td>
-</tr>
-<tr>
-<td>Chunked prefill</td>
-<td><code>--long-prefill-token-threshold</code></td>
-<td>Splits long prefills across multiple steps</td>
-</tr>
-</tbody>
-</table>
-<h3 id="preemption-strategy">Preemption Strategy<a class="headerlink" href="#preemption-strategy" title="Permanent link">&para;</a></h3>
-<p>When KV allocation fails for a continuing request:
-1. Evict requests from the batch tail (reverse order of admission)
-2. Free their KV blocks
-3. Re-enqueue evicted requests at the front of the wait queue
-4. Retry allocation for the original request
-5. <strong>Circuit breaker:</strong> Stop if allocation still fails after exhausting the batch, or if the request itself is unservable</p>
-<h2 id="kv-cache-management">KV Cache Management<a class="headerlink" href="#kv-cache-management" title="Permanent link">&para;</a></h2>
-<p>The KV cache simulates GPU memory organized as fixed-size blocks. Each block holds <code>--block-size-in-tokens</code> tokens (default: 16).</p>
-<h3 id="single-tier-cache">Single-Tier Cache<a class="headerlink" href="#single-tier-cache" title="Permanent link">&para;</a></h3>
-<p>The default KV cache operates entirely in GPU memory:</p>
+<p><strong>Experiment design:</strong></p>
 <ul>
-<li><strong>Block allocation:</strong> Requests are allocated blocks proportional to their token count</li>
-<li><strong>Prefix caching:</strong> Hierarchical block hashing enables prefix sharing across requests. Each block's hash chains with the prior block's hash, creating semantic prefix signatures. When a new request shares a prefix with an existing request, the cached blocks are reused rather than reallocated.</li>
-<li><strong>LRU eviction:</strong> Free blocks are managed via a doubly-linked list with LRU ordering</li>
-<li><strong>Reference counting:</strong> Shared blocks (prefix caching) are reference-counted and exempt from eviction while any request references them</li>
-<li><strong>Transactional allocation:</strong> Multi-block allocations are rolled back on failure (no partial allocation)</li>
+<li>Treatment: SLO-tiered priority scheduler + priority bridge</li>
+<li>Control: FCFS scheduler (baseline)</li>
+<li>Workload: Orthogonal SLO tiers (identical request shapes, SLO class is only differentiator)</li>
+<li>Rate: 2000 req/s (near saturation)</li>
+<li>Seeds: 42, 123, 456</li>
 </ul>
-<p><strong>Conservation invariant (INV-4):</strong> <code>allocated_blocks + free_blocks = total_blocks</code> at all times.</p>
-<h3 id="tiered-cache-gpu-cpu">Tiered Cache (GPU + CPU)<a class="headerlink" href="#tiered-cache-gpu-cpu" title="Permanent link">&para;</a></h3>
-<p>When <code>--kv-cpu-blocks</code> is set to a positive value, BLIS enables a two-tier cache:</p>
+<h4 id="h-ablation-priority-scheduling-component-isolation">H-ablation-priority — scheduling component isolation<a class="headerlink" href="#h-ablation-priority-scheduling-component-isolation" title="Permanent link">&para;</a></h4>
+<blockquote>
+<p>"Removing priority ordering (reverting to FCFS) while keeping the priority bridge and all other components will degrade critical TTFT P99 by &gt;20%, because priority scheduling is the primary mechanism.</p>
+<p><em>If degradation is &lt;5%, the improvement comes from the routing bridge, not the scheduler.</em>"</p>
+</blockquote>
+<p><strong>Experiment design:</strong></p>
 <ul>
-<li><strong>GPU tier:</strong> Full KV cache with prefix caching and LRU eviction</li>
-<li><strong>CPU tier:</strong> Simple capacity store for offloaded blocks</li>
-<li><strong>Offload trigger:</strong> When GPU utilization exceeds <code>--kv-offload-threshold</code> (default: 0.9), blocks are offloaded to CPU</li>
-<li><strong>Reload:</strong> On GPU allocation failure, blocks are reloaded from CPU with a transfer latency penalty</li>
-<li><strong>Transfer latency:</strong> Per reloaded block: <code>base_latency + ceil(block_size_tokens / bandwidth)</code>. Accumulated across all reloaded blocks. Non-blocking (added to step time).</li>
-<li><strong>Thrashing detection:</strong> Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter</li>
+<li>Treatment: Full compound strategy</li>
+<li>Control: Same strategy but with FCFS scheduler (priority disabled)</li>
+<li>Vary: Scheduler only (one dimension — ED-1)</li>
 </ul>
-<h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
-<p>BLIS predicts GPU step time through one of three latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
-<h3 id="blackbox-model-default">Blackbox Model (Default)<a class="headerlink" href="#blackbox-model-default" title="Permanent link">&para;</a></h3>
-<p>Uses trained regression coefficients to predict step time:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>QueueingTime = alpha0 + alpha1 * input_length
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>OutputTokenProcessingTime = alpha2
-</code></pre></div>
+<h4 id="h-zero-sum-cluster-wide-side-effect-detection-application-specific-arm">H-zero-sum — cluster-wide side-effect detection (application-specific arm)<a class="headerlink" href="#h-zero-sum-cluster-wide-side-effect-detection-application-specific-arm" title="Permanent link">&para;</a></h4>
+<p><em>Note: This arm replaces H-super-additivity for this strategy. The priority bridge is infrastructure (not an independent mechanism), so component interaction testing is less relevant than side-effect detection. H-zero-sum tests whether improving one class harms another — a question specific to priority-based strategies at saturation.</em></p>
+<blockquote>
+<p>"The compound strategy at near-saturation (rate=2000) will NOT degrade cluster-wide TTFT P99 by more than 10%, because priority reordering should primarily benefit critical requests without significantly harming others.</p>
+<p><em>If cluster P99 degrades &gt;30%, scheduling is zero-sum at saturation — improving one class directly worsens another. A non-zero-sum lever (e.g., admission control) would be needed to break the compute floor.</em>"</p>
+</blockquote>
+<p><strong>Experiment design:</strong></p>
 <ul>
-<li><strong>Beta coefficients</strong> model GPU execution time as a linear function of batch composition</li>
-<li><strong>Alpha coefficients</strong> model non-GPU overhead (tokenization, API serialization, output processing)</li>
-<li>Coefficients are trained offline via Bayesian optimization against real vLLM measurements</li>
-<li>Pre-trained coefficients for common model/GPU combinations are shipped in <code>defaults.yaml</code></li>
+<li>Treatment: Full compound strategy</li>
+<li>Metric: Both critical-class and cluster-wide TTFT P99</li>
+<li>Rate: Near-saturation (2000 req/s)</li>
 </ul>
-<p>See <a href="../../reference/configuration/#coefficient-calibration">Configuration Reference: Coefficient Calibration</a> for the training process.</p>
-<h3 id="roofline-model-analytical">Roofline Model (Analytical)<a class="headerlink" href="#roofline-model-analytical" title="Permanent link">&para;</a></h3>
-<p>Uses analytical FLOPs/bandwidth estimation when no trained coefficients are available:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>Step Time  = Prefill Phase Time + Decode Phase Time
-</code></pre></div>
+<h4 id="h-control-negative-scheduling-mechanism-specificity">H-control-negative — scheduling mechanism specificity<a class="headerlink" href="#h-control-negative-scheduling-mechanism-specificity" title="Permanent link">&para;</a></h4>
+<blockquote>
+<p>"Applying the strategy to a uniform workload (all requests same SLO class) will produce &lt;5% improvement, confirming the mechanism requires SLO differentiation.</p>
+<p><em>If improvement exceeds 5%, the mechanism has an SLO-independent component we haven't identified.</em>"</p>
+</blockquote>
+<p><strong>Experiment design:</strong></p>
 <ul>
-<li>Requires HuggingFace <code>config.json</code> (model architecture: layers, heads, hidden dim)</li>
-<li>Requires <code>hardware_config.json</code> (GPU specs: peak TFLOPS, peak bandwidth, MFU)</li>
-<li>Accounts for Tensor Parallelism, All-Reduce latency, and per-layer overheads</li>
-<li>No training data needed — works for any supported model immediately</li>
+<li>Treatment: Full compound strategy</li>
+<li>Workload: All requests labeled <code>standard</code> (uniform SLO)</li>
+<li>Expected: Byte-identical or &lt;5% difference from baseline</li>
 </ul>
-<p>See <a href="../roofline/">Roofline Estimation</a> for implementation details.</p>
-<h3 id="alpha-overhead">Alpha Overhead<a class="headerlink" href="#alpha-overhead" title="Permanent link">&para;</a></h3>
-<p>Alpha overhead models non-GPU processing time:
-- <strong>Queueing time</strong> (<code>alpha0 + alpha1 * input_length</code>): Delays request enqueue but does not block the server. The simulation clock is not advanced by this overhead.
-- <strong>Output token processing time</strong> (<code>alpha2</code>): Added to per-request ITL/TTFT metrics but does not block the next step.</p>
-<p>This is architecturally correct for vLLM, where CPU post-processing (tokenization, output serialization) runs concurrently with GPU execution.</p>
-<h2 id="scheduling-policies">Scheduling Policies<a class="headerlink" href="#scheduling-policies" title="Permanent link">&para;</a></h2>
-<p>Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance. To add a new scheduling policy, see <a href="../../contributing/extension-recipes/">Extension Recipes</a>.</p>
-<table>
-<thead>
-<tr>
-<th>Policy</th>
-<th>Ordering Rule</th>
-<th>Use Case</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>fcfs</code></td>
-<td>No reordering (arrival order)</td>
-<td>Default, fair</td>
-</tr>
-<tr>
-<td><code>priority-fcfs</code></td>
-<td>Priority descending, then arrival ascending</td>
-<td>SLO-aware scheduling</td>
-</tr>
-<tr>
-<td><code>sjf</code></td>
-<td>Input token count ascending, then arrival ascending</td>
-<td>Shortest-job-first for TTFT optimization</td>
-</tr>
-<tr>
-<td><code>reverse-priority</code></td>
-<td>Priority ascending (starves high-priority)</td>
-<td>Pathological testing only</td>
-</tr>
-</tbody>
-</table>
-<h3 id="priority-policies">Priority Policies<a class="headerlink" href="#priority-policies" title="Permanent link">&para;</a></h3>
-<p>Priority policies assign a numeric score to each request before scheduling:</p>
-<table>
-<thead>
-<tr>
-<th>Policy</th>
-<th>Score Computation</th>
-<th>Behavior</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>constant</code></td>
-<td>Fixed score for all requests</td>
-<td>No differentiation (default)</td>
-</tr>
-<tr>
-<td><code>slo-based</code></td>
-<td><code>base + age_weight * (clock - arrival)</code></td>
-<td>Favors older requests, prevents starvation. Note: despite the name, does not currently use per-request SLO metadata.</td>
-</tr>
-<tr>
-<td><code>inverted-slo</code></td>
-<td><code>base - age_weight * age</code></td>
-<td>Starves older requests (pathological)</td>
-</tr>
-</tbody>
-</table>
-<h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h2>
-<p>BLIS records per-request and aggregate metrics throughout the simulation.</p>
-<h3 id="per-request-metrics">Per-Request Metrics<a class="headerlink" href="#per-request-metrics" title="Permanent link">&para;</a></h3>
+<h4 id="h-robustness-scheduling-generalization-boundary">H-robustness — scheduling generalization boundary<a class="headerlink" href="#h-robustness-scheduling-generalization-boundary" title="Permanent link">&para;</a></h4>
+<blockquote>
+<p>"The strategy maintains &gt;40% critical TTFT improvement when KV blocks decrease from 132K to 3000, because the priority mechanism doesn't depend on KV abundance. Below 3000, degradation is expected as KV contention dominates scheduling order.</p>
+<p><em>If improvement collapses above 3000 blocks, KV state is confounding the priority mechanism.</em>"</p>
+</blockquote>
+<h3 id="what-actually-happened-and-what-hypothesis-bundles-would-have-caught-earlier">What actually happened (and what hypothesis bundles would have caught earlier)<a class="headerlink" href="#what-actually-happened-and-what-hypothesis-bundles-would-have-caught-earlier" title="Permanent link">&para;</a></h3>
+<p>The actual iteration 1 results:</p>
 <table>
 <thead>
 <tr>
 <th>Metric</th>
-<th>Definition</th>
+<th>Prediction</th>
+<th>Outcome</th>
+<th>Match?</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>TTFT</strong></td>
-<td>Time from arrival to first token: includes queueing delay, prefill step times, and output processing overhead (alpha2)</td>
+<td>Critical TTFT P99</td>
+<td>&gt;30% improvement</td>
+<td><strong>-50.8%</strong></td>
+<td>Confirmed (exceeded prediction)</td>
 </tr>
 <tr>
-<td><strong>E2E</strong></td>
-<td><code>FirstTokenTime + sum(ITLs)</code>, where each ITL includes step time + alpha2</td>
-</tr>
-<tr>
-<td><strong>ITL</strong></td>
-<td>Observed time between consecutive decode steps (includes alpha2 per token)</td>
-</tr>
-<tr>
-<td><strong>Scheduling Delay</strong></td>
-<td>Time from request arrival to entering the running batch (includes alpha queueing overhead + wait queue residence)</td>
-</tr>
-</tbody>
-</table>
-<h3 id="aggregate-metrics">Aggregate Metrics<a class="headerlink" href="#aggregate-metrics" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Metric</th>
-<th>Aggregation</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>TTFT, E2E, ITL distributions</td>
-<td>Mean, p90, p95, p99 in JSON output. Cluster-internal <code>Distribution</code> type also computes p50, min, max for fitness evaluation.</td>
+<td>Cluster TTFT P99</td>
+<td>&lt;10% degradation</td>
+<td><strong>+62.4%</strong></td>
+<td><strong>Refuted</strong> (zero-sum!)</td>
 </tr>
 <tr>
 <td>Throughput</td>
-<td>Output tokens per second, requests per second</td>
-</tr>
-<tr>
-<td>Preemption count</td>
-<td>Total KV cache evictions</td>
-</tr>
-<tr>
-<td>KV allocation failures</td>
-<td>Failed block allocations</td>
-</tr>
-<tr>
-<td>Dropped unservable</td>
-<td>Requests too large for cache</td>
+<td>&lt;5% change</td>
+<td><strong>~0%</strong></td>
+<td>Confirmed</td>
 </tr>
 </tbody>
 </table>
-<h3 id="conservation-invariant-inv-1">Conservation Invariant (INV-1)<a class="headerlink" href="#conservation-invariant-inv-1" title="Permanent link">&para;</a></h3>
-<p>At simulation end: <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable</code></p>
-<p>This is the fundamental accounting invariant that ensures no requests are silently lost.</p>
-<h2 id="determinism">Determinism<a class="headerlink" href="#determinism" title="Permanent link">&para;</a></h2>
-<p>BLIS guarantees deterministic output: the same seed produces byte-identical stdout across runs (INV-6).</p>
-<p>Key mechanisms:
-- <strong>Partitioned RNG:</strong> Each subsystem (workload generation, scheduling, etc.) uses an independent random stream derived from the seed, so adding randomness to one subsystem doesn't perturb others
-- <strong>Sorted map iteration:</strong> Where map iteration order affects output, keys are sorted first
-- <strong>Stdout/stderr separation:</strong> Deterministic results go to stdout; wall-clock timing and diagnostics go to stderr via logrus</p>
+<p>The H-zero-sum prediction was <strong>refuted</strong> — cluster P99 degraded 62.4%, far exceeding the predicted &lt;10%. The diagnostic clause ("a non-zero-sum lever is needed") pointed directly to admission control as the solution. Under the old methodology without hypothesis bundles, this zero-sum behavior was an informal surprise that took three iterations and human insight to diagnose. With the bundle, the diagnostic clause would have redirected effort to admission control in iteration 1's FINDINGS analysis.</p>
+<hr />
+<h2 id="example-routing-track-iteration-6-pr-447">Example: Routing Track, Iteration 6 (PR #447)<a class="headerlink" href="#example-routing-track-iteration-6-pr-447" title="Permanent link">&para;</a></h2>
+<p>The routing track of Strategy Evolution (PR #447, draft) explored routing scorer optimization over 19 iterations, discovering that KV-utilization as a routing scorer is counterproductive (RP-6). Here is how the iteration that discovered this finding would be formulated.</p>
+<h3 id="the-routing-strategy">The routing strategy<a class="headerlink" href="#the-routing-strategy" title="Permanent link">&para;</a></h3>
+<p>Drop the KV-utilization scorer from the routing pipeline. Use <code>pa:3,qd:2</code> instead of <code>pa:3,qd:2,kv:2</code>.</p>
+<h3 id="key-routing-bundle-arms">Key routing bundle arms<a class="headerlink" href="#key-routing-bundle-arms" title="Permanent link">&para;</a></h3>
+<h4 id="h-main-routing-mechanism-claim">H-main — routing mechanism claim<a class="headerlink" href="#h-main-routing-mechanism-claim" title="Permanent link">&para;</a></h4>
+<blockquote>
+<p>"Removing the KV-utilization scorer will improve or maintain TTFT P99 compared to the full <code>pa:3,qd:2,kv:2</code> configuration, because the <code>1-KVUtilization</code> formula routes away from instances with high occupancy — which are often the instances with the most valuable cached prefixes (in prefix-heavy workloads). Under memory pressure, this anti-correlation is especially harmful.</p>
+<p><em>If removing kv-util degrades performance, cache affinity and memory pressure are not correlated in this workload.</em>"</p>
+</blockquote>
+<h4 id="h-ablation-kv-routing-signal-isolation">H-ablation-kv — routing signal isolation<a class="headerlink" href="#h-ablation-kv-routing-signal-isolation" title="Permanent link">&para;</a></h4>
+<blockquote>
+<p>"Under KV pressure (reduced blocks), the <code>pa:3,qd:2</code> configuration will improve by &gt;10% over <code>pa:3,qd:2,kv:2</code>, because KV-utilization penalizes the instances with the best cache locality.</p>
+<p><em>If &lt;5% difference under pressure, KV-util's routing harm is negligible even in the regime where it's theoretically worst.</em>"</p>
+</blockquote>
+<h4 id="h-control-negative-routing-regime-where-kv-util-should-help">H-control-negative — routing regime where kv-util should help<a class="headerlink" href="#h-control-negative-routing-regime-where-kv-util-should-help" title="Permanent link">&para;</a></h4>
+<blockquote>
+<p>"Under abundant KV blocks (default 132K), removing kv-util will produce &lt;5% difference, because with abundant memory the signal is degenerate (all instances have low KV utilization).</p>
+<p><em>If &gt;5% improvement even with abundant blocks, kv-util is harmful in ALL regimes, not just under pressure.</em>"</p>
+</blockquote>
+<h3 id="what-this-routing-bundle-would-have-revealed">What this routing bundle would have revealed<a class="headerlink" href="#what-this-routing-bundle-would-have-revealed" title="Permanent link">&para;</a></h3>
+<p>The actual routing track results showed:</p>
+<ul>
+<li>Removing kv-util improved performance by <strong>4% even with abundant blocks</strong></li>
+<li>Under KV pressure, the improvement was <strong>23-25%</strong></li>
+<li>The H-control-negative was borderline (4% is below the 5% threshold, so formally the control passed). However, the direction of improvement — positive even with abundant blocks — suggested regime-independent harm that warranted investigation</li>
+</ul>
+<p>Combined with the KV-pressure results (23-25%), this led to principle RP-6: "KV-utilization as a routing scorer is counterproductive under memory pressure." The consistent direction of improvement across regimes additionally suggested this should be a universal recommendation.</p>
+<hr />
+<h2 id="why-prediction-errors-matter">Why Prediction Errors Matter<a class="headerlink" href="#why-prediction-errors-matter" title="Permanent link">&para;</a></h2>
+<p>The hypothesis bundle's most powerful feature is not confirming that strategies work — it's <strong>diagnosing why predictions fail.</strong></p>
+<pre class="mermaid"><code>flowchart TD
+    Pred["Prediction&lt;br/&gt;(designed in Phase 2)"]
+    Obs["Observation&lt;br/&gt;(measured in Phase 3)"]
+
+    Pred --&gt; Comp{"Prediction matches&lt;br/&gt;observation?"}
+    Obs --&gt; Comp
+
+    Comp --&gt;|Yes| Conf["CONFIRMED&lt;br/&gt;Mechanism verified&lt;br/&gt;Principle extracted"]
+    Comp --&gt;|No| Disc["DISCREPANCY&lt;br/&gt;Causal model is wrong"]
+
+    Disc --&gt; Why["Trace through code&lt;br/&gt;(RCV-1 to RCV-3)&lt;br/&gt;WHY is it wrong?"]
+    Why --&gt; Fix["New principle that&lt;br/&gt;constrains all future&lt;br/&gt;iterations"]
+
+    style Disc fill:#ffcdd2
+    style Why fill:#fff3e0
+    style Fix fill:#c8e6c9</code></pre>
+<p>Three categories of prediction error, each with different learning value:</p>
+<table>
+<thead>
+<tr>
+<th>Error type</th>
+<th>What it reveals</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Direction wrong</strong></td>
+<td>Fundamental misunderstanding of mechanism</td>
+<td>Predicted improvement, got degradation → mechanism is counterproductive</td>
+</tr>
+<tr>
+<td><strong>Magnitude wrong</strong></td>
+<td>Correct mechanism, wrong model of strength</td>
+<td>Predicted &lt;10% degradation, got +62% → underestimated zero-sum effect</td>
+</tr>
+<tr>
+<td><strong>Regime wrong</strong></td>
+<td>Mechanism works but in different conditions</td>
+<td>Predicted improvement at all loads, only works under saturation → effect is load-dependent</td>
+</tr>
+</tbody>
+</table>
+<p>In the scheduling track, the key breakthroughs came from prediction errors:</p>
+<ol>
+<li>
+<p><strong>Iteration 1:</strong> H-zero-sum predicted &lt;10% cluster degradation. Observed +62.4%. Error revealed S6 (scheduling is zero-sum at saturation) → redirected to admission control.</p>
+</li>
+<li>
+<p><strong>Iteration 3:</strong> H-main predicted admission gating would break the "compute floor" established in iteration 1-opt. Confirmed: critical TTFT dropped from 132ms to 107ms. The prediction-vs-outcome framework made this a <strong>testable claim</strong> rather than an informal hope.</p>
+</li>
+<li>
+<p><strong>Iteration 4:</strong> Ablation predicted disabling chunked prefill for the critical class would save overhead from eliminated chunk boundaries (principle S9: "Disabling chunking for critical saves 14ms of beta0 overhead"). Confirmed — critical TTFT dropped from 132ms to 90ms.</p>
+</li>
+</ol>
+<hr />
+<h2 id="bundle-size-guide">Bundle Size Guide<a class="headerlink" href="#bundle-size-guide" title="Permanent link">&para;</a></h2>
+<p>The number of hypothesis arms scales with strategy complexity. Use this table as a planning guide:</p>
+<table>
+<thead>
+<tr>
+<th>Components</th>
+<th>Typical arms</th>
+<th>Breakdown</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>4-5</td>
+<td>H-main, H-control-negative, 2-3 H-robustness</td>
+</tr>
+<tr>
+<td>2</td>
+<td>6-7</td>
+<td>H-main, 2 H-ablation, H-super-additivity, H-control-negative, 1-2 H-robustness</td>
+</tr>
+<tr>
+<td>3</td>
+<td>7-9</td>
+<td>H-main, 3 H-ablation, H-super-additivity, H-control-negative, 1-2 H-robustness</td>
+</tr>
+<tr>
+<td>4</td>
+<td>9-11</td>
+<td>H-main, 4 H-ablation, H-super-additivity, H-control-negative, 2-3 H-robustness</td>
+</tr>
+</tbody>
+</table>
+<h3 id="managing-bundle-cost">Managing bundle cost<a class="headerlink" href="#managing-bundle-cost" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p><strong>Tiered review depth:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Arm type</th>
+<th>FINDINGS Review</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>H-main</td>
+<td>Full 10-perspective</td>
+<td>Core claim — needs maximum scrutiny</td>
+</tr>
+<tr>
+<td>H-ablation, H-super-additivity</td>
+<td>5-perspective</td>
+<td>Simpler experiments, fewer confounds</td>
+</tr>
+<tr>
+<td>H-control-negative (byte-identical)</td>
+<td>Spot-check that treatment was active, then automatic validation</td>
+<td>Verify the treatment was correctly applied; byte-identical output confirms specificity</td>
+</tr>
+<tr>
+<td>H-robustness</td>
+<td>5-perspective</td>
+<td>Standard experimental rigor</td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>
+<p><strong>Parallel execution.</strong> All arms are independent. Use the <a href="../../contributing/hypothesis/#parallel-execution-mode">parallel execution mode</a> from the hypothesis process. All arms in a bundle must use the same seed set for valid comparison.</p>
+</li>
+<li>
+<p><strong>Fast-fail.</strong> If H-main is refuted (after FINDINGS review confirms the refutation is genuine, not an analyzer bug), skip remaining arms. If H-control-negative fails, stop and redesign. See <a href="../strategy-evolution/#fast-fail-rules">fast-fail rules</a>.</p>
+</li>
+</ol>
+<h3 id="when-to-skip-the-full-bundle">When to skip the full bundle<a class="headerlink" href="#when-to-skip-the-full-bundle" title="Permanent link">&para;</a></h3>
+<p>Not every iteration needs every arm:</p>
+<table>
+<thead>
+<tr>
+<th>Iteration type</th>
+<th>Required arms</th>
+<th>Optional</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>New compound mechanism (≥2 components)</td>
+<td>H-main, all H-ablation, H-super-additivity, H-control-negative</td>
+<td>H-robustness</td>
+</tr>
+<tr>
+<td>Component removal/simplification</td>
+<td>H-main, H-control-negative, H-ablation for removed component</td>
+<td>H-robustness</td>
+</tr>
+<tr>
+<td>Single-component mechanism</td>
+<td>H-main, H-control-negative</td>
+<td>H-robustness</td>
+</tr>
+<tr>
+<td>Parameter-only change (same active components, only numeric values change)</td>
+<td>H-main only</td>
+<td>Proceed directly to Bayesian optimization</td>
+</tr>
+<tr>
+<td>Robustness sweep (post-confirmation)</td>
+<td>H-robustness arms only</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="writing-good-hypothesis-arms">Writing Good Hypothesis Arms<a class="headerlink" href="#writing-good-hypothesis-arms" title="Permanent link">&para;</a></h2>
+<h3 id="the-three-elements">The three elements<a class="headerlink" href="#the-three-elements" title="Permanent link">&para;</a></h3>
+<p>Every hypothesis arm needs:</p>
+<ol>
+<li>
+<p><strong>A quantitative prediction with a threshold.</strong> Not "should improve" but "&gt;30% TTFT P99 improvement." The threshold makes the prediction falsifiable. A prediction is <strong>confirmed</strong> if the observed effect matches the predicted direction AND exceeds the stated threshold. It is <strong>partially confirmed</strong> if the direction is correct but magnitude falls short. It is <strong>refuted</strong> if the direction is wrong or the magnitude is negligible (&lt;5%).</p>
+</li>
+<li>
+<p><strong>A causal mechanism.</strong> Not "because it's better" but "because priority ordering allows critical requests to bypass the queue when they contend with lower-priority requests." The mechanism makes the prediction diagnostic.</p>
+</li>
+<li>
+<p><strong>A diagnostic clause.</strong> Not "if it fails, something is wrong" but "if this fails, priority gaps are insufficient to overcome queue depth at this load." The clause directs investigation when the prediction errors.</p>
+</li>
+</ol>
+<h3 id="common-mistakes">Common mistakes<a class="headerlink" href="#common-mistakes" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Mistake</th>
+<th>Problem</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vague prediction</td>
+<td>"Should improve TTFT"</td>
+<td>Specify metric + direction + threshold: "&gt;30% TTFT P99 improvement"</td>
+</tr>
+<tr>
+<td>No mechanism</td>
+<td>"Because it's a better strategy"</td>
+<td>Explain the causal chain: "because X causes Y which reduces Z"</td>
+</tr>
+<tr>
+<td>No diagnostic</td>
+<td>"If it fails, try something else"</td>
+<td>Direct investigation: "if it fails, it indicates X, investigate Y"</td>
+</tr>
+<tr>
+<td>Prediction too conservative</td>
+<td>"Will produce &gt;0% improvement"</td>
+<td>Unfalsifiable — any positive change confirms. Use meaningful thresholds from first principles.</td>
+</tr>
+<tr>
+<td>Missing control</td>
+<td>Testing compound without isolating components</td>
+<td>Add H-ablation for each component and H-control-negative</td>
+</tr>
+</tbody>
+</table>
 
 
 
@@ -3392,7 +3220,7 @@ Dequeue requests from the wait queue:
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../architecture/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Cluster Architecture">
+          <a href="../strategy-evolution/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Strategy Evolution">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3402,20 +3230,20 @@ Dequeue requests from the wait queue:
                 Previous
               </span>
               <div class="md-ellipsis">
-                Cluster Architecture
+                Strategy Evolution
               </div>
             </div>
           </a>
         
         
           
-          <a href="../roofline/" class="md-footer__link md-footer__link--next" aria-label="Next: Roofline Estimation">
+          <a href="../../contributing/" class="md-footer__link md-footer__link--next" aria-label="Next: Contributing">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Roofline Estimation
+                Contributing
               </div>
             </div>
             <div class="md-footer__button md-icon">
