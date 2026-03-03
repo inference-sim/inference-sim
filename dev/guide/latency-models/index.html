@@ -2510,14 +2510,14 @@
 </ol>
 <p>Or let BLIS fetch it automatically with <code>--latency-model roofline</code>.</p>
 <h3 id="tensor-parallelism-and-roofline">Tensor Parallelism and Roofline<a class="headerlink" href="#tensor-parallelism-and-roofline" title="Permanent link">&para;</a></h3>
-<p>The <code>--tp</code> flag divides FLOPs and memory bandwidth across TP ranks:</p>
+<p>The <code>--tp</code> flag divides FLOPs and memory traffic across TP ranks:</p>
 <ul>
 <li>Higher TP reduces per-GPU step time (more parallelism)</li>
 <li>Higher TP reduces KV blocks per GPU (memory split across ranks)</li>
 </ul>
 <p>When choosing between TP and replication (more instances): TP reduces per-request latency, replication increases throughput. For capacity planning, simulate both configurations.</p>
 <h2 id="cross-model-mode-physics-informed">Cross-Model Mode (Physics-Informed)<a class="headerlink" href="#cross-model-mode-physics-informed" title="Permanent link">&para;</a></h2>
-<p>Cross-model mode estimates step time using 4 globally-fitted physics coefficients that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from <code>config.json</code> to scale a single coefficient set.</p>
+<p>Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from <code>config.json</code> to scale a single coefficient set.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>crossmodel<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
 </code></pre></div>
@@ -2529,7 +2529,7 @@
 </code></pre></div>
 <p>Where <code>kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6</code>, <code>isMoE = 1.0</code> if the model has expert routing, and <code>isTP = 1.0</code> if TP &gt; 1.</p>
 <p><strong>Pre-trained coefficients</strong> from real vLLM measurements across 4 architectures (7B-70B dense + 8x7B MoE) are stored in <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. No per-model calibration needed.</p>
-<p><strong>MoE support:</strong> Cross-model correctly handles Mixture-of-Experts models. The <code>β₂</code> term captures the per-token routing and expert dispatch overhead. The <code>num_local_experts</code> and <code>num_experts_per_tok</code> fields are parsed directly from the HuggingFace config.json.</p>
+<p><strong>MoE support:</strong> Cross-model correctly handles Mixture-of-Experts models. The <code>β₂</code> term captures the per-token routing and expert dispatch overhead, activated when <code>num_local_experts &gt; 0</code> in the model's HuggingFace config.json. The MoE indicator is binary (MoE vs dense); the specific active expert count (<code>num_experts_per_tok</code>) is parsed for future refinement but not yet used in the formula.</p>
 <div class="admonition warning">
 <p class="admonition-title">Dense model prefill limitation</p>
 <p>For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, <strong>blackbox mode with trained coefficients</strong> provides more accurate estimates because its <code>β₁</code> term explicitly models per-prefill-token cost.</p>
@@ -2554,26 +2554,26 @@
 <tr>
 <td><strong>Data required</strong></td>
 <td><code>defaults.yaml</code> entry for model/GPU/TP</td>
-<td>HuggingFace <code>config.json</code> + <code>hardware_config.json</code></td>
-<td>HuggingFace <code>config.json</code> (global coefficients bundled)</td>
+<td>HuggingFace <code>config.json</code> + <code>--hardware</code> + <code>--tp</code></td>
+<td>HuggingFace <code>config.json</code> + <code>--hardware</code> + <code>--tp</code> (global coefficients bundled)</td>
 </tr>
 <tr>
 <td><strong>Accuracy</strong></td>
 <td>Highest (trained on real per-model measurements)</td>
 <td>Good mean (analytical FLOPs/bandwidth)</td>
-<td>Good mean across architectures (4 global coefficients)</td>
+<td>Good mean across architectures (7 global coefficients: 4 beta + 3 alpha)</td>
 </tr>
 <tr>
 <td><strong>MoE support</strong></td>
 <td>Yes (if trained coefficients exist)</td>
-<td>No (~4x overestimate)</td>
-<td>Yes (explicit MoE term)</td>
+<td>No (assumes dense transformers)</td>
+<td>Yes (explicit MoE dispatch term via <code>num_local_experts</code>)</td>
 </tr>
 <tr>
 <td><strong>Alpha overhead</strong></td>
-<td>Full alpha modeling</td>
-<td>Alpha from coefficients; step is analytical</td>
-<td>Full alpha modeling (same as blackbox)</td>
+<td>Alpha from coefficients (queueing + output processing)</td>
+<td>Alpha from coefficients (same as blackbox)</td>
+<td>Alpha from coefficients (same as blackbox)</td>
 </tr>
 </tbody>
 </table>

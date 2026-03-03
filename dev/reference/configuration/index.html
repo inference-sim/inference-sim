@@ -3066,7 +3066,7 @@
 <ol>
 <li><strong>Blackbox mode</strong> (default): If coefficients are provided via CLI flags or loaded from <code>defaults.yaml</code></li>
 <li><strong>Explicit roofline mode</strong>: If <code>--latency-model roofline</code> is set with <code>--hardware</code> and <code>--tp</code>. Model config is auto-resolved: <code>model_configs/</code> (local) → HuggingFace fetch → error. Alpha coefficients and <code>total_kv_blocks</code> are loaded from <code>defaults.yaml</code> when available. Beta coefficients are replaced by analytical roofline computation. Note: <code>--latency-model blackbox</code> explicitly prevents implicit roofline detection (respecting user intent).</li>
-<li><strong>Explicit cross-model mode</strong>: If <code>--latency-model crossmodel</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 4 globally-fitted physics coefficients from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. Architecture features derived from HuggingFace config.json. MoE-aware.</li>
+<li><strong>Explicit cross-model mode</strong>: If <code>--latency-model crossmodel</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. Architecture features derived from HuggingFace config.json. MoE-aware.</li>
 <li><strong>Implicit roofline mode</strong>: If all coefficients are zero and all four of <code>--model-config-folder</code>, <code>--hardware-config</code>, <code>--hardware</code>, and <code>--tp</code> are provided</li>
 <li><strong>Error</strong>: If no coefficients can be resolved and roofline inputs are incomplete</li>
 </ol>
