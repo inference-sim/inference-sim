@@ -237,7 +237,8 @@ inference-sim/
 │   ├── tiered.go              # TieredKVCache (GPU+CPU offload/reload)
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/               # Latency model implementations (PKG-2)
-│   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── crossmodel.go          # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
 │   ├── config.go              # HFConfig, GetHWConfig(), GetModelConfig(), ValidateRooflineConfig(), parseHWConfig(), parseHFConfig()
 │   └── register.go            # init()-based registration of NewLatencyModelFunc into sim/
@@ -337,7 +338,7 @@ inference-sim/
 
 ### Latency Estimation
 
-Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--model-config-folder` presence:
+Three modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--latency-model` flag:
 
 1. **Blackbox mode** (default): Uses trained alpha/beta coefficients from `defaults.yaml`
    - Alpha coefficients: queueing time estimation
@@ -347,6 +348,12 @@ Two modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) b
    - Requires HuggingFace `config.json` in `model_configs/`
    - Requires `hardware_config.json` with GPU specs
    - **`--latency-model roofline`**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./blis run --model <name> --latency-model roofline --hardware <GPU> --tp <N>`
+
+3. **Cross-model mode**: Physics-informed estimation via `sim/latency/crossmodel.go`
+   - Uses 4 globally-fitted coefficients (per-layer overhead, KV bandwidth, MoE dispatch, TP sync) from `crossmodel_defaults` in `defaults.yaml`
+   - Derives architecture features from HuggingFace `config.json` (layer count, KV heads, head dimension, MoE expert count, TP degree)
+   - MoE-aware: correctly models sparse activation patterns (unlike roofline which overestimates ~4x for MoE)
+   - **`--latency-model crossmodel`**: Same auto-fetch chain as roofline. Usage: `./blis run --model <name> --latency-model crossmodel --hardware <GPU> --tp <N>`
 
 ### Key Data Flow
 
