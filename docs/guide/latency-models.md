@@ -93,7 +93,7 @@ Or let BLIS fetch it automatically with `--latency-model roofline`.
 
 ### Tensor Parallelism and Roofline
 
-The `--tp` flag divides FLOPs and memory bandwidth across TP ranks:
+The `--tp` flag divides FLOPs and memory traffic across TP ranks:
 
 - Higher TP reduces per-GPU step time (more parallelism)
 - Higher TP reduces KV blocks per GPU (memory split across ranks)
@@ -102,7 +102,7 @@ When choosing between TP and replication (more instances): TP reduces per-reques
 
 ## Cross-Model Mode (Physics-Informed)
 
-Cross-model mode estimates step time using 4 globally-fitted physics coefficients that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from `config.json` to scale a single coefficient set.
+Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from `config.json` to scale a single coefficient set.
 
 ```bash
 ./blis run --model meta-llama/llama-3.1-8b-instruct \
@@ -122,7 +122,7 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 
 **Pre-trained coefficients** from real vLLM measurements across 4 architectures (7B-70B dense + 8x7B MoE) are stored in `crossmodel_defaults` in `defaults.yaml`. No per-model calibration needed.
 
-**MoE support:** Cross-model correctly handles Mixture-of-Experts models. The `β₂` term captures the per-token routing and expert dispatch overhead. The `num_local_experts` and `num_experts_per_tok` fields are parsed directly from the HuggingFace config.json.
+**MoE support:** Cross-model correctly handles Mixture-of-Experts models. The `β₂` term captures the per-token routing and expert dispatch overhead, activated when `num_local_experts > 0` in the model's HuggingFace config.json. The MoE indicator is binary (MoE vs dense); the specific active expert count (`num_experts_per_tok`) is parsed for future refinement but not yet used in the formula.
 
 !!! warning "Dense model prefill limitation"
     For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, **blackbox mode with trained coefficients** provides more accurate estimates because its `β₁` term explicitly models per-prefill-token cost.
@@ -132,10 +132,10 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 | Aspect | Blackbox (default) | Roofline | Cross-Model |
 |--------|-------------------|----------|-------------|
 | **When to use** | Model has per-model coefficients in `defaults.yaml` | Quick estimation, no training data | New model from config.json, MoE models |
-| **Data required** | `defaults.yaml` entry for model/GPU/TP | HuggingFace `config.json` + `hardware_config.json` | HuggingFace `config.json` (global coefficients bundled) |
-| **Accuracy** | Highest (trained on real per-model measurements) | Good mean (analytical FLOPs/bandwidth) | Good mean across architectures (4 global coefficients) |
-| **MoE support** | Yes (if trained coefficients exist) | No (~4x overestimate) | Yes (explicit MoE term) |
-| **Alpha overhead** | Full alpha modeling | Alpha from coefficients; step is analytical | Full alpha modeling (same as blackbox) |
+| **Data required** | `defaults.yaml` entry for model/GPU/TP | HuggingFace `config.json` + `--hardware` + `--tp` | HuggingFace `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
+| **Accuracy** | Highest (trained on real per-model measurements) | Good mean (analytical FLOPs/bandwidth) | Good mean across architectures (7 global coefficients: 4 beta + 3 alpha) |
+| **MoE support** | Yes (if trained coefficients exist) | No (assumes dense transformers) | Yes (explicit MoE dispatch term via `num_local_experts`) |
+| **Alpha overhead** | Alpha from coefficients (queueing + output processing) | Alpha from coefficients (same as blackbox) | Alpha from coefficients (same as blackbox) |
 
 !!! tip "Choosing the right mode"
     **Blackbox** for models with trained coefficients (highest accuracy). **Cross-model** for new models or MoE models without per-model coefficients (global physics coefficients + config.json features). **Roofline** for quick analytical estimates of dense models when no coefficients are available at all.
