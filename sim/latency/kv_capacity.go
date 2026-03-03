@@ -105,7 +105,7 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 	// When numKVHeads < tp (e.g., GQA with 2 KV heads, TP=4), vLLM replicates
 	// KV heads per GPU. Our formula divides total KV by tp, which underestimates
 	// per-GPU KV memory in this case. This is a known approximation — the error
-	// is conservative (overestimates available blocks).
+	// is optimistic (overestimates available blocks).
 	if numKVHeads >= tp && numKVHeads%tp != 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: num_kv_heads (%d) must be evenly divisible by TP (%d)", numKVHeads, tp)
 	}
