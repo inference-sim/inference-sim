@@ -49,8 +49,8 @@ func GetHWConfig(HWConfigFilePath string, GPU string) (sim.HardwareCalib, error)
 	return config, nil
 }
 
-// parseHFConfig parses arbitrary JSON into HFConfig.
-func parseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
+// ParseHFConfig parses a HuggingFace config.json file into an HFConfig.
+func ParseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
 	data, err := os.ReadFile(HFConfigFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("read HF config %q: %w", HFConfigFilePath, err)
@@ -72,10 +72,16 @@ func parseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
 // GetModelConfig parses a HuggingFace config.json and extracts model parameters.
 // Returns an error if the config file cannot be read or parsed.
 func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
-	hf, err := parseHFConfig(hfConfigPath)
+	hf, err := ParseHFConfig(hfConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("get model config: %w", err)
 	}
+	return GetModelConfigFromHF(hf)
+}
+
+// GetModelConfigFromHF extracts model parameters from a pre-parsed HFConfig.
+// Use this when you already have a parsed HFConfig to avoid re-reading the file.
+func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	getInt := func(key string) int {
 		if val, ok := hf.Raw[key].(float64); ok {
 			return int(val)

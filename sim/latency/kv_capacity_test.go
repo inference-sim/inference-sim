@@ -676,6 +676,126 @@ func TestExtractKVCapacityParams_SingleExpert_ClassifiedAsDense(t *testing.T) {
 	}
 }
 
+// --- I2: NumKVHeads=0 fallback to NumHeads ---
+
+func TestCalculateKVBlocks_NumKVHeadsZero_FallsBackToNumHeads(t *testing.T) {
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	// Explicit NumKVHeads = NumHeads (MHA)
+	mcExplicit := mc
+	mcExplicit.NumKVHeads = mc.NumHeads // 32
+	blocksExplicit, err := latency.CalculateKVBlocks(mcExplicit, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("explicit NumKVHeads=%d error: %v", mc.NumHeads, err)
+	}
+
+	// NumKVHeads = 0 (should behave identically to NumHeads)
+	mcZero := mc
+	mcZero.NumKVHeads = 0
+	blocksZero, err := latency.CalculateKVBlocks(mcZero, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("NumKVHeads=0 error: %v", err)
+	}
+
+	if blocksZero != blocksExplicit {
+		t.Errorf("NumKVHeads=0 should produce same blocks as NumKVHeads=%d: got %d vs %d",
+			mc.NumHeads, blocksZero, blocksExplicit)
+	}
+}
+
+// --- I5: numKVHeads < TP path ---
+
+func TestCalculateKVBlocks_NumKVHeadsLessThanTP_Succeeds(t *testing.T) {
+	mc := validDenseModelConfig()
+	mc.NumKVHeads = 2 // GQA with only 2 KV heads
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	// TP=4 > numKVHeads=2: vLLM replicates KV heads, our formula approximates
+	blocks, err := latency.CalculateKVBlocks(mc, hc, 4, 16, params)
+	if err != nil {
+		t.Fatalf("numKVHeads=2, TP=4 should succeed (known approximation), got error: %v", err)
+	}
+	if blocks <= 0 {
+		t.Errorf("expected positive blocks, got %d", blocks)
+	}
+	t.Logf("numKVHeads=2, TP=4: blocks=%d (optimistic approximation)", blocks)
+}
+
+// --- I3: MoE fallback detection paths ---
+
+func TestExtractKVCapacityParams_MoEFallback_NRoutedExperts(t *testing.T) {
+	// DeepSeek-style: uses n_routed_experts instead of num_local_experts
+	path := writeTempConfigJSON(t, map[string]any{
+		"hidden_act":          "silu",
+		"n_routed_experts":    64,
+	})
+
+	params, err := latency.ExtractKVCapacityParamsFromFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !params.IsMoE {
+		t.Error("expected IsMoE=true for n_routed_experts=64")
+	}
+	if params.NumLocalExperts != 64 {
+		t.Errorf("expected NumLocalExperts=64, got %d", params.NumLocalExperts)
+	}
+}
+
+func TestExtractKVCapacityParams_MoEFallback_NumExperts(t *testing.T) {
+	// DBRX-style: uses num_experts
+	path := writeTempConfigJSON(t, map[string]any{
+		"hidden_act":   "silu",
+		"num_experts":  16,
+	})
+
+	params, err := latency.ExtractKVCapacityParamsFromFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !params.IsMoE {
+		t.Error("expected IsMoE=true for num_experts=16")
+	}
+	if params.NumLocalExperts != 16 {
+		t.Errorf("expected NumLocalExperts=16, got %d", params.NumLocalExperts)
+	}
+}
+
+func TestExtractKVCapacityParams_MoEFallback_SharedExpertsOnly_ReturnsError(t *testing.T) {
+	// Model with n_shared_experts but no total expert count — cannot estimate weights
+	path := writeTempConfigJSON(t, map[string]any{
+		"hidden_act":       "silu",
+		"n_shared_experts": 2,
+	})
+
+	_, err := latency.ExtractKVCapacityParamsFromFile(path)
+	if err == nil {
+		t.Fatal("expected error for MoE detected via n_shared_experts without total expert count")
+	}
+	if !strings.Contains(err.Error(), "n_shared_experts") {
+		t.Errorf("expected error mentioning n_shared_experts, got: %v", err)
+	}
+}
+
+func TestExtractKVCapacityParams_MoEFallback_NumExpertsPerTokOnly_ReturnsError(t *testing.T) {
+	// Switch Transformer-style: num_experts_per_tok=1 signals MoE but no total count
+	path := writeTempConfigJSON(t, map[string]any{
+		"hidden_act":          "silu",
+		"num_experts_per_tok": 1,
+	})
+
+	_, err := latency.ExtractKVCapacityParamsFromFile(path)
+	if err == nil {
+		t.Fatal("expected error for MoE detected via num_experts_per_tok without total expert count")
+	}
+	if !strings.Contains(err.Error(), "num_experts_per_tok") {
+		t.Errorf("expected error mentioning num_experts_per_tok, got: %v", err)
+	}
+}
+
 func TestExtractKVCapacityParams_TiedEmbeddings(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
 		"hidden_act":           "silu",

@@ -236,17 +236,23 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 // ExtractKVCapacityParamsFromFile reads a HuggingFace config.json file and
 // extracts the KVCapacityParams needed for CalculateKVBlocks.
 func ExtractKVCapacityParamsFromFile(hfConfigPath string) (KVCapacityParams, error) {
-	hf, err := parseHFConfig(hfConfigPath)
+	hf, err := ParseHFConfig(hfConfigPath)
 	if err != nil {
 		return KVCapacityParams{}, fmt.Errorf("extract KV capacity params: %w", err)
 	}
-	return ExtractKVCapacityParams(hf), nil
+	params, err := ExtractKVCapacityParams(hf)
+	if err != nil {
+		return KVCapacityParams{}, fmt.Errorf("extract KV capacity params: %w", err)
+	}
+	return params, nil
 }
 
 // ExtractKVCapacityParams extracts KVCapacityParams from a parsed HFConfig.
 // MoE detection: checks num_local_experts > 1, then falls back to
-// n_routed_experts, n_shared_experts, num_experts, num_experts_per_tok.
-func ExtractKVCapacityParams(hf *HFConfig) KVCapacityParams {
+// n_routed_experts, num_experts. Returns an error if MoE is detected
+// via activation-count fields (n_shared_experts, num_experts_per_tok)
+// without a total expert count — weight estimation requires the count.
+func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 	var params KVCapacityParams
 
 	// hidden_act
@@ -262,7 +268,7 @@ func ExtractKVCapacityParams(hf *HFConfig) KVCapacityParams {
 	if numLocalExperts > 1 {
 		params.IsMoE = true
 		params.NumLocalExperts = numLocalExperts
-		return params
+		return params, nil
 	}
 
 	// Fallback MoE indicators: fields that represent total expert count can
@@ -273,19 +279,20 @@ func ExtractKVCapacityParams(hf *HFConfig) KVCapacityParams {
 		if v := hf.MustGetInt(key, 0); v > 1 {
 			params.IsMoE = true
 			params.NumLocalExperts = v
-			return params
+			return params, nil
 		}
 	}
 	// Activation-count or shared-expert fields: signal MoE but don't provide
-	// a reliable total expert count. Set IsMoE for activation memory but
-	// leave NumLocalExperts at 0 (computeModelWeightBytes skips MoE MLP
-	// multiplication when NumLocalExperts == 0).
+	// a reliable total expert count. Without the total count, weight estimation
+	// would use dense MLP weights — massively underestimating MoE model size.
+	// Return an error so the caller can fall back to --total-kv-blocks.
 	for _, key := range []string{"n_shared_experts", "num_experts_per_tok"} {
-		if v := hf.MustGetInt(key, 0); v > 1 {
-			params.IsMoE = true
-			return params
+		if v := hf.MustGetInt(key, 0); v > 0 {
+			return KVCapacityParams{}, fmt.Errorf(
+				"model appears to be MoE (%s=%d) but num_local_experts is missing; "+
+					"cannot estimate weight size accurately. Set --total-kv-blocks explicitly", key, v)
 		}
 	}
 
-	return params
+	return params, nil
 }
