@@ -14,7 +14,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **HuggingFace config.json support** for model architecture
 - **Dense and MoE model support** (Mixtral, DeepSeek-MoE, etc.)
 - **vLLM deployment configuration** (TP, PP, EP, batch limits)
-- **Two latency estimation modes**: blackbox (data-driven) and roofline (analytical)
+- **Three latency estimation modes**: blackbox (data-driven), roofline (analytical), and cross-model (physics-informed, MoE-aware)
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`) or custom distributions
 - **Trace replay**: replay recorded request traces for deterministic testing
 - **Multi-instance cluster simulation** with shared-clock event loop
