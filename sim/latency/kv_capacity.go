@@ -92,13 +92,20 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 		return 0, fmt.Errorf("CalculateKVBlocks: unsupported activation %q; only SwiGLU-family activations (silu, swiglu, geglu) are supported", params.HiddenAct)
 	}
 
-	// Resolve numKVHeads: 0 means MHA (same as NumHeads).
+	// Resolve numKVHeads: 0 means MHA (same as NumHeads); negative is invalid.
 	numKVHeads := mc.NumKVHeads
+	if numKVHeads < 0 {
+		return 0, fmt.Errorf("CalculateKVBlocks: num_kv_heads must be >= 0, got %d", numKVHeads)
+	}
 	if numKVHeads == 0 {
 		numKVHeads = mc.NumHeads
 	}
 
 	// TP divisibility: if numKVHeads >= tp, they must be evenly divisible.
+	// When numKVHeads < tp (e.g., GQA with 2 KV heads, TP=4), vLLM replicates
+	// KV heads per GPU. Our formula divides total KV by tp, which underestimates
+	// per-GPU KV memory in this case. This is a known approximation — the error
+	// is conservative (overestimates available blocks).
 	if numKVHeads >= tp && numKVHeads%tp != 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: num_kv_heads (%d) must be evenly divisible by TP (%d)", numKVHeads, tp)
 	}
@@ -107,13 +114,19 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 
 	// --- Step 1: Per-token KV bytes ---
 	// Each layer has a K and V projection, each of size headDim * numKVHeads.
-	perTokenKVBytes := int64(mc.NumLayers) * 2 * int64(headDim) * int64(numKVHeads) * int64(mc.BytesPerParam)
+	// Use float64 arithmetic to avoid int64 truncation of fractional BytesPerParam
+	// (e.g., INT4 = 0.5 bytes/param would truncate to 0 with int64 cast).
+	perTokenKVBytesF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
 
 	// --- Step 2: Per-token KV bytes per GPU (TP sharding) ---
-	perTokenKVBytesPerGPU := perTokenKVBytes / int64(tp)
+	perTokenKVBytesPerGPUF := perTokenKVBytesF / float64(tp)
 
 	// --- Step 3: Per-block bytes ---
-	perBlockBytes := perTokenKVBytesPerGPU * blockSize
+	perBlockBytes := int64(perTokenKVBytesPerGPUF * float64(blockSize))
+	if perBlockBytes <= 0 {
+		return 0, fmt.Errorf("CalculateKVBlocks: per-block KV bytes is %d (expected > 0); check BytesPerParam=%.4f, numKVHeads=%d, headDim=%d",
+			perBlockBytes, mc.BytesPerParam, numKVHeads, headDim)
+	}
 
 	// --- Step 4: Available memory budget (total across all TP GPUs) ---
 	// Reference: available_memory = gpu_mem * gpu_mem_util * gpu_count

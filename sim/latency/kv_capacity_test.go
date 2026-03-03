@@ -141,6 +141,29 @@ func TestCalculateKVBlocks_ZeroDenominators_ReturnError(t *testing.T) {
 			},
 			errWant: "vocab_size",
 		},
+		{
+			name: "negative TP",
+			setup: func() (sim.ModelConfig, sim.HardwareCalib, int, int64, latency.KVCapacityParams) {
+				return mc, hc, -1, blockSize, params
+			},
+			errWant: "TP",
+		},
+		{
+			name: "negative block size",
+			setup: func() (sim.ModelConfig, sim.HardwareCalib, int, int64, latency.KVCapacityParams) {
+				return mc, hc, tp, -1, params
+			},
+			errWant: "block size",
+		},
+		{
+			name: "negative NumKVHeads",
+			setup: func() (sim.ModelConfig, sim.HardwareCalib, int, int64, latency.KVCapacityParams) {
+				m := mc
+				m.NumKVHeads = -1
+				return m, hc, tp, blockSize, params
+			},
+			errWant: "num_kv_heads",
+		},
 	}
 
 	for _, tt := range tests {
@@ -384,6 +407,37 @@ func TestCalculateKVBlocks_Monotonicity_TP1ToTP2(t *testing.T) {
 	if blocksTP2 <= blocksTP1 {
 		t.Errorf("monotonicity violation: TP=2 blocks (%d) should be greater than TP=1 blocks (%d)",
 			blocksTP2, blocksTP1)
+	}
+}
+
+func TestCalculateKVBlocks_FractionalBytesPerParam_ProducesMoreBlocks(t *testing.T) {
+	// INT4 quantization uses 0.5 bytes per parameter. Before the float64
+	// arithmetic fix, int64(0.5) truncated to 0, causing a division-by-zero
+	// panic. This test verifies fractional BytesPerParam works correctly and
+	// produces more blocks than FP16 (smaller KV footprint per token).
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	// FP16 baseline (BytesPerParam = 2.0)
+	blocksFP16, err := latency.CalculateKVBlocks(mc, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("FP16 error: %v", err)
+	}
+
+	// INT4 (BytesPerParam = 0.5)
+	mcINT4 := mc
+	mcINT4.BytesPerParam = 0.5
+	blocksINT4, err := latency.CalculateKVBlocks(mcINT4, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("INT4 (BytesPerParam=0.5) error: %v", err)
+	}
+
+	t.Logf("FP16 blocks=%d, INT4 blocks=%d", blocksFP16, blocksINT4)
+
+	if blocksINT4 <= blocksFP16 {
+		t.Errorf("INT4 (0.5 bytes/param) should produce more blocks than FP16 (2 bytes/param): INT4=%d <= FP16=%d",
+			blocksINT4, blocksFP16)
 	}
 }
 
