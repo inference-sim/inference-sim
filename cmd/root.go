@@ -372,11 +372,14 @@ var runCmd = &cobra.Command{
 					"Roofline step time estimates may be inaccurate for quantized models",
 					modelConfig.BytesPerParam)
 			}
-			// Check for MoE model indicators in the raw HF config
-			if hfRawBytes, readErr := os.ReadFile(hfPath); readErr == nil {
-				if strings.Contains(string(hfRawBytes), `"num_local_experts"`) {
-					logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
-						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
+			// Check for MoE model indicators in the raw HF config (roofline-only warning;
+			// crossmodel handles MoE explicitly via the beta2 dispatch term)
+			if backend == "roofline" {
+				if hfRawBytes, readErr := os.ReadFile(hfPath); readErr == nil {
+					if strings.Contains(string(hfRawBytes), `"num_local_experts"`) {
+						logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
+							"Roofline estimation assumes dense transformers and may overestimate MoE latency")
+					}
 				}
 			}
 		}

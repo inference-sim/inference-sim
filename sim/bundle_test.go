@@ -330,6 +330,7 @@ func TestIsValidLatencyBackend(t *testing.T) {
 	assert.True(t, IsValidLatencyBackend(""))
 	assert.True(t, IsValidLatencyBackend("blackbox"))
 	assert.True(t, IsValidLatencyBackend("roofline"))
+	assert.True(t, IsValidLatencyBackend("crossmodel"))
 	assert.False(t, IsValidLatencyBackend("nonexistent"))
 }
 
@@ -337,5 +338,6 @@ func TestValidLatencyBackendNames(t *testing.T) {
 	names := ValidLatencyBackendNames()
 	assert.Contains(t, names, "blackbox")
 	assert.Contains(t, names, "roofline")
+	assert.Contains(t, names, "crossmodel")
 	assert.NotContains(t, names, "")
 }
