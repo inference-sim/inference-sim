@@ -1,6 +1,6 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- blackbox (data-driven) and roofline (analytical) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships three backends -- blackbox (data-driven), roofline (analytical), and cross-model (physics-informed, MoE-aware) -- and the pluggable architecture supports adding custom backends.
 
 ```bash
 # Blackbox mode (default) — uses pre-trained coefficients

@@ -168,6 +168,13 @@ func TestNewLatencyModel_CrossModelMode(t *testing.T) {
 	}}
 	result := model.StepTime(batch)
 	assert.GreaterOrEqual(t, result, int64(1), "factory-created crossmodel must produce positive step time")
+
+	// Regression anchor: exact value for known inputs.
+	// StepTime = 116.110*32 + 1226.868*1*0.016384 + 0 + 9445.157*1.0 = 13180.778... → int64(13180)
+	// kvDimScaled = (32 * 8 * (4096/32) / 2) * 1e-6 = 0.016384
+	if result != 13180 {
+		t.Errorf("StepTime regression anchor = %d, want 13180 (β₀·L + β₁·dc·kvDim + β₃·isTP)", result)
+	}
 }
 
 func TestNewLatencyModel_CrossModelMode_MoE(t *testing.T) {
