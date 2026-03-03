@@ -121,10 +121,11 @@ func validateCoeffs(name string, coeffs []float64) error {
 }
 
 // NewLatencyModel creates the appropriate LatencyModel based on config.
-// Dispatches on hw.Backend: "roofline" → RooflineLatencyModel, "" or "blackbox" → BlackboxLatencyModel.
-// Returns error if coefficient slices are too short, contain NaN/Inf, or roofline config validation fails.
+// Dispatches on hw.Backend: "roofline" → RooflineLatencyModel, "crossmodel" → CrossModelLatencyModel,
+// "" or "blackbox" → BlackboxLatencyModel.
+// Returns error if coefficient slices are too short, contain NaN/Inf, or config validation fails.
 func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
-	// Both implementations index alphaCoeffs[0..2]; validate upfront.
+	// All implementations index alphaCoeffs[0..2]; validate upfront.
 	if len(coeffs.AlphaCoeffs) < 3 {
 		return nil, fmt.Errorf("latency model: AlphaCoeffs requires at least 3 elements, got %d", len(coeffs.AlphaCoeffs))
 	}
@@ -144,6 +145,49 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			hwConfig:    hw.HWConfig,
 			tp:          hw.TP,
 			alphaCoeffs: coeffs.AlphaCoeffs,
+		}, nil
+	case "crossmodel":
+		// Validate required fields BEFORE computing derived features (R11: guard division)
+		if hw.TP <= 0 {
+			return nil, fmt.Errorf("latency model: crossmodel requires TP > 0, got %d", hw.TP)
+		}
+		if hw.ModelConfig.NumLayers <= 0 {
+			return nil, fmt.Errorf("latency model: crossmodel requires NumLayers > 0, got %d", hw.ModelConfig.NumLayers)
+		}
+		if hw.ModelConfig.NumHeads <= 0 {
+			return nil, fmt.Errorf("latency model: crossmodel requires NumHeads > 0, got %d", hw.ModelConfig.NumHeads)
+		}
+		if hw.ModelConfig.HiddenDim <= 0 {
+			return nil, fmt.Errorf("latency model: crossmodel requires HiddenDim > 0, got %d", hw.ModelConfig.HiddenDim)
+		}
+		if len(coeffs.BetaCoeffs) < 4 {
+			return nil, fmt.Errorf("latency model: crossmodel BetaCoeffs requires at least 4 elements, got %d", len(coeffs.BetaCoeffs))
+		}
+		if err := validateCoeffs("BetaCoeffs", coeffs.BetaCoeffs); err != nil {
+			return nil, err
+		}
+		// Compute architecture features at construction time (BC-10)
+		headDim := float64(hw.ModelConfig.HiddenDim) / float64(hw.ModelConfig.NumHeads)
+		numKVHeads := hw.ModelConfig.NumKVHeads
+		if numKVHeads == 0 {
+			numKVHeads = hw.ModelConfig.NumHeads // GQA fallback
+		}
+		kvDimScaled := (float64(hw.ModelConfig.NumLayers) * float64(numKVHeads) * headDim / float64(hw.TP)) * 1e-6
+		var isMoE float64
+		if hw.ModelConfig.NumLocalExperts > 0 {
+			isMoE = 1.0
+		}
+		var isTP float64
+		if hw.TP > 1 {
+			isTP = 1.0
+		}
+		return &CrossModelLatencyModel{
+			betaCoeffs:  coeffs.BetaCoeffs,
+			alphaCoeffs: coeffs.AlphaCoeffs,
+			numLayers:   hw.ModelConfig.NumLayers,
+			kvDimScaled: kvDimScaled,
+			isMoE:       isMoE,
+			isTP:        isTP,
 		}, nil
 	case "", "blackbox":
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.

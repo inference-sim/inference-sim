@@ -65,7 +65,7 @@ type ModelHardwareConfig struct {
 	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
 	GPU         string        // GPU type (e.g., "H100")
 	TP          int           // tensor parallelism degree
-	Backend     string        // latency model backend: "" or "blackbox" (default), "roofline"
+	Backend     string        // latency model backend: "" or "blackbox" (default), "roofline", "crossmodel"
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.

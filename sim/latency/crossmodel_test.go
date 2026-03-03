@@ -150,6 +150,84 @@ func TestCrossModelLatencyModel_MoE_PrefillMonotonicity(t *testing.T) {
 	assert.GreaterOrEqual(t, large, small, "BC-2: more prefill tokens on MoE must produce >= step time")
 }
 
+func TestNewLatencyModel_CrossModelMode(t *testing.T) {
+	// BC-9: factory creates crossmodel backend
+	mc := testCrossModelConfig()
+	coeffs := sim.NewLatencyCoeffs(
+		[]float64{116.110, 1226.868, 19.943, 9445.157},
+		[]float64{13732.0, 0.0, 860.6},
+	)
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	model, err := NewLatencyModel(coeffs, hw)
+	assert.NoError(t, err)
+
+	// Verify step time for a known batch (regression anchor)
+	batch := []*sim.Request{{
+		InputTokens: make([]int, 100), OutputTokens: []int{1},
+		ProgressIndex: 100, NumNewTokens: 1,
+	}}
+	result := model.StepTime(batch)
+	assert.GreaterOrEqual(t, result, int64(1), "factory-created crossmodel must produce positive step time")
+}
+
+func TestNewLatencyModel_CrossModelMode_MoE(t *testing.T) {
+	// BC-6: MoE model through factory path
+	mc := testMoEModelConfig()
+	coeffs := sim.NewLatencyCoeffs(
+		[]float64{116.110, 1226.868, 19.943, 9445.157},
+		[]float64{13732.0, 0.0, 860.6},
+	)
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	model, err := NewLatencyModel(coeffs, hw)
+	assert.NoError(t, err)
+
+	// MoE batch with prefill tokens — step time should be positive
+	batch := []*sim.Request{{
+		InputTokens: make([]int, 100), ProgressIndex: 0, NumNewTokens: 100,
+	}}
+	result := model.StepTime(batch)
+	assert.GreaterOrEqual(t, result, int64(1))
+}
+
+func TestNewLatencyModel_CrossModelMode_MissingNumLayers(t *testing.T) {
+	// BC-12: factory rejects missing NumLayers
+	mc := sim.ModelConfig{NumLayers: 0, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 8}
+	coeffs := sim.NewLatencyCoeffs(
+		[]float64{116, 1226, 19, 9445},
+		[]float64{13732, 0, 860},
+	)
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	_, err := NewLatencyModel(coeffs, hw)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "NumLayers")
+}
+
+func TestNewLatencyModel_CrossModelMode_MissingNumHeads(t *testing.T) {
+	// BC-12: factory rejects missing NumHeads
+	mc := sim.ModelConfig{NumLayers: 32, HiddenDim: 4096, NumHeads: 0, NumKVHeads: 8}
+	coeffs := sim.NewLatencyCoeffs(
+		[]float64{116, 1226, 19, 9445},
+		[]float64{13732, 0, 860},
+	)
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	_, err := NewLatencyModel(coeffs, hw)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "NumHeads")
+}
+
+func TestNewLatencyModel_CrossModelMode_ShortBeta(t *testing.T) {
+	// BC-13: factory rejects short BetaCoeffs
+	mc := testCrossModelConfig()
+	coeffs := sim.NewLatencyCoeffs(
+		[]float64{116, 1226, 19}, // only 3, need 4
+		[]float64{13732, 0, 860},
+	)
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	_, err := NewLatencyModel(coeffs, hw)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "4")
+}
+
 func TestCrossModelLatencyModel_QueueingTime_MatchesBlackbox(t *testing.T) {
 	// BC-8: QueueingTime identical to blackbox semantics
 	alpha := []float64{13732.0, 0.0, 860.6}
