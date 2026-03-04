@@ -16,7 +16,7 @@ func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T)
 			Seed:          42,
 			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
-			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}, nil),
 		},
 		NumInstances:    2,
 		TraceLevel:      "decisions",

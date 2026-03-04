@@ -456,7 +456,7 @@ func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 
 // TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError verifies roofline rejects zero NumHeads.
 func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
+	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}, nil)
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
 		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
@@ -477,7 +477,7 @@ func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 
 // TestNewLatencyModel_RooflineZeroTP_ReturnsError verifies roofline rejects zero TP.
 func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
+	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}, nil)
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
 		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},

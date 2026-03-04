@@ -345,6 +345,19 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
 	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()
 
+	// Record per-step metrics for SIL optimization (Iter 4)
+	sim.Metrics.StepDurations = append(sim.Metrics.StepDurations, currStepAdvance)
+	var pfToks, dcToks int64
+	for _, req := range sim.RunningBatch.Requests {
+		if req.ProgressIndex < util.Len64(req.InputTokens) {
+			pfToks += int64(req.NumNewTokens)
+		} else {
+			dcToks += int64(req.NumNewTokens)
+		}
+	}
+	sim.Metrics.StepPrefillTokens = append(sim.Metrics.StepPrefillTokens, pfToks)
+	sim.Metrics.StepDecodeTokens = append(sim.Metrics.StepDecodeTokens, dcToks)
+
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
 	// Note: TotalOutputTokens++ and TTFT metrics are recorded inline (not extracted to helpers)
@@ -425,11 +438,10 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 // remaining requests, or starts a new batch if only WaitQ has pending work
 // (work-conserving property, INV-8).
 func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*Request) {
+	interStepGap := sim.latencyModel.InterStepOverhead()
 	if len(remaining) > 0 {
 		sim.RunningBatch.Requests = remaining
-		// estimate queue overhead from LR (sim.features)
-		//
-		pbe := StepEvent{time: now + currStepAdvance}
+		pbe := StepEvent{time: now + currStepAdvance + interStepGap}
 		sim.Schedule(&pbe)
 		sim.stepEvent = &pbe
 	} else {
@@ -441,7 +453,7 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// triggers a QueuedEvent — violating the work-conserving
 		// property that real vLLM maintains.
 		if sim.WaitQ.Len() > 0 {
-			pbe := StepEvent{time: now + currStepAdvance}
+			pbe := StepEvent{time: now + currStepAdvance + interStepGap}
 			sim.Schedule(&pbe)
 			sim.stepEvent = &pbe
 		}

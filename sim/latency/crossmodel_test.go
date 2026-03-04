@@ -156,6 +156,7 @@ func TestNewLatencyModel_CrossModelMode(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(
 		[]float64{116.110, 1226.868, 19.943, 9445.157},
 		[]float64{13732.0, 0.0, 860.6},
+		nil,
 	)
 	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
 	model, err := NewLatencyModel(coeffs, hw)
@@ -183,6 +184,7 @@ func TestNewLatencyModel_CrossModelMode_MoE(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(
 		[]float64{116.110, 1226.868, 19.943, 9445.157},
 		[]float64{13732.0, 0.0, 860.6},
+		nil,
 	)
 	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
 	model, err := NewLatencyModel(coeffs, hw)
@@ -202,6 +204,7 @@ func TestNewLatencyModel_CrossModelMode_MissingNumLayers(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(
 		[]float64{116, 1226, 19, 9445},
 		[]float64{13732, 0, 860},
+		nil,
 	)
 	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
 	_, err := NewLatencyModel(coeffs, hw)
@@ -215,6 +218,7 @@ func TestNewLatencyModel_CrossModelMode_MissingNumHeads(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(
 		[]float64{116, 1226, 19, 9445},
 		[]float64{13732, 0, 860},
+		nil,
 	)
 	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
 	_, err := NewLatencyModel(coeffs, hw)
@@ -228,6 +232,7 @@ func TestNewLatencyModel_CrossModelMode_MissingHiddenDim(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(
 		[]float64{116, 1226, 19, 9445},
 		[]float64{13732, 0, 860},
+		nil,
 	)
 	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
 	_, err := NewLatencyModel(coeffs, hw)
@@ -241,6 +246,7 @@ func TestNewLatencyModel_CrossModelMode_ZeroTP(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(
 		[]float64{116, 1226, 19, 9445},
 		[]float64{13732, 0, 860},
+		nil,
 	)
 	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 0, "crossmodel")
 	_, err := NewLatencyModel(coeffs, hw)
@@ -254,6 +260,7 @@ func TestNewLatencyModel_CrossModelMode_ShortBeta(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(
 		[]float64{116, 1226, 19}, // only 3, need 4
 		[]float64{13732, 0, 860},
+		nil,
 	)
 	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
 	_, err := NewLatencyModel(coeffs, hw)

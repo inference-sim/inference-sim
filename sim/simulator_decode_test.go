@@ -13,7 +13,7 @@ func TestSimulator_DecodePhase_RequestCompletesSuccessfully(t *testing.T) {
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(100, 4, 0, 0, 0, 0),
 		BatchConfig:   NewBatchConfig(10, 1000, 0),
-		LatencyCoeffs: NewLatencyCoeffs([]float64{100, 0.5, 0.5}, []float64{100, 0.1, 50}),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{100, 0.5, 0.5}, []float64{100, 0.1, 50}, nil),
 	})
 
 	// Create a request with known input/output that exercises decode phase

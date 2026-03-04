@@ -32,7 +32,7 @@ func TestNewBatchConfig_FieldEquivalence(t *testing.T) {
 func TestNewLatencyCoeffs_FieldEquivalence(t *testing.T) {
 	beta := []float64{1000, 10, 2}
 	alpha := []float64{500, 1, 1000}
-	got := NewLatencyCoeffs(beta, alpha)
+	got := NewLatencyCoeffs(beta, alpha, nil)
 	want := LatencyCoeffs{BetaCoeffs: beta, AlphaCoeffs: alpha}
 	assert.Equal(t, want, got)
 }

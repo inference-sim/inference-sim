@@ -50,7 +50,7 @@ func msConfig(horizon int64) SimConfig {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 100000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs(msBeta(), msAlpha()),
+		LatencyCoeffs:       NewLatencyCoeffs(msBeta(), msAlpha(), nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "test-gpu", 1, ""),
 		PolicyConfig:        NewPolicyConfig("constant", "fcfs"),
 		WorkloadConfig:      NewWorkloadConfig(),

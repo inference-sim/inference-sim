@@ -62,7 +62,7 @@ func baseDeploymentConfig(numInstances int) DeploymentConfig {
 			Seed:                42,
 			KVCacheConfig:       sim.NewKVCacheConfig(2000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(64, 65536, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}, nil),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "", 0, ""),
 		},
 		NumInstances: numInstances,

@@ -20,6 +20,12 @@ type LatencyModel interface {
 
 	// PreemptionProcessingTime estimates preemption overhead per eviction.
 	PreemptionProcessingTime() int64
+
+	// InterStepOverhead estimates per-step scheduling overhead between consecutive steps.
+	// Applied in scheduleNextStep() to model real system inter-step gaps (scheduler CPU,
+	// prepare_model_input, CUDA graph overhead). Returns 0 when not modeled.
+	// Added in Iter 4 (#480) — separate from SchedulingProcessingTime (per-request).
+	InterStepOverhead() int64
 }
 
 // NewLatencyModelFunc is a factory function for creating LatencyModel implementations.

@@ -12,7 +12,7 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 		Horizon:             1000000,
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
 	lm, err := MustNewLatencyModel(config.LatencyCoeffs, config.ModelHardwareConfig)
@@ -70,7 +70,7 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 		Horizon:             1000000,
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
 	lm, err := MustNewLatencyModel(config.LatencyCoeffs, config.ModelHardwareConfig)

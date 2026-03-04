@@ -45,7 +45,7 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 				Seed:                tc.Seed,
 				KVCacheConfig:       NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 				BatchConfig:         NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
-				LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+				LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs, nil),
 				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, ""),
 			})
 
@@ -156,7 +156,7 @@ func TestSimulator_WorkloadRNG_NotNil(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, ""),
 	})
 
@@ -178,7 +178,7 @@ func TestSimulator_DeterministicWorkload(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, ""),
 	}
 
@@ -223,7 +223,7 @@ func newTestSimConfig() SimConfig {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, ""),
 	}
 }
@@ -288,7 +288,7 @@ func TestMustNewLatencyModel_NilFunc_Panics(t *testing.T) {
 			t.Errorf("panic message:\n  got:  %q\n  want: %q", msg, expected)
 		}
 	}()
-	coeffs := NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3})
+	coeffs := NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}, nil)
 	hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "")
 	_, _ = MustNewLatencyModel(coeffs, hw) //nolint:errcheck // expected to panic before returning
 }
@@ -484,7 +484,7 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 		Seed:                99,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation", "H100", 1, ""),
 	}
 
@@ -541,7 +541,7 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation-finite", "H100", 1, ""),
 	}
 
@@ -606,7 +606,7 @@ func TestSimulator_Causality_FullChain_ArrivalToCompletion(t *testing.T) {
 		Seed:                77,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-causality", "H100", 1, ""),
 	}
 
@@ -662,7 +662,7 @@ func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 		Seed:                55,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-monotonicity", "H100", 1, ""),
 	}
 
@@ -705,7 +705,7 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-determinism", "H100", 1, ""),
 	}
 
@@ -781,7 +781,7 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 				Seed:                42,
 				KVCacheConfig:       NewKVCacheConfig(10000, 16, tt.kvCPUBlocks, 0.8, 100.0, 0),
 				BatchConfig:         NewBatchConfig(256, 2048, 0),
-				LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+				LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-kv-conservation", "H100", 1, ""),
 			}
 
@@ -852,7 +852,7 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // KEY: only one request can run at a time
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-work-conserving", "H100", 1, ""),
 	}
 
@@ -929,7 +929,7 @@ func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(10, 16, 0, 0, 0, 0),
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}, nil),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -982,7 +982,7 @@ func TestEnqueueRequest_NormalInput_Enqueued(t *testing.T) {
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}, nil),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -1029,7 +1029,7 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(50, 16, 0, 0, 0, 0),
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs: NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}, nil),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -1095,7 +1095,7 @@ func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(5, 16, 0, 0, 0, 0),
 		BatchConfig:   NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}, nil),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -1144,7 +1144,7 @@ func TestRequestLifecycle_ValidTransitions(t *testing.T) {
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:   NewBatchConfig(1, 2048, 0),
-		LatencyCoeffs: NewLatencyCoeffs([]float64{100, 1, 1}, []float64{50, 0.1, 50}),
+		LatencyCoeffs: NewLatencyCoeffs([]float64{100, 1, 1}, []float64{50, 0.1, 50}, nil),
 	})
 
 	req := &Request{
@@ -1196,6 +1196,7 @@ func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
 		LatencyCoeffs: NewLatencyCoeffs(
 			[]float64{1000, 10, 2},
 			[]float64{500, 1, 1000},
+			nil,
 		),
 	}
 	sim := mustNewSimulator(t, cfg)
@@ -1250,7 +1251,7 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             100000,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}, nil),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{NumHeads: 0}, HardwareCalib{}, "", "", 0, ""),
 	}
 

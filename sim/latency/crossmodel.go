@@ -26,8 +26,9 @@ import (
 //	isMoE       = 1.0 if NumLocalExperts > 0, else 0.0
 //	isTP        = 1.0 if TP > 1, else 0.0
 type CrossModelLatencyModel struct {
-	betaCoeffs  []float64 // [per_layer, kv_bw, moe_dispatch, tp_sync]
-	alphaCoeffs []float64 // [pre_sched_fixed, pre_sched_per_tok, output_per_tok]
+	betaCoeffs      []float64 // [per_layer, kv_bw, moe_dispatch, tp_sync]
+	alphaCoeffs     []float64 // [pre_sched_fixed, pre_sched_per_tok, output_per_tok]
+	interStepCoeffs []float64 // [δ₀] inter-step overhead per step (µs)
 
 	// Pre-computed architecture features (frozen at construction)
 	numLayers   int
@@ -75,5 +76,12 @@ func (m *CrossModelLatencyModel) SchedulingProcessingTime() int64 {
 }
 
 func (m *CrossModelLatencyModel) PreemptionProcessingTime() int64 {
+	return 0
+}
+
+func (m *CrossModelLatencyModel) InterStepOverhead() int64 {
+	if len(m.interStepCoeffs) > 0 {
+		return int64(m.interStepCoeffs[0])
+	}
 	return 0
 }

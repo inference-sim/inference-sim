@@ -43,6 +43,9 @@ type Metrics struct {
 
 	NumWaitQRequests        []int                     // number of requests in waitQ over different steps
 	NumRunningBatchRequests []int                     // number of request in runningBatch over different steps
+	StepDurations           []int64                   // predicted step time (ticks) at each step
+	StepPrefillTokens       []int64                   // prefill tokens scheduled at each step
+	StepDecodeTokens        []int64                   // decode tokens scheduled at each step
 	Requests                map[string]RequestMetrics // request metrics list
 }
 

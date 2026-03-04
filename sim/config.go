@@ -45,16 +45,18 @@ func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshol
 
 // LatencyCoeffs groups regression coefficients for the latency model.
 type LatencyCoeffs struct {
-	BetaCoeffs  []float64 // regression coefficients for step time (≥3 elements required)
-	AlphaCoeffs []float64 // regression coefficients for queueing time (≥3 elements required)
+	BetaCoeffs      []float64 // regression coefficients for step time (≥3 elements required)
+	AlphaCoeffs     []float64 // regression coefficients for queueing time (≥3 elements required)
+	InterStepCoeffs []float64 // inter-step overhead coefficients (nil = 0 overhead; [δ₀] = fixed per-step)
 }
 
 // NewLatencyCoeffs creates a LatencyCoeffs with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
-func NewLatencyCoeffs(betaCoeffs, alphaCoeffs []float64) LatencyCoeffs {
+func NewLatencyCoeffs(betaCoeffs, alphaCoeffs, interStepCoeffs []float64) LatencyCoeffs {
 	return LatencyCoeffs{
-		BetaCoeffs:  betaCoeffs,
-		AlphaCoeffs: alphaCoeffs,
+		BetaCoeffs:      betaCoeffs,
+		AlphaCoeffs:     alphaCoeffs,
+		InterStepCoeffs: interStepCoeffs,
 	}
 }
 

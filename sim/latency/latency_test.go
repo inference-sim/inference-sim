@@ -244,7 +244,7 @@ func TestRooflineLatencyModel_QueueingTime_Positive(t *testing.T) {
 // TestNewLatencyModel_BlackboxMode verifies BC-4 (blackbox path).
 func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 	cfg := sim.SimConfig{
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, ""),
 	}
 
@@ -284,7 +284,7 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 // TestNewLatencyModel_RooflineMode verifies BC-4 (roofline path).
 func TestNewLatencyModel_RooflineMode(t *testing.T) {
 	cfg := sim.SimConfig{
-		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}),
+		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, "roofline"),
 	}
 
@@ -311,7 +311,7 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 // TestNewLatencyModel_InvalidRoofline verifies BC-8.
 func TestNewLatencyModel_InvalidRoofline(t *testing.T) {
 	cfg := sim.SimConfig{
-		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}),
+		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "roofline"),
 	}
 
@@ -336,7 +336,7 @@ func TestNewLatencyModel_ShortAlphaCoeffs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			coeffs := sim.NewLatencyCoeffs(tc.beta, tc.alpha)
+			coeffs := sim.NewLatencyCoeffs(tc.beta, tc.alpha, nil)
 			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, tc.backend)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
@@ -357,7 +357,7 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			coeffs := sim.NewLatencyCoeffs(tc.beta, []float64{100, 1, 100})
+			coeffs := sim.NewLatencyCoeffs(tc.beta, []float64{100, 1, 100}, nil)
 			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "")
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
@@ -369,7 +369,7 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 
 // TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError verifies BC-4: NaN in alpha rejected.
 func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{math.NaN(), 1.0, 100.0})
+	coeffs := sim.NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{math.NaN(), 1.0, 100.0}, nil)
 	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, ""))
 	if err == nil {
 		t.Fatal("expected error for NaN AlphaCoeffs, got nil")
@@ -378,7 +378,7 @@ func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
 
 // TestNewLatencyModel_InfBetaCoeffs_ReturnsError verifies BC-4: Inf in beta rejected.
 func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs([]float64{math.Inf(1), 10, 5}, []float64{100, 1.0, 100.0})
+	coeffs := sim.NewLatencyCoeffs([]float64{math.Inf(1), 10, 5}, []float64{100, 1.0, 100.0}, nil)
 	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, ""))
 	if err == nil {
 		t.Fatal("expected error for Inf BetaCoeffs, got nil")
@@ -387,7 +387,7 @@ func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
 
 // TestNewLatencyModel_UnknownBackend_ReturnsError verifies BC-6: unknown backend → error.
 func TestNewLatencyModel_UnknownBackend_ReturnsError(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs([]float64{1000, 10, 2}, []float64{500, 1, 100})
+	coeffs := sim.NewLatencyCoeffs([]float64{1000, 10, 2}, []float64{500, 1, 100}, nil)
 	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "nonexistent")
 	_, err := NewLatencyModel(coeffs, hw)
 	assert.Error(t, err)

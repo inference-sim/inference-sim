@@ -17,7 +17,7 @@ func newTestSimConfig() sim.SimConfig {
 		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}, nil),
 		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, ""),
 	}
 }
@@ -49,7 +49,7 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 					Seed:                tc.Seed,
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
-					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs, nil),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, ""),
 				},
 			)
@@ -103,7 +103,7 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 					Seed:                tc.Seed,
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
-					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
+					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs, nil),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, ""),
 				},
 			)

@@ -59,6 +59,10 @@ func (m *BlackboxLatencyModel) PreemptionProcessingTime() int64 {
 	return 0
 }
 
+func (m *BlackboxLatencyModel) InterStepOverhead() int64 {
+	return 0
+}
+
 // RooflineLatencyModel estimates latency using analytical FLOPs/bandwidth roofline model.
 // Step time is computed via rooflineStepTime(); overhead estimates use alpha coefficients.
 type RooflineLatencyModel struct {
@@ -105,6 +109,10 @@ func (m *RooflineLatencyModel) SchedulingProcessingTime() int64 {
 }
 
 func (m *RooflineLatencyModel) PreemptionProcessingTime() int64 {
+	return 0
+}
+
+func (m *RooflineLatencyModel) InterStepOverhead() int64 {
 	return 0
 }
 
@@ -183,12 +191,13 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			isTP = 1.0
 		}
 		return &CrossModelLatencyModel{
-			betaCoeffs:  coeffs.BetaCoeffs,
-			alphaCoeffs: coeffs.AlphaCoeffs,
-			numLayers:   hw.ModelConfig.NumLayers,
-			kvDimScaled: kvDimScaled,
-			isMoE:       isMoE,
-			isTP:        isTP,
+			betaCoeffs:      coeffs.BetaCoeffs,
+			alphaCoeffs:     coeffs.AlphaCoeffs,
+			interStepCoeffs: coeffs.InterStepCoeffs,
+			numLayers:       hw.ModelConfig.NumLayers,
+			kvDimScaled:     kvDimScaled,
+			isMoE:           isMoE,
+			isTP:            isTP,
 		}, nil
 	case "", "blackbox":
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.

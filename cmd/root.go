@@ -632,7 +632,7 @@ var runCmd = &cobra.Command{
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
-				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
+				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs, nil),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
