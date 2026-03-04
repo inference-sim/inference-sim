@@ -376,15 +376,17 @@ Phase 1 exploits convex structure and produces physics-interpretable starting va
    - L4 E2E (20%): per-request MAPE matched by arrival index
    - L5 throughput (10%): squared relative error
 
-3. **Coordinate-wise refinement** (8 parameters, practical budget):
-   - **Stage A — δ sweep** (most consequential, 2 params): Fix β, α from Phase 1. Grid search δ₀ ∈ [500, 5000] × δ₁ ∈ [0, 100] using a fast subset of 4 training experiments.
-   - **Stage B — α₀, α₂ refinement** (next most consequential, 2 params): Fix β, δ from Stage A. Bayesian optimization (GP surrogate, 30 evaluations) on α₀ × α₂.
-   - **Stage C — β joint refinement** (4 params, fine-tuning): Fix δ, α from Stages A-B. CMA-ES with σ₀=5% (tight search around warm-start), 50 generations × population 10.
-   - **Stage D — global polish** (all 8 params, optional): If Stages A-C meet targets, skip. Otherwise, CMA-ES on all 8 with σ₀=3%, warm-started from Stages A-C, budget 30 generations.
+3. **Coordinate-wise refinement** (7 free parameters, practical budget):
+   - **Stage A — δ₀ sweep** (most consequential, 1 param): Fix β, α from Phase 1. Grid search δ₀ ∈ [500, 5000] on 4 fast-subset experiments, validate on all 10. Record per-stage checkpoint.
+   - **Stage B — α₀, α₂ refinement** (next most consequential, 2 params): Fix β, δ₀ from Stage A. Bayesian optimization (GP surrogate, 30 evaluations, random_state=42). Record checkpoint. Also run Stage B with δ₀=0 as causality control for H-gamma-decrease.
+   - **Stage C — β joint refinement** (4 params, fine-tuning): Fix δ₀, α from Stages A-B. CMA-ES with σ₀=5%, 50 generations × population 10, random_state=42. Record checkpoint.
+   - **Stage D — global polish** (all 7, optional): If Stages A-C meet targets, skip.
 
-   Each stage validates on all 10 training experiments before proceeding. Fast subset (Stage A): llama-2-7b-general (TP=1), llama-2-70b-general (TP=4), mixtral-8x7b-general (MoE), codellama-34b-codegen (different profile).
+   Each stage records coefficients and evaluates all 10 training experiments (checkpoints enable per-stage ablation). Fast subset (Stage A): llama-2-7b-general (TP=1), llama-2-70b-general (TP=4), mixtral-8x7b-general (MoE), codellama-34b-codegen (cross-profile). Validation gate: if any non-subset experiment shows TTFT |RE| > 25%, re-run Stage A with all 10.
 
-4. **Physics guard-rails**: All parameters bounded ±30% of Phase 1 warm-start. β ≥ 0 (NNLS non-negativity). δ ≥ 0 (non-negative overhead). If any parameter moves > 30%, it is absorbing error from another source — investigate before accepting.
+   **Architecture note:** δ₀ is implemented via a new `InterStepOverhead() int64` method on the `LatencyModel` interface (Phase C interface evolution), NOT by modifying the existing `SchedulingProcessingTime()`. The existing method continues its per-request role at `batch_formation.go:131`. `InterStepOverhead()` fires every step in both paths of `scheduleNextStep()`. See `iter4-bundle.md` Architecture section.
+
+4. **Physics guard-rails**: All parameters bounded ±30% of Phase 1 warm-start (α₂ extended to [0, 1291] to allow physical value discovery). β ≥ 0, δ₀ ≥ 0. If any parameter moves > 30%, it is absorbing error from another source — investigate before accepting.
 
 5. **Validation gate**: After Phase 2 converges, run H31 (reasoning generalization) and H32 (aggregate capacity planning) with refined coefficients. Compare against both Phase 1 warm-start and Iter 3 original.
 
