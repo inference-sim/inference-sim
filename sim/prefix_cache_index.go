@@ -63,6 +63,7 @@ func (idx *PrefixCacheIndex) ComputeBlockHashes(tokens []int) []string {
 
 // MatchLength returns the number of consecutive blocks (from the start) that
 // the given instance has cached. Returns 0 if the instance has no history.
+// Does not refresh LRU ordering — only RecordBlocks updates recency.
 func (idx *PrefixCacheIndex) MatchLength(hashes []string, instanceID string) int {
 	cache, exists := idx.instances[instanceID]
 	if !exists {

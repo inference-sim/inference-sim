@@ -51,9 +51,11 @@ func newPrefixAffinityScorer(blockSize int) (scorerFunc, observerFunc) {
 		if req == nil {
 			return
 		}
-		// Reuse hashes from scorer if available for the same request
+		// Reuse hashes from scorer if available for the same request.
+		// The nil check on cachedHashes guards against the edge case where
+		// cachedReqID is "" and req.ID is also "" (both zero-values).
 		hashes := cachedHashes
-		if req.ID != cachedReqID {
+		if req.ID != cachedReqID || cachedHashes == nil {
 			hashes = idx.ComputeBlockHashes(req.InputTokens)
 		}
 		idx.RecordBlocks(hashes, targetInstance)

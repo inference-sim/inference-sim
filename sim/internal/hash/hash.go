@@ -6,6 +6,7 @@ package hash
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -51,6 +52,9 @@ func HashBlock(prevHash string, tokens []int) string {
 // single SHA256 hasher instance across blocks to reduce allocations.
 // Output equivalence is enforced by TestComputeBlockHashes_MatchesManualChaining.
 func ComputeBlockHashes(blockSize int, tokens []int) []string {
+	if blockSize <= 0 {
+		panic(fmt.Sprintf("ComputeBlockHashes: blockSize must be > 0, got %d", blockSize))
+	}
 	numBlocks := len(tokens) / blockSize
 	if numBlocks == 0 {
 		return nil
