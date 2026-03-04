@@ -120,8 +120,37 @@ H-ablation's E2E MAE (26.6%) is worse than Iter 3's (18.4%). The negative δ rem
 
 4. **P34: TTFT and E2E optimization are partially adversarial.** Negative δ that improves TTFT worsens E2E because the correction accumulates over many decode steps. A future iteration needs separate correction terms for the prefill-dominated TTFT path vs the decode-dominated E2E path.
 
+## Iter 5c: Joint 7-Param Non-Negative Optimization
+
+After the E2E degradation finding, a follow-up run jointly optimized all 7 parameters (β₀-β₃, α₀, γ₁, δ₀) with non-negativity constraints. γ₁ (OutputTokenProcessingTime per output token) serves as the "phase-aware" mechanism: it adds to E2E without affecting TTFT (at TTFT measurement, output_tokens=0).
+
+**Method:** Nelder-Mead on 4 roleplay experiments (multi-objective: 0.5×TTFT_MAPE + 0.5×E2E_MAPE).
+
+**Best result (eval 156, 9.88% combined loss):**
+
+| Parameter | Value | Iter 3 | Change | Physical meaning |
+|-----------|-------|--------|--------|------------------|
+| β₀ (per-layer) | **137** µs | 116 | +18% | CUDA kernel dispatch per layer |
+| β₁ (KV bandwidth) | **2,643** µs | 1,227 | +115% | KV cache HBM read — DOUBLED (key finding) |
+| β₂ (MoE routing) | **29** µs | 20 | +45% | Expert routing per MoE token |
+| β₃ (TP sync) | **5,119** µs | 9,445 | **-46%** | NCCL barrier — HALVED (was most inflated) |
+| α₀ (request overhead) | **21,128** µs | 13,732 | +54% | Pipeline delay + preprocessing |
+| γ₁ (output processing) | **1,431** µs/tok | 861 | +66% | Per-output-token E2E correction |
+| δ₀ (step overhead) | **178** µs | 0 | new | Small positive per-step overhead |
+
+**All coefficients non-negative.** The optimizer found that:
+- β₁(KV) should be LARGER than Iter 3 (not smaller as the wall-clock prototype suggested)
+- β₃(TP) should be ~half of Iter 3 (the TP sync was the most inflated by Block B)
+- δ₀ collapsed to ~178µs (nearly zero — most overhead captured by α₀ and γ₁)
+- γ₁=1,431µs/tok independently tunes E2E without touching TTFT
+
+**Not yet fully evaluated** on all experiments (optimizer loss on 4 roleplay only). Full evaluation on all 16 experiments pending in next iteration.
+
 ## Ledger Entry
 
 | Iter | Strategy | Form | Params | Train TTFT MAE | Train E2E MAE | Val TTFT MAE | Key Insight | Status |
 |------|----------|------|--------|---------------|---------------|-------------|-------------|--------|
 | 5 | Replay-calibrated (α₀, δ₀, δ₁) | Iter 3 β + NM-optimized overhead | 7 global | **13.3%** | 26.6% | **0.6%** | Negative δ corrects β entanglement; α₀=24ms absorbs pipeline delay; correcting β (H-main) fails at high load | H-ablation CONFIRMED, H-main REFUTED |
+| 5c | Joint 7-param non-neg | NM on (β,α₀,γ₁,δ₀), all ≥ 0 | 7 global | ~10%* | ~10%* | TBD | β₁(KV) doubles, β₃(TP) halves; γ₁ independently tunes E2E; δ₀→0 | PROMISING (optimizer loss 9.88%, full eval pending) |
+
+*Optimizer subset only (4 roleplay experiments). Full evaluation needed.
