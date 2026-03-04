@@ -18,8 +18,9 @@ import (
 // Beta coefficients estimate step time: beta0 + beta1*cacheMissTokens + beta2*decodeTokens.
 // Alpha coefficients estimate overheads: alpha0 + alpha1*inputLen (queueing), alpha2 (output processing).
 type BlackboxLatencyModel struct {
-	betaCoeffs  []float64
-	alphaCoeffs []float64
+	betaCoeffs      []float64
+	alphaCoeffs     []float64
+	interStepCoeffs []float64
 }
 
 func (m *BlackboxLatencyModel) StepTime(batch []*sim.Request) int64 {
@@ -60,6 +61,9 @@ func (m *BlackboxLatencyModel) PreemptionProcessingTime() int64 {
 }
 
 func (m *BlackboxLatencyModel) InterStepOverhead() int64 {
+	if len(m.interStepCoeffs) > 0 {
+		return int64(m.interStepCoeffs[0])
+	}
 	return 0
 }
 
@@ -208,8 +212,9 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			return nil, err
 		}
 		return &BlackboxLatencyModel{
-			betaCoeffs:  coeffs.BetaCoeffs,
-			alphaCoeffs: coeffs.AlphaCoeffs,
+			betaCoeffs:      coeffs.BetaCoeffs,
+			alphaCoeffs:     coeffs.AlphaCoeffs,
+			interStepCoeffs: coeffs.InterStepCoeffs,
 		}, nil
 	default:
 		return nil, fmt.Errorf("latency model: unknown backend %q; valid options: %s",

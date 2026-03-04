@@ -9,6 +9,7 @@
 | 2 | Journey-constrained NNLS + separate α | β₀+β₁·pf+β₂·dc (NNLS, β≥0), direct steps + journey constraints, separate α_ttft/α_e2e | 3β + 3α_ttft + 3α_e2e /model | TRAIN: TTFT=18.2%, E2E=1.9%; TEST: TTFT=1.5%, E2E=8.6% | TRAIN: TTFT=5.4%, E2E=1.1%; TEST: TTFT=1.4%, E2E=6.3% | TRAIN: TTFT=4.6%, E2E=1.4% | TRAIN: TTFT=3.8%, E2E=0.6%; TEST: TTFT=1.6%, E2E=10.9% | **H-main CONFIRMED.** Train: TTFT 3.8-18.2%, E2E 0.6-1.9% (all pass 25%/20%). Test: TTFT 1.4-1.6%, E2E 6.3-10.9%. Separate α (fit from TTFT residuals, not E2E) fixes 34pp TTFT regression. Journey constraints essential (5K-12K% without). Physics features structurally correct but need >4 envs. **Key: journey step indices → single NNLS; separate α_ttft/α_e2e prevents decode error leaking into TTFT.** | CONFIRMED |
 | 3 | Physics-first global β/α/γ | β₀·L+β₁·dc·kv_dim+β₂·(pf+dc)·MoE+β₃·I(TP>1), α₀+α₁·ν_in, γ₀+γ₁·ν_out | 4β + 2α + 2γ (8 total, ALL global) | TRAIN: TTFT=17.6%, E2E=10.6%; TEST: TTFT=1.5%, E2E=7.4% | TRAIN: TTFT=11.8%, E2E=8.0%; TEST: TTFT=1.6%, E2E=5.8% | TRAIN: TTFT=16.4%, E2E=8.9% | TRAIN: TTFT=5.3%, E2E=10.0%; TEST: TTFT=1.8%, E2E=9.0% | **PARTIAL.** 8 truly global parameters (no per-model fitting). TTFT 5.3-17.6% (all pass 25% gate). E2E 8.0-10.6% (vs Iter 2's 0.6-1.9%). γ₁=861 µs/tok (170× real detokenization) — diagnostic: global β has ~0.86ms/tok average decode error. NNLS zeros compute feature in all 12 designs tested — KV bandwidth dominates. LOMO: codellama/mixtral generalize (3.8-4.1% TTFT held-out); 7b degrades (17.3%). TTFT signed bias reveals the model-level residual: codellama/70b underpredicted (-5 to -9%), 7b/mixtral overpredicted (+7 to +13%). **Key: 4 envs insufficient for accurate global β; need >8 models to separate compute from KV bandwidth and fit TP continuously.** | PARTIAL (TTFT pass, E2E degraded) |
 | H30-H32 | BLIS replay diagnostic | Iter 3 coefficients through BLIS simulator | same 8 | BLIS TTFT RE: -17% to -56% (both BB and CM identical) | — | — | — | **DIAGNOSTIC.** Both backends produce same TTFT underprediction → error is in BLIS scheduling model (zero inter-step overhead), not coefficients. Analytical "1.5% test TTFT" was T_queue_obs masking. Saturation: +22% capacity overestimate → regime transition (ρ 1.24→1.02, 2000× TTFT). γ₁ accidentally compensates. **Key: dominant error is missing δ (inter-step overhead), not β/α inaccuracy.** | DIAGNOSTIC |
+| 4 | Journey β + per-model δ (SIL) + α search | Iter 2 per-model β₀+β₁·pf+β₂·dc, per-model δ₀ searched via BLIS replay, α₀/α₂ Nelder-Mead | 3β/model + 1δ/model + 2α (18 total) | TRAIN: TTFT=12.3%, E2E=8.8%; VAL codegen: TTFT=6.4% | TRAIN: TTFT=10.7%, E2E=0.5%; VAL — | TRAIN: TTFT=12.8%, E2E=0.2%; VAL reasoning: TTFT=97.7% (saturation) | TRAIN: TTFT=0.0%, E2E=7.0%; VAL codegen: TTFT=6.4%, roleplay: TTFT=7.1% | **PARTIAL.** Training PASS: TTFT 11.7% mean |RE|, E2E 3.5% (both within 25%/20% gates). α₂ collapsed 860→172 µs/tok (δ absorbed what γ₁ compensated). Per-model δ varies 0.5-5ms (70b≈0, 7b=5ms). Cross-profile generalizes for sub-saturation (codellama val: 6-7% TTFT). **Saturation regime still fails** (-90 to -98% for all reasoning profiles) — δ improves step timing but can't fix the +22% capacity overestimate that triggers ρ phase transition. Step-only global β failed (−50 to −89%) — journey constraints were load-bearing for global fit. | PARTIAL (sub-sat PASS, saturation FAIL) |
 
 ## Iteration 3 Full Results
 
@@ -122,10 +123,11 @@ Per-model α/γ improves train TTFT by ~4pp average (from 12.8% to 8.6%) and E2E
 
 **Trade-off:** Truly global model trades ~8pp E2E train accuracy for zero per-model calibration. 8 parameters vs 27. Test performance is comparable (T_queue dominates reasoning profiles).
 
-### Path to Iter 4
-- ~~**More environments** (>8 models)~~ — deprioritized. H30-H32 proved the dominant error is inter-step overhead, not β feature design. More models help β but won't close the -17% to -56% TTFT gap.
-- **Inter-step scheduling overhead (δ)** — the #1 priority. See H30-H32 diagnostics below and Iter 4 strategy.
-- **Non-linear batch-size interaction** — revisit after δ closes the TTFT gap. May become identifiable once the dominant error is removed.
+### Path to Iter 4 (outcome: see Iter 4 Execution Log)
+- ~~**More environments** (>8 models)~~ — deprioritized. H30-H32 proved the dominant error is inter-step overhead, not β feature design.
+- **Inter-step scheduling overhead (δ)** — ✓ DONE. Per-model δ searched via BLIS replay. Training: 11.7% TTFT, 3.5% E2E. Step-only β decomposition failed; journey β + residual δ search succeeded.
+- **Non-linear batch-size interaction** — deferred. Cross-profile TTFT variation (±22% for 7b codegen/roleplay vs general) suggests batch-size-dependent δ may be needed for further improvement.
+- **Saturation regime** — OPEN. All reasoning profiles fail at −90% to −98%. Separate workstream needed for capacity estimation near ρ≈1.
 
 ---
 
@@ -216,7 +218,67 @@ Physics guard-rails: all params bounded ±30% of warm-start, β ≥ 0, δ ≥ 0.
 
 ### Hypothesis Bundle
 
-See `training/iter4-bundle.md` for the full bundle (H-main + 6 arms).
+See `training/iter4-bundle.md` for the full bundle (H-main + 7 arms).
+
+### Execution Log
+
+**Stage A grid search (δ₀ sweep, Iter 3 global β/α fixed):** FAILED. All δ₀ values [5000-25000] produced millions-of-percent TTFT error. Root cause: **Iter 3 β already implicitly absorbed inter-step overhead** through journey-constraint NNLS (which uses wall-clock intervals including real vLLM's inter-step gaps). Adding δ₀ on top double-counts for models where β accurately captured overhead (mixtral: +2.4% TTFT at δ=0) while still undercounting for others (7b: -35.2%). The coordinate-wise assumption (δ orthogonal to β) is wrong — δ and β are entangled through the journey constraints.
+
+**Stage B step-only β refit:** FAILED. Refitted global physics β from Block A only (step-level `duration_us`, no journey constraints). Result: β₀=0, β₁=494 (vs 1227 journey), β₂=0, β₃=692 (vs 9445). BLIS replay: −50% to −89% TTFT, −80% to −91% E2E — **worse than no δ**. Also tried per-model step-only β (3 coefficients/model): β₀≈0 for all models, β₂ halved. Same failure (−45% TTFT, −84% E2E). **Root cause: journey constraints were load-bearing for β accuracy.** Without Block B, the NNLS underfits because step-level noise dominates and the 4 physics features can't capture per-model variation. The step+δ decomposition doesn't match how BLIS composes timing through its scheduler.
+
+**Stage C journey β + per-model δ search (BLIS SIL):** SUCCEEDED. Used Iter 2 per-model journey-constrained β (3 coefficients/model) and grid-searched δ∈[0,20000] independently per model using BLIS replay as objective. Then Nelder-Mead search over (α₀, α₂).
+
+Results:
+
+| Parameter | Value | Note |
+|-----------|-------|------|
+| β (per-model) | Iter 2 journey-constrained | Unchanged — β₀ includes absorbed inter-step overhead |
+| δ (codellama-34b) | 4,000 µs | Residual overhead NOT absorbed by β₀=13549 |
+| δ (llama-2-70b) | 500 µs | β₀=16534 absorbed nearly all overhead |
+| δ (llama-2-7b) | 5,000 µs | β₀=6179 left the largest gap |
+| δ (mixtral-8x7b) | 2,000 µs | β₀=17563 absorbed most overhead |
+| α₀ | 16,618 µs | Up from 13,732 (pre-scheduling) |
+| α₂ | 171.9 µs/tok | Down from 860.6 — δ absorbed 80% of γ₁'s compensatory role |
+
+Training (10 experiments, sub-saturation):
+
+| Model | Profile | TTFT mean RE | E2E mean RE |
+|-------|---------|-------------|-------------|
+| llama-2-7b | general | +2.5% | −4.0% |
+| llama-2-7b | codegen | +22.1% | −9.7% |
+| llama-2-7b | roleplay | +22.0% | −12.8% |
+| llama-2-70b | general | +0.6% | −0.3% |
+| llama-2-70b | codegen | −16.3% | +0.4% |
+| llama-2-70b | roleplay | −15.2% | +0.7% |
+| mixtral-8x7b | general | −0.5% | +0.1% |
+| mixtral-8x7b | codegen | −18.1% | −0.4% |
+| mixtral-8x7b | roleplay | −19.7% | −0.0% |
+| codellama-34b | general | −0.0% | +7.0% |
+| **Mean \|RE\|** | | **11.7%** | **3.5%** |
+
+Validation (sub-saturation profiles pass; saturation fails):
+
+| Model | Profile | TTFT mean RE | E2E mean RE |
+|-------|---------|-------------|-------------|
+| codellama-34b | codegen | −6.4% | +3.9% |
+| codellama-34b | roleplay | −7.1% | +4.2% |
+| mixtral-8x7b | reasoning | −97.7% | −92.7% |
+
+Test (all reasoning/saturation — expected failure):
+
+| Model | Profile | TTFT mean RE | E2E mean RE |
+|-------|---------|-------------|-------------|
+| llama-2-7b | reasoning | −97.2% | −91.7% |
+| llama-2-70b | reasoning | −95.5% | −83.4% |
+| codellama-34b | reasoning | −90.7% | −76.2% |
+
+**Key findings from Iter 4:**
+
+1. **δ and β are NOT orthogonal** — journey-constrained β absorbed a model-specific portion of inter-step overhead into β₀. Step-only β (without journey constraints) dramatically underfits. The working approach: keep journey β and search for the RESIDUAL δ each model needs.
+2. **Per-model δ varies 10×** (500-5000 µs) — inversely correlated with β₀. Models with high β₀ (70b: 16534) need tiny δ (500); models with low β₀ (7b: 6179) need large δ (5000). The sum β₀+δ is the total per-step overhead.
+3. **α₂ collapsed 80%** (860.6→171.9 µs/tok) — confirming the Iter 3 diagnostic that γ₁ was a β-compensator. With δ explicit, α₂ approaches a physically reasonable range (real detokenization ~5 µs/tok; remaining 172 µs is residual β decode error per output token).
+4. **Cross-profile generalization works for sub-saturation** — codellama val (unseen codegen/roleplay): 6-7% TTFT. The δ fitted on general profile transfers to other sub-saturation workloads.
+5. **Saturation regime remains unsolved** — all reasoning profiles (ρ>1) fail at −90 to −98%. This is the ρ phase-transition problem (H7/H29): δ improves per-step timing but can't fix the +22% capacity overestimate. At ρ≈1, small µ errors produce exponential queueing divergence. **Separate workstream needed** for saturation-aware capacity estimation.
 
 ---
 

@@ -1,0 +1,246 @@
+{
+  "iteration": "4a-journey-beta-delta-search",
+  "description": "Journey \u03b2 + per-model \u03b4 (searched via BLIS replay) + optimized \u03b1",
+  "coefficients": {
+    "per_model_beta": {
+      "codellama-34b": [
+        13548.787923611382,
+        2.212994871657089,
+        35.470150005132815
+      ],
+      "llama-2-70b": [
+        16534.35047561589,
+        3.750870569906465,
+        42.218203466195234
+      ],
+      "llama-2-7b": [
+        6178.843926843421,
+        2.143778329910225,
+        121.16359355694044
+      ],
+      "mixtral-8x7b": [
+        17563.288023365996,
+        4.7556448275713805,
+        18.714920963297146
+      ]
+    },
+    "beta_form": "step_time = \u03b2\u2080 + \u03b2\u2081\u00b7cacheMissTokens + \u03b2\u2082\u00b7decodeTokens",
+    "alpha": [
+      16617.991345214836,
+      0.0,
+      171.93484283447057
+    ],
+    "alpha_form": "QueueingTime = \u03b1\u2080 + \u03b1\u2081\u00b7input_tokens, OutputProcessing = \u03b1\u2082\u00b7output_tokens",
+    "per_model_delta": {
+      "codellama-34b": 4000,
+      "llama-2-70b": 500,
+      "llama-2-7b": 5000,
+      "mixtral-8x7b": 2000
+    }
+  },
+  "comparison": {
+    "iter3_alpha": [
+      13732.0,
+      0.0,
+      860.6
+    ]
+  },
+  "training_results": [
+    {
+      "experiment": "20260217-231439-llama-2-7b-tp1-general",
+      "model_short": "llama-2-7b",
+      "profile": "general",
+      "split": "train",
+      "ttft_mean_re": 0.02489460029392623,
+      "ttft_p99_re": 0.34531450515263534,
+      "e2e_mean_re": -0.04005575476144653,
+      "e2e_p99_re": 0.06623092099553538,
+      "throughput_re": -0.0011605049442425146,
+      "delta_used": 5000
+    },
+    {
+      "experiment": "20260217-155451-llama-2-7b-tp1-codegen",
+      "model_short": "llama-2-7b",
+      "profile": "codegen",
+      "split": "train",
+      "ttft_mean_re": 0.22053722920438976,
+      "ttft_p99_re": -0.12383655830039812,
+      "e2e_mean_re": -0.09707487252455625,
+      "e2e_p99_re": 0.10134411670626774,
+      "throughput_re": -0.001146781703754315,
+      "delta_used": 5000
+    },
+    {
+      "experiment": "20260217-162547-llama-2-7b-tp1-roleplay",
+      "model_short": "llama-2-7b",
+      "profile": "roleplay",
+      "split": "train",
+      "ttft_mean_re": 0.22022692293660398,
+      "ttft_p99_re": 0.0704386643100225,
+      "e2e_mean_re": -0.12847623956089596,
+      "e2e_p99_re": 0.01415895909894893,
+      "throughput_re": -0.000930427269571789,
+      "delta_used": 5000
+    },
+    {
+      "experiment": "20260217-202857-llama-2-70b-tp4-general",
+      "model_short": "llama-2-70b",
+      "profile": "general",
+      "split": "train",
+      "ttft_mean_re": 0.006057006886298513,
+      "ttft_p99_re": 0.18216046372129338,
+      "e2e_mean_re": -0.002587257388182081,
+      "e2e_p99_re": 0.019790934453309757,
+      "throughput_re": -2.2810068032216928e-05,
+      "delta_used": 500
+    },
+    {
+      "experiment": "20260217-203421-llama-2-70b-hf-tp4-codegen",
+      "model_short": "llama-2-70b",
+      "profile": "codegen",
+      "split": "train",
+      "ttft_mean_re": -0.16251583078375142,
+      "ttft_p99_re": -0.26187231444986453,
+      "e2e_mean_re": 0.0038315374502104335,
+      "e2e_p99_re": 0.009572684508756946,
+      "throughput_re": -0.00013833370973476426,
+      "delta_used": 500
+    },
+    {
+      "experiment": "20260218-084319-llama-2-70b-tp4-roleplay",
+      "model_short": "llama-2-70b",
+      "profile": "roleplay",
+      "split": "train",
+      "ttft_mean_re": -0.15199651045476983,
+      "ttft_p99_re": -0.4080994941559192,
+      "e2e_mean_re": 0.0066754591135689345,
+      "e2e_p99_re": -0.19751865175475503,
+      "throughput_re": -0.00017886911336371868,
+      "delta_used": 500
+    },
+    {
+      "experiment": "20260218-130541-mixtral-8x7b-v0-1-tp2-general",
+      "model_short": "mixtral-8x7b",
+      "profile": "general",
+      "split": "train",
+      "ttft_mean_re": -0.005249271748028219,
+      "ttft_p99_re": 1.0791653497723206,
+      "e2e_mean_re": 0.001230003621681577,
+      "e2e_p99_re": 0.054123481278775566,
+      "throughput_re": -0.00041235019500075824,
+      "delta_used": 2000
+    },
+    {
+      "experiment": "20260218-120914-mixtral-8x7b-v0-1-tp2-codegen",
+      "model_short": "mixtral-8x7b",
+      "profile": "codegen",
+      "split": "train",
+      "ttft_mean_re": -0.18070089684058485,
+      "ttft_p99_re": -0.13721125150309643,
+      "e2e_mean_re": -0.0037083023923292335,
+      "e2e_p99_re": -0.017538730325764636,
+      "throughput_re": -0.0006150530947911211,
+      "delta_used": 2000
+    },
+    {
+      "experiment": "20260218-141024-mixtral-8x7b-v0-1-tp2-roleplay",
+      "model_short": "mixtral-8x7b",
+      "profile": "roleplay",
+      "split": "train",
+      "ttft_mean_re": -0.19729669485645018,
+      "ttft_p99_re": -0.28873897427854783,
+      "e2e_mean_re": -0.0003124292149097589,
+      "e2e_p99_re": -0.08220144958089695,
+      "throughput_re": -0.0009732145297741355,
+      "delta_used": 2000
+    },
+    {
+      "experiment": "20260218-150304-codellama-34b-tp2-general",
+      "model_short": "codellama-34b",
+      "profile": "general",
+      "split": "train",
+      "ttft_mean_re": -0.00028152967970376217,
+      "ttft_p99_re": 2.862581924978761,
+      "e2e_mean_re": 0.06983453032366709,
+      "e2e_p99_re": 0.11663737022866759,
+      "throughput_re": -0.0009379897839678814,
+      "delta_used": 4000
+    }
+  ],
+  "validation_results": [
+    {
+      "experiment": "20260218-150956-codellama-34b-tp2-codegen",
+      "model_short": "codellama-34b",
+      "profile": "codegen",
+      "split": "validate",
+      "ttft_mean_re": -0.0642150018364435,
+      "ttft_p99_re": -0.10815400387624977,
+      "e2e_mean_re": 0.039212443100768456,
+      "e2e_p99_re": 0.05190024439372162,
+      "throughput_re": -0.0008297385830202691,
+      "delta_used": 4000
+    },
+    {
+      "experiment": "20260218-155500-codellama-34b-tp2-roleplay",
+      "model_short": "codellama-34b",
+      "profile": "roleplay",
+      "split": "validate",
+      "ttft_mean_re": -0.07084542144257346,
+      "ttft_p99_re": -0.3034809796327499,
+      "e2e_mean_re": 0.0420192935406288,
+      "e2e_p99_re": -0.06518600522500281,
+      "throughput_re": -0.0009420493486460659,
+      "delta_used": 4000
+    },
+    {
+      "experiment": "20260218-135247-mixtral-8x7b-v0-1-tp2-reasoning",
+      "model_short": "mixtral-8x7b",
+      "profile": "reasoning",
+      "split": "validate",
+      "ttft_mean_re": -0.9772426321734984,
+      "ttft_p99_re": -0.9399110828053274,
+      "e2e_mean_re": -0.9269432283259547,
+      "e2e_p99_re": -0.8526590735629355,
+      "throughput_re": 2.9843035617077245,
+      "delta_used": 2000
+    }
+  ],
+  "test_results": [
+    {
+      "experiment": "20260217-170634-llama-2-7b-tp1-reasoning",
+      "model_short": "llama-2-7b",
+      "profile": "reasoning",
+      "split": "test",
+      "ttft_mean_re": -0.9715606784349137,
+      "ttft_p99_re": -0.9099766686159326,
+      "e2e_mean_re": -0.9166685476575984,
+      "e2e_p99_re": -0.9360417851378325,
+      "throughput_re": -0.904353139001974,
+      "delta_used": 5000
+    },
+    {
+      "experiment": "20260218-065057-llama-2-70b-hf-tp4-reasoning",
+      "model_short": "llama-2-70b",
+      "profile": "reasoning",
+      "split": "test",
+      "ttft_mean_re": -0.9550599124582305,
+      "ttft_p99_re": -0.9353404834722195,
+      "e2e_mean_re": -0.8341350763860144,
+      "e2e_p99_re": -0.8354328105022055,
+      "throughput_re": 0.8756367553767804,
+      "delta_used": 500
+    },
+    {
+      "experiment": "20260218-160939-codellama-34b-tp2-reasoning",
+      "model_short": "codellama-34b",
+      "profile": "reasoning",
+      "split": "test",
+      "ttft_mean_re": -0.9065597342260265,
+      "ttft_p99_re": -0.9079281193628618,
+      "e2e_mean_re": -0.7619353895171634,
+      "e2e_p99_re": -0.8294456918912892,
+      "throughput_re": 0.1951918548014928,
+      "delta_used": 4000
+    }
+  ]
+}
