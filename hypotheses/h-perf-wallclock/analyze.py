@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Analysis script for h-perf-wallclock.
 
-Reads wall-clock timing files and produces comparison tables.
+Reads wall-clock timing files (4 inputs) and produces comparison tables.
+
+Usage: analyze.py <baseline_times> <pa_times> <lb_opt_times> <lb_base_times>
 """
 import sys
 import statistics
@@ -21,7 +23,7 @@ def summarize(times, label):
     """Print summary statistics for a list of times."""
     if not times:
         print(f"  {label}: NO DATA")
-        return
+        return {}
     med = statistics.median(times)
     mean = statistics.mean(times)
     mn = min(times)
@@ -30,59 +32,70 @@ def summarize(times, label):
     print(f"  {label}:")
     print(f"    Median: {med:.0f}ms  Mean: {mean:.0f}ms  Min: {mn}ms  Max: {mx}ms  Stdev: {stdev:.0f}ms")
     print(f"    Runs: {times}")
+    return {"median": med, "mean": mean, "min": mn, "max": mx, "stdev": stdev}
 
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: analyze.py <pa_times.txt> <lb_times.txt>", file=sys.stderr)
+    if len(sys.argv) < 5:
+        print("Usage: analyze.py <baseline_times> <pa_times> <lb_opt_times> <lb_base_times>",
+              file=sys.stderr)
         sys.exit(1)
 
-    pa_times = load_times(sys.argv[1])
-    lb_times = load_times(sys.argv[2])
-
-    # Known baseline (pre-optimization, measured separately)
-    # cache_warmup ~9300ms + load_spikes ~7700ms + multiturn ~250ms = ~17250ms
-    BASELINE_MEDIAN_MS = 17250
+    baseline_times = load_times(sys.argv[1])
+    pa_times = load_times(sys.argv[2])
+    lb_opt_times = load_times(sys.argv[3])
+    lb_base_times = load_times(sys.argv[4])
 
     print("=" * 60)
     print("  h-perf-wallclock: Wall-Clock Performance Results")
     print("=" * 60)
     print()
 
-    print("Pre-optimization baseline (prefix-affinity enabled):")
-    print(f"  Median: ~{BASELINE_MEDIAN_MS}ms (measured before code changes)")
+    print("Baseline (pre-optimization, PA enabled):")
+    base_stats = summarize(baseline_times, "baseline")
     print()
 
-    print("Post-optimization (prefix-affinity enabled):")
-    summarize(pa_times, "prefix-affinity + load-balance")
+    print("Optimized (PA enabled):")
+    pa_stats = summarize(pa_times, "optimized")
     print()
 
-    print("Negative control (load-balance only, no prefix-affinity):")
-    summarize(lb_times, "load-balance only")
+    print("Negative control — LB-only optimized:")
+    lb_opt_stats = summarize(lb_opt_times, "lb-only optimized")
     print()
 
-    if pa_times:
-        pa_median = statistics.median(pa_times)
-        reduction_pct = (1 - pa_median / BASELINE_MEDIAN_MS) * 100
+    print("Negative control — LB-only baseline:")
+    lb_base_stats = summarize(lb_base_times, "lb-only baseline")
+    print()
+
+    # Wall-clock reduction (PA path)
+    if base_stats and pa_stats:
+        base_med = base_stats["median"]
+        pa_med = pa_stats["median"]
+        reduction_pct = (1 - pa_med / base_med) * 100
         print("-" * 60)
-        print(f"  Wall-clock reduction: {reduction_pct:.1f}%")
-        print(f"    Baseline: ~{BASELINE_MEDIAN_MS}ms -> Optimized: {pa_median:.0f}ms")
+        print(f"  Wall-clock reduction (PA path): {reduction_pct:.1f}%")
+        print(f"    Baseline median: {base_med:.0f}ms -> Optimized median: {pa_med:.0f}ms")
         print()
 
-        # H-perf-3 gate: >50% reduction?
         if reduction_pct >= 50:
             print(f"  H-perf-3 (compound >50%): PASS ({reduction_pct:.1f}%)")
         else:
             print(f"  H-perf-3 (compound >50%): FAIL ({reduction_pct:.1f}%)")
-
-    if lb_times and pa_times:
-        lb_median = statistics.median(lb_times)
-        pa_median = statistics.median(pa_times)
-        # Negative control: optimized vs baseline should be <2% difference
-        # when prefix-affinity is disabled
         print()
-        print(f"  Negative control (load-balance only): {lb_median:.0f}ms")
-        print(f"    This confirms optimizations are prefix-affinity-specific.")
+
+    # Negative control analysis
+    if lb_opt_stats and lb_base_stats:
+        lb_opt_med = lb_opt_stats["median"]
+        lb_base_med = lb_base_stats["median"]
+        lb_diff_pct = abs(1 - lb_opt_med / lb_base_med) * 100
+        print(f"  Negative control (LB-only):")
+        print(f"    Optimized median: {lb_opt_med:.0f}ms  Baseline median: {lb_base_med:.0f}ms")
+        print(f"    Difference: {lb_diff_pct:.1f}%")
+        if lb_diff_pct < 5:
+            print(f"    Result: PASS (<5% difference confirms PA-specific bottleneck)")
+        else:
+            print(f"    Result: WARN (>{lb_diff_pct:.1f}% difference — investigate)")
+        print()
 
     print("=" * 60)
 
