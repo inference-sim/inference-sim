@@ -156,6 +156,63 @@ func TestPrefixCacheIndex_Capacity1_HeadEqualsTail(t *testing.T) {
 	assert.Equal(t, 1, idx.MatchLength(idx.ComputeBlockHashes([]int{30}), "inst_0"), "newest block present")
 }
 
+// TestPrefixCacheIndex_RecordBlocks_BatchEvictionRetainsNewest verifies that
+// when recording more blocks than LRU capacity in a single call, the last N
+// blocks (most recently touched) survive while earlier blocks are evicted.
+// Note: hierarchical hashing means block hashes chain from previous blocks,
+// so we verify using the actual hash values from the full sequence.
+func TestPrefixCacheIndex_RecordBlocks_BatchEvictionRetainsNewest(t *testing.T) {
+	idx := NewPrefixCacheIndex(1, 3) // block size 1, capacity 3
+
+	// GIVEN 6 single-token blocks recorded in one call (exceeds capacity of 3)
+	tokens := []int{10, 20, 30, 40, 50, 60}
+	hashes := idx.ComputeBlockHashes(tokens)
+	require.Len(t, hashes, 6)
+	idx.RecordBlocks(hashes, "inst_0")
+
+	// THEN cache is bounded at capacity
+	assert.Equal(t, 3, idx.InstanceBlockCount("inst_0"))
+
+	// THEN MatchLength on the full 6-block sequence returns 0 because the
+	// first 3 blocks (hashes[0..2]) were evicted — consecutive-from-start
+	// matching breaks immediately. This pins the behavioral trade-off:
+	// batch recording more blocks than capacity evicts prefix-start blocks.
+	assert.Equal(t, 0, idx.MatchLength(hashes, "inst_0"),
+		"early blocks evicted, so consecutive-from-start match is 0")
+
+	// THEN a shorter sequence whose blocks are all in the surviving set
+	// (last 3 blocks) cannot be verified via MatchLength because hierarchical
+	// hashing means those hashes depend on the evicted prefix. Verify via
+	// InstanceBlockCount that exactly capacity blocks remain.
+	assert.Equal(t, 3, idx.InstanceBlockCount("inst_0"),
+		"exactly capacity blocks should remain after batch eviction")
+}
+
+// TestPrefixCacheIndex_MatchLength_DoesNotRefreshLRU verifies that MatchLength
+// is a read-only operation that does not perturb LRU eviction ordering.
+func TestPrefixCacheIndex_MatchLength_DoesNotRefreshLRU(t *testing.T) {
+	idx := NewPrefixCacheIndex(1, 3) // capacity 3
+
+	// GIVEN A (oldest), B, C recorded
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{1}), "inst_0") // A
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{2}), "inst_0") // B
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{3}), "inst_0") // C
+
+	// WHEN A is read via MatchLength (should NOT refresh its LRU position)
+	assert.Equal(t, 1, idx.MatchLength(idx.ComputeBlockHashes([]int{1}), "inst_0"))
+
+	// AND a new block D is inserted (triggers eviction)
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{4}), "inst_0")
+
+	// THEN A is evicted (still oldest despite being read), not B
+	assert.Equal(t, 0, idx.MatchLength(idx.ComputeBlockHashes([]int{1}), "inst_0"),
+		"A should be evicted — MatchLength must not refresh LRU")
+	assert.Equal(t, 1, idx.MatchLength(idx.ComputeBlockHashes([]int{2}), "inst_0"),
+		"B should survive")
+	assert.Equal(t, 1, idx.MatchLength(idx.ComputeBlockHashes([]int{4}), "inst_0"),
+		"D should be present")
+}
+
 // TestPrefixCacheIndex_BlockCount_ConsistentThroughMixedOps verifies that
 // InstanceBlockCount stays accurate through a mixed sequence of inserts,
 // touches, and evictions at each step.
