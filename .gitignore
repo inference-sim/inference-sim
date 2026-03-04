@@ -57,6 +57,21 @@ blis
 results/
 largesweep/
 *.zip
+
+# Training data pipeline (large data files — keep .py and .md only)
+training/default_args/
+training/vllm/
+training/replay_data/
+training/model_configs/
+training/__pycache__/
+training/*.csv
+training/*.pdf
+training/*.boxnote
+training/hftoken.txt
+training/cmd/
+
+# Hypothesis experiment output (generated, reproducible from run.sh)
+hypotheses/*/output/
 *.yaml
 !examples/*.yaml
 !defaults.yaml
