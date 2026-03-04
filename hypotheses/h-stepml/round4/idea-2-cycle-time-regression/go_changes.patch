@@ -1,0 +1,117 @@
+diff --git a/cmd/root.go b/cmd/root.go
+index 962c153..ab502d9 100644
+--- a/cmd/root.go
++++ b/cmd/root.go
+@@ -98,6 +98,9 @@ var (
+ 	kvTransferBaseLatency   int64
+ 	snapshotRefreshInterval int64
+ 
++	// StepML model path
++	stepmlModelPath string // Path to StepML JSON artifact
++
+ 	// results file path
+ 	resultsPath string // File to save BLIS results to
+ )
+@@ -272,7 +275,7 @@ var runCmd = &cobra.Command{
+ 		// Load roofline model/hardware configs when roofline mode is active.
+ 		// Two activation paths: (1) explicit --roofline flag, (2) implicit detection
+ 		// when trained coefficients are all-zero and config paths are provided.
+-		if !rooflineActive && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
++		if !rooflineActive && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && stepmlModelPath == "" {
+ 			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
+ 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
+ 				rooflineActive = true
+@@ -565,6 +568,9 @@ var runCmd = &cobra.Command{
+ 		if mfuDB != nil {
+ 			mhwConfig = mhwConfig.WithMFUDatabase(mfuDB)
+ 		}
++		if stepmlModelPath != "" {
++			mhwConfig = mhwConfig.WithStepMLModel(stepmlModelPath)
++		}
+ 
+ 		config := cluster.DeploymentConfig{
+ 			SimConfig: sim.SimConfig{
+@@ -805,6 +811,9 @@ func init() {
+ 	runCmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
+ 	runCmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "KV utilization snapshot refresh interval in microseconds (0 = immediate refresh every call)")
+ 
++	// StepML model path
++	runCmd.Flags().StringVar(&stepmlModelPath, "stepml-model", "", "Path to StepML JSON model artifact")
++
+ 	// Results path
+ 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
+ 
+diff --git a/sim/config.go b/sim/config.go
+index 9365225..b3e4d75 100644
+--- a/sim/config.go
++++ b/sim/config.go
+@@ -60,13 +60,14 @@ func NewLatencyCoeffs(betaCoeffs, alphaCoeffs []float64) LatencyCoeffs {
+ 
+ // ModelHardwareConfig groups model identity and hardware specification.
+ type ModelHardwareConfig struct {
+-	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline mode)
+-	HWConfig    HardwareCalib // GPU specifications (for roofline mode)
+-	MFUDatabase *MFUDatabase  // MFU benchmark database (for roofline v2 mode, optional)
+-	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
+-	GPU         string        // GPU type (e.g., "H100")
+-	TP          int           // tensor parallelism degree
+-	Roofline    bool          // true = analytical roofline mode, false = blackbox regression
++	ModelConfig     ModelConfig   // HuggingFace model parameters (for roofline mode)
++	HWConfig        HardwareCalib // GPU specifications (for roofline mode)
++	MFUDatabase     *MFUDatabase  // MFU benchmark database (for roofline v2 mode, optional)
++	Model           string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
++	GPU             string        // GPU type (e.g., "H100")
++	TP              int           // tensor parallelism degree
++	Roofline        bool          // true = analytical roofline mode, false = blackbox regression
++	StepMLModelPath string        // path to StepML JSON artifact (optional; empty = disabled)
+ }
+ 
+ // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
+@@ -92,6 +93,12 @@ func (m ModelHardwareConfig) WithMFUDatabase(mfuDB *MFUDatabase) ModelHardwareCo
+ 	return m
+ }
+ 
++// WithStepMLModel returns a copy of ModelHardwareConfig with StepML model path set.
++func (m ModelHardwareConfig) WithStepMLModel(path string) ModelHardwareConfig {
++	m.StepMLModelPath = path
++	return m
++}
++
+ // PolicyConfig groups scheduling and priority policy selection.
+ type PolicyConfig struct {
+ 	PriorityPolicy string // "constant" (default) or "slo-based"
+diff --git a/sim/latency/latency.go b/sim/latency/latency.go
+index 25fc6c3..bb84527 100644
+--- a/sim/latency/latency.go
++++ b/sim/latency/latency.go
+@@ -127,7 +127,16 @@ func validateCoeffs(name string, coeffs []float64) error {
+ // Returns RooflineLatencyModel if hw.Roofline is true, BlackboxLatencyModel otherwise.
+ // Returns error if coefficient slices are too short, contain NaN/Inf, or roofline config validation fails.
+ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
+-	// Both implementations index alphaCoeffs[0..2]; validate upfront.
++	// StepML dispatch first: StepML manages all 5 methods internally, no coeffs needed.
++	if hw.StepMLModelPath != "" {
++		art, err := LoadStepMLArtifact(hw.StepMLModelPath)
++		if err != nil {
++			return nil, fmt.Errorf("latency model: %w", err)
++		}
++		return NewStepMLLatencyModel(art), nil
++	}
++
++	// Both blackbox and roofline implementations index alphaCoeffs[0..2]; validate upfront.
+ 	if len(coeffs.AlphaCoeffs) < 3 {
+ 		return nil, fmt.Errorf("latency model: AlphaCoeffs requires at least 3 elements, got %d", len(coeffs.AlphaCoeffs))
+ 	}
+diff --git a/sim/workload/spec.go b/sim/workload/spec.go
+index ed80a62..e82eec6 100644
+--- a/sim/workload/spec.go
++++ b/sim/workload/spec.go
+@@ -171,7 +171,7 @@ func (s *WorkloadSpec) Validate() error {
+ 	if s.AggregateRate <= 0 {
+ 		return fmt.Errorf("aggregate_rate must be positive, got %f", s.AggregateRate)
+ 	}
+-	if len(s.Clients) == 0 && s.ServeGenData == nil {
++	if len(s.Clients) == 0 && s.ServeGenData == nil && s.InferencePerf == nil {
+ 		return fmt.Errorf("at least one client or servegen_data path required")
+ 	}
+ 	for i, c := range s.Clients {

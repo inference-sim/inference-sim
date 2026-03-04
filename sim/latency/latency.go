@@ -153,6 +153,15 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			alphaCoeffs: coeffs.AlphaCoeffs,
 		}, nil
 	}
+	// StepML model: dispatched when artifact path is configured.
+	if hw.StepMLModelPath != "" {
+		art, err := LoadStepMLArtifact(hw.StepMLModelPath)
+		if err != nil {
+			return nil, fmt.Errorf("latency model: %w", err)
+		}
+		return NewStepMLLatencyModel(art), nil
+	}
+
 	// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 	if len(coeffs.BetaCoeffs) < 3 {
 		return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(coeffs.BetaCoeffs))

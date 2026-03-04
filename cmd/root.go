@@ -98,6 +98,9 @@ var (
 	kvTransferBaseLatency   int64
 	snapshotRefreshInterval int64
 
+	// StepML model config
+	stepmlModelPath string // Path to StepML model artifact JSON
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -238,7 +241,7 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
+		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 && stepmlModelPath == "" { // default all 0s
 			// GPU, TP, vLLM version configuration
 			hardware, tp, version := GetDefaultSpecs(model) // pick default config for tp, GPU, vllmVersion
 
@@ -272,7 +275,7 @@ var runCmd = &cobra.Command{
 		// Load roofline model/hardware configs when roofline mode is active.
 		// Two activation paths: (1) explicit --roofline flag, (2) implicit detection
 		// when trained coefficients are all-zero and config paths are provided.
-		if !rooflineActive && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+		if !rooflineActive && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && stepmlModelPath == "" {
 			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
 				rooflineActive = true
@@ -338,8 +341,12 @@ var runCmd = &cobra.Command{
 			if err != nil {
 				logrus.Fatalf("Failed to load workload spec: %v", err)
 			}
-			if err := spec.Validate(); err != nil {
-				logrus.Fatalf("Invalid workload spec: %v", err)
+			// Validate early only for non-inference-perf specs.
+			// InferencePerf specs are validated after expansion in GenerateRequests.
+			if spec.InferencePerf == nil {
+				if err := spec.Validate(); err != nil {
+					logrus.Fatalf("Invalid workload spec: %v", err)
+				}
 			}
 			// Apply CLI --seed override: when explicitly passed, CLI seed controls
 			// workload generation (R18: CLI flag precedence, INV-6a: seed supremacy).
@@ -564,6 +571,9 @@ var runCmd = &cobra.Command{
 		mhwConfig := sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, rooflineActive)
 		if mfuDB != nil {
 			mhwConfig = mhwConfig.WithMFUDatabase(mfuDB)
+		}
+		if stepmlModelPath != "" {
+			mhwConfig = mhwConfig.WithStepMLModel(stepmlModelPath)
 		}
 
 		config := cluster.DeploymentConfig{
@@ -804,6 +814,9 @@ func init() {
 	runCmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
 	runCmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	runCmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "KV utilization snapshot refresh interval in microseconds (0 = immediate refresh every call)")
+
+	// StepML model
+	runCmd.Flags().StringVar(&stepmlModelPath, "stepml-model", "", "Path to StepML model artifact JSON (overrides blackbox alpha/beta step time)")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

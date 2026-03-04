@@ -80,6 +80,10 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 		// Re-compute cached blocks now that CPU content is back on GPU
 		newCached := t.gpu.GetCachedBlocks(req.InputTokens)
 		newStart := int64(len(newCached)) * t.gpu.BlockSize()
+		if newStart >= endIndex {
+			// Reloaded cache covers the entire requested range — nothing to allocate
+			return true
+		}
 		if newStart > startIndex {
 			// More cache hits after reload — retry with reduced allocation range
 			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)

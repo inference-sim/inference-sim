@@ -60,13 +60,14 @@ func NewLatencyCoeffs(betaCoeffs, alphaCoeffs []float64) LatencyCoeffs {
 
 // ModelHardwareConfig groups model identity and hardware specification.
 type ModelHardwareConfig struct {
-	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline mode)
-	HWConfig    HardwareCalib // GPU specifications (for roofline mode)
-	MFUDatabase *MFUDatabase  // MFU benchmark database (for roofline v2 mode, optional)
-	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
-	GPU         string        // GPU type (e.g., "H100")
-	TP          int           // tensor parallelism degree
-	Roofline    bool          // true = analytical roofline mode, false = blackbox regression
+	ModelConfig      ModelConfig   // HuggingFace model parameters (for roofline mode)
+	HWConfig         HardwareCalib // GPU specifications (for roofline mode)
+	MFUDatabase      *MFUDatabase  // MFU benchmark database (for roofline v2 mode, optional)
+	Model            string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
+	GPU              string        // GPU type (e.g., "H100")
+	TP               int           // tensor parallelism degree
+	Roofline         bool          // true = analytical roofline mode, false = blackbox regression
+	StepMLModelPath  string        // path to StepML model artifact JSON (empty = disabled)
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
@@ -89,6 +90,13 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 // Use this to add roofline v2 support to an existing config.
 func (m ModelHardwareConfig) WithMFUDatabase(mfuDB *MFUDatabase) ModelHardwareConfig {
 	m.MFUDatabase = mfuDB
+	return m
+}
+
+// WithStepMLModel returns a copy of ModelHardwareConfig with StepML model path set.
+// When set, the latency model factory will use the StepML model instead of blackbox.
+func (m ModelHardwareConfig) WithStepMLModel(path string) ModelHardwareConfig {
+	m.StepMLModelPath = path
 	return m
 }
 

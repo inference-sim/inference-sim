@@ -1,0 +1,89 @@
+diff --git a/cmd/root.go b/cmd/root.go
+index 962c153..19dfe03 100644
+--- a/cmd/root.go
++++ b/cmd/root.go
+@@ -52,6 +52,7 @@ var (
+ 	outputTokensMax           int       // Max Output Token Count
+ 	rooflineActive            bool      // Runtime state: whether roofline step time is active (set by --roofline flag OR implicit detection)
+ 	rooflineFlag              bool      // CLI --roofline flag: auto-fetch HF config and resolve hardware config
++	stepmlModelPath           string    // Path to StepML model artifact JSON (optional)
+ 
+ 	// CLI flags for model, GPU, TP, vllm version
+ 	model             string // LLM name
+@@ -565,6 +566,9 @@ var runCmd = &cobra.Command{
+ 		if mfuDB != nil {
+ 			mhwConfig = mhwConfig.WithMFUDatabase(mfuDB)
+ 		}
++		if stepmlModelPath != "" {
++			mhwConfig = mhwConfig.WithStepMLModel(stepmlModelPath)
++		}
+ 
+ 		config := cluster.DeploymentConfig{
+ 			SimConfig: sim.SimConfig{
+@@ -752,6 +756,7 @@ func init() {
+ 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
+ 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
+ 	runCmd.Flags().BoolVar(&rooflineFlag, "roofline", false, "Enable roofline mode with auto-fetch of HuggingFace config.json and bundled hardware config")
++	runCmd.Flags().StringVar(&stepmlModelPath, "stepml-model", "", "Path to StepML model artifact JSON (optional)")
+ 
+ 	// GuideLLM-style distribution-based workload generation config
+ 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
+diff --git a/sim/config.go b/sim/config.go
+index 9365225..0b76e4f 100644
+--- a/sim/config.go
++++ b/sim/config.go
+@@ -60,13 +60,14 @@ func NewLatencyCoeffs(betaCoeffs, alphaCoeffs []float64) LatencyCoeffs {
+ 
+ // ModelHardwareConfig groups model identity and hardware specification.
+ type ModelHardwareConfig struct {
+-	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline mode)
+-	HWConfig    HardwareCalib // GPU specifications (for roofline mode)
+-	MFUDatabase *MFUDatabase  // MFU benchmark database (for roofline v2 mode, optional)
+-	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
+-	GPU         string        // GPU type (e.g., "H100")
+-	TP          int           // tensor parallelism degree
+-	Roofline    bool          // true = analytical roofline mode, false = blackbox regression
++	ModelConfig      ModelConfig   // HuggingFace model parameters (for roofline mode)
++	HWConfig         HardwareCalib // GPU specifications (for roofline mode)
++	MFUDatabase      *MFUDatabase  // MFU benchmark database (for roofline v2 mode, optional)
++	Model            string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
++	GPU              string        // GPU type (e.g., "H100")
++	TP               int           // tensor parallelism degree
++	Roofline         bool          // true = analytical roofline mode, false = blackbox regression
++	StepMLModelPath  string        // path to StepML model artifact JSON (optional)
+ }
+ 
+ // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
+@@ -92,6 +93,12 @@ func (m ModelHardwareConfig) WithMFUDatabase(mfuDB *MFUDatabase) ModelHardwareCo
+ 	return m
+ }
+ 
++// WithStepMLModel returns a copy of ModelHardwareConfig with StepML model path set.
++func (m ModelHardwareConfig) WithStepMLModel(path string) ModelHardwareConfig {
++	m.StepMLModelPath = path
++	return m
++}
++
+ // PolicyConfig groups scheduling and priority policy selection.
+ type PolicyConfig struct {
+ 	PriorityPolicy string // "constant" (default) or "slo-based"
+diff --git a/sim/latency/latency.go b/sim/latency/latency.go
+index 25fc6c3..cc43129 100644
+--- a/sim/latency/latency.go
++++ b/sim/latency/latency.go
+@@ -153,6 +153,15 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
+ 			alphaCoeffs: coeffs.AlphaCoeffs,
+ 		}, nil
+ 	}
++	// StepML dispatch: if StepMLModelPath is set, load and use StepML model.
++	if hw.StepMLModelPath != "" {
++		art, err := LoadStepMLArtifact(hw.StepMLModelPath)
++		if err != nil {
++			return nil, fmt.Errorf("latency model: %w", err)
++		}
++		return NewStepMLLatencyModel(art), nil
++	}
++
+ 	// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
+ 	if len(coeffs.BetaCoeffs) < 3 {
+ 		return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(coeffs.BetaCoeffs))

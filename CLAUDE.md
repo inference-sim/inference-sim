@@ -142,9 +142,20 @@ Full details: see [`docs/standards/principles.md`](docs/standards/principles.md)
 
 ### Current Implementation Focus
 
-Active development: Composable Scorer Framework (see `docs/plans/2026-02-19-weighted-scoring-macro-plan.md`). PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache) completed. Default weighted routing profile: `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity).
+**StepML Research (active, `stepml-experiments` branch):** Iterative research to achieve <10% BLIS E2E mean error. **You MUST follow the macro plan at `docs/plans/2026-02-26-stepml-research-macro-plan.md` strictly.** The plan defines an iterative loop (WP1→WP2→WP3→WP4) with these non-negotiable requirements:
 
-Phase 0 workload unification in progress (see issue #420): W0-1 (spec v2 schema + SLO tiers) complete. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant.
+**Autonomous execution:** When asked to run a round, execute WP1→WP2→WP3→WP4 **without stopping to ask for confirmation between steps**. Do not ask "should I proceed to WP2?" or "shall I continue?" — just do it. The only acceptable reasons to halt mid-round are: (a) a script produces an error that requires user input to resolve, (b) the context window is approaching limits (in which case, write a checkpoint to `hypotheses/h-stepml/round<N>/CHECKPOINT.md` documenting exactly where you stopped and what remains, so the next session can resume). Use subagents (Task tool) for WP3 experiments to keep the main context lean — dispatch each idea's experimentation to a subagent and collect results.
+
+- **Before starting any round:** Read the macro plan and `hypotheses/h-stepml/problem.md` to understand current state
+- **WP1 (Ideation):** Use `/research-ideas` with `problem.md` as the **sole input** — it must be self-contained with all prior learnings. Round N>1 must address binding constraints and build on successful techniques from prior rounds. Must not repeat failed approaches.
+- **WP2 (Scaffolding):** Create idea directories under `round<N>/`. Each HYPOTHESIS.md must reference prior round findings (if round >1)
+- **WP3 (Experimentation):** After all sub-hypotheses for an idea are tested, write `FINDINGS_SUMMARY.md` in the idea's root directory before moving to the next idea or to WP4
+- **WP4 (Wrap-up):** Write `FINDINGS_ROUND<N>.md`, run `/convergence-review`, then decide: converge/iterate/abort. If iterating, update `problem.md` with ALL accumulated knowledge: per-experiment results table, solved vs unsolved experiments, successful techniques to build on, data characteristics learned, eliminated approaches with root causes, binding constraints, narrowed questions, convergence review prescriptions, and cumulative round history. The next round reads ONLY `problem.md` — anything not in it is effectively lost.
+- **Artifacts are immutable after creation:** Never edit a prior round's `FINDINGS_ROUND<N>.md` or `FINDINGS_SUMMARY.md`
+- **STATUS file (CRITICAL for unattended mode):** At the very end of WP4, write `hypotheses/h-stepml/round<N>/STATUS` containing exactly one word: `CONVERGED`, `ITERATE`, or `ABORT`. This is the sole communication channel to the orchestrator script. Without it, the loop halts.
+- **Max rounds configurable** (default 5, up to 25 via orchestrator). Abort after 2 consecutive rounds without improvement.
+
+Prior completed work: Composable Scorer Framework (PR17 + PR18 complete). Phase 0 workload unification (W0-1 complete).
 
 ### Extension Recipes
 

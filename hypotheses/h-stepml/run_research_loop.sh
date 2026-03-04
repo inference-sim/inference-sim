@@ -365,6 +365,106 @@ get_idea_dirs() {
     find "$round_dir" -maxdepth 1 -type d -name 'idea-*' | sort
 }
 
+# Validate that an idea's FINDINGS_SUMMARY.md exists and contains generalization results.
+# Returns: 0=valid, 1=FINDINGS_SUMMARY.md missing, 2=generalization missing
+validate_idea_artifacts() {
+    local idea_dir="$1"
+    local idea_name="$2"
+    local summary="${idea_dir}/FINDINGS_SUMMARY.md"
+
+    # Check 1: FINDINGS_SUMMARY.md exists
+    if [[ ! -f "$summary" ]]; then
+        log "    VALIDATION FAIL: ${idea_name} — FINDINGS_SUMMARY.md missing"
+        return 1
+    fi
+
+    # Infrastructure-only ideas can use GENERALIZATION_NOTE.md as escape hatch
+    if [[ -f "${idea_dir}/GENERALIZATION_NOTE.md" ]]; then
+        log "    VALIDATION OK: ${idea_name} — uses GENERALIZATION_NOTE.md (infrastructure-only)"
+        return 0
+    fi
+
+    # Check 2: Contains LOMO results
+    local has_lomo has_lowo
+    has_lomo=$(grep -ciE 'LOMO|leave.one.model.out' "$summary" 2>/dev/null || echo 0)
+    has_lowo=$(grep -ciE 'LOWO|leave.one.workload.out' "$summary" 2>/dev/null || echo 0)
+
+    if (( has_lomo == 0 )) || (( has_lowo == 0 )); then
+        log "    VALIDATION FAIL: ${idea_name} — FINDINGS_SUMMARY.md missing generalization (LOMO mentions: ${has_lomo}, LOWO mentions: ${has_lowo})"
+        return 2
+    fi
+
+    log "    VALIDATION OK: ${idea_name} — FINDINGS_SUMMARY.md + LOMO + LOWO present"
+    return 0
+}
+
+# Retry a failed idea with a targeted prompt. Runs in the existing worktree.
+# Args: round_num, idea_name, idea_dir, validation_code (1=no summary, 2=no generalization)
+retry_idea_in_worktree() {
+    local round_num="$1"
+    local idea_name="$2"
+    local idea_dir="$3"
+    local val_code="$4"
+    local retry_log="${idea_dir}/../phase2_${idea_name}_retry.log"
+    local retry_prompt
+
+    if (( val_code == 1 )); then
+        log "    RETRY: ${idea_name} — writing missing FINDINGS_SUMMARY.md"
+        retry_prompt="The WP3 session for ${idea_name} completed but did NOT produce a FINDINGS_SUMMARY.md. This is a CRITICAL artifact.
+
+YOUR TASK: Examine the experiment outputs and write FINDINGS_SUMMARY.md.
+
+1. Read hypotheses/h-stepml/round${round_num}/${idea_name}/HYPOTHESIS.md for context.
+2. Check each sub-hypothesis directory (h1-*, h2-*, etc.) for:
+   - output/ directories with results (CSV, JSON)
+   - FINDINGS.md files with analysis
+   - Python scripts that can be re-run if outputs are missing
+3. If sub-hypothesis experiments have not been run at all, run them now using the shared infrastructure at hypotheses/h-stepml/shared/.
+4. After examining/running all sub-hypotheses, write FINDINGS_SUMMARY.md at:
+   hypotheses/h-stepml/round${round_num}/${idea_name}/FINDINGS_SUMMARY.md
+
+The FINDINGS_SUMMARY.md MUST contain these sections:
+1. Idea recap  2. Sub-hypothesis results table  3. Best BLIS E2E result table
+4. What worked  5. What failed and why  6. Binding constraints
+7. Data insights  8. Comparison to baseline  9. Go integration feasibility
+10. Generalization Results (MANDATORY):
+    - LOMO: Leave-one-model-out 4-fold CV results (target <80% MAPE per fold)
+    - LOWO: Leave-one-workload-out 3-fold CV results (target <50% MAPE per fold)
+    - Use hypotheses/h-stepml/shared/splits.py for data splitting
+    - If infrastructure-only, write GENERALIZATION_NOTE.md instead
+
+Do NOT ask for confirmation. Write the summary."
+    else
+        log "    RETRY: ${idea_name} — executing missing LOMO/LOWO generalization"
+        retry_prompt="The WP3 session for ${idea_name} produced a FINDINGS_SUMMARY.md but it is MISSING mandatory LOMO and/or LOWO generalization results. The orchestrator requires these.
+
+YOUR TASK: Execute the generalization experiments and update FINDINGS_SUMMARY.md.
+
+1. Read hypotheses/h-stepml/round${round_num}/${idea_name}/HYPOTHESIS.md — find the LOMO and LOWO sub-hypotheses.
+2. If LOMO/LOWO sub-hypothesis directories exist, check for run scripts and execute them.
+3. If they don't exist, create and run them:
+   - LOMO: Train on 3 models, test on held-out 4th (4-fold: llama-2-7b, llama-2-70b, codellama-34b, mixtral-8x7b). Target <80% MAPE per fold.
+   - LOWO: Train on 2 workloads, test on held-out 3rd (3-fold: general, codegen, roleplay). Target <50% MAPE per fold.
+4. Use hypotheses/h-stepml/shared/splits.py for LOMO/LOWO data splitting.
+5. UPDATE the existing FINDINGS_SUMMARY.md — add a 'Generalization Results' section (section 10) with LOMO and LOWO result tables.
+   - If this idea is infrastructure-only (not a trainable model), write GENERALIZATION_NOTE.md with cross-experiment evidence instead.
+
+Do NOT ask for confirmation. Execute and update the summary."
+    fi
+
+    (
+        cd "$WORKTREE_DIR"
+        log "  [round${round_num}-${idea_name}-retry] Invoking claude -p ..."
+        claude -p "$retry_prompt" \
+            --dangerously-skip-permissions \
+            --output-format stream-json \
+            --verbose \
+            --max-turns 100 \
+            < /dev/null > "$retry_log" 2>&1 \
+        || log "  [round${round_num}-${idea_name}-retry] Session exited with non-zero code"
+    )
+}
+
 # Write BEST_RESULT.md summarizing the best idea across all completed rounds
 # with full reproduction instructions.
 write_best_result_summary() {
@@ -555,6 +655,10 @@ HEADER
     log "Wrote: ${summary_file}"
 }
 
+# --- Environment ---
+# Prevent "nested session" errors when this script is launched from inside Claude Code
+unset CLAUDECODE 2>/dev/null || true
+
 # --- Auth ---
 # Source LiteLLM proxy credentials if available
 LITELLM_RC="${HOME}/litellm.sh"
@@ -635,18 +739,37 @@ Follow the macro plan at docs/plans/2026-02-26-stepml-research-macro-plan.md str
 
 STEP 1 — WP1 (Ideation):
 - Read hypotheses/h-stepml/problem.md — it is the sole input with all prior round learnings.
-- Run /research-ideas to generate 3+ ideas. Ideas must address binding constraints from prior rounds and must not repeat eliminated approaches listed in problem.md.
-- The output research.md should be saved in the h-stepml directory.
+- Also read the macro plan at docs/plans/2026-02-26-stepml-research-macro-plan.md for context on the research loop.
+- THOROUGHLY explore context before generating ideas:
+  (a) Codebase: Read sim/latency/stepml.go, sim/latency/latency.go, sim/simulator.go, hypotheses/h-stepml/shared/ scripts. Understand exactly how BLIS computes E2E latency and what the LatencyModel interface provides.
+  (b) Prior rounds: Read all FINDINGS_SUMMARY.md and FINDINGS_ROUND files from prior rounds (hypotheses/h-stepml/round*/). Understand what was tried, what worked, what failed, and why.
+  (c) Ground-truth data: Examine the training data structure and characteristics in hypotheses/h-stepml/shared/.
+  (d) Web search: Search for recent papers and techniques on LLM inference latency prediction, step-time modeling, simulator calibration, vLLM performance modeling (e.g., Vidur, MIST, Frontier, Revati, Splitwise, DistServe). Look for techniques that address the specific binding constraints in problem.md.
+  (e) Adjacent approaches: Search for queueing theory calibration, discrete-event simulation tuning, trace-driven simulation, online calibration methods.
+- Generate exactly 3 novel, concrete research ideas that:
+  (a) Address the binding constraints listed in problem.md
+  (b) Build on successful techniques from prior rounds
+  (c) Do NOT repeat any eliminated approaches listed in problem.md
+  (d) Each idea must be distinct and attack a different aspect of the problem
+  (e) Are grounded in the codebase exploration and literature findings
+- For each idea, write: title, rationale (citing specific literature or codebase findings), method sketch, expected outcome, why it differs from prior attempts.
+- Write all ideas to hypotheses/h-stepml/round${round}/research.md
+
+DO NOT use /research-ideas or any interactive skills. DO NOT use AskUserQuestion. Generate ideas directly.
 
 STEP 2 — WP2 (Scaffolding):
-- Extract the top 3 ideas from research.md.
-- Create directories under hypotheses/h-stepml/round${round}/idea-<N>-<name>/ for each idea.
-- Write HYPOTHESIS.md in each idea directory with 2-3 sub-hypotheses.
+- Take the 3 ideas from the research.md you just wrote.
+- Create directories under hypotheses/h-stepml/round${round}/idea-<N>-<short-name>/ for each idea.
+- Write HYPOTHESIS.md in each idea directory with sub-hypotheses that MUST include:
+  - Core accuracy sub-hypotheses (2-3)
+  - A LOMO generalization sub-hypothesis (leave-one-model-out, 4-fold, target <80% MAPE per fold)
+  - A LOWO generalization sub-hypothesis (leave-one-workload-out, 3-fold, target <50% MAPE per fold)
+  Use hypotheses/h-stepml/shared/splits.py for LOMO/LOWO data splitting functions.
 - Each HYPOTHESIS.md must reference prior round findings if round > 1.
 
 When done, create the marker file hypotheses/h-stepml/round${round}/.phase1_done to signal completion.
 
-Do NOT proceed to WP3 (experimentation). Do NOT ask for confirmation. Just do WP1 and WP2." \
+Do NOT proceed to WP3 (experimentation). Do NOT use AskUserQuestion. Do NOT ask for confirmation. Just do WP1 and WP2." \
         || log "  Phase 1 had non-zero exit, checking marker..."
 
         if [[ ! -f "$phase1_marker" ]]; then
@@ -660,12 +783,11 @@ Do NOT proceed to WP3 (experimentation). Do NOT ask for confirmation. Just do WP
             fi
         fi
 
-        # Archive research.md into the round directory.
-        # /research-ideas writes it as a sibling of problem.md (h-stepml/research.md),
-        # so each round overwrites the same file. Copy it to preserve per-round ideas.
-        if [[ -f "${STEPML_DIR}/research.md" ]]; then
-            cp "${STEPML_DIR}/research.md" "${round_dir}/research.md"
-            log "  Archived research.md → ${round_dir}/research.md"
+        # research.md is now written directly to round<N>/research.md by Phase 1.
+        # Copy to h-stepml/research.md for worktree seeding, then clean up after use.
+        if [[ -f "${round_dir}/research.md" ]]; then
+            cp "${round_dir}/research.md" "${STEPML_DIR}/research.md"
+            log "  Copied research.md → ${STEPML_DIR}/research.md"
         fi
     fi
 
@@ -682,7 +804,17 @@ Do NOT proceed to WP3 (experimentation). Do NOT ask for confirmation. Just do WP
         die "No idea directories found in ${round_dir}"
     fi
 
+    # --- PARALLEL WP3: Launch all ideas concurrently, then collect ---
+    # Each idea runs in its own worktree + claude session. No shared mutable state.
+
+    # Phase 2a: Launch all ideas in parallel
+    # Use parallel indexed arrays (bash 3.2 compatible — no associative arrays)
+    wp3_names=()       # [i] -> idea_name
+    wp3_pids=()        # [i] -> background PID
+    wp3_worktrees=()   # [i] -> worktree path
+    wp3_idea_dirs=()   # [i] -> idea dir in main repo
     idea_num=0
+
     while IFS= read -r idea_dir; do
         idea_num=$((idea_num + 1))
         idea_name=$(basename "$idea_dir")
@@ -700,21 +832,24 @@ Do NOT proceed to WP3 (experimentation). Do NOT ask for confirmation. Just do WP
             continue
         fi
 
-        log "  Phase 2.${idea_num}: WP3 for ${idea_name}"
+        log "  Phase 2.${idea_num}: WP3 for ${idea_name} [PARALLEL]"
 
         # Create isolated worktree for this idea
         create_idea_worktree "$round" "$idea_name"
-        local phase_log="${round_dir}/phase2_${idea_name}.log"
+        wt_dir="$WORKTREE_DIR"  # capture before next iteration overwrites global
+        idx=${#wp3_names[@]}
+        wp3_names+=("$idea_name")
+        wp3_worktrees+=("$wt_dir")
+        wp3_idea_dirs+=("$idea_dir")
 
-        # Run claude -p inside the worktree (cd in subshell)
-        log "    Running in worktree: ${WORKTREE_DIR}"
+        phase_log="${round_dir}/phase2_${idea_name}.log"
+
+        # Launch claude -p in background subshell
+        log "    Launching in worktree: ${wt_dir}"
         (
-            cd "$WORKTREE_DIR"
-            if $DRY_RUN; then
-                echo "[DRY-RUN] Would run WP3 for ${idea_name} in worktree" > "$phase_log"
-            else
-                log "  [round${round}-${idea_name}] Invoking claude -p ..."
-                claude -p "Execute WP3 (experimentation) for a SINGLE idea in Round ${round} of the StepML research loop.
+            cd "$wt_dir"
+            log "  [round${round}-${idea_name}] Invoking claude -p ..."
+            claude -p "Execute WP3 (experimentation) for a SINGLE idea in Round ${round} of the StepML research loop.
 
 Follow the macro plan at docs/plans/2026-02-26-stepml-research-macro-plan.md strictly.
 
@@ -726,7 +861,7 @@ STEPS:
 3. Use the shared infrastructure at hypotheses/h-stepml/shared/ for data loading, evaluation, and BLIS validation.
 4. After ALL sub-hypotheses are complete, write FINDINGS_SUMMARY.md in the idea's root directory (hypotheses/h-stepml/round${round}/${idea_name}/FINDINGS_SUMMARY.md).
 
-The FINDINGS_SUMMARY.md must contain:
+The FINDINGS_SUMMARY.md must contain ALL of these sections:
 1. Idea recap
 2. Sub-hypothesis results table (status, key metric, takeaway)
 3. Best BLIS E2E result — full per-experiment error table
@@ -736,43 +871,91 @@ The FINDINGS_SUMMARY.md must contain:
 7. Data insights discovered
 8. Comparison to baseline
 9. Go integration feasibility
+10. Generalization Results (MANDATORY — the orchestrator validates this section exists):
+    - LOMO table: Leave-one-model-out cross-validation results (4-fold, target <80% MAPE per fold)
+    - LOWO table: Leave-one-workload-out cross-validation results (3-fold, target <50% MAPE per fold)
+    - If infrastructure-only idea, write GENERALIZATION_NOTE.md in the idea directory instead
+    - Use hypotheses/h-stepml/shared/splits.py for data splitting
+
+CRITICAL: The orchestrator will REJECT a FINDINGS_SUMMARY.md that is missing section 10. If you skip generalization, the orchestrator will re-invoke you to add it.
 
 You are running in an ISOLATED GIT WORKTREE. You may freely modify Go code (e.g. sim/latency/stepml.go) — changes are isolated to this worktree and will not affect other ideas. Any Go changes will be saved as a patch file for reproducibility.
 
 Do NOT proceed to WP4 or any other idea. Do NOT ask for confirmation. Just run this one idea's experiments and write the summary." \
-                    --dangerously-skip-permissions \
-                    --output-format stream-json \
-                    --verbose \
-                    --max-turns "$MAX_TURNS_PER_PHASE" \
-                    < /dev/null > "$phase_log" 2>&1 \
-                || log "  [round${round}-${idea_name}] Session exited with non-zero code"
-            fi
-        )
+                --dangerously-skip-permissions \
+                --output-format stream-json \
+                --verbose \
+                --max-turns "$MAX_TURNS_PER_PHASE" \
+                < /dev/null > "$phase_log" 2>&1 \
+            || log "  [round${round}-${idea_name}] Session exited with non-zero code"
+        ) &
+        wp3_pids+=($!)
+        log "    PID ${wp3_pids[$idx]} launched for ${idea_name}"
+    done <<< "$idea_dirs"
+
+    # Phase 2b: Wait for all parallel sessions to finish
+    if (( ${#wp3_names[@]} > 0 )); then
+        log "  Waiting for ${#wp3_names[@]} parallel WP3 sessions: ${wp3_names[*]}"
+        for i in $(seq 0 $(( ${#wp3_names[@]} - 1 ))); do
+            log "    Waiting for ${wp3_names[$i]} (PID ${wp3_pids[$i]})..."
+            wait "${wp3_pids[$i]}" 2>/dev/null || true
+            log "    ${wp3_names[$i]} (PID ${wp3_pids[$i]}) finished"
+        done
+        log "  All parallel WP3 sessions complete"
+    fi
+
+    # Phase 2c: Collect artifacts, validate, retry failures, write REPRODUCE.md
+    for i in $(seq 0 $(( ${#wp3_names[@]} - 1 ))); do
+        idea_name="${wp3_names[$i]}"
+        idea_dir="${wp3_idea_dirs[$i]}"
+        WORKTREE_DIR="${wp3_worktrees[$i]}"
 
         # Collect artifacts back to main repo
         collect_idea_artifacts "$round" "$idea_name" "$idea_dir"
 
-        # Write per-idea reproduction guide
-        write_idea_reproduce "$round" "$idea_name" "$idea_dir"
+        # Validate: FINDINGS_SUMMARY.md exists + contains LOMO/LOWO
+        validate_idea_artifacts "$idea_dir" "$idea_name"
+        val_result=$?
 
-        # Check for summary in main repo (was copied back by collect_idea_artifacts)
-        if [[ ! -f "$summary_file" ]]; then
-            log "  WARNING: FINDINGS_SUMMARY.md not created for ${idea_name}. Check ${phase_log}"
-            log "  Continuing to next idea (WP4 will handle incomplete ideas)..."
+        if (( val_result != 0 )); then
+            # Retry once with a targeted prompt (worktree is still alive)
+            retry_idea_in_worktree "$round" "$idea_name" "$idea_dir" "$val_result"
+
+            # Re-collect artifacts after retry
+            collect_idea_artifacts "$round" "$idea_name" "$idea_dir"
+
+            # Final validation (warn but don't block — WP4 will flag incomplete ideas)
+            validate_idea_artifacts "$idea_dir" "$idea_name"
+            if (( $? != 0 )); then
+                log "  WARNING: ${idea_name} still incomplete after retry. WP4 will flag it."
+            fi
         fi
+
+        # Write per-idea reproduction guide (after retry, so it captures final state)
+        write_idea_reproduce "$round" "$idea_name" "$idea_dir"
 
         # Clean up worktree
         cleanup_idea_worktree
-    done <<< "$idea_dirs"
+    done
+
+    # Clean up root-level research.md now that all worktrees have been seeded
+    if [[ -f "${STEPML_DIR}/research.md" ]]; then
+        rm -f "${STEPML_DIR}/research.md"
+        log "  Cleaned up ${STEPML_DIR}/research.md (canonical copy in ${round_dir}/research.md)"
+    fi
 
     # ============================================================
-    # PHASE FINAL: WP4 (Leaderboard + Convergence Review + Wrap-up)
+    # PHASE FINAL-A: WP4 Core (Leaderboard + Decision + Wrap-up)
     # ============================================================
     # Input:  All FINDINGS_SUMMARY.md files from this round
     # Output: FINDINGS_ROUND<N>.md, updated problem.md, STATUS file
+    #
+    # This phase produces ALL critical artifacts. It does NOT run
+    # convergence-review (which dispatches 10 agents and can blow
+    # the context window). Convergence review runs in Phase FINAL-B.
     # ============================================================
 
-    log "  Phase final: WP4 (Leaderboard + Convergence Review)"
+    log "  Phase final-a: WP4 Core (Leaderboard + Decision + Wrap-up)"
 
     # Build list of available summaries for the prompt
     summaries=""
@@ -784,16 +967,19 @@ Do NOT proceed to WP4 or any other idea. Do NOT ask for confirmation. Just run t
         fi
     done <<< "$idea_dirs"
 
-    if $DRY_RUN; then
-        run_claude "round${round}-wp4" "${round_dir}/phase_final_wp4.log" \
-"[DRY-RUN] Would execute WP4 for round ${round}" \
+    wp4a_marker="${round_dir}/.wp4a_done"
+    if [[ -f "$wp4a_marker" ]]; then
+        log "  Phase final-a already complete, skipping"
+    elif $DRY_RUN; then
+        run_claude "round${round}-wp4a" "${round_dir}/phase_final_wp4a.log" \
+"[DRY-RUN] Would execute WP4 core for round ${round}" \
         || true
         dry_run_wp4 "$round_dir" "$round"
     else
-    run_claude "round${round}-wp4" "${round_dir}/phase_final_wp4.log" \
-"Execute WP4 (Leaderboard, Convergence Review, and Round Wrap-up) for Round ${round} of the StepML research loop.
+    run_claude "round${round}-wp4a" "${round_dir}/phase_final_wp4a.log" \
+"Execute WP4 Core (Leaderboard, Decision, and Round Wrap-up) for Round ${round} of the StepML research loop.
 
-Follow the macro plan at docs/plans/2026-02-26-stepml-research-macro-plan.md strictly — especially the WP4 procedure (Steps 1-6).
+Follow the macro plan at docs/plans/2026-02-26-stepml-research-macro-plan.md strictly.
 
 AVAILABLE FINDINGS SUMMARIES (read all of these):
 $(echo -e "$summaries")
@@ -801,21 +987,72 @@ $(echo -e "$summaries")
 Also read: hypotheses/h-stepml/problem.md (current problem statement with prior round context)
 
 YOUR TASKS (in order):
-1. LEADERBOARD: Read all FINDINGS_SUMMARY.md files. Rank ideas by BLIS E2E mean error. Compare against blackbox baseline and prior rounds.
-2. FINDINGS_ROUND${round}.md: Write comprehensive round findings to hypotheses/h-stepml/round${round}/FINDINGS_ROUND${round}.md with all 12 sections per the macro plan.
-3. CONVERGENCE REVIEW: Run /convergence-review on FINDINGS_ROUND${round}.md.
-4. LOOP DECISION: Decide CONVERGED, ITERATE, or ABORT based on results and convergence review.
-5. UPDATE problem.md (if ITERATE): Update hypotheses/h-stepml/problem.md with ALL accumulated knowledge per the macro plan's Step 5 specification (baseline results, solved/unsolved experiments, successful techniques, data characteristics, eliminated approaches, binding constraints, key questions, prescribed focus areas, cumulative round history).
-6. WRITE STATUS FILE (MANDATORY LAST ACTION): Write hypotheses/h-stepml/round${round}/STATUS containing exactly one word: CONVERGED, ITERATE, or ABORT.
+0. GENERALIZATION GATE (pre-leaderboard): Before ranking, verify that EVERY idea has either (a) LOMO + LOWO results in FINDINGS_SUMMARY.md section 10, or (b) a GENERALIZATION_NOTE.md file. Flag any idea missing both as 'INCOMPLETE — no generalization' in the leaderboard. An incomplete idea CANNOT be the winning idea.
+1. LEADERBOARD: Read all FINDINGS_SUMMARY.md files. Rank ideas by BLIS E2E mean error. Compare against blackbox baseline and prior rounds. Include LOMO and LOWO columns in the leaderboard table.
+2. FINDINGS_ROUND${round}.md: Write comprehensive round findings to hypotheses/h-stepml/round${round}/FINDINGS_ROUND${round}.md with all 12 sections per the macro plan. Include a dedicated 'Generalization Results' section summarizing LOMO/LOWO across all ideas.
+3. LOOP DECISION: Based on the results, decide CONVERGED (<10% E2E target met AND LOMO <80% AND LOWO <50%), ITERATE (progress but not converged), or ABORT (stagnant for 2+ rounds). Note: an idea cannot be declared CONVERGED if it fails the generalization targets.
+4. UPDATE problem.md (if ITERATE): Update hypotheses/h-stepml/problem.md with ALL accumulated knowledge per the macro plan's Step 5 specification (baseline results, solved/unsolved experiments, successful techniques, data characteristics, eliminated approaches, binding constraints, key questions, prescribed focus areas, cumulative round history). Include LOMO/LOWO results in the cumulative round history table.
+5. WRITE STATUS FILE: Write hypotheses/h-stepml/round${round}/STATUS containing exactly one word: CONVERGED, ITERATE, or ABORT.
+6. WRITE MARKER FILE: Write hypotheses/h-stepml/round${round}/.wp4a_done containing 'done'.
 
-Do NOT ask for confirmation. Execute all steps and ensure the STATUS file is written as the very last action." \
-    || log "  WP4 phase had non-zero exit, checking STATUS..."
+IMPORTANT: Do NOT run /convergence-review in this session. Convergence review runs in a separate session to avoid context overflow.
+Do NOT ask for confirmation. Execute all steps. STATUS file is the critical deliverable." \
+    || log "  WP4 core phase had non-zero exit, checking STATUS..."
+
+    # Create marker if STATUS was written (session may have crashed after STATUS but before marker)
+    if [[ -f "$status_file" ]] && [[ ! -f "$wp4a_marker" ]]; then
+        echo "done" > "$wp4a_marker"
+        log "  WP4 core: STATUS exists, created marker"
+    fi
+    fi
+
+    # ============================================================
+    # PHASE FINAL-B: Convergence Review (optional, best-effort)
+    # ============================================================
+    # Input:  FINDINGS_ROUND<N>.md
+    # Output: Review feedback (logged). May update STATUS in rare cases.
+    #
+    # This phase is non-critical. If it fails (context overflow,
+    # timeout, etc.), the loop continues with the STATUS from
+    # Phase FINAL-A.
+    # ============================================================
+
+    findings_round_file="${round_dir}/FINDINGS_ROUND${round}.md"
+    if [[ -f "$findings_round_file" ]] && [[ -f "$status_file" ]]; then
+        log "  Phase final-b: Convergence Review (best-effort)"
+
+        if $DRY_RUN; then
+            log "  [DRY-RUN] Would run convergence review for round ${round}"
+        else
+        run_claude "round${round}-wp4b" "${round_dir}/phase_final_wp4b.log" \
+"Run a LIGHTWEIGHT convergence review for Round ${round} of the StepML research loop.
+
+Read hypotheses/h-stepml/round${round}/FINDINGS_ROUND${round}.md and review it for:
+1. Are the experimental results internally consistent?
+2. Are the binding constraints correctly identified?
+3. Is the ITERATE/CONVERGE/ABORT decision well-justified?
+4. Are there any critical gaps in the findings that would mislead the next round?
+
+Write a brief review (max 50 lines) to hypotheses/h-stepml/round${round}/CONVERGENCE_REVIEW.md with:
+- Overall assessment (1-2 sentences)
+- Any CRITICAL issues found (list, or 'None')
+- Any IMPORTANT suggestions for the next round (max 3)
+- Verdict: APPROVE or REVISE
+
+If verdict is REVISE with critical issues, update the STATUS file at hypotheses/h-stepml/round${round}/STATUS if the decision should change (e.g., ITERATE→ABORT). Otherwise, leave STATUS unchanged.
+
+IMPORTANT: Do NOT use /convergence-review or dispatch parallel review agents. Do this review yourself in a single pass to stay within context limits. Keep the review concise and focused.
+Do NOT ask for confirmation." \
+        || log "  Convergence review phase had non-zero exit (non-critical, continuing)"
+        fi
+    else
+        log "  Phase final-b: SKIPPED (missing FINDINGS_ROUND${round}.md or STATUS file)"
     fi
 
     # --- Read STATUS ---
     if [[ ! -f "$status_file" ]]; then
         log "ERROR: No STATUS file after WP4 for round ${round}"
-        log "Check: ${round_dir}/phase_final_wp4.log"
+        log "Check: ${round_dir}/phase_final_wp4a.log"
         log "To resume WP4 only: re-run this script (it will skip completed phases)"
         die "Missing STATUS file for round ${round}"
     fi
