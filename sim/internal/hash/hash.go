@@ -35,6 +35,8 @@ func HashTokens(tokens []int) string {
 // HashBlock computes a SHA256 hash of a token block chained with the previous block's hash.
 // Format: prevHash bytes, then for each token: "tokenN" + "|" (pipe AFTER each token).
 // This creates hierarchical block hashes for prefix caching.
+// Also inlined in ComputeBlockHashes for hasher reuse.
+// TestComputeBlockHashes_MatchesManualChaining guards consistency between the two paths.
 func HashBlock(prevHash string, tokens []int) string {
 	h := sha256.New()
 	h.Write([]byte(prevHash))
@@ -66,6 +68,7 @@ func ComputeBlockHashes(blockSize int, tokens []int) []string {
 		start := i * blockSize
 		end := start + blockSize
 		h.Reset()
+		// Inlines HashBlock logic for hasher reuse — keep in sync with HashBlock above.
 		h.Write([]byte(prevHash))
 		for _, t := range tokens[start:end] {
 			h.Write([]byte(strconv.Itoa(t)))

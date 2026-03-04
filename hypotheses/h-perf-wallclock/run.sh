@@ -3,6 +3,10 @@
 # Measures wall-clock time before/after optimizations across 3 workloads and 3 seeds.
 # Usage: ./run.sh [--rebuild]
 #
+# NOTE: Does not use hypotheses/lib/harness.sh — this experiment requires
+# A/B binary comparison (baseline from main vs optimized from current branch),
+# which does not fit the harness's single-binary blis_run() model.
+#
 # Experiment classification:
 #   Type 1 (Deterministic): INV-6 byte-identical output, single seed sufficient
 #   Type 2 (Statistical/Dominance): Wall-clock reduction, 3 seeds (42, 123, 456)
