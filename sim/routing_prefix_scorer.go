@@ -20,18 +20,26 @@ const defaultLRUCapacity = 10000
 func newPrefixAffinityScorer(blockSize int) (scorerFunc, observerFunc) {
 	idx := NewPrefixCacheIndex(blockSize, defaultLRUCapacity)
 
+	// Shared cache: scorer computes hashes once, observer reuses them.
+	// Safe because Route() always calls scorer then observer for the same request
+	// before moving to the next request (sim/routing.go WeightedScoring.Route).
+	var cachedHashes []string
+	var cachedReqID string
+
 	scorer := func(req *Request, snapshots []RoutingSnapshot) map[string]float64 {
 		scores := make(map[string]float64, len(snapshots))
 		if req == nil {
 			return scores
 		}
-		hashes := idx.ComputeBlockHashes(req.InputTokens)
-		totalBlocks := len(hashes)
+		// Compute block hashes once and cache for the observer
+		cachedHashes = idx.ComputeBlockHashes(req.InputTokens)
+		cachedReqID = req.ID
+		totalBlocks := len(cachedHashes)
 		for _, snap := range snapshots {
 			if totalBlocks == 0 {
 				scores[snap.ID] = 0.0
 			} else {
-				matched := idx.MatchLength(hashes, snap.ID)
+				matched := idx.MatchLength(cachedHashes, snap.ID)
 				scores[snap.ID] = float64(matched) / float64(totalBlocks)
 			}
 		}
@@ -42,7 +50,11 @@ func newPrefixAffinityScorer(blockSize int) (scorerFunc, observerFunc) {
 		if req == nil {
 			return
 		}
-		hashes := idx.ComputeBlockHashes(req.InputTokens)
+		// Reuse hashes from scorer if available for the same request
+		hashes := cachedHashes
+		if req.ID != cachedReqID {
+			hashes = idx.ComputeBlockHashes(req.InputTokens)
+		}
 		idx.RecordBlocks(hashes, targetInstance)
 	}
 

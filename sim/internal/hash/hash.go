@@ -47,17 +47,25 @@ func HashBlock(prevHash string, tokens []int) string {
 // ComputeBlockHashes returns hierarchical block hashes for a token sequence.
 // Each hash chains with the previous block's hash, enabling prefix matching.
 // Tokens that don't fill a complete block are ignored.
+// Reuses a single SHA256 hasher across blocks to reduce allocations.
 func ComputeBlockHashes(blockSize int, tokens []int) []string {
 	numBlocks := len(tokens) / blockSize
 	if numBlocks == 0 {
 		return nil
 	}
 	hashes := make([]string, numBlocks)
+	h := sha256.New()
 	prevHash := ""
 	for i := 0; i < numBlocks; i++ {
 		start := i * blockSize
 		end := start + blockSize
-		hashes[i] = HashBlock(prevHash, tokens[start:end])
+		h.Reset()
+		h.Write([]byte(prevHash))
+		for _, t := range tokens[start:end] {
+			h.Write([]byte(strconv.Itoa(t)))
+			h.Write([]byte("|"))
+		}
+		hashes[i] = hex.EncodeToString(h.Sum(nil))
 		prevHash = hashes[i]
 	}
 	return hashes
