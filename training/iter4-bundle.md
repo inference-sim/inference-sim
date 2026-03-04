@@ -120,7 +120,7 @@ Joint optimization of 7 parameters with a simulator objective is expensive. Coor
 ### Stage A: δ₀ sweep (highest leverage, 1 param)
 
 Fix β, α from Phase 1. Grid search:
-- δ₀ ∈ {500, 750, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 5000} (10 values)
+- δ₀ ∈ {5000, 7000, 9000, 11000, 13000, 15000, 17000, 19000, 21000, 25000} (10 values)
 - 10 grid points × 4 fast-subset experiments × ~15s each = ~10 min
 - Then validate best δ₀ on ALL 10 training experiments (~2.5 min)
 
@@ -234,7 +234,7 @@ pandas>=2.0
 
 **If this fails, it would indicate** that even at low load, queueing dynamics amplify δ₀ beyond the constant per-step overhead — suggesting BLIS's batch formation creates queueing even when the real system does not.
 
-**Low-load workload construction:** Use codellama-34b (best-calibrated model in H30: -23% TTFT RE). Generate a single-stage workload at 2 RPS (ρ ≈ 0.2 with δ₀, well below saturation) with constant tokens matching the general profile (system_prompt_len=512, question_len=547, output_len=512). Run for 200 requests (sufficient for stable mean TTFT, short enough for fast iteration). Same KV blocks (26,602) and server config as training. Alternatively, extract Stage 0 (first 600s, ~8 RPS) from the training experiments and measure δ₀'s effect on that stage only — but this is less clean due to Stage 1 follow-on effects.
+**Low-load workload construction:** Use codellama-34b (best-calibrated model in H30: -23% TTFT RE). With δ₀ ≈ 14,275 µs and step_compute ≈ 15,018 µs, effective per-step wall time ≈ 29.3ms. With ~512 decode steps per request, request service time ≈ 15s, giving max throughput ≈ 128/15 ≈ 8.5 rps (batched). For ρ < 0.3: rate < 0.3 × 8.5 ≈ 2.5 rps. **Use 1 RPS** (ρ ≈ 0.12, safely below 0.3) with constant tokens matching the general profile (system_prompt_len=512, question_len=547, output_len=512). Run for 100 requests (~100s, sufficient for stable mean TTFT). Same KV blocks (26,602) and server config as training.
 
 **Matched positive control:** At ρ > 0.8 (high-load stage of training experiments), the same δ₀ should produce > 15% TTFT change. This creates a dose-response pair: (low load: δ₀ effect bounded by constant term) vs (high load: δ₀ effect amplified by queueing).
 
@@ -254,7 +254,7 @@ pandas>=2.0
 
 > The refined δ₀ reduces BLIS's maximum sustainable throughput for codellama-34b from 3.93 rps toward real vLLM's 3.22 rps, with the throughput overestimate decreasing from +22% to < +15%.
 
-**Back-of-envelope:** At codellama-34b (48 layers, TP=2), step time ≈ 15,018 µs. With δ₀=1,500 µs, effective step time = 16,518 µs (+10%). Throughput drops from 3.93 to ~3.57 rps (+11% overestimate). At δ₀=2,500: effective 17,518 µs, throughput ~3.37 rps (+5%). The grid search will find the δ₀ that best matches.
+**Back-of-envelope:** At codellama-34b, H30 measured BLIS throughput of 3.93 rps without δ₀. The measured inter-step gap for codellama is 14,275 µs (median). Adding δ₀=14,275 roughly doubles the effective per-step wall time (step_compute + δ₀), which would roughly halve throughput to ~2 rps — overshooting the 3.22 rps target. This suggests the optimal δ₀ for throughput matching is lower than the measured gap, likely because β already captures part of the wall-clock time or because batching amortizes the overhead. The grid search [5000, 25000] covers the full range; the optimizer will find the δ₀ that best matches. The Phase 1 measured gap is a ceiling, not a direct warm-start.
 
 **Saturation-specific controls:**
 - (a) KV-unlimited control: Set `--total-kv-blocks` very high (1,000,000) for the codellama-34b-reasoning experiment. If throughput gap persists without KV pressure, inter-step overhead is the cause. If it shrinks, KV dynamics contribute.
