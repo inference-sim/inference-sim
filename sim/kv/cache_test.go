@@ -393,6 +393,111 @@ func TestAllocateKVBlocks_Rollback_PreservesFreeListOrder(t *testing.T) {
 	}
 }
 
+func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *testing.T) {
+	// Regression test for #492: prefill capacity pre-check is conservative by 1 block.
+	// The pre-check computes blocks from the full newTokens slice, ignoring that some
+	// tokens will be absorbed into the request's partially-filled last block.
+	tests := []struct {
+		name            string
+		totalBlocks     int64
+		blockSize       int64
+		firstTokens     int   // tokens in first allocation (creates partial block)
+		totalInput      int   // total input tokens
+		secondStart     int64 // startIndex for second allocation
+		secondEnd       int64 // endIndex for second allocation
+		freeBeforeAlloc int64 // expected free blocks before second allocation
+		wantSuccess     bool
+		wantUsedBlocks  int64 // expected used blocks after second allocation
+	}{
+		{
+			// Pre-check: ceil(5/4)=2 > 1 free → false rejection (BUG).
+			// Reality: partial absorbs 2 tokens, remaining 3 → ceil(3/4)=1 ≤ 1 → should succeed.
+			name:            "partial fill saves 1 block (2 partial + 5 new tokens, blockSize=4)",
+			totalBlocks:     2,
+			blockSize:       4,
+			firstTokens:     2,
+			totalInput:      7,
+			secondStart:     2,
+			secondEnd:       7,
+			freeBeforeAlloc: 1,
+			wantSuccess:     true,
+			wantUsedBlocks:  2, // 1 original (now full) + 1 new
+		},
+		{
+			// Pre-check: ceil(2/4)=1 > 0 free → false rejection (BUG).
+			// Reality: partial absorbs all 2 tokens, 0 new blocks needed → should succeed.
+			name:            "all tokens absorbed into partial block (no new blocks needed)",
+			totalBlocks:     1,
+			blockSize:       4,
+			firstTokens:     2,
+			totalInput:      4,
+			secondStart:     2,
+			secondEnd:       4,
+			freeBeforeAlloc: 0,
+			wantSuccess:     true,
+			wantUsedBlocks:  1, // same block, now full
+		},
+		{
+			// Pre-check: ceil(9/4)=3 > 1 free → rejection.
+			// Reality: partial absorbs 2, remaining 7 → ceil(7/4)=2 > 1 → still insufficient.
+			// This is a genuine failure, not a false rejection.
+			name:            "genuinely insufficient blocks (not a false rejection)",
+			totalBlocks:     2,
+			blockSize:       4,
+			firstTokens:     2,
+			totalInput:      11,
+			secondStart:     2,
+			secondEnd:       11,
+			freeBeforeAlloc: 1,
+			wantSuccess:     false,
+			wantUsedBlocks:  1, // unchanged after failed allocation
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			kvc := NewKVCacheState(tc.totalBlocks, tc.blockSize)
+			tokens := make([]int, tc.totalInput)
+			for i := range tokens {
+				tokens[i] = (i + 1) * 10
+			}
+			req := &sim.Request{ID: "r1", InputTokens: tokens}
+
+			// First allocation: create partial block
+			ok := kvc.AllocateKVBlocks(req, 0, int64(tc.firstTokens), []int64{})
+			if !ok {
+				t.Fatal("initial allocation should succeed")
+			}
+
+			// Verify partial block exists
+			ids := kvc.RequestMap["r1"]
+			lastBlk := kvc.Blocks[ids[len(ids)-1]]
+			if int64(len(lastBlk.Tokens)) >= tc.blockSize {
+				t.Fatalf("expected partial last block, got full block with %d tokens", len(lastBlk.Tokens))
+			}
+
+			// Verify free block count matches expectation
+			free := kvc.countFreeBlocks()
+			if free != tc.freeBeforeAlloc {
+				t.Fatalf("expected %d free blocks before second alloc, got %d", tc.freeBeforeAlloc, free)
+			}
+
+			// Second allocation: this is where the bug manifests
+			req.ProgressIndex = int64(tc.firstTokens)
+			ok = kvc.AllocateKVBlocks(req, tc.secondStart, tc.secondEnd, []int64{})
+			if ok != tc.wantSuccess {
+				t.Errorf("AllocateKVBlocks() = %v, want %v", ok, tc.wantSuccess)
+			}
+
+			if kvc.UsedBlocks() != tc.wantUsedBlocks {
+				t.Errorf("UsedBlocks = %d, want %d", kvc.UsedBlocks(), tc.wantUsedBlocks)
+			}
+
+			assertBlockConservation(t, kvc)
+		})
+	}
+}
+
 func TestAllocateKVBlocks_ChunkedPrefill_NoPhantomBlocks(t *testing.T) {
 	// GIVEN a KV cache with BlockSize=4 and a request that already has a partial block (3 tokens)
 	kvc := NewKVCacheState(20, 4) // 20 blocks, size 4
