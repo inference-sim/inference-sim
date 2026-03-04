@@ -29,7 +29,7 @@
 
 ## Target Workload
 
-The three `workload-mert/` YAML files as-is. They stress prefix-affinity routing
+The three `examples/regression_workload_*.yaml` files. They stress prefix-affinity routing
 (cache_warmup has 3 prefix groups, load_spikes has a 50% heavy-hitter prefix),
 which exercises the prefix cache index and hash computation hot paths.
 

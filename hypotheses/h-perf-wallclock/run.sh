@@ -38,9 +38,9 @@ trap 'rm -rf "$RESULTS_DIR" "$BINARY_BASELINE"' EXIT
 
 # -- Configuration -----------------------------------------------------------
 WORKLOADS=(
-  "$REPO_ROOT/workload-mert/workload_v2_cache_warmup.yaml"
-  "$REPO_ROOT/workload-mert/workload_v2_load_spikes.yaml"
-  "$REPO_ROOT/workload-mert/workload_v2_multiturn.yaml"
+  "$REPO_ROOT/examples/regression_workload_cache_warmup.yaml"
+  "$REPO_ROOT/examples/regression_workload_load_spikes.yaml"
+  "$REPO_ROOT/examples/regression_workload_multiturn.yaml"
 )
 NUM_INSTANCES=4
 BLOCK_SIZE=16  # explicit for reproducibility (default)

@@ -61,3 +61,32 @@ func TestComputeBlockHashes_Empty(t *testing.T) {
 		t.Errorf("expected nil for fewer tokens than block size, got %v", hashes)
 	}
 }
+
+// TestComputeBlockHashes_FourBlocks_MatchesManualChaining verifies hash
+// equivalence with HashBlock across 4 blocks, catching any h.Reset()
+// placement bugs that could leak state across blocks.
+func TestComputeBlockHashes_FourBlocks_MatchesManualChaining(t *testing.T) {
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	blockSize := 4
+	hashes := ComputeBlockHashes(blockSize, tokens)
+	if len(hashes) != 4 {
+		t.Fatalf("expected 4 block hashes, got %d", len(hashes))
+	}
+	// Manual chaining: each block hashed with previous block's hash
+	m0 := HashBlock("", tokens[0:4])
+	m1 := HashBlock(m0, tokens[4:8])
+	m2 := HashBlock(m1, tokens[8:12])
+	m3 := HashBlock(m2, tokens[12:16])
+	if hashes[0] != m0 {
+		t.Errorf("block 0: got %q, want %q", hashes[0], m0)
+	}
+	if hashes[1] != m1 {
+		t.Errorf("block 1: got %q, want %q", hashes[1], m1)
+	}
+	if hashes[2] != m2 {
+		t.Errorf("block 2: got %q, want %q", hashes[2], m2)
+	}
+	if hashes[3] != m3 {
+		t.Errorf("block 3: got %q, want %q", hashes[3], m3)
+	}
+}

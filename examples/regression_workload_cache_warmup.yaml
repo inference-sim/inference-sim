@@ -1,0 +1,119 @@
+# V2 Workload: Cache Warmup & Exploitation
+# PURPOSE: Test whether router exploits cached prefixes AFTER caches warm up.
+#
+# WHAT THIS STRESSES: Load-aware routing when prefix-affinity creates imbalance.
+#   3 prefix groups across 4 instances means prefix-affinity maps each group to
+#   one instance, leaving the 4th underutilized. A pure prefix-affinity router
+#   creates load imbalance. A smart router should shift traffic to the idle
+#   instance while preserving cache hits where possible.
+#
+# KEY DESIGN CHOICES:
+#   - 3 prefix groups + 15% no-prefix: prefix-affinity can't perfectly partition
+#     3 groups across 4 instances, creating natural imbalance.
+#   - Moderate prefix sizes (128-512): small enough that all inputs are <1000
+#     tokens total, so the oracle's input-length threshold routes them load-first.
+#   - High rate (1000 req/s): creates real queueing, amplifying load imbalance.
+#
+# VALIDATED RESULTS:
+#   - sabotaged: +242% (routing matters)
+#   - prefix-only: +0% (same as baseline -- prefix-affinity dominates at 1:1)
+#   - load-only: -26% (load-balance BETTER -- avoids prefix imbalance)
+#   - oracle: -28% (best -- load-aware with prefix tiebreaker)
+#   Conclusion: load-aware routing beats pure prefix-affinity here.
+#
+# DESIGN:
+#   - 5000 requests at rate=1000 -> 5 seconds simulated time
+#   - 3 distinct prefix groups (each ~30% of traffic) create cache differentiation
+#   - 15% no-prefix traffic tests load balancing without cache benefit
+#   - Moderate rate creates queueing but doesn't saturate
+#   - Long enough for caches to warm (~1250 reqs/instance before halfway point)
+
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 1000.0
+num_requests: 5000
+
+clients:
+  # Group A: Shared system prompt (e.g., chatbot)
+  - id: "prefix-group-a"
+    slo_class: "interactive"
+    rate_fraction: 0.30
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 300
+        std_dev: 80
+        min: 100
+        max: 600
+    output_distribution:
+      type: exponential
+      params:
+        mean: 64
+    prefix_group: "system-prompt-chatbot"
+    prefix_length: 512
+
+  # Group B: Different system prompt (e.g., code assistant)
+  - id: "prefix-group-b"
+    slo_class: "interactive"
+    rate_fraction: 0.30
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 400
+        std_dev: 100
+        min: 150
+        max: 800
+    output_distribution:
+      type: exponential
+      params:
+        mean: 80
+    prefix_group: "system-prompt-code"
+    prefix_length: 384
+
+  # Group C: Short shared prefix (e.g., API gateway)
+  - id: "prefix-group-c"
+    slo_class: "realtime"
+    rate_fraction: 0.25
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 100
+        std_dev: 30
+        min: 40
+        max: 250
+    output_distribution:
+      type: exponential
+      params:
+        mean: 40
+    prefix_group: "api-gateway-prompt"
+    prefix_length: 128
+
+  # No-prefix traffic: pure load balancing test
+  - id: "unique-requests"
+    slo_class: "batch"
+    rate_fraction: 0.15
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 3.0
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 600
+        std_dev: 200
+        min: 200
+        max: 1200
+    output_distribution:
+      type: exponential
+      params:
+        mean: 150

@@ -1,0 +1,108 @@
+# V2 Workload: Heavy-Hitter Prefix with Bursty Arrival
+# PURPOSE: Create TENSION between prefix-affinity and load-balance.
+#
+# WHAT THIS STRESSES: Load imbalance when one prefix group dominates traffic.
+#   50% of ALL traffic shares one large prefix (512 tokens). Prefix-affinity
+#   wants to send all of it to one instance (the one that cached this prefix),
+#   creating massive 2x overload on that instance. Meanwhile, realtime traffic
+#   needs low-load instances. A good router must avoid prefix-affinity trap.
+#
+# KEY DESIGN CHOICES:
+#   - 50% heavy-hitter: one prefix group gets HALF of all traffic. This is the
+#     worst case for prefix-affinity (concentrates load on one instance).
+#   - Bursty arrival (gamma CV=3): traffic arrives in bursts, making load spikes
+#     worse when concentrated on one instance.
+#   - 25% realtime (no prefix): these requests need idle instances and will
+#     suffer if routed to the overloaded prefix-heavy instance.
+#   - 25% different prefix group: tests whether router can maintain SEPARATE
+#     cache affinity while managing the heavy group's load impact.
+#
+# VALIDATED RESULTS:
+#   - sabotaged: +416% (routing matters enormously)
+#   - prefix-only: +113% (terrible! concentrates 50% on one instance)
+#   - load-only: +2% (near-optimal, spreads traffic evenly)
+#   - baseline: 0% (reference -- load-balance component saves it from prefix trap)
+#   - oracle: -1.5% (slightly better than baseline)
+#   Conclusion: prefix-affinity is HARMFUL here. Load-balance is essential.
+#
+# DESIGN:
+#   - 5000 requests at rate=1000 -> 5 seconds simulated time
+#   - 50% heavy-prefix bursty traffic (gamma CV=3, prefix=512)
+#   - 25% realtime SLO-critical (no prefix, needs idle instances)
+#   - 25% different prefix group (should use its own cached instance)
+
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 1000.0
+num_requests: 5000
+
+clients:
+  # Heavy hitter: 50% of ALL traffic, large shared prefix, bursty arrival.
+  # Prefix-affinity locks this to one instance → creates 2x average load there.
+  - id: "heavy-prefix-batch"
+    slo_class: "batch"
+    rate_fraction: 0.50
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 3.0
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 400
+        std_dev: 120
+        min: 100
+        max: 800
+    output_distribution:
+      type: exponential
+      params:
+        mean: 120
+    prefix_group: "heavy-system-prompt"
+    prefix_length: 512  # Large prefix: prefix-affinity strongly favors cached instance
+
+  # Realtime: needs low latency, must route AWAY from the heavy-prefix instance.
+  # No prefix → prefix-affinity gives 0 score → load-balance decides.
+  # But with [0.5, 0.5] weights, the heavy instance's load-balance penalty
+  # may not overcome other instances' prefix-affinity=0.
+  - id: "realtime-critical"
+    slo_class: "realtime"
+    rate_fraction: 0.25
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 80
+        std_dev: 20
+        min: 30
+        max: 180
+    output_distribution:
+      type: exponential
+      params:
+        mean: 30
+    # No prefix group - pure load-balance routing
+
+  # Second prefix group: different prefix, steady arrival.
+  # Tests whether router can maintain cache affinity for this group
+  # while managing the heavy-prefix group's load impact.
+  - id: "light-prefix-interactive"
+    slo_class: "interactive"
+    rate_fraction: 0.25
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 200
+        std_dev: 50
+        min: 80
+        max: 400
+    output_distribution:
+      type: exponential
+      params:
+        mean: 60
+    prefix_group: "light-system-prompt"
+    prefix_length: 384

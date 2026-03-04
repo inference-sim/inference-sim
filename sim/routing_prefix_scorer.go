@@ -23,6 +23,7 @@ func newPrefixAffinityScorer(blockSize int) (scorerFunc, observerFunc) {
 	// Shared cache: scorer computes hashes once, observer reuses them.
 	// Safe because Route() always calls scorer then observer for the same request
 	// before moving to the next request (sim/routing.go WeightedScoring.Route).
+	// Single-threaded DES event loop guarantees no concurrent Route() calls.
 	var cachedHashes []string
 	var cachedReqID string
 

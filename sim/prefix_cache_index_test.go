@@ -64,7 +64,7 @@ func TestPrefixCacheIndex_MatchLength_ConsecutiveFromStart(t *testing.T) {
 	assert.Equal(t, 0, matched)
 }
 
-// TestPrefixCacheIndex_LRUEviction_BoundsCapacity verifies BC-10 (INV-7).
+// TestPrefixCacheIndex_LRUEviction_BoundsCapacity verifies BC-10 (LRU capacity bounds).
 func TestPrefixCacheIndex_LRUEviction_BoundsCapacity(t *testing.T) {
 	idx := NewPrefixCacheIndex(1, 3) // block size 1, capacity 3 per instance
 
@@ -126,4 +126,69 @@ func TestPrefixCacheIndex_RecordTouches_PreventEviction(t *testing.T) {
 	// C and D should be present
 	assert.Equal(t, 1, idx.MatchLength(idx.ComputeBlockHashes([]int{3}), "inst_0"), "C should survive")
 	assert.Equal(t, 1, idx.MatchLength(idx.ComputeBlockHashes([]int{4}), "inst_0"), "D should be present")
+}
+
+// TestPrefixCacheIndex_Capacity1_HeadEqualsTail verifies the capacity-1 edge case
+// where head and tail point to the same node. Exercises all removeNode branches
+// simultaneously (node is both head and tail).
+func TestPrefixCacheIndex_Capacity1_HeadEqualsTail(t *testing.T) {
+	idx := NewPrefixCacheIndex(1, 1) // capacity 1
+
+	// GIVEN a single block recorded
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{10}), "inst_0")
+	assert.Equal(t, 1, idx.InstanceBlockCount("inst_0"))
+	assert.Equal(t, 1, idx.MatchLength(idx.ComputeBlockHashes([]int{10}), "inst_0"))
+
+	// WHEN a new block is recorded (triggers eviction of the only element)
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{20}), "inst_0")
+
+	// THEN capacity remains 1, old block evicted, new block present
+	assert.Equal(t, 1, idx.InstanceBlockCount("inst_0"))
+	assert.Equal(t, 0, idx.MatchLength(idx.ComputeBlockHashes([]int{10}), "inst_0"), "old block should be evicted")
+	assert.Equal(t, 1, idx.MatchLength(idx.ComputeBlockHashes([]int{20}), "inst_0"), "new block should be present")
+
+	// WHEN touching the existing block and adding another (evict + insert cycle)
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{20}), "inst_0") // touch
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{30}), "inst_0") // replace
+
+	assert.Equal(t, 1, idx.InstanceBlockCount("inst_0"))
+	assert.Equal(t, 0, idx.MatchLength(idx.ComputeBlockHashes([]int{20}), "inst_0"), "touched block evicted by new insert")
+	assert.Equal(t, 1, idx.MatchLength(idx.ComputeBlockHashes([]int{30}), "inst_0"), "newest block present")
+}
+
+// TestPrefixCacheIndex_BlockCount_ConsistentThroughMixedOps verifies that
+// InstanceBlockCount stays accurate through a mixed sequence of inserts,
+// touches, and evictions at each step.
+func TestPrefixCacheIndex_BlockCount_ConsistentThroughMixedOps(t *testing.T) {
+	idx := NewPrefixCacheIndex(1, 3) // capacity 3
+
+	// Step 1: Insert A — count should be 1
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{1}), "inst_0")
+	assert.Equal(t, 1, idx.InstanceBlockCount("inst_0"), "after insert A")
+
+	// Step 2: Insert B — count should be 2
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{2}), "inst_0")
+	assert.Equal(t, 2, idx.InstanceBlockCount("inst_0"), "after insert B")
+
+	// Step 3: Touch A — count stays 2 (no new entry)
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{1}), "inst_0")
+	assert.Equal(t, 2, idx.InstanceBlockCount("inst_0"), "after touch A")
+
+	// Step 4: Insert C — count should be 3 (at capacity)
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{3}), "inst_0")
+	assert.Equal(t, 3, idx.InstanceBlockCount("inst_0"), "after insert C (at capacity)")
+
+	// Step 5: Insert D — triggers eviction, count stays 3
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{4}), "inst_0")
+	assert.Equal(t, 3, idx.InstanceBlockCount("inst_0"), "after insert D (eviction)")
+
+	// Step 6: Touch C — count stays 3
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{3}), "inst_0")
+	assert.Equal(t, 3, idx.InstanceBlockCount("inst_0"), "after touch C")
+
+	// Step 7: Insert E, F — two evictions, count stays 3
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{5}), "inst_0")
+	assert.Equal(t, 3, idx.InstanceBlockCount("inst_0"), "after insert E")
+	idx.RecordBlocks(idx.ComputeBlockHashes([]int{6}), "inst_0")
+	assert.Equal(t, 3, idx.InstanceBlockCount("inst_0"), "after insert F")
 }

@@ -47,7 +47,9 @@ func HashBlock(prevHash string, tokens []int) string {
 // ComputeBlockHashes returns hierarchical block hashes for a token sequence.
 // Each hash chains with the previous block's hash, enabling prefix matching.
 // Tokens that don't fill a complete block are ignored.
-// Reuses a single SHA256 hasher across blocks to reduce allocations.
+// Produces the same output as calling HashBlock sequentially, but reuses a
+// single SHA256 hasher instance across blocks to reduce allocations.
+// Output equivalence is enforced by TestComputeBlockHashes_MatchesManualChaining.
 func ComputeBlockHashes(blockSize int, tokens []int) []string {
 	numBlocks := len(tokens) / blockSize
 	if numBlocks == 0 {

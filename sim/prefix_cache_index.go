@@ -34,7 +34,6 @@ type lruBlockCache struct {
 	head     *lruNode            // most recently used
 	tail     *lruNode            // least recently used (eviction target)
 	capacity int
-	size     int
 }
 
 // NewPrefixCacheIndex creates a prefix cache index with the given block size
@@ -81,7 +80,7 @@ func (idx *PrefixCacheIndex) MatchLength(hashes []string, instanceID string) int
 }
 
 // RecordBlocks records that the given instance now has the given block hashes.
-// Updates LRU timestamps for existing blocks and evicts oldest if at capacity.
+// Refreshes LRU ordering for existing blocks and evicts the oldest if at capacity.
 func (idx *PrefixCacheIndex) RecordBlocks(hashes []string, instanceID string) {
 	cache, exists := idx.instances[instanceID]
 	if !exists {
@@ -97,13 +96,13 @@ func (idx *PrefixCacheIndex) RecordBlocks(hashes []string, instanceID string) {
 }
 
 // InstanceBlockCount returns the number of cached blocks for an instance.
-// Used for testing INV-7 (bounded growth).
+// Used for testing LRU capacity bounds.
 func (idx *PrefixCacheIndex) InstanceBlockCount(instanceID string) int {
 	cache, exists := idx.instances[instanceID]
 	if !exists {
 		return 0
 	}
-	return cache.size
+	return len(cache.lookup)
 }
 
 // touch adds or refreshes a block hash in the LRU cache, evicting the tail if at capacity.
@@ -115,27 +114,30 @@ func (c *lruBlockCache) touch(h string) {
 		return
 	}
 	// New entry — evict tail if at capacity
-	if c.size >= c.capacity {
+	if len(c.lookup) >= c.capacity {
 		c.evictOldest()
 	}
 	node := &lruNode{hash: h}
 	c.lookup[h] = node
 	c.pushHead(node)
-	c.size++
 }
 
 // evictOldest removes the least recently used block hash (the tail). O(1).
+// Panics if tail is nil — callers only invoke this when len(lookup) >= capacity,
+// so a nil tail indicates linked-list corruption.
 func (c *lruBlockCache) evictOldest() {
 	if c.tail == nil {
-		return
+		panic(fmt.Sprintf("lruBlockCache.evictOldest: tail is nil but len(lookup)=%d (invariant violation)", len(c.lookup)))
 	}
 	delete(c.lookup, c.tail.hash)
 	c.removeNode(c.tail)
-	c.size--
 }
 
 // pushHead inserts a node at the head of the doubly-linked list.
 func (c *lruBlockCache) pushHead(node *lruNode) {
+	if node == nil {
+		panic("lruBlockCache.pushHead: node must not be nil")
+	}
 	node.prev = nil
 	node.next = c.head
 	if c.head != nil {
@@ -149,6 +151,9 @@ func (c *lruBlockCache) pushHead(node *lruNode) {
 
 // removeNode removes a node from the doubly-linked list.
 func (c *lruBlockCache) removeNode(node *lruNode) {
+	if node == nil {
+		panic("lruBlockCache.removeNode: node must not be nil")
+	}
 	if node.prev != nil {
 		node.prev.next = node.next
 	} else {
