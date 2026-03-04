@@ -28,11 +28,25 @@ InterStepOverhead()         = δ₀                        [NEW method — see A
 | β₃ | 9445.2 µs/step | [6612, 12279] | NCCL all-reduce barrier (TP>1) |
 | α₀ | 13,732 µs | [9612, 17852] | Pre-scheduling CPU (tokenization, HTTP) |
 | α₂ | 860.6 µs/tok | [0, 1291] | Output processing (physical: ~5 µs/tok; Iter 3 absorbs β error) |
-| δ₀ | preliminary, pending Phase 1 | [500, 5000] | Fixed per-step inter-step overhead |
+| δ₀ | **model-dependent (see below)** | [5000, 25000] | Fixed per-step inter-step overhead |
 
-β bounded ±30% of Iter 3. α₂ lower bound extended to 0 to allow discovery of physical value if δ absorbs all inter-step compensation. δ₀ warm-start is a preliminary estimate pending Phase 1 analytical extraction from BATCH_SUMMARY timing gaps (not an NNLS-derived value like the β warm-starts).
+β bounded ±30% of Iter 3. α₂ lower bound extended to 0 to allow discovery of physical value if δ absorbs all inter-step compensation.
 
-**Design decision: δ₁ (per-batch-size term) is deferred.** H30 provides no per-request overhead analysis — all evidence is per-step. Stage A begins as a 1D sweep of δ₀. If residual analysis after Stage A shows batch-size correlation, δ₁ can be introduced in Stage C or D. The search space is 7 free parameters (α₁ fixed at 0, δ₁ deferred).
+**Phase 1 diagnostic extraction (completed):** Measured inter-step gaps from 8,690 truly consecutive BATCH_SUMMARY step pairs across 10 training experiments:
+
+| Model | TP | Count | Median δ (µs) | P5 (µs) | P95 (µs) | Batch-size corr |
+|-------|-----|-------|---------------|---------|----------|-----------------|
+| llama-2-7b | 1 | 4,150 | 7,774 | 6,533 | 10,567 | +0.80 |
+| codellama-34b | 2 | 716 | 14,275 | 8,164 | 16,139 | -0.47 |
+| llama-2-70b | 4 | 1,898 | 17,439 | 14,766 | 18,729 | -0.18 |
+| mixtral-8x7b | 2 | 1,926 | 18,291 | 16,862 | 19,959 | +0.62 |
+| **Global** | — | **8,690** | **13,159** | **6,720** | **19,269** | — |
+
+The gap is 14× larger than GPU step compute time (median step_duration_us: 143-530 µs). The preliminary 1,500 µs estimate in the initial bundle was wildly wrong. Search range updated to [5000, 25000].
+
+**Model dependence:** δ correlates with TP degree and model size (7b/TP=1: 8ms; 70b/TP=4: 17ms; mixtral/TP=2: 18ms). A single global δ₀ will be a compromise. If the global δ₀ produces > 5pp cross-model TTFT variance, a model-aware δ₀ = δ_base + δ_tp · I(TP>1) should be considered in Stage C or D.
+
+**Batch-size correlation is inconsistent across models** (7b: +0.80, codellama: -0.47). δ₁ (per-batch-size term) remains deferred — no consistent signal to anchor it. The search space is 7 free parameters (α₁ fixed at 0, δ₁ deferred).
 
 ---
 
@@ -53,7 +67,11 @@ InterStepOverhead()         = δ₀                        [NEW method — see A
 - Line 432: `time: now + currStepAdvance + sim.latencyModel.InterStepOverhead()` (batch continues)
 - Line 444: `time: now + currStepAdvance + sim.latencyModel.InterStepOverhead()` (work-conserving new batch)
 
-**TTFT effect is indirect:** δ delays when the NEXT step fires but does NOT inflate TTFT for requests completing prefill in the CURRENT step (TTFT is recorded at `now + currStepAdvance + OutputTokenProcessingTime()`, line 365). δ improves TTFT accuracy indirectly by: (a) delaying when subsequent requests are admitted (more arrivals accumulate between steps), and (b) building queue depth (longer inter-step gaps → higher ρ → more queueing). For a request processed with zero queue wait, δ has zero direct TTFT effect.
+**TTFT effect pathways:** δ delays when the NEXT step fires but does NOT inflate TTFT for requests completing prefill in the CURRENT step (TTFT is recorded at `now + currStepAdvance + OutputTokenProcessingTime()`, line 365). δ affects TTFT through three pathways:
+
+- **(a) Scheduling-delay (load-independent, dominant at low load):** Requests arriving DURING a step must wait for `currStepAdvance + δ` before the next step starts (vs `currStepAdvance` without δ). This is a constant per-step increase in scheduling latency even for a single waiting request with no queue buildup. At low load (ρ < 0.3), this is the dominant mechanism. H-control-neg's "bounded by δ₀ × num_prefill_steps" refers to this pathway.
+- **(b) Queue-depth amplification (load-dependent, dominant at high load):** Longer inter-step gaps mean more arrivals accumulate between steps → higher ρ → deeper queues → non-linear TTFT growth. This is the cascade mechanism.
+- **(c) Batch-admission delay:** Fewer steps per unit time means new requests wait longer to enter the running batch, even if the queue itself is short.
 
 ---
 
@@ -89,7 +107,7 @@ gap_k = (ts_start_ns[k+1] - ts_end_ns[k]) / 1000    (microseconds)
 
 Fit: `δ₀ = median(positive_gaps)` (robust to outliers). Regression against batch size deferred — if residual analysis shows batch-size correlation, introduce δ₁ later.
 
-**Back-of-envelope check (codellama-34b):** Step time ≈ β₀·48 + β₃·1 = 116.1·48 + 9445 ≈ 15,018 µs. If δ₀ = 1,500 µs, effective step time = 16,518 µs (+10%). Throughput shifts from 3.93 rps to ~3.57 rps. Real target: 3.22 rps (need -18%). δ₀=1,500 closes ~half the gap; δ₀=2,500 would get to ~3.25 rps. The grid search range [500, 5000] covers both scenarios.
+**Back-of-envelope check (codellama-34b):** The H30 measured throughput is 3.93 rps with step-only compute. Adding measured δ₀ ≈ 14,275 µs (codellama median from diagnostic): effective per-step wall time = step_compute + δ₀. Since throughput ∝ 1/(step_compute + δ₀), and δ₀ is ~14× the median step_duration_us (~530 µs), the inter-step overhead dominates wall time. The H30 throughput of 3.93 rps was achieved because BLIS only modeled step_compute; adding δ₀=14,275 would roughly halve throughput — overshooting the real 3.22 rps target. **Note:** The simplified β₀·48 + β₃ formula (~15,018 µs) understates actual step time because it omits the β₁ decode term (which adds ~2,000-10,000 µs depending on batch decode tokens). The grid search will find the δ₀ that empirically matches throughput; the back-of-envelope serves only to validate the search range [5000, 25000] is physically reasonable.
 
 ---
 
@@ -134,6 +152,8 @@ Fix δ₀ from Stage A, fix α from Stage B. CMA-ES:
 - Bounds: ±15% of Iter 3 (tighter than ±30% since β is already good)
 
 Expected: small adjustments (< 10%). May be skippable if Stage A+B meet all targets.
+
+**ED-1 exception (justified):** Stage C jointly searches 4 β parameters, not one. This is an optimization procedure (finding the best β in a 4D neighborhood), not a hypothesis test (isolating one variable's effect). The tight search radius (σ₀=5%, bounds ±15%) constrains the search to a local neighborhood of the analytically-derived warm-start. Per-stage checkpoints (Stage A → A+B → A+B+C) enable after-the-fact attribution of which stage contributed how much improvement.
 
 **Per-stage checkpoint:** Record and evaluate after Stage C.
 
@@ -213,6 +233,8 @@ pandas>=2.0
 > At ρ < 0.3 (dedicated single-rate low-load workload, not extracted from multi-stage), δ₀'s TOTAL contribution to TTFT is bounded by δ₀ × num_prefill_steps (constant, load-independent). The queueing-amplification component of δ₀'s effect (the part that compounds non-linearly with load) should be < 5% of total TTFT change attributable to δ₀.
 
 **If this fails, it would indicate** that even at low load, queueing dynamics amplify δ₀ beyond the constant per-step overhead — suggesting BLIS's batch formation creates queueing even when the real system does not.
+
+**Low-load workload construction:** Use codellama-34b (best-calibrated model in H30: -23% TTFT RE). Generate a single-stage workload at 2 RPS (ρ ≈ 0.2 with δ₀, well below saturation) with constant tokens matching the general profile (system_prompt_len=512, question_len=547, output_len=512). Run for 200 requests (sufficient for stable mean TTFT, short enough for fast iteration). Same KV blocks (26,602) and server config as training. Alternatively, extract Stage 0 (first 600s, ~8 RPS) from the training experiments and measure δ₀'s effect on that stage only — but this is less clean due to Stage 1 follow-on effects.
 
 **Matched positive control:** At ρ > 0.8 (high-load stage of training experiments), the same δ₀ should produce > 15% TTFT change. This creates a dose-response pair: (low load: δ₀ effect bounded by constant term) vs (high load: δ₀ effect amplified by queueing).
 

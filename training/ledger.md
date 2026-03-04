@@ -191,18 +191,17 @@ Iter 3 proved that 8 global physics coefficients (β, α, γ) produce excellent 
 | β₃ | TP synchronization | Iter 3 NNLS (9445.2 µs/step) | NCCL all-reduce barrier |
 | α₀ | Pre-scheduling | Iter 3 min-wait (13,732 µs) | HTTP parsing, tokenization |
 | α₂ | Output processing | Iter 3 E2E residual (860.6 µs/tok) | β decode error absorber (diagnostic) |
-| **δ₀** | **Fixed scheduling overhead** | **NEW: step-gap NNLS (~1500 µs/step)** | **scheduler.schedule() + prepare_model_input()** |
-| **δ₁** | **Per-request scheduling cost** | **NEW: step-gap NNLS (~10 µs/req)** | **Per-request metadata preparation** |
+| **δ₀** | **Fixed scheduling overhead** | **NEW: measured 8-18ms/step (model-dependent)** | **scheduler.schedule() + prepare_model_input() + Python/GIL** |
 
 ### Two-Phase Strategy
 
 **Phase 1 (analytical warm-start):** NNLS/convex optimization on training data. Unchanged for β, α. New for δ: fit from BATCH_SUMMARY inter-step timing gaps.
 
 **Phase 2 (simulator-in-the-loop refinement):** Coordinate-wise blackbox optimization using BLIS replay with multi-signal loss (step accuracy 15%, queue dynamics 25%, TTFT 30%, E2E 20%, throughput 10%). Four stages in order of consequence:
-1. **δ₀, δ₁ sweep** (grid search, 4 fast experiments) — highest leverage
+1. **δ₀ sweep** (grid search [5000, 25000], 4 fast experiments) — highest leverage
 2. **α₀, α₂ refinement** (Bayesian optimization, 30 evals) — next highest
 3. **β₀-β₃ fine-tuning** (CMA-ES, σ₀=5%, 50 generations) — already close
-4. **Global polish** (optional, all 8, CMA-ES σ₀=3%) — only if gates still fail
+4. **Global polish** (optional, all 7, CMA-ES σ₀=3%) — only if gates still fail
 
 Physics guard-rails: all params bounded ±30% of warm-start, β ≥ 0, δ ≥ 0.
 
