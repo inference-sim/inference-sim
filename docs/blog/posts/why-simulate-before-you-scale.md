@@ -48,14 +48,8 @@ The aerospace industry doesn't test new wing designs by building full aircraft a
 The key difference: **it runs on your laptop in seconds, with no GPUs required.**
 
 ```mermaid
-flowchart TD
-    R["Request Arrival"] --> AC["Admission Control"]
-    AC --> PS["Priority Assignment"]
-    PS --> RT["Routing"]
-    RT --> IQ["Instance Queueing"]
-    IQ --> IS["Instance Scheduling"]
-    IS --> FP["Forward Pass"]
-    FP --> Done["Response Complete"]
+flowchart LR
+    R["Request"] --> AC["Admission<br>Control"] --> PS["Priority<br>Assignment"] --> RT["Routing"] --> IQ["Instance<br>Queueing"] --> IS["Instance<br>Scheduling"] --> FP["Forward<br>Pass"] --> Done["Done"]
 
     style R fill:#4051b5,color:#fff
     style AC fill:#4051b5,color:#fff
@@ -67,7 +61,7 @@ flowchart TD
     style Done fill:#2e7d32,color:#fff
 ```
 
-*Dark blue = cluster-level decisions. Light blue = instance-level processing. BLIS models every stage.*
+*Dark blue = cluster-level decisions. Purple = instance-level processing. BLIS models every stage.*
 
 ## What You Can Do With It
 
