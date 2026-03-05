@@ -2,6 +2,7 @@ package latency
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -392,6 +393,54 @@ func TestNewLatencyModel_UnknownBackend_ReturnsError(t *testing.T) {
 	_, err := NewLatencyModel(coeffs, hw)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "nonexistent")
+}
+
+// TestNewLatencyModel_NegativeCoefficients_ReturnsError verifies BC-5:
+// GIVEN alpha or beta coefficients containing negative values
+// WHEN NewLatencyModel is called
+// THEN it returns an error mentioning "negative"
+func TestNewLatencyModel_NegativeCoefficients_ReturnsError(t *testing.T) {
+	tests := []struct {
+		name  string
+		beta  []float64
+		alpha []float64
+	}{
+		{"negative_alpha_0", []float64{100, 1, 1}, []float64{-1, 0, 0}},
+		{"negative_alpha_2", []float64{100, 1, 1}, []float64{0, 0, -5}},
+		{"negative_beta_0", []float64{-100, 1, 1}, []float64{100, 1, 100}},
+		{"negative_beta_1", []float64{100, -1, 1}, []float64{100, 1, 100}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			coeffs := sim.NewLatencyCoeffs(tc.beta, tc.alpha)
+			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "")
+			_, err := NewLatencyModel(coeffs, hw)
+			if err == nil {
+				t.Fatal("expected error for negative coefficient")
+			}
+			if !strings.Contains(err.Error(), "negative") {
+				t.Errorf("error should mention 'negative', got: %v", err)
+			}
+		})
+	}
+}
+
+// TestBlackboxLatencyModel_StepTime_FloorAtOne verifies BC-4:
+// GIVEN zero beta coefficients (pathological input)
+// WHEN StepTime is called with a non-empty batch
+// THEN the return value is >= 1 (livelock protection via R19)
+func TestBlackboxLatencyModel_StepTime_FloorAtOne(t *testing.T) {
+	coeffs := sim.NewLatencyCoeffs([]float64{0, 0, 0}, []float64{0, 0, 0})
+	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "")
+	model, err := NewLatencyModel(coeffs, hw)
+	if err != nil {
+		t.Fatalf("NewLatencyModel: %v", err)
+	}
+	batch := []*sim.Request{{InputTokens: make([]int, 16), OutputTokens: make([]int, 4), NumNewTokens: 1}}
+	stepTime := model.StepTime(batch)
+	if stepTime < 1 {
+		t.Errorf("StepTime = %d, want >= 1", stepTime)
+	}
 }
 
 // TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification verifies BC-5:

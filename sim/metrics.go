@@ -61,7 +61,7 @@ func NewMetrics() *Metrics {
 	}
 }
 
-func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string) {
+func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string) error {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
 	// Create an instance of our output struct to populate
@@ -117,15 +117,16 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		sort.Float64s(sortedSchedulingDelays)
 		output.SchedulingDelayP99Ms = CalculatePercentile(sortedSchedulingDelays, 99)
 
-		output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
-		output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
+		if vllmRuntime > 0 {
+			output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
+			output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
+		}
 
 		// Print to stdout (results are primary output, not log messages)
 		fmt.Println("=== Simulation Metrics ===")
 		data, err := json.MarshalIndent(output, "", "  ")
 		if err != nil {
-			logrus.Errorf("Error marshalling metrics: %v", err)
-			return
+			return fmt.Errorf("error marshalling metrics: %w", err)
 		}
 		fmt.Println(string(data))
 	}
@@ -151,17 +152,16 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 
 		data, err := json.MarshalIndent(output, "", "  ")
 		if err != nil {
-			logrus.Errorf("Error marshalling metrics to JSON: %v", err)
-			return
+			return fmt.Errorf("error marshalling metrics to JSON: %w", err)
 		}
 
 		writeErr := os.WriteFile(outputFilePath, data, 0644)
 		if writeErr != nil {
-			logrus.Errorf("Error writing JSON file: %v", writeErr)
-			return
+			return fmt.Errorf("error writing JSON file: %w", writeErr)
 		}
 		logrus.Infof("Metrics written to: %s", outputFilePath)
 	}
+	return nil
 }
 
 // sortedRequestIDs returns request IDs from the Requests map in sorted order.
