@@ -207,6 +207,7 @@ Use these templates when generating new hypotheses. Each family has a characteri
 | Family | Related invariants | Related rules |
 |--------|-------------------|---------------|
 | Scheduler invariants | INV-1 (conservation), INV-2 (lifecycle), INV-3 (clock monotonicity), INV-5 (causality), INV-6 (determinism) | R1 (no silent data loss), R5 (transactional mutation), R21 (mutable slice iteration) |
+| Performance-regime | INV-8 (work-conserving) | — |
 | Structural model | INV-4 (KV conservation), INV-7 (signal freshness) | R2 (sort map keys), R11 (guard division), R17 (signal freshness), R22 (pre-check consistency) |
 | Workload/arrival | — | R23 (code path parity) |
 | Robustness | — | R3 (validate numeric parameters), R19 (livelock protection), R20 (degenerate inputs) |
