@@ -15,7 +15,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 go build -o blis main.go
 
 # Run with default model
-./blis run --model meta-llama/llama-3.1-8b-instruct
+./blis run --model qwen/qwen2.5-7b-instruct
 
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
