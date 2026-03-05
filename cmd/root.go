@@ -352,9 +352,15 @@ var runCmd = &cobra.Command{
 				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, or use --latency-model crossmodel",
 				model, gpu, tensorParallelism)
 		}
+		// Analytical backends (roofline, crossmodel): parse HFConfig once, use for
+		// both model config extraction and KV capacity auto-calculation.
 		if backend == "roofline" || backend == "crossmodel" {
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
-			mc, err := latency.GetModelConfig(hfPath)
+			hfConfig, err := latency.ParseHFConfig(hfPath)
+			if err != nil {
+				logrus.Fatalf("Failed to parse HuggingFace config: %v", err)
+			}
+			mc, err := latency.GetModelConfigFromHF(hfConfig)
 			if err != nil {
 				logrus.Fatalf("Failed to load model config: %v", err)
 			}
@@ -374,10 +380,37 @@ var runCmd = &cobra.Command{
 			// Check for MoE model indicators in the raw HF config (roofline-only warning;
 			// crossmodel handles MoE explicitly via the beta2 dispatch term)
 			if backend == "roofline" {
-				if hfRawBytes, readErr := os.ReadFile(hfPath); readErr == nil {
-					if strings.Contains(string(hfRawBytes), `"num_local_experts"`) {
-						logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
-							"Roofline estimation assumes dense transformers and may overestimate MoE latency")
+				if hfConfig.MustGetInt("num_local_experts", 0) > 1 {
+					logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
+						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
+				}
+			}
+
+			// KV capacity auto-calculation: derive total-kv-blocks from model + hardware
+			// when the user hasn't explicitly set --total-kv-blocks. This overrides the
+			// defaults.yaml value (loaded above) with a more accurate estimate derived
+			// from actual model architecture and GPU memory capacity.
+			// R18: cmd.Flags().Changed() ensures CLI flags always take precedence.
+			if !cmd.Flags().Changed("total-kv-blocks") {
+				kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
+				if kvParamsErr != nil {
+					logrus.Fatalf("--latency-model: could not extract KV capacity params: %v\n"+
+					"Set --total-kv-blocks explicitly to override", kvParamsErr)
+				} else if hwConfig.MemoryGiB <= 0 {
+					logrus.Warnf("--latency-model: GPU memory capacity not available in hardware config; using current total-kv-blocks=%d. "+
+						"Add MemoryGiB to hardware_config.json or pass --total-kv-blocks explicitly", totalKVBlocks)
+				} else {
+					if kvParams.HiddenAct == "" {
+						logrus.Infof("--latency-model: hidden_act not set in config.json; assuming SwiGLU (3-matrix MLP) for weight estimation")
+					}
+					autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, kvParams)
+					if calcErr != nil {
+						logrus.Fatalf("--latency-model: KV capacity auto-calculation failed: %v\n"+
+							"Set --total-kv-blocks explicitly to override", calcErr)
+					} else {
+						totalKVBlocks = autoBlocks
+						logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, block_size=%d, MoE=%v)",
+							totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, blockSizeTokens, kvParams.IsMoE)
 					}
 				}
 			}
