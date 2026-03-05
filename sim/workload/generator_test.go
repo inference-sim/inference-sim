@@ -1017,3 +1017,97 @@ func TestGenerateRequests_ReasoningClient_PrefixWithAccumulation(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateRequests_MultiSession_PerRoundLifecycleFiltering(t *testing.T) {
+	// BC-3: Multi-session reasoning must filter individual rounds against
+	// lifecycle windows, not just session start times. A session starting
+	// inside a window can have later rounds that cross the window boundary.
+	//
+	// Timeline with rate=1.0 constant arrival:
+	//   Session 1 starts at t=1,000,000 (1s). Rounds:
+	//     Round 0: t=1,000,000 (in window [0, 2s)) → KEPT
+	//     Round 1: t=1,500,025 (in window) → KEPT
+	//     Round 2: t=2,000,050 (outside window) → FILTERED
+	//     Rounds 3-9: beyond window → FILTERED
+	//   Session 2 would start at t=2,000,000 — filtered at session level.
+	//   Expected: 2 accepted requests.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 1.0,
+		Clients: []ClientSpec{{
+			ID: "ms-lc", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     10,
+					ThinkTimeUs:   500_000,
+					ContextGrowth: "",
+					SingleSession: false,
+				},
+			},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 2_000_000}},
+			},
+		}},
+	}
+	horizon := int64(10_000_000)
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request")
+	}
+	for i, req := range requests {
+		if req.ArrivalTime >= 2_000_000 {
+			t.Errorf("request %d: ArrivalTime=%d >= window end 2000000 (BC-3 violation)",
+				i, req.ArrivalTime)
+		}
+	}
+	if len(requests) >= 10 {
+		t.Errorf("expected fewer than 10 requests due to lifecycle window truncation, got %d", len(requests))
+	}
+}
+
+func TestGenerateRequests_MultiSession_PerRoundHorizonFiltering(t *testing.T) {
+	// BC-4: Multi-session reasoning must filter individual rounds against
+	// horizon, not just the session start time. No lifecycle windows — exercises
+	// the `break` on horizon independently of lifecycle filtering.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 1.0,
+		Clients: []ClientSpec{{
+			ID: "ms-hz", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     20,
+					ThinkTimeUs:   500_000,
+					ContextGrowth: "",
+					SingleSession: false,
+				},
+			},
+		}},
+	}
+	horizon := int64(3_000_000) // 3s — session at 1s, rounds at 1.0s, 1.5s, 2.0s, 2.5s, 3.0s...
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request")
+	}
+	for i, req := range requests {
+		if req.ArrivalTime >= horizon {
+			t.Errorf("request %d: ArrivalTime=%d >= horizon %d (BC-4 violation)",
+				i, req.ArrivalTime, horizon)
+		}
+	}
+	if len(requests) >= 20 {
+		t.Errorf("expected fewer than 20 requests due to horizon truncation, got %d", len(requests))
+	}
+}

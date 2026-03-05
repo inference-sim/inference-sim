@@ -189,8 +189,24 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				if err != nil {
 					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
 				}
-				allRequests = append(allRequests, reasoningReqs...)
+				// Prepend shared prefix to each round's input (BC-2, #516)
+				if len(prefix) > 0 {
+					for _, req := range reasoningReqs {
+						req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
+					}
+				}
+				// Count all generated rounds for perClientCap safety (R19)
 				clientReqCount += int64(len(reasoningReqs))
+				// Filter individual rounds against horizon and lifecycle windows (BC-3, BC-4, #515)
+				for _, req := range reasoningReqs {
+					if req.ArrivalTime >= horizon {
+						break // rounds are in chronological order (BC-4)
+					}
+					if client.Lifecycle != nil && !isInActiveWindow(req.ArrivalTime, client.Lifecycle) {
+						continue // suppress rounds outside lifecycle windows (BC-3)
+					}
+					allRequests = append(allRequests, req)
+				}
 				// Note: we do NOT skip ahead by session duration. Sessions overlap
 				// in time — the arrival process controls inter-session spacing.
 				// This models concurrent chat users starting sessions independently.
