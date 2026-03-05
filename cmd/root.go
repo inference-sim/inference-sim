@@ -483,6 +483,12 @@ var runCmd = &cobra.Command{
 			if outputTokensStdev < 0 {
 				logrus.Fatalf("--output-tokens-stdev must be >= 0, got %d", outputTokensStdev)
 			}
+			if promptTokensMin > promptTokensMax {
+				logrus.Fatalf("--prompt-tokens-min (%d) must be <= --prompt-tokens-max (%d)", promptTokensMin, promptTokensMax)
+			}
+			if outputTokensMin > outputTokensMax {
+				logrus.Fatalf("--output-tokens-min (%d) must be <= --output-tokens-max (%d)", outputTokensMin, outputTokensMax)
+			}
 			if promptTokensMean > promptTokensMax || promptTokensMean < promptTokensMin || promptTokensStdev > promptTokensMax || promptTokensStdev < promptTokensMin {
 				logrus.Fatalf("prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]")
 			}
