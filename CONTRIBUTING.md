@@ -235,13 +235,13 @@ Key points for new contributors:
 
 ## Antipattern Checklist
 
-20 rules, each tracing to a real bug. See [`docs/contributing/standards/rules.md`](docs/contributing/standards/rules.md) for full details.
+23 rules, each tracing to a real bug. See [`docs/contributing/standards/rules.md`](docs/contributing/standards/rules.md) for full details.
 
 Before submitting a PR, verify:
 
 - [ ] R1: No silent `continue`/`return` dropping data
 - [ ] R2: Map keys sorted before float accumulation or ordered output
-- [ ] R3: Every new CLI flag validated (zero, negative, NaN, Inf)
+- [ ] R3: Every new numeric parameter validated (CLI flags AND library constructors)
 - [ ] R4: All struct construction sites audited for new fields
 - [ ] R5: Resource allocation loops handle mid-loop failure with rollback
 - [ ] R6: No `logrus.Fatalf` or `os.Exit` in `sim/` packages
@@ -259,6 +259,9 @@ Before submitting a PR, verify:
 - [ ] R18: CLI flag values not silently overwritten by defaults.yaml
 - [ ] R19: Unbounded retry/requeue loops have circuit breakers
 - [ ] R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)
+- [ ] R21: No `range` over slices that can shrink during iteration
+- [ ] R22: Pre-check estimates consistent with actual operation accounting
+- [ ] R23: Parallel code paths apply equivalent transformations
 
 ## Adding New Components
 
@@ -373,7 +376,7 @@ Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key 
 | Document | What It Covers | When to Read |
 |---|---|---|
 | `CLAUDE.md` | Code architecture, file organization, CLI flags, compact rule/invariant tables | Always — authoritative for current codebase state |
-| `docs/contributing/standards/rules.md` | 20 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
+| `docs/contributing/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
 | `docs/contributing/standards/invariants.md` | 8 system invariants (INV-1 through INV-8) with verification strategies | When touching request lifecycle, KV cache, or metrics |
 | `docs/contributing/standards/experiments.md` | Experiment taxonomy, rigor requirements, findings classification | When running hypothesis experiments |
 | `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |

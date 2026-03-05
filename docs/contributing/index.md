@@ -39,7 +39,7 @@ See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/C
 
 | Document | Covers |
 |----------|--------|
-| [Antipattern Rules (R1-R20)](standards/rules.md) | 20 rules, each tracing to a real bug |
+| [Antipattern Rules (R1-R23)](standards/rules.md) | 23 rules, each tracing to a real bug |
 | [System Invariants (INV-1-8)](standards/invariants.md) | Properties that must always hold |
 | [Engineering Principles](standards/principles.md) | Separation of concerns, interface design, BDD/TDD |
 | [Experiment Standards](standards/experiments.md) | Hypothesis families, rigor requirements |

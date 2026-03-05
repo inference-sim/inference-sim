@@ -22,7 +22,7 @@ Skills and plugins are organized into five layers, from most specific to most ge
 | **Official plugins** | `claude-plugins-official` | Anthropic official tools | `commit-commands` (git workflow), `pr-review-toolkit` (PR review), `code-review`, `feature-dev`, `claude-md-management` |
 | **Community plugins** | `awesome-claude-plugins` | Community-contributed tools | `audit-project` (multi-agent code review), `bug-fix`, `debugger`, `test-writer-fixer` |
 
-Project skills take precedence -- they encode BLIS-specific conventions (20 antipattern rules, 8 system invariants, convergence protocol) that generic tools do not know about.
+Project skills take precedence -- they encode BLIS-specific conventions (23 antipattern rules, 8 system invariants, convergence protocol) that generic tools do not know about.
 
 ## Marketplaces
 

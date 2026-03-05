@@ -81,7 +81,7 @@ For new features that introduce module boundaries or modify the architecture, a 
 
 ### Code Review Standards
 
-During PR reviews, check all Antipattern Prevention rules (1-20) below. Pay special attention to rules 8-10 (exported mutable maps, YAML pointer types, strict YAML parsing) which are easy to miss in new code. Always run `go test ./...` and lint after fixes.
+During PR reviews, check all Antipattern Prevention rules (1-23) below. Pay special attention to rules 8-10 (exported mutable maps, YAML pointer types, strict YAML parsing) which are easy to miss in new code. Always run `go test ./...` and lint after fixes.
 
 ### Key Invariants to Maintain
 
@@ -120,13 +120,13 @@ Full details: see [`docs/contributing/standards/principles.md`](docs/contributin
 
 > **Canonical source:** [`docs/contributing/standards/rules.md`](docs/contributing/standards/rules.md). If this section diverges, rules.md is authoritative.
 
-20 rules, each tracing to a real bug. Full details (evidence, checks, enforcement): see [`docs/contributing/standards/rules.md`](docs/contributing/standards/rules.md).
+23 rules, each tracing to a real bug. Full details (evidence, checks, enforcement): see [`docs/contributing/standards/rules.md`](docs/contributing/standards/rules.md).
 
 | # | Rule | One-sentence summary |
 |---|------|---------------------|
 | R1 | No silent data loss | Every error path must return error, panic, or increment counter — never silently drop data |
 | R2 | Sort map keys | Map iteration feeding float sums or output ordering must sort keys first (determinism) |
-| R3 | Validate CLI flags | Every numeric flag validated for zero, negative, NaN, Inf |
+| R3 | Validate numeric parameters | Every numeric parameter validated — CLI flags AND library constructors |
 | R4 | Construction site audit | Adding a struct field? Grep for ALL literal construction sites, update every one |
 | R5 | Transactional mutation | Resource-allocating loops must rollback on mid-loop failure |
 | R6 | No Fatalf in library | `sim/` never terminates the process — return errors to callers |
@@ -144,6 +144,9 @@ Full details: see [`docs/contributing/standards/principles.md`](docs/contributin
 | R18 | CLI flag precedence | defaults.yaml must not silently override user-provided CLI flags |
 | R19 | Livelock protection | Unbounded retry/requeue loops must have circuit breakers |
 | R20 | Degenerate detector inputs | Anomaly detectors must handle empty, skewed, or zero inputs explicitly |
+| R21 | No range over mutable slices | Go `range` captures slice header at entry — use index-based iteration when slice can shrink |
+| R22 | Pre-check consistency | Capacity pre-checks must not be stricter than the actual operation they guard |
+| R23 | Code path parity | Parallel code paths producing same output must apply equivalent transformations |
 
 
 ### Current Implementation Focus
@@ -369,7 +372,7 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 
 ### Standards (what rules apply)
 
-- `docs/contributing/standards/rules.md`: **20 antipattern rules** (R1-R20) — each with evidence, checks, enforcement locations
+- `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
 - `docs/contributing/standards/invariants.md`: **8 system invariants** (INV-1 through INV-8) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/contributing/convergence.md`), findings classification
