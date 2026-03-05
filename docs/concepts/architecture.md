@@ -8,29 +8,52 @@ This page describes how BLIS simulates multi-instance inference serving clusters
 
 A BLIS cluster consists of N independent inference instances orchestrated by a shared-clock event loop. Each incoming request passes through a three-stage pipeline — admission, routing, and per-instance processing — before metrics are aggregated across all instances.
 
-```
-                    ┌─────────────┐
-  Requests ───────▶│  Admission   │──rejected──▶ (counted)
-                    └──────┬──────┘
-                           │ admitted
-                    ┌──────▼──────┐
-                    │   Routing   │
-                    └──────┬──────┘
-                           │ target instance selected
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-        ┌──────────┐ ┌──────────┐ ┌──────────┐
-        │Instance 0│ │Instance 1│ │Instance 2│
-        └──────────┘ └──────────┘ └──────────┘
-              │            │            │
-              └────────────┼────────────┘
-                    ┌──────▼──────┐
-                    │   Metrics   │──▶ stdout (JSON)
-                    │ Aggregation │
-                    └─────────────┘
-```
+```mermaid
+flowchart TD
+    WG["Workload<br/>Generator"] -->|Requests| Adm{"Admission<br/>Policy"}
+    Adm -->|rejected| Rej["Rejected<br/>(counted)"]
+    Adm -->|admitted| Rtr["Routing Policy<br/>(WeightedScoring)<br/>PA:3 QD:2 KV:2"]
 
-![Cluster Data Flow](diagrams/clusterdataflow.png)
+    Snap["Routing Snapshots<br/>QueueDepth, BatchSize,<br/>KVUtil, InFlightRequests"] -.-> Rtr
+
+    Rtr --> I0
+    Rtr --> I1
+    Rtr --> IN
+
+    subgraph I0 ["Instance 0"]
+        I0WQ["WaitQueue → Batch Formation<br/>KV Cache → Latency Model"]
+    end
+
+    subgraph I1 ["Instance 1"]
+        I1Int[" · · · "]
+    end
+
+    subgraph IN ["Instance N"]
+        INInt["WaitQueue → Batch Formation<br/>KV Cache → Latency Model"]
+    end
+
+    I0 -.->|snapshots| Snap
+    I1 -.->|snapshots| Snap
+    IN -.->|snapshots| Snap
+
+    I0 --> Met["Metrics Aggregation<br/>+ Fitness Evaluation"]
+    I1 --> Met
+    IN --> Met
+
+    Met --> Out1["stdout (JSON)<br/>Deterministic"]
+    Met --> Out2["stderr (logrus)<br/>Diagnostics"]
+
+    style WG fill:#a5d8ff
+    style Adm fill:#ffec99
+    style Rej fill:#ffc9c9
+    style Rtr fill:#b2f2bb
+    style Snap fill:#e7f5ff
+    style I0 fill:#d0bfff
+    style IN fill:#d0bfff
+    style Met fill:#ffd8a8
+    style Out1 fill:#d0bfff
+    style Out2 fill:#f1f3f5
+```
 
 ## Shared-Clock Event Loop
 
@@ -87,7 +110,32 @@ The routing decision follows this pipeline:
 
 Default weights: `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity). Note: weights are normalized to sum to 1.0 before scoring, so only weight ratios matter — `prefix-affinity:3,queue-depth:2` is identical to `prefix-affinity:30,queue-depth:20`. To add a new scorer, see [Extension Recipes](../contributing/extension-recipes.md).
 
-![Scoring Pipeline](diagrams/scoringpipeline.png)
+```mermaid
+flowchart TD
+    Req["Request<br/>+ Input Tokens"] --> S1
+    Snap["Routing Snapshots<br/>(per instance)<br/>QD, BS, KVUtil"] --> S2
+    Snap --> S3
+
+    S1["prefix-affinity<br/>(prefix overlap proportion)"] --> W1["× weight (3)"]
+    S2["queue-depth<br/>(min-max norm of load)"] --> W2["× weight (2)"]
+    S3["kv-utilization<br/>(1 − KVUtilization)"] --> W3["× weight (2)"]
+
+    W1 --> Sum["Weighted Sum<br/>(per instance)<br/>3×PA + 2×QD + 2×KV"]
+    W2 --> Sum
+    W3 --> Sum
+
+    Sum --> Sel["Argmax<br/>→ Selected Instance"]
+    Sel -->|observer callback| Obs["Update prefix<br/>cache index"]
+    Obs -.->|stateful feedback| S1
+
+    style Req fill:#a5d8ff
+    style Snap fill:#e7f5ff
+    style S1 fill:#fff3e0
+    style S2 fill:#fff3e0
+    style S3 fill:#fff3e0
+    style Sel fill:#c8e6c9
+    style Obs fill:#ffecb3
+```
 
 ## Scorer Composition
 

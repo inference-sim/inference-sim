@@ -22,17 +22,19 @@ This document serves two audiences:
 
 ### Relationship to Existing Docs
 
-```
-Design Guidelines (this doc)          ← Principles, target architecture, extension framework
-    ↓ informs
+```mermaid
+flowchart TD
+    DG["Design Guidelines<br/>(this doc)"] -->|informs| Downstream
 
-┌─────────────────────────────────────────────────┐
-│  Design Docs  ←→  Macro Plan                    │
-│       ↓                ↓                        │
-│  Micro Plans     Micro Plans                    │
-│       ↓                ↓                        │
-│  CLAUDE.md (updated by each PR)                 │
-└─────────────────────────────────────────────────┘
+    subgraph Downstream ["Downstream Artifacts"]
+        DD["Design Docs"] <-->|cross-reference| MP["Macro Plan"]
+        DD --> MiP["Micro Plans"]
+        MP --> MiP
+        MiP --> CM["CLAUDE.md<br/>(updated by each PR)"]
+    end
+
+    style DG fill:#e1f5fe
+    style CM fill:#e8f5e9
 ```
 
 | Scenario | Path |
@@ -196,34 +198,38 @@ The kernel provides the execution substrate. Domain modules define *what* is bei
 
 BLIS models an extensible distributed inference platform — not any single system. llm-d, vLLM, SGLang, Mooncake, and LMCache are all target systems whose behaviors should be expressible through BLIS's module composition.
 
-```
-                    ┌──────────────────────────────────────────────┐
-                    │            Cluster Orchestrator              │
-                    │  (shared clock, event dispatch, aggregation) │
-                    └──────┬──────────┬──────────┬────────────────┘
-                           │          │          │
-                    ┌──────▼───┐ ┌────▼────┐ ┌───▼──────┐
-                    │ Admission│ │ Router  │ │AutoScaler│
-                    │ Policy   │ │ Policy  │ │ Policy   │
-                    └──────────┘ └────┬────┘ └──────────┘
-                                      │
-              ┌───────────────────────┬┴──────────────────────┐
-              │                       │                       │
-        ┌─────▼──────┐        ┌──────▼──────┐        ┌──────▼──────┐
-        │ Instance 0  │        │ Instance 1  │        │ Instance N  │
-        │┌───────────┐│        │             │        │             │
-        ││ Scheduler  ││        │   . . .     │        │   . . .     │
-        │├───────────┤│        │             │        │             │
-        ││ Latency   ││        └─────────────┘        └─────────────┘
-        ││ Model     ││
-        │├───────────┤│
-        ││ KV Cache  ││
-        ││ Manager   ││
-        │├───────────┤│
-        ││ Batch     ││
-        ││ Formation ││
-        │└───────────┘│
-        └─────────────┘
+```mermaid
+flowchart TD
+    CO["Cluster Orchestrator<br/>(shared clock, event dispatch, aggregation)"]
+    CO --> Adm["Admission<br/>Policy"]
+    CO --> Rtr["Router<br/>Policy"]
+    CO --> AS["AutoScaler<br/>Policy"]
+    Rtr --> I0
+    Rtr --> I1
+    Rtr --> IN
+
+    subgraph I0 ["Instance 0"]
+        Sch["Scheduler"]
+        LM["Latency Model"]
+        KV["KV Cache Manager"]
+        BF["Batch Formation"]
+    end
+
+    subgraph I1 ["Instance 1"]
+        direction TB
+        Dots1["· · ·"]
+    end
+
+    subgraph IN ["Instance N"]
+        direction TB
+        DotsN["· · ·"]
+    end
+
+    style CO fill:#e1f5fe
+    style Adm fill:#fff3e0
+    style Rtr fill:#fff3e0
+    style AS fill:#fff3e0
+    style I0 fill:#e8f5e9
 ```
 
 | Module | Responsibility | Interface Today | Status |
