@@ -38,7 +38,7 @@ flowchart TD
     R(["New Request"]) --> AC("Admission Control")
     AC --> PS("Priority Scheduling")
     PS --> RT("Routing")
-    RT --->|"picks best GPU"| Q("Queueing")
+    RT --->|"picks best instance"| Q("Queueing")
     Q --> S("Scheduling")
     S --> FP("Forward Pass")
     FP -->|"output tokens"| Q
