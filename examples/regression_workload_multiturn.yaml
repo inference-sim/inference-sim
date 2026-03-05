@@ -48,7 +48,7 @@ clients:
   # With short output (15 tokens, ~104ms decode), 72ms = 40% of request time.
   - id: "heavy-coding-sessions"
     tenant_id: "developers"
-    slo_class: "interactive"
+    slo_class: "standard"
     rate_fraction: 0.40
     streaming: true
     arrival:
@@ -76,7 +76,7 @@ clients:
   # Cache miss costs ~2048 * 17.67us = 36.2ms.
   - id: "chat-sessions"
     tenant_id: "chat-users"
-    slo_class: "interactive"
+    slo_class: "standard"
     rate_fraction: 0.25
     streaming: true
     arrival:
@@ -105,7 +105,7 @@ clients:
   # Cache miss costs ~1024 * 17.67us = 18.1ms.
   - id: "qa-sessions"
     tenant_id: "qa-users"
-    slo_class: "interactive"
+    slo_class: "standard"
     rate_fraction: 0.15
     streaming: true
     arrival:
@@ -132,7 +132,7 @@ clients:
   # Single-turn realtime: no prefix, no session, needs low latency.
   # Should route to least-loaded instances, avoiding session-heavy ones.
   - id: "realtime-api"
-    slo_class: "realtime"
+    slo_class: "critical"
     rate_fraction: 0.20
     streaming: true
     arrival:
