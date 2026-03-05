@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 // GenerateRequests creates a request sequence from a WorkloadSpec.
@@ -30,9 +31,14 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		if spec.Category == "" {
 			spec.Category = expanded.Category
 		}
-		if spec.AggregateRate <= 0 {
-			spec.AggregateRate = expanded.AggregateRate
+		// Always use the expanded aggregate rate — per-stage rates define the
+		// ground truth. A user-specified aggregate_rate would silently scale
+		// all per-stage rates by the wrong factor.
+		if spec.AggregateRate > 0 && spec.AggregateRate != expanded.AggregateRate {
+			logrus.Warnf("overriding aggregate_rate %.2f with sum of stage rates %.2f",
+				spec.AggregateRate, expanded.AggregateRate)
 		}
+		spec.AggregateRate = expanded.AggregateRate
 	}
 
 	// Load ServeGen data if specified (populates spec.Clients)

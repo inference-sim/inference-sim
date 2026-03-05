@@ -68,11 +68,24 @@ func validateInferencePerfSpec(spec *InferencePerfSpec) error {
 	if sp.OutputLen < 0 {
 		return fmt.Errorf("inference_perf.shared_prefix: output_len must be non-negative, got %d", sp.OutputLen)
 	}
+	// Multi-turn request generation (generator.go reasoning path) does not check
+	// lifecycle windows, so multi-stage + multi-turn would silently ignore stage
+	// boundaries. Reject explicitly until the generator supports this combination.
+	if len(spec.Stages) > 1 && sp.EnableMultiTurnChat {
+		return fmt.Errorf("inference_perf: multi-stage with enable_multi_turn_chat is not supported; " +
+			"multi-turn request generation does not respect lifecycle windows")
+	}
 	return nil
 }
 
 // ExpandInferencePerfSpec converts an InferencePerfSpec into a standard WorkloadSpec.
 // The seed is passed through to the resulting WorkloadSpec.
+//
+// Single-stage: N*M clients with no lifecycle windows, aggregateRate = stage rate.
+// Multi-stage: N*M clients per stage, each active only during its stage's window.
+// aggregateRate = sum of stage rates; each client's rateFraction = stageRate / (N*M).
+// This ensures each stage emits at its configured rate during its time window.
+//
 // Returns error if the spec is invalid.
 func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec, error) {
 	if err := validateInferencePerfSpec(spec); err != nil {
@@ -80,20 +93,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 	}
 
 	sp := spec.SharedPrefix
-	numClients := sp.NumUniqueSystemPrompts * sp.NumUsersPerSystemPrompt
-
-	// Compute aggregate rate as time-weighted average across stages.
-	// Division is safe: validation guarantees at least one stage with positive duration.
-	var totalDuration int64
-	var weightedRateSum float64
-	for _, stage := range spec.Stages {
-		totalDuration += stage.Duration
-		weightedRateSum += stage.Rate * float64(stage.Duration)
-	}
-	aggregateRate := weightedRateSum / float64(totalDuration)
-
-	// Compute lifecycle windows from stages (nil for single stage)
-	windows := stagesToWindows(spec.Stages)
+	numClientsPerStage := sp.NumUniqueSystemPrompts * sp.NumUsersPerSystemPrompt
 
 	// Build constant distributions for fixed lengths
 	inputDist := constantDist(float64(sp.QuestionLen))
@@ -120,30 +120,73 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 		category = "reasoning"
 	}
 
-	// Generate N*M clients
-	clients := make([]ClientSpec, 0, numClients)
-	rateFraction := 1.0 / float64(numClients)
+	var clients []ClientSpec
+	var aggregateRate float64
 
-	for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
-		prefixGroup := fmt.Sprintf("prompt-%d", p)
-		for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
-			clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
-			client := ClientSpec{
-				ID:           clientID,
-				TenantID:     prefixGroup,
-				SLOClass:     "batch",
-				RateFraction: rateFraction,
-				Arrival:      ArrivalSpec{Process: "poisson"},
-				InputDist:    inputDist,
-				OutputDist:   outputDist,
-				PrefixGroup:  prefixGroup,
-				PrefixLength: sp.SystemPromptLen,
-				Reasoning:    reasoning,
+	if len(spec.Stages) == 1 {
+		// Single stage: no lifecycle windows needed.
+		aggregateRate = spec.Stages[0].Rate
+		rateFraction := 1.0 / float64(numClientsPerStage)
+		clients = make([]ClientSpec, 0, numClientsPerStage)
+
+		for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+			prefixGroup := fmt.Sprintf("prompt-%d", p)
+			for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+				clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+				clients = append(clients, ClientSpec{
+					ID:           clientID,
+					TenantID:     prefixGroup,
+					SLOClass:     "batch",
+					RateFraction: rateFraction,
+					Arrival:      ArrivalSpec{Process: "poisson"},
+					InputDist:    inputDist,
+					OutputDist:   outputDist,
+					PrefixGroup:  prefixGroup,
+					PrefixLength: sp.SystemPromptLen,
+					Reasoning:    reasoning,
+				})
 			}
-			if len(windows) > 0 {
-				client.Lifecycle = &LifecycleSpec{Windows: windows}
+		}
+	} else {
+		// Multi-stage: create per-stage client cohorts with lifecycle windows.
+		// Each stage's N*M clients are active only during that stage's window
+		// and emit at that stage's rate.
+		//
+		// Math: aggregateRate = sum(stageRates), rateFraction = stageRate/numClientsPerStage.
+		// After normalization, each client's rate = stageRate/numClientsPerStage.
+		// During a stage, N*M clients are active → total rate = stageRate.
+		windows := stagesToWindows(spec.Stages)
+
+		for _, stage := range spec.Stages {
+			aggregateRate += stage.Rate
+		}
+
+		clients = make([]ClientSpec, 0, numClientsPerStage*len(spec.Stages))
+		for s, stage := range spec.Stages {
+			rateFraction := stage.Rate / float64(numClientsPerStage)
+			stageLifecycle := &LifecycleSpec{
+				Windows: []ActiveWindow{windows[s]},
 			}
-			clients = append(clients, client)
+
+			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+				prefixGroup := fmt.Sprintf("prompt-%d", p)
+				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+					clientID := fmt.Sprintf("stage-%d-prompt-%d-user-%d", s, p, u)
+					clients = append(clients, ClientSpec{
+						ID:           clientID,
+						TenantID:     prefixGroup,
+						SLOClass:     "batch",
+						RateFraction: rateFraction,
+						Arrival:      ArrivalSpec{Process: "poisson"},
+						InputDist:    inputDist,
+						OutputDist:   outputDist,
+						PrefixGroup:  prefixGroup,
+						PrefixLength: sp.SystemPromptLen,
+						Reasoning:    reasoning,
+						Lifecycle:    stageLifecycle,
+					})
+				}
+			}
 		}
 	}
 
