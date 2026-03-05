@@ -78,3 +78,40 @@ func TestComputeBlockHashes_FourBlocks_MatchesManualChaining(t *testing.T) {
 		t.Errorf("block 3: got %q, want %q", hashes[3], m3)
 	}
 }
+
+func BenchmarkHashBlock(b *testing.B) {
+	// Simulate a typical block: 16 tokens with values in [0, 128000]
+	tokens := make([]int, 16)
+	for i := range tokens {
+		tokens[i] = i * 1000
+	}
+	prevHash := "abc123"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		HashBlock(prevHash, tokens)
+	}
+}
+
+func BenchmarkComputeBlockHashes(b *testing.B) {
+	// Simulate a reasoning workload: 2048 tokens, block size 16 = 128 blocks
+	tokens := make([]int, 2048)
+	for i := range tokens {
+		tokens[i] = i * 100
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ComputeBlockHashes(16, tokens)
+	}
+}
+
+func BenchmarkComputeBlockHashes_LargeContext(b *testing.B) {
+	// Simulate a long reasoning context: 20480 tokens, block size 16 = 1280 blocks
+	tokens := make([]int, 20480)
+	for i := range tokens {
+		tokens[i] = i
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ComputeBlockHashes(16, tokens)
+	}
+}
