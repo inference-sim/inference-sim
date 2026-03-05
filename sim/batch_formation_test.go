@@ -559,3 +559,81 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 		t.Errorf("INV-4: expected %d used blocks after preemption, got %d", expectedUsed, kvCache.UsedBlocks())
 	}
 }
+
+// TestVLLMBatchFormation_LivelockResolution verifies FIX-3:
+// The pathological workload from #349 (seed=7, 7463 blocks, output 3200-3596 tokens)
+// must complete requests instead of livelocking with 100K+ preemptions.
+func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// GIVEN parameters matching tmp/run.sh reproducer
+	// Note: NewLatencyCoeffs takes (betaCoeffs, alphaCoeffs)
+	cfg := SimConfig{
+		Horizon: 120000000,
+		Seed:    7,
+		KVCacheConfig: NewKVCacheConfig(
+			7463, // total blocks
+			16,   // block size
+			0, 0, 0, 0,
+		),
+		BatchConfig: NewBatchConfig(
+			256,  // max running reqs
+			2048, // max scheduled tokens
+			0,    // long prefill threshold (disabled)
+		),
+		LatencyCoeffs: NewLatencyCoeffs(
+			[]float64{5752.705191348184, 17.25086436834028, 5.999143920128404},   // beta
+			[]float64{232.46191091038054, 1.752360364195244, 3357.4400353290152}, // alpha
+		),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		PolicyConfig:        NewPolicyConfig("constant", "fcfs"),
+	}
+
+	sim := mustNewSimulator(t, cfg)
+
+	// Inject 30 requests (subset of 300 for test speed) with the workload profile.
+	// Uses its own RNG for workload generation (independent from simulator's RNG).
+	rng := NewPartitionedRNG(NewSimulationKey(7))
+	wlRng := rng.ForSubsystem(SubsystemWorkload)
+	arrivalTime := int64(0)
+	for i := 0; i < 30; i++ {
+		inputLen := 200 + wlRng.Intn(201)  // 200-400
+		outputLen := 3200 + wlRng.Intn(397) // 3200-3596
+		req := &Request{
+			ID:           fmt.Sprintf("req_%d", i),
+			InputTokens:  make([]int, inputLen),
+			OutputTokens: make([]int, outputLen),
+			ArrivalTime:  arrivalTime,
+			State:        StateQueued,
+		}
+		sim.InjectArrival(req)
+		arrivalTime += 100000 // 100ms between arrivals (rate=10/s)
+	}
+
+	sim.Run()
+
+	// THEN some requests must complete (livelock resolved)
+	if sim.Metrics.CompletedRequests == 0 {
+		t.Errorf("FIX-3: expected completed_requests > 0, got 0 (livelock not resolved)")
+	}
+
+	// AND preemption count must be dramatically reduced (not 100K+)
+	if sim.Metrics.PreemptionCount > 1000 {
+		t.Errorf("FIX-3: expected preemption_count < 1000, got %d (cascading preemption not resolved)",
+			sim.Metrics.PreemptionCount)
+	}
+
+	// AND request conservation must hold (INV-1)
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != 30 {
+		t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, expected 30",
+			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,
+			sim.Metrics.DroppedUnservable, total)
+	}
+
+	t.Logf("Results: completed=%d, queued=%d, running=%d, dropped=%d, preemptions=%d",
+		sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,
+		sim.Metrics.DroppedUnservable, sim.Metrics.PreemptionCount)
+}

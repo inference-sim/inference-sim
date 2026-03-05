@@ -71,7 +71,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	// Zero NumNewTokens for all running requests at the start of each scheduling pass.
 	// This prevents stale values from the prior step from causing phantom budget
 	// restoration when a request is preempted before being visited in this pass.
-	for _, req := range ctx.RunningBatch.Requests {
+	for _, req := range result.RunningBatch.Requests {
 		req.NumNewTokens = 0
 	}
 
@@ -180,10 +180,11 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			})
 
 			// Defensive: restore token budget if preempted request was already
-			// scheduled in this step. With tail-only eviction and head-to-tail
-			// iteration, this fires when a request earlier in the batch (already
-			// visited and scheduled) is evicted. The NumNewTokens zeroing at
-			// FormBatch entry prevents stale values from prior steps.
+			// scheduled in this step. Currently unreachable with head-to-tail
+			// iteration + tail-only eviction (evicted requests are always
+			// unvisited, so NumNewTokens is 0 from the FormBatch entry zeroing).
+			// Guards against future iteration order changes (e.g., priority-based
+			// eviction that could evict an already-visited request).
 			if preemptedRequest.NumNewTokens > 0 {
 				*tokenBudget += int64(preemptedRequest.NumNewTokens)
 				preemptedRequest.NumNewTokens = 0
