@@ -62,7 +62,7 @@ The simulation time limit in ticks (microseconds). The simulation stops when the
 
 ### ITL (Inter-Token Latency)
 
-The observed time between consecutive decode steps for a single request. ITL varies with batch composition changes between steps. Mean ITL is reported as TPOT (Time Per Output Token).
+The observed time between consecutive decode steps for a single request. A request generating N output tokens produces N-1 ITL entries (the number of inter-token gaps). ITL varies with batch composition changes between steps. Mean ITL is reported as TPOT (Time Per Output Token).
 
 ### KV Cache
 
