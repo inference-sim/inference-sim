@@ -13,12 +13,12 @@ These pages explain BLIS's architecture and core mechanisms at the level needed 
 
 ## Diagrams
 
-| Diagram | Description |
-|---------|-------------|
-| ![Cluster Data Flow](diagrams/clusterdataflow.png) | End-to-end cluster pipeline: request arrival through metrics output |
-| ![Request Lifecycle](diagrams/requestlifecycle.png) | Request state machine: states, transitions, and metric recording points |
-| ![Event Processing](diagrams/eventprocessingloop.png) | DES event loop: min-heap queue, clock advancement, Step() decomposition |
-| ![Scoring Pipeline](diagrams/scoringpipeline.png) | Weighted scorer composition: per-scorer normalization, weight multiplication, argmax selection |
+Each concept page includes inline Mermaid diagrams:
+
+- **[Cluster Data Flow](architecture.md#overview)** — End-to-end cluster pipeline: request arrival through metrics output
+- **[Request Lifecycle](core-engine.md#request-lifecycle)** — Request state machine: states, transitions, and metric recording points
+- **[Event Processing Loop](core-engine.md#event-queue)** — DES event loop: min-heap queue, clock advancement, Step() decomposition
+- **[Scoring Pipeline](architecture.md#weighted-scoring-policy)** — Weighted scorer composition: per-scorer normalization, weight multiplication, argmax selection
 
 ## Reading Order
 

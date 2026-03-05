@@ -34,11 +34,37 @@ The event queue is a min-heap ordered by event timestamp. Events represent state
 
 **Work-conserving (INV-8):** After every step completion, if the wait queue is non-empty, a `StepEvent` must exist in the event queue. The simulator never idles while work is waiting.
 
-![Event Processing Loop](diagrams/eventprocessingloop.png)
+```mermaid
+flowchart TD
+    EQ["Event Queue (min-heap)<br/>Ordered by timestamp"] -->|Pop min| Clock["Advance clock<br/>to event.timestamp"]
+    Clock --> Exec["Execute Event Handler<br/>Arrival → Queued → WaitQ<br/>Step → Step() phases<br/>Completion → metrics"]
+    Exec -->|produces new events| EQ
+    Exec -->|clock ≥ horizon<br/>or queue empty| Done["Simulation<br/>Complete"]
+
+    style EQ fill:#fff9db
+    style Clock fill:#a5d8ff
+    style Exec fill:#b2f2bb
+    style Done fill:#c8e6c9
+```
 
 ## Step Phases
 
 The `Step()` function is a 4-line orchestrator that delegates to four phases:
+
+```mermaid
+flowchart TD
+    P1["1. scheduleBatch<br/>Priority assignment<br/>Queue reordering<br/>Batch formation"]
+    P2["2. executeBatchStep<br/>Latency estimation<br/>Prefill/decode progress<br/>TTFT at boundary"]
+    P3["3. processCompletions<br/>Release KV blocks<br/>Record E2E metrics<br/>Schedule RequestLeft"]
+    P4["4. scheduleNextStep<br/>Batch has work → Step<br/>Queue has work → Step<br/>Both empty → idle"]
+
+    P1 --> P2 --> P3 --> P4
+
+    style P1 fill:#d0bfff
+    style P2 fill:#d0bfff
+    style P3 fill:#d0bfff
+    style P4 fill:#d0bfff
+```
 
 ### Phase 1: Schedule Batch (`scheduleBatch`)
 
@@ -71,21 +97,44 @@ Identify completed requests (all output tokens generated), release their KV bloc
 
 Requests follow a linear state machine with one exception (preemption):
 
-```
-                      ┌─────────────────────────────────┐
-                      │         Preemption               │
-                      │    (re-enqueue at front)         │
-                      ▼                                  │
-  Arrival ──▶ Queued ──▶ Running ──▶ Completed
-               │                        │
-               │                        ▼
-               │                   RequestLeft
-               │
-  Arrival ──▶ DroppedUnservable
-             (input too large for KV cache)
+```mermaid
+stateDiagram-v2
+    [*] --> Arrival
+    Arrival --> Queued : alpha queueing delay
+    Arrival --> DroppedUnservable : input too large for KV cache
+
+    state "Queued" as Queued
+    note right of Queued
+        EnqueueTime recorded
+        Scheduler orders queue
+    end note
+
+    Queued --> Running : BatchFormation selects
+
+    state "Running" as Running
+    note right of Running
+        ScheduleTime recorded
+        TTFT at prefill→decode boundary
+        KV blocks allocated
+        ITL recorded per decode step
+    end note
+
+    Running --> Completed
+    Running --> Queued : Preemption (KV eviction, re-enqueue front)
+
+    state "Completed" as Completed
+    note right of Completed
+        CompletionTime recorded
+        KV blocks released
+        E2E = CompletionTime − ArrivalTime
+    end note
+
+    Completed --> RequestLeft
+    RequestLeft --> [*]
+    DroppedUnservable --> [*]
 ```
 
-![Request Lifecycle](diagrams/requestlifecycle.png)
+> **INV-5 (Causality):** ArrivalTime ≤ EnqueueTime ≤ ScheduleTime ≤ CompletionTime
 
 ### States
 

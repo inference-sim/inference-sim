@@ -8,45 +8,25 @@ This document describes the complete workflow for implementing a PR from any sou
 
 ## Overview
 
-```
-┌─────────────────────────────────┐
-│ Step 1: Create Isolated Workspace│
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│ Step 2: Write Implementation Plan│
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│ Step 2.5: Review the Plan        │ (10 perspectives → convergence)
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│ Step 3: Human Review             │ (Approve plan)
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│ Step 4: Implement the Plan       │
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│ Step 4.5: Review the Code        │ (10 perspectives → convergence)
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│ Step 4.75: Pre-Commit Self-Audit │ (Critical thinking — no agent)
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│ Step 5: Commit, Push, Create PR  │
-└─────────────────────────────────┘
+```mermaid
+flowchart TD
+    S1["Step 1: Create Isolated Workspace"]
+    S2["Step 2: Write Implementation Plan"]
+    S25["Step 2.5: Review the Plan<br/>(10 perspectives → convergence)"]
+    S3["Step 3: Human Review<br/>(Approve plan)"]
+    S4["Step 4: Implement the Plan"]
+    S45["Step 4.5: Review the Code<br/>(10 perspectives → convergence)"]
+    S475["Step 4.75: Pre-Commit Self-Audit<br/>(Critical thinking — no agent)"]
+    S5["Step 5: Commit, Push, Create PR"]
+
+    S1 --> S2 --> S25 --> S3 --> S4 --> S45 --> S475 --> S5
+    S25 -->|convergence<br/>rounds| S25
+    S45 -->|convergence<br/>rounds| S45
+
+    style S25 fill:#fff3e0
+    style S3 fill:#e1bee7
+    style S45 fill:#fff3e0
+    style S475 fill:#ffecb3
 ```
 
 **Key insights:**

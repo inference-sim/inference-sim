@@ -10,60 +10,30 @@ This document describes the end-to-end process for running a hypothesis-driven e
 
 ## Overview
 
-```
-┌──────────────────────────────────┐
-│ Step 0: Create Worktree          │ (Isolated workspace)
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 1: Select & Classify        │ (Family, VV&UQ, type)
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 2: Design + Design Review   │ (5 perspectives → convergence)
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 3: Human Approval           │ (Approve design before implementation)
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 4: Implement                │ (run.sh + analyze.py using harness)
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 5: Code Review              │ (5 perspectives → convergence)
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 6: Run Experiments          │ (Execute across seeds)
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 7: Analyze & Document       │ (FINDINGS.md)
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 8: FINDINGS Review          │ (10 perspectives → convergence)
-└──────────┬───────────────────────┘  ↑ (iterate rounds until convergence)
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 9: Self-Audit               │ (6 dimensions, no agent)
-└──────────┬───────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────┐
-│ Step 10: Verify + Commit + PR    │ (verification gate, commit-push-pr)
-└──────────────────────────────────┘
+```mermaid
+flowchart TD
+    S0["Step 0: Create Worktree<br/>(Isolated workspace)"]
+    S1["Step 1: Select & Classify<br/>(Family, VV&UQ, type)"]
+    S2["Step 2: Design + Design Review<br/>(5 perspectives → convergence)"]
+    S3["Step 3: Human Approval<br/>(Approve design before implementation)"]
+    S4["Step 4: Implement<br/>(run.sh + analyze.py using harness)"]
+    S5["Step 5: Code Review<br/>(5 perspectives → convergence)"]
+    S6["Step 6: Run Experiments<br/>(Execute across seeds)"]
+    S7["Step 7: Analyze & Document<br/>(FINDINGS.md)"]
+    S8["Step 8: FINDINGS Review<br/>(10 perspectives → convergence)"]
+    S9["Step 9: Self-Audit<br/>(6 dimensions, no agent)"]
+    S10["Step 10: Verify + Commit + PR<br/>(verification gate)"]
+
+    S0 --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9 --> S10
+    S2 -->|convergence<br/>rounds| S2
+    S5 -->|convergence<br/>rounds| S5
+    S8 -->|convergence<br/>rounds| S8
+
+    style S2 fill:#fff3e0
+    style S3 fill:#e1bee7
+    style S5 fill:#fff3e0
+    style S8 fill:#fff3e0
+    style S9 fill:#ffecb3
 ```
 
 **Key insights:**

@@ -303,8 +303,7 @@ inference-sim/
 │   │   ├── glossary.md        # Concepts glossary
 │   │   ├── architecture.md    # Cluster architecture
 │   │   ├── core-engine.md     # Core DES engine
-│   │   ├── roofline.md        # Roofline step time estimation
-│   │   └── diagrams/          # Architecture diagrams (PNG + Excalidraw source)
+│   │   └── roofline.md        # Roofline step time estimation
 │   ├── reference/             # Configuration and model reference
 │   │   ├── index.md           # Reference overview
 │   │   ├── configuration.md   # Configuration reference
