@@ -91,7 +91,7 @@ flowchart TB
         L2["Identify bottlenecks<br>& failure modes"]
     end
     subgraph act ["Act"]
-        A1["Deploy with\nconfidence"]
+        A1["Deploy with<br>confidence"]
     end
 
     S1 --> S2 --> S3 --> L1 --> L2 --> A1
@@ -110,6 +110,45 @@ flowchart TB
 ### Deterministic and Reproducible
 
 Every simulation run with the same inputs produces byte-identical results. This means your capacity plans are auditable, shareable, and version-controlled — not tribal knowledge locked in someone's head.
+
+## A Foundation for AI-Driven Algorithm Discovery
+
+Capacity planning is just the beginning. The deeper opportunity is using simulation as a **research platform for discovering entirely new algorithms**.
+
+Routing, admission control, scheduling, and auto-scaling in LLM serving systems interact in complex, non-obvious ways. The optimal strategy for one workload may be catastrophic for another. Human intuition alone cannot navigate this design space — there are too many interacting dimensions.
+
+BLIS was custom-built to be a foundation for **AI-Driven Research and Strategy Discovery (ADRS)**: using AI systems themselves to search for, evaluate, and refine serving algorithms that no human would design from scratch.
+
+```mermaid
+flowchart LR
+    subgraph ai ["AI Search"]
+        G["Generate<br>candidate algorithm"]
+    end
+    subgraph sim ["BLIS Simulation"]
+        E["Evaluate across<br>diverse workloads"]
+    end
+    subgraph fit ["Fitness"]
+        F["Score on latency,<br>throughput, fairness"]
+    end
+
+    G --> E --> F
+    F -.->|"Evolve & refine"| G
+
+    style G fill:#4051b5,color:#fff
+    style E fill:#6a77c4,color:#fff
+    style F fill:#2e7d32,color:#fff
+```
+
+*AI proposes candidate strategies; BLIS evaluates them in seconds; the best survive and evolve.*
+
+Here's why BLIS is uniquely suited for this:
+
+- **Speed**: Each simulation completes in seconds, enabling thousands of candidate evaluations per hour — fast enough for evolutionary and Bayesian search
+- **Determinism**: Identical inputs always produce identical outputs, so fitness comparisons are apples-to-apples with no noise from hardware variability
+- **Pluggable policy axes**: Routing, scheduling, admission, and batch formation are each a swappable interface — AI frameworks can inject candidate algorithms at any layer without modifying the simulator core
+- **Rich fitness signals**: BLIS produces multi-objective metrics (latency distributions, throughput, fairness indices, SLO attainment) that guide search toward strategies balancing competing goals
+
+The result: instead of hand-tuning a few knobs on known algorithms, you can **let AI explore the space of possible algorithms** — discovering routing policies, scheduling strategies, and admission rules that outperform anything a human would think to try.
 
 ## The Bottom Line
 
