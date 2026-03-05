@@ -47,30 +47,31 @@ The aerospace industry doesn't test new wing designs by building full aircraft a
 
 The key difference: **it runs on your laptop in seconds, with no GPUs required.**
 
-**Cluster level** — decides *which* instance handles each request:
-
 ```mermaid
 flowchart LR
-    R["Request"] --> AC["Admission Control"] --> PS["Priority Assignment"] --> RT["Routing"]
+    R["Request"] --> AC["Admission<br>Control"] --> PS["Priority<br>Assignment"] --> RT{{"Routing"}}
+
+    RT --> I1_Q["Queue"] --> I1_S["Schedule"] --> I1_B["Batch"] --> I1_F["Forward Pass"]
+    I1_F -->|"Output tokens"| I1_B
+
+    RT --> I2_Q["Queue"] --> I2_S["Schedule"] --> I2_B["Batch"] --> I2_F["Forward Pass"]
+    I2_F -->|"Output tokens"| I2_B
 
     style R fill:#4051b5,color:#fff
     style AC fill:#4051b5,color:#fff
     style PS fill:#4051b5,color:#fff
     style RT fill:#4051b5,color:#fff
+    style I1_Q fill:#6a77c4,color:#fff
+    style I1_S fill:#6a77c4,color:#fff
+    style I1_B fill:#6a77c4,color:#fff
+    style I1_F fill:#6a77c4,color:#fff
+    style I2_Q fill:#6a77c4,color:#fff
+    style I2_S fill:#6a77c4,color:#fff
+    style I2_B fill:#6a77c4,color:#fff
+    style I2_F fill:#6a77c4,color:#fff
 ```
 
-**Instance level** — generates tokens one batch at a time:
-
-```mermaid
-flowchart LR
-    IQ["Queueing"] --> IS["Scheduling"] --> BF["Batch Formation"] --> FP["Forward Pass"]
-    FP -->|"More tokens"| BF
-
-    style IQ fill:#6a77c4,color:#fff
-    style IS fill:#6a77c4,color:#fff
-    style BF fill:#6a77c4,color:#fff
-    style FP fill:#6a77c4,color:#fff
-```
+*Dark blue: cluster-level decisions. Purple: per-instance processing. Routing fans out to multiple instances, each running its own batch loop.*
 
 Importantly, this isn't a rough approximation. BLIS produces **highly accurate predictions** of real-world serving metrics — throughput, time to first token, end-to-end latency — validated against production inference engines. The simulator faithfully captures how requests interact with batching, memory pressure, and scheduling under realistic workload conditions, so the numbers you see in simulation translate directly to capacity decisions you can trust.
 
