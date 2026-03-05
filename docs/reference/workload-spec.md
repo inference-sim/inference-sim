@@ -83,7 +83,8 @@ Used for `input_distribution` and `output_distribution`:
 | `multi_turn` | object | Multi-turn conversation configuration |
 | `multi_turn.max_rounds` | int | Maximum conversation rounds |
 | `multi_turn.think_time_us` | int64 | User think time between rounds (microseconds) |
-| `multi_turn.context_growth` | string | `accumulate` (prepend prior context) |
+| `multi_turn.context_growth` | string | `accumulate` (prepend prior context) or empty (fixed-length) |
+| `multi_turn.single_session` | bool | If true, each client creates exactly one session instead of spawning new sessions per arrival. Used by inference-perf multi-turn expansion. Default: false |
 
 ## Cohort Specification
 
@@ -191,7 +192,7 @@ inference-perf format compatibility (used in the `inference_perf` top-level fiel
 | `system_prompt_len` | int | System prompt length in tokens |
 | `question_len` | int | Question length in tokens |
 | `output_len` | int | Output length in tokens |
-| `enable_multi_turn_chat` | bool | Accepted but ignored. Real inference-perf data shows constant input tokens; BLIS's generator requires architectural changes for single-session multi-turn. See #481. |
+| `enable_multi_turn_chat` | bool | When true, maps to BLIS reasoning.multi_turn with SingleSession mode and fixed-length inputs (no context accumulation). Computes MaxRounds and ThinkTimeUs from stage parameters. See #514. |
 
 ## Complete Example
 

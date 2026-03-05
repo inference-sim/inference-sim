@@ -10,11 +10,7 @@ import (
 //
 // Stage-based rates: sequential rate/duration pairs that produce lifecycle windows.
 // Shared prefix: auto-generates N*M clients with prefix groups.
-// Note: enable_multi_turn_chat is accepted but ignored — real inference-perf data
-// shows constant input tokens (the flag controls chat template formatting, not context
-// accumulation). BLIS's generator would also need single-session-per-client support
-// to model multi-turn correctly. Token counts may differ from real inference-perf
-// by a model-dependent number of chat template tokens (e.g., ~27 for Llama-3).
+// Multi-turn: maps to BLIS reasoning.multi_turn with fixed-length inputs (no context accumulation).
 type InferencePerfSpec struct {
 	Stages       []StageSpec       `yaml:"stages"`
 	SharedPrefix *SharedPrefixSpec `yaml:"shared_prefix"`
@@ -97,15 +93,24 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 	outputDist := constantDist(float64(sp.OutputLen))
 
 	category := "language"
+	if sp.EnableMultiTurnChat {
+		category = "reasoning"
+	}
 
 	var clients []ClientSpec
 	var aggregateRate float64
 
 	if len(spec.Stages) == 1 {
 		// Single stage: no lifecycle windows needed.
-		aggregateRate = spec.Stages[0].Rate
+		stage := spec.Stages[0]
+		aggregateRate = stage.Rate
 		rateFraction := 1.0 / float64(numClientsPerStage)
 		clients = make([]ClientSpec, 0, numClientsPerStage)
+
+		var reasoning *ReasoningSpec
+		if sp.EnableMultiTurnChat {
+			reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
+		}
 
 		for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 			prefixGroup := fmt.Sprintf("prompt-%d", p)
@@ -121,6 +126,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 					OutputDist:   outputDist,
 					PrefixGroup:  prefixGroup,
 					PrefixLength: sp.SystemPromptLen,
+					Reasoning:    reasoning,
 				})
 			}
 		}
@@ -145,6 +151,11 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 				Windows: []ActiveWindow{windows[s]},
 			}
 
+			var reasoning *ReasoningSpec
+			if sp.EnableMultiTurnChat {
+				reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
+			}
+
 			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 				prefixGroup := fmt.Sprintf("prompt-%d", p)
 				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
@@ -159,6 +170,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 						OutputDist:   outputDist,
 						PrefixGroup:  prefixGroup,
 						PrefixLength: sp.SystemPromptLen,
+						Reasoning:    reasoning,
 						Lifecycle:    stageLifecycle,
 					})
 				}
@@ -193,6 +205,36 @@ func stagesToWindows(stages []StageSpec) []ActiveWindow {
 		offsetUs += durationUs
 	}
 	return windows
+}
+
+// computeReasoningSpec builds a ReasoningSpec for inference-perf multi-turn mode.
+// It derives MaxRounds and ThinkTimeUs from stage parameters to match inference-perf's
+// round-robin cycling behavior: N sessions cycle at rate R over duration D seconds.
+// MaxRounds = ceil(R * D / N): total requests per session
+// ThinkTimeUs = floor((N / R) * 1e6): inter-round delay in microseconds
+//
+// ContextGrowth is intentionally empty (fixed-length inputs per round) because
+// real inference-perf sends constant input tokens per request — the chat template
+// is applied but context is NOT accumulated across turns (H30 finding).
+//
+// Note: ThinkTimeUs does not account for the 1µs/token output completion heuristic
+// in GenerateReasoningRequests. This is negligible for typical parameterizations
+// (e.g., OutputLen=248 adds 248µs to a ThinkTimeUs of 600,000µs = 0.04% error).
+func computeReasoningSpec(stageRate float64, stageDurationSec int64, numSessions int) *ReasoningSpec {
+	maxRounds := int(math.Ceil(stageRate * float64(stageDurationSec) / float64(numSessions)))
+	thinkTimeUs := int64(float64(numSessions) / stageRate * 1e6)
+	return &ReasoningSpec{
+		ReasonRatioDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 0},
+		},
+		MultiTurn: &MultiTurnSpec{
+			MaxRounds:     maxRounds,
+			ThinkTimeUs:   thinkTimeUs,
+			ContextGrowth: "", // fixed-length: matches real inference-perf behavior
+			SingleSession: true,
+		},
+	}
 }
 
 // constantDist creates a DistSpec for a constant (zero-variance) distribution.

@@ -388,6 +388,7 @@ The `reasoning` field generates multi-turn conversation sessions where each roun
 - `multi_turn.max_rounds`: number of conversation rounds per session
 - `multi_turn.think_time_us`: inter-round delay (user think time, in microseconds)
 - `multi_turn.context_growth`: `"accumulate"` to prepend all prior input+output as context, or omit for independent rounds
+- `multi_turn.single_session`: if `true`, each client creates exactly one session (useful for modeling persistent chat sessions like inference-perf's `enable_multi_turn_chat`). Default: `false` (multiple independent sessions per client)
 
 ### Client-Side Network Latency
 
