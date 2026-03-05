@@ -2459,13 +2459,14 @@
 <li><code>OutputTokenProcessingTime() int64</code> — per-token post-processing overhead</li>
 <li><code>SchedulingProcessingTime() int64</code> — scheduling overhead per request</li>
 <li><code>PreemptionProcessingTime() int64</code> — preemption overhead per eviction</li>
-<li><strong>Register in <code>NewLatencyModel</code> factory</strong> in <code>sim/latency/latency.go</code>: add a branch based on <code>ModelHardwareConfig</code> fields (e.g., a new string field or boolean in <code>sim/config.go</code>). The factory signature is <code>NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)</code>.</li>
+<li><strong>Register in <code>NewLatencyModel</code> factory</strong> in <code>sim/latency/latency.go</code>: add a <code>case</code> branch in the <code>switch hw.Backend</code> block. The backend string (e.g., <code>"crossmodel"</code>) is set by the <code>--latency-model</code> CLI flag and stored in <code>ModelHardwareConfig.Backend</code>. The factory signature is <code>NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)</code>.</li>
 <li><strong>Add behavioral tests</strong> in <code>sim/latency/</code> — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)</li>
 <li>Extension friction: <strong>2 touch points</strong> (implementation + factory branch)</li>
 </ol>
 <p>Examples:
 - See <code>BlackboxLatencyModel</code> in <code>sim/latency/latency.go</code> for a simple stateless model (alpha/beta regression)
-- See <code>RooflineLatencyModel</code> in <code>sim/latency/latency.go</code> for a model that uses hardware config (FLOPs/bandwidth)</p>
+- See <code>RooflineLatencyModel</code> in <code>sim/latency/latency.go</code> for a model that uses hardware config (FLOPs/bandwidth)
+- See <code>CrossModelLatencyModel</code> in <code>sim/latency/crossmodel.go</code> for a physics-informed model that derives step time from HuggingFace architecture features (MoE-aware)</p>
 <h2 id="adding-new-batch-formation-strategies">Adding New Batch Formation Strategies<a class="headerlink" href="#adding-new-batch-formation-strategies" title="Permanent link">&para;</a></h2>
 <p>To add a new batch formation strategy (e.g., disaggregated prefill/decode, speculative decoding, continuous batching without preemption):</p>
 <ol>
