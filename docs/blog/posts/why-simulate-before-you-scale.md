@@ -48,9 +48,14 @@ The aerospace industry doesn't test new wing designs by building full aircraft a
 The key difference: **it runs on your laptop in seconds, with no GPUs required.**
 
 ```mermaid
-flowchart LR
-    R["Request"] --> AC["Admission<br>Control"] --> PS["Priority<br>Assignment"] --> RT["Routing"]
-    RT --> IQ["Instance<br>Queueing"] --> IS["Instance<br>Scheduling"] --> FP["Forward<br>Pass"] --> Done["Done"]
+flowchart TD
+    R["Request"] --> AC["Admission Control"] --> PS["Priority Assignment"] --> RT["Routing"]
+    RT --> IQ["Instance Queueing"]
+    IQ --> IS["Scheduling"]
+    IS --> BF["Batch Formation"]
+    BF --> FP["Forward Pass"]
+    FP -->|"More tokens"| BF
+    FP -->|"Complete"| Out["Response"]
 
     style R fill:#4051b5,color:#fff
     style AC fill:#4051b5,color:#fff
@@ -58,11 +63,12 @@ flowchart LR
     style RT fill:#4051b5,color:#fff
     style IQ fill:#6a77c4,color:#fff
     style IS fill:#6a77c4,color:#fff
+    style BF fill:#6a77c4,color:#fff
     style FP fill:#6a77c4,color:#fff
-    style Done fill:#2e7d32,color:#fff
+    style Out fill:#2e7d32,color:#fff
 ```
 
-*Top row (dark blue): cluster-level decisions. Bottom row (purple): instance-level processing. BLIS models every stage.*
+*Dark blue = cluster-level decisions. Purple = instance-level processing with batch loop. BLIS models every stage.*
 
 Importantly, this isn't a rough approximation. BLIS produces **highly accurate predictions** of real-world serving metrics — throughput, time to first token, end-to-end latency — validated against production inference engines. The simulator faithfully captures how requests interact with batching, memory pressure, and scheduling under realistic workload conditions, so the numbers you see in simulation translate directly to capacity decisions you can trust.
 
