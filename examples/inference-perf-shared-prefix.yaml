@@ -16,7 +16,7 @@
 #   data.shared_prefix.system_prompt_len --> prefix_length on each client
 #   data.shared_prefix.question_len     --> constant input distribution
 #   data.shared_prefix.output_len       --> constant output distribution
-#   data.shared_prefix.enable_multi_turn_chat --> reasoning.multi_turn
+#   data.shared_prefix.enable_multi_turn_chat --> ignored (see #481)
 #
 # ============================================================================
 # TRY IT
@@ -48,4 +48,4 @@ inference_perf:
     system_prompt_len: 100     # 100-token shared prefix per group
     question_len: 447          # Fixed input length (constant distribution)
     output_len: 248            # Fixed output length
-    enable_multi_turn_chat: false
+    enable_multi_turn_chat: false  # When true: accepted but ignored (see #481)
