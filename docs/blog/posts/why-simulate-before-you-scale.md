@@ -33,21 +33,28 @@ The aerospace industry doesn't test new wing designs by building full aircraft a
 
 The key difference: **it runs on your laptop in seconds, with no GPUs required.** BLIS models the end-to-end journey of every request as true to real serving systems as possible — from cluster-level routing decisions down to per-token batch scheduling.
 
+*A new request arrives and flows through:*
+
 ```mermaid
+---
+config:
+  flowchart:
+    nodeSpacing: 16
+    rankSpacing: 30
+---
 flowchart TD
-    R(["New Request"]):::cluster --> AC(["Admission Control"]):::cluster
-    AC --> PS(["Priority Scheduling"]):::cluster
+    AC(["Admission Control"]):::cluster --> PS(["Priority Scheduling"]):::cluster
     PS --> RT(["Routing"]):::cluster
-    RT --->|"picks best instance"| Q(["Queueing"]):::instance
+    RT -->|"best instance"| Q(["Queueing"]):::instance
     Q --> S(["Scheduling"]):::instance
     S --> FP(["Forward Pass"]):::instance
     FP -->|"output tokens"| Q
 
-    classDef cluster fill:#4051b5,color:#fff,stroke:#3040a0,rx:20
-    classDef instance fill:#7c4dff,color:#fff,stroke:#6a3de8,rx:20
+    classDef cluster fill:#4051b5,color:#fff,stroke:#3040a0
+    classDef instance fill:#7c4dff,color:#fff,stroke:#6a3de8
 ```
 
-*Cluster-level decisions (blue) route each request to the best instance. Once there, it enters the token generation loop (purple).*
+*Blue = cluster-level decisions. Purple = per-instance token generation loop.*
 
 ## What You Can Do With It
 
