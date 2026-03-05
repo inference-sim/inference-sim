@@ -269,7 +269,6 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				TenantID:         client.TenantID,
 				SLOClass:         client.SLOClass,
 				Model:            client.Model,
-				Streaming:        client.Streaming,
 				TextTokenCount:   textCount,
 				ImageTokenCount:  imageCount,
 				AudioTokenCount:  audioCount,

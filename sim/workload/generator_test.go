@@ -406,8 +406,8 @@ func TestRequestNewFields_ZeroValueDefault(t *testing.T) {
 	if req.TenantID != "" || req.SLOClass != "" || req.SessionID != "" {
 		t.Error("new fields should have zero-value defaults")
 	}
-	if req.Streaming || req.RoundIndex != 0 || req.ReasonRatio != 0 {
-		t.Error("new bool/int/float fields should have zero-value defaults")
+	if req.RoundIndex != 0 || req.ReasonRatio != 0 {
+		t.Error("new int/float fields should have zero-value defaults")
 	}
 }
 
