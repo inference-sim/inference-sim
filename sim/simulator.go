@@ -91,6 +91,15 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	if latencyModel == nil {
 		return nil, fmt.Errorf("NewSimulator: latencyModel must not be nil")
 	}
+	if cfg.MaxRunningReqs <= 0 {
+		return nil, fmt.Errorf("NewSimulator: MaxRunningReqs must be > 0, got %d", cfg.MaxRunningReqs)
+	}
+	if cfg.MaxScheduledTokens <= 0 {
+		return nil, fmt.Errorf("NewSimulator: MaxScheduledTokens must be > 0, got %d", cfg.MaxScheduledTokens)
+	}
+	if cfg.LongPrefillTokenThreshold < 0 {
+		return nil, fmt.Errorf("NewSimulator: LongPrefillTokenThreshold must be >= 0, got %d", cfg.LongPrefillTokenThreshold)
+	}
 	batchFormation := NewBatchFormation(latencyModel)
 
 	s := &Simulator{

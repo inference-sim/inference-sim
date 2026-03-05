@@ -10,7 +10,7 @@ import (
 //
 // Stage-based rates: sequential rate/duration pairs that produce lifecycle windows.
 // Shared prefix: auto-generates N*M clients with prefix groups.
-// Multi-turn: maps to BLIS reasoning.multi_turn with context accumulation.
+// Multi-turn: maps to BLIS reasoning.multi_turn with fixed-length inputs (no context accumulation).
 type InferencePerfSpec struct {
 	Stages       []StageSpec       `yaml:"stages"`
 	SharedPrefix *SharedPrefixSpec `yaml:"shared_prefix"`
@@ -68,13 +68,6 @@ func validateInferencePerfSpec(spec *InferencePerfSpec) error {
 	if sp.OutputLen < 0 {
 		return fmt.Errorf("inference_perf.shared_prefix: output_len must be non-negative, got %d", sp.OutputLen)
 	}
-	// Multi-turn request generation (generator.go reasoning path) does not check
-	// lifecycle windows, so multi-stage + multi-turn would silently ignore stage
-	// boundaries. Reject explicitly until the generator supports this combination.
-	if len(spec.Stages) > 1 && sp.EnableMultiTurnChat {
-		return fmt.Errorf("inference_perf: multi-stage with enable_multi_turn_chat is not supported; " +
-			"multi-turn request generation does not respect lifecycle windows")
-	}
 	return nil
 }
 
@@ -99,22 +92,6 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 	inputDist := constantDist(float64(sp.QuestionLen))
 	outputDist := constantDist(float64(sp.OutputLen))
 
-	// Build optional reasoning spec for multi-turn
-	var reasoning *ReasoningSpec
-	if sp.EnableMultiTurnChat {
-		reasoning = &ReasoningSpec{
-			ReasonRatioDist: DistSpec{
-				Type:   "constant",
-				Params: map[string]float64{"value": 0},
-			},
-			MultiTurn: &MultiTurnSpec{
-				MaxRounds:     5,
-				ThinkTimeUs:   500000, // 500ms
-				ContextGrowth: "accumulate",
-			},
-		}
-	}
-
 	category := "language"
 	if sp.EnableMultiTurnChat {
 		category = "reasoning"
@@ -125,9 +102,15 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 
 	if len(spec.Stages) == 1 {
 		// Single stage: no lifecycle windows needed.
-		aggregateRate = spec.Stages[0].Rate
+		stage := spec.Stages[0]
+		aggregateRate = stage.Rate
 		rateFraction := 1.0 / float64(numClientsPerStage)
 		clients = make([]ClientSpec, 0, numClientsPerStage)
+
+		var reasoning *ReasoningSpec
+		if sp.EnableMultiTurnChat {
+			reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
+		}
 
 		for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 			prefixGroup := fmt.Sprintf("prompt-%d", p)
@@ -166,6 +149,11 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 			rateFraction := stage.Rate / float64(numClientsPerStage)
 			stageLifecycle := &LifecycleSpec{
 				Windows: []ActiveWindow{windows[s]},
+			}
+
+			var reasoning *ReasoningSpec
+			if sp.EnableMultiTurnChat {
+				reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
 			}
 
 			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
@@ -217,6 +205,36 @@ func stagesToWindows(stages []StageSpec) []ActiveWindow {
 		offsetUs += durationUs
 	}
 	return windows
+}
+
+// computeReasoningSpec builds a ReasoningSpec for inference-perf multi-turn mode.
+// It derives MaxRounds and ThinkTimeUs from stage parameters to match inference-perf's
+// round-robin cycling behavior: N sessions cycle at rate R over duration D seconds.
+// MaxRounds = ceil(R * D / N): total requests per session
+// ThinkTimeUs = floor((N / R) * 1e6): inter-round delay in microseconds
+//
+// ContextGrowth is intentionally empty (fixed-length inputs per round) because
+// real inference-perf sends constant input tokens per request — the chat template
+// is applied but context is NOT accumulated across turns (H30 finding).
+//
+// Note: ThinkTimeUs does not account for the 1µs/token output completion heuristic
+// in GenerateReasoningRequests. This is negligible for typical parameterizations
+// (e.g., OutputLen=248 adds 248µs to a ThinkTimeUs of 600,000µs = 0.04% error).
+func computeReasoningSpec(stageRate float64, stageDurationSec int64, numSessions int) *ReasoningSpec {
+	maxRounds := int(math.Ceil(stageRate * float64(stageDurationSec) / float64(numSessions)))
+	thinkTimeUs := int64(float64(numSessions) / stageRate * 1e6)
+	return &ReasoningSpec{
+		ReasonRatioDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 0},
+		},
+		MultiTurn: &MultiTurnSpec{
+			MaxRounds:     maxRounds,
+			ThinkTimeUs:   thinkTimeUs,
+			ContextGrowth: "", // fixed-length: matches real inference-perf behavior
+			SingleSession: true,
+		},
+	}
 }
 
 // constantDist creates a DistSpec for a constant (zero-variance) distribution.

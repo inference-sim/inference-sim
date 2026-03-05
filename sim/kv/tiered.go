@@ -44,7 +44,7 @@ type TieredKVCache struct {
 }
 
 // NewTieredKVCache creates a TieredKVCache.
-// Panics if gpu is nil, bandwidth is non-positive/NaN/Inf, or threshold is NaN/Inf.
+// Panics if gpu is nil, cpuBlocks is non-positive, bandwidth is non-positive/NaN/Inf, or threshold is NaN/Inf.
 func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth float64, baseLat int64) *TieredKVCache {
 	if gpu == nil {
 		panic("NewTieredKVCache: gpu must not be nil")
@@ -54,6 +54,9 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 	}
 	if math.IsNaN(threshold) || math.IsInf(threshold, 0) {
 		panic(fmt.Sprintf("NewTieredKVCache: KVOffloadThreshold must be finite, got %v", threshold))
+	}
+	if cpuBlocks <= 0 {
+		panic(fmt.Sprintf("NewTieredKVCache: cpuBlocks must be > 0, got %d", cpuBlocks))
 	}
 	return &TieredKVCache{
 		gpu: gpu,
@@ -81,6 +84,20 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 		newCached := t.gpu.GetCachedBlocks(req.InputTokens)
 		newStart := int64(len(newCached)) * t.gpu.BlockSize()
 		if newStart > startIndex {
+			if newStart >= endIndex {
+				// Entire requested range is cached after reload.
+				// For new requests, commit cached blocks (capped at endIndex)
+				// to RequestMap so ReleaseKVBlocks can track them.
+				// Running requests already have blocks in RequestMap.
+				if _, exists := t.gpu.RequestMap[req.ID]; !exists {
+					blocksNeeded := (endIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
+					if blocksNeeded > int64(len(newCached)) {
+						blocksNeeded = int64(len(newCached))
+					}
+					t.gpu.commitCachedBlocks(req.ID, newCached[:blocksNeeded])
+				}
+				return true
+			}
 			// More cache hits after reload — retry with reduced allocation range
 			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
 		}
@@ -136,8 +153,12 @@ func (t *TieredKVCache) tryReloadFromCPU() bool {
 		transferTicks := int64(math.Ceil(blockSize / t.transferBandwidth))
 		t.pendingLatency += t.baseLatency + transferTicks
 
-		// Check thrashing (BC-6): offload followed by reload within 1000 ticks
-		if t.clock-offloaded.OffloadTime < 1000 {
+		// Check thrashing (BC-6): offload followed by reload within 1000 ticks.
+		// Guard: t.clock > 0 skips detection when SetClock was never called (clock=0
+		// is the Go zero-value). In the DES event loop, SetClock(now) is always called
+		// before any batch processing, and the first realistic offload+reload cycle
+		// occurs at clock > 0 (step time > 0 from beta0). Relies on INV-3 (clock monotonicity).
+		if t.clock > 0 && t.clock-offloaded.OffloadTime < 1000 {
 			t.thrashingCount++
 		}
 

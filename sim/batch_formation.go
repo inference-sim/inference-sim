@@ -68,16 +68,27 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 
 	tokenBudget := ctx.MaxScheduledTokens
 
+	// Zero NumNewTokens for all running requests at the start of each scheduling pass.
+	// This prevents stale values from the prior step from causing phantom budget
+	// restoration when a request is preempted before being visited in this pass.
+	for _, req := range result.RunningBatch.Requests {
+		req.NumNewTokens = 0
+	}
+
 	// Phase 1: Process continuing requests (chunked prefill + decode).
-	// NOTE: preemptForTokens may shorten result.RunningBatch.Requests during iteration
-	// (tail eviction). Go's range captures the slice header at loop entry, so the loop
-	// still visits evicted requests at their original indices. This matches the original
-	// makeRunningBatch() behavior exactly — do NOT "fix" this.
-	for _, req := range ctx.RunningBatch.Requests {
+	// Index-based loop: re-evaluates len() each iteration so evicted requests
+	// (removed by preemptForTokens tail eviction) are never visited.
+	// This achieves the same behavioral property as vLLM v1 (evicted requests
+	// are never revisited within a scheduling pass), though through a different
+	// mechanism (vLLM uses deque popleft/pop; BLIS uses index bounds re-evaluation).
+	reqIndex := 0
+	for reqIndex < len(result.RunningBatch.Requests) {
 		if tokenBudget <= 0 {
 			logrus.Warnf("[tick %07d] token budget exhausted, deferring remaining requests to next step", ctx.Now)
 			break
 		}
+		req := result.RunningBatch.Requests[reqIndex]
+
 		numNewTokens := util.Len64(req.InputTokens) - req.ProgressIndex
 		// Chunked prefill for running requests
 		if numNewTokens > 0 {
@@ -86,7 +97,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			}
 			numNewTokens = min(numNewTokens, tokenBudget)
 
-			if canSchedule := v.preemptForTokens(req, numNewTokens, &result, ctx); !canSchedule {
+			if canSchedule := v.preemptForTokens(req, numNewTokens, &result, ctx, &tokenBudget); !canSchedule {
 				break
 			}
 
@@ -97,13 +108,14 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// Decode phase: allocate 1 token
 		if req.ProgressIndex >= util.Len64(req.InputTokens) && len(req.OutputTokens) > 0 {
 			decodeTokens := int64(1)
-			if canSchedule := v.preemptForTokens(req, decodeTokens, &result, ctx); !canSchedule {
+			if canSchedule := v.preemptForTokens(req, decodeTokens, &result, ctx, &tokenBudget); !canSchedule {
 				break
 			}
 			tokenBudget--
 			req.NumNewTokens = 1
 			ctx.ComputedTokens[req.ID] += 1
 		}
+		reqIndex++
 	}
 
 	// Phase 2: Dequeue new requests from wait queue
@@ -146,7 +158,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 // preemptForTokens tries to allocate numNewTokens of KV blocks for req,
 // evicting from the batch tail if needed. Returns false if allocation is
 // impossible (cache too small or request was itself evicted).
-func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext) bool {
+func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64) bool {
 	for {
 		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int64{}); !ok {
 			// Circuit breaker: empty batch means cache is too small (R19)
@@ -166,6 +178,17 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 				Request:         preemptedRequest,
 				PreemptionDelay: preemptionDelay,
 			})
+
+			// Defensive: restore token budget if preempted request was already
+			// scheduled in this step. Currently unreachable with head-to-tail
+			// iteration + tail-only eviction (evicted requests are always
+			// unvisited, so NumNewTokens is 0 from the FormBatch entry zeroing).
+			// Guards against future iteration order changes (e.g., priority-based
+			// eviction that could evict an already-visited request).
+			if preemptedRequest.NumNewTokens > 0 {
+				*tokenBudget += int64(preemptedRequest.NumNewTokens)
+				preemptedRequest.NumNewTokens = 0
+			}
 
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0

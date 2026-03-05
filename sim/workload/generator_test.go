@@ -663,3 +663,227 @@ func TestGenerateRequests_NaNAggregateRate_ReturnsError(t *testing.T) {
 		t.Fatal("expected error for NaN aggregate_rate")
 	}
 }
+
+func TestGenerateRequests_SingleSession_OneSessionPerClient(t *testing.T) {
+	// BC-2: SingleSession mode generates exactly one session per client.
+	// 3 clients, each with MaxRounds=10 and ThinkTimeUs=100_000.
+	var clients []ClientSpec
+	for i := 0; i < 3; i++ {
+		clients = append(clients, ClientSpec{
+			ID: fmt.Sprintf("client-%d", i), TenantID: fmt.Sprintf("t%d", i),
+			SLOClass: "batch", RateFraction: 1.0 / 3.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     10,
+					ThinkTimeUs:   100_000,
+					ContextGrowth: "accumulate",
+					SingleSession: true,
+				},
+			},
+		})
+	}
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 30.0,
+		Clients: clients,
+	}
+	horizon := int64(2_000_000) // 2 seconds
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request")
+	}
+
+	// Each client (by TenantID) should have at most MaxRounds requests
+	byTenant := make(map[string]int)
+	for _, req := range requests {
+		byTenant[req.TenantID]++
+	}
+	for tenant, count := range byTenant {
+		if count > 10 {
+			t.Errorf("tenant %q: %d requests, want <= 10 (MaxRounds)", tenant, count)
+		}
+	}
+}
+
+func TestGenerateRequests_SingleSession_HorizonTruncation(t *testing.T) {
+	// BC-7: Rounds beyond horizon are excluded.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "c1", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     100,
+					ThinkTimeUs:   100_000, // 100 rounds × 100ms = 10s total session
+					ContextGrowth: "accumulate",
+					SingleSession: true,
+				},
+			},
+		}},
+	}
+	horizon := int64(1_000_000) // 1 second — should truncate the 10s session
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i, req := range requests {
+		if req.ArrivalTime >= horizon {
+			t.Errorf("request %d: ArrivalTime=%d >= horizon=%d", i, req.ArrivalTime, horizon)
+		}
+	}
+	// Should have significantly fewer than 100 requests (horizon truncation)
+	if len(requests) >= 100 {
+		t.Errorf("expected fewer than 100 requests due to horizon truncation, got %d", len(requests))
+	}
+}
+
+func TestGenerateRequests_SingleSession_Deterministic(t *testing.T) {
+	// BC-5 / INV-6: SingleSession mode must be deterministic — same seed, same output.
+	makeSpec := func() *WorkloadSpec {
+		return &WorkloadSpec{
+			Version: "2", Seed: 99, AggregateRate: 20.0,
+			Clients: []ClientSpec{
+				{
+					ID: "ss-a", TenantID: "a", SLOClass: "batch", RateFraction: 0.5,
+					Arrival:    ArrivalSpec{Process: "poisson"},
+					InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+					Reasoning: &ReasoningSpec{
+						ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+						MultiTurn: &MultiTurnSpec{
+							MaxRounds: 20, ThinkTimeUs: 50_000,
+							ContextGrowth: "accumulate", SingleSession: true,
+						},
+					},
+				},
+				{
+					ID: "ss-b", TenantID: "b", SLOClass: "batch", RateFraction: 0.5,
+					Arrival:    ArrivalSpec{Process: "poisson"},
+					InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+					Reasoning: &ReasoningSpec{
+						ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+						MultiTurn: &MultiTurnSpec{
+							MaxRounds: 20, ThinkTimeUs: 50_000,
+							ContextGrowth: "accumulate", SingleSession: true,
+						},
+					},
+				},
+			},
+		}
+	}
+	horizon := int64(2_000_000)
+	r1, err1 := GenerateRequests(makeSpec(), horizon, 0)
+	r2, err2 := GenerateRequests(makeSpec(), horizon, 0)
+	if err1 != nil || err2 != nil {
+		t.Fatalf("errors: %v, %v", err1, err2)
+	}
+	if len(r1) != len(r2) {
+		t.Fatalf("different counts: %d vs %d", len(r1), len(r2))
+	}
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("request %d: arrival %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+			break
+		}
+		if len(r1[i].InputTokens) != len(r2[i].InputTokens) {
+			t.Errorf("request %d: input len %d vs %d", i, len(r1[i].InputTokens), len(r2[i].InputTokens))
+			break
+		}
+	}
+}
+
+func TestGenerateRequests_SingleSession_LifecycleWindowRoundSuppression(t *testing.T) {
+	// BC-6: SingleSession rounds that cross the lifecycle window boundary must be suppressed.
+	// Session has MaxRounds=50 at ThinkTimeUs=100_000 (5s span), but window is only 1s wide.
+	// Only rounds within the window should appear in output.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "ss-lc", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     50,
+					ThinkTimeUs:   100_000, // 100ms between rounds → 50 rounds spans 5s
+					ContextGrowth: "",
+					SingleSession: true,
+				},
+			},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 1_000_000}}, // 1s window
+			},
+		}},
+	}
+	horizon := int64(10_000_000) // 10s
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request")
+	}
+	// All requests must be within the lifecycle window [0, 1_000_000)
+	for i, req := range requests {
+		if req.ArrivalTime >= 1_000_000 {
+			t.Errorf("request %d: ArrivalTime=%d >= window end 1000000 (BC-6 violation)", i, req.ArrivalTime)
+		}
+	}
+	// Should have significantly fewer than 50 requests (window truncation)
+	if len(requests) >= 50 {
+		t.Errorf("expected fewer than 50 requests due to window truncation, got %d", len(requests))
+	}
+	// Should have at least a few (window starts at 0, constant arrival means start near 0)
+	if len(requests) < 3 {
+		t.Errorf("expected at least 3 requests in 1s window with 100ms spacing, got %d", len(requests))
+	}
+}
+
+func TestGenerateRequests_ReasoningClient_RespectsLifecycleWindows(t *testing.T) {
+	// BC-1/BC-6: Reasoning path must respect lifecycle windows, just like the standard path.
+	// Bug: the reasoning arrival loop in generator.go did not call isInActiveWindow(),
+	// so multi-turn requests ignored stage boundaries.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "mt-client", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn:       &MultiTurnSpec{MaxRounds: 2, ThinkTimeUs: 10000, ContextGrowth: "accumulate"},
+			},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 500_000, EndUs: 1_500_000}},
+			},
+		}},
+	}
+	horizon := int64(2_000_000) // 2 seconds
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request within the lifecycle window")
+	}
+	for i, req := range requests {
+		if req.ArrivalTime < 500_000 || req.ArrivalTime >= 1_500_000 {
+			t.Errorf("request %d: ArrivalTime=%d outside lifecycle window [500000, 1500000)",
+				i, req.ArrivalTime)
+		}
+	}
+}

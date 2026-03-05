@@ -2,6 +2,7 @@ package kv
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -198,6 +199,93 @@ func TestTieredKVCache_GetCachedBlocks_DoesNotAffectHitRate(t *testing.T) {
 	}
 }
 
+func TestTieredKVCache_AllocateKVBlocks_FullRangeReload(t *testing.T) {
+	// GIVEN a TieredKVCache with prefix blocks split: block 0 hashed on GPU,
+	//   block 1 on CPU, and enough free blocks for allocation to succeed
+	// WHEN a new request allocates with the partial cached prefix
+	// THEN allocation succeeds without panic
+	// AND INV-4 (allocated + free == total) holds through release
+	gpu := NewKVCacheState(3, 4) // 3 blocks, blockSize=4
+	tiered := NewTieredKVCache(gpu, 2, 0.3, 100.0, 0)
+
+	// Compute correct hashes via probe allocation
+	probe := &sim.Request{ID: "probe", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	tiered.AllocateKVBlocks(probe, 0, 8, []int64{})
+	hash1 := gpu.Blocks[gpu.RequestMap["probe"][1]].Hash
+	gpu.ReleaseKVBlocks(probe)
+
+	// Clear block1 hash (simulates eviction), keep block0 hash on GPU
+	delete(gpu.HashToBlock, hash1)
+	gpu.Blocks[1].Hash = ""
+	gpu.Blocks[1].Tokens = nil
+
+	// Mark block2 as used
+	gpu.removeFromFreeList(gpu.Blocks[2])
+	gpu.Blocks[2].InUse = true
+	gpu.Blocks[2].RefCount = 1
+	gpu.UsedBlockCnt++
+	// GPU: 1 used (block2), 2 free: [block1(empty), block0(hashed)]
+
+	// Place second prefix block on CPU
+	tiered.cpu.blocks[99] = &offloadedBlock{
+		OriginalID: 99, Tokens: []int{5, 6, 7, 8}, Hash: hash1,
+	}
+	tiered.cpu.used = 1
+
+	// Verify partial cache: only block0 found
+	cached := tiered.GetCachedBlocks([]int{1, 2, 3, 4, 5, 6, 7, 8})
+	if len(cached) != 1 {
+		t.Fatalf("expected 1 cached block, got %d", len(cached))
+	}
+
+	// WHEN: new request with 8-token input, startIndex=4, endIndex=8
+	newReq := &sim.Request{ID: "new-req", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	ok := tiered.AllocateKVBlocks(newReq, 4, 8, cached)
+
+	// THEN: succeeds
+	if !ok {
+		t.Fatal("AllocateKVBlocks should succeed with tiered cache")
+	}
+
+	// AND: INV-4 conservation holds
+	tiered.ReleaseKVBlocks(newReq)
+	gpu.Blocks[2].RefCount = 0
+	gpu.Blocks[2].InUse = false
+	gpu.UsedBlockCnt--
+	gpu.appendToFreeList(gpu.Blocks[2])
+	if gpu.UsedBlocks() != 0 {
+		t.Errorf("UsedBlocks = %d after all releases, want 0 (INV-4)", gpu.UsedBlocks())
+	}
+}
+
+func TestTieredKVCache_CommitCachedBlocks_Conservation(t *testing.T) {
+	// GIVEN free GPU blocks with prefix hashes
+	// WHEN commitCachedBlocks registers them for a new request
+	// THEN blocks are marked in-use and tracked
+	// AND releasing the request restores all blocks to free (INV-4)
+	gpu := NewKVCacheState(4, 2)
+	for i := int64(2); i < 4; i++ {
+		blk := gpu.Blocks[i]
+		gpu.removeFromFreeList(blk)
+		blk.InUse = true
+		blk.RefCount = 1
+		gpu.UsedBlockCnt++
+	}
+
+	usedBefore := gpu.UsedBlocks()
+	req := &sim.Request{ID: "req1"}
+	gpu.commitCachedBlocks(req.ID, []int64{0, 1})
+
+	if gpu.UsedBlocks() != usedBefore+2 {
+		t.Errorf("UsedBlocks after commit = %d, want %d", gpu.UsedBlocks(), usedBefore+2)
+	}
+
+	gpu.ReleaseKVBlocks(req)
+	if gpu.UsedBlocks() != usedBefore {
+		t.Errorf("UsedBlocks after release = %d, want %d (INV-4)", gpu.UsedBlocks(), usedBefore)
+	}
+}
+
 func TestTieredKVCache_NegativeBandwidth_Panics(t *testing.T) {
 	// BC-12 (partial): GIVEN negative bandwidth
 	defer func() {
@@ -206,4 +294,70 @@ func TestTieredKVCache_NegativeBandwidth_Panics(t *testing.T) {
 		}
 	}()
 	NewTieredKVCache(NewKVCacheState(10, 2), 10, 0.5, -1.0, 0)
+}
+
+func TestTieredKVCache_ThrashingNotCounted_WhenClockNeverSet(t *testing.T) {
+	// BC-2: GIVEN a TieredKVCache where SetClock has never been called
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.3, 100.0, 0)
+	// Note: no SetClock() call — clock stays at 0
+
+	// Allocate and release to trigger offload
+	target := &sim.Request{ID: "target", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(target, 0, 4, []int64{})
+	for i := 0; i < 3; i++ {
+		other := &sim.Request{ID: fmt.Sprintf("o%d", i), InputTokens: []int{i*4 + 10, i*4 + 11, i*4 + 12, i*4 + 13}}
+		tiered.AllocateKVBlocks(other, 0, 4, []int64{})
+	}
+	tiered.ReleaseKVBlocks(target)
+	if tiered.offloadCount == 0 {
+		t.Fatal("setup error: offload should have triggered")
+	}
+
+	// Fill GPU to force CPU reload
+	for i := 0; i < 3; i++ {
+		filler := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 100, i*2 + 101}}
+		tiered.AllocateKVBlocks(filler, 0, 2, []int64{})
+	}
+
+	// Re-request same prefix — triggers CPU reload
+	sameReq := &sim.Request{ID: "retry", InputTokens: []int{1, 2, 3, 4}}
+	cached := tiered.GetCachedBlocks([]int{1, 2, 3, 4})
+	start := int64(len(cached)) * tiered.BlockSize()
+	tiered.AllocateKVBlocks(sameReq, start, 4, cached)
+
+	// THEN thrashing should NOT be counted (clock was never set)
+	if tiered.KVThrashingRate() != 0 {
+		t.Errorf("KVThrashingRate() = %f, want 0 when clock was never set", tiered.KVThrashingRate())
+	}
+}
+
+func TestNewTieredKVCache_ZeroCPUBlocks_Panics(t *testing.T) {
+	// BC-1: GIVEN cpuBlocks=0
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for cpuBlocks=0")
+		}
+		msg := fmt.Sprintf("%v", r)
+		if !strings.Contains(msg, "cpuBlocks") {
+			t.Errorf("panic message should mention cpuBlocks, got: %s", msg)
+		}
+	}()
+	NewTieredKVCache(NewKVCacheState(10, 2), 0, 0.5, 100.0, 0)
+}
+
+func TestNewTieredKVCache_NegativeCPUBlocks_Panics(t *testing.T) {
+	// BC-1: GIVEN cpuBlocks=-5
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for cpuBlocks=-5")
+		}
+		msg := fmt.Sprintf("%v", r)
+		if !strings.Contains(msg, "cpuBlocks") {
+			t.Errorf("panic message should mention cpuBlocks, got: %s", msg)
+		}
+	}()
+	NewTieredKVCache(NewKVCacheState(10, 2), -5, 0.5, 100.0, 0)
 }

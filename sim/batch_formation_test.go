@@ -447,10 +447,193 @@ func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 	bf := &VLLMBatchFormation{latencyModel: lm}
 
 	// WHEN preemption evicts victim to make room for newcomer
-	bf.preemptForTokens(newReq, 16, &result, ctx)
+	var budget int64 = 10000
+	bf.preemptForTokens(newReq, 16, &result, ctx, &budget)
 
 	// THEN ComputedTokens should NOT contain the preempted request's entry
 	if _, exists := computedTokens[victim.ID]; exists {
 		t.Error("preempted request should be removed from ComputedTokens")
 	}
+}
+
+// TestVLLMBatchFormation_Phase1_EvictedNotRevisited verifies FIX-1 and FIX-4:
+// Phase 1 must not visit requests that were evicted by preemptForTokens.
+// The old range-based loop continued iterating over evicted requests (ProgressIndex=0),
+// causing cascading re-prefill allocations and state corruption.
+func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
+	// 6 blocks * 16 tokens = 96 token capacity
+	cfg := SimConfig{
+		KVCacheConfig:       NewKVCacheConfig(6, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10000, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+	}
+	lm, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("MustNewLatencyModel: %v", err)
+	}
+	bf := NewBatchFormation(lm)
+	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+
+	// GIVEN 3 running requests, all in decode phase with KV fully allocated:
+	// r1 uses 3 blocks (48 tokens, exact multiple of 16 → last block full)
+	// r2 uses 2 blocks (31 tokens, partial last block: 15/16 filled)
+	// r3 uses 1 block (16 tokens, exact multiple → last block full)
+	// Total: 6 blocks = full cache.
+	// r1's decode needs a NEW block (last block full) → triggers preemption of r3 (tail).
+	// r2's decode fills its partial block (15→16) → NO new block needed, r2 survives.
+	r1 := &Request{ID: "r1", InputTokens: make([]int, 48), OutputTokens: make([]int, 100), State: StateRunning}
+	r2 := &Request{ID: "r2", InputTokens: make([]int, 31), OutputTokens: make([]int, 100), State: StateRunning}
+	r3 := &Request{ID: "r3", InputTokens: make([]int, 16), OutputTokens: make([]int, 100), State: StateRunning}
+
+	if ok := kvCache.AllocateKVBlocks(r1, 0, 48, []int64{}); !ok {
+		t.Fatal("setup: allocate r1")
+	}
+	r1.ProgressIndex = 48
+
+	if ok := kvCache.AllocateKVBlocks(r2, 0, 31, []int64{}); !ok {
+		t.Fatal("setup: allocate r2")
+	}
+	r2.ProgressIndex = 31
+
+	if ok := kvCache.AllocateKVBlocks(r3, 0, 16, []int64{}); !ok {
+		t.Fatal("setup: allocate r3")
+	}
+	r3.ProgressIndex = 16
+	r3.NumNewTokens = 5 // Stale value from prior step — FIX-2 zeroing must clear this
+
+	if kvCache.UsedBlocks() != 6 {
+		t.Fatalf("setup: expected 6 used blocks, got %d", kvCache.UsedBlocks())
+	}
+
+	computedTokens := map[string]int64{"r1": 48, "r2": 31, "r3": 16}
+	ctx := BatchContext{
+		RunningBatch:          &Batch{Requests: []*Request{r1, r2, r3}},
+		WaitQ:                 &WaitQueue{},
+		KVCache:               kvCache,
+		MaxScheduledTokens:    10000,
+		MaxRunningReqs:        10,
+		PrefillTokenThreshold: 0,
+		Now:                   5000,
+		StepCount:             5,
+		ComputedTokens:        computedTokens,
+	}
+
+	result := bf.FormBatch(ctx)
+
+	// THEN r3 must be preempted (tail eviction to make room for r1's decode)
+	if !result.PreemptionHappened {
+		t.Fatal("expected preemption to occur")
+	}
+
+	// AND preemption count must be exactly 1 (only r3 evicted — no cascading)
+	if len(result.Preempted) != 1 {
+		t.Errorf("FIX-1: expected exactly 1 preemption (r3), got %d", len(result.Preempted))
+	}
+
+	// AND FIX-2: r3's stale NumNewTokens (5) must have been zeroed at FormBatch entry,
+	// so preemption did NOT inflate the budget by 5.
+	if len(result.Preempted) == 1 && result.Preempted[0].Request.NumNewTokens != 0 {
+		t.Errorf("FIX-2: preempted r3 should have NumNewTokens=0 (zeroed at entry), got %d",
+			result.Preempted[0].Request.NumNewTokens)
+	}
+
+	// AND r1 and r2 must still be in the running batch, r3 must not
+	batchIDs := make(map[string]bool)
+	for _, req := range result.RunningBatch.Requests {
+		batchIDs[req.ID] = true
+	}
+	if !batchIDs["r1"] || !batchIDs["r2"] {
+		t.Errorf("FIX-1: r1 and r2 must remain in batch, got %v", batchIDs)
+	}
+	if batchIDs["r3"] {
+		t.Error("FIX-4: evicted request r3 must not be in running batch")
+	}
+
+	// AND KV conservation must hold (INV-4):
+	// r1: 3 blocks (48 tokens) + 1 new block (decode at block boundary) = 4 blocks
+	// r2: 2 blocks (31 tokens, decode fills partial block 15→16, no new block)
+	// r3: freed (1 block released, used by r1's decode allocation)
+	expectedUsed := int64(4 + 2) // r1=4, r2=2
+	if kvCache.UsedBlocks() != expectedUsed {
+		t.Errorf("INV-4: expected %d used blocks after preemption, got %d", expectedUsed, kvCache.UsedBlocks())
+	}
+}
+
+// TestVLLMBatchFormation_LivelockResolution verifies FIX-3:
+// The pathological workload from #349 (seed=7, 7463 blocks, output 3200-3596 tokens)
+// must complete requests instead of livelocking with 100K+ preemptions.
+func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// GIVEN parameters matching tmp/run.sh reproducer
+	// Note: NewLatencyCoeffs takes (betaCoeffs, alphaCoeffs)
+	cfg := SimConfig{
+		Horizon: 120000000,
+		Seed:    7,
+		KVCacheConfig: NewKVCacheConfig(
+			7463, // total blocks
+			16,   // block size
+			0, 0, 0, 0,
+		),
+		BatchConfig: NewBatchConfig(
+			256,  // max running reqs
+			2048, // max scheduled tokens
+			0,    // long prefill threshold (disabled)
+		),
+		LatencyCoeffs: NewLatencyCoeffs(
+			[]float64{5752.705191348184, 17.25086436834028, 5.999143920128404},   // beta
+			[]float64{232.46191091038054, 1.752360364195244, 3357.4400353290152}, // alpha
+		),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		PolicyConfig:        NewPolicyConfig("constant", "fcfs"),
+	}
+
+	sim := mustNewSimulator(t, cfg)
+
+	// Inject 30 requests (subset of 300 for test speed) with the workload profile.
+	// Uses its own RNG for workload generation (independent from simulator's RNG).
+	rng := NewPartitionedRNG(NewSimulationKey(7))
+	wlRng := rng.ForSubsystem(SubsystemWorkload)
+	arrivalTime := int64(0)
+	for i := 0; i < 30; i++ {
+		inputLen := 200 + wlRng.Intn(201)  // 200-400
+		outputLen := 3200 + wlRng.Intn(397) // 3200-3596
+		req := &Request{
+			ID:           fmt.Sprintf("req_%d", i),
+			InputTokens:  make([]int, inputLen),
+			OutputTokens: make([]int, outputLen),
+			ArrivalTime:  arrivalTime,
+			State:        StateQueued,
+		}
+		sim.InjectArrival(req)
+		arrivalTime += 100000 // 100ms between arrivals (rate=10/s)
+	}
+
+	sim.Run()
+
+	// THEN some requests must complete (livelock resolved)
+	if sim.Metrics.CompletedRequests == 0 {
+		t.Errorf("FIX-3: expected completed_requests > 0, got 0 (livelock not resolved)")
+	}
+
+	// AND preemption count must be dramatically reduced (not 100K+)
+	if sim.Metrics.PreemptionCount > 1000 {
+		t.Errorf("FIX-3: expected preemption_count < 1000, got %d (cascading preemption not resolved)",
+			sim.Metrics.PreemptionCount)
+	}
+
+	// AND request conservation must hold (INV-1)
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != 30 {
+		t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, expected 30",
+			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,
+			sim.Metrics.DroppedUnservable, total)
+	}
+
+	t.Logf("Results: completed=%d, queued=%d, running=%d, dropped=%d, preemptions=%d",
+		sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,
+		sim.Metrics.DroppedUnservable, sim.Metrics.PreemptionCount)
 }
