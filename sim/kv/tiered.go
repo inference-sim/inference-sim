@@ -44,7 +44,7 @@ type TieredKVCache struct {
 }
 
 // NewTieredKVCache creates a TieredKVCache.
-// Panics if gpu is nil, bandwidth is non-positive/NaN/Inf, or threshold is NaN/Inf.
+// Panics if gpu is nil, cpuBlocks is non-positive, bandwidth is non-positive/NaN/Inf, or threshold is NaN/Inf.
 func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth float64, baseLat int64) *TieredKVCache {
 	if gpu == nil {
 		panic("NewTieredKVCache: gpu must not be nil")
@@ -54,6 +54,9 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 	}
 	if math.IsNaN(threshold) || math.IsInf(threshold, 0) {
 		panic(fmt.Sprintf("NewTieredKVCache: KVOffloadThreshold must be finite, got %v", threshold))
+	}
+	if cpuBlocks <= 0 {
+		panic(fmt.Sprintf("NewTieredKVCache: cpuBlocks must be > 0, got %d", cpuBlocks))
 	}
 	return &TieredKVCache{
 		gpu: gpu,
@@ -150,8 +153,12 @@ func (t *TieredKVCache) tryReloadFromCPU() bool {
 		transferTicks := int64(math.Ceil(blockSize / t.transferBandwidth))
 		t.pendingLatency += t.baseLatency + transferTicks
 
-		// Check thrashing (BC-6): offload followed by reload within 1000 ticks
-		if t.clock-offloaded.OffloadTime < 1000 {
+		// Check thrashing (BC-6): offload followed by reload within 1000 ticks.
+		// Guard: t.clock > 0 skips detection when SetClock was never called (clock=0
+		// is the Go zero-value). In the DES event loop, SetClock(now) is always called
+		// before any batch processing, and the first realistic offload+reload cycle
+		// occurs at clock > 0 (step time > 0 from beta0). Relies on INV-3 (clock monotonicity).
+		if t.clock > 0 && t.clock-offloaded.OffloadTime < 1000 {
 			t.thrashingCount++
 		}
 

@@ -2,6 +2,7 @@ package kv
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -293,4 +294,70 @@ func TestTieredKVCache_NegativeBandwidth_Panics(t *testing.T) {
 		}
 	}()
 	NewTieredKVCache(NewKVCacheState(10, 2), 10, 0.5, -1.0, 0)
+}
+
+func TestTieredKVCache_ThrashingNotCounted_WhenClockNeverSet(t *testing.T) {
+	// BC-2: GIVEN a TieredKVCache where SetClock has never been called
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.3, 100.0, 0)
+	// Note: no SetClock() call — clock stays at 0
+
+	// Allocate and release to trigger offload
+	target := &sim.Request{ID: "target", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(target, 0, 4, []int64{})
+	for i := 0; i < 3; i++ {
+		other := &sim.Request{ID: fmt.Sprintf("o%d", i), InputTokens: []int{i*4 + 10, i*4 + 11, i*4 + 12, i*4 + 13}}
+		tiered.AllocateKVBlocks(other, 0, 4, []int64{})
+	}
+	tiered.ReleaseKVBlocks(target)
+	if tiered.offloadCount == 0 {
+		t.Fatal("setup error: offload should have triggered")
+	}
+
+	// Fill GPU to force CPU reload
+	for i := 0; i < 3; i++ {
+		filler := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 100, i*2 + 101}}
+		tiered.AllocateKVBlocks(filler, 0, 2, []int64{})
+	}
+
+	// Re-request same prefix — triggers CPU reload
+	sameReq := &sim.Request{ID: "retry", InputTokens: []int{1, 2, 3, 4}}
+	cached := tiered.GetCachedBlocks([]int{1, 2, 3, 4})
+	start := int64(len(cached)) * tiered.BlockSize()
+	tiered.AllocateKVBlocks(sameReq, start, 4, cached)
+
+	// THEN thrashing should NOT be counted (clock was never set)
+	if tiered.KVThrashingRate() != 0 {
+		t.Errorf("KVThrashingRate() = %f, want 0 when clock was never set", tiered.KVThrashingRate())
+	}
+}
+
+func TestNewTieredKVCache_ZeroCPUBlocks_Panics(t *testing.T) {
+	// BC-1: GIVEN cpuBlocks=0
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for cpuBlocks=0")
+		}
+		msg := fmt.Sprintf("%v", r)
+		if !strings.Contains(msg, "cpuBlocks") {
+			t.Errorf("panic message should mention cpuBlocks, got: %s", msg)
+		}
+	}()
+	NewTieredKVCache(NewKVCacheState(10, 2), 0, 0.5, 100.0, 0)
+}
+
+func TestNewTieredKVCache_NegativeCPUBlocks_Panics(t *testing.T) {
+	// BC-1: GIVEN cpuBlocks=-5
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for cpuBlocks=-5")
+		}
+		msg := fmt.Sprintf("%v", r)
+		if !strings.Contains(msg, "cpuBlocks") {
+			t.Errorf("panic message should mention cpuBlocks, got: %s", msg)
+		}
+	}()
+	NewTieredKVCache(NewKVCacheState(10, 2), -5, 0.5, 100.0, 0)
 }
