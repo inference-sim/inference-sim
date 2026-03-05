@@ -50,13 +50,14 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 ```mermaid
 flowchart LR
     R["Request"] --> AC["Admission Control"] --> PS["Priority"] --> RT{{"Route to 1 of N instances"}}
-    RT --> S["Schedule"] --> B["Batch"] --> FP["Forward Pass"]
+    RT --> Q["Queue"] --> S["Schedule"] --> B["Batch"] --> FP["Forward Pass"]
     FP -->|"Output tokens"| S
 
     style R fill:#4051b5,color:#fff
     style AC fill:#4051b5,color:#fff
     style PS fill:#4051b5,color:#fff
     style RT fill:#4051b5,color:#fff
+    style Q fill:#6a77c4,color:#fff
     style S fill:#6a77c4,color:#fff
     style B fill:#6a77c4,color:#fff
     style FP fill:#6a77c4,color:#fff
