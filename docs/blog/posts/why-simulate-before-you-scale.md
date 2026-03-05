@@ -45,21 +45,18 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 
 ```mermaid
 flowchart TD
-    AC(["Admission Control"]):::cluster
-    PS(["Priority Scheduling"]):::cluster
-    RT(["Routing"]):::cluster
-    Q(["Queueing"]):::instance
-    S(["Scheduling"]):::instance
-    FP(["Forward Pass"]):::instance
+    AC["Admission Control"]
+    PS["Priority Scheduling"]
+    RT["Routing"]
+    Q(["Queueing"])
+    S(["Scheduling"])
+    FP(["Forward Pass"])
 
     AC --> PS --> RT --> Q --> S --> FP
     FP -->|"output tokens"| S
-
-    classDef cluster fill:#e3f2fd,color:#0d47a1,stroke:#1565c0,stroke-width:2px
-    classDef instance fill:#f3e5f5,color:#4a148c,stroke:#6a1b9a,stroke-width:2px
 ```
 
-*Blue = cluster-level decisions. Purple = per-instance token generation loop.* **BLIS simulates the physics of this entire system end-to-end.**
+*Rectangles = cluster-level decisions. Rounded = per-instance token generation loop.* **BLIS simulates the physics of this entire system end-to-end.**
 
 ## What You Can Do With It
 
