@@ -261,7 +261,13 @@ func TestNewSimulator_BatchConfigValidation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := newTestSimConfig()
-			cfg.BatchConfig = NewBatchConfig(tc.maxRunning, tc.maxTokens, tc.prefillThresh)
+			// Use struct literal to bypass NewBatchConfig validation — this tests
+			// NewSimulator's defense-in-depth, not the constructor.
+			cfg.BatchConfig = BatchConfig{
+				MaxRunningReqs:            tc.maxRunning,
+				MaxScheduledTokens:        tc.maxTokens,
+				LongPrefillTokenThreshold: tc.prefillThresh,
+			}
 			kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
 			latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 			if err != nil {
