@@ -394,11 +394,15 @@ var runCmd = &cobra.Command{
 			if !cmd.Flags().Changed("total-kv-blocks") {
 				kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
 				if kvParamsErr != nil {
-					logrus.Warnf("--latency-model: could not extract KV capacity params: %v; using current total-kv-blocks=%d", kvParamsErr, totalKVBlocks)
+					logrus.Fatalf("--latency-model: could not extract KV capacity params: %v\n"+
+					"Set --total-kv-blocks explicitly to override", kvParamsErr)
 				} else if hwConfig.MemoryGiB <= 0 {
 					logrus.Warnf("--latency-model: GPU memory capacity not available in hardware config; using current total-kv-blocks=%d. "+
 						"Add MemoryGiB to hardware_config.json or pass --total-kv-blocks explicitly", totalKVBlocks)
 				} else {
+					if kvParams.HiddenAct == "" {
+						logrus.Infof("--latency-model: hidden_act not set in config.json; assuming SwiGLU (3-matrix MLP) for weight estimation")
+					}
 					autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, kvParams)
 					if calcErr != nil {
 						logrus.Fatalf("--latency-model: KV capacity auto-calculation failed: %v\n"+

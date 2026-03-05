@@ -214,7 +214,7 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 		mlpPerLayer += int64(params.NumLocalExperts) * hiddenDim
 	}
 
-	// Layer norms: 2 per layer (pre-attention + post-attention), each = hidden_dim params
+	// Layer norms: 2 per layer (pre-attention + pre-MLP), each = hidden_dim params
 	layerNormsPerLayer := 2 * hiddenDim
 
 	// Per-layer total
