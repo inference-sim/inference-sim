@@ -81,19 +81,7 @@ Model traffic spikes, mixed workloads (short chatbot queries alongside long docu
 
 ```mermaid
 flowchart LR
-    subgraph simulate ["Simulate"]
-        direction TB
-        S1["Define workload"] --> S2["Choose policies"] --> S3["Run simulation"]
-    end
-    subgraph learn ["Learn"]
-        direction TB
-        L1["Review metrics"] --> L2["Find bottlenecks"]
-    end
-    subgraph act ["Act"]
-        A1["Deploy"]
-    end
-
-    simulate --> learn --> act
+    S1["Define workload"] --> S2["Choose policies"] --> S3["Run simulation"] --> L1["Review metrics"] --> L2["Find bottlenecks"] --> A1["Deploy"]
     L2 -.->|"Iterate"| S1
 
     style S1 fill:#4051b5,color:#fff
