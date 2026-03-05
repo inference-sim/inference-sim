@@ -544,7 +544,7 @@ Before implementation, verify:
 **Antipattern rules (full details in docs/contributing/standards/rules.md):**
 - [ ] R1: No silent `continue`/`return` dropping data
 - [ ] R2: Map keys sorted before float accumulation or ordered output
-- [ ] R3: Every new CLI flag validated (zero, negative, NaN, Inf)
+- [ ] R3: Every new numeric parameter validated (CLI flags AND library constructors)
 - [ ] R4: All struct construction sites audited for new fields
 - [ ] R5: Resource allocation loops handle mid-loop failure with rollback
 - [ ] R6: No `logrus.Fatalf` or `os.Exit` in `sim/` packages
@@ -562,6 +562,9 @@ Before implementation, verify:
 - [ ] R18: CLI flag values not silently overwritten by defaults.yaml
 - [ ] R19: Unbounded retry/requeue loops have circuit breakers
 - [ ] R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)
+- [ ] R21: No `range` over slices that can shrink during iteration
+- [ ] R22: Pre-check estimates consistent with actual operation accounting
+- [ ] R23: Parallel code paths apply equivalent transformations
 
 ======================================================================
 APPENDIX — FILE-LEVEL IMPLEMENTATION DETAILS

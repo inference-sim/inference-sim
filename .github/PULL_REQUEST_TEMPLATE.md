@@ -13,14 +13,34 @@
 
 <!-- Check each item. If N/A, check it and note why. Full details: docs/contributing/standards/rules.md -->
 
-- [ ] No silent data loss (R1)
-- [ ] Map keys sorted before float accumulation (R2)
-- [ ] CLI flags validated for zero, negative, NaN, Inf (R3)
+**Critical (correctness):**
+- [ ] No silent data loss — every error path returns error, panics, or increments counter (R1)
 - [ ] Struct construction sites audited for new fields (R4)
 - [ ] Resource allocation loops rollback on mid-loop failure (R5)
 - [ ] No `logrus.Fatalf` or `os.Exit` in `sim/` packages (R6)
+- [ ] Division by runtime-derived denominators guarded (R11)
+- [ ] Unbounded retry/requeue loops have circuit breakers (R19)
+- [ ] No `range` over slices that can shrink during iteration (R21)
+
+**Important (quality):**
+- [ ] Map keys sorted before float accumulation or ordered output (R2)
+- [ ] Every new numeric parameter validated — CLI flags AND library constructors (R3)
 - [ ] Invariant tests alongside golden tests (R7)
+- [ ] No exported mutable maps — use `IsValid*()` accessors (R8)
+- [ ] `*float64` for YAML fields where zero is valid (R9)
+- [ ] YAML strict parsing with `KnownFields(true)` (R10)
+- [ ] New interfaces work for 2+ implementations (R13)
+- [ ] No method spans multiple module responsibilities (R14)
+- [ ] Routing scorer signals documented for freshness tier (R17)
+- [ ] CLI flag values not silently overwritten by defaults.yaml (R18)
+- [ ] Detectors and analyzers handle degenerate inputs (R20)
+- [ ] Pre-check estimates consistent with actual operation accounting (R22)
+- [ ] Parallel code paths apply equivalent transformations (R23)
+
+**Hygiene (maintenance):**
 - [ ] Golden dataset regenerated if output changed (R12)
+- [ ] Stale PR references resolved (R15)
+- [ ] Config params grouped by module (R16)
 
 ## Invariants
 

@@ -39,6 +39,7 @@ Principles guide design decisions. The [antipattern rules](rules.md) are specifi
 |-------|----------|---------|
 | CLI (`cmd/`) | `logrus.Fatalf` for user errors | Invalid `--rate` value |
 | Library (`sim/`) | `panic()` for invariant violations | Unknown policy name in factory |
+| Library (`sim/`) | `panic()` for invalid constructor inputs | `NewTieredKVCache` with `cpuBlocks <= 0` |
 | Library (`sim/`) | `error` return for recoverable failures | File I/O, parse errors |
 | Runtime (`sim/`) | `bool` return for expected conditions | KV allocation failure -> preemption |
 
@@ -88,7 +89,7 @@ Every piece of documentation lives in exactly one canonical location. Other file
 
 | Content | Canonical Source | Working Copies |
 |---------|-----------------|----------------|
-| Antipattern rules (R1-R20) | `docs/contributing/standards/rules.md` | CLAUDE.md (table), CONTRIBUTING.md (checklist) |
+| Antipattern rules (R1-R23) | `docs/contributing/standards/rules.md` | CLAUDE.md (table), CONTRIBUTING.md (checklist), `.github/PULL_REQUEST_TEMPLATE.md` (PR checklist), `docs/contributing/templates/micro-plan-prompt.md` (Phase 8 checklist), `docs/contributing/templates/micro-plan.md` (Phase 8 checklist), `docs/contributing/index.md` (landing page table), `docs/guide/skills-and-plugins.md` (rules count) |
 | System invariants (INV-1–INV-8) | `docs/contributing/standards/invariants.md` | CLAUDE.md (summary), `docs/concepts/core-engine.md` (formulas), `docs/concepts/architecture.md` (signal freshness) |
 | Engineering principles | `docs/contributing/standards/principles.md` | CLAUDE.md (summary) |
 | Extension recipes (policies, scorers, KV tiers) | `docs/contributing/extension-recipes.md` | — |

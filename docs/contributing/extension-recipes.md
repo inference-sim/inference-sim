@@ -90,13 +90,14 @@ To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-L
    - `OutputTokenProcessingTime() int64` — per-token post-processing overhead
    - `SchedulingProcessingTime() int64` — scheduling overhead per request
    - `PreemptionProcessingTime() int64` — preemption overhead per eviction
-2. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a branch based on `ModelHardwareConfig` fields (e.g., a new string field or boolean in `sim/config.go`). The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
+2. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"crossmodel"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
 3. **Add behavioral tests** in `sim/latency/` — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)
 4. Extension friction: **2 touch points** (implementation + factory branch)
 
 Examples:
 - See `BlackboxLatencyModel` in `sim/latency/latency.go` for a simple stateless model (alpha/beta regression)
 - See `RooflineLatencyModel` in `sim/latency/latency.go` for a model that uses hardware config (FLOPs/bandwidth)
+- See `CrossModelLatencyModel` in `sim/latency/crossmodel.go` for a physics-informed model that derives step time from HuggingFace architecture features (MoE-aware)
 
 ## Adding New Batch Formation Strategies
 
