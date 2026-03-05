@@ -57,7 +57,7 @@ The final step time is the sum of independent phases and overheads:
 The simplest way to run roofline mode is with `--latency-model roofline`, which auto-resolves the model config:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct --latency-model roofline --hardware H100 --tp 1
+./blis run --model qwen/qwen2.5-7b-instruct --latency-model roofline --hardware H100 --tp 1
 ```
 
 The flag automatically:
@@ -70,7 +70,7 @@ For models not in `defaults.yaml`, add an `hf_repo` entry mapping the BLIS model
 
 Alternatively, download the `config.json` manually:
 
-* Download the `config.json` for the LLM of your choice into `model_configs/`. [This](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct/blob/main/config.json) is an example config.json for `meta-llama/Llama-3.3-70B-Instruct`. The recommended file structure is `model_configs/llama-3.1-8b-instruct/config.json`.
+* Download the `config.json` for the LLM of your choice into `model_configs/`. [This](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/config.json) is an example config.json for `Qwen/Qwen2.5-7B-Instruct`. The recommended file structure is `model_configs/qwen2.5-7b-instruct/config.json`.
 
 ### Adding a new GPU
 

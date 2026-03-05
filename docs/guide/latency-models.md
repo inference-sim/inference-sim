@@ -4,17 +4,17 @@ The `LatencyModel` interface determines how BLIS estimates GPU step time for eac
 
 ```bash
 # Blackbox mode (default) — uses pre-trained coefficients
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen2.5-7b-instruct \
   --num-instances 4 --rate 100 --num-requests 500
 
 # Roofline mode — analytical estimation from model architecture
-./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --latency-model roofline --hardware H100 --tp 2 \
+./blis run --model qwen/qwen2.5-7b-instruct \
+  --latency-model roofline --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 
 # Cross-model mode — physics-informed estimation from config.json (MoE-aware)
-./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --latency-model crossmodel --hardware H100 --tp 2 \
+./blis run --model qwen/qwen2.5-7b-instruct \
+  --latency-model crossmodel --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
@@ -39,7 +39,7 @@ QueueingTime           = alpha0 + alpha1 * input_length
 OutputTokenProcessingTime = alpha2
 ```
 
-All alpha and beta coefficients must be non-negative. Negative values are rejected at construction time (INV-5: causality). Pre-trained coefficient sets exist in `defaults.yaml` for common model/GPU/TP combinations (e.g., `meta-llama/llama-3.1-8b-instruct` on H100 with TP=2).
+All alpha and beta coefficients must be non-negative. Negative values are rejected at construction time (INV-5: causality). Pre-trained coefficient sets exist in `defaults.yaml` for common model/GPU/TP combinations (e.g., `qwen/qwen2.5-7b-instruct` on H100 with TP=1).
 
 !!! note "Alpha overhead is non-blocking"
     Alpha coefficients model CPU post-processing (tokenization, output serialization) that runs concurrently with GPU execution. Alpha time inflates TTFT and ITL metrics but does **not** block step scheduling -- the next batch step is scheduled at `now + stepTime` regardless of alpha overhead. This matches real vLLM's asynchronous post-processing pipeline.
@@ -53,8 +53,8 @@ Roofline mode computes step time analytically from model architecture (FLOPs, pa
 The simplest way to use roofline mode:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --latency-model roofline --hardware H100 --tp 2
+./blis run --model qwen/qwen2.5-7b-instruct \
+  --latency-model roofline --hardware H100 --tp 1
 ```
 
 This auto-resolves both required inputs:
@@ -67,7 +67,7 @@ For gated models (e.g., LLaMA), set `HF_TOKEN`:
 ```bash
 export HF_TOKEN=your_token_here
 ./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --latency-model roofline --hardware H100 --tp 2
+  --latency-model roofline --hardware H100 --tp 1
 ```
 
 ### Manual Configuration
@@ -108,8 +108,8 @@ When choosing between TP and replication (more instances): TP reduces per-reques
 Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from `config.json` to scale a single coefficient set.
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --latency-model crossmodel --hardware H100 --tp 2
+./blis run --model qwen/qwen2.5-7b-instruct \
+  --latency-model crossmodel --hardware H100 --tp 1
 ```
 
 **StepTime formula:**
