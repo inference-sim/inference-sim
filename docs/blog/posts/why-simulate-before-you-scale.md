@@ -33,6 +33,28 @@ The aerospace industry doesn't test new wing designs by building full aircraft a
 
 The key difference: **it runs on your laptop in seconds, with no GPUs required.** And this isn't a rough approximation — BLIS produces highly accurate predictions of real-world serving metrics, validated against production inference engines. The numbers you see in simulation translate directly to capacity decisions you can trust.
 
+**At the cluster level**, BLIS decides what happens to each request before it reaches a GPU:
+
+```mermaid
+flowchart LR
+    R["Request"] --> AC["Admission\nControl"] --> PS["Priority\nScheduling"] --> RT["Routing"]
+    style R fill:#4051b5,color:#fff
+    style AC fill:#4051b5,color:#fff
+    style PS fill:#4051b5,color:#fff
+    style RT fill:#4051b5,color:#fff
+```
+
+**At the instance level**, each GPU runs a continuous loop — queueing requests, scheduling them into batches, and executing forward passes to generate tokens:
+
+```mermaid
+flowchart LR
+    Q["Request\nQueueing"] --> S["Scheduling"] --> FP["Forward\nPass"]
+    FP -->|"Output tokens"| Q
+    style Q fill:#6a77c4,color:#fff
+    style S fill:#6a77c4,color:#fff
+    style FP fill:#6a77c4,color:#fff
+```
+
 ## What You Can Do With It
 
 ### Plan Capacity With Confidence
