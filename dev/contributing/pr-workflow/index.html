@@ -3283,45 +3283,24 @@
 <p>This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.</p>
 <hr />
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌─────────────────────────────────┐
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│ Step 1: Create Isolated Workspace│
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>└──────────┬──────────────────────┘
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>           │
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>           ▼
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>┌─────────────────────────────────┐
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│ Step 2: Write Implementation Plan│
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>└──────────┬──────────────────────┘
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>           │
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>           ▼
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>┌─────────────────────────────────┐
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│ Step 2.5: Review the Plan        │ (10 perspectives → convergence)
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>└──────────┬──────────────────────┘
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>           │
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>           ▼
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>┌─────────────────────────────────┐
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│ Step 3: Human Review             │ (Approve plan)
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>└──────────┬──────────────────────┘
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>           │
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>           ▼
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>┌─────────────────────────────────┐
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>│ Step 4: Implement the Plan       │
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>└──────────┬──────────────────────┘
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>           │
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>           ▼
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>┌─────────────────────────────────┐
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│ Step 4.5: Review the Code        │ (10 perspectives → convergence)
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>└──────────┬──────────────────────┘
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>           │
-<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>           ▼
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>┌─────────────────────────────────┐
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│ Step 4.75: Pre-Commit Self-Audit │ (Critical thinking — no agent)
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>└──────────┬──────────────────────┘
-<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>           │
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>           ▼
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>┌─────────────────────────────────┐
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>│ Step 5: Commit, Push, Create PR  │
-<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>└─────────────────────────────────┘
-</code></pre></div>
+<pre class="mermaid"><code>flowchart TD
+    S1["Step 1: Create Isolated Workspace"]
+    S2["Step 2: Write Implementation Plan"]
+    S25["Step 2.5: Review the Plan&lt;br/&gt;(10 perspectives → convergence)"]
+    S3["Step 3: Human Review&lt;br/&gt;(Approve plan)"]
+    S4["Step 4: Implement the Plan"]
+    S45["Step 4.5: Review the Code&lt;br/&gt;(10 perspectives → convergence)"]
+    S475["Step 4.75: Pre-Commit Self-Audit&lt;br/&gt;(Critical thinking — no agent)"]
+    S5["Step 5: Commit, Push, Create PR"]
+
+    S1 --&gt; S2 --&gt; S25 --&gt; S3 --&gt; S4 --&gt; S45 --&gt; S475 --&gt; S5
+    S25 --&gt;|convergence&lt;br/&gt;rounds| S25
+    S45 --&gt;|convergence&lt;br/&gt;rounds| S45
+
+    style S25 fill:#fff3e0
+    style S3 fill:#e1bee7
+    style S45 fill:#fff3e0
+    style S475 fill:#ffecb3</code></pre>
 <p><strong>Key insights:</strong>
 1. <strong>Worktree isolation from start</strong> (Step 1) — Create worktree BEFORE any work. Main worktree never touched. Enables parallel work on multiple PRs.
 2. <strong>Three-stage quality assurance:</strong>
@@ -3332,8 +3311,8 @@
 <h2 id="step-by-step-process">Step-by-Step Process<a class="headerlink" href="#step-by-step-process" title="Permanent link">&para;</a></h2>
 <h3 id="step-1-create-an-isolated-workspace">Step 1: Create an Isolated Workspace<a class="headerlink" href="#step-1-create-an-isolated-workspace" title="Permanent link">&para;</a></h3>
 <p>Create a git worktree BEFORE any work begins:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>worktree<span class="w"> </span>add<span class="w"> </span>.worktrees/pr&lt;N&gt;-&lt;feature-name&gt;<span class="w"> </span>-b<span class="w"> </span>pr&lt;N&gt;-&lt;feature-name&gt;
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>.worktrees/pr&lt;N&gt;-&lt;feature-name&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>worktree<span class="w"> </span>add<span class="w"> </span>.worktrees/pr&lt;N&gt;-&lt;feature-name&gt;<span class="w"> </span>-b<span class="w"> </span>pr&lt;N&gt;-&lt;feature-name&gt;
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>.worktrees/pr&lt;N&gt;-&lt;feature-name&gt;
 </code></pre></div>
 <p><strong>Why first?</strong> This ensures:
 - Main worktree stays clean (no uncommitted plans or code)
@@ -3496,7 +3475,7 @@
 <h4 id="filing-pre-existing-issues">Filing Pre-Existing Issues<a class="headerlink" href="#filing-pre-existing-issues" title="Permanent link">&para;</a></h4>
 <p>Review passes naturally surface pre-existing bugs in surrounding code. These are valuable discoveries but outside the current PR's scope.</p>
 <p><strong>Rule:</strong> File a GitHub issue immediately. Do not fix in the current PR.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>gh<span class="w"> </span>issue<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;Bug: &lt;concise description&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;location, impact, discovery context&gt;&quot;</span><span class="w"> </span>--label<span class="w"> </span>bug
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>gh<span class="w"> </span>issue<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;Bug: &lt;concise description&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;location, impact, discovery context&gt;&quot;</span><span class="w"> </span>--label<span class="w"> </span>bug
 </code></pre></div>
 <p><strong>Label guide:</strong> Use <code>bug</code> for code defects, <code>design</code> for design limitations, <code>enhancement</code> for feature gaps, <code>hardening</code> for correctness/invariant issues. Every issue must have at least one label — unlabeled issues are invisible in filtered views.</p>
 <p><strong>After filing:</strong> Reference the issue number in the PR description under a "Discovered Issues" section so reviewers know it was found and tracked.</p>
@@ -3506,10 +3485,10 @@
 - <strong>Tracking</strong> — issues that aren't filed are issues that are lost</p>
 <h4 id="after-convergence-verification-gate">After Convergence: Verification Gate<a class="headerlink" href="#after-convergence-verification-gate" title="Permanent link">&para;</a></h4>
 <p>After fixing issues from all passes, run the verification gate to ensure all claims are backed by evidence:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>go<span class="w"> </span>build<span class="w"> </span>./...<span class="w">            </span><span class="c1"># Build passes</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...<span class="w"> </span>-count<span class="o">=</span><span class="m">1</span><span class="w">    </span><span class="c1"># All tests pass (with counts)</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...<span class="w">   </span><span class="c1"># Zero lint issues</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>git<span class="w"> </span>status<span class="w">                </span><span class="c1"># Working tree status</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>go<span class="w"> </span>build<span class="w"> </span>./...<span class="w">            </span><span class="c1"># Build passes</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...<span class="w"> </span>-count<span class="o">=</span><span class="m">1</span><span class="w">    </span><span class="c1"># All tests pass (with counts)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...<span class="w">   </span><span class="c1"># Zero lint issues</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>git<span class="w"> </span>status<span class="w">                </span><span class="c1"># Working tree status</span>
 </code></pre></div>
 <p>Report: build exit code, test pass/fail counts, lint issue count, working tree status. Wait for user approval before proceeding.</p>
 <p><strong>Why a gate instead of informal checking?</strong> In PR9, the manual "run these commands" instruction was easy to skip or half-execute. Making verification a formal gate with expected output makes it non-optional and evidence-based.</p>
@@ -3539,15 +3518,15 @@
 <hr />
 <h3 id="step-5-commit-push-and-create-pr">Step 5: Commit, Push, and Create PR<a class="headerlink" href="#step-5-commit-push-and-create-pr" title="Permanent link">&para;</a></h3>
 <p>Stage your changes, commit, push, and create a PR:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>git<span class="w"> </span>add<span class="w"> </span>&lt;files&gt;
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(scope): &lt;description&gt;</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="s2">- Implement BC-1: &lt;brief description&gt;</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="s2">- Implement BC-2: &lt;brief description&gt;</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="s2">Co-Authored-By: Claude &lt;noreply@anthropic.com&gt;&quot;</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>&lt;branch-name&gt;
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;&lt;title&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;description with behavioral contracts&gt;&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>add<span class="w"> </span>&lt;files&gt;
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(scope): &lt;description&gt;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="s2">- Implement BC-1: &lt;brief description&gt;</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="s2">- Implement BC-2: &lt;brief description&gt;</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="s2">Co-Authored-By: Claude &lt;noreply@anthropic.com&gt;&quot;</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>&lt;branch-name&gt;
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;&lt;title&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;description with behavioral contracts&gt;&quot;</span>
 </code></pre></div>
 <p>The PR description should include a summary, behavioral contracts (GIVEN/WHEN/THEN), testing verification, and GitHub closing keywords from the plan's <code>Closes:</code> field (e.g., <code>Fixes #183, fixes #189</code>).</p>
 <div class="admonition tip">
@@ -3638,23 +3617,23 @@
 <p class="admonition-title">Requires Claude Code</p>
 <p>This workaround uses the <code>claude</code> CLI tool. Contributors without Claude Code can run reviews manually using the perspective checklists in Steps 2.5 and 4.5.</p>
 </div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="ch">#!/bin/bash</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># headless-review.sh — Run review agents with full context each</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nv">BRANCH</span><span class="o">=</span><span class="k">$(</span>git<span class="w"> </span>branch<span class="w"> </span>--show-current<span class="k">)</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>.review
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># Run each pass in its own context (no overflow)</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 1: Code quality review of branch </span><span class="nv">$BRANCH</span><span class="s2">. Write findings to .review/01-code-quality.md&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 2: Test behavioral quality review. Write findings to .review/02-test-quality.md&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 3: Getting-started review. Write findings to .review/03-getting-started.md&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="nb">wait</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="c1"># Lightweight consolidation</span>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Read .review/*.md files. Produce a consolidated summary sorted by severity.&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Glob&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="ch">#!/bin/bash</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># headless-review.sh — Run review agents with full context each</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nv">BRANCH</span><span class="o">=</span><span class="k">$(</span>git<span class="w"> </span>branch<span class="w"> </span>--show-current<span class="k">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>.review
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># Run each pass in its own context (no overflow)</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 1: Code quality review of branch </span><span class="nv">$BRANCH</span><span class="s2">. Write findings to .review/01-code-quality.md&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 2: Test behavioral quality review. Write findings to .review/02-test-quality.md&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 3: Getting-started review. Write findings to .review/03-getting-started.md&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="nb">wait</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="c1"># Lightweight consolidation</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Read .review/*.md files. Produce a consolidated summary sorted by severity.&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Glob&quot;</span>
 </code></pre></div>
 <p>When to use: When Step 2.5 or Step 4.5 hits context limits. Not needed for most PRs.</p>
 <hr />

@@ -3012,9 +3012,30 @@
 </table>
 <p><strong>Clock monotonicity (INV-3):</strong> The simulation clock never decreases. Events are processed in strictly non-decreasing timestamp order.</p>
 <p><strong>Work-conserving (INV-8):</strong> After every step completion, if the wait queue is non-empty, a <code>StepEvent</code> must exist in the event queue. The simulator never idles while work is waiting.</p>
-<p><img alt="Event Processing Loop" src="../diagrams/eventprocessingloop.png" /></p>
+<pre class="mermaid"><code>flowchart TD
+    EQ["Event Queue (min-heap)&lt;br/&gt;Ordered by timestamp"] --&gt;|Pop min| Clock["Advance clock&lt;br/&gt;to event.timestamp"]
+    Clock --&gt; Exec["Execute Event Handler&lt;br/&gt;Arrival → Queued → WaitQ&lt;br/&gt;Step → Step() phases&lt;br/&gt;Completion → metrics"]
+    Exec --&gt;|produces new events| EQ
+    Exec --&gt;|clock ≥ horizon&lt;br/&gt;or queue empty| Done["Simulation&lt;br/&gt;Complete"]
+
+    style EQ fill:#fff9db
+    style Clock fill:#a5d8ff
+    style Exec fill:#b2f2bb
+    style Done fill:#c8e6c9</code></pre>
 <h2 id="step-phases">Step Phases<a class="headerlink" href="#step-phases" title="Permanent link">&para;</a></h2>
 <p>The <code>Step()</code> function is a 4-line orchestrator that delegates to four phases:</p>
+<pre class="mermaid"><code>flowchart TD
+    P1["1. scheduleBatch&lt;br/&gt;Priority assignment&lt;br/&gt;Queue reordering&lt;br/&gt;Batch formation"]
+    P2["2. executeBatchStep&lt;br/&gt;Latency estimation&lt;br/&gt;Prefill/decode progress&lt;br/&gt;TTFT at boundary"]
+    P3["3. processCompletions&lt;br/&gt;Release KV blocks&lt;br/&gt;Record E2E metrics&lt;br/&gt;Schedule RequestLeft"]
+    P4["4. scheduleNextStep&lt;br/&gt;Batch has work → Step&lt;br/&gt;Queue has work → Step&lt;br/&gt;Both empty → idle"]
+
+    P1 --&gt; P2 --&gt; P3 --&gt; P4
+
+    style P1 fill:#d0bfff
+    style P2 fill:#d0bfff
+    style P3 fill:#d0bfff
+    style P4 fill:#d0bfff</code></pre>
 <h3 id="phase-1-schedule-batch-schedulebatch">Phase 1: Schedule Batch (<code>scheduleBatch</code>)<a class="headerlink" href="#phase-1-schedule-batch-schedulebatch" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Assign priority scores to all queued requests via the priority policy</li>
@@ -3042,19 +3063,43 @@
 </ol>
 <h2 id="request-lifecycle">Request Lifecycle<a class="headerlink" href="#request-lifecycle" title="Permanent link">&para;</a></h2>
 <p>Requests follow a linear state machine with one exception (preemption):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>                      ┌─────────────────────────────────┐
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>                      │         Preemption               │
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                      │    (re-enqueue at front)         │
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>                      ▼                                  │
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  Arrival ──▶ Queued ──▶ Running ──▶ Completed
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>               │                        │
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>               │                        ▼
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>               │                   RequestLeft
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>               │
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  Arrival ──▶ DroppedUnservable
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>             (input too large for KV cache)
-</code></pre></div>
-<p><img alt="Request Lifecycle" src="../diagrams/requestlifecycle.png" /></p>
+<pre class="mermaid"><code>stateDiagram-v2
+    [*] --&gt; Arrival
+    Arrival --&gt; Queued : alpha queueing delay
+    Arrival --&gt; DroppedUnservable : input too large for KV cache
+
+    state "Queued" as Queued
+    note right of Queued
+        EnqueueTime recorded
+        Scheduler orders queue
+    end note
+
+    Queued --&gt; Running : BatchFormation selects
+
+    state "Running" as Running
+    note right of Running
+        ScheduleTime recorded
+        TTFT at prefill→decode boundary
+        KV blocks allocated
+        ITL recorded per decode step
+    end note
+
+    Running --&gt; Completed
+    Running --&gt; Queued : Preemption (KV eviction, re-enqueue front)
+
+    state "Completed" as Completed
+    note right of Completed
+        CompletionTime recorded
+        KV blocks released
+        E2E = CompletionTime − ArrivalTime
+    end note
+
+    Completed --&gt; RequestLeft
+    RequestLeft --&gt; [*]
+    DroppedUnservable --&gt; [*]</code></pre>
+<blockquote>
+<p><strong>INV-5 (Causality):</strong> ArrivalTime ≤ EnqueueTime ≤ ScheduleTime ≤ CompletionTime</p>
+</blockquote>
 <h3 id="states">States<a class="headerlink" href="#states" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3199,9 +3244,9 @@ Dequeue requests from the wait queue:
 <p>BLIS predicts GPU step time through one of three latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
 <h3 id="blackbox-model-default">Blackbox Model (Default)<a class="headerlink" href="#blackbox-model-default" title="Permanent link">&para;</a></h3>
 <p>Uses trained regression coefficients to predict step time:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>QueueingTime = alpha0 + alpha1 * input_length
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>OutputTokenProcessingTime = alpha2
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>QueueingTime = alpha0 + alpha1 * input_length
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>OutputTokenProcessingTime = alpha2
 </code></pre></div>
 <ul>
 <li><strong>Beta coefficients</strong> model GPU execution time as a linear function of batch composition</li>
@@ -3212,8 +3257,8 @@ Dequeue requests from the wait queue:
 <p>See <a href="../../reference/configuration/#coefficient-calibration">Configuration Reference: Coefficient Calibration</a> for the training process.</p>
 <h3 id="roofline-model-analytical">Roofline Model (Analytical)<a class="headerlink" href="#roofline-model-analytical" title="Permanent link">&para;</a></h3>
 <p>Uses analytical FLOPs/bandwidth estimation when no trained coefficients are available:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>Step Time  = Prefill Phase Time + Decode Phase Time
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Step Time  = Prefill Phase Time + Decode Phase Time
 </code></pre></div>
 <ul>
 <li>Requires HuggingFace <code>config.json</code> (model architecture: layers, heads, hidden dim)</li>

@@ -2226,32 +2226,13 @@
 </tbody>
 </table>
 <h2 id="diagrams">Diagrams<a class="headerlink" href="#diagrams" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Diagram</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><img alt="Cluster Data Flow" src="diagrams/clusterdataflow.png" /></td>
-<td>End-to-end cluster pipeline: request arrival through metrics output</td>
-</tr>
-<tr>
-<td><img alt="Request Lifecycle" src="diagrams/requestlifecycle.png" /></td>
-<td>Request state machine: states, transitions, and metric recording points</td>
-</tr>
-<tr>
-<td><img alt="Event Processing" src="diagrams/eventprocessingloop.png" /></td>
-<td>DES event loop: min-heap queue, clock advancement, Step() decomposition</td>
-</tr>
-<tr>
-<td><img alt="Scoring Pipeline" src="diagrams/scoringpipeline.png" /></td>
-<td>Weighted scorer composition: per-scorer normalization, weight multiplication, argmax selection</td>
-</tr>
-</tbody>
-</table>
+<p>Each concept page includes inline Mermaid diagrams:</p>
+<ul>
+<li><strong><a href="architecture/#overview">Cluster Data Flow</a></strong> — End-to-end cluster pipeline: request arrival through metrics output</li>
+<li><strong><a href="core-engine/#request-lifecycle">Request Lifecycle</a></strong> — Request state machine: states, transitions, and metric recording points</li>
+<li><strong><a href="core-engine/#event-queue">Event Processing Loop</a></strong> — DES event loop: min-heap queue, clock advancement, Step() decomposition</li>
+<li><strong><a href="architecture/#weighted-scoring-policy">Scoring Pipeline</a></strong> — Weighted scorer composition: per-scorer normalization, weight multiplication, argmax selection</li>
+</ul>
 <h2 id="reading-order">Reading Order<a class="headerlink" href="#reading-order" title="Permanent link">&para;</a></h2>
 <p>For newcomers to BLIS:</p>
 <ol>
