@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
@@ -240,6 +241,40 @@ func TestNewSimulator_NilKVStore_ReturnsError(t *testing.T) {
 	}
 	if err.Error() != "NewSimulator: kvStore must not be nil" {
 		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestNewSimulator_BatchConfigValidation(t *testing.T) {
+	tests := []struct {
+		name           string
+		maxRunning     int64
+		maxTokens      int64
+		prefillThresh  int64
+		wantErrContain string
+	}{
+		{"zero_max_running", 0, 2048, 0, "MaxRunningReqs"},
+		{"negative_max_running", -1, 2048, 0, "MaxRunningReqs"},
+		{"zero_max_tokens", 256, 0, 0, "MaxScheduledTokens"},
+		{"negative_max_tokens", 256, -1, 0, "MaxScheduledTokens"},
+		{"negative_prefill_threshold", 256, 2048, -1, "LongPrefillTokenThreshold"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newTestSimConfig()
+			cfg.BatchConfig = NewBatchConfig(tc.maxRunning, tc.maxTokens, tc.prefillThresh)
+			kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+			latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+			if err != nil {
+				t.Fatalf("MustNewLatencyModel: %v", err)
+			}
+			_, err = NewSimulator(cfg, kvStore, latencyModel)
+			if err == nil {
+				t.Fatalf("expected error for %s", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.wantErrContain) {
+				t.Errorf("error %q should contain %q", err.Error(), tc.wantErrContain)
+			}
+		})
 	}
 }
 
@@ -1279,6 +1314,7 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             100000,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{NumHeads: 0}, HardwareCalib{}, "", "", 0, ""),
 	}
