@@ -72,17 +72,13 @@ Importantly, this isn't a rough approximation. BLIS produces **highly accurate p
 
 ## What You Can Do With It
 
-### Right-Size Before You Buy
+### Plan Capacity With Confidence
 
-Run simulations at different instance counts and GPU configurations. BLIS tells you exactly where your latency targets break — so you can provision for reality, not guesswork.
+Run simulations at different instance counts, GPU configurations, and traffic patterns — including spikes, mixed workloads, and priority classes. BLIS tells you exactly where your latency targets break and how the system degrades, so you provision for reality rather than guesswork. Every simulation is deterministic and reproducible: same inputs, byte-identical results, fully auditable.
 
-### Stress-Test Your Policies
+### Compare Policies Side by Side
 
-Compare routing strategies (round-robin vs. load-aware vs. prefix-affinity), admission control policies, and scheduling algorithms side by side. See how each performs under your actual workload distribution — not a generic benchmark.
-
-### Predict the Unpredictable
-
-Model traffic spikes, mixed workloads (short chatbot queries alongside long document summaries), and priority classes (critical requests vs. background batch jobs). Understand failure modes before they happen in production.
+Routing strategies, admission control rules, and scheduling algorithms all interact in non-obvious ways. BLIS lets you swap any of these independently and measure the impact on your actual workload distribution — not a generic benchmark.
 
 ```mermaid
 flowchart LR
@@ -99,17 +95,11 @@ flowchart LR
 
 *The simulate-learn-act loop: iterate in seconds, deploy with confidence.*
 
-### Deterministic and Reproducible
+### Discover New Algorithms With AI
 
-Every simulation run with the same inputs produces byte-identical results. This means your capacity plans are auditable, shareable, and version-controlled — not tribal knowledge locked in someone's head.
+Capacity planning and policy comparison answer "which *known* strategy is best?" The deeper opportunity is discovering strategies that no human would design from scratch.
 
-## A Foundation for AI-Driven Algorithm Discovery
-
-Capacity planning is just the beginning. The deeper opportunity is using simulation as a **research platform for discovering entirely new algorithms**.
-
-Routing, admission control, scheduling, and auto-scaling in LLM serving systems interact in complex, non-obvious ways. The optimal strategy for one workload may be catastrophic for another. Human intuition alone cannot navigate this design space — there are too many interacting dimensions.
-
-BLIS was custom-built to be a foundation for **AI-Driven Research and Strategy Discovery (ADRS)**: using AI systems themselves to search for, evaluate, and refine serving algorithms that no human would design from scratch.
+BLIS was custom-built to be a foundation for **AI-Driven Research and Strategy Discovery (ADRS)**. Routing, scheduling, admission, and batch formation are each a swappable interface — AI frameworks can inject candidate algorithms at any layer, evaluate them across diverse workloads in seconds, and evolve the best performers. Thousands of candidates per hour, with deterministic fitness comparisons and rich multi-objective signals (latency, throughput, fairness, SLO attainment).
 
 ```mermaid
 flowchart LR
@@ -122,15 +112,6 @@ flowchart LR
 ```
 
 *AI proposes candidate strategies; BLIS evaluates them in seconds; the best survive and evolve.*
-
-Here's why BLIS is uniquely suited for this:
-
-- **Speed**: Each simulation completes in seconds, enabling thousands of candidate evaluations per hour — fast enough for evolutionary and Bayesian search
-- **Determinism**: Identical inputs always produce identical outputs, so fitness comparisons are apples-to-apples with no noise from hardware variability
-- **Pluggable policy axes**: Routing, scheduling, admission, and batch formation are each a swappable interface — AI frameworks can inject candidate algorithms at any layer without modifying the simulator core
-- **Rich fitness signals**: BLIS produces multi-objective metrics (latency distributions, throughput, fairness indices, SLO attainment) that guide search toward strategies balancing competing goals
-
-The result: instead of hand-tuning a few knobs on known algorithms, you can **let AI explore the space of possible algorithms** — discovering routing policies, scheduling strategies, and admission rules that outperform anything a human would think to try.
 
 ## The Bottom Line
 
