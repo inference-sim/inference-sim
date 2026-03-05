@@ -17,6 +17,52 @@ type HFConfig struct {
 	Raw map[string]any
 }
 
+// GetString returns a string value for a key if present and of the right type.
+func (c *HFConfig) GetString(key string) (string, bool) {
+	if v, ok := c.Raw[key]; ok {
+		if s, ok := v.(string); ok {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// GetInt tries to coerce a JSON number to int.
+func (c *HFConfig) GetInt(key string) (int, bool) {
+	if v, ok := c.Raw[key]; ok {
+		if f, ok := v.(float64); ok {
+			return int(f), true
+		}
+	}
+	return 0, false
+}
+
+// GetBool returns a bool for a key.
+func (c *HFConfig) GetBool(key string) (bool, bool) {
+	if v, ok := c.Raw[key]; ok {
+		if b, ok := v.(bool); ok {
+			return b, true
+		}
+	}
+	return false, false
+}
+
+// MustGetString returns the string or a default.
+func (c *HFConfig) MustGetString(key, def string) string {
+	if s, ok := c.GetString(key); ok {
+		return s
+	}
+	return def
+}
+
+// MustGetInt returns the int or a default.
+func (c *HFConfig) MustGetInt(key string, def int) int {
+	if i, ok := c.GetInt(key); ok {
+		return i
+	}
+	return def
+}
+
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
 	data, err := os.ReadFile(HWConfigFilePath)
 	if err != nil {
