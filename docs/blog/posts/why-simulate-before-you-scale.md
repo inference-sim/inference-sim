@@ -2,14 +2,14 @@
 date: 2026-03-05
 authors:
   - dipanwita
-  - srini
   - mert
-  - nick
   - jing
+  - nick
+  - michael
   - asser
   - vishakha
+  - srini
   - fabio
-  - michael
 categories:
   - What is BLIS?
 ---
