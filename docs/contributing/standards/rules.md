@@ -47,13 +47,15 @@ Go map iteration is non-deterministic. Any `for k, v := range someMap` that feed
 
 ---
 
-### R3: Validate ALL numeric CLI flags
+### R3: Validate ALL numeric parameters
 
 Every numeric flag (`--rate`, `--fitness-weights`, `--kv-cpu-blocks`, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).
 
 **Evidence:** `--rate 0` caused an infinite loop deep in the simulation. `--snapshot-refresh-interval` was added without validation (#281).
 
-**Check:** For every new CLI flag, add validation in `cmd/root.go` with `logrus.Fatalf` for invalid values.
+**Additional evidence:** Issues #508, #509, #382, #383, #384 (fix #520) — `NewTieredKVCache` accepted `cpuBlocks <= 0`, `NewKVStore` did not validate `KVOffloadThreshold` range or `KVTransferBandwidth > 0`, and `NewSimulator` accepted `MaxRunningReqs <= 0`. Library callers bypass CLI validation entirely.
+
+**Check:** For every new numeric parameter — whether CLI flag or library constructor argument — add validation. CLI: `logrus.Fatalf` in `cmd/root.go`. Library: `panic` or `error` return in the constructor. Validation must appear before the first consumption site (validate-before-use).
 
 **Enforced:** PR template, micro-plan Phase 8, self-audit dimension 6.
 
@@ -257,6 +259,8 @@ Loops where the exit condition depends on resource availability that may never b
 
 **Evidence:** H8 hypothesis experiment — with total KV blocks below ~1000 (insufficient for any single request), the preempt-requeue cycle ran indefinitely with no termination condition, no max-retry limit, and no progress check.
 
+**Additional evidence:** Issue #349, fix #519 — Go `range` over `RunningBatch.Requests` captured the slice header at loop entry. When `preemptForTokens` evicted tail requests mid-iteration, the range loop visited phantom elements, causing 102K+ cascading preemptions with zero completions. This is a distinct livelock mechanism from resource-retry loops — the loop itself is not a retry, but it processes stale elements that trigger resource exhaustion. See also R21.
+
 **Check:** For every loop that retries an operation after a resource failure, verify there is an explicit bound or progress check. Pay special attention to preemption, eviction, and reallocation loops.
 
 **Enforced:** PR template, micro-plan Phase 8, self-audit dimension 4.
@@ -317,7 +321,7 @@ For PR authors — check each rule before submitting:
 
 - [ ] **R1:** No silent `continue`/`return` dropping data
 - [ ] **R2:** Map keys sorted before float accumulation or ordered output
-- [ ] **R3:** Every new CLI flag validated (zero, negative, NaN, Inf)
+- [ ] **R3:** Every new numeric parameter validated (CLI flags AND library constructors)
 - [ ] **R4:** All struct construction sites audited for new fields
 - [ ] **R5:** Resource allocation loops handle mid-loop failure with rollback
 - [ ] **R6:** No `logrus.Fatalf` or `os.Exit` in `sim/` packages
