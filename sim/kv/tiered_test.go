@@ -361,3 +361,97 @@ func TestNewTieredKVCache_NegativeCPUBlocks_Panics(t *testing.T) {
 	}()
 	NewTieredKVCache(NewKVCacheState(10, 2), -5, 0.5, 100.0, 0)
 }
+
+func TestTieredKVCache_OffloadReload_MechanismExercised(t *testing.T) {
+	// BC-8: GIVEN a TieredKVCache with prefix blocks offloaded to CPU and GPU under pressure
+	// WHEN a request for the same prefix triggers AllocateKVBlocks
+	// THEN tryReloadFromCPU MUST execute (cpuHitCount > 0)
+	//
+	// Follows the established pattern from TestTieredKVCache_ThrashingDetected.
+	//
+	// Block arithmetic (10 GPU blocks, blockSize=2):
+	//   Step 1: target [1,2,3,4] (2 blk) + 3 others (6 blk) = 8 used, 2 free
+	//   Step 2: release target → 6 used, 4 free. maybeOffload (util 0.6 > 0.3)
+	//           offloads 2 hashed free blocks to CPU. Free count UNCHANGED: 6 used, 4 free.
+	//   Step 3: 3 fillers (3 blk) → 9 used, 1 free
+	//   Step 4: reload request needs 2 new (0 cached), has 1 free → GPU FAILS.
+	//           tryReloadFromCPU: 2 CPU blocks, 1 free GPU slot.
+	//           Reload block 0 into slot → append. Reload block 1 → pop same slot,
+	//           destroy block 0 hash, fill with block 1. cpuHitCount = 2.
+	//           GetCachedBlocks: block 0 hash miss (overwritten). newCached = 0.
+	//           Retry: needs 2, has 1 → fails. ok = false (expected — known limitation).
+	//
+	// Note: the allocation failure is due to the single-slot overwrite limitation
+	// in tryReloadFromCPU (tiered.go:115-119) combined with hierarchical hashing.
+	// This test verifies the reload MECHANISM works, not the chain outcome.
+
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.3, 100.0, 0)
+	tiered.SetClock(100)
+
+	// Step 1: Allocate target prefix [1,2,3,4] (2 blocks) + fill GPU to 80%
+	tokens := []int{1, 2, 3, 4}
+	target := &sim.Request{ID: "target", InputTokens: tokens}
+	if !tiered.AllocateKVBlocks(target, 0, 4, []int64{}) {
+		t.Fatal("target allocation should succeed")
+	}
+	others := make([]*sim.Request, 3)
+	for i := 0; i < 3; i++ {
+		others[i] = &sim.Request{ID: fmt.Sprintf("o%d", i), InputTokens: []int{i*4 + 10, i*4 + 11, i*4 + 12, i*4 + 13}}
+		if !tiered.AllocateKVBlocks(others[i], 0, 4, []int64{}) {
+			t.Fatalf("other allocation %d should succeed", i)
+		}
+	}
+	// GPU: 8 used, 2 free
+
+	// Verify target's prefix is cached before offload
+	cachedBefore := tiered.GetCachedBlocks(tokens)
+	if len(cachedBefore) != 2 {
+		t.Fatalf("expected 2 cached blocks before offload, got %d", len(cachedBefore))
+	}
+
+	// Step 2: Release target → offload triggered (util 6/10=0.6 > 0.3)
+	tiered.ReleaseKVBlocks(target)
+	if tiered.offloadCount == 0 {
+		t.Fatal("setup error: offload should have triggered")
+	}
+	// After offload: 6 used, 4 free (offload preserves free count), 2 blocks on CPU
+
+	// Verify cache miss after offload (hashes removed from GPU hash table)
+	cachedAfterOffload := tiered.GetCachedBlocks(tokens)
+	if len(cachedAfterOffload) != 0 {
+		t.Fatalf("expected 0 cached blocks after offload, got %d", len(cachedAfterOffload))
+	}
+
+	// Step 3: Fill GPU to leave exactly 1 free block
+	tiered.SetClock(5000) // well past thrashing window
+	fillers := make([]*sim.Request, 3)
+	for i := 0; i < 3; i++ {
+		fillers[i] = &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 100, i*2 + 101}}
+		if !tiered.AllocateKVBlocks(fillers[i], 0, 2, []int64{}) {
+			t.Fatalf("filler allocation %d should succeed", i)
+		}
+	}
+	// GPU: 9 used, 1 free. Target needs 2 blocks → GPU direct alloc FAILS.
+
+	// Step 4: Re-request the SAME prefix — GPU fails, triggers CPU→GPU reload
+	reloadReq := &sim.Request{ID: "reload", InputTokens: tokens}
+	cached := tiered.GetCachedBlocks(tokens)
+	start := int64(len(cached)) * tiered.BlockSize()
+	tiered.AllocateKVBlocks(reloadReq, start, 4, cached)
+	// Allocation return value intentionally unchecked — may fail due to single-slot
+	// overwrite limitation in tryReloadFromCPU (see test comment above).
+
+	// Step 5: Verify CPU reload path was exercised
+	if tiered.cpuHitCount == 0 {
+		t.Fatal("expected CPU reload to occur (cpuHitCount == 0 means reload path was never triggered)")
+	}
+
+	// Clean up
+	for _, o := range others {
+		tiered.ReleaseKVBlocks(o)
+	}
+	for _, f := range fillers {
+		tiered.ReleaseKVBlocks(f)
+	}
+}

@@ -464,6 +464,31 @@ var runCmd = &cobra.Command{
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
 			}
+			// R3: Standalone validation for distribution token bounds (BC-1, BC-2)
+			if promptTokensMin < 1 {
+				logrus.Fatalf("--prompt-tokens-min must be >= 1, got %d", promptTokensMin)
+			}
+			if promptTokensMax < 1 {
+				logrus.Fatalf("--prompt-tokens-max must be >= 1, got %d", promptTokensMax)
+			}
+			if outputTokensMin < 1 {
+				logrus.Fatalf("--output-tokens-min must be >= 1, got %d", outputTokensMin)
+			}
+			if outputTokensMax < 1 {
+				logrus.Fatalf("--output-tokens-max must be >= 1, got %d", outputTokensMax)
+			}
+			if promptTokensStdev < 0 {
+				logrus.Fatalf("--prompt-tokens-stdev must be >= 0, got %d", promptTokensStdev)
+			}
+			if outputTokensStdev < 0 {
+				logrus.Fatalf("--output-tokens-stdev must be >= 0, got %d", outputTokensStdev)
+			}
+			if promptTokensMin > promptTokensMax {
+				logrus.Fatalf("--prompt-tokens-min (%d) must be <= --prompt-tokens-max (%d)", promptTokensMin, promptTokensMax)
+			}
+			if outputTokensMin > outputTokensMax {
+				logrus.Fatalf("--output-tokens-min (%d) must be <= --output-tokens-max (%d)", outputTokensMin, outputTokensMax)
+			}
 			if promptTokensMean > promptTokensMax || promptTokensMean < promptTokensMin || promptTokensStdev > promptTokensMax || promptTokensStdev < promptTokensMin {
 				logrus.Fatalf("prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]")
 			}

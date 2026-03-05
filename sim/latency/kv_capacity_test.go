@@ -42,12 +42,7 @@ func validHWConfig() sim.HardwareCalib {
 // validDenseKVParams returns KVCapacityParams for a dense (non-MoE) model
 // with SwiGLU activation.
 func validDenseKVParams() latency.KVCapacityParams {
-	return latency.KVCapacityParams{
-		IsMoE:             false,
-		NumLocalExperts:   0,
-		TieWordEmbeddings: false,
-		HiddenAct:         "silu",
-	}
+	return latency.NewKVCapacityParams(false, 0, false, "silu")
 }
 
 // --- Input validation tests ---
@@ -331,12 +326,7 @@ func h100HWConfig() sim.HardwareCalib         { return validHWConfig() }
 func TestCalculateKVBlocks_Llama31_8B_H100_TP2_WithinTolerance(t *testing.T) {
 	mc := llama31_8B_ModelConfig()
 	hc := h100HWConfig()
-	params := latency.KVCapacityParams{
-		IsMoE:             false,
-		NumLocalExperts:   0,
-		TieWordEmbeddings: false,
-		HiddenAct:         "silu",
-	}
+	params := latency.NewKVCapacityParams(false, 0, false, "silu")
 
 	// Empirical baseline from defaults.yaml: Llama-3.1-8B / H100 / TP=2 = 132,139 blocks
 	const empirical int64 = 132139
@@ -360,12 +350,7 @@ func TestCalculateKVBlocks_Llama31_8B_H100_TP2_WithinTolerance(t *testing.T) {
 func TestCalculateKVBlocks_Llama31_8B_H100_TP4_WithinTolerance(t *testing.T) {
 	mc := llama31_8B_ModelConfig()
 	hc := h100HWConfig()
-	params := latency.KVCapacityParams{
-		IsMoE:             false,
-		NumLocalExperts:   0,
-		TieWordEmbeddings: false,
-		HiddenAct:         "silu",
-	}
+	params := latency.NewKVCapacityParams(false, 0, false, "silu")
 
 	// Empirical baseline from defaults.yaml: Llama-3.1-8B / H100 / TP=4 = 559,190 blocks
 	const empirical int64 = 559190
@@ -475,12 +460,7 @@ func TestCalculateKVBlocks_Mixtral_8x7B_H100_TP2_WithinTolerance(t *testing.T) {
 		IntermediateDim: 14336,
 	}
 	hc := h100HWConfig()
-	params := latency.KVCapacityParams{
-		IsMoE:             true,
-		NumLocalExperts:   8,
-		TieWordEmbeddings: false,
-		HiddenAct:         "silu",
-	}
+	params := latency.NewKVCapacityParams(true, 8, false, "silu")
 
 	// Empirical baseline from defaults.yaml: Mixtral-8x7B / H100 / TP=2 = 58,377 blocks
 	const empirical int64 = 58377
@@ -513,18 +493,8 @@ func TestCalculateKVBlocks_MoE_UsesHigherActivationConstant(t *testing.T) {
 	}
 	hc := h100HWConfig()
 
-	denseParams := latency.KVCapacityParams{
-		IsMoE:             false,
-		NumLocalExperts:   0,
-		TieWordEmbeddings: false,
-		HiddenAct:         "silu",
-	}
-	moeParams := latency.KVCapacityParams{
-		IsMoE:             true,
-		NumLocalExperts:   8,
-		TieWordEmbeddings: false,
-		HiddenAct:         "silu",
-	}
+	denseParams := latency.NewKVCapacityParams(false, 0, false, "silu")
+	moeParams := latency.NewKVCapacityParams(true, 8, false, "silu")
 
 	denseBlocks, err := latency.CalculateKVBlocks(mc, hc, 2, 16, denseParams)
 	if err != nil {
@@ -551,18 +521,8 @@ func TestCalculateKVBlocks_TiedEmbeddings_ProducesMoreBlocks(t *testing.T) {
 	mc := validDenseModelConfig()
 	hc := validHWConfig()
 
-	untiedParams := latency.KVCapacityParams{
-		IsMoE:             false,
-		NumLocalExperts:   0,
-		TieWordEmbeddings: false,
-		HiddenAct:         "silu",
-	}
-	tiedParams := latency.KVCapacityParams{
-		IsMoE:             false,
-		NumLocalExperts:   0,
-		TieWordEmbeddings: true,
-		HiddenAct:         "silu",
-	}
+	untiedParams := latency.NewKVCapacityParams(false, 0, false, "silu")
+	tiedParams := latency.NewKVCapacityParams(false, 0, true, "silu")
 
 	untiedBlocks, err := latency.CalculateKVBlocks(mc, hc, 2, 16, untiedParams)
 	if err != nil {
