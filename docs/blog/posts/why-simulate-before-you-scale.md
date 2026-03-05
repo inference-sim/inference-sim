@@ -80,21 +80,20 @@ Compare routing strategies (round-robin vs. load-aware vs. prefix-affinity), adm
 Model traffic spikes, mixed workloads (short chatbot queries alongside long document summaries), and priority classes (critical requests vs. background batch jobs). Understand failure modes before they happen in production.
 
 ```mermaid
-flowchart TB
+flowchart LR
     subgraph simulate ["Simulate"]
-        S1["Define workload<br>& traffic pattern"]
-        S2["Choose model,<br>GPU, & policies"]
-        S3["Run simulation<br>(seconds, no GPUs)"]
+        direction TB
+        S1["Define workload"] --> S2["Choose policies"] --> S3["Run simulation"]
     end
     subgraph learn ["Learn"]
-        L1["Review latency,<br>throughput, & memory"]
-        L2["Identify bottlenecks<br>& failure modes"]
+        direction TB
+        L1["Review metrics"] --> L2["Find bottlenecks"]
     end
     subgraph act ["Act"]
-        A1["Deploy with<br>confidence"]
+        A1["Deploy"]
     end
 
-    S1 --> S2 --> S3 --> L1 --> L2 --> A1
+    simulate --> learn --> act
     L2 -.->|"Iterate"| S1
 
     style S1 fill:#4051b5,color:#fff
