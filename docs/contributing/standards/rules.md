@@ -13,11 +13,11 @@ New contributors: focus on **Critical** rules first. These protect correctness �
 
 | Tier | Rules | Why |
 |------|-------|-----|
-| **Critical** (correctness) | R1, R4, R5, R6, R11, R19 | Violations produce silent data loss, panics, conservation invariant breaks, or infinite loops |
-| **Important** (quality) | R2, R3, R7, R8, R9, R10, R13, R14, R17, R18, R20 | Violations produce non-determinism, validation gaps, silent misconfig, interface debt, or undetected anomalies |
+| **Critical** (correctness) | R1, R4, R5, R6, R11, R19, R21 | Violations produce silent data loss, panics, conservation invariant breaks, or infinite loops |
+| **Important** (quality) | R2, R3, R7, R8, R9, R10, R13, R14, R17, R18, R20, R22, R23 | Violations produce non-determinism, validation gaps, silent misconfig, interface debt, or undetected anomalies |
 | **Hygiene** (maintenance) | R12, R15, R16 | Violations produce stale references, config sprawl, or misleading test baselines |
 
-All 20 rules apply to every PR. The tiers help you prioritize during review — check Critical rules first.
+All 23 rules apply to every PR. The tiers help you prioritize during review — check Critical rules first.
 
 ## Rules
 
@@ -275,6 +275,42 @@ Anomaly detectors and metric analyzers must explicitly handle degenerate inputs:
 
 ---
 
+### R21: No `range` over mutable slices
+
+Go's `range` captures the slice header (pointer, length, capacity) at loop entry. If the loop body — or any function it calls — removes elements from the slice (e.g., preemption evicting tail requests), `range` still visits the original indices, accessing stale or evicted elements. Use index-based `for i := 0; i < len(slice); i++` when the slice can shrink during iteration.
+
+**Evidence:** Issue #349, fix #519 — `FormBatch` Phase 1 used `for _, req := range result.RunningBatch.Requests`. When `preemptForTokens` evicted tail requests, the range loop still visited them at original indices. Evicted requests had `ProgressIndex=0`, triggering full re-prefill allocation → cascading preemptions (102K+ preemptions, 0 completions). Fix: index-based loop with per-iteration `len()` re-evaluation.
+
+**Check:** For every `range` over a slice, check if the loop body (or any callee) can modify the slice's length. If so, use index-based iteration. Pay special attention to preemption, eviction, and reallocation callees. Note: read-only `range` loops that don't shrink the iterated slice are safe (e.g., zeroing fields on existing elements).
+
+**Enforced:** Micro-plan Phase 8, self-audit dimension 1.
+
+---
+
+### R22: Pre-check consistency with guarded operation
+
+When a capacity pre-check guards an expensive operation (e.g., "do we have enough free blocks before attempting allocation?"), the pre-check must be at least as permissive as the actual operation. A pre-check that uses a simplified formula (e.g., `ceil(tokens/blockSize)`) while the actual path accounts for additional factors (e.g., partial last-block fill) causes false rejections — the pre-check says "no" when the operation would succeed.
+
+**Evidence:** Issue #492, fix #502 — `AllocateKVBlocks` pre-check computed `ceil(newTokens/blockSize)` without accounting for tokens absorbed into the request's partially-filled last block. Over-estimated by up to 1 block, causing false KV allocation failures and spurious preemptions under tight KV pressure with chunked prefill.
+
+**Check:** For every fast-path pre-check that guards an allocation or resource operation, verify the pre-check's estimate is consistent with (at least as permissive as) the actual operation's accounting. Diff the two formulas explicitly.
+
+**Enforced:** Micro-plan Phase 8, self-audit dimension 1.
+
+---
+
+### R23: Parallel code path transformation parity
+
+When multiple code paths produce the same output type (e.g., standard requests, reasoning single-session, reasoning multi-session), all paths must apply the same set of transformations. A transformation present in one path but missing from another causes silent data corruption — requests with wrong token counts, missing lifecycle filtering, or absent prefix tokens.
+
+**Evidence:** Issue #515 (missing lifecycle filtering), #516 (missing prefix token prepend), fix #530 — `GenerateRequests` had three paths producing `sim.Request` objects: standard, reasoning single-session, reasoning multi-session. The standard path applied three transformations: (1) prefix token prepend, (2) per-round lifecycle filtering, (3) horizon check. Both reasoning paths were missing transformations (1) and (2), causing reasoning requests to have shorter inputs than expected and to leak past lifecycle window boundaries.
+
+**Check:** When adding a new code path that generates the same output type as existing paths, diff the transformation steps. List all transformations applied by the reference path side-by-side with the new path and verify each is present (or explicitly documented as inapplicable). When a function has multiple branches producing the same return type, write a table-driven test where each row exercises one path and asserts the same observable properties.
+
+**Enforced:** Micro-plan Phase 8, self-audit dimension 1.
+
+---
+
 ## Quick Reference Checklist
 
 For PR authors — check each rule before submitting:
@@ -299,6 +335,9 @@ For PR authors — check each rule before submitting:
 - [ ] **R18:** CLI flag values not silently overwritten by defaults.yaml
 - [ ] **R19:** Unbounded retry/requeue loops have circuit breakers
 - [ ] **R20:** Detectors and analyzers handle degenerate inputs (empty, skewed, zero)
+- [ ] **R21:** No `range` over slices that can shrink during iteration
+- [ ] **R22:** Pre-check estimates consistent with actual operation accounting
+- [ ] **R23:** Parallel code paths apply equivalent transformations
 
 ---
 
@@ -330,4 +369,4 @@ File an issue for each proposed state change. Do not retire rules silently.
 
 ### Current State
 
-All 20 rules (R1-R20) are **Active** as of 2026-02-26. No rules have been automated, consolidated, or retired.
+All 23 rules (R1-R23) are **Active** as of 2026-03-05. No rules have been automated, consolidated, or retired.
