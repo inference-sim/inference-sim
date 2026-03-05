@@ -406,10 +406,10 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// State transitions
 			req.State = StateCompleted
 			// Zero-output requests complete at prefill end with no decode phase.
-			// Both the completion-step ITL and the final-token KV allocation
-			// only apply to requests that have output tokens.
+			// The final-token KV allocation only applies to requests that have
+			// output tokens. ITL is NOT appended here — executeBatchStep already
+			// recorded it for this decode step (fix for #524 phantom ITL entry).
 			if len(req.OutputTokens) > 0 {
-				req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s (request will still complete) — this indicates a cache accounting bug", now, req.ID)
