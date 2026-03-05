@@ -27,12 +27,13 @@
 #     --num-instances 4 --routing-policy weighted \
 #     --workload-spec examples/inference-perf-shared-prefix.yaml
 #
-# This auto-generates 45 clients (9 prompts x 5 users), each sharing a
-# 100-token system prompt prefix within their group.
+# Multi-stage: generates 90 clients (2 stages x 9 prompts x 5 users).
+# Each stage's clients are active only during that stage's time window
+# and emit at that stage's rate. aggregate_rate is always computed as
+# the sum of stage rates (8 + 20 = 28).
 
 version: "1"
 seed: 42
-aggregate_rate: 14.0   # Overridden by time-weighted average if omitted
 
 inference_perf:
   stages:
