@@ -25,20 +25,6 @@ When a team decides to serve an LLM at scale, they face a cascade of interconnec
 
 These questions are deeply intertwined. Changing the number of instances affects routing behavior, which affects queue depths, which affects latency. Traditional back-of-the-envelope math can't capture these dynamics. And running experiments on real GPUs is slow, expensive, and hard to reproduce.
 
-```mermaid
-flowchart LR
-    Q1["How many GPUs?"] --- Q2["Which routing policy?"]
-    Q2 --- Q3["How much memory?"]
-    Q3 --- Q4["What about spikes?"]
-    Q4 --- Q1
-    style Q1 fill:#4051b5,color:#fff
-    style Q2 fill:#4051b5,color:#fff
-    style Q3 fill:#4051b5,color:#fff
-    style Q4 fill:#4051b5,color:#fff
-```
-
-*Capacity decisions form a loop — each choice affects the others.*
-
 ## The Insight: A Flight Simulator for LLM Infrastructure
 
 The aerospace industry doesn't test new wing designs by building full aircraft and hoping for the best. They simulate. The same principle applies to inference infrastructure.
