@@ -111,9 +111,50 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 			prefix = prefixes[client.PrefixGroup]
 		}
 
-		// Handle reasoning/multi-turn clients: generate multiple sessions
-		// based on the arrival process, each session producing MaxRounds requests.
+		// Handle reasoning/multi-turn clients.
 		if client.Reasoning != nil && client.Reasoning.MultiTurn != nil {
+			mt := client.Reasoning.MultiTurn
+
+			if mt.SingleSession {
+				// Single session: sample one start time, generate one session,
+				// filter rounds against horizon. Models inference-perf's behavior
+				// where each client is one persistent session cycling through rounds.
+				iat := arrivalSampler.SampleIAT(clientRNG)
+				startTime := iat
+				// For clients with lifecycle windows, offset into the first window.
+				// The IAT sample provides staggering within the window.
+				if client.Lifecycle != nil && len(client.Lifecycle.Windows) > 0 {
+					startTime = client.Lifecycle.Windows[0].StartUs + iat
+				}
+				if startTime >= horizon {
+					continue
+				}
+				if client.Lifecycle != nil && !isInActiveWindow(startTime, client.Lifecycle) {
+					continue
+				}
+				reasoningReqs, err := GenerateReasoningRequests(
+					clientRNG, client.Reasoning,
+					inputSampler, outputSampler,
+					startTime,
+					client.ID, client.TenantID, client.SLOClass, client.Model,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+				}
+				for _, req := range reasoningReqs {
+					if req.ArrivalTime >= horizon {
+						break // rounds are in chronological order
+					}
+					if client.Lifecycle != nil && !isInActiveWindow(req.ArrivalTime, client.Lifecycle) {
+						continue // suppress rounds outside lifecycle windows (BC-6)
+					}
+					allRequests = append(allRequests, req)
+				}
+				continue
+			}
+
+			// Multi-session: generate multiple sessions based on the arrival process,
+			// each session producing MaxRounds requests.
 			var clientReqCount int64
 			currentTime := int64(0)
 			for currentTime < horizon {
@@ -124,6 +165,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				currentTime += iat
 				if currentTime >= horizon {
 					break
+				}
+				// Check lifecycle windows (bug fix: reasoning path was missing this)
+				if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
+					continue
 				}
 				reasoningReqs, err := GenerateReasoningRequests(
 					clientRNG, client.Reasoning,

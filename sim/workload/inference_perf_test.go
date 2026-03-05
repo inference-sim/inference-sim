@@ -138,6 +138,47 @@ func TestValidateInferencePerfSpec_NoSharedPrefix_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestValidateInferencePerfSpec_MultiStageMultiTurn_NoError(t *testing.T) {
+	// BC-4: multi-stage + multi-turn now works (lifecycle bug fixed in generator.go).
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 600},
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	if err := validateInferencePerfSpec(spec); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateInferencePerfSpec_SingleStageMultiTurn_NoError(t *testing.T) {
+	// Single-stage + multi-turn is fine (no lifecycle windows needed).
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	if err := validateInferencePerfSpec(spec); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 // --- Expansion tests (Task 3) ---
 
 func TestExpandInferencePerfSpec_SharedPrefix_GeneratesNxMClients(t *testing.T) {
@@ -476,13 +517,10 @@ func TestExpandInferencePerfSpec_ThreeStages_PerStageClients(t *testing.T) {
 	}
 }
 
-// --- Multi-turn flag tests (#481) ---
+// --- Multi-turn mapping tests ---
 
-func TestExpandInferencePerfSpec_MultiTurn_ProducesIndependentRequests(t *testing.T) {
-	// BC-1: enable_multi_turn_chat is ignored — no ReasoningSpec created.
-	// Real inference-perf data shows constant input tokens (~574).
-	// BLIS's generator architecture (many-sessions-per-client) is incompatible
-	// with inference-perf's model (one-session-per-user). See #481.
+func TestExpandInferencePerfSpec_MultiTurn_MapsToReasoning(t *testing.T) {
+	// enable_multi_turn_chat=true maps to ReasoningSpec with computed parameters.
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 10.0, Duration: 600},
@@ -501,18 +539,36 @@ func TestExpandInferencePerfSpec_MultiTurn_ProducesIndependentRequests(t *testin
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, c := range ws.Clients {
-		if c.Reasoning != nil {
-			t.Errorf("client %q: Reasoning should be nil (multi-turn flag is ignored for inference-perf)", c.ID)
+		if c.Reasoning == nil {
+			t.Fatalf("client %q: Reasoning should be set when multi-turn enabled", c.ID)
+		}
+		mt := c.Reasoning.MultiTurn
+		if mt == nil {
+			t.Fatalf("client %q: MultiTurn should be set", c.ID)
+		}
+		// rate=10, duration=600, sessions=2*3=6
+		// MaxRounds = ceil(10*600/6) = 1000
+		// ThinkTimeUs = floor(6/10 * 1e6) = 600_000
+		if mt.MaxRounds != 1000 {
+			t.Errorf("client %q: MaxRounds = %d, want 1000", c.ID, mt.MaxRounds)
+		}
+		if mt.ContextGrowth != "" {
+			t.Errorf("client %q: ContextGrowth = %q, want empty (fixed-length per H30)", c.ID, mt.ContextGrowth)
+		}
+		if mt.ThinkTimeUs != 600_000 {
+			t.Errorf("client %q: ThinkTimeUs = %d, want 600000", c.ID, mt.ThinkTimeUs)
+		}
+		if !mt.SingleSession {
+			t.Errorf("client %q: SingleSession = false, want true", c.ID)
 		}
 	}
-	// BC-3: category should be "language" (not "reasoning")
-	if ws.Category != "language" {
-		t.Errorf("category = %q, want language", ws.Category)
+	if ws.Category != "reasoning" {
+		t.Errorf("category = %q, want reasoning when multi-turn enabled", ws.Category)
 	}
 }
 
 func TestExpandInferencePerfSpec_MultiTurnFalse_NoReasoning(t *testing.T) {
-	// BC-2: enable_multi_turn_chat=false produces nil Reasoning (explicit false-path test)
+	// enable_multi_turn_chat=false produces nil Reasoning.
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 10.0, Duration: 600},
@@ -539,7 +595,7 @@ func TestExpandInferencePerfSpec_MultiTurnFalse_NoReasoning(t *testing.T) {
 }
 
 func TestExpandInferencePerfSpec_MultiStageMultiTurn_Succeeds(t *testing.T) {
-	// BC-4: multi-stage + multi-turn no longer rejected since the flag is a no-op.
+	// BC-4: multi-stage + multi-turn works with per-stage computed parameters.
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 5.0, Duration: 600},
@@ -561,17 +617,15 @@ func TestExpandInferencePerfSpec_MultiStageMultiTurn_Succeeds(t *testing.T) {
 	if len(ws.Clients) != 2 {
 		t.Fatalf("client count = %d, want 2 (1 per stage)", len(ws.Clients))
 	}
-	// BC-1 also holds for multi-stage path
 	for _, c := range ws.Clients {
-		if c.Reasoning != nil {
-			t.Errorf("client %q: Reasoning should be nil", c.ID)
+		if c.Reasoning == nil {
+			t.Errorf("client %q: Reasoning should be set", c.ID)
 		}
 	}
-	// Verify expanded spec passes full validation
 	if err := ws.Validate(); err != nil {
 		t.Fatalf("expanded spec validation failed: %v", err)
 	}
-	// Verify lifecycle windows are correctly assigned (stage 0: [0, 600s), stage 1: [600s, 1200s))
+	// Verify lifecycle windows
 	lc0 := ws.Clients[0].Lifecycle
 	if lc0 == nil || len(lc0.Windows) != 1 {
 		t.Fatal("stage 0 client should have exactly 1 lifecycle window")
@@ -590,55 +644,95 @@ func TestExpandInferencePerfSpec_MultiStageMultiTurn_Succeeds(t *testing.T) {
 	}
 }
 
-func TestExpandInferencePerfSpec_MultiTurnFlag_IsNoOpEndToEnd(t *testing.T) {
-	// BC-7: enable_multi_turn_chat=true produces the same request count as false.
-	// This is the quantitative regression anchor proving the flag is truly a no-op.
-	horizon := int64(10_000_000) // 10 seconds
-
-	// With flag = false
-	specFalse := &InferencePerfSpec{
-		Stages: []StageSpec{{Rate: 10.0, Duration: 10}},
-		SharedPrefix: &SharedPrefixSpec{
-			NumUniqueSystemPrompts:  2,
-			NumUsersPerSystemPrompt: 2,
-			SystemPromptLen:         50,
-			QuestionLen:             100,
-			OutputLen:               50,
-			EnableMultiTurnChat:     false,
+func TestExpandInferencePerfSpec_MultiTurn_ComputedParameters(t *testing.T) {
+	// BC-3: MaxRounds, ThinkTimeUs, SingleSession computed from stage parameters.
+	// 1 stage, rate=10, duration=600, 2 prompts × 5 users = 10 sessions
+	// MaxRounds = ceil(10*600/10) = 600
+	// ThinkTimeUs = floor(10/10 * 1e6) = 1_000_000
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 600},
 		},
-	}
-	wsFalse, err := ExpandInferencePerfSpec(specFalse, 42)
-	if err != nil {
-		t.Fatalf("expand false: %v", err)
-	}
-	rFalse, err := GenerateRequests(wsFalse, horizon, 0)
-	if err != nil {
-		t.Fatalf("generate false: %v", err)
-	}
-
-	// With flag = true
-	specTrue := &InferencePerfSpec{
-		Stages: []StageSpec{{Rate: 10.0, Duration: 10}},
 		SharedPrefix: &SharedPrefixSpec{
 			NumUniqueSystemPrompts:  2,
-			NumUsersPerSystemPrompt: 2,
-			SystemPromptLen:         50,
-			QuestionLen:             100,
-			OutputLen:               50,
+			NumUsersPerSystemPrompt: 5,
+			SystemPromptLen:         100,
+			QuestionLen:             50,
+			OutputLen:               25,
 			EnableMultiTurnChat:     true,
 		},
 	}
-	wsTrue, err := ExpandInferencePerfSpec(specTrue, 42)
+	ws, err := ExpandInferencePerfSpec(spec, 42)
 	if err != nil {
-		t.Fatalf("expand true: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	rTrue, err := GenerateRequests(wsTrue, horizon, 0)
+	for _, c := range ws.Clients {
+		mt := c.Reasoning.MultiTurn
+		if mt.MaxRounds != 600 {
+			t.Errorf("client %q: MaxRounds = %d, want 600", c.ID, mt.MaxRounds)
+		}
+		if mt.ThinkTimeUs != 1_000_000 {
+			t.Errorf("client %q: ThinkTimeUs = %d, want 1000000", c.ID, mt.ThinkTimeUs)
+		}
+		if !mt.SingleSession {
+			t.Errorf("client %q: SingleSession = false, want true", c.ID)
+		}
+		if mt.ContextGrowth != "" {
+			t.Errorf("client %q: ContextGrowth = %q, want empty (fixed-length per H30)", c.ID, mt.ContextGrowth)
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_MultiStageMultiTurn_PerStageParameters(t *testing.T) {
+	// BC-4: Each stage gets its own computed MaxRounds and ThinkTimeUs.
+	// 2 stages (rate=5/dur=600, rate=20/dur=300), 1 prompt × 1 user = 1 session
+	// Stage 0: MaxRounds = ceil(5*600/1) = 3000, ThinkTimeUs = floor(1/5 * 1e6) = 200_000
+	// Stage 1: MaxRounds = ceil(20*300/1) = 6000, ThinkTimeUs = floor(1/20 * 1e6) = 50_000
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 600},
+			{Rate: 20.0, Duration: 300},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
 	if err != nil {
-		t.Fatalf("generate true: %v", err)
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 2 stages × 1 client each = 2 clients
+	if len(ws.Clients) != 2 {
+		t.Fatalf("client count = %d, want 2", len(ws.Clients))
 	}
 
-	if len(rFalse) != len(rTrue) {
-		t.Errorf("request count differs: false=%d, true=%d (flag should be no-op)", len(rFalse), len(rTrue))
+	// Stage 0 client
+	mt0 := ws.Clients[0].Reasoning.MultiTurn
+	if mt0.MaxRounds != 3000 {
+		t.Errorf("stage 0: MaxRounds = %d, want 3000", mt0.MaxRounds)
+	}
+	if mt0.ThinkTimeUs != 200_000 {
+		t.Errorf("stage 0: ThinkTimeUs = %d, want 200000", mt0.ThinkTimeUs)
+	}
+	if !mt0.SingleSession {
+		t.Errorf("stage 0: SingleSession = false, want true")
+	}
+
+	// Stage 1 client
+	mt1 := ws.Clients[1].Reasoning.MultiTurn
+	if mt1.MaxRounds != 6000 {
+		t.Errorf("stage 1: MaxRounds = %d, want 6000", mt1.MaxRounds)
+	}
+	if mt1.ThinkTimeUs != 50_000 {
+		t.Errorf("stage 1: ThinkTimeUs = %d, want 50000", mt1.ThinkTimeUs)
+	}
+	if !mt1.SingleSession {
+		t.Errorf("stage 1: SingleSession = false, want true")
 	}
 }
 
@@ -1190,6 +1284,65 @@ func TestInferencePerf_AllRequestsHaveValidTokens(t *testing.T) {
 		if len(req.InputTokens) < expectedMinLen {
 			t.Errorf("request %d: input len %d < expected min %d (prefix+question)",
 				i, len(req.InputTokens), expectedMinLen)
+		}
+	}
+}
+
+func TestGenerateRequests_InferencePerfSpec_MultiTurnMultiStage_Integration(t *testing.T) {
+	// End-to-end integration: 2-stage multi-turn inference-perf spec generates
+	// requests in both stage windows with approximately 2x ratio.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 10},  // stage 0: 5 QPS for 10s
+			{Rate: 10.0, Duration: 10}, // stage 1: 10 QPS for 10s
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expand error: %v", err)
+	}
+
+	horizon := int64(20_000_000) // 20 seconds in µs
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected requests from multi-stage multi-turn spec")
+	}
+
+	// Count requests per stage window
+	boundary := int64(10_000_000) // 10s in µs
+	var stage0Count, stage1Count int
+	for _, req := range requests {
+		if req.ArrivalTime < boundary {
+			stage0Count++
+		} else {
+			stage1Count++
+		}
+	}
+
+	if stage0Count == 0 {
+		t.Error("no requests in stage 0 window")
+	}
+	if stage1Count == 0 {
+		t.Error("no requests in stage 1 window")
+	}
+	// Stage 1 has 2x rate, so should have roughly 2x requests.
+	// Tolerance accounts for SingleSession staggering and Poisson start time.
+	if stage1Count > 0 && stage0Count > 0 {
+		ratio := float64(stage0Count) / float64(stage1Count)
+		if ratio < 0.3 || ratio > 0.7 {
+			t.Errorf("stage ratio = %.3f (s0=%d, s1=%d), want ~0.5 (±0.2)",
+				ratio, stage0Count, stage1Count)
 		}
 	}
 }

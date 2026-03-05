@@ -161,6 +161,7 @@ type MultiTurnSpec struct {
 	MaxRounds     int    `yaml:"max_rounds"`
 	ThinkTimeUs   int64  `yaml:"think_time_us"`
 	ContextGrowth string `yaml:"context_growth"`
+	SingleSession bool   `yaml:"single_session,omitempty"`
 }
 
 // ServeGenDataSpec configures native ServeGen data file loading.
