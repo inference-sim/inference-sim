@@ -19,7 +19,15 @@ authors:
     name: Jing Chen
     description: Contributor
     avatar: https://github.com/jgchn.png
-  satyam:
-    name: Satyam Goyal
+  asser:
+    name: Asser Tantawi
     description: Contributor
-    avatar: https://github.com/Satgoy152.png
+    avatar: https://github.com/atantawi.png
+  vishakha:
+    name: Vishakha Ramani
+    description: Contributor
+    avatar: https://github.com/vishakha-r.png
+  fabio:
+    name: Fabio Oliveira
+    description: Contributor
+    avatar: https://github.com/fabolive.png
