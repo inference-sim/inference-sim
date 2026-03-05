@@ -1,6 +1,8 @@
 package sim
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -68,4 +70,35 @@ func TestNewKVCacheConfig_ZeroValues_NoDefaults(t *testing.T) {
 	// BC-4: Zero-value arguments must NOT inject non-zero defaults
 	got := NewKVCacheConfig(0, 0, 0, 0, 0, 0)
 	assert.Equal(t, KVCacheConfig{}, got)
+}
+
+func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
+	tests := []struct {
+		name          string
+		maxRunning    int64
+		maxTokens     int64
+		prefillThresh int64
+		wantContains  string
+	}{
+		{"zero_max_running", 0, 2048, 0, "MaxRunningReqs"},
+		{"negative_max_running", -1, 2048, 0, "MaxRunningReqs"},
+		{"zero_max_tokens", 256, 0, 0, "MaxScheduledTokens"},
+		{"negative_max_tokens", 256, -1, 0, "MaxScheduledTokens"},
+		{"negative_prefill", 256, 2048, -1, "LongPrefillTokenThreshold"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatal("expected panic")
+				}
+				msg := fmt.Sprintf("%v", r)
+				if !strings.Contains(msg, tc.wantContains) {
+					t.Errorf("panic message %q should contain %q", msg, tc.wantContains)
+				}
+			}()
+			NewBatchConfig(tc.maxRunning, tc.maxTokens, tc.prefillThresh)
+		})
+	}
 }

@@ -1,5 +1,7 @@
 package sim
 
+import "fmt"
+
 // KVCacheConfig groups KV cache parameters for KV store construction.
 type KVCacheConfig struct {
 	TotalKVBlocks         int64   // GPU tier capacity in blocks (must be > 0)
@@ -35,7 +37,18 @@ type BatchConfig struct {
 
 // NewBatchConfig creates a BatchConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
+// Panics on invalid values: MaxRunningReqs and MaxScheduledTokens must be > 0,
+// LongPrefillTokenThreshold must be >= 0 (0 means disabled).
 func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64) BatchConfig {
+	if maxRunningReqs <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxRunningReqs must be > 0, got %d", maxRunningReqs))
+	}
+	if maxScheduledTokens <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxScheduledTokens must be > 0, got %d", maxScheduledTokens))
+	}
+	if longPrefillTokenThreshold < 0 {
+		panic(fmt.Sprintf("NewBatchConfig: LongPrefillTokenThreshold must be >= 0, got %d", longPrefillTokenThreshold))
+	}
 	return BatchConfig{
 		MaxRunningReqs:            maxRunningReqs,
 		MaxScheduledTokens:        maxScheduledTokens,
