@@ -49,11 +49,11 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 
 ```mermaid
 flowchart LR
-    A["Request\nArrival"] --> B["Routing"]
+    A["Request<br>Arrival"] --> B["Routing"]
     B --> C["Queue"]
-    C --> D["Batch\nFormation"]
-    D --> E["Token\nGeneration"]
-    E --> F["Response\nComplete"]
+    C --> D["Batch<br>Formation"]
+    D --> E["Token<br>Generation"]
+    E --> F["Response<br>Complete"]
 
     style A fill:#4051b5,color:#fff
     style B fill:#4051b5,color:#fff
@@ -82,13 +82,13 @@ Model traffic spikes, mixed workloads (short chatbot queries alongside long docu
 ```mermaid
 flowchart TB
     subgraph simulate ["Simulate"]
-        S1["Define workload\n& traffic pattern"]
-        S2["Choose model,\nGPU, & policies"]
-        S3["Run simulation\n(seconds, no GPUs)"]
+        S1["Define workload<br>& traffic pattern"]
+        S2["Choose model,<br>GPU, & policies"]
+        S3["Run simulation<br>(seconds, no GPUs)"]
     end
     subgraph learn ["Learn"]
-        L1["Review latency,\nthroughput, & memory"]
-        L2["Identify bottlenecks\n& failure modes"]
+        L1["Review latency,<br>throughput, & memory"]
+        L2["Identify bottlenecks<br>& failure modes"]
     end
     subgraph act ["Act"]
         A1["Deploy with\nconfidence"]
