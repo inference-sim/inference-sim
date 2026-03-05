@@ -18,6 +18,17 @@ type KVCapacityParams struct {
 	HiddenAct         string
 }
 
+// NewKVCapacityParams creates a KVCapacityParams. Positional arguments ensure
+// that adding a field causes a compiler error at every construction site (R4).
+func NewKVCapacityParams(isMoE bool, numLocalExperts int, tieWordEmbeddings bool, hiddenAct string) KVCapacityParams {
+	return KVCapacityParams{
+		IsMoE:             isMoE,
+		NumLocalExperts:   numLocalExperts,
+		TieWordEmbeddings: tieWordEmbeddings,
+		HiddenAct:         hiddenAct,
+	}
+}
+
 // Constants matching the llm-d-benchmark capacity_planner.py reference.
 const (
 	gpuMemUtil                 = 0.9
@@ -253,22 +264,16 @@ func ExtractKVCapacityParamsFromFile(hfConfigPath string) (KVCapacityParams, err
 // via activation-count fields (n_shared_experts, num_experts_per_tok)
 // without a total expert count — weight estimation requires the count.
 func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
-	var params KVCapacityParams
-
-	// hidden_act
-	params.HiddenAct = hf.MustGetString("hidden_act", "")
-
-	// tie_word_embeddings
+	hiddenAct := hf.MustGetString("hidden_act", "")
+	tieWordEmbeddings := false
 	if tied, ok := hf.GetBool("tie_word_embeddings"); ok {
-		params.TieWordEmbeddings = tied
+		tieWordEmbeddings = tied
 	}
 
 	// MoE detection: check multiple field names used by different architectures.
 	numLocalExperts := hf.MustGetInt("num_local_experts", 0)
 	if numLocalExperts > 1 {
-		params.IsMoE = true
-		params.NumLocalExperts = numLocalExperts
-		return params, nil
+		return NewKVCapacityParams(true, numLocalExperts, tieWordEmbeddings, hiddenAct), nil
 	}
 
 	// Fallback MoE indicators: fields that represent total expert count can
@@ -277,9 +282,7 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 	// presence — they must NOT be used as the expert multiplier for weights.
 	for _, key := range []string{"n_routed_experts", "num_experts"} {
 		if v := hf.MustGetInt(key, 0); v > 1 {
-			params.IsMoE = true
-			params.NumLocalExperts = v
-			return params, nil
+			return NewKVCapacityParams(true, v, tieWordEmbeddings, hiddenAct), nil
 		}
 	}
 	// Activation-count or shared-expert fields: signal MoE but don't provide
@@ -294,5 +297,5 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 		}
 	}
 
-	return params, nil
+	return NewKVCapacityParams(false, 0, tieWordEmbeddings, hiddenAct), nil
 }
