@@ -16,6 +16,8 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Experimental validation:** H12 confirmed conservation across 10 policy configurations (67 invariant checks) — including round-robin, least-loaded, weighted (multiple scorer configs), SJF, priority-FCFS, token-bucket admission, and always-busiest. H8 confirmed conservation under extreme KV pressure (15 configurations). Full preemption-path validation is blocked by the panic bug (#293).
 
+**Additional evidence (hardening wave):** Issue #498, fix #504 — `InjectArrival` silently accepted requests with `ArrivalTime > Horizon`, registering them in `Metrics.Requests` but never firing the arrival event. This broke conservation accounting (LHS included the request, RHS never completed it). Fix: log warning on beyond-horizon injection.
+
 ---
 
 ## INV-2: Request Lifecycle
@@ -41,6 +43,8 @@ Invariants are properties that must hold at all times during and after simulatio
 **Verification:** Checked after every allocation/deallocation. Transactional allocation with rollback on mid-loop failure (R5).
 
 **Operational note (H8):** KV cache pressure exhibits a sharp cliff, not gradual degradation. In H8's workload, performance was identical above ~2200 blocks and collapsed below it (4.7x TTFT P99 increase with just 4.5% fewer blocks). Below ~1000 blocks, the preempt-requeue cycle can livelock (see R19). Capacity planning formula: `threshold ≈ rate / num_instances × (input_tokens + output_tokens) / block_size`.
+
+**Additional evidence (hardening wave):** Two KV conservation bugs discovered in March 2026: (1) Issue #492, fix #502 — prefill capacity pre-check over-estimated by up to 1 block (partial last-block fill not accounted for), causing false allocation failures that triggered unnecessary preemptions. (2) Issue #501, fix #506 — TieredKVCache CPU→GPU reload could produce an inverted range (`newStart >= endIndex`), causing a slice-bounds panic in block allocation. Both bugs directly affected the allocation/deallocation balance that INV-4 protects. (See also #519 in INV-8 — the range-loop livelock primarily violated the work-conserving property, not block-level conservation.)
 
 ---
 
