@@ -305,8 +305,8 @@ func TestExpandInferencePerfSpec_EqualRateFractions(t *testing.T) {
 
 // --- Stage-based rate tests (Task 4) ---
 
-func TestExpandInferencePerfSpec_TwoStages_LifecycleWindows(t *testing.T) {
-	// BC-1: stage-to-lifecycle expansion
+func TestExpandInferencePerfSpec_TwoStages_PerStageClients(t *testing.T) {
+	// BC-1: multi-stage creates per-stage client cohorts
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 8.0, Duration: 600},
@@ -324,34 +324,36 @@ func TestExpandInferencePerfSpec_TwoStages_LifecycleWindows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(ws.Clients) != 1 {
-		t.Fatalf("client count = %d, want 1", len(ws.Clients))
+	// 2 stages × 1 client each = 2 clients
+	if len(ws.Clients) != 2 {
+		t.Fatalf("client count = %d, want 2 (1 per stage)", len(ws.Clients))
 	}
-	lc := ws.Clients[0].Lifecycle
-	if lc == nil {
-		t.Fatal("lifecycle should be set for multi-stage spec")
+
+	// Stage 0 client: active during [0, 600_000_000)
+	lc0 := ws.Clients[0].Lifecycle
+	if lc0 == nil || len(lc0.Windows) != 1 {
+		t.Fatal("stage 0 client should have exactly 1 lifecycle window")
 	}
-	if len(lc.Windows) != 2 {
-		t.Fatalf("window count = %d, want 2", len(lc.Windows))
+	if lc0.Windows[0].StartUs != 0 || lc0.Windows[0].EndUs != 600_000_000 {
+		t.Errorf("stage 0 window = [%d, %d), want [0, 600000000)",
+			lc0.Windows[0].StartUs, lc0.Windows[0].EndUs)
 	}
-	// Window 1: [0, 600_000_000)
-	if lc.Windows[0].StartUs != 0 {
-		t.Errorf("window[0].StartUs = %d, want 0", lc.Windows[0].StartUs)
+
+	// Stage 1 client: active during [600_000_000, 1_200_000_000)
+	lc1 := ws.Clients[1].Lifecycle
+	if lc1 == nil || len(lc1.Windows) != 1 {
+		t.Fatal("stage 1 client should have exactly 1 lifecycle window")
 	}
-	if lc.Windows[0].EndUs != 600_000_000 {
-		t.Errorf("window[0].EndUs = %d, want 600000000", lc.Windows[0].EndUs)
-	}
-	// Window 2: [600_000_000, 1_200_000_000)
-	if lc.Windows[1].StartUs != 600_000_000 {
-		t.Errorf("window[1].StartUs = %d, want 600000000", lc.Windows[1].StartUs)
-	}
-	if lc.Windows[1].EndUs != 1_200_000_000 {
-		t.Errorf("window[1].EndUs = %d, want 1200000000", lc.Windows[1].EndUs)
+	if lc1.Windows[0].StartUs != 600_000_000 || lc1.Windows[0].EndUs != 1_200_000_000 {
+		t.Errorf("stage 1 window = [%d, %d), want [600000000, 1200000000)",
+			lc1.Windows[0].StartUs, lc1.Windows[0].EndUs)
 	}
 }
 
 func TestExpandInferencePerfSpec_TwoStages_AggregateRate(t *testing.T) {
-	// BC-2: aggregate rate is time-weighted average
+	// BC-2: aggregate rate is sum of stage rates (not time-weighted average).
+	// Each stage's clients emit at the stage rate during their window;
+	// aggregateRate = sum ensures normalizeRateFractions produces correct per-client rates.
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 8.0, Duration: 600},
@@ -369,8 +371,8 @@ func TestExpandInferencePerfSpec_TwoStages_AggregateRate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Time-weighted average: (8*600 + 20*600) / 1200 = 14.0
-	expectedRate := 14.0
+	// Sum of stage rates: 8.0 + 20.0 = 28.0
+	expectedRate := 28.0
 	if ws.AggregateRate != expectedRate {
 		t.Errorf("aggregate rate = %f, want %f", ws.AggregateRate, expectedRate)
 	}
@@ -402,7 +404,7 @@ func TestExpandInferencePerfSpec_SingleStage_NoLifecycle(t *testing.T) {
 	}
 }
 
-func TestExpandInferencePerfSpec_ThreeStages_CumulativeWindows(t *testing.T) {
+func TestExpandInferencePerfSpec_ThreeStages_PerStageClients(t *testing.T) {
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 5.0, Duration: 100},
@@ -421,21 +423,32 @@ func TestExpandInferencePerfSpec_ThreeStages_CumulativeWindows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	lc := ws.Clients[0].Lifecycle
-	if lc == nil || len(lc.Windows) != 3 {
-		t.Fatalf("expected 3 lifecycle windows")
+	// 3 stages × 1 client each = 3 clients
+	if len(ws.Clients) != 3 {
+		t.Fatalf("client count = %d, want 3 (1 per stage)", len(ws.Clients))
 	}
-	// Window 1: [0, 100_000_000)
-	if lc.Windows[0].EndUs != 100_000_000 {
-		t.Errorf("window[0].EndUs = %d, want 100000000", lc.Windows[0].EndUs)
+	// aggregateRate = 5 + 10 + 15 = 30
+	if ws.AggregateRate != 30.0 {
+		t.Errorf("aggregate rate = %f, want 30.0", ws.AggregateRate)
 	}
-	// Window 2: [100_000_000, 300_000_000)
-	if lc.Windows[1].StartUs != 100_000_000 || lc.Windows[1].EndUs != 300_000_000 {
-		t.Errorf("window[1] = [%d, %d), want [100000000, 300000000)", lc.Windows[1].StartUs, lc.Windows[1].EndUs)
+
+	// Each client has exactly one lifecycle window matching its stage
+	expectedWindows := []ActiveWindow{
+		{StartUs: 0, EndUs: 100_000_000},
+		{StartUs: 100_000_000, EndUs: 300_000_000},
+		{StartUs: 300_000_000, EndUs: 600_000_000},
 	}
-	// Window 3: [300_000_000, 600_000_000)
-	if lc.Windows[2].StartUs != 300_000_000 || lc.Windows[2].EndUs != 600_000_000 {
-		t.Errorf("window[2] = [%d, %d), want [300000000, 600000000)", lc.Windows[2].StartUs, lc.Windows[2].EndUs)
+	for i, client := range ws.Clients {
+		lc := client.Lifecycle
+		if lc == nil || len(lc.Windows) != 1 {
+			t.Fatalf("client[%d]: expected exactly 1 lifecycle window", i)
+		}
+		got := lc.Windows[0]
+		want := expectedWindows[i]
+		if got.StartUs != want.StartUs || got.EndUs != want.EndUs {
+			t.Errorf("client[%d] window = [%d, %d), want [%d, %d)",
+				i, got.StartUs, got.EndUs, want.StartUs, want.EndUs)
+		}
 	}
 }
 
@@ -864,6 +877,116 @@ func TestInferencePerf_Determinism_SameSeedIdenticalOutput(t *testing.T) {
 				t.Errorf("request %d token %d: %d vs %d", i, j, r1[i].InputTokens[j], r2[i].InputTokens[j])
 				break
 			}
+		}
+	}
+}
+
+func TestInferencePerf_TwoStages_PerStageRateFidelity(t *testing.T) {
+	// Core behavioral test for #503: per-stage rates must produce proportional
+	// request counts, not a flattened uniform rate.
+	// Stage 1: 5 QPS for 600s → ~3000 requests
+	// Stage 2: 10 QPS for 600s → ~6000 requests
+	// Ratio should be ~0.5 (±20% for Poisson variance).
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 600},
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+
+	horizon := int64(1_200_000_000) // 1200 seconds in µs
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+
+	boundary := int64(600_000_000) // 600s in µs
+	var stage1Count, stage2Count int
+	for _, req := range requests {
+		if req.ArrivalTime < boundary {
+			stage1Count++
+		} else {
+			stage2Count++
+		}
+	}
+
+	if stage2Count == 0 {
+		t.Fatal("no requests in stage 2")
+	}
+	ratio := float64(stage1Count) / float64(stage2Count)
+	// Expected ratio: 5/10 = 0.5. Allow 20% tolerance for Poisson variance.
+	if ratio < 0.35 || ratio > 0.65 {
+		t.Errorf("stage rate ratio = %.3f (stage1=%d, stage2=%d), want ~0.5 (±0.15)",
+			ratio, stage1Count, stage2Count)
+	}
+}
+
+func TestInferencePerf_MultiStage_ClientCountIsNxMxStages(t *testing.T) {
+	// Multi-stage expansion creates N*M clients per stage.
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 8.0, Duration: 600},
+			{Rate: 20.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  9,
+			NumUsersPerSystemPrompt: 5,
+			SystemPromptLen:         100,
+			QuestionLen:             447,
+			OutputLen:               248,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 2 stages × 9 prompts × 5 users = 90 clients
+	if len(ws.Clients) != 90 {
+		t.Errorf("client count = %d, want 90 (2×9×5)", len(ws.Clients))
+	}
+}
+
+func TestInferencePerf_MultiStage_PrefixGroupsPreserved(t *testing.T) {
+	// All stages share the same prefix groups (same system prompts across stages).
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 100},
+			{Rate: 10.0, Duration: 100},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  3,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         50,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	groups := make(map[string]int)
+	for _, c := range ws.Clients {
+		groups[c.PrefixGroup]++
+	}
+	// 3 prefix groups, each appearing 2 users × 2 stages = 4 times
+	if len(groups) != 3 {
+		t.Errorf("distinct prefix groups = %d, want 3", len(groups))
+	}
+	for g, count := range groups {
+		if count != 4 {
+			t.Errorf("prefix group %q has %d clients, want 4 (2 users × 2 stages)", g, count)
 		}
 	}
 }
