@@ -61,6 +61,17 @@ markdown_extensions:
   - toc:
       permalink: true
 
+plugins:
+  - search
+  - blog:
+      blog_dir: blog
+      post_date_format: long
+      categories_allowed:
+        - Capacity Planning
+        - Architecture
+        - Tutorials
+        - Deep Dives
+
 extra:
   version:
     provider: mike
@@ -100,6 +111,8 @@ nav:
       - methodology/index.md
       - Strategy Evolution: methodology/strategy-evolution.md
       - Hypothesis Bundles: methodology/hypothesis-bundles.md
+  - Blog:
+      - blog/index.md
   - Contributing:
       - contributing/index.md
       - Extension Recipes: contributing/extension-recipes.md
