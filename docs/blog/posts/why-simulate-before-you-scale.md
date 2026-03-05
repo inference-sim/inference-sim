@@ -16,7 +16,7 @@ categories:
 
 # Why Simulate Before You Scale
 
-Deploying large language models in production is one of the most expensive infrastructure decisions an organization can make. A single GPU cluster serving a flagship model can cost millions of dollars per year. Yet most teams make their first scaling decisions based on rough estimates, vendor benchmarks, or — worst of all — trial and error on live hardware.
+Deploying large language models in production is one of the most expensive infrastructure decisions an organization can make. A single high-end GPU costs upwards of $30,000, and a production cluster can run into millions per year. Yet most teams make their first scaling decisions based on rough estimates, vendor benchmarks, or — worst of all — trial and error on live hardware.
 
 What if you could test your deployment plan *before* spending a dollar on GPUs?
 
@@ -81,9 +81,9 @@ flowchart LR
 
 ### Discover New Algorithms With AI
 
-Capacity planning and policy comparison answer "which *known* strategy is best?" The deeper opportunity is discovering strategies that no human would design from scratch.
+Beyond planning and benchmarking, simulation opens the door to something more powerful: **letting AI discover entirely new serving algorithms**.
 
-BLIS was custom-built to be a foundation for **AI-Driven Research and Strategy Discovery (ADRS)**. Routing, scheduling, admission, and batch formation are each a swappable interface — AI frameworks can inject candidate algorithms at any layer, evaluate them across diverse workloads in seconds, and evolve the best performers. Thousands of candidates per hour, with deterministic fitness comparisons and rich multi-objective signals (latency, throughput, fairness, SLO attainment).
+Routing, scheduling, and admission control interact in complex, non-obvious ways — too many dimensions for human intuition alone. BLIS was custom-built to be a foundation for **AI-Driven Research and Strategy Discovery (ADRS)**, where AI frameworks propose candidate algorithms, BLIS evaluates them across diverse workloads in seconds, and the best performers survive and evolve. Every policy axis is a swappable interface, so candidates can be injected at any layer without modifying the simulator core.
 
 ```mermaid
 flowchart LR
