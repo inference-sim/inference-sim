@@ -30,9 +30,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		if spec.Category == "" {
 			spec.Category = expanded.Category
 		}
-		if spec.AggregateRate <= 0 {
-			spec.AggregateRate = expanded.AggregateRate
-		}
+		// Always use the expanded aggregate rate — per-stage rates define the
+		// ground truth for multi-stage specs. A user-specified aggregate_rate
+		// would silently scale all per-stage rates by the wrong factor.
+		spec.AggregateRate = expanded.AggregateRate
 	}
 
 	// Load ServeGen data if specified (populates spec.Clients)

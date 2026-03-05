@@ -68,6 +68,13 @@ func validateInferencePerfSpec(spec *InferencePerfSpec) error {
 	if sp.OutputLen < 0 {
 		return fmt.Errorf("inference_perf.shared_prefix: output_len must be non-negative, got %d", sp.OutputLen)
 	}
+	// Multi-turn request generation (generator.go reasoning path) does not check
+	// lifecycle windows, so multi-stage + multi-turn would silently ignore stage
+	// boundaries. Reject explicitly until the generator supports this combination.
+	if len(spec.Stages) > 1 && sp.EnableMultiTurnChat {
+		return fmt.Errorf("inference_perf: multi-stage with enable_multi_turn_chat is not supported; " +
+			"multi-turn request generation does not respect lifecycle windows")
+	}
 	return nil
 }
 
@@ -76,7 +83,7 @@ func validateInferencePerfSpec(spec *InferencePerfSpec) error {
 //
 // Single-stage: N*M clients with no lifecycle windows, aggregateRate = stage rate.
 // Multi-stage: N*M clients per stage, each active only during its stage's window.
-// aggregateRate = sum of stage rates; rateFraction proportional to stage rate.
+// aggregateRate = sum of stage rates; each client's rateFraction = stageRate / (N*M).
 // This ensures each stage emits at its configured rate during its time window.
 //
 // Returns error if the spec is invalid.

@@ -138,6 +138,52 @@ func TestValidateInferencePerfSpec_NoSharedPrefix_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestValidateInferencePerfSpec_MultiStageMultiTurn_ReturnsError(t *testing.T) {
+	// Multi-turn + multi-stage is rejected because the reasoning path
+	// in generator.go does not check lifecycle windows.
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 600},
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	err := validateInferencePerfSpec(spec)
+	if err == nil {
+		t.Fatal("expected error for multi-stage + multi-turn")
+	}
+	if !strings.Contains(err.Error(), "multi-stage with enable_multi_turn_chat") {
+		t.Errorf("error should mention multi-stage + multi-turn: %v", err)
+	}
+}
+
+func TestValidateInferencePerfSpec_SingleStageMultiTurn_NoError(t *testing.T) {
+	// Single-stage + multi-turn is fine (no lifecycle windows needed).
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	if err := validateInferencePerfSpec(spec); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 // --- Expansion tests (Task 3) ---
 
 func TestExpandInferencePerfSpec_SharedPrefix_GeneratesNxMClients(t *testing.T) {
@@ -273,6 +319,30 @@ func TestExpandInferencePerfSpec_ValidWorkloadSpec(t *testing.T) {
 	}
 	if err := ws.Validate(); err != nil {
 		t.Errorf("expanded spec validation failed: %v", err)
+	}
+}
+
+func TestExpandInferencePerfSpec_MultiStage_ValidWorkloadSpec(t *testing.T) {
+	// Multi-stage expanded spec must pass Validate().
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 8.0, Duration: 600},
+			{Rate: 20.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  3,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         50,
+			QuestionLen:             100,
+			OutputLen:               50,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expand error: %v", err)
+	}
+	if err := ws.Validate(); err != nil {
+		t.Errorf("multi-stage expanded spec validation failed: %v", err)
 	}
 }
 
@@ -822,6 +892,40 @@ inference_perf:
 	}
 }
 
+func TestGenerateRequests_InferencePerfSpec_AggregateRateOverridden(t *testing.T) {
+	// The expanded aggregate rate must always override the user-specified value.
+	// A user-specified aggregate_rate conflicts with per-stage rates and would
+	// silently scale all rates by the wrong factor.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 8.0, Duration: 5},
+			{Rate: 20.0, Duration: 5},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0, // wrong — should be 28.0 (sum of stage rates)
+		InferencePerf: ipSpec,
+	}
+	horizon := int64(10_000_000) // 10 seconds
+	_, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	// After expansion, AggregateRate must be overridden to sum of stage rates.
+	if spec.AggregateRate != 28.0 {
+		t.Errorf("AggregateRate = %f, want 28.0 (sum of 8+20)", spec.AggregateRate)
+	}
+}
+
 // --- Invariant tests (Task 9) ---
 
 func TestInferencePerf_Determinism_SameSeedIdenticalOutput(t *testing.T) {
@@ -884,9 +988,9 @@ func TestInferencePerf_Determinism_SameSeedIdenticalOutput(t *testing.T) {
 func TestInferencePerf_TwoStages_PerStageRateFidelity(t *testing.T) {
 	// Core behavioral test for #503: per-stage rates must produce proportional
 	// request counts, not a flattened uniform rate.
-	// Stage 1: 5 QPS for 600s → ~3000 requests
-	// Stage 2: 10 QPS for 600s → ~6000 requests
-	// Ratio should be ~0.5 (±20% for Poisson variance).
+	// Stage 0: 5 QPS for 600s → ~3000 requests
+	// Stage 1: 10 QPS for 600s → ~6000 requests
+	// Ratio should be ~0.5 (±0.15 for Poisson variance).
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 5.0, Duration: 600},
