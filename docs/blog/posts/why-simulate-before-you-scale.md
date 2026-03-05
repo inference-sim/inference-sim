@@ -31,7 +31,7 @@ The aerospace industry doesn't test new wing designs by building full aircraft a
 
 **BLIS** (Blackbox Inference Simulator) is a discrete-event simulator purpose-built for LLM serving systems. It models the full lifecycle of every request — from arrival through routing, queuing, batching, and token generation — and produces the same metrics you'd measure in production: time to first token, inter-token latency, throughput, and memory utilization.
 
-The key difference: **it runs on your laptop in seconds, with no GPUs required.** And this isn't a rough approximation — BLIS produces highly accurate predictions of real-world serving metrics, validated against production inference engines. The numbers you see in simulation translate directly to capacity decisions you can trust.
+The key difference: **it runs on your laptop in seconds, with no GPUs required.** BLIS models the end-to-end journey of every request as true to real serving systems as possible — from cluster-level routing decisions down to per-token batch scheduling.
 
 ```mermaid
 flowchart TD
