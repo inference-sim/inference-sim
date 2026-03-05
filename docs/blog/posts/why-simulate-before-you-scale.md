@@ -83,7 +83,7 @@ flowchart LR
 
 Beyond planning and benchmarking, simulation opens the door to something more powerful: **letting AI discover entirely new serving algorithms**.
 
-Routing, scheduling, and admission control interact in complex, non-obvious ways — too many dimensions for human intuition alone. BLIS was custom-built to be a foundation for **AI-Driven Research and Strategy Discovery (ADRS)**, where AI frameworks propose candidate algorithms, BLIS evaluates them across diverse workloads in seconds, and the best performers survive and evolve. Every policy axis is a swappable interface, so candidates can be injected at any layer without modifying the simulator core.
+Routing, scheduling, and admission control interact in complex, non-obvious ways — too many dimensions for human intuition alone. BLIS was custom-built to be a foundation for **AI-native system design and evolution**, where AI frameworks propose candidate algorithms, BLIS evaluates them across diverse workloads in seconds, and the best performers survive and evolve. Every policy axis is a swappable interface, so candidates can be injected at any layer without modifying the simulator core. We call this disciplined process [Strategy Evolution](../../methodology/strategy-evolution.md).
 
 ```mermaid
 flowchart LR
