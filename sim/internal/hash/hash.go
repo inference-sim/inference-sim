@@ -18,9 +18,11 @@ import (
 func HashBlock(prevHash string, tokens []int) string {
 	h := sha256.New()
 	h.Write([]byte(prevHash))
+	var buf [20]byte // stack buffer: max int64 (19 digits) + pipe
 	for _, t := range tokens {
-		h.Write([]byte(strconv.Itoa(t)))
-		h.Write([]byte("|"))
+		b := strconv.AppendInt(buf[:0], int64(t), 10)
+		b = append(b, '|')
+		h.Write(b)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -42,6 +44,7 @@ func ComputeBlockHashes(blockSize int, tokens []int) []string {
 	hashes := make([]string, numBlocks)
 	h := sha256.New()
 	prevHash := ""
+	var buf [20]byte // stack buffer: reused across all tokens in all blocks
 	for i := 0; i < numBlocks; i++ {
 		start := i * blockSize
 		end := start + blockSize
@@ -49,8 +52,9 @@ func ComputeBlockHashes(blockSize int, tokens []int) []string {
 		// Inlines HashBlock logic for hasher reuse — keep in sync with HashBlock above.
 		h.Write([]byte(prevHash))
 		for _, t := range tokens[start:end] {
-			h.Write([]byte(strconv.Itoa(t)))
-			h.Write([]byte("|"))
+			b := strconv.AppendInt(buf[:0], int64(t), 10)
+			b = append(b, '|')
+			h.Write(b)
 		}
 		hashes[i] = hex.EncodeToString(h.Sum(nil))
 		prevHash = hashes[i]
