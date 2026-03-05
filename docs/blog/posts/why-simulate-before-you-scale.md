@@ -55,8 +55,8 @@ flowchart TD
     AC --> PS --> RT --> Q --> S --> FP
     FP -->|"output tokens"| S
 
-    classDef cluster fill:#1565c0,color:#fff,stroke:#0d47a1
-    classDef instance fill:#6a1b9a,color:#fff,stroke:#4a148c
+    classDef cluster fill:#e3f2fd,color:#0d47a1,stroke:#1565c0,stroke-width:2px
+    classDef instance fill:#f3e5f5,color:#4a148c,stroke:#6a1b9a,stroke-width:2px
 ```
 
 *Blue = cluster-level decisions. Purple = per-instance token generation loop.* **BLIS simulates the physics of this entire system end-to-end.**
