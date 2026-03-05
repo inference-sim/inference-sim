@@ -141,6 +141,16 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				if err != nil {
 					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
 				}
+				// Prepend shared prefix to each round's input (BC-1, #516).
+				// NOTE: reasoning.go builds contextPrefix from raw newInputTokens,
+				// NOT from req.InputTokens. The prefix must be prepended here in
+				// the caller, not passed into GenerateReasoningRequests, to avoid
+				// double-prepend with context accumulation.
+				if len(prefix) > 0 {
+					for _, req := range reasoningReqs {
+						req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
+					}
+				}
 				for _, req := range reasoningReqs {
 					if req.ArrivalTime >= horizon {
 						break // rounds are in chronological order

@@ -887,3 +887,133 @@ func TestGenerateRequests_ReasoningClient_RespectsLifecycleWindows(t *testing.T)
 		}
 	}
 }
+
+func TestGenerateRequests_ReasoningClient_PrependsPrefixTokens(t *testing.T) {
+	// BC-1/BC-2: Reasoning paths must prepend shared prefix tokens, just like
+	// the standard request path. Both SingleSession and multi-session must work.
+	for _, singleSession := range []bool{true, false} {
+		name := "multi-session"
+		if singleSession {
+			name = "single-session"
+		}
+		t.Run(name, func(t *testing.T) {
+			spec := &WorkloadSpec{
+				Version: "2", Seed: 42, AggregateRate: 10.0,
+				Clients: []ClientSpec{{
+					ID: "reasoning-pfx", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+					PrefixGroup:  "system-prompt",
+					PrefixLength: 20,
+					Arrival:      ArrivalSpec{Process: "constant"},
+					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+					Reasoning: &ReasoningSpec{
+						ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+						MultiTurn: &MultiTurnSpec{
+							MaxRounds:     2,
+							ThinkTimeUs:   10_000,
+							ContextGrowth: "",
+							SingleSession: singleSession,
+						},
+					},
+				}},
+			}
+			horizon := int64(2_000_000)
+			requests, err := GenerateRequests(spec, horizon, 0)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(requests) < 2 {
+				t.Fatalf("expected at least 2 requests, got %d", len(requests))
+			}
+
+			prefixLen := 20
+			for i, req := range requests {
+				if len(req.InputTokens) < prefixLen {
+					t.Errorf("request %d: input too short (%d < %d)", i, len(req.InputTokens), prefixLen)
+					continue
+				}
+				if req.RoundIndex == 0 && len(req.InputTokens) != prefixLen+50 {
+					t.Errorf("request %d (round 0): input len %d, want %d (prefix %d + input 50)",
+						i, len(req.InputTokens), prefixLen+50, prefixLen)
+				}
+			}
+			firstPrefix := requests[0].InputTokens[:prefixLen]
+			for i := 1; i < len(requests); i++ {
+				for j := 0; j < prefixLen; j++ {
+					if requests[i].InputTokens[j] != firstPrefix[j] {
+						t.Errorf("request %d: prefix token %d = %d, want %d (shared prefix mismatch)",
+							i, j, requests[i].InputTokens[j], firstPrefix[j])
+						break
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGenerateRequests_ReasoningClient_PrefixWithAccumulation(t *testing.T) {
+	// BC-8: With prefix + context accumulation, the token layout per round is:
+	//   Round 0: [prefix | newInput_r0]
+	//   Round 1: [prefix | newInput_r0 + output_r0 | newInput_r1]
+	// The prefix is NOT part of the accumulated context — it's re-prepended fresh.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 1.0,
+		Clients: []ClientSpec{{
+			ID: "accum-pfx", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			PrefixGroup:  "sys",
+			PrefixLength: 10,
+			Arrival:      ArrivalSpec{Process: "constant"},
+			InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+			OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 15}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     2,
+					ThinkTimeUs:   10_000,
+					ContextGrowth: "accumulate",
+					SingleSession: true,
+				},
+			},
+		}},
+	}
+	horizon := int64(5_000_000)
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(requests))
+	}
+
+	prefixLen := 10
+	inputLen := 20
+	outputLen := 15
+
+	r0 := requests[0]
+	if len(r0.InputTokens) != prefixLen+inputLen {
+		t.Errorf("round 0: input len %d, want %d", len(r0.InputTokens), prefixLen+inputLen)
+	}
+
+	r1 := requests[1]
+	expectedR1Len := prefixLen + (inputLen + outputLen) + inputLen
+	if len(r1.InputTokens) != expectedR1Len {
+		t.Errorf("round 1: input len %d, want %d", len(r1.InputTokens), expectedR1Len)
+	}
+
+	for j := 0; j < prefixLen; j++ {
+		if r0.InputTokens[j] != r1.InputTokens[j] {
+			t.Errorf("prefix token %d: round 0 has %d, round 1 has %d",
+				j, r0.InputTokens[j], r1.InputTokens[j])
+			break
+		}
+	}
+
+	r0NewInput := r0.InputTokens[prefixLen:]
+	for j := 0; j < inputLen; j++ {
+		if r1.InputTokens[prefixLen+j] != r0NewInput[j] {
+			t.Errorf("round 1 context token %d: got %d, want %d (round 0's newInput)",
+				j, r1.InputTokens[prefixLen+j], r0NewInput[j])
+			break
+		}
+	}
+}
