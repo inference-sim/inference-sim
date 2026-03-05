@@ -49,7 +49,8 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 
 ```mermaid
 flowchart LR
-    R["Request"] --> AC["Admission<br>Control"] --> PS["Priority<br>Assignment"] --> RT["Routing"] --> IQ["Instance<br>Queueing"] --> IS["Instance<br>Scheduling"] --> FP["Forward<br>Pass"] --> Done["Done"]
+    R["Request"] --> AC["Admission<br>Control"] --> PS["Priority<br>Assignment"] --> RT["Routing"]
+    RT --> IQ["Instance<br>Queueing"] --> IS["Instance<br>Scheduling"] --> FP["Forward<br>Pass"] --> Done["Done"]
 
     style R fill:#4051b5,color:#fff
     style AC fill:#4051b5,color:#fff
@@ -61,7 +62,9 @@ flowchart LR
     style Done fill:#2e7d32,color:#fff
 ```
 
-*Dark blue = cluster-level decisions. Purple = instance-level processing. BLIS models every stage.*
+*Top row (dark blue): cluster-level decisions. Bottom row (purple): instance-level processing. BLIS models every stage.*
+
+Importantly, this isn't a rough approximation. BLIS produces **highly accurate predictions** of real-world serving metrics — throughput, time to first token, end-to-end latency — validated against production inference engines. The simulator faithfully captures how requests interact with batching, memory pressure, and scheduling under realistic workload conditions, so the numbers you see in simulation translate directly to capacity decisions you can trust.
 
 ## What You Can Do With It
 
@@ -106,17 +109,7 @@ BLIS was custom-built to be a foundation for **AI-Driven Research and Strategy D
 
 ```mermaid
 flowchart LR
-    subgraph ai ["AI Search"]
-        G["Generate<br>candidate algorithm"]
-    end
-    subgraph sim ["BLIS Simulation"]
-        E["Evaluate across<br>diverse workloads"]
-    end
-    subgraph fit ["Fitness"]
-        F["Score on latency,<br>throughput, fairness"]
-    end
-
-    G --> E --> F
+    G["Generate<br>candidate"] --> E["Simulate<br>workloads"] --> F["Score fitness"]
     F -.->|"Evolve & refine"| G
 
     style G fill:#4051b5,color:#fff
