@@ -230,7 +230,7 @@ inference-sim/
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
-│   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/); HardwareCalib includes MemoryGiB (reserved for future KV capacity auto-calculation)
+│   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/); HardwareCalib includes MemoryGiB (used by KV capacity auto-calculation in roofline/crossmodel modes)
 │   └── internal/              # Shared internal packages
 │       ├── hash/              # Block-level hashing for prefix cache
 │       ├── testutil/          # Shared test infrastructure (golden dataset loading)
@@ -244,7 +244,7 @@ inference-sim/
 │   ├── crossmodel.go          # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
 │   ├── kv_capacity.go         # CalculateKVBlocks: auto-derive total KV cache blocks from model architecture + GPU memory; KVCapacityParams, ExtractKVCapacityParams, computeModelWeightBytes
-│   ├── config.go              # HFConfig, GetHWConfig(), GetModelConfig(), ValidateRooflineConfig(), parseHWConfig(), parseHFConfig()
+│   ├── config.go              # HFConfig, GetHWConfig(), GetModelConfig(), ValidateRooflineConfig(), parseHWConfig(), ParseHFConfig()
 │   └── register.go            # init()-based registration of NewLatencyModelFunc into sim/
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)

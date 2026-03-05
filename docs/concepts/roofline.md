@@ -1,6 +1,6 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`, except Mixture-of-Expert (MoE) models currently.
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`. For Mixture-of-Experts (MoE) models, use `--latency-model crossmodel` instead — see [Cross-Model Mode](../guide/latency-models.md#cross-model-mode-physics-informed).
 
 
 ## 1. Why Roofline?
@@ -102,6 +102,6 @@ Alternatively, download the `config.json` manually:
 | `mfuPrefill` | Static MFU for prefill (used when MFU database is unavailable) |
 | `mfuDecode` | Static MFU for decode (used when MFU database is unavailable) |
 | `allReduceLatency` | All-reduce latency in microseconds (multi-GPU TP) |
-| `MemoryGiB` | GPU memory capacity in GiB (reserved for future KV capacity auto-calculation) |
+| `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or crossmodel mode is active and the flag is not explicitly set. |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.

@@ -17,7 +17,7 @@ KV cache is allocated in **blocks** of `--block-size-in-tokens` tokens (default:
 | `--total-kv-blocks` | Per-model* | Total GPU-tier KV blocks |
 | `--block-size-in-tokens` | 16 | Tokens per block |
 
-*The CLI default is 1,000,000 but `defaults.yaml` overrides this per model. For LLaMA 3.1 8B / H100 / TP=2: 132,139 blocks.
+*In blackbox mode, `defaults.yaml` overrides the 1,000,000 CLI default per model (e.g., LLaMA 3.1 8B / H100 / TP=2: 132,139 blocks). In roofline or crossmodel mode, the block count is auto-calculated from model architecture and GPU memory, superseding the `defaults.yaml` value. Explicit `--total-kv-blocks` always wins. See [Configuration Reference](../reference/configuration.md#resolution-process).
 
 !!! tip "Block size affects prefix cache granularity"
     Prefix caching uses block-aligned hashing (`hash.ComputeBlockHashes`). Smaller block sizes increase cache hit granularity but also increase allocation overhead. Choose block size relative to your typical prefix lengths.
