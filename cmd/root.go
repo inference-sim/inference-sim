@@ -107,8 +107,8 @@ var rootCmd = &cobra.Command{
 	Short: "BLIS — Blackbox Inference Simulator for LLM serving systems",
 }
 
-// check if all values in the coefficients list is 0 (default)
-func AllZeros(values []float64) bool {
+// allZeros reports whether all values in the coefficients slice are 0 (default).
+func allZeros(values []float64) bool {
 	for _, v := range values {
 		if v != 0 {
 			return false
@@ -171,7 +171,7 @@ var runCmd = &cobra.Command{
 			// Warn if user also provided explicit beta coefficients — roofline replaces
 			// step time estimation. Alpha coefficients are still used for queueing time
 			// and output token processing time.
-			if !AllZeros(betaCoeffs) {
+			if !allZeros(betaCoeffs) {
 				logrus.Warnf("--latency-model roofline replaces --beta-coeffs with analytical step time estimation. " +
 					"Alpha coefficients are still used for queueing time and output token processing")
 			}
@@ -209,7 +209,7 @@ var runCmd = &cobra.Command{
 					}
 				}
 				defAlpha, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-				if !cmd.Flags().Changed("alpha-coeffs") && !AllZeros(defAlpha) {
+				if !cmd.Flags().Changed("alpha-coeffs") && !allZeros(defAlpha) {
 					alphaCoeffs = defAlpha
 					logrus.Infof("--latency-model: loaded alpha coefficients from defaults.yaml for queueing time estimation")
 				}
@@ -221,7 +221,7 @@ var runCmd = &cobra.Command{
 						"using default %d. Consider setting --total-kv-blocks explicitly for accurate KV cache simulation",
 						model, gpu, tensorParallelism, totalKVBlocks)
 				}
-				if AllZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
+				if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
 					logrus.Warnf("--latency-model: no trained alpha coefficients found for model=%s, GPU=%s, TP=%d; "+
 						"queueing time and output token processing time will use zero alpha (may underestimate TTFT/ITL)",
 						model, gpu, tensorParallelism)
@@ -256,7 +256,7 @@ var runCmd = &cobra.Command{
 			}
 			hwConfigPath = resolvedHW
 
-			// Load crossmodel defaults from defaults.yaml (R18: use Flags().Changed, not AllZeros)
+			// Load crossmodel defaults from defaults.yaml (R18: use Flags().Changed, not allZeros)
 			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
 				data, readErr := os.ReadFile(defaultsFilePath)
 				if readErr != nil {
@@ -293,7 +293,7 @@ var runCmd = &cobra.Command{
 				}
 			}
 			// Validate crossmodel coefficients were loaded (catches missing file, missing section, etc.)
-			if !cmd.Flags().Changed("beta-coeffs") && (len(betaCoeffs) < 4 || AllZeros(betaCoeffs)) {
+			if !cmd.Flags().Changed("beta-coeffs") && (len(betaCoeffs) < 4 || allZeros(betaCoeffs)) {
 				logrus.Fatalf("--latency-model crossmodel: no crossmodel_defaults found in %s and no --beta-coeffs provided. "+
 					"Add crossmodel_defaults to defaults.yaml or provide --beta-coeffs explicitly",
 					defaultsFilePath)
@@ -335,7 +335,7 @@ var runCmd = &cobra.Command{
 		// trained coefficients are all-zero AND config paths are provided.
 		// Guard uses backend == "" (not != "roofline") so that --latency-model blackbox
 		// explicitly prevents implicit detection — respecting user intent.
-		if backend == "" && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+		if backend == "" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
 			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
 			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
 				backend = "roofline"
@@ -347,14 +347,20 @@ var runCmd = &cobra.Command{
 		}
 		// Zero-coefficients safety guard: prevents silently running with zero step times
 		// when blackbox mode has no trained coefficients (would produce meaningless results).
-		if backend != "roofline" && backend != "crossmodel" && AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) {
+		if backend != "roofline" && backend != "crossmodel" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
 			logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
 				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, or use --latency-model crossmodel",
 				model, gpu, tensorParallelism)
 		}
+		// Analytical backends (roofline, crossmodel): parse HFConfig once, use for
+		// both model config extraction and KV capacity auto-calculation.
 		if backend == "roofline" || backend == "crossmodel" {
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
-			mc, err := latency.GetModelConfig(hfPath)
+			hfConfig, err := latency.ParseHFConfig(hfPath)
+			if err != nil {
+				logrus.Fatalf("Failed to parse HuggingFace config: %v", err)
+			}
+			mc, err := latency.GetModelConfigFromHF(hfConfig)
 			if err != nil {
 				logrus.Fatalf("Failed to load model config: %v", err)
 			}
@@ -374,13 +380,48 @@ var runCmd = &cobra.Command{
 			// Check for MoE model indicators in the raw HF config (roofline-only warning;
 			// crossmodel handles MoE explicitly via the beta2 dispatch term)
 			if backend == "roofline" {
-				if hfRawBytes, readErr := os.ReadFile(hfPath); readErr == nil {
-					if strings.Contains(string(hfRawBytes), `"num_local_experts"`) {
-						logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
-							"Roofline estimation assumes dense transformers and may overestimate MoE latency")
+				if hfConfig.MustGetInt("num_local_experts", 0) > 1 {
+					logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
+						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
+				}
+			}
+
+			// KV capacity auto-calculation: derive total-kv-blocks from model + hardware
+			// when the user hasn't explicitly set --total-kv-blocks. This overrides the
+			// defaults.yaml value (loaded above) with a more accurate estimate derived
+			// from actual model architecture and GPU memory capacity.
+			// R18: cmd.Flags().Changed() ensures CLI flags always take precedence.
+			if !cmd.Flags().Changed("total-kv-blocks") {
+				kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
+				if kvParamsErr != nil {
+					logrus.Fatalf("--latency-model: could not extract KV capacity params: %v\n"+
+					"Set --total-kv-blocks explicitly to override", kvParamsErr)
+				} else if hwConfig.MemoryGiB <= 0 {
+					logrus.Warnf("--latency-model: GPU memory capacity not available in hardware config; using current total-kv-blocks=%d. "+
+						"Add MemoryGiB to hardware_config.json or pass --total-kv-blocks explicitly", totalKVBlocks)
+				} else {
+					if kvParams.HiddenAct == "" {
+						logrus.Infof("--latency-model: hidden_act not set in config.json; assuming SwiGLU (3-matrix MLP) for weight estimation")
+					}
+					autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, kvParams)
+					if calcErr != nil {
+						logrus.Fatalf("--latency-model: KV capacity auto-calculation failed: %v\n"+
+							"Set --total-kv-blocks explicitly to override", calcErr)
+					} else {
+						totalKVBlocks = autoBlocks
+						logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, block_size=%d, MoE=%v)",
+							totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, blockSizeTokens, kvParams.IsMoE)
 					}
 				}
 			}
+		}
+
+		// R3: Validate workload generation flags (before any synthesis path consumes them)
+		if numRequests < 0 {
+			logrus.Fatalf("--num-requests must be >= 0, got %d", numRequests)
+		}
+		if prefixTokens < 0 {
+			logrus.Fatalf("--prefix-tokens must be >= 0, got %d", prefixTokens)
 		}
 
 		// Workload configuration — all paths synthesize a v2 WorkloadSpec
@@ -491,6 +532,11 @@ var runCmd = &cobra.Command{
 		}
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
+		}
+		// Changed() guard: unlike peer flags (default always positive), --horizon defaults
+		// to math.MaxInt64 which would fail <= 0. Only validate when user explicitly sets it.
+		if cmd.Flags().Changed("horizon") && simulationHorizon <= 0 {
+			logrus.Fatalf("--horizon must be > 0, got %d", simulationHorizon)
 		}
 
 		// Load policy bundle if specified (BC-6: CLI flags override YAML values)

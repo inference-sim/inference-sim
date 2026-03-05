@@ -5,12 +5,6 @@ import (
 	"math"
 )
 
-// Bin represents a single completion time integral bin with its integer key and count.
-type Bin struct {
-	Key   int
-	Count int
-}
-
 type IntOrFloat64 interface {
 	int | int64 | float64
 }

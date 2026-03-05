@@ -887,3 +887,265 @@ func TestGenerateRequests_ReasoningClient_RespectsLifecycleWindows(t *testing.T)
 		}
 	}
 }
+
+func TestGenerateRequests_ReasoningClient_PrependsPrefixTokens(t *testing.T) {
+	// BC-1/BC-2: Reasoning paths must prepend shared prefix tokens, just like
+	// the standard request path. Both SingleSession and multi-session must work.
+	for _, singleSession := range []bool{true, false} {
+		name := "multi-session"
+		if singleSession {
+			name = "single-session"
+		}
+		t.Run(name, func(t *testing.T) {
+			spec := &WorkloadSpec{
+				Version: "2", Seed: 42, AggregateRate: 10.0,
+				Clients: []ClientSpec{{
+					ID: "reasoning-pfx", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+					PrefixGroup:  "system-prompt",
+					PrefixLength: 20,
+					Arrival:      ArrivalSpec{Process: "constant"},
+					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+					Reasoning: &ReasoningSpec{
+						ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+						MultiTurn: &MultiTurnSpec{
+							MaxRounds:     2,
+							ThinkTimeUs:   10_000,
+							ContextGrowth: "",
+							SingleSession: singleSession,
+						},
+					},
+				}},
+			}
+			horizon := int64(2_000_000)
+			requests, err := GenerateRequests(spec, horizon, 0)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(requests) < 2 {
+				t.Fatalf("expected at least 2 requests, got %d", len(requests))
+			}
+
+			prefixLen := 20
+			for i, req := range requests {
+				if len(req.InputTokens) < prefixLen {
+					t.Errorf("request %d: input too short (%d < %d)", i, len(req.InputTokens), prefixLen)
+					continue
+				}
+				if req.RoundIndex == 0 && len(req.InputTokens) != prefixLen+50 {
+					t.Errorf("request %d (round 0): input len %d, want %d (prefix %d + input 50)",
+						i, len(req.InputTokens), prefixLen+50, prefixLen)
+				}
+			}
+			firstPrefix := requests[0].InputTokens[:prefixLen]
+			for i := 1; i < len(requests); i++ {
+				for j := 0; j < prefixLen; j++ {
+					if requests[i].InputTokens[j] != firstPrefix[j] {
+						t.Errorf("request %d: prefix token %d = %d, want %d (shared prefix mismatch)",
+							i, j, requests[i].InputTokens[j], firstPrefix[j])
+						break
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGenerateRequests_ReasoningClient_PrefixWithAccumulation(t *testing.T) {
+	// BC-8: With prefix + context accumulation, the token layout per round is:
+	//   Round 0: [prefix | newInput_r0]
+	//   Round 1: [prefix | newInput_r0 + output_r0 | newInput_r1]
+	// The prefix is NOT part of the accumulated context — it's re-prepended fresh.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 1.0,
+		Clients: []ClientSpec{{
+			ID: "accum-pfx", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			PrefixGroup:  "sys",
+			PrefixLength: 10,
+			Arrival:      ArrivalSpec{Process: "constant"},
+			InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+			OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 15}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     2,
+					ThinkTimeUs:   10_000,
+					ContextGrowth: "accumulate",
+					SingleSession: true,
+				},
+			},
+		}},
+	}
+	horizon := int64(5_000_000)
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(requests))
+	}
+
+	prefixLen := 10
+	inputLen := 20
+	outputLen := 15
+
+	r0 := requests[0]
+	if len(r0.InputTokens) != prefixLen+inputLen {
+		t.Errorf("round 0: input len %d, want %d", len(r0.InputTokens), prefixLen+inputLen)
+	}
+
+	r1 := requests[1]
+	expectedR1Len := prefixLen + (inputLen + outputLen) + inputLen
+	if len(r1.InputTokens) != expectedR1Len {
+		t.Errorf("round 1: input len %d, want %d", len(r1.InputTokens), expectedR1Len)
+	}
+
+	for j := 0; j < prefixLen; j++ {
+		if r0.InputTokens[j] != r1.InputTokens[j] {
+			t.Errorf("prefix token %d: round 0 has %d, round 1 has %d",
+				j, r0.InputTokens[j], r1.InputTokens[j])
+			break
+		}
+	}
+
+	r0NewInput := r0.InputTokens[prefixLen:]
+	for j := 0; j < inputLen; j++ {
+		if r1.InputTokens[prefixLen+j] != r0NewInput[j] {
+			t.Errorf("round 1 context token %d: got %d, want %d (round 0's newInput)",
+				j, r1.InputTokens[prefixLen+j], r0NewInput[j])
+			break
+		}
+	}
+}
+
+func TestGenerateRequests_MultiSession_PerRoundLifecycleFiltering(t *testing.T) {
+	// BC-3: Multi-session reasoning must filter individual rounds against
+	// lifecycle windows, not just session start times. A session starting
+	// inside a window can have later rounds that cross the window boundary.
+	//
+	// Timeline with rate=1.0 constant arrival:
+	//   Session 1 starts at t=1,000,000 (1s). Rounds:
+	//     Round 0: t=1,000,000 (in window [0, 2s)) → KEPT
+	//     Round 1: t=1,500,025 (in window) → KEPT
+	//     Round 2: t=2,000,050 (outside window) → FILTERED
+	//     Rounds 3-9: beyond window → FILTERED
+	//   Session 2 would start at t=2,000,000 — filtered at session level.
+	//   Expected: 2 accepted requests.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 1.0,
+		Clients: []ClientSpec{{
+			ID: "ms-lc", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     10,
+					ThinkTimeUs:   500_000,
+					ContextGrowth: "",
+					SingleSession: false,
+				},
+			},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 2_000_000}},
+			},
+		}},
+	}
+	horizon := int64(10_000_000)
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request")
+	}
+	for i, req := range requests {
+		if req.ArrivalTime >= 2_000_000 {
+			t.Errorf("request %d: ArrivalTime=%d >= window end 2000000 (BC-3 violation)",
+				i, req.ArrivalTime)
+		}
+	}
+	if len(requests) >= 10 {
+		t.Errorf("expected fewer than 10 requests due to lifecycle window truncation, got %d", len(requests))
+	}
+}
+
+func TestGenerateRequests_MultiSession_PerRoundHorizonFiltering(t *testing.T) {
+	// BC-4: Multi-session reasoning must filter individual rounds against
+	// horizon, not just the session start time. No lifecycle windows — exercises
+	// the `break` on horizon independently of lifecycle filtering.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, AggregateRate: 1.0,
+		Clients: []ClientSpec{{
+			ID: "ms-hz", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     20,
+					ThinkTimeUs:   500_000,
+					ContextGrowth: "",
+					SingleSession: false,
+				},
+			},
+		}},
+	}
+	horizon := int64(3_000_000) // 3s — session at 1s, rounds at 1.0s, 1.5s, 2.0s, 2.5s, 3.0s...
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request")
+	}
+	for i, req := range requests {
+		if req.ArrivalTime >= horizon {
+			t.Errorf("request %d: ArrivalTime=%d >= horizon %d (BC-4 violation)",
+				i, req.ArrivalTime, horizon)
+		}
+	}
+	if len(requests) >= 20 {
+		t.Errorf("expected fewer than 20 requests due to horizon truncation, got %d", len(requests))
+	}
+}
+
+func TestGenerateRequests_ReasoningClient_NoPrefixGroup_Unchanged(t *testing.T) {
+	// BC-5: Reasoning clients without prefix_group must produce identical output.
+	// No prefix should be spuriously prepended.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 99, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "no-pfx", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     3,
+					ThinkTimeUs:   10_000,
+					ContextGrowth: "",
+					SingleSession: false,
+				},
+			},
+			// No PrefixGroup, no Lifecycle
+		}},
+	}
+	horizon := int64(2_000_000)
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request")
+	}
+	// With no prefix, input tokens should be exactly 50 (constant sampler) for round 0.
+	for _, req := range requests {
+		if req.RoundIndex == 0 && len(req.InputTokens) != 50 {
+			t.Errorf("round 0 request: input len %d, want 50 (no prefix should be added)", len(req.InputTokens))
+		}
+	}
+}

@@ -2,7 +2,6 @@ package latency
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -16,6 +15,52 @@ import (
 type HFConfig struct {
 	// Raw holds the entire JSON as a dynamic map.
 	Raw map[string]any
+}
+
+// GetString returns a string value for a key if present and of the right type.
+func (c *HFConfig) GetString(key string) (string, bool) {
+	if v, ok := c.Raw[key]; ok {
+		if s, ok := v.(string); ok {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// GetInt tries to coerce a JSON number to int.
+func (c *HFConfig) GetInt(key string) (int, bool) {
+	if v, ok := c.Raw[key]; ok {
+		if f, ok := v.(float64); ok {
+			return int(f), true
+		}
+	}
+	return 0, false
+}
+
+// GetBool returns a bool for a key.
+func (c *HFConfig) GetBool(key string) (bool, bool) {
+	if v, ok := c.Raw[key]; ok {
+		if b, ok := v.(bool); ok {
+			return b, true
+		}
+	}
+	return false, false
+}
+
+// MustGetString returns the string or a default.
+func (c *HFConfig) MustGetString(key, def string) string {
+	if s, ok := c.GetString(key); ok {
+		return s
+	}
+	return def
+}
+
+// MustGetInt returns the int or a default.
+func (c *HFConfig) MustGetInt(key string, def int) int {
+	if i, ok := c.GetInt(key); ok {
+		return i
+	}
+	return def
 }
 
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
@@ -50,8 +95,8 @@ func GetHWConfig(HWConfigFilePath string, GPU string) (sim.HardwareCalib, error)
 	return config, nil
 }
 
-// parseHFConfig parses arbitrary JSON into HFConfig.
-func parseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
+// ParseHFConfig parses a HuggingFace config.json file into an HFConfig.
+func ParseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
 	data, err := os.ReadFile(HFConfigFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("read HF config %q: %w", HFConfigFilePath, err)
@@ -73,10 +118,16 @@ func parseHFConfig(HFConfigFilePath string) (*HFConfig, error) {
 // GetModelConfig parses a HuggingFace config.json and extracts model parameters.
 // Returns an error if the config file cannot be read or parsed.
 func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
-	hf, err := parseHFConfig(hfConfigPath)
+	hf, err := ParseHFConfig(hfConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("get model config: %w", err)
 	}
+	return GetModelConfigFromHF(hf)
+}
+
+// GetModelConfigFromHF extracts model parameters from a pre-parsed HFConfig.
+// Use this when you already have a parsed HFConfig to avoid re-reading the file.
+func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	getInt := func(key string) int {
 		if val, ok := hf.Raw[key].(float64); ok {
 			return int(val)
@@ -145,107 +196,6 @@ func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
 		NumExpertsPerTok: numExpertsPerTok,
 	}
 	return modelConfig, nil
-}
-
-// GetString returns a string value for a key if present and of the right type.
-func (c *HFConfig) GetString(key string) (string, bool) {
-	if v, ok := c.Raw[key]; ok {
-		if s, ok := v.(string); ok {
-			return s, true
-		}
-	}
-	return "", false
-}
-
-// GetFloat returns a float64 for a key, handling JSON numbers (which decode as float64).
-func (c *HFConfig) GetFloat(key string) (float64, bool) {
-	if v, ok := c.Raw[key]; ok {
-		switch x := v.(type) {
-		case float64:
-			return x, true
-		case json.Number:
-			f, err := x.Float64()
-			if err == nil {
-				return f, true
-			}
-		}
-	}
-	return 0, false
-}
-
-// GetInt tries to coerce a JSON number to int.
-func (c *HFConfig) GetInt(key string) (int, bool) {
-	if v, ok := c.Raw[key]; ok {
-		switch x := v.(type) {
-		case float64:
-			return int(x), true
-		case json.Number:
-			i, err := x.Int64()
-			if err == nil {
-				return int(i), true
-			}
-		}
-	}
-	return 0, false
-}
-
-// GetBool returns a bool for a key.
-func (c *HFConfig) GetBool(key string) (bool, bool) {
-	if v, ok := c.Raw[key]; ok {
-		if b, ok := v.(bool); ok {
-			return b, true
-		}
-	}
-	return false, false
-}
-
-// GetStrings returns []string, coercing []any → []string when possible.
-func (c *HFConfig) GetStrings(key string) ([]string, bool) {
-	v, ok := c.Raw[key]
-	if !ok {
-		return nil, false
-	}
-	switch arr := v.(type) {
-	case []any:
-		out := make([]string, 0, len(arr))
-		for _, elem := range arr {
-			if s, ok := elem.(string); ok {
-				out = append(out, s)
-			} else {
-				return nil, false
-			}
-		}
-		return out, true
-	case []string:
-		// Rarely produced directly by encoding/json; included for completeness.
-		return arr, true
-	default:
-		return nil, false
-	}
-}
-
-// MustGetString returns the string or a default.
-func (c *HFConfig) MustGetString(key, def string) string {
-	if s, ok := c.GetString(key); ok {
-		return s
-	}
-	return def
-}
-
-// MustGetInt returns the int or a default.
-func (c *HFConfig) MustGetInt(key string, def int) int {
-	if i, ok := c.GetInt(key); ok {
-		return i
-	}
-	return def
-}
-
-// Marshal returns the canonical JSON (preserving unknown fields).
-func (c *HFConfig) Marshal() ([]byte, error) {
-	if c.Raw == nil {
-		return nil, errors.New("nil HFConfig")
-	}
-	return json.MarshalIndent(c.Raw, "", "  ")
 }
 
 // invalidPositiveFloat returns true if v is not a valid positive float64

@@ -797,3 +797,52 @@ func TestMetrics_Percentile_Monotonicity(t *testing.T) {
 // (sum(per_instance_rate) / N). With imbalanced load, this can underreport
 // effective caching vs a block-weighted average. This is a design choice
 // documented here rather than tested, since it exercises no simulator code.
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BC-MS-15: ITL Count Invariant
+//
+// For every completed request with N output tokens:
+//   len(req.ITL) == max(N-1, 0)
+// This is the number of inter-token gaps: N tokens produce N-1 gaps.
+// Zero-output requests have 0 ITL entries.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestMetrics_ITLCount_MatchesInterTokenGaps(t *testing.T) {
+	tests := []struct {
+		name      string
+		outputLen int
+		wantITL   int
+	}{
+		{"zero-output", 0, 0},
+		{"single-token", 1, 0},
+		{"two-tokens", 2, 1},
+		{"five-tokens", 5, 4},
+		{"ten-tokens", 10, 9},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := msConfig(math.MaxInt64)
+			s := mustNewSimulator(t, cfg)
+			req := &Request{
+				ID:           "itl-count",
+				InputTokens:  msMakeTokens(32),
+				OutputTokens: msMakeTokens(tc.outputLen),
+				ArrivalTime:  0,
+				State:        StateQueued,
+			}
+			s.InjectArrival(req)
+			s.Run()
+
+			if s.Metrics.CompletedRequests != 1 {
+				t.Fatalf("expected 1 completed, got %d", s.Metrics.CompletedRequests)
+			}
+
+			gotITL := len(s.Metrics.AllITLs)
+			if gotITL != tc.wantITL {
+				t.Errorf("BC-MS-15 violated: len(AllITLs) = %d, want %d for %d output tokens",
+					gotITL, tc.wantITL, tc.outputLen)
+			}
+		})
+	}
+}

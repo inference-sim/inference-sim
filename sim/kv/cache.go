@@ -125,16 +125,24 @@ func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
 // It returns block IDs for the longest contiguous cached prefix.
 // This is a pure query — it does not modify any state.
 // CacheHits are counted by AllocateKVBlocks when cached blocks are committed.
+//
+// Uses hierarchical block hashing: each block's hash chains the previous
+// block's hash, so each iteration hashes only blockSize tokens plus a
+// fixed-length prev hash (O(K * blockSize) total, down from O(K^2 * blockSize)
+// with flat-prefix hashing). Breaks on first miss.
 func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
 	n := util.Len64(tokens) / kvc.BlockSizeTokens
+	prevHash := ""
 	for i := int64(0); i < n; i++ {
-		chunk := tokens[:(i+1)*kvc.BlockSizeTokens]
-		h := hash.HashTokens(chunk)
+		start := i * kvc.BlockSizeTokens
+		end := start + kvc.BlockSizeTokens
+		h := hash.HashBlock(prevHash, tokens[start:end])
 		blockId, ok := kvc.HashToBlock[h]
 		if !ok {
 			break
 		}
 		blockIDs = append(blockIDs, blockId)
+		prevHash = h
 	}
 	return
 }
@@ -218,12 +226,13 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 			newTokenProgressIndex += util.Len64(toksToAppend)
 			logrus.Debugf("Appending to latest blk: req: %s, newTokenProgressIndex = %d, appended=%d tokens", req.ID, newTokenProgressIndex, util.Len64(toksToAppend))
 			if util.Len64(latestBlk.Tokens) == kvc.BlockSizeTokens {
-				// latesBlk is full
-				fullTokens := []int{}
-				for _, blockId := range ids {
-					fullTokens = append(fullTokens, kvc.Blocks[blockId].Tokens...)
+				// latestBlk is full — compute its hierarchical hash.
+				// Chain from the previous block's hash (or "" if first block).
+				prevHash := ""
+				if len(ids) >= 2 {
+					prevHash = kvc.Blocks[ids[len(ids)-2]].Hash
 				}
-				h := hash.HashTokens(fullTokens)
+				h := hash.HashBlock(prevHash, latestBlk.Tokens)
 				latestBlk.Hash = h
 				kvc.HashToBlock[h] = latestBlk.ID
 			}
@@ -236,6 +245,14 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				break
 			}
 			numNewBlocks = (remainingTokens + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
+
+			// Initialize prevHash for hierarchical block hashing.
+			// Chain from the last existing block for this request (if any).
+			prevHash := ""
+			if existingIDs, has := kvc.RequestMap[reqID]; has && len(existingIDs) > 0 {
+				prevHash = kvc.Blocks[existingIDs[len(existingIDs)-1]].Hash
+			}
+
 			for i := int64(0); i < numNewBlocks; i++ {
 				// Save the original prefix hash before popFreeBlock clears it.
 				// This allows rollback to restore cached prefix hashes.
@@ -264,13 +281,12 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 
 				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < util.Len64(req.InputTokens) {
 					// Only compute prefix hash during prefill (not decode).
-					// During decode, startIndex >= len(InputTokens) and absoluteEnd
-					// would be out of range for req.InputTokens.
-					absoluteEnd := startIndex + end
-					fullPrefix := req.InputTokens[:absoluteEnd]
-					h := hash.HashTokens(fullPrefix)
+					// During decode, blocks hold output tokens that should not
+					// participate in prefix caching (input sequences only).
+					h := hash.HashBlock(prevHash, blk.Tokens)
 					blk.Hash = h
 					kvc.HashToBlock[h] = blk.ID
+					prevHash = h
 				}
 				newlyAllocated = append(newlyAllocated, newBlockMutation{block: blk, originalHash: originalHash})
 				// allocated is the block IDs allocated for this request
@@ -388,16 +404,10 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 	ids := kvc.RequestMap[req.ID]
 	delete(kvc.RequestMap, req.ID)
 	// From https://docs.vllm.ai/en/v0.8.5/design/v1/prefix_caching.html
-	/*
-		When a request is finished, we free all its blocks if no other
-		requests are using them (reference count = 0).
-		In this example, we free request 1 and block 2, 3, 4, 8
-		associated with it. We can see that the freed blocks are added
-		to the tail of the free queue in the reverse order.
-		This is because the last block of a request must hash more tokens
-		and is less likely to be reused by other requests.
-		As a result, it should be evicted first.
-	*/
+	// Freed blocks are added to the tail of the free queue in reverse order.
+	// Later blocks can only be reused if all preceding blocks also match
+	// (hierarchical hashing), so evicting them first preserves the more
+	// broadly reusable earlier blocks.
 	for i := len(ids) - 1; i >= 0; i-- {
 		blockId := ids[i]
 		blk := kvc.Blocks[blockId]

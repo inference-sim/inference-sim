@@ -47,6 +47,9 @@ func TestAllocateKVBlocks_PartialBlockFill_AdvancesByActualTokenCount(t *testing
 	if len(blk.Tokens) != 2 {
 		t.Fatalf("expected partial block with 2 tokens, got %d", len(blk.Tokens))
 	}
+	if blk.Hash != "" {
+		t.Errorf("partial block should not have hash before fill, got %s", blk.Hash)
+	}
 
 	// WHEN we allocate 2 more tokens that should fill the partial block
 	req.ProgressIndex = 2
@@ -65,9 +68,119 @@ func TestAllocateKVBlocks_PartialBlockFill_AdvancesByActualTokenCount(t *testing
 	if len(finalIDs) != 1 {
 		t.Errorf("expected 1 block total (partial filled), got %d", len(finalIDs))
 	}
+
+	// THEN the filled block's hash equals HashBlock("", [10,20,30,40]) and is findable
+	// via GetCachedBlocks (partial-fill path with len(ids)==1 → prevHash="")
+	expectedHash := hash.HashBlock("", []int{10, 20, 30, 40})
+	if blk.Hash != expectedHash {
+		t.Errorf("partial-fill block hash mismatch:\n  got  %s\n  want %s", blk.Hash, expectedHash)
+	}
+	kvc.ReleaseKVBlocks(req)
+	cached := kvc.GetCachedBlocks([]int{10, 20, 30, 40})
+	if len(cached) != 1 {
+		t.Errorf("expected 1 cached block after partial-fill + release, got %d", len(cached))
+	}
 }
 
-func TestAllocateKVBlocks_ChunkedPrefill_PrefixHashUsesAbsoluteOffset(t *testing.T) {
+func TestAllocateKVBlocks_PartialBlockFill_MultiBlock_ChainsFromPreviousBlock(t *testing.T) {
+	// Exercises the len(ids) >= 2 branch of the partial-fill hash path:
+	// block 0 is full, block 1 is partial, then block 1 gets filled and
+	// its hash must chain from block 0's hash (not "").
+	kvc := NewKVCacheState(10, 4) // blockSize=4
+	req := &sim.Request{
+		ID:          "r1",
+		InputTokens: []int{10, 20, 30, 40, 50, 60, 70, 80},
+	}
+
+	// Allocate 5 tokens: block 0 full [10,20,30,40], block 1 partial [50]
+	ok := kvc.AllocateKVBlocks(req, 0, 5, []int64{})
+	if !ok {
+		t.Fatal("first allocation should succeed")
+	}
+	ids := kvc.RequestMap["r1"]
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 blocks (1 full + 1 partial), got %d", len(ids))
+	}
+
+	// WHEN we allocate tokens 5-8, filling partial block 1
+	req.ProgressIndex = 5
+	ok = kvc.AllocateKVBlocks(req, 5, 8, []int64{})
+	if !ok {
+		t.Fatal("second allocation should succeed")
+	}
+
+	// THEN block 1's hash chains from block 0's hash (len(ids)>=2 branch)
+	block0Hash := hash.HashBlock("", []int{10, 20, 30, 40})
+	expectedBlock1Hash := hash.HashBlock(block0Hash, []int{50, 60, 70, 80})
+	blk1 := kvc.Blocks[kvc.RequestMap["r1"][1]]
+	if blk1.Hash != expectedBlock1Hash {
+		t.Errorf("block 1 hash should chain from block 0:\n  got  %s\n  want %s", blk1.Hash, expectedBlock1Hash)
+	}
+
+	// BC-3 consistency: both hashes match ComputeBlockHashes
+	expected := hash.ComputeBlockHashes(4, []int{10, 20, 30, 40, 50, 60, 70, 80})
+	if len(expected) != 2 {
+		t.Fatalf("expected 2 hashes from ComputeBlockHashes, got %d", len(expected))
+	}
+	blk0 := kvc.Blocks[kvc.RequestMap["r1"][0]]
+	if blk0.Hash != expected[0] {
+		t.Errorf("block 0 hash mismatch with ComputeBlockHashes:\n  got  %s\n  want %s", blk0.Hash, expected[0])
+	}
+	if blk1.Hash != expected[1] {
+		t.Errorf("block 1 hash mismatch with ComputeBlockHashes:\n  got  %s\n  want %s", blk1.Hash, expected[1])
+	}
+
+	// Behavioral: round-trip via GetCachedBlocks
+	kvc.ReleaseKVBlocks(req)
+	cached := kvc.GetCachedBlocks([]int{10, 20, 30, 40, 50, 60, 70, 80})
+	if len(cached) != 2 {
+		t.Errorf("expected 2 cached blocks after multi-block partial-fill round-trip, got %d", len(cached))
+	}
+}
+
+func TestAllocateKVBlocks_CachedPrefixToNewBlocks_HashChainingRoundTrip(t *testing.T) {
+	// Verifies that new blocks allocated after a cached prefix correctly chain
+	// their hashes from the last cached block, and the full extended prefix is
+	// findable by GetCachedBlocks after release.
+	kvc := NewKVCacheState(8, 2) // 8 blocks, blockSize=2
+
+	// Step 1: Allocate [1,2,3,4] (2 blocks), then release to populate cache
+	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
+	kvc.ReleaseKVBlocks(req1)
+
+	// Step 2: Allocate [1,2,3,4,5,6,7,8] — 2 cached blocks + 2 new blocks
+	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	cached := kvc.GetCachedBlocks(req2.InputTokens)
+	if len(cached) != 2 {
+		t.Fatalf("expected 2 cached blocks, got %d", len(cached))
+	}
+	ok := kvc.AllocateKVBlocks(req2, 4, 8, cached)
+	if !ok {
+		t.Fatal("allocation should succeed")
+	}
+
+	// Step 3: Release and verify full 4-block prefix is findable
+	kvc.ReleaseKVBlocks(req2)
+	fullCached := kvc.GetCachedBlocks([]int{1, 2, 3, 4, 5, 6, 7, 8})
+	if len(fullCached) != 4 {
+		t.Errorf("expected 4 cached blocks after cached-prefix + new-block round-trip, got %d", len(fullCached))
+	}
+
+	// Verify hashes match ComputeBlockHashes (BC-3)
+	expected := hash.ComputeBlockHashes(2, []int{1, 2, 3, 4, 5, 6, 7, 8})
+	if len(expected) != 4 {
+		t.Fatalf("expected 4 hashes from ComputeBlockHashes, got %d", len(expected))
+	}
+	for i, blockID := range fullCached {
+		blk := kvc.Blocks[blockID]
+		if blk.Hash != expected[i] {
+			t.Errorf("block %d hash mismatch:\n  got  %s\n  want %s", i, blk.Hash, expected[i])
+		}
+	}
+}
+
+func TestAllocateKVBlocks_ChunkedPrefill_HierarchicalHashChaining(t *testing.T) {
 	// GIVEN a request with 8 tokens and BlockSize=4
 	kvc := NewKVCacheState(10, 4)
 	req := &sim.Request{
@@ -81,8 +194,8 @@ func TestAllocateKVBlocks_ChunkedPrefill_PrefixHashUsesAbsoluteOffset(t *testing
 		t.Fatal("first chunk allocation should succeed")
 	}
 
-	// Verify first block has correct hash
-	expectedHash1 := hash.HashTokens([]int{10, 20, 30, 40})
+	// Verify first block has correct hierarchical hash (chained from "")
+	expectedHash1 := hash.HashBlock("", []int{10, 20, 30, 40})
 	ids1 := kvc.RequestMap["r1"]
 	blk1 := kvc.Blocks[ids1[0]]
 	if blk1.Hash != expectedHash1 {
@@ -96,19 +209,33 @@ func TestAllocateKVBlocks_ChunkedPrefill_PrefixHashUsesAbsoluteOffset(t *testing
 		t.Fatal("second chunk allocation should succeed")
 	}
 
-	// THEN second block has hash of InputTokens[:8] (absolute), not InputTokens[:4] (relative)
+	// THEN second block has hierarchical hash chained from block 1's hash
 	ids2 := kvc.RequestMap["r1"]
 	if len(ids2) < 2 {
 		t.Fatalf("expected at least 2 blocks, got %d", len(ids2))
 	}
 	blk2 := kvc.Blocks[ids2[1]]
-	expectedHash2 := hash.HashTokens([]int{10, 20, 30, 40, 50, 60, 70, 80})
-	wrongHash := hash.HashTokens([]int{10, 20, 30, 40}) // This is what the buggy code produces
-	if blk2.Hash == wrongHash {
-		t.Errorf("second block has WRONG hash (newTokens-relative instead of absolute)")
-	}
+	expectedHash2 := hash.HashBlock(expectedHash1, []int{50, 60, 70, 80})
 	if blk2.Hash != expectedHash2 {
 		t.Errorf("second block hash mismatch:\n  got  %s\n  want %s", blk2.Hash, expectedHash2)
+	}
+	// Verify the two hashes match what ComputeBlockHashes produces (BC-3 consistency)
+	allHashes := hash.ComputeBlockHashes(4, []int{10, 20, 30, 40, 50, 60, 70, 80})
+	if len(allHashes) != 2 {
+		t.Fatalf("expected 2 block hashes from ComputeBlockHashes, got %d", len(allHashes))
+	}
+	if blk1.Hash != allHashes[0] {
+		t.Errorf("block 1 hash does not match ComputeBlockHashes[0]:\n  got  %s\n  want %s", blk1.Hash, allHashes[0])
+	}
+	if blk2.Hash != allHashes[1] {
+		t.Errorf("block 2 hash does not match ComputeBlockHashes[1]:\n  got  %s\n  want %s", blk2.Hash, allHashes[1])
+	}
+
+	// Behavioral assertion: release and verify full prefix is findable via GetCachedBlocks
+	kvc.ReleaseKVBlocks(req)
+	cached := kvc.GetCachedBlocks([]int{10, 20, 30, 40, 50, 60, 70, 80})
+	if len(cached) != 2 {
+		t.Errorf("expected 2 cached blocks after chunked-prefill + release round-trip, got %d", len(cached))
 	}
 }
 
