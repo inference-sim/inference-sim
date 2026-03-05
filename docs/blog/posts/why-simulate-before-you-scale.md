@@ -35,29 +35,16 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 
 ```mermaid
 flowchart TD
-    subgraph cluster ["☁️ Cluster — where does this request go?"]
-        direction LR
-        R(["🔔 Request"]) --> AC["Admission<br>Control"] --> PS["Priority<br>Scheduling"] --> RT["Routing"]
-    end
-
-    subgraph instance ["🖥️ Instance — generate the response"]
-        direction LR
-        Q["Queueing"] --> S["Scheduling"] --> FP["Forward<br>Pass"]
-        FP -->|"output tokens"| Q
-    end
-
-    RT -->|"best instance"| Q
-
-    style R fill:#f5f5f5,color:#333,stroke:#4051b5
-    style AC fill:#4051b5,color:#fff
-    style PS fill:#4051b5,color:#fff
-    style RT fill:#4051b5,color:#fff
-    style Q fill:#6a77c4,color:#fff
-    style S fill:#6a77c4,color:#fff
-    style FP fill:#6a77c4,color:#fff
-    style cluster fill:#e8eaf6,stroke:#4051b5,color:#333
-    style instance fill:#ede7f6,stroke:#6a77c4,color:#333
+    R(["New Request"]) --> AC("Admission Control")
+    AC --> PS("Priority Scheduling")
+    PS --> RT("Routing")
+    RT --->|"picks best GPU"| Q("Queueing")
+    Q --> S("Scheduling")
+    S --> FP("Forward Pass")
+    FP -->|"output tokens"| Q
 ```
+
+*Above the line: cluster-level decisions. Below: per-instance token generation loop.*
 
 ## What You Can Do With It
 
