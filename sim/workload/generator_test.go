@@ -1111,3 +1111,41 @@ func TestGenerateRequests_MultiSession_PerRoundHorizonFiltering(t *testing.T) {
 		t.Errorf("expected fewer than 20 requests due to horizon truncation, got %d", len(requests))
 	}
 }
+
+func TestGenerateRequests_ReasoningClient_NoPrefixGroup_Unchanged(t *testing.T) {
+	// BC-5: Reasoning clients without prefix_group must produce identical output.
+	// No prefix should be spuriously prepended.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 99, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "no-pfx", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "constant"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     3,
+					ThinkTimeUs:   10_000,
+					ContextGrowth: "",
+					SingleSession: false,
+				},
+			},
+			// No PrefixGroup, no Lifecycle
+		}},
+	}
+	horizon := int64(2_000_000)
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request")
+	}
+	// With no prefix, input tokens should be exactly 50 (constant sampler) for round 0.
+	for _, req := range requests {
+		if req.RoundIndex == 0 && len(req.InputTokens) != 50 {
+			t.Errorf("round 0 request: input len %d, want 50 (no prefix should be added)", len(req.InputTokens))
+		}
+	}
+}
