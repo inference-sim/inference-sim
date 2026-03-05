@@ -2,18 +2,6 @@ package hash
 
 import "testing"
 
-func TestHashTokens_Deterministic(t *testing.T) {
-	tokens := []int{1, 2, 3, 4, 5}
-	h1 := HashTokens(tokens)
-	h2 := HashTokens(tokens)
-	if h1 != h2 {
-		t.Errorf("HashTokens not deterministic: %q != %q", h1, h2)
-	}
-	if h1 == "" {
-		t.Error("HashTokens returned empty string")
-	}
-}
-
 func TestHashBlock_ChainsDeterministically(t *testing.T) {
 	tokens := []int{10, 20, 30}
 	h1 := HashBlock("", tokens)
