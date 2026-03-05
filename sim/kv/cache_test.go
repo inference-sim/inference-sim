@@ -408,6 +408,7 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 		freeBeforeAlloc int64 // expected free blocks before second allocation
 		wantSuccess     bool
 		wantUsedBlocks  int64 // expected used blocks after second allocation
+		expectPartial   bool  // whether first allocation leaves a partial block
 	}{
 		{
 			// Pre-check: ceil(5/4)=2 > 1 free → false rejection (BUG).
@@ -422,6 +423,7 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 			freeBeforeAlloc: 1,
 			wantSuccess:     true,
 			wantUsedBlocks:  2, // 1 original (now full) + 1 new
+			expectPartial:   true,
 		},
 		{
 			// Pre-check: ceil(2/4)=1 > 0 free → false rejection (BUG).
@@ -436,6 +438,7 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 			freeBeforeAlloc: 0,
 			wantSuccess:     true,
 			wantUsedBlocks:  1, // same block, now full
+			expectPartial:   true,
 		},
 		{
 			// Pre-check: ceil(9/4)=3 > 1 free → rejection.
@@ -451,6 +454,22 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 			freeBeforeAlloc: 1,
 			wantSuccess:     false,
 			wantUsedBlocks:  1, // unchanged after failed allocation
+			expectPartial:   true,
+		},
+		{
+			// blockSize=1: every block is always full (1 token fills it), so
+			// spare=0 and the partial-block path is never entered. Verifies
+			// the fix does not incorrectly subtract capacity at this boundary.
+			name:            "blockSize=1 never has partial blocks (no adjustment needed)",
+			totalBlocks:     5,
+			blockSize:       1,
+			firstTokens:     3,
+			totalInput:      5,
+			secondStart:     3,
+			secondEnd:       5,
+			freeBeforeAlloc: 2,
+			wantSuccess:     true,
+			wantUsedBlocks:  5,
 		},
 	}
 
@@ -469,11 +488,14 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 				t.Fatal("initial allocation should succeed")
 			}
 
-			// Verify partial block exists
+			// Verify partial block state (structural precondition, for debuggability)
 			ids := kvc.RequestMap["r1"]
 			lastBlk := kvc.Blocks[ids[len(ids)-1]]
-			if int64(len(lastBlk.Tokens)) >= tc.blockSize {
+			if tc.expectPartial && int64(len(lastBlk.Tokens)) >= tc.blockSize {
 				t.Fatalf("expected partial last block, got full block with %d tokens", len(lastBlk.Tokens))
+			}
+			if !tc.expectPartial && int64(len(lastBlk.Tokens)) != tc.blockSize {
+				t.Fatalf("expected full last block, got %d tokens", len(lastBlk.Tokens))
 			}
 
 			// Verify free block count matches expectation
@@ -496,6 +518,31 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 			assertBlockConservation(t, kvc)
 		})
 	}
+}
+
+func TestAllocateKVBlocks_FirstAllocation_PreCheckUnaffectedByFix(t *testing.T) {
+	// Verifies the fix does not alter behavior for first-ever allocations (no prior blocks).
+	// When RequestMap has no entry, the partial-block adjustment is skipped entirely.
+	kvc := NewKVCacheState(2, 4) // 2 blocks, blockSize=4
+	req := &sim.Request{ID: "r1", InputTokens: []int{10, 20, 30, 40, 50}}
+
+	// 5 tokens → ceil(5/4)=2 blocks needed, 2 free → should succeed
+	ok := kvc.AllocateKVBlocks(req, 0, 5, []int64{})
+	if !ok {
+		t.Fatal("first allocation should succeed with exact block count")
+	}
+	if kvc.UsedBlocks() != 2 {
+		t.Errorf("UsedBlocks = %d, want 2", kvc.UsedBlocks())
+	}
+
+	// Same scenario but insufficient blocks: 5 tokens need 2 blocks, only 1 available
+	kvc2 := NewKVCacheState(1, 4)
+	req2 := &sim.Request{ID: "r2", InputTokens: []int{10, 20, 30, 40, 50}}
+	ok = kvc2.AllocateKVBlocks(req2, 0, 5, []int64{})
+	if ok {
+		t.Fatal("first allocation should fail when blocks are insufficient")
+	}
+	assertBlockConservation(t, kvc2)
 }
 
 func TestAllocateKVBlocks_ChunkedPrefill_NoPhantomBlocks(t *testing.T) {

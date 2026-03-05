@@ -154,10 +154,13 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 		newTokens = req.InputTokens[startIndex:endIndex]
 
 		// Compute blocks needed, accounting for tokens that will be absorbed
-		// into the request's existing partially-filled last block (#492).
+		// into the request's existing partially-filled last block. Without this,
+		// the pre-check over-estimates by up to 1 block, causing false rejections
+		// when free blocks are tight (#492).
 		effectiveTokens := util.Len64(newTokens)
-		if ids, hasBlocks := kvc.RequestMap[reqID]; hasBlocks {
+		if ids, hasBlocks := kvc.RequestMap[reqID]; hasBlocks && len(ids) > 0 {
 			lastBlk := kvc.Blocks[ids[len(ids)-1]]
+			// spare < BlockSizeTokens excludes empty blocks (0 tokens stored)
 			if spare := kvc.BlockSizeTokens - util.Len64(lastBlk.Tokens); spare > 0 && spare < kvc.BlockSizeTokens {
 				effectiveTokens -= min(spare, effectiveTokens)
 			}
