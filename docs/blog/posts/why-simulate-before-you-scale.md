@@ -49,21 +49,24 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 
 ```mermaid
 flowchart LR
-    R["Request"] --> AC["Admission Control"] --> PS["Priority"] --> RT{{"Route to 1 of N instances"}}
-    RT --> Q["Queue"] --> S["Schedule"] --> B["Batch"] --> FP["Forward Pass"]
-    FP -->|"Output tokens"| S
+    A["New request\narrives"] --> B["Accept or\nreject?"]
+    B --> C["How urgent\nis it?"]
+    C --> D["Pick the best\nGPU instance"]
+    D --> E["Wait in line"]
+    E --> F["Group into\na batch"]
+    F --> G["Generate\ntokens"]
+    G -->|"Keep generating\nuntil done"| F
 
-    style R fill:#4051b5,color:#fff
-    style AC fill:#4051b5,color:#fff
-    style PS fill:#4051b5,color:#fff
-    style RT fill:#4051b5,color:#fff
-    style Q fill:#6a77c4,color:#fff
-    style S fill:#6a77c4,color:#fff
-    style B fill:#6a77c4,color:#fff
-    style FP fill:#6a77c4,color:#fff
+    style A fill:#4051b5,color:#fff
+    style B fill:#4051b5,color:#fff
+    style C fill:#4051b5,color:#fff
+    style D fill:#4051b5,color:#fff
+    style E fill:#6a77c4,color:#fff
+    style F fill:#6a77c4,color:#fff
+    style G fill:#6a77c4,color:#fff
 ```
 
-*Dark blue: cluster-level. Purple: per-instance. Output tokens feed back into scheduling for the next batch.*
+*BLIS simulates every step: cluster-level decisions (dark blue) and per-instance token generation (purple).*
 
 Importantly, this isn't a rough approximation. BLIS produces **highly accurate predictions** of real-world serving metrics — throughput, time to first token, end-to-end latency — validated against production inference engines. The simulator faithfully captures how requests interact with batching, memory pressure, and scheduling under realistic workload conditions, so the numbers you see in simulation translate directly to capacity decisions you can trust.
 
