@@ -64,26 +64,11 @@ Run simulations at different instance counts, GPU configurations, and traffic pa
 
 Routing strategies, admission control rules, and scheduling algorithms all interact in non-obvious ways. BLIS lets you swap any of these independently and measure the impact on your actual workload distribution — not a generic benchmark.
 
-```mermaid
-flowchart LR
-    S1["Define workload"] --> S2["Choose policies"] --> S3["Run simulation"] --> L1["Review metrics"] --> L2["Find bottlenecks"] --> A1["Deploy"]
-    L2 -.->|"Iterate"| S1
-
-    style S1 fill:#4051b5,color:#fff
-    style S2 fill:#4051b5,color:#fff
-    style S3 fill:#4051b5,color:#fff
-    style L1 fill:#6a77c4,color:#fff
-    style L2 fill:#6a77c4,color:#fff
-    style A1 fill:#2e7d32,color:#fff
-```
-
-*The simulate-learn-act loop: iterate in seconds, deploy with confidence.*
-
 ### Discover New Algorithms With AI
 
 Beyond planning and benchmarking, simulation opens the door to something more powerful: **letting AI discover entirely new serving algorithms**.
 
-Routing, scheduling, and admission control interact in complex, non-obvious ways — too many dimensions for human intuition alone. BLIS was custom-built to be a foundation for **AI-native system design and evolution**, where AI frameworks propose candidate algorithms, BLIS evaluates them across diverse workloads in seconds, and the best performers survive and evolve. Every policy axis is a swappable interface, so candidates can be injected at any layer without modifying the simulator core. We call this disciplined process [Strategy Evolution](../../methodology/strategy-evolution.md).
+Routing, scheduling, and admission control interact in complex, non-obvious ways — too many dimensions for human intuition alone. BLIS was custom-built to be a foundation for **AI-native system design and evolution**, where AI frameworks propose candidate algorithms, BLIS evaluates them across diverse workloads in seconds, and the best performers survive and evolve. Every policy axis is a swappable interface, so candidates can be injected at any layer without modifying the simulator core. This approach is part of a broader research direction known as [AI-native system design and evolution](https://ucbskyadrs.github.io).
 
 ```mermaid
 flowchart LR
