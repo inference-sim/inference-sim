@@ -48,22 +48,26 @@ The aerospace industry doesn't test new wing designs by building full aircraft a
 The key difference: **it runs on your laptop in seconds, with no GPUs required.**
 
 ```mermaid
-flowchart LR
-    A["Request<br>Arrival"] --> B["Routing"]
-    B --> C["Queue"]
-    C --> D["Batch<br>Formation"]
-    D --> E["Token<br>Generation"]
-    E --> F["Response<br>Complete"]
+flowchart TD
+    R["Request Arrival"] --> AC["Admission Control"]
+    AC --> PS["Priority Assignment"]
+    PS --> RT["Routing"]
+    RT --> IQ["Instance Queueing"]
+    IQ --> IS["Instance Scheduling"]
+    IS --> FP["Forward Pass"]
+    FP --> Done["Response Complete"]
 
-    style A fill:#4051b5,color:#fff
-    style B fill:#4051b5,color:#fff
-    style C fill:#4051b5,color:#fff
-    style D fill:#4051b5,color:#fff
-    style E fill:#4051b5,color:#fff
-    style F fill:#6a77c4,color:#fff
+    style R fill:#4051b5,color:#fff
+    style AC fill:#4051b5,color:#fff
+    style PS fill:#4051b5,color:#fff
+    style RT fill:#4051b5,color:#fff
+    style IQ fill:#6a77c4,color:#fff
+    style IS fill:#6a77c4,color:#fff
+    style FP fill:#6a77c4,color:#fff
+    style Done fill:#2e7d32,color:#fff
 ```
 
-*BLIS models the full request lifecycle, from arrival to completion.*
+*Dark blue = cluster-level decisions. Light blue = instance-level processing. BLIS models every stage.*
 
 ## What You Can Do With It
 
