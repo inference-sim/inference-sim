@@ -10,7 +10,11 @@ import (
 //
 // Stage-based rates: sequential rate/duration pairs that produce lifecycle windows.
 // Shared prefix: auto-generates N*M clients with prefix groups.
-// Multi-turn: maps to BLIS reasoning.multi_turn with context accumulation.
+// Note: enable_multi_turn_chat is accepted but ignored — real inference-perf data
+// shows constant input tokens (the flag controls chat template formatting, not context
+// accumulation). BLIS's generator would also need single-session-per-client support
+// to model multi-turn correctly. Token counts may differ from real inference-perf
+// by a model-dependent number of chat template tokens (e.g., ~27 for Llama-3).
 type InferencePerfSpec struct {
 	Stages       []StageSpec       `yaml:"stages"`
 	SharedPrefix *SharedPrefixSpec `yaml:"shared_prefix"`
@@ -68,13 +72,6 @@ func validateInferencePerfSpec(spec *InferencePerfSpec) error {
 	if sp.OutputLen < 0 {
 		return fmt.Errorf("inference_perf.shared_prefix: output_len must be non-negative, got %d", sp.OutputLen)
 	}
-	// Multi-turn request generation (generator.go reasoning path) does not check
-	// lifecycle windows, so multi-stage + multi-turn would silently ignore stage
-	// boundaries. Reject explicitly until the generator supports this combination.
-	if len(spec.Stages) > 1 && sp.EnableMultiTurnChat {
-		return fmt.Errorf("inference_perf: multi-stage with enable_multi_turn_chat is not supported; " +
-			"multi-turn request generation does not respect lifecycle windows")
-	}
 	return nil
 }
 
@@ -99,26 +96,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 	inputDist := constantDist(float64(sp.QuestionLen))
 	outputDist := constantDist(float64(sp.OutputLen))
 
-	// Build optional reasoning spec for multi-turn
-	var reasoning *ReasoningSpec
-	if sp.EnableMultiTurnChat {
-		reasoning = &ReasoningSpec{
-			ReasonRatioDist: DistSpec{
-				Type:   "constant",
-				Params: map[string]float64{"value": 0},
-			},
-			MultiTurn: &MultiTurnSpec{
-				MaxRounds:     5,
-				ThinkTimeUs:   500000, // 500ms
-				ContextGrowth: "accumulate",
-			},
-		}
-	}
-
 	category := "language"
-	if sp.EnableMultiTurnChat {
-		category = "reasoning"
-	}
 
 	var clients []ClientSpec
 	var aggregateRate float64
@@ -143,7 +121,6 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 					OutputDist:   outputDist,
 					PrefixGroup:  prefixGroup,
 					PrefixLength: sp.SystemPromptLen,
-					Reasoning:    reasoning,
 				})
 			}
 		}
@@ -182,7 +159,6 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 						OutputDist:   outputDist,
 						PrefixGroup:  prefixGroup,
 						PrefixLength: sp.SystemPromptLen,
-						Reasoning:    reasoning,
 						Lifecycle:    stageLifecycle,
 					})
 				}

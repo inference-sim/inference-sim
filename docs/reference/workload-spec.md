@@ -191,7 +191,7 @@ inference-perf format compatibility (used in the `inference_perf` top-level fiel
 | `system_prompt_len` | int | System prompt length in tokens |
 | `question_len` | int | Question length in tokens |
 | `output_len` | int | Output length in tokens |
-| `enable_multi_turn_chat` | bool | Enable multi-turn chat mode |
+| `enable_multi_turn_chat` | bool | Accepted but ignored. Real inference-perf data shows constant input tokens; BLIS's generator requires architectural changes for single-session multi-turn. See #481. |
 
 ## Complete Example
 
