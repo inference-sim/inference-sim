@@ -311,6 +311,30 @@ func TestPrefixAffinityScorer_INV1_INV2_Conformance(t *testing.T) {
 	}
 }
 
+// TestPrefixAffinityScorer_ObserverFallback_RecomputesHashes verifies that the
+// observer correctly recomputes block hashes when called for a request whose ID
+// does not match the scorer's cached request ID (the fallback path).
+func TestPrefixAffinityScorer_ObserverFallback_RecomputesHashes(t *testing.T) {
+	scorer, observer := newPrefixAffinityScorer(4)
+
+	snapshots := []RoutingSnapshot{{ID: "inst_0"}, {ID: "inst_1"}}
+
+	// GIVEN: scorer called for request A (caches A's hashes)
+	reqA := &Request{ID: "rA", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	scorer(reqA, snapshots)
+
+	// WHEN: observer called for a DIFFERENT request B (triggers fallback recompute)
+	reqB := &Request{ID: "rB", InputTokens: []int{10, 20, 30, 40}}
+	observer(reqB, "inst_1")
+
+	// THEN: inst_1 should have reqB's blocks, not reqA's blocks
+	// Verify by scoring a new request with reqB's prefix — inst_1 should match
+	reqB2 := &Request{ID: "rB2", InputTokens: []int{10, 20, 30, 40}}
+	scores := scorer(reqB2, snapshots)
+	assert.Equal(t, 1.0, scores["inst_1"], "inst_1 should have reqB's prefix cached (observer recomputed)")
+	assert.Equal(t, 0.0, scores["inst_0"], "inst_0 should not have reqB's prefix")
+}
+
 // TestPrefixAffinityScorer_NonWeightedPolicies_Unchanged verifies BC-8 (INV-5).
 func TestPrefixAffinityScorer_NonWeightedPolicies_Unchanged(t *testing.T) {
 	policies := []string{"round-robin", "least-loaded", "always-busiest"}

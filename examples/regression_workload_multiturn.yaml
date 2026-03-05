@@ -1,0 +1,151 @@
+# V2 Workload: Multi-Turn Session Affinity
+# PURPOSE: Test whether router benefits from session-to-instance affinity.
+#
+# WHAT THIS STRESSES: Cache hit vs miss cost for multi-turn conversations.
+#   When a session returns to the same instance, its accumulated context
+#   (prefix + prior turns) is already in KV cache -> fast prefill.
+#   When bounced to a different instance, ALL context must be recomputed.
+#
+# KEY DESIGN CHOICES:
+#   - VERY LARGE PREFIX (4096 tokens): cache_miss_cost = beta1 * tokens
+#     = 17.67us/token * 4096 = 72.4ms per cache miss. This must be a
+#     significant fraction of per-request latency to differentiate strategies.
+#   - SHORT OUTPUT (mean=15-20 tokens): keeps decode time low (~110ms).
+#     With long output (150 tokens), decode = 1035ms and cache benefit
+#     of 72ms is only 7% of e2e. With short output,
+#     total request time is ~180ms and 72ms = 40% -- clearly measurable.
+#   - MODERATE-LOW RATE (150 req/s): at high rates (1000+), queueing time
+#     (seconds) drowns out cache benefit. At rate=150, e2e stays ~160ms.
+#   - MULTI-TURN with context accumulation: by turn 3, context grows to
+#     4096 + 80*2 + 20*2 = 4296 tokens, increasing cache miss cost to 76ms.
+#
+# VALIDATED RESULTS:
+#   - sabotaged: +194% (routing matters)
+#   - prefix-only: +0% (same as baseline -- prefix-affinity already dominates)
+#   - load-only: +5.5% (WORSE -- sessions bounce, cache misses add 36-72ms)
+#   - baseline: 0% (reference)
+#   - oracle: +0.1% (ties baseline -- input-length-aware preserves affinity)
+#   Conclusion: prefix-affinity (session stickiness) IS the right strategy here.
+#   Load-only routing destroys session affinity, causing measurable cache misses.
+#
+# DESIGN:
+#   - 1500 requests at rate=150 -> 10 seconds simulated time
+#   - 40% heavy multi-turn coding (prefix=4096, short output, 5 rounds)
+#   - 25% moderate multi-turn chat (prefix=2048, short output, 4 rounds)
+#   - 15% light multi-turn Q&A (prefix=1024, short output, 3 rounds)
+#   - 20% single-turn realtime (no prefix, needs load balance)
+
+version: "1"
+seed: 42
+category: reasoning
+aggregate_rate: 150.0
+num_requests: 1500
+
+clients:
+  # Heavy coding sessions: very large prefix (4096), short output.
+  # Cache miss on turn 2+ costs ~4096 * 17.67us = 72.4ms + accumulated context.
+  # By turn 3-4, context is ~4300 tokens -> cache miss costs ~76ms.
+  # With short output (15 tokens, ~104ms decode), 72ms = 40% of request time.
+  - id: "heavy-coding-sessions"
+    tenant_id: "developers"
+    slo_class: "interactive"
+    rate_fraction: 0.40
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 80
+        std_dev: 20
+        min: 30
+        max: 200
+    output_distribution:
+      type: exponential
+      params:
+        mean: 15
+    prefix_group: "coding-system-prompt"
+    prefix_length: 4096
+    reasoning:
+      multi_turn:
+        max_rounds: 5
+        think_time_us: 30000    # 30ms - fast, sessions stay active
+        context_growth: accumulate
+
+  # Moderate chat sessions: large prefix, short output.
+  # Cache miss costs ~2048 * 17.67us = 36.2ms.
+  - id: "chat-sessions"
+    tenant_id: "chat-users"
+    slo_class: "interactive"
+    rate_fraction: 0.25
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 60
+        std_dev: 15
+        min: 20
+        max: 150
+    output_distribution:
+      type: exponential
+      params:
+        mean: 15
+    prefix_group: "chat-system-prompt"
+    prefix_length: 2048
+    reasoning:
+      multi_turn:
+        max_rounds: 4
+        think_time_us: 50000    # 50ms
+        context_growth: accumulate
+
+  # Light Q&A sessions: large prefix, very short output.
+  # Third prefix group forces prefix-affinity to share instances (3 groups, 4 instances).
+  # Cache miss costs ~1024 * 17.67us = 18.1ms.
+  - id: "qa-sessions"
+    tenant_id: "qa-users"
+    slo_class: "interactive"
+    rate_fraction: 0.15
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 50
+        std_dev: 10
+        min: 20
+        max: 120
+    output_distribution:
+      type: exponential
+      params:
+        mean: 10
+    prefix_group: "qa-system-prompt"
+    prefix_length: 1024
+    reasoning:
+      multi_turn:
+        max_rounds: 3
+        think_time_us: 40000
+        context_growth: accumulate
+
+  # Single-turn realtime: no prefix, no session, needs low latency.
+  # Should route to least-loaded instances, avoiding session-heavy ones.
+  - id: "realtime-api"
+    slo_class: "realtime"
+    rate_fraction: 0.20
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 40
+        std_dev: 10
+        min: 10
+        max: 100
+    output_distribution:
+      type: exponential
+      params:
+        mean: 10
+    # No prefix, no multi-turn - tests load balancing

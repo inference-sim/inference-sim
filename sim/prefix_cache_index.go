@@ -2,7 +2,6 @@ package sim
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
@@ -21,11 +20,20 @@ type PrefixCacheIndex struct {
 	instances   map[string]*lruBlockCache
 }
 
+// lruNode is an element of the doubly-linked list used for O(1) LRU eviction.
+type lruNode struct {
+	hash       string
+	prev, next *lruNode
+}
+
 // lruBlockCache is a per-instance LRU cache of block hashes.
+// Uses a doubly-linked list + map for O(1) touch, lookup, and eviction.
+// Head = most recently used, tail = least recently used (eviction target).
 type lruBlockCache struct {
-	hashes   map[string]int64 // block hash → access timestamp
+	lookup   map[string]*lruNode // O(1) lookup by hash
+	head     *lruNode            // most recently used
+	tail     *lruNode            // least recently used (eviction target)
 	capacity int
-	clock    int64 // monotonic counter for LRU ordering
 }
 
 // NewPrefixCacheIndex creates a prefix cache index with the given block size
@@ -55,6 +63,7 @@ func (idx *PrefixCacheIndex) ComputeBlockHashes(tokens []int) []string {
 
 // MatchLength returns the number of consecutive blocks (from the start) that
 // the given instance has cached. Returns 0 if the instance has no history.
+// Does not refresh LRU ordering — only RecordBlocks updates recency.
 func (idx *PrefixCacheIndex) MatchLength(hashes []string, instanceID string) int {
 	cache, exists := idx.instances[instanceID]
 	if !exists {
@@ -62,7 +71,7 @@ func (idx *PrefixCacheIndex) MatchLength(hashes []string, instanceID string) int
 	}
 	matched := 0
 	for _, h := range hashes {
-		if _, ok := cache.hashes[h]; ok {
+		if _, ok := cache.lookup[h]; ok {
 			matched++
 		} else {
 			break // consecutive from start only
@@ -72,12 +81,12 @@ func (idx *PrefixCacheIndex) MatchLength(hashes []string, instanceID string) int
 }
 
 // RecordBlocks records that the given instance now has the given block hashes.
-// Updates LRU timestamps for existing blocks and evicts oldest if at capacity.
+// Refreshes LRU ordering for existing blocks and evicts the oldest if at capacity.
 func (idx *PrefixCacheIndex) RecordBlocks(hashes []string, instanceID string) {
 	cache, exists := idx.instances[instanceID]
 	if !exists {
 		cache = &lruBlockCache{
-			hashes:   make(map[string]int64),
+			lookup:   make(map[string]*lruNode),
 			capacity: idx.lruCapacity,
 		}
 		idx.instances[instanceID] = cache
@@ -88,42 +97,74 @@ func (idx *PrefixCacheIndex) RecordBlocks(hashes []string, instanceID string) {
 }
 
 // InstanceBlockCount returns the number of cached blocks for an instance.
-// Used for testing INV-7 (bounded growth).
+// Used for testing LRU capacity bounds.
 func (idx *PrefixCacheIndex) InstanceBlockCount(instanceID string) int {
 	cache, exists := idx.instances[instanceID]
 	if !exists {
 		return 0
 	}
-	return len(cache.hashes)
+	return len(cache.lookup)
 }
 
-// touch adds or refreshes a block hash in the LRU cache, evicting the oldest if at capacity.
-func (c *lruBlockCache) touch(hash string) {
-	c.clock++
-	if _, exists := c.hashes[hash]; exists {
-		// Refresh existing entry
-		c.hashes[hash] = c.clock
+// touch adds or refreshes a block hash in the LRU cache, evicting the tail if at capacity.
+func (c *lruBlockCache) touch(h string) {
+	if node, exists := c.lookup[h]; exists {
+		// Move existing node to head (most recently used)
+		c.removeNode(node)
+		c.pushHead(node)
 		return
 	}
-	// New entry — evict if at capacity
-	if len(c.hashes) >= c.capacity {
+	// New entry — evict tail if at capacity
+	if len(c.lookup) >= c.capacity {
 		c.evictOldest()
 	}
-	c.hashes[hash] = c.clock
+	node := &lruNode{hash: h}
+	c.lookup[h] = node
+	c.pushHead(node)
 }
 
-// evictOldest removes the least recently used block hash.
-// Uses monotonic timestamps so there is always a unique minimum (no tie-breaking needed).
+// evictOldest removes the least recently used block hash (the tail). O(1).
+// Panics if tail is nil — callers only invoke this when len(lookup) >= capacity,
+// so a nil tail indicates linked-list corruption.
 func (c *lruBlockCache) evictOldest() {
-	var oldestHash string
-	oldestTime := int64(math.MaxInt64)
-	for h, t := range c.hashes {
-		if t < oldestTime {
-			oldestTime = t
-			oldestHash = h
-		}
+	if c.tail == nil {
+		panic(fmt.Sprintf("lruBlockCache.evictOldest: tail is nil but len(lookup)=%d (invariant violation)", len(c.lookup)))
 	}
-	if oldestHash != "" {
-		delete(c.hashes, oldestHash)
+	delete(c.lookup, c.tail.hash)
+	c.removeNode(c.tail)
+}
+
+// pushHead inserts a node at the head of the doubly-linked list.
+func (c *lruBlockCache) pushHead(node *lruNode) {
+	if node == nil {
+		panic("lruBlockCache.pushHead: node must not be nil")
 	}
+	node.prev = nil
+	node.next = c.head
+	if c.head != nil {
+		c.head.prev = node
+	}
+	c.head = node
+	if c.tail == nil {
+		c.tail = node
+	}
+}
+
+// removeNode removes a node from the doubly-linked list.
+func (c *lruBlockCache) removeNode(node *lruNode) {
+	if node == nil {
+		panic("lruBlockCache.removeNode: node must not be nil")
+	}
+	if node.prev != nil {
+		node.prev.next = node.next
+	} else {
+		c.head = node.next
+	}
+	if node.next != nil {
+		node.next.prev = node.prev
+	} else {
+		c.tail = node.prev
+	}
+	node.prev = nil
+	node.next = nil
 }
