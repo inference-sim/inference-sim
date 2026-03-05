@@ -44,25 +44,15 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 *A new request arrives and flows through:*
 
 ```mermaid
----
-config:
-  flowchart:
-    nodeSpacing: 16
-    rankSpacing: 30
----
-flowchart TD
-    AC(["Admission Control"]):::cluster --> PS(["Priority Scheduling"]):::cluster
-    PS --> RT(["Routing"]):::cluster
-    RT -->|"best instance"| Q(["Queueing"]):::instance
-    Q --> S(["Scheduling"]):::instance
-    S --> FP(["Forward Pass"]):::instance
+flowchart LR
+    AC(["Admission Control"]):::cluster --> PS(["Priority Scheduling"]):::cluster --> RT(["Routing"]):::cluster --> Q(["Queueing"]):::instance --> S(["Scheduling"]):::instance --> FP(["Forward Pass"]):::instance
     FP -->|"output tokens"| S
 
     classDef cluster fill:#4051b5,color:#fff,stroke:#3040a0
     classDef instance fill:#7c4dff,color:#fff,stroke:#6a3de8
 ```
 
-*Blue = cluster-level decisions. Purple = per-instance token generation loop.*
+*Blue = cluster-level decisions. Purple = per-instance token generation loop.* **BLIS simulates the physics of this entire system end-to-end.**
 
 ## What You Can Do With It
 
