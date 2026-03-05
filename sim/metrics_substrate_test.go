@@ -808,8 +808,6 @@ func TestMetrics_Percentile_Monotonicity(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 func TestMetrics_ITLCount_MatchesInterTokenGaps(t *testing.T) {
-	t.Skip("BC-MS-15: enable after removing phantom ITL append from processCompletions")
-
 	tests := []struct {
 		name      string
 		outputLen int
