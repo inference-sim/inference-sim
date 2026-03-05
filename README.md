@@ -179,7 +179,8 @@ inference-sim/
 │   ├── metrics.go          # TTFT, TPOT, E2E collection
 │   ├── metrics_utils.go    # MetricsOutput JSON struct, percentile calculations
 │   ├── rng.go              # PartitionedRNG for deterministic simulation
-│   └── model_hardware_config.go  # ModelConfig, HardwareCalib structs
+│   ├── model_hardware_config.go  # ModelConfig, HardwareCalib structs
+│   └── internal/           # Shared internal packages (hash, testutil, util)
 ├── sim/kv/                 # KV cache implementations
 │   ├── cache.go            # KVCacheState (single-tier GPU)
 │   ├── tiered.go           # TieredKVCache (GPU+CPU)
@@ -189,6 +190,7 @@ inference-sim/
 │   ├── crossmodel.go       # CrossModelLatencyModel: physics-informed step time from architecture features
 │   ├── roofline.go         # Analytical FLOPs/bandwidth latency estimation
 │   ├── config.go           # HFConfig, GetHWConfig, GetModelConfig, ValidateRooflineConfig
+│   ├── kv_capacity.go      # KV cache block auto-calculation from model architecture + GPU memory
 │   └── register.go         # init()-based registration into sim/
 ├── sim/cluster/            # Multi-replica cluster simulation
 │   ├── cluster.go          # Shared-clock event loop, online routing
@@ -230,7 +232,10 @@ inference-sim/
 │   ├── multiturn-chat-demo.yaml
 │   ├── epp-estimate-prefix.yaml
 │   ├── epp-precise-prefix.yaml
-│   └── inference-perf-shared-prefix.yaml
+│   ├── inference-perf-shared-prefix.yaml
+│   ├── regression_workload_cache_warmup.yaml
+│   ├── regression_workload_load_spikes.yaml
+│   └── regression_workload_multiturn.yaml
 ├── model_configs/          # Auto-fetched HuggingFace config.json files (gitignored)
 ├── defaults.yaml           # Pre-trained coefficients, model defaults
 ├── hardware_config.json    # GPU hardware specifications
