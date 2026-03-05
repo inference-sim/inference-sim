@@ -35,16 +35,19 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 
 ```mermaid
 flowchart TD
-    R(["New Request"]) --> AC("Admission Control")
-    AC --> PS("Priority Scheduling")
-    PS --> RT("Routing")
-    RT --->|"picks best instance"| Q("Queueing")
-    Q --> S("Scheduling")
-    S --> FP("Forward Pass")
+    R(["New Request"]):::cluster --> AC(["Admission Control"]):::cluster
+    AC --> PS(["Priority Scheduling"]):::cluster
+    PS --> RT(["Routing"]):::cluster
+    RT --->|"picks best instance"| Q(["Queueing"]):::instance
+    Q --> S(["Scheduling"]):::instance
+    S --> FP(["Forward Pass"]):::instance
     FP -->|"output tokens"| Q
+
+    classDef cluster fill:#4051b5,color:#fff,stroke:#3040a0,rx:20
+    classDef instance fill:#7c4dff,color:#fff,stroke:#6a3de8,rx:20
 ```
 
-*Above the line: cluster-level decisions. Below: per-instance token generation loop.*
+*Cluster-level decisions (blue) route each request to the best instance. Once there, it enters the token generation loop (purple).*
 
 ## What You Can Do With It
 
