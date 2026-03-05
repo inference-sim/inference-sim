@@ -9,6 +9,7 @@ authors:
   - asser
   - vishakha
   - fabio
+  - michael
 categories:
   - What is BLIS?
 ---
