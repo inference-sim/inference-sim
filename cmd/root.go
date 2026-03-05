@@ -383,6 +383,14 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// R3: Validate workload generation flags (before any synthesis path consumes them)
+		if numRequests < 0 {
+			logrus.Fatalf("--num-requests must be >= 0, got %d", numRequests)
+		}
+		if prefixTokens < 0 {
+			logrus.Fatalf("--prefix-tokens must be >= 0, got %d", prefixTokens)
+		}
+
 		// Workload configuration — all paths synthesize a v2 WorkloadSpec
 		// and generate requests via workload.GenerateRequests (BC-10).
 		var spec *workload.WorkloadSpec
@@ -456,14 +464,6 @@ var runCmd = &cobra.Command{
 			spec.Seed = seed
 		}
 
-		// R3: Validate workload generation flags
-		if numRequests < 0 {
-			logrus.Fatalf("--num-requests must be >= 0, got %d", numRequests)
-		}
-		if prefixTokens < 0 {
-			logrus.Fatalf("--prefix-tokens must be >= 0, got %d", prefixTokens)
-		}
-
 		// Resolve maxRequests: spec.NumRequests as default, CLI --num-requests overrides
 		maxRequests := spec.NumRequests
 		if cmd.Flags().Changed("num-requests") {
@@ -500,6 +500,8 @@ var runCmd = &cobra.Command{
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
 		}
+		// Changed() guard: unlike peer flags (default always positive), --horizon defaults
+		// to math.MaxInt64 which would fail <= 0. Only validate when user explicitly sets it.
 		if cmd.Flags().Changed("horizon") && simulationHorizon <= 0 {
 			logrus.Fatalf("--horizon must be > 0, got %d", simulationHorizon)
 		}
