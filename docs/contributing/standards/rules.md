@@ -287,7 +287,7 @@ Go's `range` captures the slice header (pointer, length, capacity) at loop entry
 
 **Check:** For every `range` over a slice, check if the loop body (or any callee) can modify the slice's length. If so, use index-based iteration. Pay special attention to preemption, eviction, and reallocation callees. Note: read-only `range` loops that don't shrink the iterated slice are safe (e.g., zeroing fields on existing elements).
 
-**Enforced:** Micro-plan Phase 8, self-audit dimension 1.
+**Enforced:** PR template, micro-plan Phase 8, self-audit dimension 1.
 
 ---
 
