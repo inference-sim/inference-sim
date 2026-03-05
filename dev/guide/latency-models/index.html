@@ -2472,7 +2472,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>QueueingTime           = alpha0 + alpha1 * input_length
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>OutputTokenProcessingTime = alpha2
 </code></pre></div>
-<p>Pre-trained coefficient sets exist in <code>defaults.yaml</code> for common model/GPU/TP combinations (e.g., <code>meta-llama/llama-3.1-8b-instruct</code> on H100 with TP=2).</p>
+<p>All alpha and beta coefficients must be non-negative. Negative values are rejected at construction time (INV-5: causality). Pre-trained coefficient sets exist in <code>defaults.yaml</code> for common model/GPU/TP combinations (e.g., <code>meta-llama/llama-3.1-8b-instruct</code> on H100 with TP=2).</p>
 <div class="admonition note">
 <p class="admonition-title">Alpha overhead is non-blocking</p>
 <p>Alpha coefficients model CPU post-processing (tokenization, output serialization) that runs concurrently with GPU execution. Alpha time inflates TTFT and ITL metrics but does <strong>not</strong> block step scheduling -- the next batch step is scheduled at <code>now + stepTime</code> regardless of alpha overhead. This matches real vLLM's asynchronous post-processing pipeline.</p>
