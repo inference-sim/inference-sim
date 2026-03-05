@@ -81,6 +81,20 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 		newCached := t.gpu.GetCachedBlocks(req.InputTokens)
 		newStart := int64(len(newCached)) * t.gpu.BlockSize()
 		if newStart > startIndex {
+			if newStart >= endIndex {
+				// Entire requested range is cached after reload.
+				// For new requests, commit cached blocks (capped at endIndex)
+				// to RequestMap so ReleaseKVBlocks can track them.
+				// Running requests already have blocks in RequestMap.
+				if _, exists := t.gpu.RequestMap[req.ID]; !exists {
+					blocksNeeded := (endIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
+					if blocksNeeded > int64(len(newCached)) {
+						blocksNeeded = int64(len(newCached))
+					}
+					t.gpu.commitCachedBlocks(req.ID, newCached[:blocksNeeded])
+				}
+				return true
+			}
 			// More cache hits after reload — retry with reduced allocation range
 			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
 		}
