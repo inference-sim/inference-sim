@@ -31,30 +31,7 @@ The aerospace industry doesn't test new wing designs by building full aircraft a
 
 **BLIS** (Blackbox Inference Simulator) is a discrete-event simulator purpose-built for LLM serving systems. It models the full lifecycle of every request — from arrival through routing, queuing, batching, and token generation — and produces the same metrics you'd measure in production: time to first token, inter-token latency, throughput, and memory utilization.
 
-The key difference: **it runs on your laptop in seconds, with no GPUs required.**
-
-```mermaid
-flowchart LR
-    A["New request\narrives"] --> B["Accept or\nreject?"]
-    B --> C["How urgent\nis it?"]
-    C --> D["Pick the best\nGPU instance"]
-    D --> E["Wait in line"]
-    E --> F["Group into\na batch"]
-    F --> G["Generate\ntokens"]
-    G -->|"Keep generating\nuntil done"| F
-
-    style A fill:#4051b5,color:#fff
-    style B fill:#4051b5,color:#fff
-    style C fill:#4051b5,color:#fff
-    style D fill:#4051b5,color:#fff
-    style E fill:#6a77c4,color:#fff
-    style F fill:#6a77c4,color:#fff
-    style G fill:#6a77c4,color:#fff
-```
-
-*BLIS simulates every step: cluster-level decisions (dark blue) and per-instance token generation (purple).*
-
-Importantly, this isn't a rough approximation. BLIS produces **highly accurate predictions** of real-world serving metrics — throughput, time to first token, end-to-end latency — validated against production inference engines. The simulator faithfully captures how requests interact with batching, memory pressure, and scheduling under realistic workload conditions, so the numbers you see in simulation translate directly to capacity decisions you can trust.
+The key difference: **it runs on your laptop in seconds, with no GPUs required.** And this isn't a rough approximation — BLIS produces highly accurate predictions of real-world serving metrics, validated against production inference engines. The numbers you see in simulation translate directly to capacity decisions you can trust.
 
 ## What You Can Do With It
 
