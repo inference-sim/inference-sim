@@ -56,7 +56,7 @@ flowchart TD
     RT -->|"best instance"| Q(["Queueing"]):::instance
     Q --> S(["Scheduling"]):::instance
     S --> FP(["Forward Pass"]):::instance
-    FP -->|"output tokens"| Q
+    FP -->|"output tokens"| S
 
     classDef cluster fill:#4051b5,color:#fff,stroke:#3040a0
     classDef instance fill:#7c4dff,color:#fff,stroke:#6a3de8
