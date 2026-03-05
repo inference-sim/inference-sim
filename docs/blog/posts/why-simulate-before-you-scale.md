@@ -44,12 +44,19 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 *A new request arrives and flows through:*
 
 ```mermaid
-flowchart LR
-    AC(["Admission Control"]):::cluster --> PS(["Priority Scheduling"]):::cluster --> RT(["Routing"]):::cluster --> Q(["Queueing"]):::instance --> S(["Scheduling"]):::instance --> FP(["Forward Pass"]):::instance
+flowchart TD
+    AC(["Admission Control"]):::cluster
+    PS(["Priority Scheduling"]):::cluster
+    RT(["Routing"]):::cluster
+    Q(["Queueing"]):::instance
+    S(["Scheduling"]):::instance
+    FP(["Forward Pass"]):::instance
+
+    AC --> PS --> RT --> Q --> S --> FP
     FP -->|"output tokens"| S
 
-    classDef cluster fill:#4051b5,color:#fff,stroke:#3040a0
-    classDef instance fill:#7c4dff,color:#fff,stroke:#6a3de8
+    classDef cluster fill:#1565c0,color:#fff,stroke:#0d47a1
+    classDef instance fill:#6a1b9a,color:#fff,stroke:#4a148c
 ```
 
 *Blue = cluster-level decisions. Purple = per-instance token generation loop.* **BLIS simulates the physics of this entire system end-to-end.**
@@ -64,23 +71,9 @@ Run simulations at different instance counts, GPU configurations, and traffic pa
 
 Routing strategies, admission control rules, and scheduling algorithms all interact in non-obvious ways. BLIS lets you swap any of these independently and measure the impact on your actual workload distribution — not a generic benchmark.
 
-### Discover New Algorithms With AI
+### Validate New Algorithms Quickly
 
-Beyond planning and benchmarking, simulation opens the door to something more powerful: **letting AI discover entirely new serving algorithms**.
-
-Routing, scheduling, and admission control interact in complex, non-obvious ways — too many dimensions for human intuition alone. BLIS was custom-built to be a foundation for **AI-native system design and evolution**, where AI frameworks propose candidate algorithms, BLIS evaluates them across diverse workloads in seconds, and the best performers survive and evolve. Every policy axis is a swappable interface, so candidates can be injected at any layer without modifying the simulator core. This approach is part of a broader research direction known as [AI-native system design and evolution](https://ucbskyadrs.github.io).
-
-```mermaid
-flowchart LR
-    G["Generate<br>candidate"] --> E["Simulate<br>workloads"] --> F["Score fitness"]
-    F -.->|"Evolve & refine"| G
-
-    style G fill:#4051b5,color:#fff
-    style E fill:#6a77c4,color:#fff
-    style F fill:#2e7d32,color:#fff
-```
-
-*AI proposes candidate strategies; BLIS evaluates them in seconds; the best survive and evolve.*
+Beyond comparing known strategies, BLIS is a testbed for new ones. Designing a novel routing policy or scheduling algorithm? Every policy axis in BLIS is a swappable interface — plug in your candidate, run it against realistic workloads, and get deterministic results in seconds. No GPU cluster needed, no week-long experiment cycles. This makes BLIS a natural foundation for rapid, iterative algorithm development in the emerging field of [AI-native system design and evolution](https://ucbskyadrs.github.io).
 
 ## The Bottom Line
 
