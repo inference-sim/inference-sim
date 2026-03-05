@@ -456,6 +456,14 @@ var runCmd = &cobra.Command{
 			spec.Seed = seed
 		}
 
+		// R3: Validate workload generation flags
+		if numRequests < 0 {
+			logrus.Fatalf("--num-requests must be >= 0, got %d", numRequests)
+		}
+		if prefixTokens < 0 {
+			logrus.Fatalf("--prefix-tokens must be >= 0, got %d", prefixTokens)
+		}
+
 		// Resolve maxRequests: spec.NumRequests as default, CLI --num-requests overrides
 		maxRequests := spec.NumRequests
 		if cmd.Flags().Changed("num-requests") {
@@ -491,6 +499,9 @@ var runCmd = &cobra.Command{
 		}
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
+		}
+		if cmd.Flags().Changed("horizon") && simulationHorizon <= 0 {
+			logrus.Fatalf("--horizon must be > 0, got %d", simulationHorizon)
 		}
 
 		// Load policy bundle if specified (BC-6: CLI flags override YAML values)
