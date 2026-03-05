@@ -2,7 +2,6 @@ package latency
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -145,107 +144,6 @@ func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
 		NumExpertsPerTok: numExpertsPerTok,
 	}
 	return modelConfig, nil
-}
-
-// GetString returns a string value for a key if present and of the right type.
-func (c *HFConfig) GetString(key string) (string, bool) {
-	if v, ok := c.Raw[key]; ok {
-		if s, ok := v.(string); ok {
-			return s, true
-		}
-	}
-	return "", false
-}
-
-// GetFloat returns a float64 for a key, handling JSON numbers (which decode as float64).
-func (c *HFConfig) GetFloat(key string) (float64, bool) {
-	if v, ok := c.Raw[key]; ok {
-		switch x := v.(type) {
-		case float64:
-			return x, true
-		case json.Number:
-			f, err := x.Float64()
-			if err == nil {
-				return f, true
-			}
-		}
-	}
-	return 0, false
-}
-
-// GetInt tries to coerce a JSON number to int.
-func (c *HFConfig) GetInt(key string) (int, bool) {
-	if v, ok := c.Raw[key]; ok {
-		switch x := v.(type) {
-		case float64:
-			return int(x), true
-		case json.Number:
-			i, err := x.Int64()
-			if err == nil {
-				return int(i), true
-			}
-		}
-	}
-	return 0, false
-}
-
-// GetBool returns a bool for a key.
-func (c *HFConfig) GetBool(key string) (bool, bool) {
-	if v, ok := c.Raw[key]; ok {
-		if b, ok := v.(bool); ok {
-			return b, true
-		}
-	}
-	return false, false
-}
-
-// GetStrings returns []string, coercing []any → []string when possible.
-func (c *HFConfig) GetStrings(key string) ([]string, bool) {
-	v, ok := c.Raw[key]
-	if !ok {
-		return nil, false
-	}
-	switch arr := v.(type) {
-	case []any:
-		out := make([]string, 0, len(arr))
-		for _, elem := range arr {
-			if s, ok := elem.(string); ok {
-				out = append(out, s)
-			} else {
-				return nil, false
-			}
-		}
-		return out, true
-	case []string:
-		// Rarely produced directly by encoding/json; included for completeness.
-		return arr, true
-	default:
-		return nil, false
-	}
-}
-
-// MustGetString returns the string or a default.
-func (c *HFConfig) MustGetString(key, def string) string {
-	if s, ok := c.GetString(key); ok {
-		return s
-	}
-	return def
-}
-
-// MustGetInt returns the int or a default.
-func (c *HFConfig) MustGetInt(key string, def int) int {
-	if i, ok := c.GetInt(key); ok {
-		return i
-	}
-	return def
-}
-
-// Marshal returns the canonical JSON (preserving unknown fields).
-func (c *HFConfig) Marshal() ([]byte, error) {
-	if c.Raw == nil {
-		return nil, errors.New("nil HFConfig")
-	}
-	return json.MarshalIndent(c.Raw, "", "  ")
 }
 
 // invalidPositiveFloat returns true if v is not a valid positive float64
