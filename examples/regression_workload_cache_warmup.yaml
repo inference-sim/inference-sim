@@ -37,7 +37,7 @@ num_requests: 5000
 clients:
   # Group A: Shared system prompt (e.g., chatbot)
   - id: "prefix-group-a"
-    slo_class: "interactive"
+    slo_class: "standard"
     rate_fraction: 0.30
     streaming: false
     arrival:
@@ -58,7 +58,7 @@ clients:
 
   # Group B: Different system prompt (e.g., code assistant)
   - id: "prefix-group-b"
-    slo_class: "interactive"
+    slo_class: "standard"
     rate_fraction: 0.30
     streaming: false
     arrival:
@@ -79,7 +79,7 @@ clients:
 
   # Group C: Short shared prefix (e.g., API gateway)
   - id: "prefix-group-c"
-    slo_class: "realtime"
+    slo_class: "critical"
     rate_fraction: 0.25
     streaming: true
     arrival:

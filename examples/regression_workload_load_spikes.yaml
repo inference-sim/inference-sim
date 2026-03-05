@@ -66,7 +66,7 @@ clients:
   # But with [0.5, 0.5] weights, the heavy instance's load-balance penalty
   # may not overcome other instances' prefix-affinity=0.
   - id: "realtime-critical"
-    slo_class: "realtime"
+    slo_class: "critical"
     rate_fraction: 0.25
     streaming: true
     arrival:
@@ -88,7 +88,7 @@ clients:
   # Tests whether router can maintain cache affinity for this group
   # while managing the heavy-prefix group's load impact.
   - id: "light-prefix-interactive"
-    slo_class: "interactive"
+    slo_class: "standard"
     rate_fraction: 0.25
     streaming: false
     arrival:

@@ -589,3 +589,64 @@ func TestWorkloadSpec_Validate_WeibullCVOutOfRange_ReturnsError(t *testing.T) {
 		t.Fatal("expected error for Weibull CV > 10.4")
 	}
 }
+
+func TestExampleWorkloadFiles_AllValid(t *testing.T) {
+	// Validate all example workload specs load and pass validation.
+	// Only files that parse as WorkloadSpec are tested — examples/
+	// also contains policy configs and inference-perf specs.
+	files, err := filepath.Glob("../../examples/*.yaml")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no example YAML files found — check relative path from sim/workload/")
+	}
+	for _, path := range files {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			spec, err := LoadWorkloadSpec(path)
+			if err != nil {
+				t.Skipf("not a workload spec: %v", err)
+			}
+			if spec.InferencePerf != nil {
+				t.Skip("inference-perf spec — validated via its own pipeline")
+			}
+			if err := spec.Validate(); err != nil {
+				t.Errorf("validation failed for %s: %v", path, err)
+			}
+		})
+	}
+}
+
+func TestExampleWorkloadFiles_CanonicalSLOClasses(t *testing.T) {
+	// BC-1: Verify raw YAML slo_class values are canonical v2 names,
+	// not deprecated v1 names that rely on auto-upgrade.
+	files, err := filepath.Glob("../../examples/*.yaml")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no example YAML files found — check relative path from sim/workload/")
+	}
+	for _, path := range files {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			var raw struct {
+				Clients []struct {
+					SLOClass string `yaml:"slo_class"`
+				} `yaml:"clients"`
+			}
+			if err := yaml.Unmarshal(data, &raw); err != nil {
+				t.Fatalf("unmarshal %s: %v", path, err)
+			}
+			for i, c := range raw.Clients {
+				if !IsValidSLOClass(c.SLOClass) {
+					t.Errorf("client[%d] slo_class %q is not a canonical v2 tier name in %s",
+						i, c.SLOClass, filepath.Base(path))
+				}
+			}
+		})
+	}
+}
