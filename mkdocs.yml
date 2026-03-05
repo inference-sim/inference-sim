@@ -67,6 +67,7 @@ plugins:
       blog_dir: blog
       post_date_format: long
       categories_allowed:
+        - What is BLIS?
         - Capacity Planning
         - Architecture
         - Tutorials

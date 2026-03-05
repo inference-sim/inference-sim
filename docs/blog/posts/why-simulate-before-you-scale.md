@@ -3,7 +3,7 @@ date: 2026-03-05
 authors:
   - dipanwita
 categories:
-  - Capacity Planning
+  - What is BLIS?
 ---
 
 # Why Simulate Before You Scale
