@@ -695,6 +695,31 @@ func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 	t.Logf("clock monotonicity held across %d events (final clock: %d)", eventCount, sim.Clock)
 }
 
+// TestInjectArrival_BeyondHorizon_Warns verifies BC-8 (bugfix-audit):
+// GIVEN a request with ArrivalTime > sim.Horizon
+// WHEN InjectArrival is called
+// THEN the request is still registered (backward compatible) and no panic occurs.
+func TestInjectArrival_BeyondHorizon_Warns(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{50, 0.1, 50}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+	}
+	sim := mustNewSimulator(t, cfg)
+	req := &Request{
+		ID: "beyond_horizon", InputTokens: make([]int, 16),
+		OutputTokens: make([]int, 4), ArrivalTime: 2000, State: StateQueued,
+	}
+	sim.InjectArrival(req) // should not panic
+	// Request is registered (backward compatible)
+	if _, ok := sim.Metrics.Requests["beyond_horizon"]; !ok {
+		t.Error("request should still be registered in Metrics.Requests")
+	}
+}
+
 // TestSimulator_Determinism_ByteIdenticalJSON verifies BC-8:
 // GIVEN two simulator runs with identical config and seed
 // WHEN both save results via SaveResults to temp files
@@ -716,7 +741,9 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 	injectRequests(sim1, requests1)
 	sim1.Run()
 	f1 := t.TempDir() + "/run1.json"
-	sim1.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f1)
+	if err := sim1.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f1); err != nil {
+		t.Fatalf("SaveResults run1: %v", err)
+	}
 
 	// Run 2
 	sim2 := mustNewSimulator(t, cfg)
@@ -725,7 +752,9 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 	injectRequests(sim2, requests2)
 	sim2.Run()
 	f2 := t.TempDir() + "/run2.json"
-	sim2.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f2)
+	if err := sim2.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f2); err != nil {
+		t.Fatalf("SaveResults run2: %v", err)
+	}
 
 	data1, err1 := os.ReadFile(f1)
 	if err1 != nil {

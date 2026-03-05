@@ -37,7 +37,7 @@ func (m *BlackboxLatencyModel) StepTime(batch []*sim.Request) int64 {
 	totalStepTime += m.betaCoeffs[0]
 	totalStepTime += m.betaCoeffs[1] * float64(totalCacheMissTokens)
 	totalStepTime += m.betaCoeffs[2] * float64(totalDecodeTokens)
-	return int64(totalStepTime)
+	return max(1, int64(totalStepTime))
 }
 
 func (m *BlackboxLatencyModel) QueueingTime(req *sim.Request) int64 {
@@ -86,7 +86,7 @@ func (m *RooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
 			})
 		}
 	}
-	return rooflineStepTime(m.modelConfig, m.hwConfig, stepConfig, m.tp)
+	return max(1, rooflineStepTime(m.modelConfig, m.hwConfig, stepConfig, m.tp))
 }
 
 func (m *RooflineLatencyModel) QueueingTime(req *sim.Request) int64 {
@@ -108,7 +108,7 @@ func (m *RooflineLatencyModel) PreemptionProcessingTime() int64 {
 	return 0
 }
 
-// validateCoeffs checks for NaN or Inf in a coefficient slice.
+// validateCoeffs checks for NaN, Inf, or negative values in a coefficient slice.
 func validateCoeffs(name string, coeffs []float64) error {
 	for i, c := range coeffs {
 		if math.IsNaN(c) {
@@ -116,6 +116,9 @@ func validateCoeffs(name string, coeffs []float64) error {
 		}
 		if math.IsInf(c, 0) {
 			return fmt.Errorf("latency model: %s[%d] is Inf", name, i)
+		}
+		if c < 0 {
+			return fmt.Errorf("latency model: %s[%d] must be non-negative, got %f", name, i, c)
 		}
 	}
 	return nil

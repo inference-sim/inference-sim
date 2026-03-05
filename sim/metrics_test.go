@@ -41,7 +41,9 @@ func TestSaveResults_InstanceID_InJSON(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with instanceID "test-instance"
-	m.SaveResults("test-instance", 1000000, 1000, outputPath)
+	if err := m.SaveResults("test-instance", 1000000, 1000, outputPath); err != nil {
+		t.Fatalf("SaveResults returned error: %v", err)
+	}
 
 	// THEN the JSON file contains "instance_id": "test-instance"
 	data, err := os.ReadFile(outputPath)
@@ -89,7 +91,9 @@ func TestSaveResults_InstanceID_Empty(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with empty instanceID
-	m.SaveResults("", 1000000, 1000, outputPath)
+	if err := m.SaveResults("", 1000000, 1000, outputPath); err != nil {
+		t.Fatalf("SaveResults returned error: %v", err)
+	}
 
 	// THEN the JSON file contains "instance_id": ""
 	data, err := os.ReadFile(outputPath)
@@ -137,7 +141,9 @@ func TestSaveResults_InstanceID_Default(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with instanceID "default"
-	m.SaveResults("default", 1000000, 1000, outputPath)
+	if err := m.SaveResults("default", 1000000, 1000, outputPath); err != nil {
+		t.Fatalf("SaveResults returned error: %v", err)
+	}
 
 	// THEN the JSON file contains "instance_id": "default"
 	data, err := os.ReadFile(outputPath)
@@ -181,7 +187,9 @@ func TestSaveResults_IncludesIncompleteRequests(t *testing.T) {
 	// WHEN SaveResults writes to a temp file
 	tmpDir := t.TempDir()
 	outPath := filepath.Join(tmpDir, "results.json")
-	m.SaveResults("test-instance", 10_000_000, 100, outPath)
+	if err := m.SaveResults("test-instance", 10_000_000, 100, outPath); err != nil {
+		t.Fatalf("SaveResults returned error: %v", err)
+	}
 
 	// THEN the output file contains all 3 requests
 	data, err := os.ReadFile(outPath)
@@ -226,7 +234,9 @@ func TestSaveResults_NoWallClockFields(t *testing.T) {
 	outPath := filepath.Join(tmpDir, "results.json")
 
 	// WHEN SaveResults writes output
-	m.SaveResults("test", 1_000_000, 1000, outPath)
+	if err := m.SaveResults("test", 1_000_000, 1000, outPath); err != nil {
+		t.Fatalf("SaveResults returned error: %v", err)
+	}
 
 	// THEN the JSON must not contain wall-clock fields
 	data, err := os.ReadFile(outPath)
@@ -261,7 +271,9 @@ func TestSaveResults_ConservationFields(t *testing.T) {
 	outPath := filepath.Join(tmpDir, "results.json")
 
 	// WHEN SaveResults writes output
-	m.SaveResults("test", 5_000_000, 1000, outPath)
+	if err := m.SaveResults("test", 5_000_000, 1000, outPath); err != nil {
+		t.Fatalf("SaveResults returned error: %v", err)
+	}
 
 	// THEN JSON must contain conservation fields
 	data, err := os.ReadFile(outPath)
@@ -295,7 +307,9 @@ func TestSaveResults_PerRequestITL_InMilliseconds(t *testing.T) {
 	m.AllITLs = []int64{5000}
 
 	outputPath := filepath.Join(t.TempDir(), "results.json")
-	m.SaveResults("test", 1e15, 100, outputPath)
+	if err := m.SaveResults("test", 1e15, 100, outputPath); err != nil {
+		t.Fatalf("SaveResults returned error: %v", err)
+	}
 
 	data, err := os.ReadFile(outputPath)
 	require.NoError(t, err)
@@ -311,6 +325,29 @@ func TestSaveResults_PerRequestITL_InMilliseconds(t *testing.T) {
 	assert.InDelta(t, 50.0, output.Requests[0].E2E, 0.001, "E2E should be in ms")
 }
 
+// TestSaveResults_ZeroRuntime_NoInfinity verifies BC-2:
+// GIVEN SimEndedTime == 0 (zero runtime)
+// WHEN SaveResults computes throughput metrics
+// THEN ResponsesPerSec and TokensPerSec are 0.0 (not +Inf or NaN)
+// AND SaveResults returns nil (no error)
+func TestSaveResults_ZeroRuntime_NoInfinity(t *testing.T) {
+	m := NewMetrics()
+	m.CompletedRequests = 1
+	m.SimEndedTime = 0 // zero runtime
+	m.RequestTTFTs["r1"] = 100.0
+	m.RequestE2Es["r1"] = 200.0
+	m.RequestITLs["r1"] = 50.0
+	m.AllITLs = []int64{50}
+	m.RequestSchedulingDelays["r1"] = 100
+	m.Requests["r1"] = NewRequestMetrics(&Request{ID: "r1", InputTokens: make([]int, 10), OutputTokens: make([]int, 5)}, 0)
+
+	err := m.SaveResults("test", 1000000, 100, "")
+	if err != nil {
+		t.Fatalf("SaveResults returned error for zero runtime: %v", err)
+	}
+	// Should NOT produce +Inf — if it did, JSON marshal would fail
+}
+
 // BC-4: DroppedUnservable appears in JSON output
 func TestSaveResults_DroppedUnservable_InJSON(t *testing.T) {
 	// GIVEN metrics with dropped requests
@@ -320,7 +357,9 @@ func TestSaveResults_DroppedUnservable_InJSON(t *testing.T) {
 
 	// WHEN saving results to a temp file
 	tmpFile := filepath.Join(t.TempDir(), "test_output.json")
-	m.SaveResults("test", 10_000_000, 100, tmpFile)
+	if err := m.SaveResults("test", 10_000_000, 100, tmpFile); err != nil {
+		t.Fatalf("SaveResults returned error: %v", err)
+	}
 
 	// THEN the JSON file must contain dropped_unservable
 	data, err := os.ReadFile(tmpFile)

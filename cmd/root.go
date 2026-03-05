@@ -38,7 +38,6 @@ var (
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
 	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
-	maxModelLength            int       // Max request length (input + output tokens) to be handled
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
 	numRequests               int       // Number of requests
@@ -210,7 +209,7 @@ var runCmd = &cobra.Command{
 					}
 				}
 				defAlpha, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-				if AllZeros(alphaCoeffs) && !AllZeros(defAlpha) {
+				if !cmd.Flags().Changed("alpha-coeffs") && !AllZeros(defAlpha) {
 					alphaCoeffs = defAlpha
 					logrus.Infof("--latency-model: loaded alpha coefficients from defaults.yaml for queueing time estimation")
 				}
@@ -222,7 +221,7 @@ var runCmd = &cobra.Command{
 						"using default %d. Consider setting --total-kv-blocks explicitly for accurate KV cache simulation",
 						model, gpu, tensorParallelism, totalKVBlocks)
 				}
-				if AllZeros(alphaCoeffs) {
+				if AllZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
 					logrus.Warnf("--latency-model: no trained alpha coefficients found for model=%s, GPU=%s, TP=%d; "+
 						"queueing time and output token processing time will use zero alpha (may underestimate TTFT/ITL)",
 						model, gpu, tensorParallelism)
@@ -301,7 +300,7 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		if AllZeros(alphaCoeffs) && AllZeros(betaCoeffs) && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
+		if !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
 			// GPU, TP, vLLM version configuration
 			hardware, tp, version := GetDefaultSpecs(model) // pick default config for tp, GPU, vllmVersion
 
@@ -582,6 +581,12 @@ var runCmd = &cobra.Command{
 		if snapshotRefreshInterval < 0 {
 			logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
 		}
+		if admissionLatency < 0 {
+			logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
+		}
+		if routingLatency < 0 {
+			logrus.Fatalf("--routing-latency must be >= 0, got %d", routingLatency)
+		}
 
 		// Log active policy configuration so users can verify which policies are in effect
 		logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
@@ -659,11 +664,15 @@ var runCmd = &cobra.Command{
 		if numInstances > 1 {
 			// Print per-instance metrics to stdout (multi-instance only)
 			for _, inst := range cs.Instances() {
-				inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "")
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
+					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
+				}
 			}
 		}
 		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
-		cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, resultsPath)
+		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, resultsPath); err != nil {
+			logrus.Fatalf("SaveResults: %v", err)
+		}
 
 		// Collect RawMetrics and compute fitness (PR9)
 		rawMetrics := cluster.CollectRawMetrics(
@@ -798,7 +807,6 @@ func init() {
 	runCmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated list of beta coefficients")
 	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
 	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
-	runCmd.Flags().IntVar(&maxModelLength, "max-model-len", 2048, "Max request length (input + output tokens)")
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
 
 	// BLIS model configs

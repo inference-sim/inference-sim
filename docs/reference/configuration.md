@@ -60,10 +60,10 @@ Trained coefficients for the blackbox latency model. Maps to `LatencyCoeffs`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--alpha-coeffs` | float64 slice | [0, 0, 0] | Alpha coefficients [alpha0, alpha1, alpha2]. Models non-GPU overhead. |
-| `--beta-coeffs` | float64 slice | [0, 0, 0] | Beta coefficients [beta0, beta1, beta2]. Models GPU step time. |
+| `--alpha-coeffs` | float64 slice | [0, 0, 0] | Alpha coefficients [alpha0, alpha1, alpha2]. Models non-GPU overhead. Must be non-negative. |
+| `--beta-coeffs` | float64 slice | [0, 0, 0] | Beta coefficients [beta0, beta1, beta2]. Models GPU step time. Must be non-negative. |
 
-When both alpha and beta coefficients are all zeros, BLIS automatically loads pre-trained coefficients from `defaults.yaml` based on the model, GPU, and TP configuration.
+When `--alpha-coeffs` and `--beta-coeffs` are not explicitly provided on the CLI, BLIS automatically loads pre-trained coefficients from `defaults.yaml` based on the model, GPU, and TP configuration. Explicitly passing `--alpha-coeffs 0,0,0` preserves zero coefficients (they are not overridden by defaults).
 
 ### Model and Hardware Selection
 
@@ -113,7 +113,7 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--admission-policy` | string | "always-admit" | Policy name: `always-admit`, `token-bucket`, `reject-all`. |
-| `--admission-latency` | int64 | 0 | Admission decision latency in microseconds. |
+| `--admission-latency` | int64 | 0 | Admission decision latency in microseconds. Must be >= 0. |
 | `--token-bucket-capacity` | float64 | 10000 | Token bucket maximum capacity. Required > 0 when using `token-bucket`. |
 | `--token-bucket-refill-rate` | float64 | 1000 | Token bucket refill rate in tokens/second. Required > 0 when using `token-bucket`. |
 
@@ -124,7 +124,7 @@ Controls how admitted requests are assigned to instances. See [Cluster Architect
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--routing-policy` | string | "round-robin" | Policy name: `round-robin`, `least-loaded`, `weighted`, `always-busiest`. |
-| `--routing-latency` | int64 | 0 | Routing decision latency in microseconds. |
+| `--routing-latency` | int64 | 0 | Routing decision latency in microseconds. Must be >= 0. |
 | `--routing-scorers` | string | "" | Scorer configuration for `weighted` policy. Format: `name:weight,name:weight,...` |
 | `--snapshot-refresh-interval` | int64 | 0 | Prometheus snapshot refresh interval for all instance metrics (QueueDepth, BatchSize, KVUtilization) in microseconds. 0 = immediate. |
 
@@ -336,13 +336,13 @@ When BLIS starts:
    - Auto-resolve hardware config from bundled `hardware_config.json`
    - Load alpha coefficients and `total_kv_blocks` from `defaults.yaml` (beta coefficients are replaced by roofline computation)
    - `--model-config-folder` and `--hardware-config` override auto-resolution when explicitly set
-2. If `--alpha-coeffs` and `--beta-coeffs` are both all-zero and no roofline config is provided:
+2. If `--alpha-coeffs` and `--beta-coeffs` are not explicitly provided on the CLI and no roofline config is provided:
    - Look up the model in `defaults.yaml` using `--model`, `--hardware`, `--tp`, `--vllm-version`
    - Load alpha/beta coefficients and `total_kv_blocks` from the matching entry
    - Override `--total-kv-blocks` only if the user did not explicitly set it
-3. If coefficients are still all-zero but `--model-config-folder` and `--hardware-config` are provided:
+3. If coefficients are still all-zero (no defaults found) but `--model-config-folder` and `--hardware-config` are provided:
    - Enable roofline mode (implicit activation)
-4. If coefficients were explicitly provided via CLI:
+4. If coefficients were explicitly provided via CLI (including explicit zeros):
    - Use them directly, no `defaults.yaml` lookup
 
 ## Coefficient Calibration

@@ -172,6 +172,11 @@ func (sim *Simulator) Finalize() {
 
 // InjectArrival schedules an ArrivalEvent for req and registers it in Metrics.Requests.
 func (sim *Simulator) InjectArrival(req *Request) {
+	if req.ArrivalTime > sim.Horizon {
+		logrus.Warnf("InjectArrival: request %s has ArrivalTime %d > Horizon %d; "+
+			"ArrivalEvent will not fire (INV-1 conservation may be affected)",
+			req.ID, req.ArrivalTime, sim.Horizon)
+	}
 	sim.Schedule(&ArrivalEvent{time: req.ArrivalTime, Request: req})
 	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
 }
