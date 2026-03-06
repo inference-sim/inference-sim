@@ -6,7 +6,7 @@ defaults:
     hf_repo: ibm-granite/granite-3.1-8b-instruct
   meta-llama/llama-3.1-8b-instruct:
     GPU: H100
-    tensor_parallelism: 2
+    tensor_parallelism: 1
     vllm_version: vllm/vllm-openai:v0.8.4
     hf_repo: meta-llama/Llama-3.1-8B-Instruct
   meta-llama/llama-3.3-70b-instruct:
@@ -59,6 +59,16 @@ defaults:
     GPU: H100
     tensor_parallelism: 1
     vllm_version: vllm/vllm-openai:v0.10.1.1
+  qwen/qwen2.5-3b-instruct:
+    GPU: H100
+    tensor_parallelism: 1
+    vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: Qwen/Qwen2.5-3B-Instruct
+  qwen/qwen3-14b:
+    GPU: H100
+    tensor_parallelism: 1
+    vllm_version: vllm/vllm-openai:v0.8.4
+    hf_repo: Qwen/Qwen3-14B
   qwen/qwen2.5-7b-instruct:
     GPU: H100
     tensor_parallelism: 4
@@ -280,14 +290,14 @@ models:
   vllm_version: vllm/vllm-openai:v0.8.4
 - GPU: H100
   alpha_coeffs:
-  - 232.46191091038054
-  - 1.752360364195244
-  - 3357.4400353290152
+  - 10326.268121600151
+  - 0.0
+  - 0.0
   best_loss: 379.0472762050282
   beta_coeffs:
-  - 5752.705191348184
-  - 17.25086436834028
-  - 5.999143920128404
+  - 6472.007648778123
+  - 19.79721387814611
+  - 304.4021040302657
   id: meta-llama/llama-3.1-8b-instruct
   tensor_parallelism: 1
   total_kv_blocks: 29205
@@ -698,6 +708,32 @@ models:
   tensor_parallelism: 8
   total_kv_blocks: 23146322
   vllm_version: vllm/vllm-openai:v0.10.1.1
+- GPU: H100
+  alpha_coeffs:
+  - 3142.6414696246693
+  - 0.10526412493912439
+  - 0.0
+  beta_coeffs:
+  - 4795.791416550158
+  - 9.448739636724016
+  - 35.63358858584016
+  id: qwen/qwen2.5-3b-instruct
+  tensor_parallelism: 1
+  total_kv_blocks: 117925
+  vllm_version: vllm/vllm-openai:v0.8.4
+- GPU: H100
+  alpha_coeffs:
+  - 8888.089034078324
+  - 0.18488961143592303
+  - 0.0
+  beta_coeffs:
+  - 13578.186662538783
+  - 39.44465647189146
+  - 27.3227753326911
+  id: qwen/qwen3-14b
+  tensor_parallelism: 1
+  total_kv_blocks: 17600
+  vllm_version: vllm/vllm-openai:v0.8.4
 - GPU: A100-80
   alpha_coeffs:
   - 8970.33939991319
@@ -714,14 +750,14 @@ models:
   vllm_version: vllm/vllm-openai:v0.8.4
 - GPU: H100
   alpha_coeffs:
-  - 5223.7601312008765
-  - 2.4114266267351026
-  - 5368.0632635001375
+  - 4680.303204056608
+  - 0.0
+  - 0.0
   best_loss: 489.86573167272115
   beta_coeffs:
-  - 1602.214225165806
-  - 19.870256563814962
-  - 452.93689651035174
+  - 7051.796874715078
+  - 19.538416565504026
+  - 25.431830886933543
   id: qwen/qwen2.5-7b-instruct
   tensor_parallelism: 1
   total_kv_blocks: 67659
