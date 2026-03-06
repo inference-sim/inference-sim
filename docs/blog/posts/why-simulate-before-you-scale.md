@@ -12,6 +12,7 @@ authors:
   - fabio
 categories:
   - What is BLIS?
+  - Capacity Planning
 ---
 
 # Why Simulate Before You Scale
@@ -37,7 +38,7 @@ These questions are deeply intertwined. Changing the number of instances affects
 
 The aerospace industry doesn't test new wing designs by building full aircraft and hoping for the best. They simulate. The same principle applies to inference infrastructure.
 
-**BLIS** (Blackbox Inference Simulator) is a discrete-event simulator purpose-built for LLM serving systems. It models the full lifecycle of every request — from arrival through routing, queuing, batching, and token generation — and produces the same metrics you'd measure in production: time to first token, inter-token latency, throughput, and memory utilization.
+**BLIS** (Blackbox Inference Simulator) is a discrete-event simulator purpose-built for LLM serving systems. It models the full lifecycle of every request — from arrival through routing, queuing, batching, and token generation — and produces the same metrics you'd measure in production: time to first token, inter-token latency, throughput, and KV cache utilization.
 
 The key difference: **it runs on your laptop in seconds, with no GPUs required.** BLIS models the end-to-end journey of every request as true to real serving systems as possible — from cluster-level routing decisions down to per-token batch scheduling.
 
@@ -46,13 +47,12 @@ The key difference: **it runs on your laptop in seconds, with no GPUs required.*
 ```mermaid
 flowchart TD
     AC["Admission Control"]
-    PS["Priority Scheduling"]
     RT["Routing"]
     Q(["Queueing"])
     S(["Scheduling"])
     FP(["Forward Pass"])
 
-    AC --> PS --> RT --> Q --> S --> FP
+    AC --> RT --> Q --> S --> FP
     FP -->|"output tokens"| S
 ```
 
@@ -70,10 +70,16 @@ Routing strategies, admission control rules, and scheduling algorithms all inter
 
 ### Validate New Algorithms Quickly
 
-Beyond comparing known strategies, BLIS is a testbed for new ones. Designing a novel routing policy or scheduling algorithm? Every policy axis in BLIS is a swappable interface — plug in your candidate, run it against realistic workloads, and get deterministic results in seconds. No GPU cluster needed, no week-long experiment cycles. This makes BLIS a natural foundation for rapid, iterative algorithm development in the emerging field of [AI-native system design and evolution](https://ucbskyadrs.github.io).
+Beyond comparing known strategies, BLIS is a testbed for new ones. Designing a novel routing policy or scheduling algorithm? Every policy axis in BLIS is a swappable interface — plug in your candidate, run it against realistic workloads, and get deterministic results in seconds. No GPU cluster needed, no week-long experiment cycles. BLIS's architecture makes it a natural fit for rapid, iterative algorithm development in the emerging field of [AI-native system design and evolution](https://ucbskyadrs.github.io).
 
 ## The Bottom Line
 
 GPU infrastructure is too expensive for guesswork. BLIS gives you a way to explore your deployment design space — model choices, instance counts, routing policies, memory configurations — before committing real resources. The cost of a simulation is measured in seconds of laptop time. The cost of getting it wrong in production is measured in dollars, downtime, and user experience.
 
-**Get started:** [Run your first simulation](../../getting-started/quickstart.md) in under a minute, or walk through an [end-to-end capacity planning tutorial](../../getting-started/tutorial.md).
+**Try it yourself:**
+
+```bash
+./blis run --model meta-llama/llama-3.1-8b-instruct --num-instances 4 --routing-policy weighted
+```
+
+[Run your first simulation](../../getting-started/quickstart.md) in under a minute, or walk through an [end-to-end capacity planning tutorial](../../getting-started/tutorial.md).
