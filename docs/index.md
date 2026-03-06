@@ -12,7 +12,7 @@ The simulator is CPU-only, deterministic, and designed for **capacity planning**
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
-./blis run --model meta-llama/llama-3.1-8b-instruct
+./blis run --model qwen/qwen2.5-7b-instruct
 ```
 
 ---

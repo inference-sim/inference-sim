@@ -65,10 +65,10 @@ go build -o blis main.go
 
 ## Quick Start
 
-Run BLIS for `meta-llama/llama-3.1-8b-instruct` with default configs:
+Run BLIS for `qwen/qwen2.5-7b-instruct` with default configs:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct
+./blis run --model qwen/qwen2.5-7b-instruct
 ```
 
 You should see JSON output like:
@@ -92,13 +92,13 @@ You should see JSON output like:
 ### Multi-client workload specification
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct --workload-spec examples/servegen-language.yaml
+./blis run --model qwen/qwen2.5-7b-instruct --workload-spec examples/servegen-language.yaml
 ```
 
 ### Cluster simulation with weighted routing
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen2.5-7b-instruct \
   --num-instances 4 --routing-policy weighted \
   --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
 ```
@@ -106,7 +106,7 @@ You should see JSON output like:
 ### Roofline mode (analytical, no trained coefficients)
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct --latency-model roofline --hardware H100 --tp 2
+./blis run --model qwen/qwen2.5-7b-instruct --latency-model roofline --hardware H100 --tp 1
 ```
 
 ### Convert workload formats
