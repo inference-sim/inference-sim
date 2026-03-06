@@ -73,7 +73,3 @@ func (m *CrossModelLatencyModel) OutputTokenProcessingTime() int64 {
 func (m *CrossModelLatencyModel) SchedulingProcessingTime() int64 {
 	return 0
 }
-
-func (m *CrossModelLatencyModel) PreemptionProcessingTime() int64 {
-	return 0
-}

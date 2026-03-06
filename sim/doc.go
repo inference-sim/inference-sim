@@ -23,7 +23,7 @@
 // # Key Interfaces
 //
 // The extension points are single-method or small interfaces:
-//   - LatencyModel: step time, queueing time, scheduling/preemption/output processing overheads
+//   - LatencyModel: step time, queueing time, scheduling/output processing overheads
 //   - KVStore: block allocation, eviction, prefix caching, capacity queries
 //   - RoutingPolicy: select target instance given cluster snapshots
 //   - AdmissionPolicy: accept or reject incoming requests

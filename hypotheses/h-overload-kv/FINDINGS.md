@@ -87,7 +87,7 @@ Conservation invariant INV-1 (`sim/simulator.go:310-318`) is verified at simulat
 
 The finding from Round 1 reveals a sharp cliff in simulation tractability:
 
-- **500 blocks/4 instances = 125/instance**: At ~5 concurrent requests per instance, virtually every arriving request triggers a preemption. Each preemption generates a `PreemptionEvent` + re-`QueuedEvent` + new `StepEvent`, tripling the event count per cycle. Under 2x+ overload, this creates exponential event cascade that exceeds the 180s timeout.
+- **500 blocks/4 instances = 125/instance**: At ~5 concurrent requests per instance, virtually every arriving request triggers a preemption. Each preemption generates a `PreemptionEvent` + re-`QueuedEvent` + new `StepEvent`, tripling the event count per cycle. Under 2x+ overload, this creates exponential event cascade that exceeds the 180s timeout. (Note: `PreemptionEvent` removed in #554 — preemptions now emit a debug log only, reducing per-preemption event overhead.)
 - **2000 blocks/4 instances = 500/instance**: At ~20 concurrent requests per instance, the batch (max 256 requests) easily fits within the block budget. Zero preemptions.
 
 This cliff was also observed in H8 (KV-pressure): the preemption transition is abrupt, occurring between 2000-2300 blocks (`hypotheses/h8-kv-pressure/FINDINGS.md`). Below the cliff, preemption cascades dominate; above it, the system is pressure-free.

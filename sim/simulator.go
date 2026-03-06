@@ -328,12 +328,9 @@ func (sim *Simulator) scheduleBatch(now int64) {
 	// Apply result: update running batch
 	sim.RunningBatch = batchResult.RunningBatch
 
-	// Schedule events for preempted requests and record preemption metrics
+	// Record preemption metrics and emit debug log for each preempted request
 	for _, p := range batchResult.Preempted {
-		sim.Schedule(&PreemptionEvent{
-			time:    now + p.PreemptionDelay,
-			Request: p.Request,
-		})
+		logrus.Debugf("<< Preemption: %s at %d ticks", p.Request.ID, now)
 		sim.Metrics.PreemptionCount++
 	}
 

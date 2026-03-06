@@ -40,8 +40,7 @@ type ScheduledRequest struct {
 
 // PreemptedRequest carries metadata about a preempted request.
 type PreemptedRequest struct {
-	Request         *Request
-	PreemptionDelay int64
+	Request *Request
 }
 
 // BatchResult describes the outcome of batch formation.
@@ -169,14 +168,12 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			}
 
 			result.PreemptionHappened = true
-			preemptionDelay := v.latencyModel.PreemptionProcessingTime()
 			preemptedRequest := result.RunningBatch.Requests[len(result.RunningBatch.Requests)-1]
 			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", ctx.Now, preemptedRequest.ID)
 			result.RunningBatch.Requests = result.RunningBatch.Requests[:len(result.RunningBatch.Requests)-1]
 
 			result.Preempted = append(result.Preempted, PreemptedRequest{
-				Request:         preemptedRequest,
-				PreemptionDelay: preemptionDelay,
+				Request: preemptedRequest,
 			})
 
 			// Defensive: restore token budget if preempted request was already
