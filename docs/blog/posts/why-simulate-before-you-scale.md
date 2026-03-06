@@ -79,7 +79,7 @@ GPU infrastructure is too expensive for guesswork. BLIS gives you a way to explo
 **Try it yourself:**
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct --num-instances 4 --routing-policy weighted
+./blis run --model qwen/qwen2.5-7b-instruct --num-instances 4 --routing-policy weighted
 ```
 
 [Run your first simulation](../../getting-started/quickstart.md) in under a minute, or walk through an [end-to-end capacity planning tutorial](../../getting-started/tutorial.md).
