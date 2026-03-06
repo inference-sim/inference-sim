@@ -3224,6 +3224,7 @@
 <li><code>multi_turn.max_rounds</code>: number of conversation rounds per session</li>
 <li><code>multi_turn.think_time_us</code>: inter-round delay (user think time, in microseconds)</li>
 <li><code>multi_turn.context_growth</code>: <code>"accumulate"</code> to prepend all prior input+output as context, or omit for independent rounds</li>
+<li><code>multi_turn.single_session</code>: if <code>true</code>, each client creates exactly one session (useful for modeling persistent chat sessions like inference-perf's <code>enable_multi_turn_chat</code>). Default: <code>false</code> (multiple independent sessions per client)</li>
 </ul>
 <h3 id="client-side-network-latency">Client-Side Network Latency<a class="headerlink" href="#client-side-network-latency" title="Permanent link">&para;</a></h3>
 <p>The <code>network</code> field adds client-perspective latency to server-side metrics. Useful for modeling geographically distributed users:</p>

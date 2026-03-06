@@ -2673,27 +2673,50 @@
 </blockquote>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>A BLIS cluster consists of N independent inference instances orchestrated by a shared-clock event loop. Each incoming request passes through a three-stage pipeline — admission, routing, and per-instance processing — before metrics are aggregated across all instances.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>                    ┌─────────────┐
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  Requests ───────▶│  Admission   │──rejected──▶ (counted)
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>                    └──────┬──────┘
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                           │ admitted
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>                    ┌──────▼──────┐
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                    │   Routing   │
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                    └──────┬──────┘
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                           │ target instance selected
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>              ┌────────────┼────────────┐
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>              ▼            ▼            ▼
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        ┌──────────┐ ┌──────────┐ ┌──────────┐
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        │Instance 0│ │Instance 1│ │Instance 2│
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        └──────────┘ └──────────┘ └──────────┘
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>              │            │            │
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>              └────────────┼────────────┘
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                    ┌──────▼──────┐
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                    │   Metrics   │──▶ stdout (JSON)
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                    │ Aggregation │
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                    └─────────────┘
-</code></pre></div>
-<p><img alt="Cluster Data Flow" src="../diagrams/clusterdataflow.png" /></p>
+<pre class="mermaid"><code>flowchart TD
+    WG["Workload&lt;br/&gt;Generator"] --&gt;|Requests| Adm{"Admission&lt;br/&gt;Policy"}
+    Adm --&gt;|rejected| Rej["Rejected&lt;br/&gt;(counted)"]
+    Adm --&gt;|admitted| Rtr["Routing Policy&lt;br/&gt;(WeightedScoring)&lt;br/&gt;PA:3 QD:2 KV:2"]
+
+    Snap["Routing Snapshots&lt;br/&gt;QueueDepth, BatchSize,&lt;br/&gt;KVUtil, InFlightRequests"] -.-&gt; Rtr
+
+    Rtr --&gt; I0
+    Rtr --&gt; I1
+    Rtr --&gt; IN
+
+    subgraph I0 ["Instance 0"]
+        I0WQ["WaitQueue → Batch Formation&lt;br/&gt;KV Cache → Latency Model"]
+    end
+
+    subgraph I1 ["Instance 1"]
+        I1Int[" · · · "]
+    end
+
+    subgraph IN ["Instance N"]
+        INInt["WaitQueue → Batch Formation&lt;br/&gt;KV Cache → Latency Model"]
+    end
+
+    I0 -.-&gt;|snapshots| Snap
+    I1 -.-&gt;|snapshots| Snap
+    IN -.-&gt;|snapshots| Snap
+
+    I0 --&gt; Met["Metrics Aggregation&lt;br/&gt;+ Fitness Evaluation"]
+    I1 --&gt; Met
+    IN --&gt; Met
+
+    Met --&gt; Out1["stdout (JSON)&lt;br/&gt;Deterministic"]
+    Met --&gt; Out2["stderr (logrus)&lt;br/&gt;Diagnostics"]
+
+    style WG fill:#a5d8ff
+    style Adm fill:#ffec99
+    style Rej fill:#ffc9c9
+    style Rtr fill:#b2f2bb
+    style Snap fill:#e7f5ff
+    style I0 fill:#d0bfff
+    style IN fill:#d0bfff
+    style Met fill:#ffd8a8
+    style Out1 fill:#d0bfff
+    style Out2 fill:#f1f3f5</code></pre>
 <h2 id="shared-clock-event-loop">Shared-Clock Event Loop<a class="headerlink" href="#shared-clock-event-loop" title="Permanent link">&para;</a></h2>
 <p>The cluster simulator maintains a single global clock shared across all instances. At each iteration, it compares the earliest cluster-level event (request arrival, admission decision, routing decision) against the earliest per-instance event (step completion, queueing), and processes whichever is earlier.</p>
 <p><strong>Ordering rules:</strong>
@@ -2765,7 +2788,30 @@
 <li><strong>Select:</strong> The instance with the highest total score is chosen (argmax)</li>
 </ol>
 <p>Default weights: <code>prefix-affinity:3, queue-depth:2, kv-utilization:2</code> (llm-d parity). Note: weights are normalized to sum to 1.0 before scoring, so only weight ratios matter — <code>prefix-affinity:3,queue-depth:2</code> is identical to <code>prefix-affinity:30,queue-depth:20</code>. To add a new scorer, see <a href="../../contributing/extension-recipes/">Extension Recipes</a>.</p>
-<p><img alt="Scoring Pipeline" src="../diagrams/scoringpipeline.png" /></p>
+<pre class="mermaid"><code>flowchart TD
+    Req["Request&lt;br/&gt;+ Input Tokens"] --&gt; S1
+    Snap["Routing Snapshots&lt;br/&gt;(per instance)&lt;br/&gt;QD, BS, KVUtil"] --&gt; S2
+    Snap --&gt; S3
+
+    S1["prefix-affinity&lt;br/&gt;(prefix overlap proportion)"] --&gt; W1["× weight (3)"]
+    S2["queue-depth&lt;br/&gt;(min-max norm of load)"] --&gt; W2["× weight (2)"]
+    S3["kv-utilization&lt;br/&gt;(1 − KVUtilization)"] --&gt; W3["× weight (2)"]
+
+    W1 --&gt; Sum["Weighted Sum&lt;br/&gt;(per instance)&lt;br/&gt;3×PA + 2×QD + 2×KV"]
+    W2 --&gt; Sum
+    W3 --&gt; Sum
+
+    Sum --&gt; Sel["Argmax&lt;br/&gt;→ Selected Instance"]
+    Sel --&gt;|observer callback| Obs["Update prefix&lt;br/&gt;cache index"]
+    Obs -.-&gt;|stateful feedback| S1
+
+    style Req fill:#a5d8ff
+    style Snap fill:#e7f5ff
+    style S1 fill:#fff3e0
+    style S2 fill:#fff3e0
+    style S3 fill:#fff3e0
+    style Sel fill:#c8e6c9
+    style Obs fill:#ffecb3</code></pre>
 <h2 id="scorer-composition">Scorer Composition<a class="headerlink" href="#scorer-composition" title="Permanent link">&para;</a></h2>
 <p>Scorers are the building blocks of the weighted routing policy. Each scorer evaluates one signal dimension across all instances.</p>
 <h3 id="built-in-scorers">Built-in Scorers<a class="headerlink" href="#built-in-scorers" title="Permanent link">&para;</a></h3>

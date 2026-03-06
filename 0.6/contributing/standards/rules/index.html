@@ -1921,10 +1921,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#r3-validate-all-numeric-cli-flags" class="md-nav__link">
+  <a href="#r3-validate-all-numeric-parameters" class="md-nav__link">
     <span class="md-ellipsis">
       
-        R3: Validate ALL numeric CLI flags
+        R3: Validate ALL numeric parameters
       
     </span>
   </a>
@@ -2112,6 +2112,39 @@
     <span class="md-ellipsis">
       
         R20: Degenerate input handling in detectors and analyzers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r21-no-range-over-mutable-slices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R21: No range over mutable slices
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r22-pre-check-consistency-with-guarded-operation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R22: Pre-check consistency with guarded operation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r23-parallel-code-path-transformation-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R23: Parallel code path transformation parity
       
     </span>
   </a>
@@ -2562,10 +2595,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#r3-validate-all-numeric-cli-flags" class="md-nav__link">
+  <a href="#r3-validate-all-numeric-parameters" class="md-nav__link">
     <span class="md-ellipsis">
       
-        R3: Validate ALL numeric CLI flags
+        R3: Validate ALL numeric parameters
       
     </span>
   </a>
@@ -2759,6 +2792,39 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#r21-no-range-over-mutable-slices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R21: No range over mutable slices
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r22-pre-check-consistency-with-guarded-operation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R22: Pre-check consistency with guarded operation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#r23-parallel-code-path-transformation-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        R23: Parallel code path transformation parity
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2875,12 +2941,12 @@
 <tbody>
 <tr>
 <td><strong>Critical</strong> (correctness)</td>
-<td>R1, R4, R5, R6, R11, R19</td>
+<td>R1, R4, R5, R6, R11, R19, R21</td>
 <td>Violations produce silent data loss, panics, conservation invariant breaks, or infinite loops</td>
 </tr>
 <tr>
 <td><strong>Important</strong> (quality)</td>
-<td>R2, R3, R7, R8, R9, R10, R13, R14, R17, R18, R20</td>
+<td>R2, R3, R7, R8, R9, R10, R13, R14, R17, R18, R20, R22, R23</td>
 <td>Violations produce non-determinism, validation gaps, silent misconfig, interface debt, or undetected anomalies</td>
 </tr>
 <tr>
@@ -2890,7 +2956,7 @@
 </tr>
 </tbody>
 </table>
-<p>All 20 rules apply to every PR. The tiers help you prioritize during review — check Critical rules first.</p>
+<p>All 23 rules apply to every PR. The tiers help you prioritize during review — check Critical rules first.</p>
 <h2 id="rules">Rules<a class="headerlink" href="#rules" title="Permanent link">&para;</a></h2>
 <h3 id="r1-no-silent-data-loss">R1: No silent data loss<a class="headerlink" href="#r1-no-silent-data-loss" title="Permanent link">&para;</a></h3>
 <p>Every error path must either return an error, panic with context, or increment a counter. A <code>continue</code> or early <code>return</code> that silently drops a request, metric, or allocation is a correctness bug.</p>
@@ -2905,10 +2971,11 @@
 <p><strong>Check:</strong> For every <code>range</code> over a map, check if the loop body accumulates floats or produces ordered output. If so, sort keys first.</p>
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 3.</p>
 <hr />
-<h3 id="r3-validate-all-numeric-cli-flags">R3: Validate ALL numeric CLI flags<a class="headerlink" href="#r3-validate-all-numeric-cli-flags" title="Permanent link">&para;</a></h3>
+<h3 id="r3-validate-all-numeric-parameters">R3: Validate ALL numeric parameters<a class="headerlink" href="#r3-validate-all-numeric-parameters" title="Permanent link">&para;</a></h3>
 <p>Every numeric flag (<code>--rate</code>, <code>--fitness-weights</code>, <code>--kv-cpu-blocks</code>, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).</p>
 <p><strong>Evidence:</strong> <code>--rate 0</code> caused an infinite loop deep in the simulation. <code>--snapshot-refresh-interval</code> was added without validation (#281).</p>
-<p><strong>Check:</strong> For every new CLI flag, add validation in <code>cmd/root.go</code> with <code>logrus.Fatalf</code> for invalid values.</p>
+<p><strong>Additional evidence:</strong> Issues #508, #509, #382, #383, #384 (fix #520) — <code>NewTieredKVCache</code> accepted <code>cpuBlocks &lt;= 0</code>, <code>NewKVStore</code> did not validate <code>KVOffloadThreshold</code> range or <code>KVTransferBandwidth &gt; 0</code>, and <code>NewSimulator</code> accepted <code>MaxRunningReqs &lt;= 0</code>. Library callers bypass CLI validation entirely.</p>
+<p><strong>Check:</strong> For every new numeric parameter — whether CLI flag or library constructor argument — add validation. CLI: <code>logrus.Fatalf</code> in <code>cmd/root.go</code>. Library: <code>panic</code> or <code>error</code> return in the constructor. Validation must appear before the first consumption site (validate-before-use).</p>
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 6.</p>
 <hr />
 <h3 id="r4-construction-site-audit">R4: Construction site audit<a class="headerlink" href="#r4-construction-site-audit" title="Permanent link">&para;</a></h3>
@@ -3011,6 +3078,7 @@
 <h3 id="r19-livelock-protection-for-unbounded-retry-loops">R19: Livelock protection for unbounded retry loops<a class="headerlink" href="#r19-livelock-protection-for-unbounded-retry-loops" title="Permanent link">&para;</a></h3>
 <p>Loops where the exit condition depends on resource availability that may never be satisfied (e.g., preempt → requeue → schedule → preempt) must have a circuit breaker: maximum iteration count, progress assertion, or bounded retry with error escalation. An infinite loop in a deterministic simulator is indistinguishable from a hang.</p>
 <p><strong>Evidence:</strong> H8 hypothesis experiment — with total KV blocks below ~1000 (insufficient for any single request), the preempt-requeue cycle ran indefinitely with no termination condition, no max-retry limit, and no progress check.</p>
+<p><strong>Additional evidence:</strong> Issue #349, fix #519 — Go <code>range</code> over <code>RunningBatch.Requests</code> captured the slice header at loop entry. When <code>preemptForTokens</code> evicted tail requests mid-iteration, the range loop visited phantom elements, causing 102K+ cascading preemptions with zero completions. This is a distinct livelock mechanism from resource-retry loops — the loop itself is not a retry, but it processes stale elements that trigger resource exhaustion. See also R21.</p>
 <p><strong>Check:</strong> For every loop that retries an operation after a resource failure, verify there is an explicit bound or progress check. Pay special attention to preemption, eviction, and reallocation loops.</p>
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 4.</p>
 <hr />
@@ -3020,12 +3088,30 @@
 <p><strong>Check:</strong> For every detector or analyzer, identify what happens when one or more inputs are empty, zero, or maximally skewed. Write tests for these degenerate cases.</p>
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 9.</p>
 <hr />
+<h3 id="r21-no-range-over-mutable-slices">R21: No <code>range</code> over mutable slices<a class="headerlink" href="#r21-no-range-over-mutable-slices" title="Permanent link">&para;</a></h3>
+<p>Go's <code>range</code> captures the slice header (pointer, length, capacity) at loop entry. If the loop body — or any function it calls — removes elements from the slice (e.g., preemption evicting tail requests), <code>range</code> still visits the original indices, accessing stale or evicted elements. Use index-based <code>for i := 0; i &lt; len(slice); i++</code> when the slice can shrink during iteration.</p>
+<p><strong>Evidence:</strong> Issue #349, fix #519 — <code>FormBatch</code> Phase 1 used <code>for _, req := range result.RunningBatch.Requests</code>. When <code>preemptForTokens</code> evicted tail requests, the range loop still visited them at original indices. Evicted requests had <code>ProgressIndex=0</code>, triggering full re-prefill allocation → cascading preemptions (102K+ preemptions, 0 completions). Fix: index-based loop with per-iteration <code>len()</code> re-evaluation.</p>
+<p><strong>Check:</strong> For every <code>range</code> over a slice, check if the loop body (or any callee) can modify the slice's length. If so, use index-based iteration. Pay special attention to preemption, eviction, and reallocation callees. Note: read-only <code>range</code> loops that don't shrink the iterated slice are safe (e.g., zeroing fields on existing elements).</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8, self-audit dimension 1.</p>
+<hr />
+<h3 id="r22-pre-check-consistency-with-guarded-operation">R22: Pre-check consistency with guarded operation<a class="headerlink" href="#r22-pre-check-consistency-with-guarded-operation" title="Permanent link">&para;</a></h3>
+<p>When a capacity pre-check guards an expensive operation (e.g., "do we have enough free blocks before attempting allocation?"), the pre-check must be at least as permissive as the actual operation. A pre-check that uses a simplified formula (e.g., <code>ceil(tokens/blockSize)</code>) while the actual path accounts for additional factors (e.g., partial last-block fill) causes false rejections — the pre-check says "no" when the operation would succeed.</p>
+<p><strong>Evidence:</strong> Issue #492, fix #502 — <code>AllocateKVBlocks</code> pre-check computed <code>ceil(newTokens/blockSize)</code> without accounting for tokens absorbed into the request's partially-filled last block. Over-estimated by up to 1 block, causing false KV allocation failures and spurious preemptions under tight KV pressure with chunked prefill.</p>
+<p><strong>Check:</strong> For every fast-path pre-check that guards an allocation or resource operation, verify the pre-check's estimate is consistent with (at least as permissive as) the actual operation's accounting. Diff the two formulas explicitly.</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8, self-audit dimension 1.</p>
+<hr />
+<h3 id="r23-parallel-code-path-transformation-parity">R23: Parallel code path transformation parity<a class="headerlink" href="#r23-parallel-code-path-transformation-parity" title="Permanent link">&para;</a></h3>
+<p>When multiple code paths produce the same output type (e.g., standard requests, reasoning single-session, reasoning multi-session), all paths must apply the same set of transformations. A transformation present in one path but missing from another causes silent data corruption — requests with wrong token counts, missing lifecycle filtering, or absent prefix tokens.</p>
+<p><strong>Evidence:</strong> Issue #515 (missing lifecycle filtering), #516 (missing prefix token prepend), fix #530 — <code>GenerateRequests</code> had three paths producing <code>sim.Request</code> objects: standard, reasoning single-session, reasoning multi-session. The standard path applied three transformations: (1) prefix token prepend, (2) per-round lifecycle filtering, (3) horizon check. Both reasoning paths were missing transformations (1) and (2), causing reasoning requests to have shorter inputs than expected and to leak past lifecycle window boundaries.</p>
+<p><strong>Check:</strong> When adding a new code path that generates the same output type as existing paths, diff the transformation steps. List all transformations applied by the reference path side-by-side with the new path and verify each is present (or explicitly documented as inapplicable). When a function has multiple branches producing the same return type, write a table-driven test where each row exercises one path and asserts the same observable properties.</p>
+<p><strong>Enforced:</strong> Micro-plan Phase 8, self-audit dimension 1.</p>
+<hr />
 <h2 id="quick-reference-checklist">Quick Reference Checklist<a class="headerlink" href="#quick-reference-checklist" title="Permanent link">&para;</a></h2>
 <p>For PR authors — check each rule before submitting:</p>
 <ul class="task-list">
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R1:</strong> No silent <code>continue</code>/<code>return</code> dropping data</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R2:</strong> Map keys sorted before float accumulation or ordered output</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R3:</strong> Every new CLI flag validated (zero, negative, NaN, Inf)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R3:</strong> Every new numeric parameter validated (CLI flags AND library constructors)</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R4:</strong> All struct construction sites audited for new fields</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R5:</strong> Resource allocation loops handle mid-loop failure with rollback</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R6:</strong> No <code>logrus.Fatalf</code> or <code>os.Exit</code> in <code>sim/</code> packages</li>
@@ -3043,6 +3129,9 @@
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R18:</strong> CLI flag values not silently overwritten by defaults.yaml</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R19:</strong> Unbounded retry/requeue loops have circuit breakers</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R20:</strong> Detectors and analyzers handle degenerate inputs (empty, skewed, zero)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R21:</strong> No <code>range</code> over slices that can shrink during iteration</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R22:</strong> Pre-check estimates consistent with actual operation accounting</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R23:</strong> Parallel code paths apply equivalent transformations</li>
 </ul>
 <hr />
 <h2 id="rule-lifecycle">Rule Lifecycle<a class="headerlink" href="#rule-lifecycle" title="Permanent link">&para;</a></h2>
@@ -3088,7 +3177,7 @@
 3. Has the code path that motivated any rule been removed?</p>
 <p>File an issue for each proposed state change. Do not retire rules silently.</p>
 <h3 id="current-state">Current State<a class="headerlink" href="#current-state" title="Permanent link">&para;</a></h3>
-<p>All 20 rules (R1-R20) are <strong>Active</strong> as of 2026-02-26. No rules have been automated, consolidated, or retired.</p>
+<p>All 23 rules (R1-R23) are <strong>Active</strong> as of 2026-03-05. No rules have been automated, consolidated, or retired.</p>
 
 
 

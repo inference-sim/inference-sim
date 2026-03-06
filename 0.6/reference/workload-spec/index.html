@@ -3017,7 +3017,12 @@
 <tr>
 <td><code>multi_turn.context_growth</code></td>
 <td>string</td>
-<td><code>accumulate</code> (prepend prior context)</td>
+<td><code>accumulate</code> (prepend prior context) or empty (fixed-length)</td>
+</tr>
+<tr>
+<td><code>multi_turn.single_session</code></td>
+<td>bool</td>
+<td>If true, each client creates exactly one session instead of spawning new sessions per arrival. Used by inference-perf multi-turn expansion. Default: false</td>
 </tr>
 </tbody>
 </table>
@@ -3391,7 +3396,7 @@
 <tr>
 <td><code>enable_multi_turn_chat</code></td>
 <td>bool</td>
-<td>Enable multi-turn chat mode</td>
+<td>When true, maps to BLIS reasoning.multi_turn with SingleSession mode and fixed-length inputs (no context accumulation). Computes MaxRounds and ThinkTimeUs from stage parameters. See #514.</td>
 </tr>
 </tbody>
 </table>

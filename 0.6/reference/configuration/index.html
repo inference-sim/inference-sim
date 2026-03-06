@@ -2929,7 +2929,7 @@
 </tr>
 </tbody>
 </table>
-<p>* The CLI default is 1,000,000 but <code>defaults.yaml</code> overrides this per model when coefficients are loaded. For example, <code>llama-3.1-8b/H100/TP=2</code> uses 132,139 blocks. The override only applies if the user did not explicitly set <code>--total-kv-blocks</code>.</p>
+<p>* The effective value of <code>--total-kv-blocks</code> depends on the latency backend — see <a href="#resolution-process">Resolution Process</a> for the full priority chain. In blackbox mode, <code>defaults.yaml</code> overrides the 1,000,000 CLI default per model (e.g., <code>llama-3.1-8b/H100/TP=2</code> uses 132,139 blocks). In roofline or crossmodel mode, the value is auto-calculated from model architecture and GPU memory via <code>CalculateKVBlocks</code>, which supersedes the <code>defaults.yaml</code> value. Explicit <code>--total-kv-blocks</code> always takes precedence.</p>
 <h2 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h2>
 <p>Controls how requests are selected for the running batch. Maps to <code>BatchConfig</code>.</p>
 <table>
@@ -2979,17 +2979,17 @@
 <td><code>--alpha-coeffs</code></td>
 <td>float64 slice</td>
 <td>[0, 0, 0]</td>
-<td>Alpha coefficients [alpha0, alpha1, alpha2]. Models non-GPU overhead.</td>
+<td>Alpha coefficients [alpha0, alpha1, alpha2]. Models non-GPU overhead. Must be non-negative.</td>
 </tr>
 <tr>
 <td><code>--beta-coeffs</code></td>
 <td>float64 slice</td>
 <td>[0, 0, 0]</td>
-<td>Beta coefficients [beta0, beta1, beta2]. Models GPU step time.</td>
+<td>Beta coefficients [beta0, beta1, beta2]. Models GPU step time. Must be non-negative.</td>
 </tr>
 </tbody>
 </table>
-<p>When both alpha and beta coefficients are all zeros, BLIS automatically loads pre-trained coefficients from <code>defaults.yaml</code> based on the model, GPU, and TP configuration.</p>
+<p>When <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are not explicitly provided on the CLI, BLIS automatically loads pre-trained coefficients from <code>defaults.yaml</code> based on the model, GPU, and TP configuration. Explicitly passing <code>--alpha-coeffs 0,0,0</code> preserves zero coefficients (they are not overridden by defaults).</p>
 <h3 id="model-and-hardware-selection">Model and Hardware Selection<a class="headerlink" href="#model-and-hardware-selection" title="Permanent link">&para;</a></h3>
 <p>Maps to <code>ModelHardwareConfig</code>.</p>
 <table>
@@ -3112,7 +3112,7 @@
 <td><code>--admission-latency</code></td>
 <td>int64</td>
 <td>0</td>
-<td>Admission decision latency in microseconds.</td>
+<td>Admission decision latency in microseconds. Must be &gt;= 0.</td>
 </tr>
 <tr>
 <td><code>--token-bucket-capacity</code></td>
@@ -3150,7 +3150,7 @@
 <td><code>--routing-latency</code></td>
 <td>int64</td>
 <td>0</td>
-<td>Routing decision latency in microseconds.</td>
+<td>Routing decision latency in microseconds. Must be &gt;= 0.</td>
 </tr>
 <tr>
 <td><code>--routing-scorers</code></td>
@@ -3499,21 +3499,29 @@
 <a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="w">    </span><span class="nt">total_kv_blocks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">132139</span>
 </code></pre></div>
 <h3 id="resolution-process">Resolution Process<a class="headerlink" href="#resolution-process" title="Permanent link">&para;</a></h3>
-<p>When BLIS starts:</p>
+<p>When BLIS starts, it resolves latency coefficients and KV block counts through a layered process. Explicit CLI flags always take precedence (R18).</p>
+<p><strong>Latency coefficient resolution:</strong></p>
 <ol>
-<li>If <code>--latency-model roofline</code> is set:</li>
+<li>If <code>--latency-model roofline</code> or <code>--latency-model crossmodel</code> is set:</li>
 <li>Auto-resolve model config: check <code>model_configs/</code> for existing <code>config.json</code>, fetch from HuggingFace on miss (set <code>HF_TOKEN</code> for gated models)</li>
 <li>Auto-resolve hardware config from bundled <code>hardware_config.json</code></li>
-<li>Load alpha coefficients and <code>total_kv_blocks</code> from <code>defaults.yaml</code> (beta coefficients are replaced by roofline computation)</li>
+<li>For roofline: load alpha coefficients and per-model KV blocks from <code>defaults.yaml</code> (beta coefficients are replaced by analytical computation). Warns if no per-model KV blocks found</li>
+<li>For crossmodel: load global alpha + beta coefficients from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>, and per-model KV blocks if available</li>
 <li><code>--model-config-folder</code> and <code>--hardware-config</code> override auto-resolution when explicitly set</li>
-<li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are both all-zero and no roofline config is provided:</li>
+<li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are not explicitly provided on the CLI and no analytical backend is selected:</li>
 <li>Look up the model in <code>defaults.yaml</code> using <code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code></li>
-<li>Load alpha/beta coefficients and <code>total_kv_blocks</code> from the matching entry</li>
-<li>Override <code>--total-kv-blocks</code> only if the user did not explicitly set it</li>
-<li>If coefficients are still all-zero but <code>--model-config-folder</code> and <code>--hardware-config</code> are provided:</li>
+<li>Load alpha/beta coefficients from the matching entry</li>
+<li>If coefficients are still all-zero (no defaults found) but <code>--model-config-folder</code> and <code>--hardware-config</code> are provided:</li>
 <li>Enable roofline mode (implicit activation)</li>
-<li>If coefficients were explicitly provided via CLI:</li>
+<li>If coefficients were explicitly provided via CLI (including explicit zeros):</li>
 <li>Use them directly, no <code>defaults.yaml</code> lookup</li>
+</ol>
+<p><strong><code>--total-kv-blocks</code> resolution</strong> (highest priority wins):</p>
+<ol>
+<li><strong>Explicit CLI flag</strong> — if <code>--total-kv-blocks</code> is set, that value is used regardless of backend</li>
+<li><strong>Auto-calculation</strong> (roofline/crossmodel only) — when <code>MemoryGiB &gt; 0</code> in the hardware config, <code>CalculateKVBlocks</code> derives the block count from model architecture and GPU memory, superseding the <code>defaults.yaml</code> value. Three failure modes: (a) if <code>MemoryGiB</code> is missing from <code>hardware_config.json</code>, BLIS warns and falls back to the <code>defaults.yaml</code> value (layer 3) or hardcoded default (layer 4); (b) if model architecture params cannot be extracted from <code>config.json</code>, BLIS exits with an error; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS exits with an error. Only the <code>MemoryGiB</code>-missing case is a graceful fallback — other failures are fatal. Auto-calculation currently requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>); models with other activations (e.g., Falcon's <code>gelu</code>) should set <code>--total-kv-blocks</code> explicitly</li>
+<li><strong><code>defaults.yaml</code></strong> — per-model block count loaded for the model/GPU/TP combination (e.g., 132,139 for llama-3.1-8b/H100/TP=2). For roofline/crossmodel with <code>MemoryGiB &gt; 0</code>, this value is superseded by auto-calculation (layer 2). It remains the effective value only for blackbox mode or when <code>MemoryGiB</code> is unavailable in the hardware config</li>
+<li><strong>Hardcoded default</strong> — 1,000,000 (CLI flag default, used only when no other source provides a value)</li>
 </ol>
 <h2 id="coefficient-calibration">Coefficient Calibration<a class="headerlink" href="#coefficient-calibration" title="Permanent link">&para;</a></h2>
 <p>BLIS uses a data-driven calibration strategy to ensure simulation accuracy. This process runs once per environment configuration (model, GPU, TP degree, vLLM version):</p>

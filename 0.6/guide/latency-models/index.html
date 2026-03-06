@@ -2472,7 +2472,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>QueueingTime           = alpha0 + alpha1 * input_length
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>OutputTokenProcessingTime = alpha2
 </code></pre></div>
-<p>Pre-trained coefficient sets exist in <code>defaults.yaml</code> for common model/GPU/TP combinations (e.g., <code>meta-llama/llama-3.1-8b-instruct</code> on H100 with TP=2).</p>
+<p>All alpha and beta coefficients must be non-negative. Negative values are rejected at construction time (INV-5: causality). Pre-trained coefficient sets exist in <code>defaults.yaml</code> for common model/GPU/TP combinations (e.g., <code>meta-llama/llama-3.1-8b-instruct</code> on H100 with TP=2).</p>
 <div class="admonition note">
 <p class="admonition-title">Alpha overhead is non-blocking</p>
 <p>Alpha coefficients model CPU post-processing (tokenization, output serialization) that runs concurrently with GPU execution. Alpha time inflates TTFT and ITL metrics but does <strong>not</strong> block step scheduling -- the next batch step is scheduled at <code>now + stepTime</code> regardless of alpha overhead. This matches real vLLM's asynchronous post-processing pipeline.</p>
@@ -2516,6 +2516,10 @@
 <li>Higher TP reduces KV blocks per GPU (memory split across ranks)</li>
 </ul>
 <p>When choosing between TP and replication (more instances): TP reduces per-request latency, replication increases throughput. For capacity planning, simulate both configurations.</p>
+<div class="admonition note">
+<p class="admonition-title">Automatic KV block calculation</p>
+<p>When using roofline or crossmodel mode, <code>--total-kv-blocks</code> is automatically derived from model architecture and GPU memory if not explicitly set. The auto-calculated value accounts for TP (KV heads are sharded across ranks; total GPU memory scales with GPU count). Override with <code>--total-kv-blocks &lt;N&gt;</code> for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations.</p>
+</div>
 <h2 id="cross-model-mode-physics-informed">Cross-Model Mode (Physics-Informed)<a class="headerlink" href="#cross-model-mode-physics-informed" title="Permanent link">&para;</a></h2>
 <p>Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from <code>config.json</code> to scale a single coefficient set.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
@@ -2533,6 +2537,10 @@
 <div class="admonition warning">
 <p class="admonition-title">Dense model prefill limitation</p>
 <p>For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, <strong>blackbox mode with trained coefficients</strong> provides more accurate estimates because its <code>β₁</code> term explicitly models per-prefill-token cost.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Automatic KV block calculation</p>
+<p>Like roofline mode, crossmodel auto-derives <code>--total-kv-blocks</code> from model architecture and GPU memory when the flag is not set. Override with <code>--total-kv-blocks &lt;N&gt;</code> for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>).</p>
 </div>
 <h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
 <table>
@@ -2582,7 +2590,7 @@
 <p><strong>Blackbox</strong> for models with trained coefficients (highest accuracy). <strong>Cross-model</strong> for new models or MoE models without per-model coefficients (global physics coefficients + config.json features). <strong>Roofline</strong> for quick analytical estimates of dense models when no coefficients are available at all.</p>
 </div>
 <h2 id="pluggable-architecture">Pluggable Architecture<a class="headerlink" href="#pluggable-architecture" title="Permanent link">&para;</a></h2>
-<p>The <code>LatencyModel</code> interface (defined in <code>sim/latency_model.go</code>) has five methods:</p>
+<p>The <code>LatencyModel</code> interface (defined in <code>sim/latency_model.go</code>) has four methods:</p>
 <table>
 <thead>
 <tr>
@@ -2607,14 +2615,10 @@
 <td><code>SchedulingProcessingTime()</code></td>
 <td>Scheduling overhead per request</td>
 </tr>
-<tr>
-<td><code>PreemptionProcessingTime()</code></td>
-<td>Preemption overhead per eviction</td>
-</tr>
 </tbody>
 </table>
 <p>All time estimates are in microseconds (ticks).</p>
-<p>New backends register via the <code>NewLatencyModelFunc</code> variable in <code>sim/latency_model.go</code>. The <code>sim/latency/register.go</code> file uses <code>init()</code> to wire the factory, breaking the import cycle between <code>sim/</code> (interface owner) and <code>sim/latency/</code> (implementation). To add a custom backend, implement the five methods and register your factory via <code>init()</code> in a sub-package. See <a href="../../contributing/extension-recipes/">Extension Recipes</a> for a step-by-step guide.</p>
+<p>New backends register via the <code>NewLatencyModelFunc</code> variable in <code>sim/latency_model.go</code>. The <code>sim/latency/register.go</code> file uses <code>init()</code> to wire the factory, breaking the import cycle between <code>sim/</code> (interface owner) and <code>sim/latency/</code> (implementation). To add a custom backend, implement the four methods and register your factory via <code>init()</code> in a sub-package. See <a href="../../contributing/extension-recipes/">Extension Recipes</a> for a step-by-step guide.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../concepts/roofline/">Roofline Estimation</a> -- the mathematical model behind roofline step time calculation</li>

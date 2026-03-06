@@ -2753,7 +2753,7 @@ The agent prompt version is at <a href="../micro-plan-prompt/"><code>micro-plan-
 <p><strong>Antipattern rules (full details in <a href="../../standards/rules/">standards/rules.md</a>):</strong>
 - [ ] R1: No silent <code>continue</code>/<code>return</code> dropping data
 - [ ] R2: Map keys sorted before float accumulation or ordered output
-- [ ] R3: Every new CLI flag validated (zero, negative, NaN, Inf)
+- [ ] R3: Every new numeric parameter validated (CLI flags AND library constructors)
 - [ ] R4: All struct construction sites audited for new fields
 - [ ] R5: Resource allocation loops handle mid-loop failure with rollback
 - [ ] R6: No <code>logrus.Fatalf</code> or <code>os.Exit</code> in <code>sim/</code> packages
@@ -2770,7 +2770,10 @@ The agent prompt version is at <a href="../micro-plan-prompt/"><code>micro-plan-
 - [ ] R17: Routing scorer signals documented for freshness tier
 - [ ] R18: CLI flag values not silently overwritten by defaults.yaml
 - [ ] R19: Unbounded retry/requeue loops have circuit breakers
-- [ ] R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)</p>
+- [ ] R20: Detectors and analyzers handle degenerate inputs (empty, skewed, zero)
+- [ ] R21: No <code>range</code> over slices that can shrink during iteration
+- [ ] R22: Pre-check estimates consistent with actual operation accounting
+- [ ] R23: Parallel code paths apply equivalent transformations</p>
 <hr />
 <h2 id="appendix-file-level-implementation-details">Appendix: File-Level Implementation Details<a class="headerlink" href="#appendix-file-level-implementation-details" title="Permanent link">&para;</a></h2>
 <p><strong>This section has NO LENGTH LIMIT.</strong> It should contain everything needed to implement the PR without further codebase exploration.</p>
