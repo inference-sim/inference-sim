@@ -112,8 +112,6 @@ nav:
       - methodology/index.md
       - Strategy Evolution: methodology/strategy-evolution.md
       - Hypothesis Bundles: methodology/hypothesis-bundles.md
-  - Blog:
-      - blog/index.md
   - Contributing:
       - contributing/index.md
       - Extension Recipes: contributing/extension-recipes.md
@@ -132,3 +130,5 @@ nav:
           - Macro Plan: contributing/templates/macro-plan.md
           - Micro Plan: contributing/templates/micro-plan.md
           - Hypothesis: contributing/templates/hypothesis.md
+  - Blog:
+      - blog/index.md
