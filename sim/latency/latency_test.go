@@ -109,9 +109,6 @@ func TestBlackboxLatencyModel_PlaceholderOverheads(t *testing.T) {
 	if model.SchedulingProcessingTime() != 0 {
 		t.Errorf("SchedulingProcessingTime = %d, want 0", model.SchedulingProcessingTime())
 	}
-	if model.PreemptionProcessingTime() != 0 {
-		t.Errorf("PreemptionProcessingTime = %d, want 0", model.PreemptionProcessingTime())
-	}
 }
 
 // TestBlackboxLatencyModel_StepTime_Monotonic verifies BC-1 invariant:

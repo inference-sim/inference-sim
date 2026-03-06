@@ -79,22 +79,6 @@ func (e *ScheduledEvent) Execute(sim *Simulator) {
 	logrus.Debugf("<< Schedule: %s at %d ticks", e.Request.ID, e.time)
 }
 
-// PreemptionEvent represents the pre-emption of an inference request in the system.
-type PreemptionEvent struct {
-	time    int64    // Simulation time of PreemptionEvent (in ticks)
-	Request *Request // The incoming request associated with this event
-}
-
-// Timestamp returns the time of the PreemptionEvent.
-func (e *PreemptionEvent) Timestamp() int64 {
-	return e.time
-}
-
-// Execute does nothing
-func (e *PreemptionEvent) Execute(sim *Simulator) {
-	logrus.Debugf("<< Preemption: %s at %d ticks", e.Request.ID, e.time)
-}
-
 // RequestLeftEvent represents the leaving of an inference request from the system.
 type RequestLeftEvent struct {
 	time    int64    // Simulation time of RequestLeftEvent (in ticks)

@@ -27,7 +27,6 @@ The event queue is a min-heap ordered by event timestamp. Events represent state
 | `QueuedEvent` | Request enters wait queue | Adds request to wait queue; if no `StepEvent` exists, schedules one (work-conserving) |
 | `StepEvent` | Batch ready for execution | Runs the 4-phase Step() cycle (see below) |
 | `ScheduledEvent` | Request moves to running batch | Timeline marker for tracing (scheduling delay recorded in `scheduleBatch`) |
-| `PreemptionEvent` | KV cache eviction | Timeline marker for tracing (preemption count recorded in `scheduleBatch`) |
 | `RequestLeftEvent` | Request completes | Timeline marker for tracing (E2E metrics recorded in `processCompletions`) |
 
 **Clock monotonicity (INV-3):** The simulation clock never decreases. Events are processed in strictly non-decreasing timestamp order.
@@ -71,7 +70,7 @@ flowchart TD
 1. Assign priority scores to all queued requests via the priority policy
 2. Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-based)
 3. Invoke batch formation to select which requests enter the running batch
-4. Schedule `PreemptionEvent` for any evicted requests
+4. Record preemption metrics for any evicted requests
 5. Schedule `ScheduledEvent` for any newly admitted requests
 
 ### Phase 2: Execute Batch Step (`executeBatchStep`)
@@ -164,7 +163,7 @@ When KV cache pressure forces eviction, running requests are preempted:
 1. Request is removed from the running batch (tail-first eviction)
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
-4. A `PreemptionEvent` is recorded for tracing
+4. A debug log is emitted and `PreemptionCount` is incremented
 
 Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and their KV blocks are freed. However, the freed blocks' prefix hashes are preserved in the KV cache's free list — when the request is re-scheduled, prefix caching may find these blocks (if not yet evicted by LRU), reducing recomputation. This matches vLLM's "recompute" preemption mode.
 

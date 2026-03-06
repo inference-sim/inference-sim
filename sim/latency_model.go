@@ -17,9 +17,6 @@ type LatencyModel interface {
 
 	// SchedulingProcessingTime estimates scheduling overhead per request.
 	SchedulingProcessingTime() int64
-
-	// PreemptionProcessingTime estimates preemption overhead per eviction.
-	PreemptionProcessingTime() int64
 }
 
 // NewLatencyModelFunc is a factory function for creating LatencyModel implementations.

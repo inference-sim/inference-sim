@@ -148,7 +148,7 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 
 ## Pluggable Architecture
 
-The `LatencyModel` interface (defined in `sim/latency_model.go`) has five methods:
+The `LatencyModel` interface (defined in `sim/latency_model.go`) has four methods:
 
 | Method | Purpose |
 |--------|---------|
@@ -156,11 +156,10 @@ The `LatencyModel` interface (defined in `sim/latency_model.go`) has five method
 | `QueueingTime(req)` | Arrival-to-queue delay for a request |
 | `OutputTokenProcessingTime()` | Per-token post-processing time |
 | `SchedulingProcessingTime()` | Scheduling overhead per request |
-| `PreemptionProcessingTime()` | Preemption overhead per eviction |
 
 All time estimates are in microseconds (ticks).
 
-New backends register via the `NewLatencyModelFunc` variable in `sim/latency_model.go`. The `sim/latency/register.go` file uses `init()` to wire the factory, breaking the import cycle between `sim/` (interface owner) and `sim/latency/` (implementation). To add a custom backend, implement the five methods and register your factory via `init()` in a sub-package. See [Extension Recipes](../contributing/extension-recipes.md) for a step-by-step guide.
+New backends register via the `NewLatencyModelFunc` variable in `sim/latency_model.go`. The `sim/latency/register.go` file uses `init()` to wire the factory, breaking the import cycle between `sim/` (interface owner) and `sim/latency/` (implementation). To add a custom backend, implement the four methods and register your factory via `init()` in a sub-package. See [Extension Recipes](../contributing/extension-recipes.md) for a step-by-step guide.
 
 ## Further Reading
 
