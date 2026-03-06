@@ -79,7 +79,9 @@ GPU infrastructure is too expensive for guesswork. BLIS gives you a way to explo
 **Try it yourself:**
 
 ```bash
+git clone https://github.com/inference-sim/inference-sim.git && cd inference-sim
+go build -o blis main.go
 ./blis run --model qwen/qwen2.5-7b-instruct --num-instances 4 --routing-policy weighted
 ```
 
-[Run your first simulation](../../getting-started/quickstart.md) in under a minute, or walk through an [end-to-end capacity planning tutorial](../../getting-started/tutorial.md).
+See the [installation guide](../../getting-started/installation.md) for details, or jump straight to the [capacity planning tutorial](../../getting-started/tutorial.md).
