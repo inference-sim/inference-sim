@@ -100,7 +100,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	if cfg.LongPrefillTokenThreshold < 0 {
 		return nil, fmt.Errorf("NewSimulator: LongPrefillTokenThreshold must be >= 0, got %d", cfg.LongPrefillTokenThreshold)
 	}
-	batchFormation := NewBatchFormation(latencyModel)
+	batchFormation := NewBatchFormation()
 
 	s := &Simulator{
 		Clock:                     0,
@@ -337,10 +337,10 @@ func (sim *Simulator) scheduleBatch(now int64) {
 	// Schedule events for newly scheduled requests and record scheduling metrics
 	for _, s := range batchResult.NewlyScheduled {
 		sim.Schedule(&ScheduledEvent{
-			time:    now + s.ScheduledDelay,
+			time:    now,
 			Request: s.Request,
 		})
-		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now + s.ScheduledDelay - s.Request.ArrivalTime
+		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now - s.Request.ArrivalTime
 	}
 
 	// Record queue depth observations after batch formation

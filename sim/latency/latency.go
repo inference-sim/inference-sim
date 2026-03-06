@@ -51,10 +51,6 @@ func (m *BlackboxLatencyModel) OutputTokenProcessingTime() int64 {
 	return int64(m.alphaCoeffs[2])
 }
 
-func (m *BlackboxLatencyModel) SchedulingProcessingTime() int64 {
-	return 0
-}
-
 // RooflineLatencyModel estimates latency using analytical FLOPs/bandwidth roofline model.
 // Step time is computed via rooflineStepTime(); overhead estimates use alpha coefficients.
 type RooflineLatencyModel struct {
@@ -94,10 +90,6 @@ func (m *RooflineLatencyModel) QueueingTime(req *sim.Request) int64 {
 
 func (m *RooflineLatencyModel) OutputTokenProcessingTime() int64 {
 	return int64(m.alphaCoeffs[2])
-}
-
-func (m *RooflineLatencyModel) SchedulingProcessingTime() int64 {
-	return 0
 }
 
 // validateCoeffs checks for NaN, Inf, or negative values in a coefficient slice.

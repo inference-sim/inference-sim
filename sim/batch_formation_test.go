@@ -16,11 +16,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
-	lm, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	bf := NewBatchFormation(lm)
+	bf := NewBatchFormation()
 	if bf == nil {
 		t.Fatal("NewBatchFormation returned nil")
 	}
@@ -55,11 +51,7 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
-	lm, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	bf := NewBatchFormation(lm)
+	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN 3 requests in the wait queue, each needing 30 tokens (total 90 > budget 50)
@@ -112,11 +104,7 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
-	lm, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	bf := NewBatchFormation(lm)
+	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN 5 requests in the wait queue
@@ -171,11 +159,7 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
-	lm, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	bf := NewBatchFormation(lm)
+	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN two running requests: victim occupies 2 blocks, needy needs 3 blocks for prefill
@@ -241,11 +225,7 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
-	lm, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	bf := NewBatchFormation(lm)
+	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN two running requests where req2's prefill will trigger preemption
@@ -300,11 +280,7 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
-	lm, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	bf := NewBatchFormation(lm)
+	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN a request needing more blocks than total capacity
@@ -349,11 +325,7 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
-	lm, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	bf := NewBatchFormation(lm)
+	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN: first request fits, second needs too many blocks, third is small but can't skip
@@ -437,14 +409,7 @@ func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 		InputTokens:  []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160},
 		OutputTokens: []int{100},
 	}
-	lm, err := MustNewLatencyModel(
-		NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
-	)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	bf := &VLLMBatchFormation{latencyModel: lm}
+	bf := &VLLMBatchFormation{}
 
 	// WHEN preemption evicts victim to make room for newcomer
 	var budget int64 = 10000
@@ -468,11 +433,7 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
 	}
-	lm, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	bf := NewBatchFormation(lm)
+	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN 3 running requests, all in decode phase with KV fully allocated:

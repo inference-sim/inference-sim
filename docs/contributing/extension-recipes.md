@@ -84,11 +84,10 @@ Examples:
 
 To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-LLM, neural surrogate):
 
-1. **Implement the `LatencyModel` interface** in `sim/latency/latency.go` (or a new file in `sim/latency/` for complex models) — 4 methods:
+1. **Implement the `LatencyModel` interface** in `sim/latency/latency.go` (or a new file in `sim/latency/` for complex models) — 3 methods:
    - `StepTime(batch []*Request) int64` — estimate batch step duration from request states
    - `QueueingTime(req *Request) int64` — estimate arrival-to-queue delay
    - `OutputTokenProcessingTime() int64` — per-token post-processing overhead
-   - `SchedulingProcessingTime() int64` — scheduling overhead per request
 2. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"crossmodel"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
 3. **Add behavioral tests** in `sim/latency/` — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)
 4. Extension friction: **2 touch points** (implementation + factory branch)
@@ -108,7 +107,7 @@ To add a new batch formation strategy (e.g., disaggregated prefill/decode, specu
    - The implementation MUST update `ctx.ComputedTokens[req.ID]` for each request that receives new tokens (Phase 2 of `Step()` reads this map to advance `ProgressIndex`)
    - The implementation may mutate `WaitQ` (dequeue/prepend) and `KVCache` (allocate/release) during batch formation
    - The implementation MUST NOT schedule events or record metrics — return decisions in `BatchResult`, the Simulator applies them
-2. **Register in `NewBatchFormation` factory** in `sim/batch_formation.go`: add a selection branch. The factory signature is `NewBatchFormation(LatencyModel)` — a future PR will add a strategy selection parameter (e.g., a string field in `PolicyConfig` or `BatchConfig`)
+2. **Register in `NewBatchFormation` factory** in `sim/batch_formation.go`: add a selection branch. The factory signature is `NewBatchFormation()` — a future PR will add a strategy selection parameter (e.g., a string field in `PolicyConfig` or `BatchConfig`)
 3. **Add behavioral tests** — token budget enforcement, batch size limits, KV conservation, preemption behavior (if applicable), FCFS ordering
 4. Extension friction: **2 touch points** (implementation + factory registration)
 
