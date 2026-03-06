@@ -108,7 +108,7 @@ Full details: see [`docs/contributing/standards/principles.md`](docs/contributin
 
 **Interface design:** Single-method interfaces. Pure query methods. Factory validation. Behavioral contracts, not implementation-specific (R13). Single-module methods (R14).
 
-**Configuration design:** Group by module (R16). `SimConfig` composed of 6 embedded sub-configs. Factory signatures accept the narrowest sub-config: `NewKVStore(KVCacheConfig)`, `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`, `NewBatchFormation(LatencyModel)`. Each module's config independently validatable.
+**Configuration design:** Group by module (R16). `SimConfig` composed of 6 embedded sub-configs. Factory signatures accept the narrowest sub-config: `NewKVStore(KVCacheConfig)`, `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`. Each module's config independently validatable.
 
 **Canonical constructors:** Struct literals in exactly one place (R4). Grep for ALL construction sites before adding fields.
 
@@ -218,14 +218,14 @@ inference-sim/
 │   ├── prefix_cache_index.go  # PrefixCacheIndex: per-instance LRU of hierarchical block hashes
 │   ├── priority.go            # PriorityPolicy interface with ConstantPriority, SLOBasedPriority, and InvertedSLO templates, NewPriorityPolicy factory
 │   ├── scheduler.go           # InstanceScheduler interface with FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, and ReversePriority templates, NewScheduler factory
-│   ├── latency_model.go       # LatencyModel interface (4 methods), NewLatencyModelFunc registration variable, MustNewLatencyModel nil-guarded wrapper
+│   ├── latency_model.go       # LatencyModel interface (3 methods), NewLatencyModelFunc registration variable, MustNewLatencyModel nil-guarded wrapper
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, RequestLeft)
 │   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted), Request lifecycle and state machine, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.)
 │   ├── kv_store.go            # KVStore interface (11 methods: +SetClock, +ConsumePendingTransferLatency), NewKVStoreFromConfig registration variable, MustNewKVCacheState/MustNewKVStoreFromConfig nil-guarded wrappers
 │   ├── batch.go               # Batch struct
-│   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (FCFS + chunked-prefill + preemption), NewBatchFormation(LatencyModel) factory
+│   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (FCFS + chunked-prefill + preemption), NewBatchFormation() factory
 │   ├── queue.go               # FIFO wait queue
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor

@@ -240,7 +240,7 @@ flowchart TD
 | **Priority** | Compute request priority for scheduler | `PriorityPolicy` (single method) | Implemented, frozen |
 | **KV Cache Manager** | Allocate/release/cache KV blocks | `KVStore` (11 methods) | Implemented |
 | **AutoScaler** | Add/remove instances based on load signals | `AutoScalePolicy` (planned) | Target — PR11 |
-| **Latency Model** | Estimate step execution time | `LatencyModel` (4 methods) | Implemented — `NewLatencyModel` factory |
+| **Latency Model** | Estimate step execution time | `LatencyModel` (3 methods) | Implemented — `NewLatencyModel` factory |
 | **Batch Formation** | Select requests from queue for next step | `BatchFormation` (1 method: `FormBatch`) | Implemented — `NewBatchFormation` factory |
 | **Workload Generator** | Produce request streams from specs/traces | `GenerateRequests()` function | Implemented |
 | **Trace Recorder** | Record decisions for analysis | `SimulationTrace` | Implemented |
