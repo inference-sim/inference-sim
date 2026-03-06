@@ -2590,7 +2590,7 @@
 <p><strong>Blackbox</strong> for models with trained coefficients (highest accuracy). <strong>Cross-model</strong> for new models or MoE models without per-model coefficients (global physics coefficients + config.json features). <strong>Roofline</strong> for quick analytical estimates of dense models when no coefficients are available at all.</p>
 </div>
 <h2 id="pluggable-architecture">Pluggable Architecture<a class="headerlink" href="#pluggable-architecture" title="Permanent link">&para;</a></h2>
-<p>The <code>LatencyModel</code> interface (defined in <code>sim/latency_model.go</code>) has four methods:</p>
+<p>The <code>LatencyModel</code> interface (defined in <code>sim/latency_model.go</code>) has three methods:</p>
 <table>
 <thead>
 <tr>
@@ -2611,14 +2611,10 @@
 <td><code>OutputTokenProcessingTime()</code></td>
 <td>Per-token post-processing time</td>
 </tr>
-<tr>
-<td><code>SchedulingProcessingTime()</code></td>
-<td>Scheduling overhead per request</td>
-</tr>
 </tbody>
 </table>
 <p>All time estimates are in microseconds (ticks).</p>
-<p>New backends register via the <code>NewLatencyModelFunc</code> variable in <code>sim/latency_model.go</code>. The <code>sim/latency/register.go</code> file uses <code>init()</code> to wire the factory, breaking the import cycle between <code>sim/</code> (interface owner) and <code>sim/latency/</code> (implementation). To add a custom backend, implement the four methods and register your factory via <code>init()</code> in a sub-package. See <a href="../../contributing/extension-recipes/">Extension Recipes</a> for a step-by-step guide.</p>
+<p>New backends register via the <code>NewLatencyModelFunc</code> variable in <code>sim/latency_model.go</code>. The <code>sim/latency/register.go</code> file uses <code>init()</code> to wire the factory, breaking the import cycle between <code>sim/</code> (interface owner) and <code>sim/latency/</code> (implementation). To add a custom backend, implement the three methods and register your factory via <code>init()</code> in a sub-package. See <a href="../../contributing/extension-recipes/">Extension Recipes</a> for a step-by-step guide.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../concepts/roofline/">Roofline Estimation</a> -- the mathematical model behind roofline step time calculation</li>
