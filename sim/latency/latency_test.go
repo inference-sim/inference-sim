@@ -99,18 +99,6 @@ func TestBlackboxLatencyModel_OutputTokenProcessingTime_NonNegative(t *testing.T
 	}
 }
 
-// TestBlackboxLatencyModel_PlaceholderOverheads verifies placeholders return 0.
-func TestBlackboxLatencyModel_PlaceholderOverheads(t *testing.T) {
-	model := &BlackboxLatencyModel{
-		betaCoeffs:  []float64{1000, 10, 5},
-		alphaCoeffs: []float64{100, 1, 100},
-	}
-
-	if model.SchedulingProcessingTime() != 0 {
-		t.Errorf("SchedulingProcessingTime = %d, want 0", model.SchedulingProcessingTime())
-	}
-}
-
 // TestBlackboxLatencyModel_StepTime_Monotonic verifies BC-1 invariant:
 // more prefill tokens must increase step time.
 func TestBlackboxLatencyModel_StepTime_Monotonic(t *testing.T) {

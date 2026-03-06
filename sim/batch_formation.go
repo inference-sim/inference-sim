@@ -34,8 +34,7 @@ type BatchContext struct {
 
 // ScheduledRequest carries metadata about a newly scheduled request.
 type ScheduledRequest struct {
-	Request        *Request
-	ScheduledDelay int64
+	Request *Request
 }
 
 // PreemptedRequest carries metadata about a preempted request.
@@ -52,9 +51,7 @@ type BatchResult struct {
 }
 
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
-type VLLMBatchFormation struct {
-	latencyModel LatencyModel
-}
+type VLLMBatchFormation struct{}
 
 func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	if ctx.RunningBatch == nil {
@@ -139,10 +136,8 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
 		next.ScheduledStepIdx = ctx.StepCount
 
-		scheduledDelay := v.latencyModel.SchedulingProcessingTime()
 		result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{
-			Request:        next,
-			ScheduledDelay: scheduledDelay,
+			Request: next,
 		})
 
 		tokenBudget -= numNewTokens
@@ -204,8 +199,6 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 
 // NewBatchFormation creates the default BatchFormation.
 // Currently returns VLLMBatchFormation (the only implementation).
-func NewBatchFormation(latencyModel LatencyModel) BatchFormation {
-	return &VLLMBatchFormation{
-		latencyModel: latencyModel,
-	}
+func NewBatchFormation() BatchFormation {
+	return &VLLMBatchFormation{}
 }

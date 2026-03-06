@@ -14,9 +14,6 @@ type LatencyModel interface {
 
 	// OutputTokenProcessingTime estimates per-token post-processing time.
 	OutputTokenProcessingTime() int64
-
-	// SchedulingProcessingTime estimates scheduling overhead per request.
-	SchedulingProcessingTime() int64
 }
 
 // NewLatencyModelFunc is a factory function for creating LatencyModel implementations.

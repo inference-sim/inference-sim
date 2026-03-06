@@ -70,6 +70,4 @@ func (m *CrossModelLatencyModel) OutputTokenProcessingTime() int64 {
 	return int64(m.alphaCoeffs[2])
 }
 
-func (m *CrossModelLatencyModel) SchedulingProcessingTime() int64 {
-	return 0
-}
+
