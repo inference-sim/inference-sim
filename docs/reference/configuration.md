@@ -305,7 +305,7 @@ defaults:
   qwen/qwen2.5-7b-instruct:
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.8.4
+    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: Qwen/Qwen2.5-7B-Instruct
 
 # Section 2: Workload presets
@@ -322,7 +322,7 @@ models:
   - id: qwen/qwen2.5-7b-instruct
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.8.4
+    vllm_version: vllm/vllm-openai:v0.11.0
     alpha_coeffs: [5223.76, 2.41, 5368.06]
     beta_coeffs: [10041.67, 81.12, 59.99]
     total_kv_blocks: 67659
