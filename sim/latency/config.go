@@ -179,21 +179,41 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// Intermediate dim: Falcon/GLM use "ffn_hidden_size" instead of "intermediate_size".
 	intermediateDim := getIntWithFallbacks("intermediate_size", "ffn_hidden_size")
 
-	// MoE fields: 0 = dense model (zero-value safe)
-	numLocalExperts := getInt("num_local_experts")
+	// MoE expert count: extended resolution chain (design D4)
+	// num_local_experts → num_routed_experts → n_routed_experts → num_experts
+	numLocalExperts := getIntWithFallbacks("num_local_experts", "num_routed_experts", "n_routed_experts", "num_experts")
 	numExpertsPerTok := getInt("num_experts_per_tok")
 
+	// MoE per-expert FFN dimension (design Section 4.2)
+	// When present and nonzero, takes precedence over general intermediate dim.
+	moeExpertFFNDim := getInt("moe_intermediate_size")
+
+	// Shared expert FFN dimension resolution (design D3, D5)
+	// Priority: explicit shared_expert_intermediate_size > n_shared_experts × per-expert dim
+	var sharedExpertFFNDim int
+	if v := getInt("shared_expert_intermediate_size"); v > 0 {
+		sharedExpertFFNDim = v
+	} else if nShared := getInt("n_shared_experts"); nShared > 0 {
+		// Compute total shared dim from count × per-expert dim
+		perExpert := moeExpertFFNDim
+		if perExpert == 0 {
+			perExpert = intermediateDim // Mixtral convention
+		}
+		sharedExpertFFNDim = nShared * perExpert
+	}
+
 	modelConfig := &sim.ModelConfig{
-		// From HFConfig.Raw
-		NumLayers:        getInt("num_hidden_layers"),
-		HiddenDim:        getInt("hidden_size"),
-		VocabSize:        getInt("vocab_size"),
-		IntermediateDim:  intermediateDim,
-		NumHeads:         numHeads,
-		NumKVHeads:       numKVHeads,
-		BytesPerParam:    float64(bytesPerParam),
-		NumLocalExperts:  numLocalExperts,
-		NumExpertsPerTok: numExpertsPerTok,
+		NumLayers:          getInt("num_hidden_layers"),
+		HiddenDim:          getInt("hidden_size"),
+		VocabSize:          getInt("vocab_size"),
+		IntermediateDim:    intermediateDim,
+		NumHeads:           numHeads,
+		NumKVHeads:         numKVHeads,
+		BytesPerParam:      float64(bytesPerParam),
+		NumLocalExperts:    numLocalExperts,
+		NumExpertsPerTok:   numExpertsPerTok,
+		MoEExpertFFNDim:    moeExpertFFNDim,
+		SharedExpertFFNDim: sharedExpertFFNDim,
 	}
 	return modelConfig, nil
 }
