@@ -653,3 +653,83 @@ func TestGetModelConfig_Qwen2MoEStyle_SharedExpertDimExplicit(t *testing.T) {
 		t.Errorf("expected SharedExpertFFNDim=5632 (explicit field), got %d", cfg.SharedExpertFFNDim)
 	}
 }
+
+// --- MoE validation tests (BC-12, BC-13, BC-14) ---
+
+func TestValidateRooflineConfig_MoE_ExpertsWithoutActive_ReturnsError(t *testing.T) {
+	// BC-12: experts > 0, active = 0
+	mc := sim.ModelConfig{
+		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+		NumLocalExperts: 8, NumExpertsPerTok: 0,
+	}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err == nil {
+		t.Fatal("expected error for experts > 0 with active = 0")
+	}
+	if !strings.Contains(err.Error(), "active") {
+		t.Errorf("expected error mentioning 'active', got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_MoE_ActiveExceedsTotal_ReturnsError(t *testing.T) {
+	// BC-13: active > total
+	mc := sim.ModelConfig{
+		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+		NumLocalExperts: 8, NumExpertsPerTok: 10,
+	}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err == nil {
+		t.Fatal("expected error for active > total experts")
+	}
+}
+
+func TestValidateRooflineConfig_MoE_NegativeDimensions_ReturnsError(t *testing.T) {
+	// BC-14: negative MoE dimensions
+	tests := []struct {
+		name string
+		mc   sim.ModelConfig
+	}{
+		{
+			"negative MoEExpertFFNDim",
+			sim.ModelConfig{
+				NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+				NumLocalExperts: 8, NumExpertsPerTok: 2, MoEExpertFFNDim: -1,
+			},
+		},
+		{
+			"negative SharedExpertFFNDim",
+			sim.ModelConfig{
+				NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+				NumLocalExperts: 8, NumExpertsPerTok: 2, SharedExpertFFNDim: -1,
+			},
+		},
+	}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := latency.ValidateRooflineConfig(tt.mc, hc)
+			if err == nil {
+				t.Fatal("expected error for negative MoE dimension")
+			}
+		})
+	}
+}
+
+func TestValidateRooflineConfig_MoE_ValidConfig_ReturnsNil(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+		IntermediateDim: 14336,
+		NumLocalExperts: 8, NumExpertsPerTok: 2,
+	}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err != nil {
+		t.Errorf("expected nil error for valid MoE config, got: %v", err)
+	}
+}
