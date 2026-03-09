@@ -14,6 +14,37 @@
 | **Date** | 2026-02-25 |
 | **Rounds** | 1 |
 
+## Erratum (2026-03-09)
+
+**PR #467** (commit `9a603bc`) changed `sim/cluster/snapshot.go` so that when
+`--snapshot-refresh-interval > 0`, **all three signals** (QueueDepth, BatchSize,
+KVUtilization) use Periodic mode — not just KVUtilization. This invalidates the
+key design note and several conclusions in the original findings:
+
+- **"QueueDepth is always Immediate"** — no longer true when interval > 0. Only
+  `InFlightRequests` (injected synchronously by `buildRouterState()`) remains
+  unconditionally fresh.
+- **"queue-depth scorer is NOT affected"** — partially invalidated. Queue-depth
+  uses `EffectiveLoad() = QueueDepth + BatchSize + InFlightRequests`. When
+  interval > 0, both `QueueDepth` and `BatchSize` are stale; only
+  `InFlightRequests` remains fresh. The composite scorer resilience finding
+  (+3.8% mean) may no longer hold at non-zero intervals.
+- **"the default composite scorer is inherently resilient"** — this conclusion
+  now applies **only to the default `--snapshot-refresh-interval 0`
+  configuration**, where all signals are Immediate.
+
+The experiment results themselves remain valid — they were run before #467 and
+accurately describe the behavior at the time. INV-7 in
+`docs/contributing/standards/invariants.md` was updated in PR #467 to reflect
+the current behavior.
+
+**Experiment 2 (negative control) invalidated:** H29's queue-depth:1 negative
+control showed 0.0% change between fresh and stale configurations — but that
+result depended on QueueDepth being Immediate. Post-#467, queue-depth:1 with
+`--snapshot-refresh-interval > 0` would also exhibit staleness-driven
+degradation, since both QueueDepth and BatchSize (which feed `EffectiveLoad()`)
+are now Periodic.
+
 ## Hypothesis Statement
 
 Increasing the snapshot refresh interval from 1ms to 100ms degrades TTFT p99 by at least 20% for weighted routing (kv-utilization scorer) at high request rates (>80% saturation, 4 instances), because stale load signals cause the router to repeatedly select already-loaded instances, creating transient load imbalance.
@@ -22,7 +53,9 @@ Increasing the snapshot refresh interval from 1ms to 100ms degrades TTFT p99 by 
 
 ## Critical Design Note
 
-The `--snapshot-refresh-interval` flag (defined in `cmd/root.go:667`) only controls **KVUtilization** staleness. From `sim/cluster/snapshot.go:39-48`:
+**[Updated 2026-03-09 — see Erratum above]**
+
+When this experiment was run, `--snapshot-refresh-interval` only controlled **KVUtilization** staleness. The code at that time was:
 
 ```go
 func newObservabilityConfig(refreshInterval int64) ObservabilityConfig {
@@ -30,18 +63,36 @@ func newObservabilityConfig(refreshInterval int64) ObservabilityConfig {
         return DefaultObservabilityConfig()  // all Immediate
     }
     return ObservabilityConfig{
-        QueueDepth:    FieldConfig{Mode: Immediate},      // ALWAYS fresh
-        BatchSize:     FieldConfig{Mode: Immediate},      // ALWAYS fresh
-        KVUtilization: FieldConfig{Mode: Periodic, Interval: refreshInterval}, // AFFECTED
+        QueueDepth:    FieldConfig{Mode: Immediate},      // was Immediate pre-#467
+        BatchSize:     FieldConfig{Mode: Immediate},      // was Immediate pre-#467
+        KVUtilization: FieldConfig{Mode: Periodic, Interval: refreshInterval},
     }
 }
 ```
 
-Therefore:
-- `kv-utilization` scorer IS affected (reads `KVUtilization` directly)
-- `queue-depth` scorer is NOT affected (reads `EffectiveLoad() = QueueDepth + BatchSize + PendingRequests`, all Immediate/synchronous)
+Post-PR #467, when `--snapshot-refresh-interval > 0`, all three Prometheus-sourced signals become Periodic. Only `InFlightRequests` (gateway-local counter) remains synchronous. The current code is:
 
-The original hypothesis text mentions "queue-depth scorer" but the mechanism only applies to `kv-utilization`. The experiment tests both scorers to confirm this architectural distinction.
+```go
+func newObservabilityConfig(refreshInterval int64) ObservabilityConfig {
+    if refreshInterval <= 0 {
+        return DefaultObservabilityConfig()  // all Immediate
+    }
+    periodic := FieldConfig{Mode: Periodic, Interval: refreshInterval}
+    return ObservabilityConfig{
+        QueueDepth:    periodic,    // Periodic when interval > 0 (changed in PR #467)
+        BatchSize:     periodic,    // Periodic when interval > 0 (changed in PR #467)
+        KVUtilization: periodic,
+    }
+}
+```
+
+At the time of this experiment:
+- `kv-utilization` scorer was affected (reads `KVUtilization` directly)
+- `queue-depth` scorer was NOT affected (reads `EffectiveLoad() = QueueDepth + BatchSize + InFlightRequests`, all Immediate/synchronous)
+
+**[Note: see Erratum]** Post-#467, queue-depth is also affected when interval > 0.
+
+The experiment tested both scorers to confirm the architectural distinction that existed at the time.
 
 ## Experiment Design
 
@@ -157,7 +208,7 @@ H3 (`hypotheses/h3-signal-freshness/FINDINGS.md`) showed 200x worse distribution
 
 ### Key insight for INV-7 (Signal Freshness)
 
-The experiment validates INV-7's design: the tiered freshness architecture (QueueDepth=Immediate, KVUtilization=Periodic) means that routing quality degrades gracefully when snapshot refresh is slow, as long as at least one Immediate signal is included in the scoring pipeline. The default profile (`prefix-affinity:3,queue-depth:2,kv-utilization:2`) achieves this by construction.
+**[See Erratum]** The experiment validates INV-7's design *as it existed pre-#467*: the tiered freshness architecture (QueueDepth=Immediate, KVUtilization=Periodic) means that routing quality degrades gracefully when snapshot refresh is slow, as long as at least one Immediate signal is included in the scoring pipeline. The default profile (`prefix-affinity:3,queue-depth:2,kv-utilization:2`) achieves this by construction. Post-#467, all three Prometheus-sourced signals share the same scrape interval; only `InFlightRequests` remains unconditionally fresh.
 
 ## Conservation Check (INV-1)
 
@@ -260,7 +311,7 @@ The herding effect could be an artifact of constant-token workloads where all re
 
 ## Implications for Users
 
-- The default scoring profile (`prefix-affinity:3,queue-depth:2,kv-utilization:2`) is inherently resilient to KV staleness because queue-depth provides a real-time corrective signal
+- **[See Erratum]** The default scoring profile (`prefix-affinity:3,queue-depth:2,kv-utilization:2`) is inherently resilient to KV staleness when `--snapshot-refresh-interval` is 0 (the default). Post-#467, non-zero intervals make all Prometheus-sourced signals stale; only `InFlightRequests` remains fresh
 - Users who configure kv-utilization as the sole scorer should keep snapshot refresh intervals below 5ms (< 1 step time) to avoid measurable degradation
 - The 10ms threshold (14% degradation) provides a useful "warning zone" for monitoring systems
 - At intervals exceeding 50ms, degradation becomes severe (>250%) due to herding feedback loop
