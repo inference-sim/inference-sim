@@ -25,15 +25,14 @@ type StepConfig struct {
 	DecodeRequests  []DecodeRequestConfig  `json:"decode_requests"`
 }
 
-// mlpMatrixCount returns 3 for SwiGLU (gate+up+down) or 2 for standard (up+down) MLP.
-// Empty HiddenAct defaults to SwiGLU since most modern LLMs (Llama, Mistral, Qwen) use it.
+// mlpMatrixCount returns the number of MLP weight matrices for bandwidth/FLOPs estimation.
+// Always returns 2 (up+down) to match llm-optimizer's convention: for SwiGLU models,
+// HF intermediate_size is already scaled so that 2 × d × intermediate ≈ 3 × d × (2/3 × 4d).
+// Using 3 with the raw intermediate_size over-predicts for models like Llama2-70B
+// whose intermediate_size exceeds the standard SwiGLU (2/3 × 4d) convention.
 func mlpMatrixCount(hiddenAct string) float64 {
-	switch hiddenAct {
-	case "silu", "swiglu", "geglu", "":
-		return 3
-	default:
-		return 2
-	}
+	_ = hiddenAct // reserved for future per-activation tuning
+	return 2
 }
 
 // --- Bento FLOPS Logic ---
