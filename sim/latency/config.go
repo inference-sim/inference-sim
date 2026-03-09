@@ -258,6 +258,10 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 	}
 
 	// MoE consistency checks (design Section 4.6)
+	if mc.NumLocalExperts < 0 {
+		problems = append(problems, fmt.Sprintf(
+			"MoE: NumLocalExperts must be >= 0, got %d", mc.NumLocalExperts))
+	}
 	if mc.NumLocalExperts > 0 && mc.NumExpertsPerTok <= 0 {
 		problems = append(problems, fmt.Sprintf(
 			"MoE: NumLocalExperts=%d but active experts per token (NumExpertsPerTok) must be > 0",

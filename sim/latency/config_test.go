@@ -707,6 +707,13 @@ func TestValidateRooflineConfig_MoE_NegativeDimensions_ReturnsError(t *testing.T
 				NumLocalExperts: 8, NumExpertsPerTok: 2, SharedExpertFFNDim: -1,
 			},
 		},
+		{
+			"negative NumLocalExperts",
+			sim.ModelConfig{
+				NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+				NumLocalExperts: -1,
+			},
+		},
 	}
 	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
 
