@@ -5,8 +5,8 @@
         "BwEffConstant": 0.72,
 		"TOverheadMicros":  500.0,
 		"perLayerOverhead": 20.0,
-		"mfuPrefill":       0.65,
-		"mfuDecode":        0.12,
+		"mfuPrefill":       0.45,
+		"mfuDecode":        0.30,
 		"allReduceLatency": 20.0,
 		"MemoryGiB":        80.0
 	},
@@ -16,8 +16,8 @@
         "BwEffConstant": 0.72,
 		"TOverheadMicros":  500.0,
 		"perLayerOverhead": 20.0,
-		"mfuPrefill":       0.65,
-		"mfuDecode":        0.12,
+		"mfuPrefill":       0.45,
+		"mfuDecode":        0.30,
 		"allReduceLatency": 20.0,
 		"MemoryGiB":        80.0
 	},
@@ -28,8 +28,8 @@
         "BwEffConstant": 0.72,
 		"TOverheadMicros":  500.0,
 		"perLayerOverhead": 20.0,
-		"mfuPrefill":       0.65,
-		"mfuDecode":        0.12,
+		"mfuPrefill":       0.45,
+		"mfuDecode":        0.30,
 		"allReduceLatency": 20.0,
 		"MemoryGiB":        80.0
 	}
