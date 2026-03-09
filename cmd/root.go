@@ -715,6 +715,13 @@ var runCmd = &cobra.Command{
 			logrus.Warnf("--num-instances=%d is ignored in disaggregated mode; using --num-prefill-instances=%d + --num-decode-instances=%d",
 				numInstances, numPrefillInstances, numDecodeInstances)
 		}
+		// I14 fix: warn when disaggregated flags are set in mixed mode (R1: no silent data loss)
+		if servingMode != "disaggregated" {
+			if numPrefillInstances > 0 || numDecodeInstances > 0 {
+				logrus.Warnf("--num-prefill-instances and --num-decode-instances are ignored in %q mode; use --serving-mode disaggregated to enable disaggregated serving",
+					servingMode)
+			}
+		}
 
 		// Unified cluster path (used for all values of numInstances)
 		config := cluster.DeploymentConfig{

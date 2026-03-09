@@ -256,8 +256,31 @@ func (e *DecodeRoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 	decision := cs.routingPolicy.Route(e.request, state)
 	logrus.Debugf("[cluster] decode-route req %s → instance %s", e.request.ID, decision.TargetInstance)
 
+	// Apply cluster-level priority hint if set by routing policy (I5 fix, R23 parity)
+	if decision.Priority != 0 {
+		e.request.Priority = decision.Priority
+	}
+
 	// Update assigned instance to decode instance
 	e.request.AssignedInstance = decision.TargetInstance
+
+	// Record decode routing decision if tracing is enabled (C5 fix, R1 no silent data loss)
+	if cs.trace != nil {
+		record := trace.RoutingRecord{
+			RequestID:      e.request.ID,
+			Clock:          cs.clock,
+			ChosenInstance: decision.TargetInstance,
+			Reason:         "decode-routing:" + decision.Reason,
+			Scores:         copyScores(decision.Scores),
+		}
+		if cs.trace.Config.CounterfactualK > 0 {
+			record.Candidates, record.Regret = computeCounterfactual(
+				decision.TargetInstance, decision.Scores,
+				state.Snapshots, cs.trace.Config.CounterfactualK,
+			)
+		}
+		cs.trace.RecordRouting(record)
+	}
 
 	for _, inst := range cs.decodeInstances {
 		if string(inst.ID()) == decision.TargetInstance {

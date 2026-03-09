@@ -157,8 +157,11 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 
 	var newTokens []int
 	var numNewBlocks int64
-	if req.ProgressIndex < util.Len64(req.InputTokens) {
-		// request is in prefill (could be chunked)
+	if endIndex <= util.Len64(req.InputTokens) {
+		// request is in prefill (could be chunked).
+		// Uses endIndex (not ProgressIndex) to determine prefill vs decode,
+		// enabling decode-injected requests (ProgressIndex == len(InputTokens))
+		// to re-allocate input KV blocks via the prefill path.
 		newTokens = req.InputTokens[startIndex:endIndex]
 
 		// Compute blocks needed, accounting for tokens that will be absorbed
@@ -279,7 +282,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				kvc.UsedBlockCnt++
 				kvc.CacheMisses++
 
-				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < util.Len64(req.InputTokens) {
+				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && endIndex <= util.Len64(req.InputTokens) {
 					// Only compute prefix hash during prefill (not decode).
 					// During decode, blocks hold output tokens that should not
 					// participate in prefix caching (input sequences only).

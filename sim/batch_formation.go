@@ -183,7 +183,12 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			}
 
 			preemptedRequest.State = StateQueued
-			preemptedRequest.ProgressIndex = 0
+			// Reset ProgressIndex to 0 for normal requests so they re-prefill.
+			// For decode-injected requests (HandoffTime > 0), preserve ProgressIndex
+			// at len(InputTokens) so they skip re-prefill when re-scheduled (C7 fix).
+			if preemptedRequest.HandoffTime == 0 {
+				preemptedRequest.ProgressIndex = 0
+			}
 			ctx.KVCache.ReleaseKVBlocks(preemptedRequest)
 			delete(ctx.ComputedTokens, preemptedRequest.ID)
 			ctx.WaitQ.PrependFront(preemptedRequest)

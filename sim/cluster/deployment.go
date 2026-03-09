@@ -77,6 +77,16 @@ func (d DeploymentConfig) ValidateDisaggregated() error {
 	if d.DisagKVTransferBaseLat < 0 {
 		return fmt.Errorf("DisagKVTransferBaseLat must be >= 0, got %d", d.DisagKVTransferBaseLat)
 	}
+	// I1 fix: validate per-pool override values (R3)
+	if d.PrefillMaxScheduledTokens < 0 {
+		return fmt.Errorf("PrefillMaxScheduledTokens must be >= 0, got %d", d.PrefillMaxScheduledTokens)
+	}
+	if d.DecodeMaxRunningReqs < 0 {
+		return fmt.Errorf("DecodeMaxRunningReqs must be >= 0, got %d", d.DecodeMaxRunningReqs)
+	}
+	if d.DecodeKVBlocks < 0 {
+		return fmt.Errorf("DecodeKVBlocks must be >= 0, got %d", d.DecodeKVBlocks)
+	}
 	return nil
 }
 

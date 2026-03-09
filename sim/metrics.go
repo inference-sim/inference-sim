@@ -28,6 +28,7 @@ type Metrics struct {
 	KVThrashingRate      float64 // KV thrashing rate at finalization (PR12)
 	StillQueued          int     // Requests still in wait queue at sim end
 	StillRunning         int     // Requests still in running batch at sim end
+	InTransit            int     // Requests in-transit between prefill and decode at sim end (disaggregated mode only)
 	DroppedUnservable    int     // Requests dropped because input tokens exceed KV cache capacity (R19)
 
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
@@ -70,13 +71,14 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		CompletedRequests:    m.CompletedRequests,
 		StillQueued:          m.StillQueued,
 		StillRunning:         m.StillRunning,
-		InjectedRequests:     m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable,
+		InjectedRequests:     m.CompletedRequests + m.StillQueued + m.StillRunning + m.InTransit + m.DroppedUnservable,
 		TotalInputTokens:     int(m.TotalInputTokens),
 		TotalOutputTokens:    int(m.TotalOutputTokens),
 		VllmDurationSec:      vllmRuntime,
 		KVAllocationFailures: m.KVAllocationFailures,
 		PreemptionCount:      m.PreemptionCount,
 		DroppedUnservable:    m.DroppedUnservable,
+		InTransit:            m.InTransit,
 	}
 
 	if m.CompletedRequests > 0 {

@@ -1358,7 +1358,9 @@ func newDisagTestSimulator(t *testing.T) *Simulator {
 }
 
 // TestExtractPrefillCompleted_ExtractionAfterPrefill verifies BC-2: requests with
-// >1 output tokens are extracted after prefill completes, KV blocks released, TTFT undone.
+// >1 output tokens are extracted after prefill completes, KV blocks released.
+// TTFT metrics are preserved on the prefill instance (not undone) — the prefill TTFT
+// correctly represents arrival→first_token time for disaggregated E2E calculation.
 func TestExtractPrefillCompleted_ExtractionAfterPrefill(t *testing.T) {
 	sim := newDisagTestSimulator(t)
 
@@ -1404,20 +1406,20 @@ func TestExtractPrefillCompleted_ExtractionAfterPrefill(t *testing.T) {
 		t.Errorf("expected KV blocks to be released: before=%d, after=%d", usedBefore, sim.KVCache.UsedBlocks())
 	}
 
-	// Verify TTFT undone
-	if sim.Metrics.TTFTSum >= ttftBefore {
-		t.Errorf("expected TTFTSum to decrease: before=%d, after=%d", ttftBefore, sim.Metrics.TTFTSum)
+	// Verify TTFT preserved (not undone) — prefill TTFT stands for E2E calculation
+	if sim.Metrics.TTFTSum != ttftBefore {
+		t.Errorf("expected TTFTSum to be preserved: before=%d, after=%d", ttftBefore, sim.Metrics.TTFTSum)
 	}
-	if _, exists := sim.Metrics.RequestTTFTs[req.ID]; exists {
-		t.Error("expected RequestTTFTs entry to be deleted")
+	if _, exists := sim.Metrics.RequestTTFTs[req.ID]; !exists {
+		t.Error("expected RequestTTFTs entry to be preserved")
 	}
 
-	// Verify request state
-	if extracted[0].TTFTSet {
-		t.Error("expected TTFTSet to be false after extraction")
+	// Verify request state: TTFT preserved from prefill for E2E calculation on decode instance
+	if !extracted[0].TTFTSet {
+		t.Error("expected TTFTSet to remain true after extraction")
 	}
-	if extracted[0].FirstTokenTime != 0 {
-		t.Error("expected FirstTokenTime to be 0 after extraction")
+	if extracted[0].FirstTokenTime <= 0 {
+		t.Error("expected FirstTokenTime to be preserved after extraction")
 	}
 	if extracted[0].State != StateRunning {
 		t.Errorf("expected state to remain StateRunning, got %s", extracted[0].State)
@@ -1524,57 +1526,57 @@ func TestInjectForDecode_SuccessfulInjection(t *testing.T) {
 	}
 }
 
-// TestDisaggregatedTTFT_FullJourney verifies BC-5: TTFT for disaggregated requests
-// captures the full journey (arrival → prefill → handoff → first decode output).
-func TestDisaggregatedTTFT_FullJourney(t *testing.T) {
+// TestDisaggregatedTTFT_PreservedFromPrefill verifies BC-5: TTFT for disaggregated
+// requests is preserved from the prefill instance. The decode instance inherits
+// TTFTSet and FirstTokenTime, so E2E = FirstTokenTime + sum(ITL from decode).
+func TestDisaggregatedTTFT_PreservedFromPrefill(t *testing.T) {
 	sim := newDisagTestSimulator(t)
 
 	inputTokens := make([]int, 32)
 	outputTokens := make([]int, 10)
+	prefillTTFT := int64(4000) // TTFT recorded during prefill
+
 	req := &Request{
-		ID:            "req_disag_ttft",
-		InputTokens:   inputTokens,
-		OutputTokens:  outputTokens,
-		State:         StateRunning,
-		ProgressIndex: int64(len(inputTokens)), // Prefill complete
-		ArrivalTime:   1000,                    // Original arrival time
-		HandoffTime:   5000,                    // Handoff completed at 5000
-		TTFTSet:       false,                   // Reset by ExtractPrefillCompleted
-		FirstTokenTime: 0,
+		ID:             "req_disag_ttft",
+		InputTokens:    inputTokens,
+		OutputTokens:   outputTokens,
+		State:          StateRunning,
+		ProgressIndex:  int64(len(inputTokens)), // Prefill complete
+		ArrivalTime:    1000,                     // Original arrival time
+		HandoffTime:    5000,                     // Handoff completed at 5000
+		TTFTSet:        true,                     // Preserved from prefill (not reset)
+		FirstTokenTime: prefillTTFT,              // Preserved from prefill
 	}
 
 	sim.InjectForDecode(req, 5000)
 
-	// Run one step to trigger disaggregated TTFT recording
-	for sim.HasPendingEvents() {
+	// Run steps to generate decode tokens
+	stepCount := 0
+	for sim.HasPendingEvents() && stepCount < 3 {
 		ev := sim.ProcessNextEvent()
 		if _, ok := ev.(*StepEvent); ok {
-			break // One step processed
+			stepCount++
 		}
 	}
 
-	// After one decode step, TTFT should be set
-	if !req.TTFTSet {
-		t.Fatal("expected TTFT to be set after first decode step")
+	// TTFT should be preserved from prefill — not re-recorded on decode instance
+	if req.FirstTokenTime != prefillTTFT {
+		t.Errorf("expected FirstTokenTime preserved from prefill (%d), got %d",
+			prefillTTFT, req.FirstTokenTime)
 	}
 
-	// TTFT should be relative to original arrival time, capturing the full journey
-	if req.FirstTokenTime <= 0 {
-		t.Errorf("expected positive FirstTokenTime, got %d", req.FirstTokenTime)
+	// ITL should have entries for decode steps (not for the TTFT step)
+	if len(req.ITL) == 0 {
+		t.Fatal("expected ITL entries from decode steps")
 	}
 
-	// Verify TTFT is in metrics
-	ttft, exists := sim.Metrics.RequestTTFTs[req.ID]
-	if !exists {
-		t.Fatal("expected TTFT in RequestTTFTs")
+	// E2E should be FirstTokenTime + sum(ITL) — no double-counting
+	var itlSum int64
+	for _, v := range req.ITL {
+		itlSum += v
 	}
-	if ttft <= 0 {
-		t.Errorf("expected positive TTFT, got %.2f", ttft)
-	}
-
-	// TTFT should include handoff time: FirstTokenTime = (step_end - ArrivalTime)
-	// Since ArrivalTime=1000 and step happens at >= 5000, TTFT should be >= 4000
-	if req.FirstTokenTime < 4000 {
-		t.Errorf("TTFT seems too small for disaggregated request: %d (expected >= 4000)", req.FirstTokenTime)
+	expectedE2E := req.FirstTokenTime + itlSum
+	if expectedE2E <= 0 {
+		t.Errorf("expected positive E2E, got %d", expectedE2E)
 	}
 }

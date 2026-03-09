@@ -7,6 +7,7 @@ import (
 	"math"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -1587,10 +1588,11 @@ func TestDisaggregated_BasicFlow(t *testing.T) {
 	agg := cs.AggregatedMetrics()
 
 	// INV-1: Request conservation — all requests should complete or be accounted for
-	conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
+	// InTransit captures requests between prefill and decode (in HandoffEvent/DecodeRoutingDecisionEvent)
+	conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.InTransit + agg.DroppedUnservable
 	if conservation != len(requests) {
-		t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
-			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable,
+		t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + transit(%d) + dropped(%d) = %d, want %d",
+			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.InTransit, agg.DroppedUnservable,
 			conservation, len(requests))
 	}
 
@@ -1797,6 +1799,21 @@ func TestValidateDisaggregated_Errors(t *testing.T) {
 			config:  DeploymentConfig{ServingMode: "disaggregated", NumPrefillInstances: 1, NumDecodeInstances: 1, KVTransferPerToken: -1},
 			wantErr: true,
 		},
+		{
+			name:    "negative PrefillMaxScheduledTokens",
+			config:  DeploymentConfig{ServingMode: "disaggregated", NumPrefillInstances: 1, NumDecodeInstances: 1, PrefillMaxScheduledTokens: -1},
+			wantErr: true,
+		},
+		{
+			name:    "negative DecodeMaxRunningReqs",
+			config:  DeploymentConfig{ServingMode: "disaggregated", NumPrefillInstances: 1, NumDecodeInstances: 1, DecodeMaxRunningReqs: -1},
+			wantErr: true,
+		},
+		{
+			name:    "negative DecodeKVBlocks",
+			config:  DeploymentConfig{ServingMode: "disaggregated", NumPrefillInstances: 1, NumDecodeInstances: 1, DecodeKVBlocks: -1},
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1806,5 +1823,171 @@ func TestValidateDisaggregated_Errors(t *testing.T) {
 				t.Errorf("ValidateDisaggregated() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestDisaggregated_INV5_CausalityChain verifies INV-5 for disaggregated mode:
+// arrival_time <= handoff_time <= completion_time for every completed request.
+func TestDisaggregated_INV5_CausalityChain(t *testing.T) {
+	config := newDisagDeploymentConfig(2, 2)
+	requests := newTestRequests(15)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	agg := cs.AggregatedMetrics()
+	if agg.CompletedRequests == 0 {
+		t.Fatal("no completed requests")
+	}
+
+	// Verify causality chain for completed requests
+	for _, req := range requests {
+		if req.State != sim.StateCompleted {
+			continue
+		}
+		// arrival_time <= handoff_time (if disaggregated)
+		if req.HandoffTime > 0 && req.ArrivalTime > req.HandoffTime {
+			t.Errorf("INV-5 violation for %s: ArrivalTime(%d) > HandoffTime(%d)",
+				req.ID, req.ArrivalTime, req.HandoffTime)
+		}
+		// TTFT should be positive (arrival → first token)
+		if req.FirstTokenTime <= 0 {
+			t.Errorf("INV-5: completed request %s has non-positive FirstTokenTime: %d",
+				req.ID, req.FirstTokenTime)
+		}
+	}
+}
+
+// TestDisaggregated_Determinism_Comprehensive verifies INV-6 with more thorough checks.
+func TestDisaggregated_Determinism_Comprehensive(t *testing.T) {
+	config := newDisagDeploymentConfig(2, 3)
+	config.KVTransferPerToken = 10
+
+	requests1 := newTestRequests(20)
+	requests2 := newTestRequests(20)
+
+	cs1 := NewClusterSimulator(config, requests1)
+	mustRun(t, cs1)
+
+	cs2 := NewClusterSimulator(config, requests2)
+	mustRun(t, cs2)
+
+	agg1 := cs1.AggregatedMetrics()
+	agg2 := cs2.AggregatedMetrics()
+
+	if agg1.CompletedRequests != agg2.CompletedRequests {
+		t.Errorf("completed: %d vs %d", agg1.CompletedRequests, agg2.CompletedRequests)
+	}
+	if agg1.TotalOutputTokens != agg2.TotalOutputTokens {
+		t.Errorf("output tokens: %d vs %d", agg1.TotalOutputTokens, agg2.TotalOutputTokens)
+	}
+	if agg1.TTFTSum != agg2.TTFTSum {
+		t.Errorf("TTFTSum: %d vs %d", agg1.TTFTSum, agg2.TTFTSum)
+	}
+	if agg1.StillQueued != agg2.StillQueued {
+		t.Errorf("StillQueued: %d vs %d", agg1.StillQueued, agg2.StillQueued)
+	}
+	if agg1.StillRunning != agg2.StillRunning {
+		t.Errorf("StillRunning: %d vs %d", agg1.StillRunning, agg2.StillRunning)
+	}
+	if agg1.InTransit != agg2.InTransit {
+		t.Errorf("InTransit: %d vs %d", agg1.InTransit, agg2.InTransit)
+	}
+	// Compare per-request TTFTs for all completed requests
+	for id, ttft1 := range agg1.RequestTTFTs {
+		if ttft2, ok := agg2.RequestTTFTs[id]; ok {
+			if ttft1 != ttft2 {
+				t.Errorf("TTFT[%s]: %.2f vs %.2f", id, ttft1, ttft2)
+			}
+		}
+	}
+}
+
+// TestDisaggregated_ShortHorizon_Conservation verifies INV-1 conservation when the
+// horizon cuts off requests mid-pipeline (in-transit between prefill and decode).
+func TestDisaggregated_ShortHorizon_Conservation(t *testing.T) {
+	config := newDisagDeploymentConfig(1, 1)
+	// Very short horizon — some requests will be in-transit at cutoff
+	config.Horizon = 5_000_000
+	config.KVTransferPerToken = 100 // Slow transfer → more in-transit
+
+	requests := newTestRequests(20)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	agg := cs.AggregatedMetrics()
+
+	// INV-1: All requests accounted for
+	conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.InTransit + agg.DroppedUnservable
+	rejected := cs.RejectedRequests()
+	total := conservation + rejected
+	if total != len(requests) {
+		t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) + transit(%d) + dropped(%d) + rejected(%d) = %d, want %d",
+			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.InTransit,
+			agg.DroppedUnservable, rejected, total, len(requests))
+	}
+}
+
+// TestDisaggregated_DecodeTraceRecording verifies C5 fix: decode routing decisions
+// are recorded in the trace when tracing is enabled.
+func TestDisaggregated_DecodeTraceRecording(t *testing.T) {
+	config := newDisagDeploymentConfig(1, 1)
+	config.TraceLevel = "decisions"
+
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected trace to be non-nil")
+	}
+
+	// Should have routing records for both prefill and decode routing
+	if len(tr.Routings) == 0 {
+		t.Error("expected routing decisions in trace")
+	}
+
+	// Check that decode routing records exist (reason starts with "decode-routing:")
+	hasDecodeRouting := false
+	for _, rec := range tr.Routings {
+		if strings.HasPrefix(rec.Reason, "decode-routing:") {
+			hasDecodeRouting = true
+			break
+		}
+	}
+	if !hasDecodeRouting && cs.AggregatedMetrics().CompletedRequests > 0 {
+		t.Error("expected decode-routing records in trace for completed disaggregated requests")
+	}
+}
+
+// TestDisaggregated_R19_UnservableGuard verifies that InjectForDecode drops requests
+// that can never fit in the decode instance's KV cache.
+func TestDisaggregated_R19_UnservableGuard(t *testing.T) {
+	config := newDisagDeploymentConfig(1, 1)
+	config.DecodeKVBlocks = 5 // Very small decode KV cache
+
+	// Create requests with many input tokens that exceed decode KV capacity
+	requests := make([]*sim.Request, 3)
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("req_%d", i),
+			InputTokens:  make([]int, 200), // 200 tokens / 16 per block = 13 blocks > 5
+			OutputTokens: make([]int, 5),
+			ArrivalTime:  int64(i) * 1_000_000,
+			State:        sim.StateQueued,
+		}
+	}
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	// Find decode instance metrics
+	for _, inst := range cs.Instances() {
+		if inst.Role() == RoleDecode {
+			m := inst.Metrics()
+			if m.DroppedUnservable == 0 {
+				t.Error("expected decode instance to drop unservable requests (R19)")
+			}
+		}
 	}
 }

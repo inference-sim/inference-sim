@@ -106,7 +106,15 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 }
 
 // newDisaggregatedClusterSimulator creates a ClusterSimulator with separate prefill and decode pools.
+// Panics if NumPrefillInstances < 1 or NumDecodeInstances < 1 (I8 fix).
 func newDisaggregatedClusterSimulator(config DeploymentConfig, requests []*sim.Request, simTrace *trace.SimulationTrace, obsCfg ObservabilityConfig) *ClusterSimulator {
+	// I8 fix: validate pool sizes even for direct library consumers
+	if config.NumPrefillInstances < 1 {
+		panic(fmt.Sprintf("newDisaggregatedClusterSimulator: NumPrefillInstances must be >= 1, got %d", config.NumPrefillInstances))
+	}
+	if config.NumDecodeInstances < 1 {
+		panic(fmt.Sprintf("newDisaggregatedClusterSimulator: NumDecodeInstances must be >= 1, got %d", config.NumDecodeInstances))
+	}
 	prefillCfg := config.ToPrefillSimConfig()
 	decodeCfg := config.ToDecodeSimConfig()
 
@@ -174,6 +182,14 @@ func newDisaggregatedClusterSimulator(config DeploymentConfig, requests []*sim.R
 
 	logrus.Infof("[cluster] disaggregated mode: %d prefill + %d decode instances, transfer_base=%d, transfer_per_tok=%d",
 		config.NumPrefillInstances, config.NumDecodeInstances, cs.kvTransferBase, cs.kvTransferPerTok)
+
+	// I4 fix: pipeline horizon warning for disaggregated mode.
+	// Disaggregated pipeline is longer: admission + routing + prefill + transfer + decode routing.
+	pipelineLatency := cs.admissionLatency + cs.routingLatency + cs.kvTransferBase
+	if cs.config.Horizon > 0 && cs.config.Horizon < pipelineLatency {
+		logrus.Warnf("[cluster] horizon (%d) < disaggregated pipeline latency (%d); no requests can complete — increase --horizon or reduce pipeline latencies",
+			cs.config.Horizon, pipelineLatency)
+	}
 
 	return cs
 }
@@ -279,7 +295,18 @@ func (c *ClusterSimulator) Run() error {
 				extracted := inst.ExtractPrefillCompleted()
 				for _, req := range extracted {
 					c.inFlightRequests[instID]--
-					transferLatency := c.kvTransferBase + c.kvTransferPerTok*int64(len(req.InputTokens))
+					// C8 fix: guard against integer overflow in transfer latency calculation.
+					// Use safe multiplication with overflow detection.
+					perTokCost := c.kvTransferPerTok * int64(len(req.InputTokens))
+					if c.kvTransferPerTok > 0 && perTokCost/c.kvTransferPerTok != int64(len(req.InputTokens)) {
+						logrus.Warnf("[cluster] transfer latency overflow for req %s (perTok=%d, inputLen=%d), clamping",
+							req.ID, c.kvTransferPerTok, len(req.InputTokens))
+						perTokCost = math.MaxInt64 - c.kvTransferBase
+					}
+					transferLatency := c.kvTransferBase + perTokCost
+					if transferLatency < c.kvTransferBase { // overflow from addition
+						transferLatency = math.MaxInt64
+					}
 					heap.Push(&c.clusterEvents, clusterEventEntry{
 						event: &HandoffEvent{
 							time:    c.clock + transferLatency,
@@ -292,7 +319,20 @@ func (c *ClusterSimulator) Run() error {
 		}
 	}
 
-	// 4. Finalize all instances (populates StillQueued/StillRunning)
+	// 4. Count in-transit requests (C1 fix: INV-1 conservation for disaggregated mode).
+	// Requests in HandoffEvent or DecodeRoutingDecisionEvent at horizon end are
+	// between prefill and decode — not in any instance's StillQueued/StillRunning.
+	inTransitCount := 0
+	if c.IsDisaggregated() {
+		for _, entry := range c.clusterEvents {
+			switch entry.event.(type) {
+			case *HandoffEvent, *DecodeRoutingDecisionEvent:
+				inTransitCount++
+			}
+		}
+	}
+
+	// 5. Finalize all instances (populates StillQueued/StillRunning)
 	for _, inst := range c.instances {
 		inst.Finalize()
 	}
@@ -314,6 +354,7 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	c.aggregatedMetrics = c.aggregateMetrics()
+	c.aggregatedMetrics.InTransit = inTransitCount
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {

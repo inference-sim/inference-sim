@@ -23,6 +23,7 @@ type RequestMetrics struct {
 	TenantID         string  `json:"tenant_id,omitempty"`  // PR10: for per-tenant fairness
 	HandledBy        string  `json:"handled_by,omitempty"` // #181: instance that processed this request
 	Model            string  `json:"model,omitempty"`      // W0-1: model tag for per-model metrics
+	HandoffTimeMs    float64 `json:"handoff_time_ms,omitempty"` // disaggregated: KV handoff timestamp
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
@@ -38,6 +39,7 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		TenantID:         req.TenantID,
 		HandledBy:        req.AssignedInstance,
 		Model:            req.Model,
+		HandoffTimeMs:    float64(req.HandoffTime) / 1e3,
 	}
 }
 
@@ -69,6 +71,7 @@ type MetricsOutput struct {
 	KVAllocationFailures    int64            `json:"kv_allocation_failures,omitempty"`
 	PreemptionCount         int64            `json:"preemption_count"`
 	DroppedUnservable       int              `json:"dropped_unservable"`
+	InTransit               int              `json:"in_transit,omitempty"`
 	Requests                []RequestMetrics `json:"requests,omitempty"`
 }
 
