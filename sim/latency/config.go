@@ -179,9 +179,18 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// Intermediate dim: Falcon/GLM use "ffn_hidden_size" instead of "intermediate_size".
 	intermediateDim := getIntWithFallbacks("intermediate_size", "ffn_hidden_size")
 
-	// MoE expert count: extended resolution chain (design D4)
-	// num_local_experts → num_routed_experts → n_routed_experts → num_experts
-	numLocalExperts := getIntWithFallbacks("num_local_experts", "num_routed_experts", "n_routed_experts", "num_experts")
+	// MoE expert count: extended resolution chain (design D4).
+	// Threshold is > 1: single-expert models (num_local_experts=1) are dense-equivalent.
+	// This matches ExtractKVCapacityParams semantics (R23 code path parity).
+	numLocalExperts := getInt("num_local_experts")
+	if numLocalExperts <= 1 {
+		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
+			if v := getInt(key); v > 1 {
+				numLocalExperts = v
+				break
+			}
+		}
+	}
 	numExpertsPerTok := getInt("num_experts_per_tok")
 
 	// MoE per-expert FFN dimension (design Section 4.2)

@@ -26,6 +26,10 @@ type StepConfig struct {
 }
 
 // --- Bento FLOPS Logic ---
+//
+// Precondition: config must pass ValidateRooflineConfig (NumHeads > 0, and when
+// NumLocalExperts > 0, NumExpertsPerTok must be > 0). Violating preconditions
+// produces silently incorrect results (zero MLP FLOPs, +Inf from division).
 func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) map[string]float64 {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
@@ -88,7 +92,10 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 			// Routed expert FLOPs: top_k active experts per token
 			routedFLOPs := 2 * newT * (3 * dModel * dRouted) * topK * nLayers
 
-			// Shared expert FLOPs (always active, every token)
+			// Shared expert FLOPs (always active, every token).
+			// SharedExpertFFNDim is the TOTAL shared FFN dim (n_shared_experts × per-expert dim).
+			// Treating it as a single SwiGLU block is correct because FLOPs are linear in FFN dim:
+			// N experts × (3 × d_model × d_expert) == 3 × d_model × (N × d_expert).
 			var sharedFLOPs float64
 			if config.SharedExpertFFNDim > 0 {
 				dShared := float64(config.SharedExpertFFNDim)
@@ -109,6 +116,8 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 	return flops
 }
 
+// Precondition: same as calculateTransformerFlops — config must pass
+// ValidateRooflineConfig. NumHeads > 0 required (division at dHead).
 func calculateMemoryAccessBytes(
 	config sim.ModelConfig,
 	sequenceLength int64,
@@ -140,7 +149,10 @@ func calculateMemoryAccessBytes(
 
 	var mlpWeightsPerLayer float64
 	if config.NumLocalExperts > 0 {
-		// MoE active weights: top_k expert MLP + shared + gate
+		// MoE ACTIVE weights per step: only top_k expert MLPs are loaded from HBM,
+		// matching vLLM's fused_moe kernel behavior. For TOTAL model weights
+		// (all E experts, used for GPU memory budgeting), see computeModelWeightBytes
+		// in kv_capacity.go.
 		topK := float64(config.NumExpertsPerTok)
 		numExperts := float64(config.NumLocalExperts)
 

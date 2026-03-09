@@ -271,7 +271,7 @@ func ExtractKVCapacityParamsFromFile(hfConfigPath string) (KVCapacityParams, err
 }
 
 // ExtractKVCapacityParams extracts KVCapacityParams from a parsed HFConfig.
-// MoE detection: checks num_local_experts > 1, then falls back to
+// MoE detection: checks num_local_experts > 0, then falls back to
 // num_routed_experts, n_routed_experts, num_experts. Returns an error if MoE
 // is detected via activation-count fields (n_shared_experts, num_experts_per_tok)
 // without a total expert count — weight estimation requires the count.
@@ -284,6 +284,8 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 
 	// MoE detection: check multiple field names used by different architectures.
 	// Extended resolution chain (design D4): parity with GetModelConfigFromHF.
+	// Threshold is > 1: single-expert models (num_local_experts=1) are dense-equivalent
+	// and should not enter the MoE weight estimation path.
 	numLocalExperts := hf.MustGetInt("num_local_experts", 0)
 	if numLocalExperts <= 1 {
 		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
