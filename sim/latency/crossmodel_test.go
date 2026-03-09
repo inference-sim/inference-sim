@@ -50,8 +50,8 @@ func TestCrossModelLatencyModel_StepTime_NonEmpty_Positive(t *testing.T) {
 	assert.GreaterOrEqual(t, result, int64(1), "BC-4: non-empty batch must produce positive step time")
 }
 
-func TestCrossModelLatencyModel_StepTime_EmptyBatch_Zero(t *testing.T) {
-	// BC-5: empty batch → 0
+func TestCrossModelLatencyModel_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
+	// BC-1: empty batch → StepTime ≥ 1 (clock must always advance)
 	m := &CrossModelLatencyModel{
 		betaCoeffs:  []float64{116.110, 1226.868, 19.943, 9445.157},
 		alphaCoeffs: []float64{13732.0, 0.0, 860.6},
@@ -61,7 +61,10 @@ func TestCrossModelLatencyModel_StepTime_EmptyBatch_Zero(t *testing.T) {
 		isTP:        0.0,
 	}
 	result := m.StepTime([]*sim.Request{})
-	assert.Equal(t, int64(0), result, "BC-5: empty batch must return 0")
+	assert.GreaterOrEqual(t, result, int64(1), "BC-1: empty batch must return >= 1 to guarantee clock advancement")
+
+	// Regression anchor: empty batch computes β₀·numLayers + β₃·isTP = 116.110*32 + 9445.157*0.0 = 3715.52 → int64(3715)
+	assert.Equal(t, int64(3715), result, "empty batch regression anchor: β₀·numLayers overhead")
 }
 
 func TestCrossModelLatencyModel_StepTime_Monotonic_Decode(t *testing.T) {
