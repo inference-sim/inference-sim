@@ -89,14 +89,14 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 				dRouted = float64(config.MoEExpertFFNDim)
 			}
 
-			// Routed expert FLOPs: top_k active experts, 2-matrix MLP (up + down)
-			routedFLOPs := 2 * newT * (2 * dModel * dRouted) * topK * nLayers
+			// Routed expert FLOPs: top_k active experts, SwiGLU 3-matrix MLP (gate + up + down)
+			routedFLOPs := 2 * newT * (3 * dModel * dRouted) * topK * nLayers
 
 			// Shared expert FLOPs (always active, every token)
 			var sharedFLOPs float64
 			if config.SharedExpertFFNDim > 0 {
 				dShared := float64(config.SharedExpertFFNDim)
-				sharedFLOPs = 2 * newT * (2 * dModel * dShared) * nLayers
+				sharedFLOPs = 2 * newT * (3 * dModel * dShared) * nLayers
 			}
 
 			// Gate (router) FLOPs: linear projection → E logits per layer
@@ -104,8 +104,8 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 
 			flops["gemm_ops"] += routedFLOPs + sharedFLOPs + gateFLOPs
 		} else {
-			// Dense MLP: 2-matrix (up + down projections), matching llm-optimizer
-			flops["gemm_ops"] += 2 * newT * (2 * dModel * dFF) * nLayers
+			// Dense MLP: SwiGLU 3-matrix (gate + up + down projections)
+			flops["gemm_ops"] += 2 * newT * (3 * dModel * dFF) * nLayers
 		}
 	}
 
@@ -158,13 +158,13 @@ func calculateMemoryAccessBytes(
 			dRouted = float64(config.MoEExpertFFNDim)
 		}
 
-		// Active routed expert weights (per step, only top_k loaded), 2-matrix MLP
-		routedWeights := topK * (2 * dModel * dRouted)
+		// Active routed expert weights (per step, only top_k loaded), SwiGLU 3-matrix MLP
+		routedWeights := topK * (3 * dModel * dRouted)
 
 		// Shared expert weights (always loaded)
 		var sharedWeights float64
 		if config.SharedExpertFFNDim > 0 {
-			sharedWeights = 2 * dModel * float64(config.SharedExpertFFNDim)
+			sharedWeights = 3 * dModel * float64(config.SharedExpertFFNDim)
 		}
 
 		// Gate weights: dModel × numExperts
@@ -172,8 +172,8 @@ func calculateMemoryAccessBytes(
 
 		mlpWeightsPerLayer = routedWeights + sharedWeights + gateWeights
 	} else {
-		// Dense MLP weights: 2-matrix (up + down), matching llm-optimizer
-		mlpWeightsPerLayer = 2 * dModel * dFF
+		// Dense MLP weights: SwiGLU 3-matrix (gate + up + down)
+		mlpWeightsPerLayer = 3 * dModel * dFF
 	}
 
 	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer
