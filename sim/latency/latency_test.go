@@ -464,8 +464,8 @@ func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T
 	}
 }
 
-// TestAllBackends_StepTime_EmptyBatch_FloorAtOne verifies BC-2:
-// all backends must return >= 1 for empty batch, even with zero coefficients.
+// TestAllBackends_StepTime_EmptyBatch_FloorAtOne verifies the LatencyModel
+// interface contract: all backends must return >= 1 for empty batch, even with zero coefficients.
 func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
 	emptyBatch := []*sim.Request{}
 
