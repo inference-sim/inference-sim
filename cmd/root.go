@@ -377,13 +377,13 @@ var runCmd = &cobra.Command{
 					"Roofline step time estimates may be inaccurate for quantized models",
 					modelConfig.BytesPerParam)
 			}
-			// Check for MoE model indicators in the raw HF config (roofline-only warning;
-			// crossmodel handles MoE explicitly via the beta2 dispatch term)
-			if backend == "roofline" {
-				if hfConfig.MustGetInt("num_local_experts", 0) > 1 {
-					logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
-						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
-				}
+			// MoE informational note: roofline now models per-expert FLOPs, active
+			// weights, shared experts, and gate overhead. Remaining approximations:
+			// no expert-load-imbalance or MoE dispatch communication overhead.
+			if backend == "roofline" && modelConfig.NumLocalExperts > 1 {
+				logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). "+
+					"Roofline models per-expert FLOPs and active weights; dispatch overhead is not modeled",
+					modelConfig.NumLocalExperts, modelConfig.NumExpertsPerTok)
 			}
 
 			// KV capacity auto-calculation: derive total-kv-blocks from model + hardware
