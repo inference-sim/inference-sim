@@ -29,6 +29,7 @@ type ClusterSimulator struct {
 	admissionPolicy      sim.AdmissionPolicy
 	snapshotProvider     SnapshotProvider
 	routingPolicy        sim.RoutingPolicy
+	decodeRoutingPolicy  sim.RoutingPolicy      // separate instance for decode pool (C3 fix)
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
@@ -170,6 +171,7 @@ func newDisaggregatedClusterSimulator(config DeploymentConfig, requests []*sim.R
 		admissionPolicy:         sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
 		snapshotProvider:        NewCachedSnapshotProvider(allMap, obsCfg),
 		routingPolicy:           sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
+		decodeRoutingPolicy:    sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
 		trace:                   simTrace,
 		inFlightRequests:        make(map[string]int, totalInstances),
 		prefillInstances:        prefillInstances,
@@ -307,9 +309,14 @@ func (c *ClusterSimulator) Run() error {
 					if transferLatency < c.kvTransferBase { // overflow from addition
 						transferLatency = math.MaxInt64
 					}
+					// C4 fix: guard c.clock + transferLatency against integer overflow.
+					handoffTime := c.clock + transferLatency
+					if handoffTime < c.clock {
+						handoffTime = math.MaxInt64
+					}
 					heap.Push(&c.clusterEvents, clusterEventEntry{
 						event: &HandoffEvent{
-							time:    c.clock + transferLatency,
+							time:    handoffTime,
 							request: req,
 						},
 						seqID: c.nextSeqID(),

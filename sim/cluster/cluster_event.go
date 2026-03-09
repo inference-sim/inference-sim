@@ -253,7 +253,7 @@ func (e *DecodeRoutingDecisionEvent) Priority() int    { return 4 }
 // Execute routes the request to a decode instance and injects it for decode processing.
 func (e *DecodeRoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 	state := buildRouterStateForPool(cs, cs.decodeInstances, cs.decodeSnapshotProvider)
-	decision := cs.routingPolicy.Route(e.request, state)
+	decision := cs.decodeRoutingPolicy.Route(e.request, state)
 	logrus.Debugf("[cluster] decode-route req %s → instance %s", e.request.ID, decision.TargetInstance)
 
 	// Apply cluster-level priority hint if set by routing policy (I5 fix, R23 parity)

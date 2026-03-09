@@ -457,6 +457,11 @@ func (sim *Simulator) ExtractPrefillCompleted() []*Request {
 			// Release KV blocks (will be re-allocated on decode instance)
 			sim.KVCache.ReleaseKVBlocks(req)
 			delete(sim.reqNumComputedTokens, req.ID)
+			// C1 fix: remove prefill's Metrics.Requests entry so the decode
+			// instance creates the authoritative one (correct HandledBy).
+			// TTFT/SchedulingDelay maps are intentionally kept — the decode
+			// instance doesn't re-record them.
+			delete(sim.Metrics.Requests, req.ID)
 
 			// Keep State = StateRunning (still in-flight from cluster perspective)
 			extracted = append(extracted, req)

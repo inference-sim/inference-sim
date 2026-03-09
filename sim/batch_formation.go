@@ -115,8 +115,32 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	}
 
 	// Phase 2: Dequeue new requests from wait queue
-	for len(result.RunningBatch.Requests) < int(ctx.MaxRunningReqs) && ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
+	for len(result.RunningBatch.Requests) < int(ctx.MaxRunningReqs) && ctx.WaitQ.Len() > 0 && !result.PreemptionHappened {
 		next := ctx.WaitQ.Peek()
+
+		// C2 fix: decode-injected requests (HandoffTime > 0) only need KV block
+		// allocation (memory transfer), not compute budget. Skip token budget
+		// charging so they don't starve other requests.
+		if next.HandoffTime > 0 {
+			endIndex := util.Len64(next.InputTokens)
+			if ok := ctx.KVCache.AllocateKVBlocks(next, 0, endIndex, []int64{}); !ok {
+				break
+			}
+			ctx.WaitQ.DequeueBatch()
+			result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
+			next.ScheduledStepIdx = ctx.StepCount
+			result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{
+				Request: next,
+			})
+			next.State = StateRunning
+			next.NumNewTokens = 0
+			ctx.ComputedTokens[next.ID] = endIndex
+			continue
+		}
+
+		if tokenBudget <= 0 {
+			break
+		}
 
 		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.InputTokens)
 		numNewTokens := util.Len64(next.InputTokens) - util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
