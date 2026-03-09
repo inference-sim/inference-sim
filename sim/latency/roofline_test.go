@@ -181,6 +181,9 @@ func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *t
 }
 
 // testHardwareCalib returns an H100-like hardware config for roofline tests.
+// Note: BwEffConstant, TOverheadMicros, PerLayerOverhead, AllReduceLatency are
+// present for struct completeness and ValidateRooflineConfig but are NOT consumed
+// by rooflineStepTime() (single-crossover model uses raw peak bandwidth, no overheads).
 func testHardwareCalib() sim.HardwareCalib {
 	return sim.HardwareCalib{
 		TFlopsPeak:       989.0,
@@ -269,17 +272,16 @@ func TestRooflineStepTime_Smoke_ValidInputsProducePositiveFiniteResult(t *testin
 	}
 }
 
-func TestRooflineStepTime_EmptyStep_ReturnsOverheadOnly(t *testing.T) {
-	// Edge case: no requests should still return overhead (non-zero due to TOverheadMicros)
+func TestRooflineStepTime_EmptyStep_ReturnsZero(t *testing.T) {
+	// No requests = no work = 0 µs (no overhead terms in llm-optimizer model)
 	mc := testModelConfig()
 	hc := testHardwareCalib()
 
 	step := StepConfig{} // empty
 	result := rooflineStepTime(mc, hc, step, 1)
 
-	// Should be approximately TOverheadMicros (50) + layer overhead
-	if result <= 0 {
-		t.Errorf("empty step should still have overhead latency, got %d µs", result)
+	if result != 0 {
+		t.Errorf("empty step should return 0 µs, got %d µs", result)
 	}
 }
 
@@ -552,8 +554,48 @@ func TestRooflineStepTime_MoE_TPScaling(t *testing.T) {
 	}
 }
 
-func TestRooflineStepTime_Dense_RegressionAnchor(t *testing.T) {
-	// BC-10: Dense model step time must not change after MoE changes
+func TestRooflineStepTime_SingleCrossover_MemoryBoundDecode(t *testing.T) {
+	// llm-optimizer physics: memory-bound step time = total_bytes / peak_bandwidth
+	// No bandwidth haircut, no overhead terms, single crossover (not dual ceiling).
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+
+	// Single decode request — decode is memory-bound on H100
+	step := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
+	}
+	result := rooflineStepTime(mc, hc, step, 1)
+
+	// Compute expected: weights + KV + activations, all at raw peak bandwidth
+	peakBW := hc.BwPeakTBs * 1e12
+	peakFlops := hc.TFlopsPeak * 1e12
+
+	baseMem := calculateMemoryAccessBytes(mc, 0, 0, false)
+	dynamicMem := calculateMemoryAccessBytes(mc, 512, 1, true)
+	totalBytes := baseMem["model_weights"] + (dynamicMem["total"] - dynamicMem["model_weights"])
+
+	flops := calculateTransformerFlops(mc, 512, 1, true, true)
+	totalFlops := flops["total"]
+
+	computeS := totalFlops / (peakFlops * hc.MfuDecode)
+	memoryS := totalBytes / peakBW
+
+	// Decode should be memory-bound (verify assumption)
+	if computeS >= memoryS {
+		t.Skipf("decode is compute-bound with this config, skipping memory-bound test")
+	}
+
+	expectedMicros := int64(math.Round(memoryS * 1e6))
+	if result != expectedMicros {
+		t.Errorf("expected %d µs (total_bytes/peak_bw), got %d µs (delta=%d)",
+			expectedMicros, result, result-expectedMicros)
+	}
+}
+
+func TestRooflineStepTime_Dense_PositiveAndTPScaling(t *testing.T) {
+	// Dense model: positive step times and TP=2 < TP=1 (invariant, not pinned values)
 	mc := testModelConfig()
 	hc := testHardwareCalib()
 

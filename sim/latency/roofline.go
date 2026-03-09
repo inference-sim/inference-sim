@@ -216,6 +216,11 @@ func calculateMemoryAccessBytes(
 }
 
 // rooflineStepTime computes step latency using the roofline model.
+//
+// Uses single-crossover roofline (llm-optimizer style): for each phase,
+// step_time = max(total_flops / (peak * MFU), total_bytes / peak_bandwidth).
+// No bandwidth haircut, no overhead terms.
+//
 // Precondition: ValidateRooflineConfig(modelConfig, hwConfig) must return nil
 // and tp must be > 0. Callers must validate before first call.
 func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, stepConfig StepConfig, tp int) int64 {
@@ -223,70 +228,55 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	tpFactor := float64(tp)
 	peakFlops := hwConfig.TFlopsPeak * 1e12
 	peakBW := hwConfig.BwPeakTBs * 1e12
-	effBW := peakBW * hwConfig.BwEffConstant
-	vectorPeak := peakFlops * 0.10 // Non-tensor core ops
 
-	var prefillComputeS, prefillMemoryS float64
-	var decodeComputeS, decodeMemoryS float64
+	var prefillTimeS, decodeTimeS float64
 
-	// 1. PREFILL PHASE (Calculated as a single batched operation)
+	// 1. PREFILL PHASE
 	if len(stepConfig.PrefillRequests) > 0 {
-		var pGemmFlops, pVectorFlops, pDynamicBytes float64
+		var pTotalFlops, pDynamicBytes float64
 
 		for _, req := range stepConfig.PrefillRequests {
 			numTokens := int64(req.NumNewPrefillTokens)
 
 			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
-			pGemmFlops += f["gemm_ops"] / tpFactor
-			pVectorFlops += f["sram_ops"] / tpFactor
+			pTotalFlops += f["total"] / tpFactor
 
 			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
 			pDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
 		}
 
-		// Prefill Roofline: Weights + KV Cache are loaded once for the whole chunk
 		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
 		pWeightBytes := baseMem["model_weights"] / tpFactor
 
-		prefillComputeS = (pGemmFlops / (peakFlops * hwConfig.MfuPrefill)) + (pVectorFlops / vectorPeak)
-		prefillMemoryS = (pWeightBytes + pDynamicBytes) / effBW
+		pComputeS := pTotalFlops / (peakFlops * hwConfig.MfuPrefill)
+		pMemoryS := (pWeightBytes + pDynamicBytes) / peakBW
+
+		prefillTimeS = math.Max(pComputeS, pMemoryS)
 	}
 
-	// 2. DECODE PHASE (Calculated as a single batched step)
+	// 2. DECODE PHASE
 	if len(stepConfig.DecodeRequests) > 0 {
-		var dGemmFlops, dVectorFlops, dDynamicBytes float64
+		var dTotalFlops, dDynamicBytes float64
 
 		for _, req := range stepConfig.DecodeRequests {
 			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
-			dGemmFlops += f["gemm_ops"] / tpFactor
-			dVectorFlops += f["sram_ops"] / tpFactor
+			dTotalFlops += f["total"] / tpFactor
 
 			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
 			dDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
 		}
 
-		// Decode Roofline: Every step must reload the weights
 		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
 		dWeightBytes := baseMem["model_weights"] / tpFactor
 
-		decodeComputeS = (dGemmFlops / (peakFlops * hwConfig.MfuDecode)) + (dVectorFlops / vectorPeak)
-		decodeMemoryS = (dWeightBytes + dDynamicBytes) / effBW
+		dComputeS := dTotalFlops / (peakFlops * hwConfig.MfuDecode)
+		dMemoryS := (dWeightBytes + dDynamicBytes) / peakBW
+
+		decodeTimeS = math.Max(dComputeS, dMemoryS)
 	}
 
-	// 3. COMBINE AND ADD OVERHEADS
-	// We take the Max (bottleneck) for each phase independently
-	stepHardwareS := math.Max(prefillComputeS, prefillMemoryS) + math.Max(decodeComputeS, decodeMemoryS)
-
-	// Parallelism & Launch Overheads
-	layerFloorS := (float64(modelConfig.NumLayers) * hwConfig.PerLayerOverhead) / 1e6
-
-	commOverheadS := 0.0
-	if tp > 1 {
-		// TP synchronization happens per layer
-		commOverheadS = (float64(modelConfig.NumLayers) * 2 * hwConfig.AllReduceLatency) / 1e6
-	}
-
-	totalMicros := (stepHardwareS * 1e6) + (layerFloorS * 1e6) + (commOverheadS * 1e6) + hwConfig.TOverheadMicros
+	// 3. COMBINE (no overhead terms)
+	totalMicros := (prefillTimeS + decodeTimeS) * 1e6
 
 	return int64(math.Round(totalMicros))
 }
