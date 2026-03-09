@@ -49,7 +49,7 @@ func TestBlackboxLatencyModel_StepTime_MixedBatch_Positive(t *testing.T) {
 // TestBlackboxLatencyModel_StepTime_EmptyBatch verifies:
 // GIVEN an empty batch
 // WHEN StepTime is called
-// THEN the result MUST be non-negative (overhead-only baseline).
+// THEN the result MUST be >= 1 (LatencyModel interface contract: clock must advance).
 func TestBlackboxLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 	model := &BlackboxLatencyModel{
 		betaCoeffs:  []float64{1000, 10, 5},
@@ -58,10 +58,8 @@ func TestBlackboxLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 
 	result := model.StepTime([]*sim.Request{})
 
-	// THEN overhead-only baseline is non-negative
-	if result < 0 {
-		t.Errorf("StepTime(empty) = %d, want >= 0", result)
-	}
+	// THEN empty batch produces StepTime >= 1 (interface contract: clock must advance)
+	assert.GreaterOrEqual(t, result, int64(1), "empty batch must return >= 1 per LatencyModel contract")
 }
 
 // TestBlackboxLatencyModel_QueueingTime_Positive verifies:
@@ -187,10 +185,8 @@ func TestRooflineLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 
 	emptyResult := model.StepTime([]*sim.Request{})
 
-	// THEN empty batch result must be non-negative (overhead only)
-	if emptyResult < 0 {
-		t.Errorf("StepTime(empty) = %d, want >= 0", emptyResult)
-	}
+	// THEN empty batch result must be >= 1 (interface contract: clock must advance)
+	assert.GreaterOrEqual(t, emptyResult, int64(1), "empty batch must return >= 1 per LatencyModel contract")
 
 	// AND a non-empty batch must produce a longer step time
 	nonEmptyBatch := []*sim.Request{
@@ -466,4 +462,28 @@ func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T
 	if rooflineWith != rooflineEmpty {
 		t.Errorf("roofline: zero-output request should not change step time: with=%d empty=%d", rooflineWith, rooflineEmpty)
 	}
+}
+
+// TestAllBackends_StepTime_EmptyBatch_FloorAtOne verifies the LatencyModel
+// interface contract: all backends must return >= 1 for empty batch, even with zero coefficients.
+func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
+	emptyBatch := []*sim.Request{}
+
+	blackbox := &BlackboxLatencyModel{
+		betaCoeffs:  []float64{0, 0, 0}, // zero coefficients — worst case
+		alphaCoeffs: []float64{0, 0, 0},
+	}
+	assert.GreaterOrEqual(t, blackbox.StepTime(emptyBatch), int64(1),
+		"blackbox with zero coefficients must still return >= 1")
+
+	crossmodel := &CrossModelLatencyModel{
+		betaCoeffs:  []float64{0, 0, 0, 0}, // zero coefficients — worst case
+		alphaCoeffs: []float64{0, 0, 0},
+		numLayers:   1,
+		kvDimScaled: 0.0,
+		isMoE:       0.0,
+		isTP:        0.0,
+	}
+	assert.GreaterOrEqual(t, crossmodel.StepTime(emptyBatch), int64(1),
+		"crossmodel with zero coefficients must still return >= 1")
 }

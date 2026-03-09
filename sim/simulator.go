@@ -356,6 +356,11 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
 	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()
 
+	// INV-3 defense-in-depth: guarantee clock advancement regardless of backend.
+	// All LatencyModel implementations must return >= 1 per interface contract;
+	// this floor catches violations that would cause infinite livelock.
+	currStepAdvance = max(1, currStepAdvance)
+
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
 	// Note: TotalOutputTokens++ and TTFT metrics are recorded inline (not extracted to helpers)

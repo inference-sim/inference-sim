@@ -7,6 +7,8 @@ package sim
 type LatencyModel interface {
 	// StepTime estimates the duration of one batch step given the running batch.
 	// Precondition: each request in batch has NumNewTokens set by BatchFormation.FormBatch().
+	// Postcondition: return value >= 1 for all inputs (including empty batch).
+	// A return value of 0 would stall the simulation clock, violating INV-3 (clock monotonicity).
 	StepTime(batch []*Request) int64
 
 	// QueueingTime estimates the arrival-to-queue delay for a request.
