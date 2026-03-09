@@ -89,10 +89,12 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 
 	if includeMLP {
 		nMat := mlpMatrixCount(config.HiddenAct)
-		// Dense-equivalent MLP FLOPs: treats MoE same as dense (matching llm-optimizer).
-		// MoE-specific FLOPs (top_k scaling, shared experts, gate) are handled by
-		// the crossmodel backend; the roofline backend uses this simpler formula.
-		flops["gemm_ops"] += 2 * newT * (nMat * dModel * dFF) * nLayers
+		mlpFlopsPerLayer := 2 * newT * (nMat * dModel * dFF)
+		if config.NumLocalExperts > 1 {
+			// MoE: only top_k experts compute per token
+			mlpFlopsPerLayer *= float64(config.NumExpertsPerTok)
+		}
+		flops["gemm_ops"] += mlpFlopsPerLayer * nLayers
 	}
 
 	flops["total"] = flops["gemm_ops"] + flops["sram_ops"]
@@ -131,10 +133,13 @@ func calculateMemoryAccessBytes(
 	attnWeightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel)
 
 	nMat := mlpMatrixCount(config.HiddenAct)
-	// Dense-equivalent MLP weights: treats MoE same as dense (matching llm-optimizer).
-	// For TOTAL model weights (all E experts, used for GPU memory budgeting),
-	// see computeModelWeightBytes in kv_capacity.go.
 	mlpWeightsPerLayer := nMat * dModel * dFF
+	if config.NumLocalExperts > 1 {
+		// MoE: all E expert weights loaded from HBM per step (with batching,
+		// tokens route to all experts). For GPU memory budgeting (total model
+		// weights), see computeModelWeightBytes in kv_capacity.go.
+		mlpWeightsPerLayer *= float64(config.NumLocalExperts)
+	}
 
 	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer
 	mem["model_weights"] = weightsPerLayer * nLayers * config.BytesPerParam

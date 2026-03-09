@@ -322,23 +322,22 @@ func testDeepSeekV3Config() sim.ModelConfig {
 
 // --- Task 4: MoE FLOPs tests ---
 
-func TestCalculateTransformerFlops_MoE_DenseEquivalent(t *testing.T) {
-	// Roofline treats MoE same as dense (matching llm-optimizer).
-	// MoE fields are ignored; only IntermediateDim matters.
-	mc := testMixtralConfig()
+func TestCalculateTransformerFlops_MoE_TopKScaling(t *testing.T) {
+	// MoE MLP FLOPs scale by top_k (active experts per token)
+	mc := testMixtralConfig() // top_k=2, E=8
 
-	// MoE config
 	moeFlops := calculateTransformerFlops(mc, 0, 128, false, true)
 
-	// Equivalent dense config (same hidden/intermediate dims, no MoE fields)
 	dense := mc
 	dense.NumLocalExperts = 0
 	dense.NumExpertsPerTok = 0
 	denseFlops := calculateTransformerFlops(dense, 0, 128, false, true)
 
-	if moeFlops["gemm_ops"] != denseFlops["gemm_ops"] {
-		t.Errorf("MoE FLOPs should equal dense FLOPs: moe=%g, dense=%g",
-			moeFlops["gemm_ops"], denseFlops["gemm_ops"])
+	// MoE MLP FLOPs = top_k × dense MLP FLOPs
+	ratio := moeFlops["gemm_ops"] / denseFlops["gemm_ops"]
+	if math.Abs(ratio-float64(mc.NumExpertsPerTok)) > 0.01 {
+		t.Errorf("MoE FLOPs should be %dx dense: moe=%g, dense=%g, ratio=%g",
+			mc.NumExpertsPerTok, moeFlops["gemm_ops"], denseFlops["gemm_ops"], ratio)
 	}
 }
 
@@ -381,9 +380,9 @@ func TestCalculateTransformerFlops_Dense_UnchangedAfterMoE(t *testing.T) {
 
 // --- Task 5: MoE memory access tests ---
 
-func TestCalculateMemoryAccessBytes_MoE_DenseEquivalent(t *testing.T) {
-	// Roofline treats MoE same as dense (matching llm-optimizer).
-	mc := testMixtralConfig()
+func TestCalculateMemoryAccessBytes_MoE_AllExpertsLoaded(t *testing.T) {
+	// MoE weight bandwidth includes all E experts (all loaded from HBM per step)
+	mc := testMixtralConfig() // E=8
 	moeMem := calculateMemoryAccessBytes(mc, 512, 1, false)
 
 	dense := mc
@@ -391,8 +390,9 @@ func TestCalculateMemoryAccessBytes_MoE_DenseEquivalent(t *testing.T) {
 	dense.NumExpertsPerTok = 0
 	denseMem := calculateMemoryAccessBytes(dense, 512, 1, false)
 
-	if moeMem["model_weights"] != denseMem["model_weights"] {
-		t.Errorf("MoE weights should equal dense weights: moe=%g, dense=%g",
+	// MoE model_weights > dense (attention is same, MLP is E× larger)
+	if moeMem["model_weights"] <= denseMem["model_weights"] {
+		t.Errorf("MoE weights (%g) should exceed dense weights (%g)",
 			moeMem["model_weights"], denseMem["model_weights"])
 	}
 }
