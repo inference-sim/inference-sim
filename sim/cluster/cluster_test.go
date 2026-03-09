@@ -3,6 +3,7 @@ package cluster
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"sort"
@@ -514,7 +515,7 @@ func TestNewClusterSimulator_ZeroInstances_Panics(t *testing.T) {
 // WHEN InjectRequest() called
 // THEN panic.
 func TestInstanceSimulator_InjectAfterRun_Panics(t *testing.T) {
-	inst := NewInstanceSimulator("test", newTestDeploymentConfig(1).ToSimConfig())
+	inst := NewInstanceSimulator("test", newTestDeploymentConfig(1).ToSimConfig(), RoleMixed)
 	inst.Run()
 
 	defer func() {
@@ -1551,4 +1552,259 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 			t.Error("expected some rejections with token-bucket(cap=500,refill=300) at rate=200, got 0")
 		}
 	})
+}
+
+// --- Disaggregated Serving Tests ---
+
+// newDisagDeploymentConfig creates a DeploymentConfig for disaggregated mode tests.
+func newDisagDeploymentConfig(numPrefill, numDecode int) DeploymentConfig {
+	return DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             100_000_000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, ""),
+		},
+		NumInstances:           1, // ignored in disaggregated mode
+		ServingMode:            "disaggregated",
+		NumPrefillInstances:    numPrefill,
+		NumDecodeInstances:     numDecode,
+		KVTransferPerToken:     5,
+		DisagKVTransferBaseLat: 1000,
+	}
+}
+
+// TestDisaggregated_BasicFlow verifies BC-2, BC-4, BC-5, BC-7:
+// all requests complete, TTFT includes handoff latency, INV-1 conservation holds.
+func TestDisaggregated_BasicFlow(t *testing.T) {
+	config := newDisagDeploymentConfig(2, 2)
+	requests := newTestRequests(20)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	agg := cs.AggregatedMetrics()
+
+	// INV-1: Request conservation — all requests should complete or be accounted for
+	conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
+	if conservation != len(requests) {
+		t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
+			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable,
+			conservation, len(requests))
+	}
+
+	// Sanity: some requests should complete (horizon is large enough)
+	if agg.CompletedRequests == 0 {
+		t.Error("expected some completed requests in disaggregated mode")
+	}
+
+	// TTFT should be positive for completed requests (includes handoff)
+	for id, ttft := range agg.RequestTTFTs {
+		if ttft <= 0 {
+			t.Errorf("expected positive TTFT for %s, got %.2f", id, ttft)
+		}
+	}
+
+	// Verify instances have correct roles
+	for _, inst := range cs.Instances() {
+		role := inst.Role()
+		if role != RolePrefill && role != RoleDecode {
+			t.Errorf("instance %s has unexpected role %q", inst.ID(), role)
+		}
+	}
+}
+
+// TestDisaggregated_ShortRequestCompletesOnPrefill verifies BC-3:
+// requests with 0 or 1 output tokens complete on the prefill instance (no handoff).
+func TestDisaggregated_ShortRequestCompletesOnPrefill(t *testing.T) {
+	config := newDisagDeploymentConfig(1, 1)
+
+	// Create requests with exactly 1 output token (should NOT be extracted)
+	requests := make([]*sim.Request, 3)
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("short_%d", i),
+			InputTokens:  make([]int, 32),
+			OutputTokens: make([]int, 1), // <=1 output token → no extraction
+			ArrivalTime:  int64(i) * 1_000_000,
+			State:        sim.StateQueued,
+		}
+	}
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	agg := cs.AggregatedMetrics()
+
+	// All short requests should complete
+	if agg.CompletedRequests != 3 {
+		t.Errorf("expected 3 completed, got %d", agg.CompletedRequests)
+	}
+
+	// Prefill instance should have completions (decode should have 0)
+	prefillCompleted := 0
+	decodeCompleted := 0
+	for _, inst := range cs.Instances() {
+		if inst.Role() == RolePrefill {
+			prefillCompleted += inst.Metrics().CompletedRequests
+		} else {
+			decodeCompleted += inst.Metrics().CompletedRequests
+		}
+	}
+	if prefillCompleted != 3 {
+		t.Errorf("expected 3 completions on prefill, got %d", prefillCompleted)
+	}
+	if decodeCompleted != 0 {
+		t.Errorf("expected 0 completions on decode, got %d", decodeCompleted)
+	}
+}
+
+// TestDisaggregated_PerPoolConfigOverrides verifies BC-9:
+// prefill and decode pools use different config overrides.
+func TestDisaggregated_PerPoolConfigOverrides(t *testing.T) {
+	config := newDisagDeploymentConfig(1, 1)
+	config.PrefillMaxScheduledTokens = 4096
+	config.DecodeMaxRunningReqs = 128
+	config.DecodeKVBlocks = 5000
+
+	// Verify config generation
+	prefillCfg := config.ToPrefillSimConfig()
+	decodeCfg := config.ToDecodeSimConfig()
+
+	if prefillCfg.MaxScheduledTokens != 4096 {
+		t.Errorf("prefill MaxScheduledTokens = %d, want 4096", prefillCfg.MaxScheduledTokens)
+	}
+	if decodeCfg.MaxRunningReqs != 128 {
+		t.Errorf("decode MaxRunningReqs = %d, want 128", decodeCfg.MaxRunningReqs)
+	}
+	if decodeCfg.TotalKVBlocks != 5000 {
+		t.Errorf("decode TotalKVBlocks = %d, want 5000", decodeCfg.TotalKVBlocks)
+	}
+
+	// Base values should be preserved when no override
+	if prefillCfg.MaxRunningReqs != config.MaxRunningReqs {
+		t.Errorf("prefill MaxRunningReqs should use base value %d, got %d",
+			config.MaxRunningReqs, prefillCfg.MaxRunningReqs)
+	}
+
+	// Run simulation to verify no panics with overridden configs
+	requests := newTestRequests(10)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+}
+
+// TestDisaggregated_Determinism verifies INV-6:
+// same seed produces identical results in disaggregated mode.
+func TestDisaggregated_Determinism(t *testing.T) {
+	config := newDisagDeploymentConfig(2, 2)
+	requests1 := newTestRequests(15)
+	requests2 := newTestRequests(15)
+
+	cs1 := NewClusterSimulator(config, requests1)
+	mustRun(t, cs1)
+
+	cs2 := NewClusterSimulator(config, requests2)
+	mustRun(t, cs2)
+
+	agg1 := cs1.AggregatedMetrics()
+	agg2 := cs2.AggregatedMetrics()
+
+	if agg1.CompletedRequests != agg2.CompletedRequests {
+		t.Errorf("determinism broken: completed %d vs %d", agg1.CompletedRequests, agg2.CompletedRequests)
+	}
+	if agg1.TotalOutputTokens != agg2.TotalOutputTokens {
+		t.Errorf("determinism broken: output tokens %d vs %d", agg1.TotalOutputTokens, agg2.TotalOutputTokens)
+	}
+}
+
+// TestDisaggregated_MixedModeUnchanged verifies BC-1:
+// "mixed" serving mode behaves identically to default (no disaggregated code paths active).
+func TestDisaggregated_MixedModeUnchanged(t *testing.T) {
+	requests1 := newTestRequests(20)
+	requests2 := newTestRequests(20)
+
+	// Default config (no serving mode specified)
+	defaultConfig := newTestDeploymentConfig(2)
+	defaultConfig.Horizon = 50_000_000
+	cs1 := NewClusterSimulator(defaultConfig, requests1)
+	mustRun(t, cs1)
+
+	// Explicit "mixed" mode
+	mixedConfig := newTestDeploymentConfig(2)
+	mixedConfig.Horizon = 50_000_000
+	mixedConfig.ServingMode = "mixed"
+	cs2 := NewClusterSimulator(mixedConfig, requests2)
+	mustRun(t, cs2)
+
+	// Results should be identical
+	agg1 := cs1.AggregatedMetrics()
+	agg2 := cs2.AggregatedMetrics()
+
+	if agg1.CompletedRequests != agg2.CompletedRequests {
+		t.Errorf("mixed mode diverges from default: completed %d vs %d",
+			agg1.CompletedRequests, agg2.CompletedRequests)
+	}
+	if agg1.TotalInputTokens != agg2.TotalInputTokens {
+		t.Errorf("mixed mode diverges from default: input tokens %d vs %d",
+			agg1.TotalInputTokens, agg2.TotalInputTokens)
+	}
+	if agg1.TotalOutputTokens != agg2.TotalOutputTokens {
+		t.Errorf("mixed mode diverges from default: output tokens %d vs %d",
+			agg1.TotalOutputTokens, agg2.TotalOutputTokens)
+	}
+}
+
+// TestValidateDisaggregated_Errors verifies validation catches invalid configs.
+func TestValidateDisaggregated_Errors(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  DeploymentConfig
+		wantErr bool
+	}{
+		{
+			name:    "mixed mode is valid",
+			config:  DeploymentConfig{ServingMode: "mixed"},
+			wantErr: false,
+		},
+		{
+			name:    "empty serving mode is valid",
+			config:  DeploymentConfig{},
+			wantErr: false,
+		},
+		{
+			name:    "unknown serving mode",
+			config:  DeploymentConfig{ServingMode: "unknown"},
+			wantErr: true,
+		},
+		{
+			name:    "disaggregated without prefill instances",
+			config:  DeploymentConfig{ServingMode: "disaggregated", NumPrefillInstances: 0, NumDecodeInstances: 1},
+			wantErr: true,
+		},
+		{
+			name:    "disaggregated without decode instances",
+			config:  DeploymentConfig{ServingMode: "disaggregated", NumPrefillInstances: 1, NumDecodeInstances: 0},
+			wantErr: true,
+		},
+		{
+			name:    "disaggregated with valid counts",
+			config:  DeploymentConfig{ServingMode: "disaggregated", NumPrefillInstances: 2, NumDecodeInstances: 3},
+			wantErr: false,
+		},
+		{
+			name:    "negative transfer per token",
+			config:  DeploymentConfig{ServingMode: "disaggregated", NumPrefillInstances: 1, NumDecodeInstances: 1, KVTransferPerToken: -1},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.config.ValidateDisaggregated()
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ValidateDisaggregated() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
 }

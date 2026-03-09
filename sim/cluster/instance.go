@@ -16,21 +16,32 @@ import (
 // Uses distinct type (not alias) to prevent accidental string mixing.
 type InstanceID string
 
+// InstanceRole identifies an instance's role in a disaggregated cluster.
+type InstanceRole string
+
+const (
+	RoleMixed   InstanceRole = "mixed"   // default, handles both prefill and decode
+	RolePrefill InstanceRole = "prefill" // prefill-only instance
+	RoleDecode  InstanceRole = "decode"  // decode-only instance
+)
+
 // InstanceSimulator wraps a Simulator for use in multi-replica clusters.
 // Provides an interception point for cluster-level coordination.
 //
 // Thread-safety: NOT thread-safe. All methods must be called from the same goroutine.
 type InstanceSimulator struct {
 	id     InstanceID
+	role   InstanceRole
 	sim    *sim.Simulator
 	hasRun bool
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
+// Role defaults to RoleMixed for backward compatibility.
 //
 // Thread-safety: NOT thread-safe. Must be called from single goroutine.
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
-func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
+func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig, role InstanceRole) *InstanceSimulator {
 	// Create KV store (single-tier or tiered based on config)
 	kvStore := kv.NewKVStore(cfg.KVCacheConfig)
 	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -42,8 +53,9 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
 	}
 	return &InstanceSimulator{
-		id:  id,
-		sim: s,
+		id:   id,
+		role: role,
+		sim:  s,
 	}
 }
 
@@ -141,4 +153,21 @@ func (i *InstanceSimulator) CacheHitRate() float64 {
 // Unlike InjectRequest, this does NOT check hasRun, allowing injection during simulation.
 func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int64) {
 	i.sim.InjectArrivalAt(req, eventTime)
+}
+
+// Role returns the instance's role in a disaggregated cluster.
+func (i *InstanceSimulator) Role() InstanceRole {
+	return i.role
+}
+
+// ExtractPrefillCompleted delegates to sim.Simulator.ExtractPrefillCompleted().
+// Returns requests that completed prefill and need handoff to a decode instance.
+func (i *InstanceSimulator) ExtractPrefillCompleted() []*sim.Request {
+	return i.sim.ExtractPrefillCompleted()
+}
+
+// InjectForDecode delegates to sim.Simulator.InjectForDecode().
+// Injects a prefill-completed request into this decode instance.
+func (i *InstanceSimulator) InjectForDecode(req *sim.Request, eventTime int64) {
+	i.sim.InjectForDecode(req, eventTime)
 }

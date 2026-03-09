@@ -17,7 +17,7 @@ func newTestInstance(id InstanceID, totalKVBlocks int64) *InstanceSimulator {
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, ""),
 	}
-	return NewInstanceSimulator(id, cfg)
+	return NewInstanceSimulator(id, cfg, RoleMixed)
 }
 
 // TestSnapshot_Immutability verifies BC-5, NC-2:

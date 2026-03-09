@@ -52,6 +52,7 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, ""),
 				},
+				RoleMixed,
 			)
 
 			requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
@@ -106,6 +107,7 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, ""),
 				},
+				RoleMixed,
 			)
 
 			requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
@@ -156,8 +158,8 @@ func TestInstanceSimulator_Determinism(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.Horizon = 10_000_000
 
-	instance1 := NewInstanceSimulator(InstanceID("run1"), cfg)
-	instance2 := NewInstanceSimulator(InstanceID("run2"), cfg)
+	instance1 := NewInstanceSimulator(InstanceID("run1"), cfg, RoleMixed)
+	instance2 := NewInstanceSimulator(InstanceID("run2"), cfg, RoleMixed)
 
 	// Inject identical requests into both instances
 	requests := newTestRequests(20)
@@ -199,7 +201,7 @@ func TestInstanceSimulator_ID_ReturnsConstructorValue(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 1000
-	instance := NewInstanceSimulator(InstanceID("replica-0"), cfg)
+	instance := NewInstanceSimulator(InstanceID("replica-0"), cfg, RoleMixed)
 
 	if instance.ID() != InstanceID("replica-0") {
 		t.Errorf("ID() = %q, want %q", instance.ID(), "replica-0")
@@ -209,7 +211,7 @@ func TestInstanceSimulator_ID_ReturnsConstructorValue(t *testing.T) {
 func TestInstanceSimulator_Clock_AdvancesWithSimulation(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.Horizon = 10_000_000
-	instance := NewInstanceSimulator(InstanceID("test"), cfg)
+	instance := NewInstanceSimulator(InstanceID("test"), cfg, RoleMixed)
 
 	// Inject requests before Run (workload is now external)
 	for i, req := range newTestRequests(5) {
@@ -231,7 +233,7 @@ func TestInstanceSimulator_Clock_AdvancesWithSimulation(t *testing.T) {
 func TestInstanceSimulator_Metrics_DelegatesCorrectly(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.Horizon = 10_000_000
-	instance := NewInstanceSimulator(InstanceID("test"), cfg)
+	instance := NewInstanceSimulator(InstanceID("test"), cfg, RoleMixed)
 
 	// Inject requests before Run (workload is now external)
 	for i, req := range newTestRequests(5) {
@@ -253,7 +255,7 @@ func TestInstanceSimulator_Horizon_ReturnsConstructorValue(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.Horizon = 5000000
 	cfg.TotalKVBlocks = 1000
-	instance := NewInstanceSimulator(InstanceID("test"), cfg)
+	instance := NewInstanceSimulator(InstanceID("test"), cfg, RoleMixed)
 
 	if instance.Horizon() != 5000000 {
 		t.Errorf("Horizon() = %d, want %d", instance.Horizon(), 5000000)
@@ -266,7 +268,7 @@ func TestInstanceSimulator_EmptyID_Valid(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 1000
-	instance := NewInstanceSimulator(InstanceID(""), cfg)
+	instance := NewInstanceSimulator(InstanceID(""), cfg, RoleMixed)
 
 	if instance.ID() != InstanceID("") {
 		t.Errorf("ID() = %q, want empty string", instance.ID())
@@ -277,7 +279,7 @@ func TestInstanceSimulator_ZeroRequests(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 1000
-	instance := NewInstanceSimulator(InstanceID("test"), cfg)
+	instance := NewInstanceSimulator(InstanceID("test"), cfg, RoleMixed)
 
 	instance.Run()
 
@@ -290,7 +292,7 @@ func TestInstanceSimulator_RunOnce_PanicsOnSecondCall(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 1000
-	instance := NewInstanceSimulator(InstanceID("test"), cfg)
+	instance := NewInstanceSimulator(InstanceID("test"), cfg, RoleMixed)
 
 	instance.Run()
 
@@ -341,7 +343,7 @@ func TestInstanceSimulator_ObservationMethods(t *testing.T) {
 			cfg := newTestInstanceSimConfig()
 			cfg.Horizon = 1000000
 			cfg.TotalKVBlocks = tc.totalKVBlocks
-			inst := NewInstanceSimulator("obs-test", cfg)
+			inst := NewInstanceSimulator("obs-test", cfg, RoleMixed)
 
 			if got := inst.QueueDepth(); got != tc.wantQueueDepth {
 				t.Errorf("QueueDepth() = %d, want %d", got, tc.wantQueueDepth)
@@ -364,7 +366,7 @@ func TestInstanceSimulator_BatchSize_NilRunningBatch(t *testing.T) {
 	cfg := newTestInstanceSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 100
-	inst := NewInstanceSimulator("nil-batch", cfg)
+	inst := NewInstanceSimulator("nil-batch", cfg, RoleMixed)
 
 	req := &sim.Request{
 		ID:           "req_0",
@@ -391,7 +393,7 @@ func TestInstanceSimulator_ProcessNextEvent_ReturnsEventsWithMonotonicTimestamps
 	cfg := newTestInstanceSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 100
-	inst := NewInstanceSimulator("return-test", cfg)
+	inst := NewInstanceSimulator("return-test", cfg, RoleMixed)
 	inst.hasRun = true
 
 	req := &sim.Request{
@@ -438,7 +440,7 @@ func TestInstanceSimulator_InjectRequestOnline(t *testing.T) {
 	cfg := newTestInstanceSimConfig()
 	cfg.Horizon = 1000000
 	cfg.TotalKVBlocks = 100
-	inst := NewInstanceSimulator("online-test", cfg)
+	inst := NewInstanceSimulator("online-test", cfg, RoleMixed)
 
 	inst.hasRun = true
 

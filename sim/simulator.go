@@ -377,6 +377,15 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			sim.Metrics.TTFTSum += req.FirstTokenTime // in microsec
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
 		}
+		// Disaggregated TTFT: first decode token on decode instance after handoff.
+		// Fires when TTFTSet was reset during extraction, first decode token generated,
+		// and HandoffTime confirms this is a disaggregated request.
+		if !req.TTFTSet && req.ProgressIndex > util.Len64(req.InputTokens) && req.HandoffTime > 0 {
+			req.TTFTSet = true
+			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
+			sim.Metrics.TTFTSum += req.FirstTokenTime
+			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+		}
 	}
 
 	// Record KV cache usage observations after execution
@@ -430,6 +439,114 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 		}
 	}
 	return remaining
+}
+
+// ExtractPrefillCompleted returns requests that completed prefill and need handoff to decode.
+// Removes them from RunningBatch, releases KV blocks, cleans up reqNumComputedTokens.
+// Requests with len(OutputTokens) <= 1 are NOT extracted (they complete on prefill instance).
+// Called by cluster layer after processing a step event on a prefill instance.
+func (sim *Simulator) ExtractPrefillCompleted() []*Request {
+	if sim.RunningBatch == nil {
+		return nil
+	}
+
+	var extracted []*Request
+	var remaining []*Request
+
+	for _, req := range sim.RunningBatch.Requests {
+		// Eligible for extraction: prefill just completed, TTFT was recorded, has decode work
+		if req.ProgressIndex == util.Len64(req.InputTokens) &&
+			req.TTFTSet &&
+			len(req.OutputTokens) > 1 {
+
+			// Release KV blocks (will be re-allocated on decode instance)
+			sim.KVCache.ReleaseKVBlocks(req)
+			delete(sim.reqNumComputedTokens, req.ID)
+
+			// Undo TTFT metrics (decode instance will record the real disaggregated TTFT)
+			sim.Metrics.TTFTSum -= req.FirstTokenTime
+			delete(sim.Metrics.RequestTTFTs, req.ID)
+
+			// Reset TTFT state so decode instance can set it
+			req.TTFTSet = false
+			req.FirstTokenTime = 0
+
+			// Keep State = StateRunning (still in-flight from cluster perspective)
+			extracted = append(extracted, req)
+		} else {
+			remaining = append(remaining, req)
+		}
+	}
+
+	if len(extracted) == 0 {
+		return nil
+	}
+
+	// Update running batch
+	if len(remaining) > 0 {
+		sim.RunningBatch.Requests = remaining
+	} else {
+		sim.RunningBatch = nil
+		sim.stepEvent = nil
+		// Work-conserving (INV-8): if WaitQ has pending requests, schedule a step
+		if sim.WaitQ.Len() > 0 {
+			pbe := StepEvent{time: sim.Clock}
+			sim.Schedule(&pbe)
+			sim.stepEvent = &pbe
+		}
+	}
+
+	return extracted
+}
+
+// InjectForDecode injects a prefill-completed request for decode processing.
+// Pre-allocates KV blocks for input tokens (simulating KV cache transfer),
+// adds request to RunningBatch, and schedules a StepEvent if needed.
+// Does NOT count TotalInputTokens (already counted on prefill instance).
+// If KV allocation fails, falls back to WaitQ.
+func (sim *Simulator) InjectForDecode(req *Request, eventTime int64) {
+	// Register request in Metrics.Requests (for per-request output)
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
+
+	// Try to allocate KV blocks for the input tokens (simulating transferred KV cache).
+	// Temporarily set ProgressIndex to 0 so AllocateKVBlocks uses the prefill path,
+	// then restore it (request has already completed prefill on the source instance).
+	savedProgress := req.ProgressIndex
+	req.ProgressIndex = 0
+	ok := sim.KVCache.AllocateKVBlocks(req, 0, util.Len64(req.InputTokens), []int64{})
+	req.ProgressIndex = savedProgress
+
+	if ok {
+		// Set computed tokens to cover input (prefill is done)
+		sim.reqNumComputedTokens[req.ID] = util.Len64(req.InputTokens)
+
+		// Add to running batch
+		if sim.RunningBatch == nil {
+			sim.RunningBatch = &Batch{}
+		}
+		sim.RunningBatch.Requests = append(sim.RunningBatch.Requests, req)
+
+		// Schedule StepEvent if none pending
+		if sim.stepEvent == nil {
+			pbe := StepEvent{time: eventTime}
+			sim.Schedule(&pbe)
+			sim.stepEvent = &pbe
+		}
+	} else {
+		// KV full — fall back to WaitQ; batch formation will re-allocate
+		logrus.Warnf("[tick %07d] InjectForDecode: KV allocation failed for request %s, falling back to WaitQ",
+			eventTime, req.ID)
+		req.State = StateQueued
+		sim.WaitQ.Enqueue(req)
+		// Do NOT increment TotalInputTokens — already counted on prefill instance
+
+		// Work-conserving (INV-8)
+		if sim.stepEvent == nil {
+			pbe := StepEvent{time: eventTime}
+			sim.Schedule(&pbe)
+			sim.stepEvent = &pbe
+		}
+	}
 }
 
 // scheduleNextStep handles Phase 4: schedules the next step event based on

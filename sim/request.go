@@ -61,6 +61,9 @@ type Request struct {
 	// Request is used outside the cluster routing pipeline (e.g., direct sim.Simulator tests).
 	AssignedInstance string // Instance ID this request was routed to
 
+	// Disaggregated serving metadata. Zero-value (0) means no handoff occurred.
+	HandoffTime int64 // Timestamp when KV handoff completed (disaggregated mode only)
+
 	// Model tag for multi-model routing (empty = default model).
 	// Phase 0: carried through the pipeline but not read by any routing policy.
 	Model string

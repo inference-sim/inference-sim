@@ -97,6 +97,16 @@ var (
 	kvTransferBaseLatency   int64
 	snapshotRefreshInterval int64
 
+	// Disaggregated serving config
+	servingMode              string // "mixed" (default) or "disaggregated"
+	numPrefillInstances      int    // Prefill pool size
+	numDecodeInstances       int    // Decode pool size
+	disagKVTransferPerToken  int64  // Per-input-token transfer cost (microseconds)
+	disagKVTransferBase      int64  // Fixed base KV transfer cost (microseconds)
+	prefillMaxTokens         int64  // Override MaxScheduledTokens for prefill (0 = use base)
+	decodeMaxRunning         int64  // Override MaxRunningReqs for decode (0 = use base)
+	decodeKVBlocks           int64  // Override TotalKVBlocks for decode (0 = use base)
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -700,6 +710,12 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
+		// Disaggregated mode validation
+		if servingMode == "disaggregated" && numInstances > 1 {
+			logrus.Warnf("--num-instances=%d is ignored in disaggregated mode; using --num-prefill-instances=%d + --num-decode-instances=%d",
+				numInstances, numPrefillInstances, numDecodeInstances)
+		}
+
 		// Unified cluster path (used for all values of numInstances)
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
@@ -712,17 +728,28 @@ var runCmd = &cobra.Command{
 				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
-			NumInstances:            numInstances,
-			AdmissionPolicy:         admissionPolicy,
-			AdmissionLatency:        admissionLatency,
-			RoutingLatency:          routingLatency,
-			TokenBucketCapacity:     tokenBucketCapacity,
-			TokenBucketRefillRate:   tokenBucketRefillRate,
-			RoutingPolicy:           routingPolicy,
-			RoutingScorerConfigs:    parsedScorerConfigs,
-			TraceLevel:              traceLevel,
-			CounterfactualK:         counterfactualK,
-			SnapshotRefreshInterval: snapshotRefreshInterval,
+			NumInstances:              numInstances,
+			AdmissionPolicy:           admissionPolicy,
+			AdmissionLatency:          admissionLatency,
+			RoutingLatency:            routingLatency,
+			TokenBucketCapacity:       tokenBucketCapacity,
+			TokenBucketRefillRate:     tokenBucketRefillRate,
+			RoutingPolicy:             routingPolicy,
+			RoutingScorerConfigs:      parsedScorerConfigs,
+			TraceLevel:                traceLevel,
+			CounterfactualK:           counterfactualK,
+			SnapshotRefreshInterval:   snapshotRefreshInterval,
+			ServingMode:               servingMode,
+			NumPrefillInstances:       numPrefillInstances,
+			NumDecodeInstances:        numDecodeInstances,
+			KVTransferPerToken:        disagKVTransferPerToken,
+			DisagKVTransferBaseLat:    disagKVTransferBase,
+			PrefillMaxScheduledTokens: prefillMaxTokens,
+			DecodeMaxRunningReqs:      decodeMaxRunning,
+			DecodeKVBlocks:            decodeKVBlocks,
+		}
+		if err := config.ValidateDisaggregated(); err != nil {
+			logrus.Fatalf("Invalid disaggregated config: %v", err)
 		}
 		cs := cluster.NewClusterSimulator(config, preGeneratedRequests)
 		if err := cs.Run(); err != nil {
@@ -938,6 +965,16 @@ func init() {
 	runCmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
 	runCmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	runCmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
+
+	// Disaggregated serving config
+	runCmd.Flags().StringVar(&servingMode, "serving-mode", "mixed", "Serving mode: mixed (default), disaggregated")
+	runCmd.Flags().IntVar(&numPrefillInstances, "num-prefill-instances", 0, "Number of prefill instances (required for disaggregated)")
+	runCmd.Flags().IntVar(&numDecodeInstances, "num-decode-instances", 0, "Number of decode instances (required for disaggregated)")
+	runCmd.Flags().Int64Var(&disagKVTransferPerToken, "kv-transfer-per-token", 0, "Per-input-token KV transfer cost in microseconds (disaggregated mode)")
+	runCmd.Flags().Int64Var(&disagKVTransferBase, "disag-kv-transfer-base", 0, "Fixed base KV transfer cost in microseconds (disaggregated mode)")
+	runCmd.Flags().Int64Var(&prefillMaxTokens, "prefill-max-tokens", 0, "Override MaxScheduledTokens for prefill pool (0 = use base)")
+	runCmd.Flags().Int64Var(&decodeMaxRunning, "decode-max-running", 0, "Override MaxRunningReqs for decode pool (0 = use base)")
+	runCmd.Flags().Int64Var(&decodeKVBlocks, "decode-kv-blocks", 0, "Override TotalKVBlocks for decode pool (0 = use base)")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

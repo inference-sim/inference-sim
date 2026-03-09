@@ -33,12 +33,37 @@ type ClusterSimulator struct {
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
 	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
+
+	// Disaggregated serving fields (nil in mixed mode)
+	prefillInstances        []*InstanceSimulator // prefill pool (nil in mixed mode)
+	decodeInstances         []*InstanceSimulator // decode pool (nil in mixed mode)
+	prefillSnapshotProvider SnapshotProvider     // snapshot provider for prefill pool
+	decodeSnapshotProvider  SnapshotProvider     // snapshot provider for decode pool
+	kvTransferBase          int64                // base handoff latency (microseconds)
+	kvTransferPerTok        int64                // per-token handoff latency (microseconds)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
 // All workload generation now happens externally — requests are passed in directly.
-// Panics if config.NumInstances < 1.
+// In mixed mode, panics if config.NumInstances < 1.
+// In disaggregated mode, uses NumPrefillInstances + NumDecodeInstances.
 func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *ClusterSimulator {
+	// Initialize trace collector if tracing is enabled (BC-1: nil when none)
+	var simTrace *trace.SimulationTrace
+	if config.TraceLevel != "" && trace.TraceLevel(config.TraceLevel) != trace.TraceLevelNone {
+		simTrace = trace.NewSimulationTrace(trace.TraceConfig{
+			Level:           trace.TraceLevel(config.TraceLevel),
+			CounterfactualK: config.CounterfactualK,
+		})
+	}
+
+	obsCfg := newObservabilityConfig(config.SnapshotRefreshInterval)
+
+	if config.IsDisaggregated() {
+		return newDisaggregatedClusterSimulator(config, requests, simTrace, obsCfg)
+	}
+
+	// Mixed mode (default)
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
@@ -48,21 +73,12 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		instances[idx] = NewInstanceSimulator(
 			InstanceID(fmt.Sprintf("instance_%d", idx)),
 			simCfg,
+			RoleMixed,
 		)
 	}
-	// Build instance map for snapshot provider
 	instanceMap := make(map[InstanceID]*InstanceSimulator, len(instances))
 	for _, inst := range instances {
 		instanceMap[inst.ID()] = inst
-	}
-
-	// Initialize trace collector if tracing is enabled (BC-1: nil when none)
-	var simTrace *trace.SimulationTrace
-	if config.TraceLevel != "" && trace.TraceLevel(config.TraceLevel) != trace.TraceLevelNone {
-		simTrace = trace.NewSimulationTrace(trace.TraceConfig{
-			Level:           trace.TraceLevel(config.TraceLevel),
-			CounterfactualK: config.CounterfactualK,
-		})
 	}
 
 	cs := &ClusterSimulator{
@@ -74,13 +90,12 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		admissionLatency:     config.AdmissionLatency,
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
-		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
+		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, obsCfg),
 		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}
 
-	// Startup warning: horizon too small for pipeline (BC-1)
 	pipelineLatency := cs.admissionLatency + cs.routingLatency
 	if cs.config.Horizon > 0 && cs.config.Horizon < pipelineLatency {
 		logrus.Warnf("[cluster] horizon (%d) < pipeline latency (%d); no requests can complete — increase --horizon or reduce admission/routing latency",
@@ -88,6 +103,84 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 	}
 
 	return cs
+}
+
+// newDisaggregatedClusterSimulator creates a ClusterSimulator with separate prefill and decode pools.
+func newDisaggregatedClusterSimulator(config DeploymentConfig, requests []*sim.Request, simTrace *trace.SimulationTrace, obsCfg ObservabilityConfig) *ClusterSimulator {
+	prefillCfg := config.ToPrefillSimConfig()
+	decodeCfg := config.ToDecodeSimConfig()
+
+	prefillInstances := make([]*InstanceSimulator, config.NumPrefillInstances)
+	for idx := range prefillInstances {
+		prefillInstances[idx] = NewInstanceSimulator(
+			InstanceID(fmt.Sprintf("prefill_%d", idx)),
+			prefillCfg,
+			RolePrefill,
+		)
+	}
+
+	decodeInstances := make([]*InstanceSimulator, config.NumDecodeInstances)
+	for idx := range decodeInstances {
+		decodeInstances[idx] = NewInstanceSimulator(
+			InstanceID(fmt.Sprintf("decode_%d", idx)),
+			decodeCfg,
+			RoleDecode,
+		)
+	}
+
+	// All instances for finalization and aggregation
+	allInstances := make([]*InstanceSimulator, 0, len(prefillInstances)+len(decodeInstances))
+	allInstances = append(allInstances, prefillInstances...)
+	allInstances = append(allInstances, decodeInstances...)
+
+	// Build per-pool snapshot providers
+	prefillMap := make(map[InstanceID]*InstanceSimulator, len(prefillInstances))
+	for _, inst := range prefillInstances {
+		prefillMap[inst.ID()] = inst
+	}
+	decodeMap := make(map[InstanceID]*InstanceSimulator, len(decodeInstances))
+	for _, inst := range decodeInstances {
+		decodeMap[inst.ID()] = inst
+	}
+
+	// All-instance map for backward-compatible snapshotProvider (used by admission)
+	allMap := make(map[InstanceID]*InstanceSimulator, len(allInstances))
+	for _, inst := range allInstances {
+		allMap[inst.ID()] = inst
+	}
+
+	totalInstances := config.NumPrefillInstances + config.NumDecodeInstances
+
+	cs := &ClusterSimulator{
+		config:                  config,
+		instances:               allInstances,
+		rng:                     sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed)),
+		preGeneratedRequests:    requests,
+		clusterEvents:           make(ClusterEventQueue, 0),
+		admissionLatency:        config.AdmissionLatency,
+		routingLatency:          config.RoutingLatency,
+		admissionPolicy:         sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
+		snapshotProvider:        NewCachedSnapshotProvider(allMap, obsCfg),
+		routingPolicy:           sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
+		trace:                   simTrace,
+		inFlightRequests:        make(map[string]int, totalInstances),
+		prefillInstances:        prefillInstances,
+		decodeInstances:         decodeInstances,
+		prefillSnapshotProvider: NewCachedSnapshotProvider(prefillMap, obsCfg),
+		decodeSnapshotProvider:  NewCachedSnapshotProvider(decodeMap, obsCfg),
+		kvTransferBase:          config.DisagKVTransferBaseLat,
+		kvTransferPerTok:        config.KVTransferPerToken,
+	}
+
+	logrus.Infof("[cluster] disaggregated mode: %d prefill + %d decode instances, transfer_base=%d, transfer_per_tok=%d",
+		config.NumPrefillInstances, config.NumDecodeInstances, cs.kvTransferBase, cs.kvTransferPerTok)
+
+	return cs
+}
+
+// IsDisaggregated returns true if the cluster is in disaggregated serving mode.
+func (c *ClusterSimulator) IsDisaggregated() bool {
+	return c.config.IsDisaggregated()
 }
 
 // Run executes the cluster simulation using online routing pipeline:
@@ -178,6 +271,22 @@ func (c *ClusterSimulator) Run() error {
 					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d) — bookkeeping bug",
 						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore)
 					c.inFlightRequests[instID] = 0
+				}
+			}
+
+			// Disaggregated: extract prefill-completed requests from prefill instances
+			if c.IsDisaggregated() && inst.Role() == RolePrefill {
+				extracted := inst.ExtractPrefillCompleted()
+				for _, req := range extracted {
+					c.inFlightRequests[instID]--
+					transferLatency := c.kvTransferBase + c.kvTransferPerTok*int64(len(req.InputTokens))
+					heap.Push(&c.clusterEvents, clusterEventEntry{
+						event: &HandoffEvent{
+							time:    c.clock + transferLatency,
+							request: req,
+						},
+						seqID: c.nextSeqID(),
+					})
 				}
 			}
 		}

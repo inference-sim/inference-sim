@@ -1341,3 +1341,240 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 		t.Error("expected non-nil simulator")
 	}
 }
+
+// --- Disaggregated serving tests (BC-2, BC-3, BC-5, BC-6) ---
+
+// newDisagTestSimulator creates a minimal simulator for disaggregated serving tests.
+func newDisagTestSimulator(t *testing.T) *Simulator {
+	t.Helper()
+	return mustNewSimulator(t, SimConfig{
+		Horizon:             100_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "", 0, ""),
+	})
+}
+
+// TestExtractPrefillCompleted_ExtractionAfterPrefill verifies BC-2: requests with
+// >1 output tokens are extracted after prefill completes, KV blocks released, TTFT undone.
+func TestExtractPrefillCompleted_ExtractionAfterPrefill(t *testing.T) {
+	sim := newDisagTestSimulator(t)
+
+	// Create request with multiple output tokens (eligible for extraction)
+	req := &Request{
+		ID:          "req_extract",
+		InputTokens: make([]int, 32),  // 32 input tokens
+		OutputTokens: make([]int, 10), // 10 output tokens (>1, eligible)
+		ArrivalTime: 0,
+	}
+	sim.InjectArrival(req)
+
+	// Run until prefill completes (look for TTFT being set)
+	for sim.HasPendingEvents() && !req.TTFTSet {
+		sim.ProcessNextEvent()
+	}
+
+	if !req.TTFTSet {
+		t.Fatal("prefill did not complete")
+	}
+	if req.State != StateRunning {
+		t.Fatalf("expected request to be running after prefill, got %s", req.State)
+	}
+
+	usedBefore := sim.KVCache.UsedBlocks()
+	ttftBefore := sim.Metrics.TTFTSum
+	_, hasTTFT := sim.Metrics.RequestTTFTs[req.ID]
+	if !hasTTFT {
+		t.Fatal("expected TTFT to be recorded before extraction")
+	}
+
+	// Extract
+	extracted := sim.ExtractPrefillCompleted()
+	if len(extracted) != 1 {
+		t.Fatalf("expected 1 extracted request, got %d", len(extracted))
+	}
+	if extracted[0].ID != "req_extract" {
+		t.Errorf("extracted wrong request: %s", extracted[0].ID)
+	}
+
+	// Verify KV blocks released
+	if sim.KVCache.UsedBlocks() >= usedBefore {
+		t.Errorf("expected KV blocks to be released: before=%d, after=%d", usedBefore, sim.KVCache.UsedBlocks())
+	}
+
+	// Verify TTFT undone
+	if sim.Metrics.TTFTSum >= ttftBefore {
+		t.Errorf("expected TTFTSum to decrease: before=%d, after=%d", ttftBefore, sim.Metrics.TTFTSum)
+	}
+	if _, exists := sim.Metrics.RequestTTFTs[req.ID]; exists {
+		t.Error("expected RequestTTFTs entry to be deleted")
+	}
+
+	// Verify request state
+	if extracted[0].TTFTSet {
+		t.Error("expected TTFTSet to be false after extraction")
+	}
+	if extracted[0].FirstTokenTime != 0 {
+		t.Error("expected FirstTokenTime to be 0 after extraction")
+	}
+	if extracted[0].State != StateRunning {
+		t.Errorf("expected state to remain StateRunning, got %s", extracted[0].State)
+	}
+
+	// RunningBatch should not contain extracted request
+	if sim.RunningBatch != nil {
+		for _, r := range sim.RunningBatch.Requests {
+			if r.ID == "req_extract" {
+				t.Error("extracted request still in RunningBatch")
+			}
+		}
+	}
+}
+
+// TestExtractPrefillCompleted_ShortRequestNotExtracted verifies BC-3: requests with
+// <=1 output tokens are NOT extracted (they complete on the prefill instance).
+func TestExtractPrefillCompleted_ShortRequestNotExtracted(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		numOutput  int
+	}{
+		{"zero_output", 0},
+		{"one_output", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sim := newDisagTestSimulator(t)
+
+			req := &Request{
+				ID:           "req_short",
+				InputTokens:  make([]int, 32),
+				OutputTokens: make([]int, tc.numOutput),
+				ArrivalTime:  0,
+			}
+			sim.InjectArrival(req)
+
+			// Run until prefill completes
+			for sim.HasPendingEvents() && !req.TTFTSet {
+				sim.ProcessNextEvent()
+			}
+
+			extracted := sim.ExtractPrefillCompleted()
+			if len(extracted) != 0 {
+				t.Errorf("expected no extraction for %d output tokens, got %d", tc.numOutput, len(extracted))
+			}
+		})
+	}
+}
+
+// TestInjectForDecode_SuccessfulInjection verifies BC-6: injected requests bypass
+// arrival pipeline and are added to RunningBatch with pre-allocated KV blocks.
+func TestInjectForDecode_SuccessfulInjection(t *testing.T) {
+	sim := newDisagTestSimulator(t)
+
+	inputTokens := make([]int, 32)
+	outputTokens := make([]int, 10)
+	req := &Request{
+		ID:            "req_decode",
+		InputTokens:   inputTokens,
+		OutputTokens:  outputTokens,
+		State:         StateRunning,
+		ProgressIndex: int64(len(inputTokens)), // Prefill complete
+		ArrivalTime:   1000,
+		HandoffTime:   5000,
+	}
+
+	inputTokensBefore := sim.Metrics.TotalInputTokens
+
+	sim.InjectForDecode(req, 5000)
+
+	// Verify NOT in WaitQ
+	if sim.QueueDepth() != 0 {
+		t.Errorf("expected empty WaitQ, got %d", sim.QueueDepth())
+	}
+
+	// Verify in RunningBatch
+	if sim.RunningBatch == nil {
+		t.Fatal("expected non-nil RunningBatch")
+	}
+	found := false
+	for _, r := range sim.RunningBatch.Requests {
+		if r.ID == "req_decode" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("request not found in RunningBatch")
+	}
+
+	// Verify TotalInputTokens NOT incremented
+	if sim.Metrics.TotalInputTokens != inputTokensBefore {
+		t.Errorf("TotalInputTokens should not change: before=%d, after=%d",
+			inputTokensBefore, sim.Metrics.TotalInputTokens)
+	}
+
+	// Verify Metrics.Requests registered
+	if _, exists := sim.Metrics.Requests["req_decode"]; !exists {
+		t.Error("request not registered in Metrics.Requests")
+	}
+
+	// Verify StepEvent scheduled
+	if !sim.HasPendingEvents() {
+		t.Error("expected StepEvent to be scheduled")
+	}
+}
+
+// TestDisaggregatedTTFT_FullJourney verifies BC-5: TTFT for disaggregated requests
+// captures the full journey (arrival → prefill → handoff → first decode output).
+func TestDisaggregatedTTFT_FullJourney(t *testing.T) {
+	sim := newDisagTestSimulator(t)
+
+	inputTokens := make([]int, 32)
+	outputTokens := make([]int, 10)
+	req := &Request{
+		ID:            "req_disag_ttft",
+		InputTokens:   inputTokens,
+		OutputTokens:  outputTokens,
+		State:         StateRunning,
+		ProgressIndex: int64(len(inputTokens)), // Prefill complete
+		ArrivalTime:   1000,                    // Original arrival time
+		HandoffTime:   5000,                    // Handoff completed at 5000
+		TTFTSet:       false,                   // Reset by ExtractPrefillCompleted
+		FirstTokenTime: 0,
+	}
+
+	sim.InjectForDecode(req, 5000)
+
+	// Run one step to trigger disaggregated TTFT recording
+	for sim.HasPendingEvents() {
+		ev := sim.ProcessNextEvent()
+		if _, ok := ev.(*StepEvent); ok {
+			break // One step processed
+		}
+	}
+
+	// After one decode step, TTFT should be set
+	if !req.TTFTSet {
+		t.Fatal("expected TTFT to be set after first decode step")
+	}
+
+	// TTFT should be relative to original arrival time, capturing the full journey
+	if req.FirstTokenTime <= 0 {
+		t.Errorf("expected positive FirstTokenTime, got %d", req.FirstTokenTime)
+	}
+
+	// Verify TTFT is in metrics
+	ttft, exists := sim.Metrics.RequestTTFTs[req.ID]
+	if !exists {
+		t.Fatal("expected TTFT in RequestTTFTs")
+	}
+	if ttft <= 0 {
+		t.Errorf("expected positive TTFT, got %.2f", ttft)
+	}
+
+	// TTFT should include handoff time: FirstTokenTime = (step_end - ArrivalTime)
+	// Since ArrivalTime=1000 and step happens at >= 5000, TTFT should be >= 4000
+	if req.FirstTokenTime < 4000 {
+		t.Errorf("TTFT seems too small for disaggregated request: %d (expected >= 4000)", req.FirstTokenTime)
+	}
+}
