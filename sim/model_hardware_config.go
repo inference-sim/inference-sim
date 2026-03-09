@@ -15,6 +15,7 @@ type ModelConfig struct {
 	NumExpertsPerTok   int     `json:"num_experts_per_tok"`             // 0 = dense model (MoE: active experts per token)
 	MoEExpertFFNDim    int     `json:"moe_intermediate_size"`           // Per-routed-expert FFN dim; 0 = use IntermediateDim (Mixtral convention)
 	SharedExpertFFNDim int     `json:"shared_expert_intermediate_size"` // Total shared-expert FFN dim; 0 = no shared experts
+	HiddenAct          string  `json:"hidden_act"`                     // Activation function: "silu"=SwiGLU(3-matrix MLP), "gelu"/"relu"=standard(2-matrix)
 }
 
 // HardwareCalib holds GPU hardware calibration parameters.

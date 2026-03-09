@@ -25,6 +25,17 @@ type StepConfig struct {
 	DecodeRequests  []DecodeRequestConfig  `json:"decode_requests"`
 }
 
+// mlpMatrixCount returns 3 for SwiGLU (gate+up+down) or 2 for standard (up+down) MLP.
+// Empty HiddenAct defaults to SwiGLU since most modern LLMs (Llama, Mistral, Qwen) use it.
+func mlpMatrixCount(hiddenAct string) float64 {
+	switch hiddenAct {
+	case "silu", "swiglu", "geglu", "":
+		return 3
+	default:
+		return 2
+	}
+}
+
 // --- Bento FLOPS Logic ---
 //
 // Precondition: config must pass ValidateRooflineConfig (NumHeads > 0, and when
@@ -78,6 +89,8 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 	}
 
 	if includeMLP {
+		nMat := mlpMatrixCount(config.HiddenAct) // 3 for SwiGLU, 2 for GELU/ReLU
+
 		if config.NumLocalExperts > 1 {
 			// MoE MLP FLOPs: routed (top_k) + shared + gate
 			topK := float64(config.NumExpertsPerTok)
@@ -89,14 +102,14 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 				dRouted = float64(config.MoEExpertFFNDim)
 			}
 
-			// Routed expert FLOPs: top_k active experts, SwiGLU 3-matrix MLP (gate + up + down)
-			routedFLOPs := 2 * newT * (3 * dModel * dRouted) * topK * nLayers
+			// Routed expert FLOPs: top_k active experts
+			routedFLOPs := 2 * newT * (nMat * dModel * dRouted) * topK * nLayers
 
 			// Shared expert FLOPs (always active, every token)
 			var sharedFLOPs float64
 			if config.SharedExpertFFNDim > 0 {
 				dShared := float64(config.SharedExpertFFNDim)
-				sharedFLOPs = 2 * newT * (3 * dModel * dShared) * nLayers
+				sharedFLOPs = 2 * newT * (nMat * dModel * dShared) * nLayers
 			}
 
 			// Gate (router) FLOPs: linear projection → E logits per layer
@@ -104,8 +117,8 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 
 			flops["gemm_ops"] += routedFLOPs + sharedFLOPs + gateFLOPs
 		} else {
-			// Dense MLP: SwiGLU 3-matrix (gate + up + down projections)
-			flops["gemm_ops"] += 2 * newT * (3 * dModel * dFF) * nLayers
+			// Dense MLP FLOPs
+			flops["gemm_ops"] += 2 * newT * (nMat * dModel * dFF) * nLayers
 		}
 	}
 
@@ -144,6 +157,8 @@ func calculateMemoryAccessBytes(
 	dKV := nKVHeads * dHead
 	attnWeightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel)
 
+	nMat := mlpMatrixCount(config.HiddenAct) // 3 for SwiGLU, 2 for GELU/ReLU
+
 	var mlpWeightsPerLayer float64
 	if config.NumLocalExperts > 1 {
 		// MoE ACTIVE weights per step: only top_k expert MLPs are loaded from HBM,
@@ -158,13 +173,13 @@ func calculateMemoryAccessBytes(
 			dRouted = float64(config.MoEExpertFFNDim)
 		}
 
-		// Active routed expert weights (per step, only top_k loaded), SwiGLU 3-matrix MLP
-		routedWeights := topK * (3 * dModel * dRouted)
+		// Active routed expert weights (per step, only top_k loaded)
+		routedWeights := topK * (nMat * dModel * dRouted)
 
 		// Shared expert weights (always loaded)
 		var sharedWeights float64
 		if config.SharedExpertFFNDim > 0 {
-			sharedWeights = 3 * dModel * float64(config.SharedExpertFFNDim)
+			sharedWeights = nMat * dModel * float64(config.SharedExpertFFNDim)
 		}
 
 		// Gate weights: dModel × numExperts
@@ -172,8 +187,8 @@ func calculateMemoryAccessBytes(
 
 		mlpWeightsPerLayer = routedWeights + sharedWeights + gateWeights
 	} else {
-		// Dense MLP weights: SwiGLU 3-matrix (gate + up + down)
-		mlpWeightsPerLayer = 3 * dModel * dFF
+		// Dense MLP weights
+		mlpWeightsPerLayer = nMat * dModel * dFF
 	}
 
 	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer

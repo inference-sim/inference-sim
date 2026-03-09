@@ -211,6 +211,9 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		sharedExpertFFNDim = nShared * perExpert
 	}
 
+	// Activation function: used to select 3-matrix SwiGLU vs 2-matrix standard MLP.
+	hiddenAct := hf.MustGetString("hidden_act", "")
+
 	modelConfig := &sim.ModelConfig{
 		NumLayers:          getInt("num_hidden_layers"),
 		HiddenDim:          getInt("hidden_size"),
@@ -223,6 +226,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		NumExpertsPerTok:   numExpertsPerTok,
 		MoEExpertFFNDim:    moeExpertFFNDim,
 		SharedExpertFFNDim: sharedExpertFFNDim,
+		HiddenAct:          hiddenAct,
 	}
 	return modelConfig, nil
 }
