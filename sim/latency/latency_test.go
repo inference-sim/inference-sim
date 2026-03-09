@@ -463,3 +463,27 @@ func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T
 		t.Errorf("roofline: zero-output request should not change step time: with=%d empty=%d", rooflineWith, rooflineEmpty)
 	}
 }
+
+// TestAllBackends_StepTime_EmptyBatch_FloorAtOne verifies BC-2:
+// all backends must return >= 1 for empty batch, even with zero coefficients.
+func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
+	emptyBatch := []*sim.Request{}
+
+	blackbox := &BlackboxLatencyModel{
+		betaCoeffs:  []float64{0, 0, 0}, // zero coefficients — worst case
+		alphaCoeffs: []float64{0, 0, 0},
+	}
+	assert.GreaterOrEqual(t, blackbox.StepTime(emptyBatch), int64(1),
+		"blackbox with zero coefficients must still return >= 1")
+
+	crossmodel := &CrossModelLatencyModel{
+		betaCoeffs:  []float64{0, 0, 0, 0}, // zero coefficients — worst case
+		alphaCoeffs: []float64{0, 0, 0},
+		numLayers:   1,
+		kvDimScaled: 0.0,
+		isMoE:       0.0,
+		isTP:        0.0,
+	}
+	assert.GreaterOrEqual(t, crossmodel.StepTime(emptyBatch), int64(1),
+		"crossmodel with zero coefficients must still return >= 1")
+}
