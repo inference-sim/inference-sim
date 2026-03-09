@@ -393,9 +393,9 @@ func TestCalculateTransformerFlops_MoE_MixtralFLOPsSanityCheck(t *testing.T) {
 	mc := testMixtralConfig()
 	flops := calculateTransformerFlops(mc, 0, 1, false, true) // 1 token, MLP only
 
-	// Expected per layer: 2 * 1 * (3 * 4096 * 14336) * 2 (top_k) = routed
+	// Expected per layer: 2 * 1 * (2 * 4096 * 14336) * 2 (top_k) = routed
 	// Plus gate: 2 * 1 * 4096 * 8 per layer
-	expectedPerLayerRouted := 2.0 * 3 * 4096 * 14336 * 2 // routed: top_k=2
+	expectedPerLayerRouted := 2.0 * 2 * 4096 * 14336 * 2 // routed: top_k=2, 2-matrix MLP
 	expectedPerLayerGate := 2.0 * 4096 * 8               // gate
 	expectedTotal := (expectedPerLayerRouted + expectedPerLayerGate) * 32
 
