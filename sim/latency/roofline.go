@@ -74,8 +74,35 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 	}
 
 	if includeMLP {
-		// SwiGLU Gating: Gate, Up, and Down (3 matrices)
-		flops["gemm_ops"] += 2 * newT * (3 * dModel * dFF) * nLayers
+		if config.NumLocalExperts > 0 {
+			// MoE MLP FLOPs: routed (top_k) + shared + gate
+			topK := float64(config.NumExpertsPerTok)
+			numExperts := float64(config.NumLocalExperts)
+
+			// Per-expert FFN dim: explicit or fallback to IntermediateDim
+			dRouted := dFF
+			if config.MoEExpertFFNDim > 0 {
+				dRouted = float64(config.MoEExpertFFNDim)
+			}
+
+			// Routed expert FLOPs: top_k active experts per token
+			routedFLOPs := 2 * newT * (3 * dModel * dRouted) * topK * nLayers
+
+			// Shared expert FLOPs (always active, every token)
+			var sharedFLOPs float64
+			if config.SharedExpertFFNDim > 0 {
+				dShared := float64(config.SharedExpertFFNDim)
+				sharedFLOPs = 2 * newT * (3 * dModel * dShared) * nLayers
+			}
+
+			// Gate (router) FLOPs: linear projection → E logits per layer
+			gateFLOPs := 2 * newT * dModel * numExperts * nLayers
+
+			flops["gemm_ops"] += routedFLOPs + sharedFLOPs + gateFLOPs
+		} else {
+			// Dense MLP: SwiGLU (3 matrices)
+			flops["gemm_ops"] += 2 * newT * (3 * dModel * dFF) * nLayers
+		}
 	}
 
 	flops["total"] = flops["gemm_ops"] + flops["sram_ops"]
@@ -109,7 +136,38 @@ func calculateMemoryAccessBytes(
 
 	// Weights: Loaded exactly once. (Static)
 	dKV := nKVHeads * dHead
-	weightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel) + (3 * dModel * dFF)
+	attnWeightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel)
+
+	var mlpWeightsPerLayer float64
+	if config.NumLocalExperts > 0 {
+		// MoE active weights: top_k expert MLP + shared + gate
+		topK := float64(config.NumExpertsPerTok)
+		numExperts := float64(config.NumLocalExperts)
+
+		dRouted := dFF
+		if config.MoEExpertFFNDim > 0 {
+			dRouted = float64(config.MoEExpertFFNDim)
+		}
+
+		// Active routed expert weights (per step, only top_k loaded)
+		routedWeights := topK * (3 * dModel * dRouted)
+
+		// Shared expert weights (always loaded)
+		var sharedWeights float64
+		if config.SharedExpertFFNDim > 0 {
+			sharedWeights = 3 * dModel * float64(config.SharedExpertFFNDim)
+		}
+
+		// Gate weights: dModel × numExperts
+		gateWeights := dModel * numExperts
+
+		mlpWeightsPerLayer = routedWeights + sharedWeights + gateWeights
+	} else {
+		// Dense MLP weights
+		mlpWeightsPerLayer = 3 * dModel * dFF
+	}
+
+	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer
 	mem["model_weights"] = weightsPerLayer * nLayers * config.BytesPerParam
 
 	if includeKVCache {
