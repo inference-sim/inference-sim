@@ -10,22 +10,26 @@ import (
 // KVCapacityParams holds model-architecture parameters that are not part of
 // sim.ModelConfig but are needed for KV block capacity estimation.
 // These come from the HuggingFace config.json (hidden_act, MoE indicators,
-// tie_word_embeddings).
+// tie_word_embeddings, per-expert and shared-expert FFN dims).
 type KVCapacityParams struct {
-	IsMoE             bool
-	NumLocalExperts   int
-	TieWordEmbeddings bool
-	HiddenAct         string
+	IsMoE              bool
+	NumLocalExperts    int
+	TieWordEmbeddings  bool
+	HiddenAct          string
+	MoEExpertFFNDim    int // Per-routed-expert FFN dim; 0 = use IntermediateDim
+	SharedExpertFFNDim int // Total shared-expert FFN dim; 0 = no shared experts
 }
 
 // NewKVCapacityParams creates a KVCapacityParams. Positional arguments ensure
 // that adding a field causes a compiler error at every construction site (R4).
-func NewKVCapacityParams(isMoE bool, numLocalExperts int, tieWordEmbeddings bool, hiddenAct string) KVCapacityParams {
+func NewKVCapacityParams(isMoE bool, numLocalExperts int, tieWordEmbeddings bool, hiddenAct string, moeExpertFFNDim int, sharedExpertFFNDim int) KVCapacityParams {
 	return KVCapacityParams{
-		IsMoE:             isMoE,
-		NumLocalExperts:   numLocalExperts,
-		TieWordEmbeddings: tieWordEmbeddings,
-		HiddenAct:         hiddenAct,
+		IsMoE:              isMoE,
+		NumLocalExperts:    numLocalExperts,
+		TieWordEmbeddings:  tieWordEmbeddings,
+		HiddenAct:          hiddenAct,
+		MoEExpertFFNDim:    moeExpertFFNDim,
+		SharedExpertFFNDim: sharedExpertFFNDim,
 	}
 }
 
@@ -213,16 +217,24 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	attentionPerLayer := hiddenDim*(hiddenDim+2*kvDim) + hiddenDim*hiddenDim
 
 	// MLP per layer: SwiGLU uses 3 matrices (gate, up, down)
-	// gate: hidden_dim * intermediate_dim
-	// up:   hidden_dim * intermediate_dim
-	// down: intermediate_dim * hidden_dim
-	mlpPerLayer := 3 * hiddenDim * intermediateDim
-
-	// MoE: multiply MLP by number of local experts, add router weights.
+	var mlpPerLayer int64
 	if params.IsMoE && params.NumLocalExperts > 0 {
-		mlpPerLayer *= int64(params.NumLocalExperts)
+		// MoE: use per-expert FFN dim for routed experts, add shared and gate
+		expertFFNDim := intermediateDim // Mixtral convention: IntermediateDim IS per-expert
+		if params.MoEExpertFFNDim > 0 {
+			expertFFNDim = int64(params.MoEExpertFFNDim)
+		}
+		// All routed experts (total model weight, not active)
+		mlpPerLayer = 3 * hiddenDim * expertFFNDim * int64(params.NumLocalExperts)
+		// Shared experts
+		if params.SharedExpertFFNDim > 0 {
+			mlpPerLayer += 3 * hiddenDim * int64(params.SharedExpertFFNDim)
+		}
 		// Router weights: num_local_experts * hidden_dim per layer
 		mlpPerLayer += int64(params.NumLocalExperts) * hiddenDim
+	} else {
+		// Dense: gate + up + down
+		mlpPerLayer = 3 * hiddenDim * intermediateDim
 	}
 
 	// Layer norms: 2 per layer (pre-attention + pre-MLP), each = hidden_dim params
@@ -260,8 +272,8 @@ func ExtractKVCapacityParamsFromFile(hfConfigPath string) (KVCapacityParams, err
 
 // ExtractKVCapacityParams extracts KVCapacityParams from a parsed HFConfig.
 // MoE detection: checks num_local_experts > 1, then falls back to
-// n_routed_experts, num_experts. Returns an error if MoE is detected
-// via activation-count fields (n_shared_experts, num_experts_per_tok)
+// num_routed_experts, n_routed_experts, num_experts. Returns an error if MoE
+// is detected via activation-count fields (n_shared_experts, num_experts_per_tok)
 // without a total expert count — weight estimation requires the count.
 func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 	hiddenAct := hf.MustGetString("hidden_act", "")
@@ -271,20 +283,33 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 	}
 
 	// MoE detection: check multiple field names used by different architectures.
+	// Extended resolution chain (design D4): parity with GetModelConfigFromHF.
 	numLocalExperts := hf.MustGetInt("num_local_experts", 0)
-	if numLocalExperts > 1 {
-		return NewKVCapacityParams(true, numLocalExperts, tieWordEmbeddings, hiddenAct), nil
-	}
-
-	// Fallback MoE indicators: fields that represent total expert count can
-	// be used directly as NumLocalExperts. Fields like num_experts_per_tok
-	// represent activation count (e.g., 2 for Mixtral) and only signal MoE
-	// presence — they must NOT be used as the expert multiplier for weights.
-	for _, key := range []string{"n_routed_experts", "num_experts"} {
-		if v := hf.MustGetInt(key, 0); v > 1 {
-			return NewKVCapacityParams(true, v, tieWordEmbeddings, hiddenAct), nil
+	if numLocalExperts <= 1 {
+		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
+			if v := hf.MustGetInt(key, 0); v > 1 {
+				numLocalExperts = v
+				break
+			}
 		}
 	}
+
+	if numLocalExperts > 1 {
+		// Extract per-expert and shared expert dims for weight estimation
+		moeExpertFFNDim := hf.MustGetInt("moe_intermediate_size", 0)
+		var sharedExpertFFNDim int
+		if v := hf.MustGetInt("shared_expert_intermediate_size", 0); v > 0 {
+			sharedExpertFFNDim = v
+		} else if nShared := hf.MustGetInt("n_shared_experts", 0); nShared > 0 {
+			perExpert := moeExpertFFNDim
+			if perExpert == 0 {
+				perExpert = hf.MustGetInt("intermediate_size", 0)
+			}
+			sharedExpertFFNDim = nShared * perExpert
+		}
+		return NewKVCapacityParams(true, numLocalExperts, tieWordEmbeddings, hiddenAct, moeExpertFFNDim, sharedExpertFFNDim), nil
+	}
+
 	// Activation-count or shared-expert fields: signal MoE but don't provide
 	// a reliable total expert count. Without the total count, weight estimation
 	// would use dense MLP weights — massively underestimating MoE model size.
@@ -297,5 +322,5 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 		}
 	}
 
-	return NewKVCapacityParams(false, 0, tieWordEmbeddings, hiddenAct), nil
+	return NewKVCapacityParams(false, 0, tieWordEmbeddings, hiddenAct, 0, 0), nil
 }
