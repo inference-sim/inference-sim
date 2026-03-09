@@ -88,37 +88,11 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 	}
 
 	if includeMLP {
-		nMat := mlpMatrixCount(config.HiddenAct) // 3 for SwiGLU, 2 for GELU/ReLU
-
-		if config.NumLocalExperts > 1 {
-			// MoE MLP FLOPs: routed (top_k) + shared + gate
-			topK := float64(config.NumExpertsPerTok)
-			numExperts := float64(config.NumLocalExperts)
-
-			// Per-expert FFN dim: explicit or fallback to IntermediateDim
-			dRouted := dFF
-			if config.MoEExpertFFNDim > 0 {
-				dRouted = float64(config.MoEExpertFFNDim)
-			}
-
-			// Routed expert FLOPs: top_k active experts
-			routedFLOPs := 2 * newT * (nMat * dModel * dRouted) * topK * nLayers
-
-			// Shared expert FLOPs (always active, every token)
-			var sharedFLOPs float64
-			if config.SharedExpertFFNDim > 0 {
-				dShared := float64(config.SharedExpertFFNDim)
-				sharedFLOPs = 2 * newT * (nMat * dModel * dShared) * nLayers
-			}
-
-			// Gate (router) FLOPs: linear projection → E logits per layer
-			gateFLOPs := 2 * newT * dModel * numExperts * nLayers
-
-			flops["gemm_ops"] += routedFLOPs + sharedFLOPs + gateFLOPs
-		} else {
-			// Dense MLP FLOPs
-			flops["gemm_ops"] += 2 * newT * (nMat * dModel * dFF) * nLayers
-		}
+		nMat := mlpMatrixCount(config.HiddenAct)
+		// Dense-equivalent MLP FLOPs: treats MoE same as dense (matching llm-optimizer).
+		// MoE-specific FLOPs (top_k scaling, shared experts, gate) are handled by
+		// the crossmodel backend; the roofline backend uses this simpler formula.
+		flops["gemm_ops"] += 2 * newT * (nMat * dModel * dFF) * nLayers
 	}
 
 	flops["total"] = flops["gemm_ops"] + flops["sram_ops"]
@@ -156,39 +130,11 @@ func calculateMemoryAccessBytes(
 	dKV := nKVHeads * dHead
 	attnWeightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel)
 
-	nMat := mlpMatrixCount(config.HiddenAct) // 3 for SwiGLU, 2 for GELU/ReLU
-
-	var mlpWeightsPerLayer float64
-	if config.NumLocalExperts > 1 {
-		// MoE ACTIVE weights per step: only top_k expert MLPs are loaded from HBM,
-		// matching vLLM's fused_moe kernel behavior. For TOTAL model weights
-		// (all E experts, used for GPU memory budgeting), see computeModelWeightBytes
-		// in kv_capacity.go.
-		topK := float64(config.NumExpertsPerTok)
-		numExperts := float64(config.NumLocalExperts)
-
-		dRouted := dFF
-		if config.MoEExpertFFNDim > 0 {
-			dRouted = float64(config.MoEExpertFFNDim)
-		}
-
-		// Active routed expert weights (per step, only top_k loaded)
-		routedWeights := topK * (nMat * dModel * dRouted)
-
-		// Shared expert weights (always loaded)
-		var sharedWeights float64
-		if config.SharedExpertFFNDim > 0 {
-			sharedWeights = nMat * dModel * float64(config.SharedExpertFFNDim)
-		}
-
-		// Gate weights: dModel × numExperts
-		gateWeights := dModel * numExperts
-
-		mlpWeightsPerLayer = routedWeights + sharedWeights + gateWeights
-	} else {
-		// Dense MLP weights
-		mlpWeightsPerLayer = nMat * dModel * dFF
-	}
+	nMat := mlpMatrixCount(config.HiddenAct)
+	// Dense-equivalent MLP weights: treats MoE same as dense (matching llm-optimizer).
+	// For TOTAL model weights (all E experts, used for GPU memory budgeting),
+	// see computeModelWeightBytes in kv_capacity.go.
+	mlpWeightsPerLayer := nMat * dModel * dFF
 
 	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer
 	mem["model_weights"] = weightsPerLayer * nLayers * config.BytesPerParam

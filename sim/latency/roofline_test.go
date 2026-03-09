@@ -322,53 +322,28 @@ func testDeepSeekV3Config() sim.ModelConfig {
 
 // --- Task 4: MoE FLOPs tests ---
 
-func TestCalculateTransformerFlops_MoE_SparsityScaling(t *testing.T) {
-	// BC-1 (MOD-ROOF-3): MLP FLOPs for top_k=K = K × single-expert + gate + shared
+func TestCalculateTransformerFlops_MoE_DenseEquivalent(t *testing.T) {
+	// Roofline treats MoE same as dense (matching llm-optimizer).
+	// MoE fields are ignored; only IntermediateDim matters.
 	mc := testMixtralConfig()
 
-	// MLP-only FLOPs for the full config (top_k=2)
-	topK2 := calculateTransformerFlops(mc, 0, 128, false, true)
+	// MoE config
+	moeFlops := calculateTransformerFlops(mc, 0, 128, false, true)
 
-	// MLP-only FLOPs with top_k=1
-	mc1 := mc
-	mc1.NumExpertsPerTok = 1
-	topK1 := calculateTransformerFlops(mc1, 0, 128, false, true)
+	// Equivalent dense config (same hidden/intermediate dims, no MoE fields)
+	dense := mc
+	dense.NumLocalExperts = 0
+	dense.NumExpertsPerTok = 0
+	denseFlops := calculateTransformerFlops(dense, 0, 128, false, true)
 
-	// Gate FLOPs: 2 * newT * dModel * numExperts * nLayers
-	dModel := 4096.0
-	numExperts := 8.0
-	nLayers := 32.0
-	newT := 128.0
-	gateFLOPs := 2 * newT * dModel * numExperts * nLayers
-
-	// topK2 routed = 2 * topK1 routed; total = routed + gate (no shared for Mixtral)
-	routedK1 := topK1["gemm_ops"] - gateFLOPs
-	expectedK2 := 2*routedK1 + gateFLOPs
-
-	ratio := topK2["gemm_ops"] / expectedK2
-	if math.Abs(ratio-1.0) > 1e-9 {
-		t.Errorf("BC-1: sparsity scaling violation: top_k=2 MLP FLOPs (%g) should be 2× routed + gate (%g), ratio=%g",
-			topK2["gemm_ops"], expectedK2, ratio)
-	}
-}
-
-func TestCalculateTransformerFlops_MoE_SharedExpertsAddFlops(t *testing.T) {
-	// BC-2 (MOD-ROOF-2): shared experts add FLOPs
-	mc := testDeepSeekV3Config()
-	withShared := calculateTransformerFlops(mc, 0, 64, false, true)
-
-	mcNoShared := mc
-	mcNoShared.SharedExpertFFNDim = 0
-	withoutShared := calculateTransformerFlops(mcNoShared, 0, 64, false, true)
-
-	if withShared["gemm_ops"] <= withoutShared["gemm_ops"] {
-		t.Errorf("BC-2: shared experts should increase FLOPs: with=%g, without=%g",
-			withShared["gemm_ops"], withoutShared["gemm_ops"])
+	if moeFlops["gemm_ops"] != denseFlops["gemm_ops"] {
+		t.Errorf("MoE FLOPs should equal dense FLOPs: moe=%g, dense=%g",
+			moeFlops["gemm_ops"], denseFlops["gemm_ops"])
 	}
 }
 
 func TestCalculateTransformerFlops_MoE_Conservation(t *testing.T) {
-	// BC-3 (MOD-ROOF-1): total = gemm_ops + sram_ops for MoE
+	// total = gemm_ops + sram_ops for MoE configs
 	configs := []struct {
 		name string
 		mc   sim.ModelConfig
@@ -385,24 +360,6 @@ func TestCalculateTransformerFlops_MoE_Conservation(t *testing.T) {
 				t.Errorf("conservation: total (%g) != gemm+sram (%g)", flops["total"], sum)
 			}
 		})
-	}
-}
-
-func TestCalculateTransformerFlops_MoE_MixtralFLOPsSanityCheck(t *testing.T) {
-	// Mixtral MLP FLOPs sanity: routed(top_k=2) + gate for 1 token
-	mc := testMixtralConfig()
-	flops := calculateTransformerFlops(mc, 0, 1, false, true) // 1 token, MLP only
-
-	// Expected per layer: 2 * 1 * (2 * 4096 * 14336) * 2 (top_k) = routed (2-matrix convention)
-	// Plus gate: 2 * 1 * 4096 * 8 per layer
-	expectedPerLayerRouted := 2.0 * 2 * 4096 * 14336 * 2 // routed: top_k=2, 2-matrix MLP convention
-	expectedPerLayerGate := 2.0 * 4096 * 8               // gate
-	expectedTotal := (expectedPerLayerRouted + expectedPerLayerGate) * 32
-
-	ratio := flops["gemm_ops"] / expectedTotal
-	if math.Abs(ratio-1.0) > 0.01 {
-		t.Errorf("Mixtral FLOPs sanity: got %g, expected %g, ratio=%g",
-			flops["gemm_ops"], expectedTotal, ratio)
 	}
 }
 
@@ -424,42 +381,24 @@ func TestCalculateTransformerFlops_Dense_UnchangedAfterMoE(t *testing.T) {
 
 // --- Task 5: MoE memory access tests ---
 
-func TestCalculateMemoryAccessBytes_MoE_ActiveLessThanTotal(t *testing.T) {
-	// BC-4 (MOD-ROOF-4): active weights < total weights when top_k < E
-	mc := testMixtralConfig() // top_k=2, E=8
-
-	active := calculateMemoryAccessBytes(mc, 512, 1, false)
-
-	// With top_k=E (all experts active), weights should be higher
-	mcAllActive := mc
-	mcAllActive.NumExpertsPerTok = mc.NumLocalExperts
-	allActive := calculateMemoryAccessBytes(mcAllActive, 512, 1, false)
-
-	if active["model_weights"] >= allActive["model_weights"] {
-		t.Errorf("BC-4: top_k=2 weights (%g) should be < top_k=E weights (%g)",
-			active["model_weights"], allActive["model_weights"])
-	}
-}
-
-func TestCalculateMemoryAccessBytes_MoE_BoundaryTopKEqualsE(t *testing.T) {
-	// BC-5 (MOD-ROOF-4 boundary): top_k=E should have more weights than top_k<E
+func TestCalculateMemoryAccessBytes_MoE_DenseEquivalent(t *testing.T) {
+	// Roofline treats MoE same as dense (matching llm-optimizer).
 	mc := testMixtralConfig()
-	mc.NumExpertsPerTok = mc.NumLocalExperts // top_k = E = 8
+	moeMem := calculateMemoryAccessBytes(mc, 512, 1, false)
 
-	activeAll := calculateMemoryAccessBytes(mc, 512, 1, false)
+	dense := mc
+	dense.NumLocalExperts = 0
+	dense.NumExpertsPerTok = 0
+	denseMem := calculateMemoryAccessBytes(dense, 512, 1, false)
 
-	mc2 := mc
-	mc2.NumExpertsPerTok = 2
-	activePartial := calculateMemoryAccessBytes(mc2, 512, 1, false)
-
-	if activeAll["model_weights"] <= activePartial["model_weights"] {
-		t.Errorf("BC-5: top_k=E weights (%g) should exceed top_k=2 weights (%g)",
-			activeAll["model_weights"], activePartial["model_weights"])
+	if moeMem["model_weights"] != denseMem["model_weights"] {
+		t.Errorf("MoE weights should equal dense weights: moe=%g, dense=%g",
+			moeMem["model_weights"], denseMem["model_weights"])
 	}
 }
 
 func TestCalculateMemoryAccessBytes_MoE_Conservation(t *testing.T) {
-	// BC-6 (MOD-ROOF-1): total = sum of components
+	// total = sum of components
 	mc := testMixtralConfig()
 	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
 
@@ -475,7 +414,7 @@ func TestCalculateMemoryAccessBytes_MoE_Conservation(t *testing.T) {
 		sum += mem[k]
 	}
 	if math.Abs(mem["total"]-sum) > 1e-6 {
-		t.Errorf("BC-6: conservation violation: total (%g) != components (%g)", mem["total"], sum)
+		t.Errorf("conservation violation: total (%g) != components (%g)", mem["total"], sum)
 	}
 }
 
