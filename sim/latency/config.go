@@ -271,12 +271,12 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 		problems = append(problems, fmt.Sprintf(
 			"MoE: NumLocalExperts must be >= 0, got %d", mc.NumLocalExperts))
 	}
-	if mc.NumLocalExperts > 0 && mc.NumExpertsPerTok <= 0 {
+	if mc.NumLocalExperts > 1 && mc.NumExpertsPerTok <= 0 {
 		problems = append(problems, fmt.Sprintf(
 			"MoE: NumLocalExperts=%d but active experts per token (NumExpertsPerTok) must be > 0",
 			mc.NumLocalExperts))
 	}
-	if mc.NumExpertsPerTok > mc.NumLocalExperts && mc.NumLocalExperts > 0 {
+	if mc.NumExpertsPerTok > mc.NumLocalExperts && mc.NumLocalExperts > 1 {
 		problems = append(problems, fmt.Sprintf(
 			"MoE: NumExpertsPerTok (%d) cannot exceed NumLocalExperts (%d)",
 			mc.NumExpertsPerTok, mc.NumLocalExperts))

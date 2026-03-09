@@ -162,7 +162,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 		}
 		kvDimScaled := (float64(hw.ModelConfig.NumLayers) * float64(numKVHeads) * headDim / float64(hw.TP)) * 1e-6
 		var isMoE float64
-		if hw.ModelConfig.NumLocalExperts > 0 {
+		if hw.ModelConfig.NumLocalExperts > 1 {
 			isMoE = 1.0
 		}
 		var isTP float64

@@ -218,7 +218,7 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 
 	// MLP per layer: SwiGLU uses 3 matrices (gate, up, down)
 	var mlpPerLayer int64
-	if params.IsMoE && params.NumLocalExperts > 0 {
+	if params.IsMoE && params.NumLocalExperts > 1 {
 		// MoE: use per-expert FFN dim for routed experts, add shared and gate
 		expertFFNDim := intermediateDim // Mixtral convention: IntermediateDim IS per-expert
 		if params.MoEExpertFFNDim > 0 {
@@ -271,7 +271,7 @@ func ExtractKVCapacityParamsFromFile(hfConfigPath string) (KVCapacityParams, err
 }
 
 // ExtractKVCapacityParams extracts KVCapacityParams from a parsed HFConfig.
-// MoE detection: checks num_local_experts > 0, then falls back to
+// MoE detection: checks num_local_experts > 1, then falls back to
 // num_routed_experts, n_routed_experts, num_experts. Returns an error if MoE
 // is detected via activation-count fields (n_shared_experts, num_experts_per_tok)
 // without a total expert count — weight estimation requires the count.

@@ -28,7 +28,7 @@ type StepConfig struct {
 // --- Bento FLOPS Logic ---
 //
 // Precondition: config must pass ValidateRooflineConfig (NumHeads > 0, and when
-// NumLocalExperts > 0, NumExpertsPerTok must be > 0). Violating preconditions
+// NumLocalExperts > 1, NumExpertsPerTok must be > 0). Violating preconditions
 // produces silently incorrect results (zero MLP FLOPs, +Inf from division).
 func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) map[string]float64 {
 	dModel := float64(config.HiddenDim)
@@ -78,7 +78,7 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 	}
 
 	if includeMLP {
-		if config.NumLocalExperts > 0 {
+		if config.NumLocalExperts > 1 {
 			// MoE MLP FLOPs: routed (top_k) + shared + gate
 			topK := float64(config.NumExpertsPerTok)
 			numExperts := float64(config.NumLocalExperts)
@@ -148,7 +148,7 @@ func calculateMemoryAccessBytes(
 	attnWeightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel)
 
 	var mlpWeightsPerLayer float64
-	if config.NumLocalExperts > 0 {
+	if config.NumLocalExperts > 1 {
 		// MoE ACTIVE weights per step: only top_k expert MLPs are loaded from HBM,
 		// matching vLLM's fused_moe kernel behavior. For TOTAL model weights
 		// (all E experts, used for GPU memory budgeting), see computeModelWeightBytes
