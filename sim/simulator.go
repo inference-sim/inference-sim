@@ -437,9 +437,9 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 // Requests with len(OutputTokens) <= 1 are NOT extracted (they complete on prefill instance).
 // Called by cluster layer after processing a step event on a prefill instance.
 //
-// TTFT metrics are preserved on the prefill instance (not undone). The prefill TTFT
-// correctly represents arrival→first_token time. The decode instance records ITL entries
-// for subsequent decode steps. E2E = FirstTokenTime + sum(ITL) with no double-counting.
+// TTFT metrics are removed from the prefill instance during extraction. The decode
+// instance re-records an adjusted TTFT in InjectForDecode that includes the KV transfer
+// latency gap. E2E = adjusted_FirstTokenTime + sum(ITL) captures the full pipeline.
 func (sim *Simulator) ExtractPrefillCompleted() []*Request {
 	if sim.RunningBatch == nil {
 		return nil
@@ -459,9 +459,11 @@ func (sim *Simulator) ExtractPrefillCompleted() []*Request {
 			delete(sim.reqNumComputedTokens, req.ID)
 			// C1 fix: remove prefill's Metrics.Requests entry so the decode
 			// instance creates the authoritative one (correct HandledBy).
-			// TTFT/SchedulingDelay maps are intentionally kept — the decode
-			// instance doesn't re-record them.
 			delete(sim.Metrics.Requests, req.ID)
+			// Remove prefill-side TTFT — the decode instance will re-record an
+			// adjusted TTFT that includes KV transfer latency (C1 convergence fix).
+			sim.Metrics.TTFTSum -= req.FirstTokenTime
+			delete(sim.Metrics.RequestTTFTs, req.ID)
 
 			// Keep State = StateRunning (still in-flight from cluster perspective)
 			extracted = append(extracted, req)
@@ -488,15 +490,30 @@ func (sim *Simulator) ExtractPrefillCompleted() []*Request {
 }
 
 // InjectForDecode injects a prefill-completed request for decode processing.
-// Pre-allocates KV blocks for input tokens (simulating KV cache transfer),
-// adds request to RunningBatch with scheduling metrics, and schedules a StepEvent.
+// Adjusts TTFT to include KV transfer latency, pre-allocates KV blocks for
+// input tokens (simulating KV cache transfer), adds request to RunningBatch
+// with scheduling metrics, and schedules a StepEvent.
 // Does NOT count TotalInputTokens (already counted on prefill instance).
 //
 // Guards: R19 (unservable request rejection), MaxRunningReqs capacity check.
 // If KV allocation fails or batch is full, falls back to WaitQ.
 func (sim *Simulator) InjectForDecode(req *Request, eventTime int64) {
+	// Adjust TTFT to include KV transfer latency (C1 convergence fix).
+	// FirstTokenTime was recorded on prefill as (prefill_absolute_tick - ArrivalTime).
+	// eventTime is the decode injection tick (after transfer). The gap between prefill
+	// completion and decode injection (= transfer latency) must be added to FirstTokenTime
+	// so that E2E = FirstTokenTime + sum(decode_ITL) captures the full pipeline.
+	prefillAbsoluteTick := req.FirstTokenTime + req.ArrivalTime
+	if transferGap := eventTime - prefillAbsoluteTick; transferGap > 0 {
+		req.FirstTokenTime += transferGap
+	}
+
 	// Register request in Metrics.Requests (for per-request output with correct HandledBy)
 	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
+
+	// Record adjusted TTFT on the decode instance (prefill-side was removed during extraction).
+	sim.Metrics.TTFTSum += req.FirstTokenTime
+	sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
 
 	// R19: Reject requests that can never fit in the decode instance's KV cache.
 	blocksNeeded := (int64(len(req.InputTokens)) + sim.KVCache.BlockSize() - 1) / sim.KVCache.BlockSize()

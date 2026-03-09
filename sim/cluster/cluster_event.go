@@ -285,7 +285,15 @@ func (e *DecodeRoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 	for _, inst := range cs.decodeInstances {
 		if string(inst.ID()) == decision.TargetInstance {
 			cs.inFlightRequests[decision.TargetInstance]++
+			// C2 convergence fix: InjectForDecode may drop the request via the R19
+			// unservable guard. That DroppedUnservable increment happens outside
+			// ProcessNextEvent, so the cluster event loop's delta check never sees it.
+			// Detect the drop here and correct inFlightRequests immediately.
+			droppedBefore := inst.Metrics().DroppedUnservable
 			inst.InjectForDecode(e.request, e.time)
+			if droppedAfter := inst.Metrics().DroppedUnservable; droppedAfter > droppedBefore {
+				cs.inFlightRequests[decision.TargetInstance] -= droppedAfter - droppedBefore
+			}
 			return
 		}
 	}

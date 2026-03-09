@@ -6,7 +6,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ## INV-1: Request Conservation
 
-**Statement:** `injected_requests == completed_requests + still_queued + still_running + dropped_unservable` at simulation end (all levels).
+**Statement:** `injected_requests == completed_requests + still_queued + still_running + in_transit + dropped_unservable` at simulation end (all levels). In mixed mode, `in_transit` is always 0. In disaggregated mode, `in_transit` counts requests in the handoff/decode-routing pipeline at horizon end.
 
 **Full pipeline:** `num_requests == injected_requests + rejected_requests` (from anomaly counters).
 

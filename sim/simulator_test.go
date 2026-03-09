@@ -1386,7 +1386,6 @@ func TestExtractPrefillCompleted_ExtractionAfterPrefill(t *testing.T) {
 	}
 
 	usedBefore := sim.KVCache.UsedBlocks()
-	ttftBefore := sim.Metrics.TTFTSum
 	_, hasTTFT := sim.Metrics.RequestTTFTs[req.ID]
 	if !hasTTFT {
 		t.Fatal("expected TTFT to be recorded before extraction")
@@ -1406,12 +1405,13 @@ func TestExtractPrefillCompleted_ExtractionAfterPrefill(t *testing.T) {
 		t.Errorf("expected KV blocks to be released: before=%d, after=%d", usedBefore, sim.KVCache.UsedBlocks())
 	}
 
-	// Verify TTFT preserved (not undone) — prefill TTFT stands for E2E calculation
-	if sim.Metrics.TTFTSum != ttftBefore {
-		t.Errorf("expected TTFTSum to be preserved: before=%d, after=%d", ttftBefore, sim.Metrics.TTFTSum)
+	// Verify TTFT removed from prefill metrics (C1 convergence fix: decode instance
+	// will re-record an adjusted TTFT that includes KV transfer latency)
+	if sim.Metrics.TTFTSum != 0 {
+		t.Errorf("expected TTFTSum to be zeroed after extraction: got %d", sim.Metrics.TTFTSum)
 	}
-	if _, exists := sim.Metrics.RequestTTFTs[req.ID]; !exists {
-		t.Error("expected RequestTTFTs entry to be preserved")
+	if _, exists := sim.Metrics.RequestTTFTs[req.ID]; exists {
+		t.Error("expected RequestTTFTs entry to be removed after extraction")
 	}
 
 	// Verify request state: TTFT preserved from prefill for E2E calculation on decode instance
