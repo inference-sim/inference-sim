@@ -217,9 +217,13 @@ func calculateMemoryAccessBytes(
 
 // rooflineStepTime computes step latency using the roofline model.
 //
-// Uses single-crossover roofline (llm-optimizer style): for each phase,
-// step_time = max(total_flops / (peak * MFU), total_bytes / peak_bandwidth).
+// Models a single forward pass per step (matching vLLM chunked prefill):
+// all prefill and decode tokens are processed together, weights loaded once.
+// Uses single-crossover roofline: step_time = max(compute_time, memory_time).
 // No bandwidth haircut, no overhead terms.
+//
+// Compute uses phase-specific MFU: prefill tokens at MfuPrefill, decode at MfuDecode,
+// reflecting that prefill is compute-bound (large GEMMs) while decode is memory-bound.
 //
 // Precondition: ValidateRooflineConfig(modelConfig, hwConfig) must return nil
 // and tp must be > 0. Callers must validate before first call.
@@ -229,54 +233,41 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	peakFlops := hwConfig.TFlopsPeak * 1e12
 	peakBW := hwConfig.BwPeakTBs * 1e12
 
-	var prefillTimeS, decodeTimeS float64
-
-	// 1. PREFILL PHASE
-	if len(stepConfig.PrefillRequests) > 0 {
-		var pTotalFlops, pDynamicBytes float64
-
-		for _, req := range stepConfig.PrefillRequests {
-			numTokens := int64(req.NumNewPrefillTokens)
-
-			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
-			pTotalFlops += f["total"] / tpFactor
-
-			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
-			pDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
-		}
-
-		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-		pWeightBytes := baseMem["model_weights"] / tpFactor
-
-		pComputeS := pTotalFlops / (peakFlops * hwConfig.MfuPrefill)
-		pMemoryS := (pWeightBytes + pDynamicBytes) / peakBW
-
-		prefillTimeS = math.Max(pComputeS, pMemoryS)
+	if len(stepConfig.PrefillRequests) == 0 && len(stepConfig.DecodeRequests) == 0 {
+		return 0
 	}
 
-	// 2. DECODE PHASE
-	if len(stepConfig.DecodeRequests) > 0 {
-		var dTotalFlops, dDynamicBytes float64
+	var totalComputeS float64
+	var totalDynamicBytes float64
 
-		for _, req := range stepConfig.DecodeRequests {
-			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
-			dTotalFlops += f["total"] / tpFactor
+	// 1. PREFILL FLOPs + dynamic memory (KV cache, activations)
+	for _, req := range stepConfig.PrefillRequests {
+		numTokens := int64(req.NumNewPrefillTokens)
 
-			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
-			dDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
-		}
+		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
+		totalComputeS += f["total"] / tpFactor / (peakFlops * hwConfig.MfuPrefill)
 
-		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-		dWeightBytes := baseMem["model_weights"] / tpFactor
-
-		dComputeS := dTotalFlops / (peakFlops * hwConfig.MfuDecode)
-		dMemoryS := (dWeightBytes + dDynamicBytes) / peakBW
-
-		decodeTimeS = math.Max(dComputeS, dMemoryS)
+		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
+		totalDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
 	}
 
-	// 3. COMBINE (no overhead terms)
-	totalMicros := (prefillTimeS + decodeTimeS) * 1e6
+	// 2. DECODE FLOPs + dynamic memory (KV cache, activations)
+	for _, req := range stepConfig.DecodeRequests {
+		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
+		totalComputeS += f["total"] / tpFactor / (peakFlops * hwConfig.MfuDecode)
+
+		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
+		totalDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
+	}
+
+	// 3. WEIGHTS loaded once per step (single forward pass, per Sarathi-Serve/vLLM V1)
+	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+	weightBytes := baseMem["model_weights"] / tpFactor
+
+	totalMemoryS := (weightBytes + totalDynamicBytes) / peakBW
+
+	// 4. ROOFLINE: single crossover
+	totalMicros := math.Max(totalComputeS, totalMemoryS) * 1e6
 
 	return int64(math.Round(totalMicros))
 }

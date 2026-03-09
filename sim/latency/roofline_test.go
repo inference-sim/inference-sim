@@ -594,6 +594,54 @@ func TestRooflineStepTime_SingleCrossover_MemoryBoundDecode(t *testing.T) {
 	}
 }
 
+func TestRooflineStepTime_MixedBatch_WeightsLoadedOnce(t *testing.T) {
+	// Verify that a mixed batch (prefill + decode) loads weights once,
+	// not once per phase. The memory-bound time for a mixed batch should
+	// equal weights + prefill_dynamic + decode_dynamic, NOT 2×weights + dynamic.
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+
+	// Mixed batch: 1 prefill + 1 decode
+	mixedStep := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 64},
+		},
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
+	}
+
+	// Decode-only step with the same decode request
+	decodeOnlyStep := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
+	}
+
+	mixed := rooflineStepTime(mc, hc, mixedStep, 1)
+	decodeOnly := rooflineStepTime(mc, hc, decodeOnlyStep, 1)
+
+	// Mixed should be >= decode-only (more work), but if weights were loaded
+	// twice, mixed would be roughly 2× decode-only for memory-bound steps.
+	// With single weight load, the increase should be modest (just extra dynamic bytes).
+	baseMem := calculateMemoryAccessBytes(mc, 0, 0, false)
+	weightBytes := baseMem["model_weights"]
+
+	// The mixed step should NOT double the weight bandwidth.
+	// If it did, the overhead would be approximately weightBytes/peakBW extra.
+	peakBW := hc.BwPeakTBs * 1e12
+	doubleWeightPenaltyMicros := int64(weightBytes / peakBW * 1e6)
+
+	// mixed - decodeOnly should be much less than a full extra weight load
+	overhead := mixed - decodeOnly
+	if overhead >= doubleWeightPenaltyMicros {
+		t.Errorf("mixed batch overhead (%d µs) >= full weight load (%d µs): weights appear loaded twice",
+			overhead, doubleWeightPenaltyMicros)
+	}
+	t.Logf("mixed=%d µs, decodeOnly=%d µs, overhead=%d µs, doubleWeightPenalty=%d µs",
+		mixed, decodeOnly, overhead, doubleWeightPenaltyMicros)
+}
+
 func TestRooflineStepTime_Dense_PositiveAndTPScaling(t *testing.T) {
 	// Dense model: positive step times and TP=2 < TP=1 (invariant, not pinned values)
 	mc := testModelConfig()
