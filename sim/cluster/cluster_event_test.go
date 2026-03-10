@@ -259,13 +259,36 @@ func TestAdmissionDecisionEvent_PoolsConfigured_SchedulesDisaggregation(t *testi
 	config.DecodeInstances = 2
 	config.PDDecider = "always"
 
-	cs := NewClusterSimulator(config, newTestRequests(3))
+	numRequests := 3
+	cs := NewClusterSimulator(config, newTestRequests(numRequests))
 
 	// Run the full simulation — verifies no panics with disaggregation in the pipeline
 	mustRun(t, cs)
 
-	if cs.AggregatedMetrics().CompletedRequests == 0 {
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests == 0 {
 		t.Fatal("expected at least one completed request with pools configured")
+	}
+
+	// INV-1: Request conservation
+	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
+	if total != numRequests {
+		t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
+			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, total, numRequests)
+	}
+
+	// INV-5: Causality — for every completed request, TTFT >= 0 and E2E >= TTFT
+	for reqID, e2e := range m.RequestE2Es {
+		ttft, hasTTFT := m.RequestTTFTs[reqID]
+		if !hasTTFT {
+			t.Errorf("INV-5 causality: request %q has E2E but no TTFT", reqID)
+		}
+		if ttft < 0 {
+			t.Errorf("INV-5 causality: request %q TTFT = %v < 0", reqID, ttft)
+		}
+		if e2e < ttft {
+			t.Errorf("INV-5 causality: request %q E2E (%v) < TTFT (%v)", reqID, e2e, ttft)
+		}
 	}
 }
 
@@ -275,11 +298,20 @@ func TestAdmissionDecisionEvent_NoPools_SchedulesRouting(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	// PrefillInstances and DecodeInstances are 0 (default)
 
-	cs := NewClusterSimulator(config, newTestRequests(5))
+	numRequests := 5
+	cs := NewClusterSimulator(config, newTestRequests(numRequests))
 	mustRun(t, cs)
 
-	if cs.AggregatedMetrics().CompletedRequests == 0 {
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests == 0 {
 		t.Fatal("expected at least one completed request without pools")
+	}
+
+	// INV-1: Request conservation
+	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
+	if total != numRequests {
+		t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
+			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, total, numRequests)
 	}
 }
 
@@ -291,12 +323,21 @@ func TestDisaggregationDecisionEvent_SchedulesRouting(t *testing.T) {
 	config.DecodeInstances = 2
 	config.PDDecider = "never"
 
-	cs := NewClusterSimulator(config, newTestRequests(5))
+	numRequests := 5
+	cs := NewClusterSimulator(config, newTestRequests(numRequests))
 
 	// Run with NeverDisaggregate — should still complete (routes to RoutingDecisionEvent)
 	mustRun(t, cs)
 
-	if cs.AggregatedMetrics().CompletedRequests == 0 {
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests == 0 {
 		t.Fatal("expected at least one completed request with NeverDisaggregate")
+	}
+
+	// INV-1: Request conservation
+	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
+	if total != numRequests {
+		t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
+			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, total, numRequests)
 	}
 }

@@ -667,6 +667,9 @@ var runCmd = &cobra.Command{
 		if !sim.IsValidDisaggregationDecider(pdDecider) {
 			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
 		}
+		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, numInstances); err != nil {
+			logrus.Fatalf("Invalid PD pool topology: %v", err)
+		}
 		if admissionLatency < 0 {
 			logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
 		}

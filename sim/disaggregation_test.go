@@ -1,6 +1,9 @@
 package sim
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 // TestNeverDisaggregate_AlwaysReturnsFalse verifies that NeverDisaggregate
 // always returns Disaggregate=false regardless of input.
@@ -49,6 +52,10 @@ func TestNewDisaggregationDecider_Factory(t *testing.T) {
 			decider := NewDisaggregationDecider(tc.name)
 			if decider == nil {
 				t.Fatal("NewDisaggregationDecider returned nil")
+			}
+			gotType := fmt.Sprintf("%T", decider)
+			if gotType != tc.wantType {
+				t.Errorf("NewDisaggregationDecider(%q) type = %s, want %s", tc.name, gotType, tc.wantType)
 			}
 		})
 	}

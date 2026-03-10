@@ -274,10 +274,17 @@ func (c *ClusterSimulator) poolsConfigured() bool {
 	return c.poolMembership != nil
 }
 
-// PoolMembership returns the pool role membership map.
+// PoolMembership returns a copy of the pool role membership map (R8: no exported mutable maps).
 // Returns nil when disaggregation is disabled.
 func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
-	return c.poolMembership
+	if c.poolMembership == nil {
+		return nil
+	}
+	result := make(map[string]PoolRole, len(c.poolMembership))
+	for k, v := range c.poolMembership {
+		result[k] = v
+	}
+	return result
 }
 
 // Trace returns the decision trace collected during simulation.
