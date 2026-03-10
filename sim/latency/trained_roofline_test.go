@@ -381,6 +381,62 @@ func TestNewLatencyModel_TrainedRoofline_InvalidConfig_Error(t *testing.T) {
 	}
 }
 
+// --- BC-4: Prefill monotonicity ---
+
+func TestTrainedRoofline_PrefillMonotonicity(t *testing.T) {
+	coeffs := sim.NewLatencyCoeffs(trainingFittedBetas, trainingFittedAlphas)
+	hw := sim.ModelHardwareConfig{
+		Backend: "trained-roofline",
+		ModelConfig: sim.ModelConfig{
+			NumLayers: 32, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 32,
+			IntermediateDim: 11008, BytesPerParam: 2,
+		},
+		HWConfig: sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35, MfuPrefill: 0.45, MfuDecode: 0.30, MemoryGiB: 80.0},
+		TP:      1,
+	}
+	model, err := NewLatencyModel(coeffs, hw)
+	assert.NoError(t, err)
+
+	tokenCounts := []int{64, 128, 256, 512, 1024}
+	var prevTime int64
+	for _, n := range tokenCounts {
+		batch := []*sim.Request{makePrefillRequest(n, n)}
+		st := model.StepTime(batch)
+		assert.GreaterOrEqual(t, st, prevTime,
+			"prefill step time should be non-decreasing: %d tokens -> %d us (prev %d us)", n, st, prevTime)
+		prevTime = st
+	}
+}
+
+// --- BC-5: Decode monotonicity ---
+
+func TestTrainedRoofline_DecodeMonotonicity(t *testing.T) {
+	coeffs := sim.NewLatencyCoeffs(trainingFittedBetas, trainingFittedAlphas)
+	hw := sim.ModelHardwareConfig{
+		Backend: "trained-roofline",
+		ModelConfig: sim.ModelConfig{
+			NumLayers: 32, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 32,
+			IntermediateDim: 11008, BytesPerParam: 2,
+		},
+		HWConfig: sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35, MfuPrefill: 0.45, MfuDecode: 0.30, MemoryGiB: 80.0},
+		TP:      1,
+	}
+	model, err := NewLatencyModel(coeffs, hw)
+	assert.NoError(t, err)
+
+	var prevTime int64
+	for nReqs := 1; nReqs <= 16; nReqs *= 2 {
+		batch := make([]*sim.Request, nReqs)
+		for i := range batch {
+			batch[i] = makeDecodeRequest(512, 100)
+		}
+		st := model.StepTime(batch)
+		assert.GreaterOrEqual(t, st, prevTime,
+			"decode step time should be non-decreasing: %d reqs -> %d us (prev %d us)", nReqs, st, prevTime)
+		prevTime = st
+	}
+}
+
 // --- Verify no NaN/Inf propagation for extreme but valid inputs ---
 
 func TestTrainedRoofline_StepTime_LargeContext_NoOverflow(t *testing.T) {
