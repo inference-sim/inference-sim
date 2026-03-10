@@ -378,9 +378,11 @@ var runCmd = &cobra.Command{
 					"Roofline step time estimates may be inaccurate for quantized models",
 					modelConfig.BytesPerParam)
 			}
-			// MoE informational note: roofline now models per-expert FLOPs, active
-			// weights, shared experts, and gate overhead. Remaining approximations:
-			// no expert-load-imbalance or MoE dispatch communication overhead.
+			// MoE informational note: roofline models per-routed-expert FLOPs (top_k active)
+			// and all-expert weight bandwidth (E experts loaded from HBM per step).
+			// Shared expert FLOPs/weights and gate/router weights are NOT modeled in
+			// roofline step time (they are included in KV capacity weight estimation).
+			// Remaining approximations: no expert-load-imbalance or MoE dispatch overhead.
 			if backend == "roofline" && modelConfig.NumLocalExperts > 1 {
 				logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). "+
 					"Roofline models per-expert FLOPs and active weights; dispatch overhead is not modeled",

@@ -30,6 +30,11 @@ type StepConfig struct {
 // HF intermediate_size is already scaled so that 2 × d × intermediate ≈ 3 × d × (2/3 × 4d).
 // Using 3 with the raw intermediate_size over-predicts for models like Llama2-70B
 // whose intermediate_size exceeds the standard SwiGLU (2/3 × 4d) convention.
+//
+// NOTE: KV capacity (computeModelWeightBytes in kv_capacity.go) intentionally uses 3-matrix
+// SwiGLU to match the capacity_planner.py reference formula. The difference is deliberate:
+// roofline optimizes for step-time accuracy (calibrated to llm-optimizer), while KV capacity
+// optimizes for conservative weight estimation (over-counting weights is safer than OOM).
 func mlpMatrixCount(hiddenAct string) float64 {
 	_ = hiddenAct // reserved for future per-activation tuning
 	return 2

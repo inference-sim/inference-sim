@@ -216,7 +216,9 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	// O: hidden_dim * hidden_dim
 	attentionPerLayer := hiddenDim*(hiddenDim+2*kvDim) + hiddenDim*hiddenDim
 
-	// MLP per layer: SwiGLU uses 3 matrices (gate, up, down)
+	// MLP per layer: SwiGLU uses 3 matrices (gate, up, down) to match capacity_planner.py.
+	// NOTE: roofline step time (mlpMatrixCount in roofline.go) uses 2-matrix convention for
+	// FLOPs/bandwidth — see that function's comment for the calibration rationale.
 	var mlpPerLayer int64
 	if params.IsMoE && params.NumLocalExperts > 1 {
 		// MoE: use per-expert FFN dim for routed experts, add shared and gate

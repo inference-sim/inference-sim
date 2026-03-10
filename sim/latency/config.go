@@ -211,7 +211,8 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		sharedExpertFFNDim = nShared * perExpert
 	}
 
-	// Activation function: used to select 3-matrix SwiGLU vs 2-matrix standard MLP.
+	// Activation function: used by KV capacity for SwiGLU detection (3-matrix weight estimation).
+	// Roofline step time currently uses 2-matrix for all activations (see mlpMatrixCount).
 	hiddenAct := hf.MustGetString("hidden_act", "")
 
 	modelConfig := &sim.ModelConfig{

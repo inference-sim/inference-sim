@@ -49,8 +49,8 @@ Port llm-optimizer's single-crossover roofline into `rooflineStepTime()`. Keep B
 | Aspect | llm-optimizer | BLIS (kept) |
 |--------|--------------|-------------|
 | MLP dims | Hardcoded `4 * d_model` | Actual `IntermediateDim` from HF config |
-| MLP matrices | 2-matrix (up/down) | 3-matrix SwiGLU (gate/up/down) |
-| MoE | None | Routed + shared + gate FLOPs and weights |
+| MLP matrices | 2-matrix (up/down) | 2-matrix (matching llm-optimizer; HF `intermediate_size` already SwiGLU-scaled). KV capacity uses 3-matrix for conservative weight estimation |
+| MoE | None | Routed expert FLOPs (top_k) and weights (all E); shared expert and gate weights modeled in KV capacity only |
 | Attention memory | Quadratic `[B,H,T,T]` in HBM | FlashAttention-aware (SRAM-local) |
 | Prefill context | Full `T²` | Effective context averaging |
 
