@@ -38,7 +38,8 @@ var (
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
 	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
-	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
+	longPrefillTokenThreshold    int64   // Max length of prefill beyond which chunked prefill is triggered
+	priorityPreemptionMargin     float64 // Priority difference threshold for preempting running requests (0 = disabled)
 	rate                      float64   // Requests arrival per second
 	numRequests               int       // Number of requests
 	prefixTokens              int       // Prefix Token Count
@@ -781,6 +782,9 @@ var runCmd = &cobra.Command{
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
 		}
+		if priorityPreemptionMargin < 0 {
+			logrus.Fatalf("--priority-preemption-margin must be >= 0, got %f", priorityPreemptionMargin)
+		}
 		// Changed() guard: unlike peer flags (default always positive), --horizon defaults
 		// to math.MaxInt64 which would fail <= 0. Only validate when user explicitly sets it.
 		if cmd.Flags().Changed("horizon") && simulationHorizon <= 0 {
@@ -946,7 +950,7 @@ var runCmd = &cobra.Command{
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
+				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold, priorityPreemptionMargin),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend, maxModelLen),
 				PolicyConfig:        sim.NewPolicyConfigWithOverride(priorityPolicy, scheduler, priorityOverride),
@@ -1119,6 +1123,7 @@ func init() {
 	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
 	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
+	runCmd.Flags().Float64Var(&priorityPreemptionMargin, "priority-preemption-margin", 0, "Priority difference threshold for preempting running requests (0 = disabled)")
 
 	// BLIS model configs
 	runCmd.Flags().StringVar(&model, "model", "", "LLM name")

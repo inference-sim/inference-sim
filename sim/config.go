@@ -30,16 +30,18 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 
 // BatchConfig groups batch formation parameters.
 type BatchConfig struct {
-	MaxRunningReqs            int64 // max requests in RunningBatch
-	MaxScheduledTokens        int64 // max total new tokens across all requests in RunningBatch
-	LongPrefillTokenThreshold int64 // threshold for long prefill chunking
+	MaxRunningReqs            int64   // max requests in RunningBatch
+	MaxScheduledTokens        int64   // max total new tokens across all requests in RunningBatch
+	LongPrefillTokenThreshold int64   // threshold for long prefill chunking
+	PriorityPreemptionMargin  float64 // if > 0, enables priority-based preemption in Phase 2: a waiting request preempts the lowest-priority running request when priority difference exceeds this margin. 0 = disabled (default).
 }
 
 // NewBatchConfig creates a BatchConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
 // Panics on invalid values: MaxRunningReqs and MaxScheduledTokens must be > 0,
-// LongPrefillTokenThreshold must be >= 0 (0 means disabled).
-func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64) BatchConfig {
+// LongPrefillTokenThreshold must be >= 0 (0 means disabled),
+// PriorityPreemptionMargin must be >= 0 (0 means disabled).
+func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64, priorityPreemptionMargin float64) BatchConfig {
 	if maxRunningReqs <= 0 {
 		panic(fmt.Sprintf("NewBatchConfig: MaxRunningReqs must be > 0, got %d", maxRunningReqs))
 	}
@@ -49,10 +51,14 @@ func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshol
 	if longPrefillTokenThreshold < 0 {
 		panic(fmt.Sprintf("NewBatchConfig: LongPrefillTokenThreshold must be >= 0, got %d", longPrefillTokenThreshold))
 	}
+	if priorityPreemptionMargin < 0 {
+		panic(fmt.Sprintf("NewBatchConfig: PriorityPreemptionMargin must be >= 0, got %f", priorityPreemptionMargin))
+	}
 	return BatchConfig{
 		MaxRunningReqs:            maxRunningReqs,
 		MaxScheduledTokens:        maxScheduledTokens,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
+		PriorityPreemptionMargin:  priorityPreemptionMargin,
 	}
 }
 

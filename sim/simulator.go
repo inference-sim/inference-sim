@@ -74,13 +74,14 @@ type Simulator struct {
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
-	model                  string
-	gpu                    string
-	maxModelLen            int64 // max total sequence length (0 = unlimited)
-	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
-	priorityPolicy         PriorityPolicy
-	scheduler              InstanceScheduler
-	latencyModel           LatencyModel
+	model                      string
+	gpu                        string
+	maxModelLen                int64   // max total sequence length (0 = unlimited)
+	priorityPreemptionMargin   float64 // from BatchConfig; if > 0, enables priority-based preemption
+	rng                        *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
+	priorityPolicy             PriorityPolicy
+	scheduler                  InstanceScheduler
+	latencyModel               LatencyModel
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
@@ -100,6 +101,9 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	}
 	if cfg.LongPrefillTokenThreshold < 0 {
 		return nil, fmt.Errorf("NewSimulator: LongPrefillTokenThreshold must be >= 0, got %d", cfg.LongPrefillTokenThreshold)
+	}
+	if cfg.PriorityPreemptionMargin < 0 {
+		return nil, fmt.Errorf("NewSimulator: PriorityPreemptionMargin must be >= 0, got %f", cfg.PriorityPreemptionMargin)
 	}
 	if cfg.MaxModelLen < 0 {
 		return nil, fmt.Errorf("NewSimulator: MaxModelLen must be >= 0, got %d", cfg.MaxModelLen)
@@ -135,10 +139,11 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		stepCount:                 0,
 		reqNumComputedTokens:      make(map[string]int64),
 		batchFormation:            batchFormation,
-		model:                     cfg.Model,
-		gpu:                       cfg.GPU,
-		maxModelLen:               cfg.MaxModelLen,
-		latencyModel:              latencyModel,
+		model:                      cfg.Model,
+		gpu:                        cfg.GPU,
+		maxModelLen:                cfg.MaxModelLen,
+		priorityPreemptionMargin:   cfg.PriorityPreemptionMargin,
+		latencyModel:               latencyModel,
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
 	if cfg.PriorityOverride != nil {
@@ -401,15 +406,16 @@ func (sim *Simulator) scheduleBatch(now int64) {
 	// Delegate batch composition to the pluggable BatchFormation strategy.
 	// Event scheduling and metrics recording happen after FormBatch returns (kernel concerns).
 	batchCtx := BatchContext{
-		RunningBatch:          sim.RunningBatch,
-		WaitQ:                 sim.WaitQ,
-		KVCache:               sim.KVCache,
-		MaxScheduledTokens:    sim.maxScheduledTokens,
-		MaxRunningReqs:        sim.maxRunningReqs,
-		PrefillTokenThreshold: sim.longPrefillTokenThreshold,
-		Now:                   now,
-		StepCount:             sim.stepCount,
-		ComputedTokens:        sim.reqNumComputedTokens,
+		RunningBatch:             sim.RunningBatch,
+		WaitQ:                    sim.WaitQ,
+		KVCache:                  sim.KVCache,
+		MaxScheduledTokens:       sim.maxScheduledTokens,
+		MaxRunningReqs:           sim.maxRunningReqs,
+		PrefillTokenThreshold:    sim.longPrefillTokenThreshold,
+		PriorityPreemptionMargin: sim.priorityPreemptionMargin,
+		Now:                      now,
+		StepCount:                sim.stepCount,
+		ComputedTokens:           sim.reqNumComputedTokens,
 	}
 	batchResult := sim.batchFormation.FormBatch(batchCtx)
 

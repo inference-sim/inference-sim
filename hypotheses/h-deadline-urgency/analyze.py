@@ -20,7 +20,6 @@ Output format reference:
   - Cluster JSON: "instance_id": "cluster" block with ttft_p99_ms, e2e_mean_ms, etc.
 """
 
-import json
 import re
 import sys
 from pathlib import Path

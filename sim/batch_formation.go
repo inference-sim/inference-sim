@@ -21,15 +21,16 @@ type BatchFormation interface {
 // increment ComputedTokens[req.ID] to the total computed tokens (including
 // cached). Phase 2 of Step() reads this map to advance ProgressIndex.
 type BatchContext struct {
-	RunningBatch          *Batch
-	WaitQ                 *WaitQueue
-	KVCache               KVStore
-	MaxScheduledTokens    int64
-	MaxRunningReqs        int64
-	PrefillTokenThreshold int64
-	Now                   int64
-	StepCount             int
-	ComputedTokens        map[string]int64
+	RunningBatch             *Batch
+	WaitQ                    *WaitQueue
+	KVCache                  KVStore
+	MaxScheduledTokens       int64
+	MaxRunningReqs           int64
+	PrefillTokenThreshold    int64
+	PriorityPreemptionMargin float64 // from BatchConfig; if > 0, enables priority-based preemption in Phase 2
+	Now                      int64
+	StepCount                int
+	ComputedTokens           map[string]int64
 }
 
 // ScheduledRequest carries metadata about a newly scheduled request.
@@ -114,8 +115,61 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		reqIndex++
 	}
 
-	// Phase 2: Dequeue new requests from wait queue
-	for len(result.RunningBatch.Requests) < int(ctx.MaxRunningReqs) && ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
+	// Phase 2: Dequeue new requests from wait queue.
+	// Priority preemption: when the batch is full and a high-priority request is waiting,
+	// evict the lowest-priority running request to make room (R19: max 3 per step).
+	priorityPreemptionsThisStep := 0
+	for ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
+		batchFull := len(result.RunningBatch.Requests) >= int(ctx.MaxRunningReqs)
+
+		if batchFull {
+			// Priority preemption: evict lowest-priority running request if a much
+			// higher-priority request is waiting.
+			if ctx.PriorityPreemptionMargin <= 0 || priorityPreemptionsThisStep >= 3 {
+				break // Disabled or circuit breaker (R19: max 3 priority preemptions per step)
+			}
+			next := ctx.WaitQ.Peek()
+			lowestIdx := findLowestPriorityRunning(result.RunningBatch.Requests)
+			if lowestIdx < 0 {
+				break
+			}
+			lowest := result.RunningBatch.Requests[lowestIdx]
+			if next.Priority-lowest.Priority < ctx.PriorityPreemptionMargin {
+				break // Priority difference too small
+			}
+
+			// Evict the lowest-priority running request
+			logrus.Warnf("[tick %07d] priority-preemption: evicting %s (pri=%.1f) for waiting %s (pri=%.1f)",
+				ctx.Now, lowest.ID, lowest.Priority, next.ID, next.Priority)
+
+			// Remove from batch (swap with last, then truncate — order doesn't matter
+			// since Phase 1 already ran)
+			lastIdx := len(result.RunningBatch.Requests) - 1
+			result.RunningBatch.Requests[lowestIdx] = result.RunningBatch.Requests[lastIdx]
+			result.RunningBatch.Requests = result.RunningBatch.Requests[:lastIdx]
+
+			result.Preempted = append(result.Preempted, PreemptedRequest{Request: lowest})
+
+			// Restore token budget if the preempted request was allocated tokens this step
+			if lowest.NumNewTokens > 0 {
+				tokenBudget += int64(lowest.NumNewTokens)
+				lowest.NumNewTokens = 0
+			}
+
+			lowest.State = StateQueued
+			lowest.ProgressIndex = 0
+			ctx.KVCache.ReleaseKVBlocks(lowest)
+			delete(ctx.ComputedTokens, lowest.ID)
+			// Enqueue at back (not front) so the high-priority waiting request
+			// that triggered this preemption gets scheduled first in the standard
+			// Phase 2 path that follows.
+			ctx.WaitQ.Enqueue(lowest)
+
+			priorityPreemptionsThisStep++
+			continue // Re-check loop: now batch has room
+		}
+
+		// Standard Phase 2: schedule from wait queue (existing logic)
 		next := ctx.WaitQ.Peek()
 
 		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.InputTokens)
@@ -195,6 +249,21 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			return true
 		}
 	}
+}
+
+// findLowestPriorityRunning returns the index of the running request with the
+// lowest Priority value. Returns -1 if the batch is empty.
+func findLowestPriorityRunning(requests []*Request) int {
+	if len(requests) == 0 {
+		return -1
+	}
+	minIdx := 0
+	for i := 1; i < len(requests); i++ {
+		if requests[i].Priority < requests[minIdx].Priority {
+			minIdx = i
+		}
+	}
+	return minIdx
 }
 
 // NewBatchFormation creates the default BatchFormation.
