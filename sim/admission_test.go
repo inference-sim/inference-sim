@@ -196,6 +196,173 @@ func TestNewAdmissionPolicy_InvalidName_Panics(t *testing.T) {
 	}
 }
 
+// TestSLOGatedAdmission_ProtectedClassesAlwaysAdmitted verifies protected SLO classes
+// are admitted regardless of queue depth.
+func TestSLOGatedAdmission_ProtectedClassesAlwaysAdmitted(t *testing.T) {
+	policy := NewSLOGatedAdmission([]string{"critical", "standard"}, 10)
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{{QueueDepth: 100}}, // way over threshold
+		Clock:     1000,
+	}
+
+	tests := []struct {
+		name     string
+		sloClass string
+	}{
+		{"critical always admitted", "critical"},
+		{"standard always admitted", "standard"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &Request{ID: "r0", SLOClass: tt.sloClass}
+			admitted, _ := policy.Admit(req, state)
+			if !admitted {
+				t.Errorf("%s should always be admitted, even when queue depth exceeds threshold", tt.sloClass)
+			}
+		})
+	}
+}
+
+// TestSLOGatedAdmission_SheddableRejectedOverThreshold verifies non-protected classes
+// are rejected when total queue depth exceeds the threshold.
+func TestSLOGatedAdmission_SheddableRejectedOverThreshold(t *testing.T) {
+	policy := NewSLOGatedAdmission([]string{"critical", "standard"}, 50)
+	overloaded := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{QueueDepth: 20}, {QueueDepth: 15}, {QueueDepth: 10}, {QueueDepth: 10},
+		}, // total = 55 > 50
+		Clock: 1000,
+	}
+
+	tests := []struct {
+		name     string
+		sloClass string
+	}{
+		{"sheddable rejected", "sheddable"},
+		{"batch rejected", "batch"},
+		{"background rejected", "background"},
+		{"empty class rejected", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &Request{ID: "r0", SLOClass: tt.sloClass}
+			admitted, reason := policy.Admit(req, overloaded)
+			if admitted {
+				t.Errorf("%q should be rejected when queue exceeds threshold", tt.sloClass)
+			}
+			if reason == "" {
+				t.Error("rejection should have a reason")
+			}
+		})
+	}
+}
+
+// TestSLOGatedAdmission_SheddableAdmittedUnderThreshold verifies non-protected classes
+// are admitted when total queue depth is under the threshold.
+func TestSLOGatedAdmission_SheddableAdmittedUnderThreshold(t *testing.T) {
+	policy := NewSLOGatedAdmission([]string{"critical", "standard"}, 50)
+	light := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{QueueDepth: 5}, {QueueDepth: 5}, {QueueDepth: 5}, {QueueDepth: 5},
+		}, // total = 20 < 50
+		Clock: 1000,
+	}
+
+	req := &Request{ID: "r0", SLOClass: "sheddable"}
+	admitted, _ := policy.Admit(req, light)
+	if !admitted {
+		t.Error("sheddable should be admitted when queue is under threshold")
+	}
+}
+
+// TestSLOGatedAdmission_ExactThresholdAdmits verifies that requests at exactly
+// the threshold boundary are admitted (rejection is strictly greater-than).
+func TestSLOGatedAdmission_ExactThresholdAdmits(t *testing.T) {
+	policy := NewSLOGatedAdmission([]string{"critical"}, 50)
+	atThreshold := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{QueueDepth: 25}, {QueueDepth: 25},
+		}, // total = 50 = threshold (not >)
+		Clock: 1000,
+	}
+
+	req := &Request{ID: "r0", SLOClass: "sheddable"}
+	admitted, _ := policy.Admit(req, atThreshold)
+	if !admitted {
+		t.Error("sheddable should be admitted when queue equals threshold (boundary is strictly >)")
+	}
+}
+
+// TestSLOGatedAdmission_INV9_DoesNotReadOutputTokens verifies that the admission
+// decision is independent of OutputTokens (INV-9: oracle knowledge boundary).
+func TestSLOGatedAdmission_INV9_DoesNotReadOutputTokens(t *testing.T) {
+	policy := NewSLOGatedAdmission([]string{"critical"}, 50)
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{{QueueDepth: 100}},
+		Clock:     1000,
+	}
+
+	req1 := &Request{SLOClass: "sheddable", OutputTokens: []int{1, 2, 3}}
+	req2 := &Request{SLOClass: "sheddable", OutputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}}
+	a1, _ := policy.Admit(req1, state)
+	a2, _ := policy.Admit(req2, state)
+	if a1 != a2 {
+		t.Error("INV-9: admission should not depend on OutputTokens")
+	}
+}
+
+// TestSLOGatedAdmission_PanicsOnZeroThreshold verifies R3 constructor validation.
+func TestSLOGatedAdmission_PanicsOnZeroThreshold(t *testing.T) {
+	tests := []struct {
+		name      string
+		threshold int
+	}{
+		{"zero", 0},
+		{"negative", -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("expected panic for queueThreshold=%d, got none", tt.threshold)
+				}
+			}()
+			NewSLOGatedAdmission([]string{"critical"}, tt.threshold)
+		})
+	}
+}
+
+// TestNewAdmissionPolicy_SLOGated verifies the factory creates a working slo-gated policy.
+func TestNewAdmissionPolicy_SLOGated(t *testing.T) {
+	// Factory uses capacity as queue threshold; protected classes = critical, standard
+	p := NewAdmissionPolicy("slo-gated", 50, 0)
+
+	overloaded := &RouterState{
+		Snapshots: []RoutingSnapshot{{QueueDepth: 100}},
+		Clock:     1000,
+	}
+
+	// Critical should be admitted even when overloaded
+	critical := &Request{ID: "r0", SLOClass: "critical"}
+	admitted, _ := p.Admit(critical, overloaded)
+	if !admitted {
+		t.Error("slo-gated factory: critical should be admitted")
+	}
+
+	// Sheddable should be rejected when overloaded
+	sheddable := &Request{ID: "r1", SLOClass: "sheddable"}
+	admitted, reason := p.Admit(sheddable, overloaded)
+	if admitted {
+		t.Error("slo-gated factory: sheddable should be rejected when overloaded")
+	}
+	if reason == "" {
+		t.Error("slo-gated factory: rejection should have a reason")
+	}
+}
+
 // TestRejectAll_RejectsAll verifies BC-4.
 func TestRejectAll_RejectsAll(t *testing.T) {
 	policy := NewAdmissionPolicy("reject-all", 0, 0)

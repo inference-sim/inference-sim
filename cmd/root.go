@@ -838,6 +838,12 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("--token-bucket-refill-rate must be a finite value > 0, got %v", tokenBucketRefillRate)
 			}
 		}
+		// SLO-gated reuses token-bucket-capacity as queue threshold (R3: validate when policy is selected)
+		if admissionPolicy == "slo-gated" {
+			if tokenBucketCapacity <= 0 || math.IsNaN(tokenBucketCapacity) || math.IsInf(tokenBucketCapacity, 0) {
+				logrus.Fatalf("--token-bucket-capacity (queue threshold for slo-gated) must be a finite value > 0, got %v", tokenBucketCapacity)
+			}
+		}
 
 		if !sim.IsValidAdmissionPolicy(admissionPolicy) {
 			logrus.Fatalf("Unknown admission policy %q. Valid: %s", admissionPolicy, strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
@@ -921,6 +927,10 @@ var runCmd = &cobra.Command{
 		if admissionPolicy == "token-bucket" {
 			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
 				tokenBucketCapacity, tokenBucketRefillRate)
+		}
+		if admissionPolicy == "slo-gated" {
+			logrus.Infof("SLO-gated admission: queue-threshold=%.0f (protected: critical, standard)",
+				tokenBucketCapacity)
 		}
 
 		// Log configuration after all config sources (CLI, workload spec, policy bundle) are resolved
@@ -1135,7 +1145,7 @@ func init() {
 	runCmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
 
 	// Online routing pipeline config
-	runCmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket, reject-all")
+	runCmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket, slo-gated, reject-all")
 	runCmd.Flags().Int64Var(&admissionLatency, "admission-latency", 0, "Admission latency in microseconds")
 	runCmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
 	runCmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")
