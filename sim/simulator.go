@@ -334,7 +334,7 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	for _, v := range req.ITL {
 		itlSum += v
 	}
-	lat := req.FirstTokenTime + itlSum
+	lat := req.FirstTokenTime + itlSum + sim.latencyModel.PostDecodeFixedOverhead()
 	sim.Metrics.RequestE2Es[req.ID] = float64(lat)
 	logrus.Debugf("Finished req: ID: %s at time: %d", req.ID, lat+req.ArrivalTime)
 	if len(req.OutputTokens) > 0 {
