@@ -181,20 +181,13 @@ func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *t
 }
 
 // testHardwareCalib returns an H100-like hardware config for roofline tests.
-// Note: BwEffConstant, TOverheadMicros, PerLayerOverhead, AllReduceLatency are
-// present for struct completeness and ValidateRooflineConfig but are NOT consumed
-// by rooflineStepTime() (single-crossover model uses raw peak bandwidth, no overheads).
 func testHardwareCalib() sim.HardwareCalib {
 	return sim.HardwareCalib{
-		TFlopsPeak:       989.0,
-		BwPeakTBs:        3.35,
-		BwEffConstant:    0.7,
-		TOverheadMicros:  50.0,
-		PerLayerOverhead: 5.0,
-		MfuPrefill:       0.55,
-		MfuDecode:        0.30,
-		AllReduceLatency: 10.0,
-		MemoryGiB:        80.0,
+		TFlopsPeak: 989.0,
+		BwPeakTBs:  3.35,
+		MfuPrefill: 0.55,
+		MfuDecode:  0.30,
+		MemoryGiB:  80.0,
 	}
 }
 

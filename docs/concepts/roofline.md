@@ -79,15 +79,11 @@ Alternatively, download the `config.json` manually:
 ```json
 {
     "<GPU_name>": {
-        "TFlopsPeak":        989.5,
-        "BwPeakTBs":         3.35,
-        "BwEffConstant":     0.72,
-        "TOverheadMicros":   500.0,
-        "perLayerOverhead":  20.0,
-        "mfuPrefill":        0.65,
-        "mfuDecode":         0.12,
-        "allReduceLatency":  20.0,
-        "MemoryGiB":         80.0
+        "TFlopsPeak":  989.5,
+        "BwPeakTBs":   3.35,
+        "mfuPrefill":  0.45,
+        "mfuDecode":   0.30,
+        "MemoryGiB":   80.0
     }
 }
 ```
@@ -96,12 +92,8 @@ Alternatively, download the `config.json` manually:
 |-------|-------------|
 | `TFlopsPeak` | Peak BF16 TFLOPS from GPU datasheet |
 | `BwPeakTBs` | Peak HBM bandwidth in TB/s from GPU datasheet |
-| `BwEffConstant` | Fraction of peak BW achieved in practice (0-1) |
-| `TOverheadMicros` | Per-step overhead in microseconds |
-| `perLayerOverhead` | CPU scheduling overhead per transformer layer in microseconds |
-| `mfuPrefill` | Static MFU for prefill (used when MFU database is unavailable) |
-| `mfuDecode` | Static MFU for decode (used when MFU database is unavailable) |
-| `allReduceLatency` | All-reduce latency in microseconds (multi-GPU TP) |
+| `mfuPrefill` | Model FLOPS Utilization for prefill phase (compute-bound) |
+| `mfuDecode` | Model FLOPS Utilization for decode phase (memory-bound) |
 | `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or crossmodel mode is active and the flag is not explicitly set. |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.

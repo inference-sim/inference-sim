@@ -22,13 +22,9 @@ type ModelConfig struct {
 // Used by the roofline latency model for compute/memory bandwidth estimation.
 // Parsing functions are in sim/latency/config.go.
 type HardwareCalib struct {
-	TFlopsPeak       float64 `json:"TFlopsPeak"`      // Tera (10^12) FLOP/s
-	BwPeakTBs        float64 `json:"BwPeakTBs"`       // in TB/s
-	BwEffConstant    float64 `json:"BwEffConstant"`   // scaling factor to convert Peak BW to Effective BW
-	TOverheadMicros  float64 `json:"TOverheadMicros"` // Per-step Overheads unaccounted for
-	PerLayerOverhead float64 `json:"perLayerOverhead"`
-	MfuPrefill       float64 `json:"mfuPrefill"`
-	MfuDecode        float64 `json:"mfuDecode"`
-	AllReduceLatency float64 `json:"allReduceLatency"`
-	MemoryGiB        float64 `json:"MemoryGiB"` // GPU memory capacity in GiB
+	TFlopsPeak float64 `json:"TFlopsPeak"` // Tera (10^12) FLOP/s
+	BwPeakTBs  float64 `json:"BwPeakTBs"`  // in TB/s
+	MfuPrefill float64 `json:"mfuPrefill"`
+	MfuDecode  float64 `json:"mfuDecode"`
+	MemoryGiB  float64 `json:"MemoryGiB"` // GPU memory capacity in GiB
 }
