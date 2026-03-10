@@ -4,7 +4,7 @@ Routing decides **which instance** receives a request. Scheduling decides **what
 
 ```bash
 # Priority-FCFS scheduling with age-based priority in a 4-instance cluster
-./blis run --model qwen/qwen2.5-7b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 100 --num-requests 500 \
   --scheduler priority-fcfs --priority-policy slo-based
 ```

@@ -71,7 +71,7 @@ Maps to `ModelHardwareConfig`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--model` | string | (required) | LLM model name (e.g., `qwen/qwen2.5-7b-instruct`). |
+| `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
 | `--hardware` | string | "" | GPU type (e.g., `H100`, `A100`). If empty, loaded from `defaults.yaml`. |
 | `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
 | `--vllm-version` | string | "" | vLLM version string. If empty, loaded from `defaults.yaml`. |
@@ -302,11 +302,11 @@ The `defaults.yaml` file serves as a model registry and workload preset store:
 ```yaml
 # Section 1: Hardware/TP mappings (keyed by model ID)
 defaults:
-  qwen/qwen2.5-7b-instruct:
+  qwen/qwen3-14b:
     GPU: H100
     tensor_parallelism: 1
     vllm_version: vllm/vllm-openai:v0.11.0
-    hf_repo: Qwen/Qwen2.5-7B-Instruct
+    hf_repo: Qwen/Qwen3-14B
 
 # Section 2: Workload presets
 workloads:
@@ -319,13 +319,13 @@ workloads:
 
 # Section 3: Trained coefficients (keyed by model+GPU+TP)
 models:
-  - id: qwen/qwen2.5-7b-instruct
+  - id: qwen/qwen3-14b
     GPU: H100
     tensor_parallelism: 1
     vllm_version: vllm/vllm-openai:v0.11.0
-    alpha_coeffs: [5223.76, 2.41, 5368.06]
-    beta_coeffs: [10041.67, 81.12, 59.99]
-    total_kv_blocks: 67659
+    alpha_coeffs: [8888.09, 0.18, 0.0]
+    beta_coeffs: [13578.19, 39.44, 27.32]
+    total_kv_blocks: 17600
 ```
 
 ### Resolution Process

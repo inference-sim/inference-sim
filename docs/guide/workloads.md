@@ -4,7 +4,7 @@ This guide covers how to define the traffic patterns BLIS simulates — from sim
 
 ```bash
 # Quick example: workload-spec YAML
-./blis run --model qwen/qwen2.5-7b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --workload-spec examples/multiturn-chat-demo.yaml
 ```
 
@@ -52,7 +52,7 @@ clients:
 Pair with prefix-affinity routing for cache reuse:
 
 ```bash
-./blis run --model qwen/qwen2.5-7b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --workload-spec chat.yaml \
   --routing-policy weighted --routing-scorers "prefix-affinity:3,queue-depth:2"
 ```
@@ -86,7 +86,7 @@ clients:
 Run with aggressive prefix-affinity to maximize cache reuse:
 
 ```bash
-./blis run --model qwen/qwen2.5-7b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --workload-spec rag.yaml \
   --routing-policy weighted --routing-scorers "prefix-affinity:3,queue-depth:1"
 ```
@@ -190,7 +190,7 @@ Context accumulation means round N sees all prior input+output tokens as prefix,
 The simplest way to generate traffic:
 
 ```bash
-./blis run --model qwen/qwen2.5-7b-instruct \
+./blis run --model qwen/qwen3-14b \
   --rate 100 --num-requests 500 \
   --prompt-tokens 512 --prompt-tokens-stdev 256 \
   --output-tokens 256 --output-tokens-stdev 128
@@ -413,7 +413,7 @@ BLIS ships with preset workload profiles in `defaults.yaml`. Use them via the CL
 
 ```bash
 # Run directly with a named preset
-./blis run --model qwen/qwen2.5-7b-instruct --workload chatbot
+./blis run --model qwen/qwen3-14b --workload chatbot
 
 # Convert a preset to a v2 WorkloadSpec YAML for customization
 ./blis convert preset --name chatbot --rate 10 --num-requests 100 > chatbot.yaml

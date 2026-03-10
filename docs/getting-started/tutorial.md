@@ -2,7 +2,7 @@
 
 This tutorial walks through a complete capacity planning exercise: determining how many inference instances you need to serve a target request rate while meeting latency SLOs.
 
-**Scenario:** You're deploying Qwen 2.5 7B on H100 GPUs with TP=1. Your SLO is TTFT p99 < 500ms. You need to find the minimum number of instances for 500 requests/second.
+**Scenario:** You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 < 500ms. You need to find the minimum number of instances for 500 requests/second.
 
 ## Step 1: Estimate Instance Capacity
 
@@ -12,11 +12,11 @@ Run a single instance at low load to establish the baseline service rate:
 
 ```bash
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --rate 10 --num-requests 50
 ```
 
-Check the `responses_per_sec` value in the output — this is the single-instance throughput at low utilization. For Qwen 2.5 7B / H100 / TP=1 with default workload (512 input / 512 output tokens), you'll see roughly **57 requests/second**.
+Check the `responses_per_sec` value in the output — this is the single-instance throughput at low utilization. For Qwen3 14B / H100 / TP=1 with default workload (512 input / 512 output tokens), you'll see roughly **57 requests/second**.
 
 This means for 500 req/s, you need at minimum `ceil(500/57) ≈ 9` instances. Let's verify with simulation.
 
@@ -24,7 +24,7 @@ This means for 500 req/s, you need at minimum `ceil(500/57) ≈ 9` instances. Le
 
 ```bash
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --rate 50 --num-requests 200
 ```
 
@@ -37,17 +37,17 @@ Run simulations at increasing instance counts for 500 req/s:
 ```bash
 # 4 instances (~228 req/s capacity → heavily overloaded)
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --num-instances 4 --rate 500 --num-requests 2000
 
 # 8 instances (~456 req/s capacity → near saturation)
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --num-instances 8 --rate 500 --num-requests 2000
 
 # 12 instances (~684 req/s capacity → comfortable headroom)
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --num-instances 12 --rate 500 --num-requests 2000
 ```
 
@@ -81,19 +81,19 @@ With 12 instances at 500 req/s, compare routing strategies:
 ```bash
 # Round-robin (baseline)
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy round-robin
 
 # Weighted (default profile)
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy weighted
 
 # Least-loaded
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy least-loaded
 ```
@@ -102,7 +102,7 @@ For prefix-heavy workloads (like RAG with shared system prompts), try the prefix
 
 ```bash
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy weighted \
   --routing-scorers "prefix-affinity:5,queue-depth:1" \
@@ -115,7 +115,7 @@ For automated comparison across many configurations, use fitness evaluation:
 
 ```bash
 ./blis run \
-  --model qwen/qwen2.5-7b-instruct \
+  --model qwen/qwen3-14b \
   --num-instances 12 --rate 500 --num-requests 2000 \
   --routing-policy weighted \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"

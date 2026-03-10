@@ -16,7 +16,7 @@ go build -o blis main.go
 ## Verify the Build
 
 ```bash
-./blis run --model qwen/qwen2.5-7b-instruct --num-requests 10
+./blis run --model qwen/qwen3-14b --num-requests 10
 ```
 
 You should see JSON output on stdout containing fields like `ttft_mean_ms`, `e2e_mean_ms`, and `responses_per_sec`. This confirms BLIS is working correctly.

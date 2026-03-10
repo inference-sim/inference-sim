@@ -4,7 +4,7 @@ Admission control is the first gate in the cluster pipeline. It decides whether 
 
 ```bash
 # Rate-limit a 4-instance cluster with token bucket admission
-./blis run --model qwen/qwen2.5-7b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 500 --num-requests 2000 \
   --admission-policy token-bucket \
   --token-bucket-capacity 10000 --token-bucket-refill-rate 1000
