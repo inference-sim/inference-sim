@@ -89,9 +89,12 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 
 	if includeMLP {
 		nMat := mlpMatrixCount(config.HiddenAct)
-		mlpFlopsPerLayer := 2 * newT * (nMat * dModel * dFF)
+		dExpert := dFF
+		if config.NumLocalExperts > 1 && config.MoEExpertFFNDim > 0 {
+			dExpert = float64(config.MoEExpertFFNDim)
+		}
+		mlpFlopsPerLayer := 2 * newT * (nMat * dModel * dExpert)
 		if config.NumLocalExperts > 1 {
-			// MoE: only top_k experts compute per token
 			mlpFlopsPerLayer *= float64(config.NumExpertsPerTok)
 		}
 		flops["gemm_ops"] += mlpFlopsPerLayer * nLayers
@@ -133,11 +136,13 @@ func calculateMemoryAccessBytes(
 	attnWeightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel)
 
 	nMat := mlpMatrixCount(config.HiddenAct)
-	mlpWeightsPerLayer := nMat * dModel * dFF
+	dExpert := dFF
+	if config.NumLocalExperts > 1 && config.MoEExpertFFNDim > 0 {
+		dExpert = float64(config.MoEExpertFFNDim)
+	}
+	mlpWeightsPerLayer := nMat * dModel * dExpert
 	if config.NumLocalExperts > 1 {
-		// MoE: all E expert weights loaded from HBM per step (with batching,
-		// tokens route to all experts). For GPU memory budgeting (total model
-		// weights), see computeModelWeightBytes in kv_capacity.go.
+		// MoE: all E expert weights loaded from HBM per step
 		mlpWeightsPerLayer *= float64(config.NumLocalExperts)
 	}
 
