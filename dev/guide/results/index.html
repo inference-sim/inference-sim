@@ -2676,8 +2676,8 @@
 </tr>
 <tr>
 <td><strong>Dropped Unservable</strong></td>
-<td>Request needs more KV blocks than exist</td>
-<td>Increase <code>--total-kv-blocks</code> or reduce max input tokens</td>
+<td>Request exceeds <code>--max-model-len</code> context window or needs more KV blocks than exist</td>
+<td>Check <code>--max-model-len</code> setting; increase <code>--total-kv-blocks</code> or reduce max input tokens</td>
 </tr>
 </tbody>
 </table>

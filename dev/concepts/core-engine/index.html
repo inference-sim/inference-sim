@@ -2957,7 +2957,7 @@
 <h1 id="core-engine">Core Engine<a class="headerlink" href="#core-engine" title="Permanent link">&para;</a></h1>
 <p>This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see <a href="../architecture/">Cluster Architecture</a>.</p>
 <blockquote>
-<p><strong>Canonical sources:</strong> System invariants (INV-1 through INV-8) are defined in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a>. If invariant descriptions here diverge, <code>invariants.md</code> is authoritative.</p>
+<p><strong>Canonical sources:</strong> System invariants (INV-1 through INV-9) are defined in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a>. If invariant descriptions here diverge, <code>invariants.md</code> is authoritative.</p>
 </blockquote>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>Each BLIS instance is a self-contained discrete event simulator. The engine maintains an event queue (min-heap), processes events in timestamp order, and advances a simulation clock. The core loop is:</p>
@@ -3061,7 +3061,7 @@
 <pre class="mermaid"><code>stateDiagram-v2
     [*] --&gt; Arrival
     Arrival --&gt; Queued : alpha queueing delay
-    Arrival --&gt; DroppedUnservable : input too large for KV cache
+    Arrival --&gt; DroppedUnservable : exceeds MaxModelLen or KV capacity
 
     state "Queued" as Queued
     note right of Queued
@@ -3165,7 +3165,12 @@
 4. A debug log is emitted and <code>PreemptionCount</code> is incremented</p>
 <p>Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and their KV blocks are freed. However, the freed blocks' prefix hashes are preserved in the KV cache's free list — when the request is re-scheduled, prefix caching may find these blocks (if not yet evicted by LRU), reducing recomputation. This matches vLLM's "recompute" preemption mode.</p>
 <h3 id="dropped-requests">Dropped Requests<a class="headerlink" href="#dropped-requests" title="Permanent link">&para;</a></h3>
-<p>Requests whose input tokens require more KV blocks than the total cache capacity are dropped at enqueue time with a <code>DroppedUnservable</code> counter increment. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.</p>
+<p>Requests are dropped as unservable at enqueue time (incrementing <code>DroppedUnservable</code>) via two guards:</p>
+<ol>
+<li><strong>MaxModelLen guard</strong> — when <code>--max-model-len</code> is set, requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (<code>MaxOutputLen &gt; 0</code>), the check is <code>input + budget &gt; maxModelLen</code>. Otherwise, input length alone is checked (vLLM defaults <code>max_tokens</code> to <code>max_model_len - seq_len</code>; the runtime stop in <code>processCompletions</code> handles output growth).</li>
+<li><strong>KV capacity guard</strong> — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.</li>
+</ol>
+<p>Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, when <code>--max-model-len</code> is set, a runtime length cap force-completes any request whose <code>ProgressIndex</code> reaches <code>MaxModelLen</code> during decode (defense-in-depth).</p>
 <h2 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h2>
 <p>BLIS models vLLM's continuous batching algorithm through the <code>VLLMBatchFormation</code> implementation.</p>
 <h3 id="two-phase-algorithm">Two-Phase Algorithm<a class="headerlink" href="#two-phase-algorithm" title="Permanent link">&para;</a></h3>

@@ -2520,6 +2520,10 @@
 <p class="admonition-title">Automatic KV block calculation</p>
 <p>When using roofline or crossmodel mode, <code>--total-kv-blocks</code> is automatically derived from model architecture and GPU memory if not explicitly set. The auto-calculated value accounts for TP (KV heads are sharded across ranks; total GPU memory scales with GPU count). Override with <code>--total-kv-blocks &lt;N&gt;</code> for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations.</p>
 </div>
+<div class="admonition note">
+<p class="admonition-title">Automatic MaxModelLen derivation</p>
+<p>When using roofline or crossmodel mode and <code>--max-model-len</code> is not explicitly set, BLIS auto-derives it from <code>max_position_embeddings</code> in the HuggingFace <code>config.json</code>. For older models with <code>rope_scaling</code> (e.g., LongChat, Yi), the scaling factor is applied. The derived value is then capped at the KV-feasible maximum (<code>total_kv_blocks * block_size</code>) to prevent context windows from exceeding GPU memory capacity. Override with <code>--max-model-len &lt;N&gt;</code> when needed.</p>
+</div>
 <h2 id="cross-model-mode-physics-informed">Cross-Model Mode (Physics-Informed)<a class="headerlink" href="#cross-model-mode-physics-informed" title="Permanent link">&para;</a></h2>
 <p>Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from <code>config.json</code> to scale a single coefficient set.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>

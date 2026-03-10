@@ -3026,6 +3026,12 @@
 <td>""</td>
 <td>vLLM version string. If empty, loaded from <code>defaults.yaml</code>.</td>
 </tr>
+<tr>
+<td><code>--max-model-len</code></td>
+<td>int</td>
+<td>0</td>
+<td>Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's <code>--max-model-len</code>. Auto-derived from <code>max_position_embeddings</code> in HuggingFace <code>config.json</code> for roofline/crossmodel backends (with <code>rope_scaling</code> support and KV-feasible capping).</td>
+</tr>
 </tbody>
 </table>
 <h3 id="roofline-mode">Roofline Mode<a class="headerlink" href="#roofline-mode" title="Permanent link">&para;</a></h3>
@@ -3558,7 +3564,7 @@
 </tr>
 <tr>
 <td><strong>ModelHardwareConfig</strong></td>
-<td><code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code>, <code>--latency-model</code>, <code>--model-config-folder</code>, <code>--hardware-config</code></td>
+<td><code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code>, <code>--latency-model</code>, <code>--model-config-folder</code>, <code>--hardware-config</code>, <code>--max-model-len</code></td>
 </tr>
 <tr>
 <td><strong>PolicyConfig</strong></td>
