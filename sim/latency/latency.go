@@ -181,6 +181,63 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			isMoE:       isMoE,
 			isTP:        isTP,
 		}, nil
+	case "trained-roofline":
+		// TrainedRooflineLatencyModel: roofline basis functions × learned corrections.
+		// Requires model architecture (config.json) and hardware specs for basis functions.
+		if hw.TP <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires TP > 0, got %d", hw.TP)
+		}
+		if hw.ModelConfig.NumLayers <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires NumLayers > 0, got %d", hw.ModelConfig.NumLayers)
+		}
+		if hw.ModelConfig.NumHeads <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires NumHeads > 0, got %d", hw.ModelConfig.NumHeads)
+		}
+		if hw.ModelConfig.HiddenDim <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires HiddenDim > 0, got %d", hw.ModelConfig.HiddenDim)
+		}
+		if hw.ModelConfig.IntermediateDim <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires IntermediateDim > 0, got %d", hw.ModelConfig.IntermediateDim)
+		}
+		if hw.ModelConfig.NumHeads%hw.TP != 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires NumHeads (%d) divisible by TP (%d)", hw.ModelConfig.NumHeads, hw.TP)
+		}
+		numKVHeadsTR := hw.ModelConfig.NumKVHeads
+		if numKVHeadsTR == 0 {
+			numKVHeadsTR = hw.ModelConfig.NumHeads // MHA fallback
+		}
+		if numKVHeadsTR%hw.TP != 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires NumKVHeads (%d) divisible by TP (%d)", numKVHeadsTR, hw.TP)
+		}
+		if invalidPositiveFloat(hw.HWConfig.TFlopsPeak) {
+			return nil, fmt.Errorf("latency model: trained-roofline requires valid TFlopsPeak > 0, got %v", hw.HWConfig.TFlopsPeak)
+		}
+		if invalidPositiveFloat(hw.HWConfig.BwPeakTBs) {
+			return nil, fmt.Errorf("latency model: trained-roofline requires valid BwPeakTBs > 0, got %v", hw.HWConfig.BwPeakTBs)
+		}
+		if len(coeffs.BetaCoeffs) < 7 {
+			return nil, fmt.Errorf("latency model: trained-roofline BetaCoeffs requires at least 7 elements, got %d", len(coeffs.BetaCoeffs))
+		}
+		if err := validateCoeffs("BetaCoeffs", coeffs.BetaCoeffs); err != nil {
+			return nil, err
+		}
+		headDimTR := hw.ModelConfig.HiddenDim / hw.ModelConfig.NumHeads
+		return &TrainedRooflineLatencyModel{
+			betaCoeffs:  coeffs.BetaCoeffs,
+			alphaCoeffs: coeffs.AlphaCoeffs,
+			numLayers:   hw.ModelConfig.NumLayers,
+			hiddenDim:   hw.ModelConfig.HiddenDim,
+			numHeads:    hw.ModelConfig.NumHeads,
+			headDim:     headDimTR,
+			dKV:         numKVHeadsTR * headDimTR,
+			dFF:         hw.ModelConfig.IntermediateDim,
+			kEff:        max(1, hw.ModelConfig.NumExpertsPerTok), // matches training: k_eff = max(1, k)
+			numExperts:  hw.ModelConfig.NumLocalExperts,
+			isMoE:       hw.ModelConfig.NumLocalExperts > 0,
+			tp:          hw.TP,
+			flopsPeakUs: hw.HWConfig.TFlopsPeak * 1e6,
+			bwHbmUs:     hw.HWConfig.BwPeakTBs * 1e6,
+		}, nil
 	case "", "blackbox":
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 		if len(coeffs.BetaCoeffs) < 3 {
