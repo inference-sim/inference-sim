@@ -3028,9 +3028,9 @@
 </tr>
 <tr>
 <td><code>--max-model-len</code></td>
-<td>int</td>
+<td>int64</td>
 <td>0</td>
-<td>Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's <code>--max-model-len</code>. Auto-derived from <code>max_position_embeddings</code> in HuggingFace <code>config.json</code> for roofline/crossmodel backends (with <code>rope_scaling</code> support and KV-feasible capping).</td>
+<td>Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's <code>--max-model-len</code>. Auto-derived from <code>max_position_embeddings</code> in HuggingFace <code>config.json</code> for roofline/crossmodel backends. Applies <code>rope_scaling</code> factor for types <code>linear</code>, <code>dynamic</code>, <code>yarn</code>, <code>default</code>, <code>mrope</code>; excludes <code>su</code>, <code>longrope</code>, <code>llama3</code>; skips entirely for <code>gemma3</code> models. Capped at KV-feasible maximum.</td>
 </tr>
 </tbody>
 </table>
