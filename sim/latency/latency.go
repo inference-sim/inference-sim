@@ -1,8 +1,9 @@
 // Package latency provides latency model implementations for the BLIS simulator.
 // The LatencyModel interface is defined in sim/ (parent package).
 // This package provides BlackboxLatencyModel (alpha/beta regression),
-// RooflineLatencyModel (analytical FLOPs/bandwidth), and
-// CrossModelLatencyModel (physics-informed cross-model step time).
+// RooflineLatencyModel (analytical FLOPs/bandwidth),
+// CrossModelLatencyModel (physics-informed cross-model step time), and
+// TrainedRooflineLatencyModel (roofline basis functions × learned corrections).
 package latency
 
 import (
