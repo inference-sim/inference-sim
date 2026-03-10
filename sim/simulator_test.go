@@ -1311,6 +1311,39 @@ func TestEnqueueRequest_ExactFit_Accepted(t *testing.T) {
 	}
 }
 
+// BC-7: Negative MaxOutputLen → warning + dropped
+func TestEnqueueRequest_NegativeMaxOutputLen_Dropped(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 512),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	req := &Request{
+		ID:           "neg_budget",
+		InputTokens:  make([]int, 100),
+		OutputTokens: make([]int, 50),
+		MaxOutputLen: -1,
+		State:        StateQueued,
+	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+	sim.EnqueueRequest(req)
+
+	if sim.WaitQ.Len() != 0 {
+		t.Errorf("WaitQ.Len() = %d, want 0 (negative MaxOutputLen should be dropped)", sim.WaitQ.Len())
+	}
+	if sim.Metrics.DroppedUnservable != 1 {
+		t.Errorf("DroppedUnservable = %d, want 1", sim.Metrics.DroppedUnservable)
+	}
+	if _, exists := sim.Metrics.Requests["neg_budget"]; exists {
+		t.Error("Metrics.Requests should not contain dropped request")
+	}
+}
+
 // BC-5: Runtime length cap force-completes request at MaxModelLen boundary.
 // This is a defense-in-depth test: we directly place a request in the running batch
 // with ProgressIndex already at MaxModelLen to simulate bypass of enqueue guard.
@@ -1351,10 +1384,73 @@ func TestProcessCompletions_RuntimeLengthCap(t *testing.T) {
 		t.Errorf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
 	}
 
+	// BC-2: LengthCappedRequests counter incremented
+	if sim.Metrics.LengthCappedRequests != 1 {
+		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
+	}
+
 	// Conservation: no requests lost
 	if sim.WaitQ.Len()+len(remaining)+sim.Metrics.CompletedRequests != 1 {
 		t.Errorf("conservation violated: queued=%d + remaining=%d + completed=%d != 1",
 			sim.WaitQ.Len(), len(remaining), sim.Metrics.CompletedRequests)
+	}
+}
+
+// BC-5: End-to-end runtime length cap via sim.Run()
+// Injects a request that passes the enqueue guard (MaxOutputLen=0 → input-only check)
+// but has OutputTokens exceeding MaxModelLen. The runtime cap in processCompletions
+// should force-complete the request at the MaxModelLen boundary.
+func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             10_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 100),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// MaxOutputLen=0 means input-only check (50 < 100), so enqueue succeeds.
+	// But actual OutputTokens=200 means ProgressIndex will exceed MaxModelLen=100.
+	req := &Request{
+		ID:           "will_be_capped",
+		InputTokens:  GenerateRandomTokenIDs(sim.WorkloadRNG(), 50),
+		OutputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 200),
+		ArrivalTime:  0,
+		State:        StateQueued,
+	}
+	sim.InjectArrival(req)
+
+	sim.Run()
+
+	// Request completes (force-completed at MaxModelLen boundary)
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
+	}
+	if sim.Metrics.LengthCappedRequests != 1 {
+		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
+	}
+	// INV-1: conservation holds
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != 1 {
+		t.Errorf("INV-1: completed(%d)+queued(%d)+running(%d)+dropped(%d) = %d, want 1",
+			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
+	}
+	// Output was truncated below the full 200
+	if sim.Metrics.TotalOutputTokens >= 200 {
+		t.Errorf("TotalOutputTokens = %d, want < 200 (force-completion should truncate)", sim.Metrics.TotalOutputTokens)
+	}
+	if sim.Metrics.TotalOutputTokens == 0 {
+		t.Error("TotalOutputTokens = 0, want > 0 (some decode work should have happened)")
+	}
+	// Regression anchor: MaxModelLen(100) - input(50) = 50 decode steps
+	if sim.Metrics.TotalOutputTokens != 50 {
+		t.Errorf("TotalOutputTokens = %d, want 50 (regression anchor)", sim.Metrics.TotalOutputTokens)
+	}
+	// KV blocks released
+	if sim.KVCache.UsedBlocks() != 0 {
+		t.Errorf("UsedBlocks = %d, want 0 (KV blocks should be released after force-completion)", sim.KVCache.UsedBlocks())
 	}
 }
 
@@ -1422,6 +1518,24 @@ func TestSimulator_Conservation_WithMaxModelLen_Drops(t *testing.T) {
 	}
 }
 
+// BC-1: Negative MaxModelLen rejected by NewSimulator (defense-in-depth for struct literal bypass)
+func TestNewSimulator_NegativeMaxModelLen_Error(t *testing.T) {
+	cfg := newTestSimConfig()
+	cfg.MaxModelLen = -5 // bypass canonical constructor's panic to test NewSimulator validation
+	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("MustNewLatencyModel: %v", err)
+	}
+	_, err = NewSimulator(cfg, kvStore, latencyModel)
+	if err == nil {
+		t.Fatal("expected error for negative MaxModelLen")
+	}
+	if !strings.Contains(err.Error(), "MaxModelLen") {
+		t.Errorf("error %q should mention MaxModelLen", err.Error())
+	}
+}
+
 // R3: NewModelHardwareConfig panics on negative MaxModelLen
 func TestNewModelHardwareConfig_NegativeMaxModelLen_Panics(t *testing.T) {
 	defer func() {
@@ -1441,8 +1555,10 @@ func TestNewModelHardwareConfig_NegativeMaxModelLen_Panics(t *testing.T) {
 // This is a structural enforcement test: it reads the source files for servability-decision
 // functions and verifies zero references to OutputTokens.
 func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T) {
-	// Control-plane files that must not reference OutputTokens
-	controlPlaneFiles := []string{
+	// Control-plane files in sim/ that must not reference OutputTokens.
+	// These files contain no metric-aggregate names like TotalOutputTokens,
+	// so a whole-file scan is safe and maximally conservative.
+	simControlPlaneFiles := []string{
 		"admission.go",
 		"routing.go",
 		"routing_scorers.go",
@@ -1451,7 +1567,7 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		"priority.go",
 	}
 
-	for _, filename := range controlPlaneFiles {
+	for _, filename := range simControlPlaneFiles {
 		data, err := os.ReadFile(filename)
 		if err != nil {
 			t.Fatalf("failed to read %s: %v", filename, err)
@@ -1459,6 +1575,31 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		content := string(data)
 		if strings.Contains(content, "OutputTokens") {
 			t.Errorf("INV-9 violation: %s references OutputTokens — control-plane code must not access oracle output length", filename)
+		}
+	}
+
+	// Cluster control-plane files that handle *Request in the routing pipeline.
+	// These files may contain TotalOutputTokens (metric aggregation, not oracle access),
+	// so we use line-level scanning with TotalOutputTokens exclusion.
+	clusterControlPlaneFiles := []string{
+		"cluster/cluster.go",
+		"cluster/cluster_event.go",
+		"cluster/snapshot.go",
+		"cluster/counterfactual.go",
+	}
+
+	for _, filename := range clusterControlPlaneFiles {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", filename, err)
+		}
+		for lineNum, line := range strings.Split(string(data), "\n") {
+			// Remove known-safe metric aggregate names, then check for remaining OutputTokens
+			cleaned := strings.ReplaceAll(line, "TotalOutputTokens", "")
+			if strings.Contains(cleaned, "OutputTokens") {
+				t.Errorf("INV-9 violation: %s line %d references OutputTokens — control-plane code must not access oracle output length",
+					filename, lineNum+1)
+			}
 		}
 	}
 

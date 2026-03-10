@@ -69,6 +69,7 @@ type MetricsOutput struct {
 	KVAllocationFailures    int64            `json:"kv_allocation_failures,omitempty"`
 	PreemptionCount         int64            `json:"preemption_count"`
 	DroppedUnservable       int              `json:"dropped_unservable"`
+	LengthCappedRequests    int              `json:"length_capped_requests"`
 	Requests                []RequestMetrics `json:"requests,omitempty"`
 }
 

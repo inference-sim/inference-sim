@@ -101,6 +101,9 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	if cfg.LongPrefillTokenThreshold < 0 {
 		return nil, fmt.Errorf("NewSimulator: LongPrefillTokenThreshold must be >= 0, got %d", cfg.LongPrefillTokenThreshold)
 	}
+	if cfg.MaxModelLen < 0 {
+		return nil, fmt.Errorf("NewSimulator: MaxModelLen must be >= 0, got %d", cfg.MaxModelLen)
+	}
 	if cfg.MaxModelLen > 0 {
 		if cfg.BlockSizeTokens <= 0 {
 			return nil, fmt.Errorf("NewSimulator: BlockSizeTokens must be > 0 when MaxModelLen is set, got %d", cfg.BlockSizeTokens)
@@ -242,7 +245,8 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 
 // EnqueueRequest adds a newly arrived request to the waiting queue.
-// Two guards prevent unservable requests from entering the queue:
+// Three guards prevent unservable requests from entering the queue:
+//  0. MaxOutputLen validation (R3): drops requests with negative MaxOutputLen.
 //  1. MaxModelLen guard (when maxModelLen > 0): validates the request fits within
 //     the model's context window. First checks input >= maxModelLen (vLLM uses >=:
 //     input filling the entire context leaves no room for output). Then, when
@@ -254,9 +258,18 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 //  2. KV capacity guard (defense-in-depth, always active): drops requests whose input
 //     tokens alone require more KV blocks than total cache capacity (R19: livelock protection).
 //
-// Both guards mirror real vLLM behavior where oversized requests are rejected
+// All guards mirror real vLLM behavior where oversized requests are rejected
 // before entering the engine.
 func (sim *Simulator) EnqueueRequest(r *Request) {
+	// Guard 0: Negative MaxOutputLen check (R3)
+	if r.MaxOutputLen < 0 {
+		logrus.Warnf("dropping request %s: MaxOutputLen %d is negative",
+			r.ID, r.MaxOutputLen)
+		sim.Metrics.DroppedUnservable++
+		delete(sim.Metrics.Requests, r.ID)
+		return
+	}
+
 	// Guard 1: MaxModelLen check (BC-2, BC-3)
 	if sim.maxModelLen > 0 {
 		// vLLM uses >= for the input check (serving.py:1542): input that fills
@@ -500,6 +513,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// committed to the prefix cache.
 			logrus.Warnf("[tick %07d] force-completing request %s: ProgressIndex %d >= MaxModelLen %d (length-capped)",
 				now, req.ID, req.ProgressIndex, sim.maxModelLen)
+			sim.Metrics.LengthCappedRequests++
 			req.State = StateCompleted
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount

@@ -431,7 +431,16 @@ var runCmd = &cobra.Command{
 					// application (these types encode the full context in max_position_embeddings).
 					// All other types (linear, dynamic, yarn, default, etc.) apply the factor.
 					// For "yarn", vLLM uses original_max_position_embeddings as the base.
-					if ropeScaling, ok := hfConfig.Raw["rope_scaling"]; ok {
+					//
+					// vLLM also skips rope_scaling entirely for gemma3 models
+					// (_get_and_verify_max_len): gemma3's max_position_embeddings is pre-scaled.
+					// Note: vLLM uses substring check ("gemma3" in model_type), but BLIS reads
+					// top-level config.json where model_type is exactly "gemma3". Exact match
+					// is sufficient; update if gemma3 variants appear at the top level.
+					modelType, _ := hfConfig.Raw["model_type"].(string)
+					if modelType == "gemma3" {
+						logrus.Infof("--latency-model: skipping rope_scaling for gemma3 (max_position_embeddings is pre-scaled)")
+					} else if ropeScaling, ok := hfConfig.Raw["rope_scaling"]; ok {
 						if ropeMap, ok := ropeScaling.(map[string]any); ok {
 							ropeType, _ := ropeMap["type"].(string)
 							if ropeType == "" {
@@ -451,8 +460,12 @@ var runCmd = &cobra.Command{
 									scaled := int(float64(base) * factor)
 									logrus.Infof("--latency-model: applying %s rope_scaling factor %.1f: %d → %d", ropeType, factor, base, scaled)
 									maxModelLen = scaled
+								} else if _, hasKey := ropeMap["factor"]; hasKey {
+									logrus.Warnf("--latency-model: rope_scaling.factor present but not a valid float64 > 1.0; ignoring")
 								}
 							}
+						} else {
+							logrus.Warnf("--latency-model: rope_scaling present but not a JSON object (type %T); ignoring", ropeScaling)
 						}
 					}
 
@@ -473,7 +486,7 @@ var runCmd = &cobra.Command{
 					blocksNeeded++
 				}
 				if blocksNeeded > totalKVBlocks {
-					kvFeasibleMax := int(totalKVBlocks * blockSizeTokens) // safe: totalKVBlocks * 16 fits int64 for all real GPUs
+					kvFeasibleMax := int(totalKVBlocks * blockSizeTokens) // safe: totalKVBlocks * blockSizeTokens < maxModelLen (blocksNeeded > totalKVBlocks), fits in int
 					logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
 						maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
 					maxModelLen = kvFeasibleMax
@@ -846,12 +859,13 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.DroppedUnservable > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
 			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
+			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 		}
 
 		// Print KV cache metrics if any nonzero (BC-1, BC-2)
