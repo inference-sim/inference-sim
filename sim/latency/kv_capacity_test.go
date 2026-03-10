@@ -30,12 +30,11 @@ func validDenseModelConfig() sim.ModelConfig {
 // validHWConfig returns an H100-like HardwareCalib with 80 GiB memory.
 func validHWConfig() sim.HardwareCalib {
 	return sim.HardwareCalib{
-		TFlopsPeak:    989.5,
-		BwPeakTBs:     3.35,
-		BwEffConstant: 0.72,
-		MfuPrefill:    0.65,
-		MfuDecode:     0.12,
-		MemoryGiB:     80.0,
+		TFlopsPeak: 989.5,
+		BwPeakTBs:  3.35,
+		MfuPrefill: 0.65,
+		MfuDecode:  0.12,
+		MemoryGiB:  80.0,
 	}
 }
 

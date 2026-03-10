@@ -261,9 +261,6 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 	if invalidPositiveFloat(hc.BwPeakTBs) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.BwPeakTBs must be a valid positive number, got %v", hc.BwPeakTBs))
 	}
-	if invalidPositiveFloat(hc.BwEffConstant) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.BwEffConstant must be a valid positive number, got %v", hc.BwEffConstant))
-	}
 	if invalidPositiveFloat(hc.MfuPrefill) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuPrefill must be a valid positive number, got %v", hc.MfuPrefill))
 	}

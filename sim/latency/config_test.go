@@ -332,7 +332,7 @@ func TestGetModelConfig_StandardFieldsTakePrecedenceOverFallbacks(t *testing.T) 
 }
 
 func TestValidateRooflineConfig_ZeroModelFields_ReturnsError(t *testing.T) {
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
 
 	tests := []struct {
 		name  string
@@ -374,7 +374,7 @@ func TestValidateRooflineConfig_ZeroHardwareFields_ReturnsAllErrors(t *testing.T
 		t.Fatal("expected error for zero hardware fields, got nil")
 	}
 	errMsg := err.Error()
-	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "BwEffConstant", "MfuPrefill", "MfuDecode"} {
+	for _, field := range []string{"TFlopsPeak", "BwPeakTBs", "MfuPrefill", "MfuDecode"} {
 		if !strings.Contains(errMsg, field) {
 			t.Errorf("error should mention %s, got: %v", field, errMsg)
 		}
@@ -385,12 +385,11 @@ func TestValidateRooflineConfig_NaNInfFields_ReturnsErrors(t *testing.T) {
 	// GIVEN a HardwareCalib with NaN and Inf fields (bypass <= 0 check)
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096}
 	hc := sim.HardwareCalib{
-		TFlopsPeak:    math.NaN(),
-		BwPeakTBs:     math.Inf(1),
-		BwEffConstant: 0.7,
-		MfuPrefill:    0.5,
-		MfuDecode:     math.NaN(),
-		MemoryGiB:     math.Inf(-1),
+		TFlopsPeak: math.NaN(),
+		BwPeakTBs:  math.Inf(1),
+		MfuPrefill: 0.5,
+		MfuDecode:  math.NaN(),
+		MemoryGiB:  math.Inf(-1),
 	}
 
 	// WHEN ValidateRooflineConfig is called
@@ -412,7 +411,7 @@ func TestValidateRooflineConfig_NaNMemoryGiB_ReturnsError(t *testing.T) {
 	// NaN != 0 is true in IEEE 754, so NaN passes the outer guard and must
 	// be caught by the inner math.IsNaN check. This test covers that path.
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: math.NaN()}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: math.NaN()}
 
 	err := latency.ValidateRooflineConfig(mc, hc)
 
@@ -428,7 +427,7 @@ func TestValidateRooflineConfig_NegativeMemoryGiB_ReturnsError(t *testing.T) {
 	// A plain negative value (not -Inf) exercises the hc.MemoryGiB < 0 branch,
 	// which is distinct from the math.IsInf path tested by NaNInfFields.
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: -80.0}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: -80.0}
 
 	err := latency.ValidateRooflineConfig(mc, hc)
 
@@ -443,7 +442,7 @@ func TestValidateRooflineConfig_NegativeMemoryGiB_ReturnsError(t *testing.T) {
 func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	// GIVEN valid ModelConfig and HardwareCalib
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
 
 	// WHEN ValidateRooflineConfig is called
 	err := latency.ValidateRooflineConfig(mc, hc)
@@ -459,7 +458,7 @@ func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
-		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
 		"", "", 1, "roofline", 0,
 	)
 
@@ -480,7 +479,7 @@ func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
-		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
+		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
 		"", "", 0, "roofline", 0,
 	)
 
@@ -662,7 +661,7 @@ func TestValidateRooflineConfig_MoE_ExpertsWithoutActive_ReturnsError(t *testing
 		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
 		NumLocalExperts: 8, NumExpertsPerTok: 0,
 	}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3}
 
 	err := latency.ValidateRooflineConfig(mc, hc)
 	if err == nil {
@@ -679,7 +678,7 @@ func TestValidateRooflineConfig_MoE_ActiveExceedsTotal_ReturnsError(t *testing.T
 		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
 		NumLocalExperts: 8, NumExpertsPerTok: 10,
 	}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3}
 
 	err := latency.ValidateRooflineConfig(mc, hc)
 	if err == nil {
@@ -715,7 +714,7 @@ func TestValidateRooflineConfig_MoE_NegativeDimensions_ReturnsError(t *testing.T
 			},
 		},
 	}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -733,7 +732,7 @@ func TestValidateRooflineConfig_MoE_ValidConfig_ReturnsNil(t *testing.T) {
 		IntermediateDim: 14336,
 		NumLocalExperts: 8, NumExpertsPerTok: 2,
 	}
-	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3}
 
 	err := latency.ValidateRooflineConfig(mc, hc)
 	if err != nil {
