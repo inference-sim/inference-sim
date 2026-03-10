@@ -160,7 +160,7 @@ func TestNewLatencyModel_CrossModelMode(t *testing.T) {
 		[]float64{116.110, 1226.868, 19.943, 9445.157},
 		[]float64{13732.0, 0.0, 860.6},
 	)
-	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel", 0)
 	model, err := NewLatencyModel(coeffs, hw)
 	assert.NoError(t, err)
 
@@ -187,7 +187,7 @@ func TestNewLatencyModel_CrossModelMode_MoE(t *testing.T) {
 		[]float64{116.110, 1226.868, 19.943, 9445.157},
 		[]float64{13732.0, 0.0, 860.6},
 	)
-	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel", 0)
 	model, err := NewLatencyModel(coeffs, hw)
 	assert.NoError(t, err)
 
@@ -206,7 +206,7 @@ func TestNewLatencyModel_CrossModelMode_MissingNumLayers(t *testing.T) {
 		[]float64{116, 1226, 19, 9445},
 		[]float64{13732, 0, 860},
 	)
-	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel", 0)
 	_, err := NewLatencyModel(coeffs, hw)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "NumLayers")
@@ -219,7 +219,7 @@ func TestNewLatencyModel_CrossModelMode_MissingNumHeads(t *testing.T) {
 		[]float64{116, 1226, 19, 9445},
 		[]float64{13732, 0, 860},
 	)
-	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel", 0)
 	_, err := NewLatencyModel(coeffs, hw)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "NumHeads")
@@ -232,7 +232,7 @@ func TestNewLatencyModel_CrossModelMode_MissingHiddenDim(t *testing.T) {
 		[]float64{116, 1226, 19, 9445},
 		[]float64{13732, 0, 860},
 	)
-	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel", 0)
 	_, err := NewLatencyModel(coeffs, hw)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "HiddenDim")
@@ -245,7 +245,7 @@ func TestNewLatencyModel_CrossModelMode_ZeroTP(t *testing.T) {
 		[]float64{116, 1226, 19, 9445},
 		[]float64{13732, 0, 860},
 	)
-	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 0, "crossmodel")
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 0, "crossmodel", 0)
 	_, err := NewLatencyModel(coeffs, hw)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "TP")
@@ -258,7 +258,7 @@ func TestNewLatencyModel_CrossModelMode_ShortBeta(t *testing.T) {
 		[]float64{116, 1226, 19}, // only 3, need 4
 		[]float64{13732, 0, 860},
 	)
-	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel")
+	hw := sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "", "", 2, "crossmodel", 0)
 	_, err := NewLatencyModel(coeffs, hw)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "4")

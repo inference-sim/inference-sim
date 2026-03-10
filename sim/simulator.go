@@ -76,6 +76,7 @@ type Simulator struct {
 	batchFormation       BatchFormation
 	model                  string
 	gpu                    string
+	maxModelLen            int // max total sequence length (0 = unlimited)
 	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
 	priorityPolicy         PriorityPolicy
 	scheduler              InstanceScheduler
@@ -100,6 +101,20 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	if cfg.LongPrefillTokenThreshold < 0 {
 		return nil, fmt.Errorf("NewSimulator: LongPrefillTokenThreshold must be >= 0, got %d", cfg.LongPrefillTokenThreshold)
 	}
+	if cfg.MaxModelLen > 0 {
+		if cfg.BlockSizeTokens <= 0 {
+			return nil, fmt.Errorf("NewSimulator: BlockSizeTokens must be > 0 when MaxModelLen is set, got %d", cfg.BlockSizeTokens)
+		}
+		// Overflow-safe ceiling division: avoids int64 wraparound for large MaxModelLen values (R11).
+		blocksForMaxLen := int64(cfg.MaxModelLen) / cfg.BlockSizeTokens
+		if int64(cfg.MaxModelLen)%cfg.BlockSizeTokens != 0 {
+			blocksForMaxLen++
+		}
+		if blocksForMaxLen > cfg.TotalKVBlocks {
+			return nil, fmt.Errorf("NewSimulator: KV cache too small for MaxModelLen: need %d blocks (ceil(%d/%d)) but TotalKVBlocks=%d",
+				blocksForMaxLen, cfg.MaxModelLen, cfg.BlockSizeTokens, cfg.TotalKVBlocks)
+		}
+	}
 	batchFormation := NewBatchFormation()
 
 	s := &Simulator{
@@ -119,6 +134,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		batchFormation:            batchFormation,
 		model:                     cfg.Model,
 		gpu:                       cfg.GPU,
+		maxModelLen:               cfg.MaxModelLen,
 		latencyModel:              latencyModel,
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
@@ -226,11 +242,46 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 
 // EnqueueRequest adds a newly arrived request to the waiting queue.
-// Requests whose input tokens require more KV blocks than the total cache
-// capacity are dropped with a warning (R19: livelock protection). This mirrors
-// real vLLM behavior where oversized requests are rejected before entering
-// the engine.
+// Two guards prevent unservable requests from entering the queue:
+//  1. MaxModelLen guard (when maxModelLen > 0): validates the request fits within
+//     the model's context window. First checks input >= maxModelLen (vLLM uses >=:
+//     input filling the entire context leaves no room for output). Then, when
+//     MaxOutputLen > 0 (client budget), checks input + budget <= maxModelLen.
+//     When MaxOutputLen == 0, the input check is sufficient (vLLM defaults
+//     max_tokens to max_model_len - seq_len; the runtime stop in processCompletions
+//     handles output growth). The control plane never peeks at len(OutputTokens) —
+//     respecting the oracle knowledge boundary (INV-9, #567).
+//  2. KV capacity guard (defense-in-depth, always active): drops requests whose input
+//     tokens alone require more KV blocks than total cache capacity (R19: livelock protection).
+//
+// Both guards mirror real vLLM behavior where oversized requests are rejected
+// before entering the engine.
 func (sim *Simulator) EnqueueRequest(r *Request) {
+	// Guard 1: MaxModelLen check (BC-2, BC-3)
+	if sim.maxModelLen > 0 {
+		// vLLM uses >= for the input check (serving.py:1542): input that fills
+		// the entire context window leaves no room for even one output token.
+		if len(r.InputTokens) >= sim.maxModelLen {
+			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
+				r.ID, len(r.InputTokens), sim.maxModelLen)
+			sim.Metrics.DroppedUnservable++
+			delete(sim.Metrics.Requests, r.ID)
+			return
+		}
+		if r.MaxOutputLen > 0 {
+			// Client declared a budget: check input + budget fits context window
+			totalSeqLen := len(r.InputTokens) + r.MaxOutputLen
+			if totalSeqLen > sim.maxModelLen {
+				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
+					r.ID, totalSeqLen, len(r.InputTokens), r.MaxOutputLen, sim.maxModelLen)
+				sim.Metrics.DroppedUnservable++
+				delete(sim.Metrics.Requests, r.ID)
+				return
+			}
+		}
+	}
+
+	// Guard 2: KV capacity check (defense-in-depth, always active)
 	blocksNeeded := (int64(len(r.InputTokens)) + sim.KVCache.BlockSize() - 1) / sim.KVCache.BlockSize()
 	if blocksNeeded > sim.KVCache.TotalCapacity() {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
@@ -275,7 +326,11 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	logrus.Debugf("Finished req: ID: %s at time: %d", req.ID, lat+req.ArrivalTime)
 	if len(req.OutputTokens) > 0 {
 		reqTotalOutput := lat - req.FirstTokenTime
-		// TPOT calculation in vLLM excludes the first generated token
+		// TPOT calculation in vLLM excludes the first generated token.
+		// NOTE: For length-capped requests (BC-5), this denominator uses the
+		// pre-determined output token count rather than actual decode steps completed.
+		// The resulting average ITL (stored in RequestITLs) will be underestimated.
+		// Acceptable for a defense-in-depth path that should rarely fire.
 		sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
 	} else {
 		sim.Metrics.RequestITLs[req.ID] = 0
@@ -429,6 +484,29 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			})
 
 			// Record completion metrics
+			sim.recordRequestCompletion(req)
+		} else if sim.maxModelLen > 0 && req.ProgressIndex >= int64(sim.maxModelLen) {
+			// BC-5: Runtime length cap — defense-in-depth.
+			// Force-complete any request that has reached MaxModelLen.
+			// This should not fire under normal operation (enqueue guard prevents it),
+			// but protects against unbounded growth if a request bypasses the guard.
+			//
+			// NOTE (R23 exception): Final-token KV allocation is intentionally skipped here.
+			// R23 requires parallel code paths to apply equivalent transformations, but
+			// the normal completion path's AllocateKVBlocks for the last token (to commit
+			// it to the prefix cache) is not useful for a force-terminated request whose
+			// blocks are immediately released. The token at the cap boundary was already
+			// processed by executeBatchStep; the partially-filled last block is not
+			// committed to the prefix cache.
+			logrus.Warnf("[tick %07d] force-completing request %s: ProgressIndex %d >= MaxModelLen %d (length-capped)",
+				now, req.ID, req.ProgressIndex, sim.maxModelLen)
+			req.State = StateCompleted
+			sim.KVCache.ReleaseKVBlocks(req)
+			req.FinishedStepIdx = sim.stepCount
+			sim.Schedule(&RequestLeftEvent{
+				time:    now + currStepAdvance,
+				Request: req,
+			})
 			sim.recordRequestCompletion(req)
 		} else {
 			remaining = append(remaining, req)
