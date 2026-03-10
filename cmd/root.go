@@ -51,7 +51,7 @@ var (
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
 	latencyModelBackend string // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
-	maxModelLen         int    // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
+	maxModelLen         int64  // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
 
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
@@ -101,6 +101,87 @@ var (
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
+
+// applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
+// Returns the (possibly scaled) value and whether scaling was applied.
+// modelType is the HuggingFace model_type string (empty if not present).
+// ropeScaling is the raw rope_scaling value from config.json (nil if not present).
+//
+// Blacklist approach matching vLLM's _get_and_verify_max_len:
+// Types "su", "longrope", "llama3" are excluded (these encode full context in max_position_embeddings).
+// All other types (linear, dynamic, yarn, default, mrope, etc.) apply the factor.
+// "mrope" is intentionally NOT excluded: vLLM normalizes mrope → "default" via patch_rope_scaling_dict
+// and then applies the factor. BLIS reads raw JSON where mrope falls through the blacklist — same result.
+// For "yarn", original_max_position_embeddings is used as base when present.
+// gemma3 model_type skips rope_scaling entirely (max_position_embeddings is pre-scaled).
+// Uses substring match to handle both "gemma3" (top-level) and "gemma3_text" (after text_config pivot).
+func applyRopeScaling(maxPosEmb int, modelType string, ropeScaling any) (scaled int, applied bool) {
+	// R3: degenerate base guard
+	if maxPosEmb <= 0 {
+		return maxPosEmb, false
+	}
+
+	// gemma3 model_type: skip rope_scaling entirely (BC-3).
+	// Note: ParseHFConfig's text_config pivot overwrites model_type from "gemma3" to
+	// "gemma3_text" for multimodal models. Use strings.Contains to match both variants,
+	// aligning with vLLM's substring check ("gemma3" not in hf_config.model_type).
+	if strings.Contains(modelType, "gemma3") {
+		return maxPosEmb, false
+	}
+
+	// No rope_scaling present
+	if ropeScaling == nil {
+		return maxPosEmb, false
+	}
+
+	// rope_scaling must be a JSON object (map[string]any)
+	ropeMap, ok := ropeScaling.(map[string]any)
+	if !ok {
+		return maxPosEmb, false
+	}
+
+	// Read type (some configs use "rope_type" instead of "type")
+	ropeType, _ := ropeMap["type"].(string)
+	if ropeType == "" {
+		ropeType, _ = ropeMap["rope_type"].(string)
+	}
+
+	// Blacklist: these types already embed scaled context in max_position_embeddings
+	if ropeType == "su" || ropeType == "longrope" || ropeType == "llama3" {
+		return maxPosEmb, false
+	}
+
+	// Extract factor
+	factor, ok := ropeMap["factor"].(float64)
+	if !ok || factor <= 1.0 {
+		return maxPosEmb, false
+	}
+
+	// NaN/Inf defense-in-depth (standard JSON can't produce these, but non-standard sources might)
+	if math.IsNaN(factor) || math.IsInf(factor, 0) {
+		return maxPosEmb, false
+	}
+
+	// For yarn, use original_max_position_embeddings as base if available (BC-4)
+	base := maxPosEmb
+	if ropeType == "yarn" {
+		if orig, ok := ropeMap["original_max_position_embeddings"].(float64); ok && orig > 0 {
+			// Overflow guard on original_max_position_embeddings
+			if orig >= float64(math.MaxInt) {
+				return maxPosEmb, false
+			}
+			base = int(orig)
+		}
+	}
+
+	// Compute scaled value with overflow guard
+	product := float64(base) * factor
+	if product >= float64(math.MaxInt) || product < 0 {
+		return maxPosEmb, false
+	}
+
+	return int(product), true
+}
 
 // rootCmd is the base command for the CLI
 var rootCmd = &cobra.Command{
@@ -424,45 +505,32 @@ var runCmd = &cobra.Command{
 			if !cmd.Flags().Changed("max-model-len") {
 				maxPosEmb := hfConfig.MustGetInt("max_position_embeddings", 0)
 				if maxPosEmb > 0 {
-					maxModelLen = maxPosEmb
+					maxModelLen = int64(maxPosEmb)
 
-					// Apply rope_scaling factor matching vLLM's blacklist approach:
-					// vLLM excludes "su", "longrope", and "llama3" rope types from factor
-					// application (these types encode the full context in max_position_embeddings).
-					// All other types (linear, dynamic, yarn, default, etc.) apply the factor.
-					// For "yarn", vLLM uses original_max_position_embeddings as the base.
-					//
-					// vLLM also skips rope_scaling entirely for gemma3 models
-					// (_get_and_verify_max_len): gemma3's max_position_embeddings is pre-scaled.
-					// Note: vLLM uses substring check ("gemma3" in model_type), but BLIS reads
-					// top-level config.json where model_type is exactly "gemma3". Exact match
-					// is sufficient; update if gemma3 variants appear at the top level.
+					// Apply rope_scaling factor via pure function (extracted for testability).
+					// See applyRopeScaling godoc for blacklist details and vLLM fidelity notes.
 					modelType, _ := hfConfig.Raw["model_type"].(string)
-					if modelType == "gemma3" {
-						logrus.Infof("--latency-model: skipping rope_scaling for gemma3 (max_position_embeddings is pre-scaled)")
-					} else if ropeScaling, ok := hfConfig.Raw["rope_scaling"]; ok {
-						if ropeMap, ok := ropeScaling.(map[string]any); ok {
-							ropeType, _ := ropeMap["type"].(string)
+					scaled, applied := applyRopeScaling(maxPosEmb, modelType, hfConfig.Raw["rope_scaling"])
+					if applied {
+						// Recover rope type and factor for diagnostic logging
+						ropeType := ""
+						factor := 0.0
+						if ropeMap, ok := hfConfig.Raw["rope_scaling"].(map[string]any); ok {
+							ropeType, _ = ropeMap["type"].(string)
 							if ropeType == "" {
-								ropeType, _ = ropeMap["rope_type"].(string) // some configs use rope_type
+								ropeType, _ = ropeMap["rope_type"].(string)
 							}
-							// Blacklist: these types already embed scaled context in max_position_embeddings
-							excluded := ropeType == "su" || ropeType == "longrope" || ropeType == "llama3"
-							if !excluded {
-								if factor, ok := ropeMap["factor"].(float64); ok && factor > 1.0 {
-									// For yarn, use original_max_position_embeddings as base if available
-									base := maxPosEmb
-									if ropeType == "yarn" {
-										if orig, ok := ropeMap["original_max_position_embeddings"].(float64); ok && int(orig) > 0 {
-											base = int(orig)
-										}
-									}
-									scaled := int(float64(base) * factor)
-									logrus.Infof("--latency-model: applying %s rope_scaling factor %.1f: %d → %d", ropeType, factor, base, scaled)
-									maxModelLen = scaled
-								} else if _, hasKey := ropeMap["factor"]; hasKey {
-									logrus.Warnf("--latency-model: rope_scaling.factor present but not a valid float64 > 1.0; ignoring")
-								}
+							factor, _ = ropeMap["factor"].(float64)
+						}
+						logrus.Infof("--latency-model: applying %s rope_scaling factor %.1f: %d → %d", ropeType, factor, maxPosEmb, scaled)
+						maxModelLen = int64(scaled)
+					} else if strings.Contains(modelType, "gemma3") {
+						logrus.Infof("--latency-model: skipping rope_scaling for gemma3 (max_position_embeddings is pre-scaled)")
+					} else if ropeScaling, ok := hfConfig.Raw["rope_scaling"]; ok && ropeScaling != nil {
+						// Factor not applied — could be excluded type, missing/invalid factor, or overflow
+						if ropeMap, ok := ropeScaling.(map[string]any); ok {
+							if _, hasKey := ropeMap["factor"]; hasKey {
+								logrus.Warnf("--latency-model: rope_scaling.factor present but not applied (excluded type, invalid value, or overflow); using max_position_embeddings as-is")
 							}
 						} else {
 							logrus.Warnf("--latency-model: rope_scaling present but not a JSON object (type %T); ignoring", ropeScaling)
@@ -481,12 +549,12 @@ var runCmd = &cobra.Command{
 			// we check whether ceil(maxModelLen / blockSizeTokens) > totalKVBlocks — the same comparison
 			// used in NewSimulator's startup validation.
 			if maxModelLen > 0 && blockSizeTokens > 0 {
-				blocksNeeded := int64(maxModelLen) / blockSizeTokens
-				if int64(maxModelLen)%blockSizeTokens != 0 {
+				blocksNeeded := maxModelLen / blockSizeTokens
+				if maxModelLen%blockSizeTokens != 0 {
 					blocksNeeded++
 				}
 				if blocksNeeded > totalKVBlocks {
-					kvFeasibleMax := int(totalKVBlocks * blockSizeTokens) // safe: totalKVBlocks * blockSizeTokens < maxModelLen (blocksNeeded > totalKVBlocks), fits in int
+					kvFeasibleMax := totalKVBlocks * blockSizeTokens // product bounded by maxModelLen (blocksNeeded > totalKVBlocks)
 					logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
 						maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
 					maxModelLen = kvFeasibleMax
@@ -970,7 +1038,7 @@ func init() {
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
 	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline, crossmodel")
-	runCmd.Flags().IntVar(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
+	runCmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
 
 	// GuideLLM-style distribution-based workload generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")

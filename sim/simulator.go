@@ -76,7 +76,7 @@ type Simulator struct {
 	batchFormation       BatchFormation
 	model                  string
 	gpu                    string
-	maxModelLen            int // max total sequence length (0 = unlimited)
+	maxModelLen            int64 // max total sequence length (0 = unlimited)
 	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
 	priorityPolicy         PriorityPolicy
 	scheduler              InstanceScheduler
@@ -108,9 +108,9 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		if cfg.BlockSizeTokens <= 0 {
 			return nil, fmt.Errorf("NewSimulator: BlockSizeTokens must be > 0 when MaxModelLen is set, got %d", cfg.BlockSizeTokens)
 		}
-		// Overflow-safe ceiling division: avoids int64 wraparound for large MaxModelLen values (R11).
-		blocksForMaxLen := int64(cfg.MaxModelLen) / cfg.BlockSizeTokens
-		if int64(cfg.MaxModelLen)%cfg.BlockSizeTokens != 0 {
+		// Ceiling division for MaxModelLen → block count (R11).
+		blocksForMaxLen := cfg.MaxModelLen / cfg.BlockSizeTokens
+		if cfg.MaxModelLen%cfg.BlockSizeTokens != 0 {
 			blocksForMaxLen++
 		}
 		if blocksForMaxLen > cfg.TotalKVBlocks {
@@ -274,7 +274,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	if sim.maxModelLen > 0 {
 		// vLLM uses >= for the input check (serving.py:1542): input that fills
 		// the entire context window leaves no room for even one output token.
-		if len(r.InputTokens) >= sim.maxModelLen {
+		if int64(len(r.InputTokens)) >= sim.maxModelLen {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, len(r.InputTokens), sim.maxModelLen)
 			sim.Metrics.DroppedUnservable++
@@ -283,7 +283,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 		}
 		if r.MaxOutputLen > 0 {
 			// Client declared a budget: check input + budget fits context window
-			totalSeqLen := len(r.InputTokens) + r.MaxOutputLen
+			totalSeqLen := int64(len(r.InputTokens)) + int64(r.MaxOutputLen)
 			if totalSeqLen > sim.maxModelLen {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, len(r.InputTokens), r.MaxOutputLen, sim.maxModelLen)
@@ -498,7 +498,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 
 			// Record completion metrics
 			sim.recordRequestCompletion(req)
-		} else if sim.maxModelLen > 0 && req.ProgressIndex >= int64(sim.maxModelLen) {
+		} else if sim.maxModelLen > 0 && req.ProgressIndex >= sim.maxModelLen {
 			// BC-5: Runtime length cap — defense-in-depth.
 			// Force-complete any request that has reached MaxModelLen.
 			// This should not fire under normal operation (enqueue guard prevents it),
