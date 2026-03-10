@@ -141,7 +141,11 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		latencyModel:              latencyModel,
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
-	s.priorityPolicy = NewPriorityPolicy(cfg.PriorityPolicy)
+	if cfg.PriorityOverride != nil {
+		s.priorityPolicy = cfg.PriorityOverride
+	} else {
+		s.priorityPolicy = NewPriorityPolicy(cfg.PriorityPolicy)
+	}
 	s.scheduler = NewScheduler(cfg.Scheduler)
 
 	return s, nil

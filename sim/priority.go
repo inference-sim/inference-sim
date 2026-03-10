@@ -92,6 +92,43 @@ func (d *DeadlineAwarePriority) Compute(req *Request, clock int64) float64 {
 	return weight / denominator
 }
 
+// NewPriorityPolicyFromConfig creates a PriorityPolicy from a PriorityConfig.
+// For "deadline-aware" and "static-class-weight" policies, it uses the config's
+// ClassWeights, Deadlines, and Epsilon fields (falling back to defaults if nil).
+// For all other policies, it delegates to NewPriorityPolicy(name).
+func NewPriorityPolicyFromConfig(cfg PriorityConfig) PriorityPolicy {
+	switch cfg.Policy {
+	case "deadline-aware":
+		weights := cfg.ClassWeights
+		if weights == nil {
+			weights = map[string]float64{"critical": 10.0, "standard": 5.0, "sheddable": 1.0}
+		}
+		deadlines := cfg.Deadlines
+		if deadlines == nil {
+			deadlines = map[string]int64{"critical": 100_000, "standard": 500_000, "sheddable": 2_000_000}
+		}
+		eps := 0.01
+		if cfg.Epsilon != nil {
+			eps = *cfg.Epsilon
+		}
+		return &DeadlineAwarePriority{
+			ClassWeights:    weights,
+			Deadlines:       deadlines,
+			Epsilon:         eps,
+			DefaultWeight:   0.0,
+			DefaultDeadline: 500_000,
+		}
+	case "static-class-weight":
+		weights := cfg.ClassWeights
+		if weights == nil {
+			weights = map[string]float64{"critical": 10.0, "standard": 5.0, "sheddable": 1.0}
+		}
+		return &StaticClassWeight{ClassWeights: weights, DefaultWeight: 0.0}
+	default:
+		return NewPriorityPolicy(cfg.Policy)
+	}
+}
+
 // NewPriorityPolicy creates a PriorityPolicy by name.
 // Valid names are defined in validPriorityPolicies (bundle.go).
 // Empty string defaults to ConstantPriority (for CLI flag default compatibility).

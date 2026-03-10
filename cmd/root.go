@@ -789,6 +789,7 @@ var runCmd = &cobra.Command{
 
 		// Load policy bundle if specified (BC-6: CLI flags override YAML values)
 		var bundleScorerConfigs []sim.ScorerConfig // captured for use in weighted routing setup
+		var priorityOverride sim.PriorityPolicy    // pre-constructed from bundle params (nil = use factory)
 		if policyConfigPath != "" {
 			bundle, err := sim.LoadPolicyBundle(policyConfigPath)
 			if err != nil {
@@ -819,6 +820,11 @@ var runCmd = &cobra.Command{
 			}
 			if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
 				scheduler = bundle.Scheduler
+			}
+			// Pre-construct priority policy from bundle params when extended fields are present.
+			// This allows class_weights, deadlines, and epsilon to flow through to the simulator.
+			if bundle.Priority.ClassWeights != nil || bundle.Priority.Deadlines != nil || bundle.Priority.Epsilon != nil {
+				priorityOverride = sim.NewPriorityPolicyFromConfig(bundle.Priority)
 			}
 		}
 
@@ -933,7 +939,7 @@ var runCmd = &cobra.Command{
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
+				PolicyConfig:        sim.NewPolicyConfigWithOverride(priorityPolicy, scheduler, priorityOverride),
 			},
 			NumInstances:            numInstances,
 			AdmissionPolicy:         admissionPolicy,

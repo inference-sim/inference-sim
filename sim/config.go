@@ -105,6 +105,11 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 type PolicyConfig struct {
 	PriorityPolicy string // "constant" (default) or "slo-based"
 	Scheduler      string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+
+	// PriorityOverride, if non-nil, is used directly by NewSimulator instead
+	// of constructing a policy from PriorityPolicy name via NewPriorityPolicy.
+	// This allows the CLI to pre-construct a parameterized policy from a YAML bundle.
+	PriorityOverride PriorityPolicy
 }
 
 // NewPolicyConfig creates a PolicyConfig with all fields explicitly set.
@@ -113,6 +118,16 @@ func NewPolicyConfig(priorityPolicy, scheduler string) PolicyConfig {
 	return PolicyConfig{
 		PriorityPolicy: priorityPolicy,
 		Scheduler:      scheduler,
+	}
+}
+
+// NewPolicyConfigWithOverride creates a PolicyConfig with a pre-constructed priority policy.
+// When PriorityOverride is set, NewSimulator uses it directly instead of the factory.
+func NewPolicyConfigWithOverride(priorityPolicy, scheduler string, override PriorityPolicy) PolicyConfig {
+	return PolicyConfig{
+		PriorityPolicy:   priorityPolicy,
+		Scheduler:        scheduler,
+		PriorityOverride: override,
 	}
 }
 

@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math"
 	"testing"
 )
 
@@ -343,6 +344,128 @@ func TestDeadlineAwarePriority_StarvationCrossover(t *testing.T) {
 	if shedPriority <= critPriority {
 		t.Errorf("starvation crossover: old sheddable urgency (%f) should overtake fresh critical (%f)",
 			shedPriority, critPriority)
+	}
+}
+
+// --- NewPriorityPolicyFromConfig tests ---
+
+func TestNewPriorityPolicyFromConfig_DeadlineAware_CustomParams(t *testing.T) {
+	// GIVEN a PriorityConfig with custom deadline-aware parameters
+	eps := 0.05
+	cfg := PriorityConfig{
+		Policy:       "deadline-aware",
+		ClassWeights: map[string]float64{"critical": 20.0, "standard": 8.0},
+		Deadlines:    map[string]int64{"critical": 50_000, "standard": 250_000},
+		Epsilon:      &eps,
+	}
+
+	policy := NewPriorityPolicyFromConfig(cfg)
+
+	// THEN the policy uses custom weights: critical request gets priority = 20.0 / 1.0 = 20.0 at t=0
+	critReq := &Request{ID: "crit", ArrivalTime: 0, SLOClass: "critical"}
+	got := policy.Compute(critReq, 0)
+	if got != 20.0 {
+		t.Errorf("expected critical priority 20.0 at t=0, got %f", got)
+	}
+
+	// THEN standard request gets 8.0 / 1.0 = 8.0 at t=0
+	stdReq := &Request{ID: "std", ArrivalTime: 0, SLOClass: "standard"}
+	got = policy.Compute(stdReq, 0)
+	if got != 8.0 {
+		t.Errorf("expected standard priority 8.0 at t=0, got %f", got)
+	}
+
+	// THEN at deadline, urgency caps at weight/epsilon = 20.0/0.05 = 400.0
+	got = policy.Compute(critReq, 50_000) // 100% of critical deadline
+	expected := 20.0 / 0.05
+	if got != expected {
+		t.Errorf("expected critical urgency at deadline = %f, got %f", expected, got)
+	}
+}
+
+func TestNewPriorityPolicyFromConfig_DeadlineAware_Defaults(t *testing.T) {
+	// GIVEN a PriorityConfig with only policy name (no custom params)
+	cfg := PriorityConfig{Policy: "deadline-aware"}
+
+	policy := NewPriorityPolicyFromConfig(cfg)
+
+	// THEN it uses default weights (same as NewPriorityPolicy("deadline-aware"))
+	critReq := &Request{ID: "crit", ArrivalTime: 0, SLOClass: "critical"}
+	got := policy.Compute(critReq, 0)
+	if got != 10.0 {
+		t.Errorf("expected default critical priority 10.0 at t=0, got %f", got)
+	}
+}
+
+func TestNewPriorityPolicyFromConfig_StaticClassWeight_CustomParams(t *testing.T) {
+	// GIVEN a PriorityConfig with custom class weights
+	cfg := PriorityConfig{
+		Policy:       "static-class-weight",
+		ClassWeights: map[string]float64{"critical": 100.0, "batch": 0.5},
+	}
+
+	policy := NewPriorityPolicyFromConfig(cfg)
+
+	// THEN custom weights are used
+	critReq := &Request{ID: "crit", ArrivalTime: 0, SLOClass: "critical"}
+	batchReq := &Request{ID: "batch", ArrivalTime: 0, SLOClass: "batch"}
+	unknownReq := &Request{ID: "unk", ArrivalTime: 0, SLOClass: "unknown"}
+
+	if got := policy.Compute(critReq, 0); got != 100.0 {
+		t.Errorf("expected critical=100.0, got %f", got)
+	}
+	if got := policy.Compute(batchReq, 0); got != 0.5 {
+		t.Errorf("expected batch=0.5, got %f", got)
+	}
+	// Unknown class gets default weight = 0.0
+	if got := policy.Compute(unknownReq, 0); got != 0.0 {
+		t.Errorf("expected unknown=0.0, got %f", got)
+	}
+}
+
+func TestNewPriorityPolicyFromConfig_FallsBackToNameFactory(t *testing.T) {
+	// GIVEN configs for policies that don't use extended params
+	tests := []struct {
+		name   string
+		config PriorityConfig
+	}{
+		{"constant", PriorityConfig{Policy: "constant"}},
+		{"slo-based", PriorityConfig{Policy: "slo-based"}},
+		{"inverted-slo", PriorityConfig{Policy: "inverted-slo"}},
+		{"empty", PriorityConfig{Policy: ""}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			policy := NewPriorityPolicyFromConfig(tc.config)
+			if policy == nil {
+				t.Fatal("expected non-nil policy")
+			}
+			// Just verify it doesn't panic and returns a valid policy
+			req := &Request{ID: "r1", ArrivalTime: 0}
+			_ = policy.Compute(req, 1000)
+		})
+	}
+}
+
+func TestNewPriorityPolicyFromConfig_EpsilonZero(t *testing.T) {
+	// R9: zero epsilon is a valid value (not "unset")
+	eps := 0.0
+	cfg := PriorityConfig{
+		Policy:  "deadline-aware",
+		Epsilon: &eps,
+	}
+
+	policy := NewPriorityPolicyFromConfig(cfg)
+
+	// With epsilon=0, at exactly the deadline, denom=0.0, eps=0.0:
+	// the clamp condition (denom < eps) is false (0.0 < 0.0 is false),
+	// so urgency = weight / 0.0 = +Inf.
+	// This confirms R9: zero epsilon is used (not treated as "unset" = 0.01).
+	req := &Request{ID: "r1", ArrivalTime: 0, SLOClass: "critical"}
+	got := policy.Compute(req, 100_000) // exactly at default critical deadline
+	if !math.IsInf(got, 1) {
+		t.Errorf("expected +Inf urgency with epsilon=0 at deadline, got %f", got)
 	}
 }
 

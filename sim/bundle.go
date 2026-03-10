@@ -35,8 +35,14 @@ type RoutingConfig struct {
 }
 
 // PriorityConfig holds priority policy configuration.
+// ClassWeights and Deadlines are optional maps that parameterize
+// the "static-class-weight" and "deadline-aware" policies.
+// Epsilon uses *float64 per R9 (zero is a valid user value).
 type PriorityConfig struct {
-	Policy string `yaml:"policy"`
+	Policy       string             `yaml:"policy"`
+	ClassWeights map[string]float64 `yaml:"class_weights,omitempty"`
+	Deadlines    map[string]int64   `yaml:"deadlines,omitempty"`
+	Epsilon      *float64           `yaml:"epsilon,omitempty"`
 }
 
 // LoadPolicyBundle reads and parses a YAML policy configuration file.
@@ -132,6 +138,22 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if err := validateFloat("token_bucket_refill_rate", b.Admission.TokenBucketRefillRate); err != nil {
 		return err
+	}
+	// Validate priority config parameters (R3: validate all numeric parameters)
+	if err := validateFloat("epsilon", b.Priority.Epsilon); err != nil {
+		return err
+	}
+	// Validate class_weights: all values must be finite
+	for cls, w := range b.Priority.ClassWeights {
+		if math.IsNaN(w) || math.IsInf(w, 0) {
+			return fmt.Errorf("priority class_weights[%q]: must be a finite number, got %v", cls, w)
+		}
+	}
+	// Validate deadlines: all values must be positive
+	for cls, d := range b.Priority.Deadlines {
+		if d <= 0 {
+			return fmt.Errorf("priority deadlines[%q]: must be > 0, got %d", cls, d)
+		}
 	}
 	// Validate scorer configs if present
 	scorerSeen := make(map[string]bool, len(b.Routing.Scorers))
