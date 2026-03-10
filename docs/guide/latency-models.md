@@ -103,6 +103,9 @@ When choosing between TP and replication (more instances): TP reduces per-reques
 !!! note "Automatic KV block calculation"
     When using roofline or crossmodel mode, `--total-kv-blocks` is automatically derived from model architecture and GPU memory if not explicitly set. The auto-calculated value accounts for TP (KV heads are sharded across ranks; total GPU memory scales with GPU count). Override with `--total-kv-blocks <N>` for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations.
 
+!!! note "Automatic MaxModelLen derivation"
+    When using roofline or crossmodel mode and `--max-model-len` is not explicitly set, BLIS auto-derives it from `max_position_embeddings` in the HuggingFace `config.json`. For older models with `rope_scaling` (e.g., LongChat, Yi), the scaling factor is applied. The derived value is then capped at the KV-feasible maximum (`total_kv_blocks * block_size`) to prevent context windows from exceeding GPU memory capacity. Override with `--max-model-len <N>` when needed.
+
 ## Cross-Model Mode (Physics-Informed)
 
 Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from `config.json` to scale a single coefficient set.

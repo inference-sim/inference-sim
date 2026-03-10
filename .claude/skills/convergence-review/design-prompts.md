@@ -71,7 +71,7 @@ DESIGN DOCUMENT:
 YOUR FOCUS: Module Contract Completeness (design guidelines Section 4.3)
 - Does every new or modified module have all 6 contract aspects?
   (observes / controls / owns / invariants / events / extension friction)
-- Are invariants named (INV-N) and cross-referenced with existing invariants (INV-1 through INV-8)?
+- Are invariants named (INV-N) and cross-referenced with existing invariants (INV-1 through INV-9)?
 - Is the extension friction count specified and within reference targets (Section 4.5)?
 - Are behavioral contracts testable? Could someone write a GIVEN/WHEN/THEN test from the contract alone?
 - Are failure modes specified? What happens under overload, misconfiguration, degenerate inputs?

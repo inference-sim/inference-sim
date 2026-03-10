@@ -38,7 +38,15 @@ Prefix caching is automatic when using the `prefix-affinity` scorer with `weight
 ## Minimum KV Block Requirements
 
 !!! danger "DroppedUnservable rejection"
-    When `ceil(inputTokens / blockSize) > TotalCapacity()`, BLIS drops the request as **unservable** — it physically cannot fit in memory. This mirrors vLLM's pre-engine rejection path.
+    Requests are dropped as **unservable** (incrementing `DroppedUnservable`) in two cases:
+
+    1. **MaxModelLen guard** — when `--max-model-len` is set, requests whose total sequence length (input + output budget) exceeds the context window are rejected before entering the queue. This mirrors vLLM's `--max-model-len` validation.
+    2. **KV capacity guard** — when `ceil(inputTokens / blockSize) > TotalCapacity()`, the request physically cannot fit in GPU memory. This mirrors vLLM's pre-engine rejection path.
+
+    Both guards fire at enqueue time, before the request enters the wait queue.
+
+!!! info "Runtime length cap"
+    When `--max-model-len` is set, requests that grow beyond the limit during decode are force-completed. This is a defense-in-depth mechanism — under normal operation the enqueue guard prevents oversized requests, but the runtime cap protects against unbounded growth if a request bypasses the guard.
 
 Compute the minimum blocks needed for your workload:
 

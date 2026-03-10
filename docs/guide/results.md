@@ -42,7 +42,7 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
 | **Priority Inversions** | A lower-priority request was scheduled before a higher-priority one | Check scheduler choice — use `priority-fcfs` for SLO workloads |
 | **HOL Blocking Events** | A long prefill blocked shorter requests | Enable chunked prefill: `--long-prefill-token-threshold 256` |
 | **Rejected Requests** | Admission policy rejected the request | Check token bucket capacity or admission policy |
-| **Dropped Unservable** | Request needs more KV blocks than exist | Increase `--total-kv-blocks` or reduce max input tokens |
+| **Dropped Unservable** | Request exceeds `--max-model-len` context window or needs more KV blocks than exist | Check `--max-model-len` setting; increase `--total-kv-blocks` or reduce max input tokens |
 
 ## KV Cache Metrics
 
