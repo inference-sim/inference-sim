@@ -3,9 +3,11 @@ package cluster
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -1551,4 +1553,119 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 			t.Error("expected some rejections with token-bucket(cap=500,refill=300) at rate=200, got 0")
 		}
 	})
+}
+
+// BC-6: Cluster-mode MaxModelLen drops surface in aggregated metrics with INV-1 conservation.
+// Exercises Guard 1a (input >= MaxModelLen) and Guard 1b (input + budget > MaxModelLen).
+// Differs from TestClusterSimulator_InFlightRequests_DroppedUnservable_Decrements which tests
+// the KV-capacity Guard 2 path.
+func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
+	const maxModelLen = 200
+
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             10_000_000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}), // zero alpha
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "", maxModelLen),
+		},
+		NumInstances: 2,
+	}
+
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(42))
+	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkload)
+
+	var requests []*sim.Request
+	numFit, numGuard1a, numGuard1b := 0, 0, 0
+
+	// 5 requests that fit (input=50, output=50, no budget → input < MaxModelLen)
+	for i := 0; i < 5; i++ {
+		req := &sim.Request{
+			ID:           fmt.Sprintf("fit_%d", i),
+			InputTokens:  sim.GenerateRandomTokenIDs(workloadRNG, 50),
+			OutputTokens: sim.GenerateRandomTokenIDs(workloadRNG, 50),
+			ArrivalTime:  int64(i * 100_000),
+			State:        sim.StateQueued,
+		}
+		requests = append(requests, req)
+		numFit++
+	}
+
+	// 3 requests dropped by Guard 1a (input >= MaxModelLen)
+	for i := 0; i < 3; i++ {
+		req := &sim.Request{
+			ID:           fmt.Sprintf("guard1a_%d", i),
+			InputTokens:  sim.GenerateRandomTokenIDs(workloadRNG, 200), // input == MaxModelLen → dropped
+			OutputTokens: sim.GenerateRandomTokenIDs(workloadRNG, 10),
+			ArrivalTime:  int64((5 + i) * 100_000),
+			State:        sim.StateQueued,
+		}
+		requests = append(requests, req)
+		numGuard1a++
+	}
+
+	// 2 requests dropped by Guard 1b (input + budget > MaxModelLen)
+	for i := 0; i < 2; i++ {
+		req := &sim.Request{
+			ID:           fmt.Sprintf("guard1b_%d", i),
+			InputTokens:  sim.GenerateRandomTokenIDs(workloadRNG, 100),
+			OutputTokens: sim.GenerateRandomTokenIDs(workloadRNG, 50),
+			MaxOutputLen: 150, // 100 + 150 = 250 > MaxModelLen(200)
+			ArrivalTime:  int64((8 + i) * 100_000),
+			State:        sim.StateQueued,
+		}
+		requests = append(requests, req)
+		numGuard1b++
+	}
+
+	totalInjected := numFit + numGuard1a + numGuard1b
+	expectedDropped := numGuard1a + numGuard1b
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	agg := cs.AggregatedMetrics()
+
+	// DroppedUnservable matches expected oversized count
+	if agg.DroppedUnservable != expectedDropped {
+		t.Errorf("DroppedUnservable = %d, want %d (Guard1a=%d + Guard1b=%d)",
+			agg.DroppedUnservable, expectedDropped, numGuard1a, numGuard1b)
+	}
+
+	// INV-1 conservation: injected == completed + queued + running + dropped
+	conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
+	if conservation != totalInjected {
+		t.Errorf("INV-1: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
+			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable,
+			conservation, totalInjected)
+	}
+
+	// Post-simulation drain: all requests completed or dropped, nothing in-flight
+	if agg.StillQueued != 0 || agg.StillRunning != 0 {
+		t.Errorf("StillQueued=%d, StillRunning=%d; want both 0 (all should complete within horizon)",
+			agg.StillQueued, agg.StillRunning)
+	}
+
+	// inFlightRequests drains to 0 for each instance (direct access, same package)
+	for _, inst := range cs.instances {
+		instID := string(inst.ID())
+		inflight := cs.inFlightRequests[instID]
+		if inflight != 0 {
+			t.Errorf("inFlightRequests[%s] = %d, want 0 (should drain after completion+drops)", instID, inflight)
+		}
+	}
+
+	// Metrics.Requests map excludes dropped request IDs
+	for _, req := range requests {
+		_, exists := agg.Requests[req.ID]
+		isDropped := strings.HasPrefix(req.ID, "guard1")
+		if exists && isDropped {
+			t.Errorf("Metrics.Requests should NOT contain dropped request %s", req.ID)
+		}
+		if !exists && !isDropped {
+			t.Errorf("Metrics.Requests should contain fit request %s", req.ID)
+		}
+	}
 }

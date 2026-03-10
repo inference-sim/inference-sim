@@ -33,7 +33,7 @@ type TraceServerConfig struct {
 	MaxNumSeqs            int     `yaml:"max_num_seqs,omitempty"`
 	BlockSize             int     `yaml:"block_size,omitempty"`
 	GPUMemoryUtilization  float64 `yaml:"gpu_memory_utilization,omitempty"`
-	MaxModelLen           int     `yaml:"max_model_len,omitempty"`
+	MaxModelLen           int64   `yaml:"max_model_len,omitempty"`
 }
 
 // TraceNetworkConfig captures network configuration in trace header.

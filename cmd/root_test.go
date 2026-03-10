@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"testing"
@@ -110,4 +111,81 @@ func TestRunCmd_MaxScheduledTokens_FlagRegistered(t *testing.T) {
 	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
 	assert.NoError(t, err)
 	assert.Greater(t, defVal, int64(0), "default must be > 0 (passes validation)")
+}
+
+// TestApplyRopeScaling validates the pure function extraction of rope_scaling logic.
+// Covers BC-1 (mrope), BC-2 (blacklist), BC-3 (gemma3), BC-4 (yarn), BC-8 (invalid input), BC-9 (never panics).
+func TestApplyRopeScaling(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxPosEmb   int
+		modelType   string
+		ropeScaling any
+		wantScaled  int
+		wantApplied bool
+	}{
+		// Basic cases
+		{name: "nil rope_scaling", maxPosEmb: 8192, modelType: "", ropeScaling: nil, wantScaled: 8192, wantApplied: false},
+		{name: "linear factor 4", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: 32768, wantApplied: true},
+		{name: "dynamic factor 2", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": "dynamic", "factor": 2.0}, wantScaled: 8192, wantApplied: true},
+		{name: "default factor 2", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": "default", "factor": 2.0}, wantScaled: 8192, wantApplied: true},
+
+		// BC-1: mrope — intentionally not excluded (vLLM normalizes mrope → "default" and applies factor)
+		{name: "mrope factor 8", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "mrope", "factor": 8.0}, wantScaled: 65536, wantApplied: true},
+
+		// BC-2: Blacklist — su, longrope, llama3 excluded
+		{name: "su excluded", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "su", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
+		{name: "longrope excluded", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "longrope", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
+		{name: "llama3 excluded", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "llama3", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
+
+		// BC-3: gemma3 model_type exclusion (substring match covers text_config pivot)
+		{name: "gemma3 skips rope_scaling", maxPosEmb: 8192, modelType: "gemma3", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
+		{name: "gemma3_text skips rope_scaling", maxPosEmb: 8192, modelType: "gemma3_text", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
+
+		// BC-4: yarn uses original_max_position_embeddings
+		{name: "yarn with original", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "yarn", "factor": 4.0, "original_max_position_embeddings": 2048.0}, wantScaled: 8192, wantApplied: true},
+		{name: "yarn without original", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": "yarn", "factor": 2.0}, wantScaled: 8192, wantApplied: true},
+
+		// BC-8: Invalid inputs — warn and ignore
+		{name: "non-object rope_scaling string", maxPosEmb: 8192, modelType: "", ropeScaling: "not-a-map", wantScaled: 8192, wantApplied: false},
+		{name: "non-object rope_scaling array", maxPosEmb: 8192, modelType: "", ropeScaling: []any{1.0, 2.0}, wantScaled: 8192, wantApplied: false},
+		{name: "factor not float64", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": "four"}, wantScaled: 8192, wantApplied: false},
+		{name: "factor lte 1", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 1.0}, wantScaled: 8192, wantApplied: false},
+		{name: "no factor key", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear"}, wantScaled: 8192, wantApplied: false},
+		{name: "null type with factor", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": nil, "factor": 2.0}, wantScaled: 8192, wantApplied: true},
+		{name: "empty type with factor", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"factor": 2.0}, wantScaled: 8192, wantApplied: true},
+
+		// rope_type fallback key
+		{name: "rope_type fallback", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"rope_type": "linear", "factor": 3.0}, wantScaled: 12288, wantApplied: true},
+
+		// NaN/Inf defense-in-depth
+		{name: "NaN factor", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": math.NaN()}, wantScaled: 8192, wantApplied: false},
+		{name: "Inf factor", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": math.Inf(1)}, wantScaled: 8192, wantApplied: false},
+
+		// Overflow guards
+		{name: "overflow guard fires", maxPosEmb: math.MaxInt / 2, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: math.MaxInt / 2, wantApplied: false},
+		{name: "yarn orig overflow", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": "yarn", "factor": 2.0, "original_max_position_embeddings": float64(math.MaxInt)}, wantScaled: 4096, wantApplied: false},
+
+		// Degenerate base guards (R3)
+		{name: "maxPosEmb zero", maxPosEmb: 0, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: 0, wantApplied: false},
+		{name: "maxPosEmb negative", maxPosEmb: -1, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: -1, wantApplied: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			scaled, applied := applyRopeScaling(tc.maxPosEmb, tc.modelType, tc.ropeScaling)
+			assert.Equal(t, tc.wantScaled, scaled, "scaled value")
+			assert.Equal(t, tc.wantApplied, applied, "applied flag")
+		})
+	}
+}
+
+// Regression: yarn with original uses original as base, not maxPosEmb
+func TestApplyRopeScaling_YarnOriginal_UsesOriginalAsBase(t *testing.T) {
+	scaled, applied := applyRopeScaling(8192, "", map[string]any{
+		"type": "yarn", "factor": 4.0, "original_max_position_embeddings": 2048.0,
+	})
+	// 2048 * 4 = 8192, NOT 8192 * 4 = 32768
+	assert.Equal(t, 8192, scaled)
+	assert.True(t, applied)
 }

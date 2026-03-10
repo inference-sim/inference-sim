@@ -1876,3 +1876,58 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 		t.Error("expected non-nil simulator")
 	}
 }
+
+// BC-7: Chunked prefill + MaxModelLen — no spurious force-completion.
+// GIVEN LongPrefillTokenThreshold=64, MaxModelLen=500, input=200, output=50
+// WHEN the request undergoes multi-chunk prefill (4 chunks: 64,64,64,8)
+// THEN the request completes normally (peak ProgressIndex=249 < 500),
+//
+//	LengthCappedRequests==0, TTFT recorded, TotalOutputTokens==49.
+func TestSimulator_ChunkedPrefill_MaxModelLen_NoSpuriousCap(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             10_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 64), // LongPrefillTokenThreshold=64
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 500),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	req := &Request{
+		ID:           "chunked_prefill",
+		InputTokens:  GenerateRandomTokenIDs(sim.WorkloadRNG(), 200),
+		OutputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 50),
+		ArrivalTime:  0,
+		State:        StateQueued,
+	}
+	sim.InjectArrival(req)
+	sim.Run()
+
+	// Request completes normally (no force-completion)
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
+	}
+	if sim.Metrics.LengthCappedRequests != 0 {
+		t.Errorf("LengthCappedRequests = %d, want 0 (no spurious force-completion during chunked prefill)", sim.Metrics.LengthCappedRequests)
+	}
+
+	// TTFT recorded — verifies TTFT fires on final prefill chunk (ProgressIndex=200), not intermediate chunks
+	ttft, hasTTFT := sim.Metrics.RequestTTFTs["chunked_prefill"]
+	if !hasTTFT || ttft <= 0 {
+		t.Errorf("TTFT not recorded (hasTTFT=%v, ttft=%v); expected positive TTFT after chunked prefill", hasTTFT, ttft)
+	}
+
+	// TotalOutputTokens: decode runs PI 201→249 = 49 tokens.
+	// Normal completion fires at PI == 200 + max(50,1) - 1 = 249.
+	if sim.Metrics.TotalOutputTokens != 49 {
+		t.Errorf("TotalOutputTokens = %d, want 49 (decode PI 201→249)", sim.Metrics.TotalOutputTokens)
+	}
+
+	// INV-1 conservation
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != 1 {
+		t.Errorf("INV-1: completed(%d)+queued(%d)+running(%d)+dropped(%d) = %d, want 1",
+			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
+	}
+}

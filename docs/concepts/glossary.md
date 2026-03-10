@@ -72,6 +72,14 @@ GPU memory organized as blocks that store key-value tensors computed during atte
 
 The component that predicts GPU execution time for a batch step. Three modes: *Blackbox* (trained regression coefficients), *Roofline* (analytical FLOPs/bandwidth estimation), and *Cross-Model* (physics-informed, MoE-aware). See [Core Engine: Latency Models](core-engine.md#latency-models), [Roofline Estimation](roofline.md), and [Latency Models Guide](../guide/latency-models.md).
 
+### MaxModelLen
+
+Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len`. When set (> 0), requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. A runtime cap force-completes any request whose progress reaches this limit (defense-in-depth). Set to 0 for unlimited. Auto-derived from `max_position_embeddings` in roofline/crossmodel modes, with `rope_scaling` factor application and KV-feasible capping. See [Configuration Reference](../reference/configuration.md#simulation-control).
+
+### Oracle Knowledge Boundary (INV-9)
+
+The principle that control-plane decisions (admission, routing, scheduling, priority) must not read `Request.OutputTokens`. The actual output token count is oracle knowledge — known only after generation completes. The control plane uses `MaxOutputLen` (client-declared output budget) or input-only checks instead. Only the execution engine (batch step processing, completion detection) may access `OutputTokens` for token generation and determining when a request finishes. See [Standards: Invariants](../contributing/standards/invariants.md).
+
 ### Pending Requests
 
 Requests that have been routed to an instance but not yet enqueued (the queueing event hasn't fired). Tracked per-instance to prevent routing pile-on at high arrival rates. Decremented when the `QueuedEvent` fires. See [Cluster Architecture: Routing Pipeline](architecture.md#routing-pipeline).
