@@ -621,7 +621,7 @@ This prevents the scenario where an experiment runs but the measurement doesn't 
    - H19: Consider adding explicit `--latency-mode roofline` flag independent of alpha coefficients (CLI design coupling)
 8. **Promote confirmed hypotheses to Go tests:** H26 (event pipeline), H25 (full-stack conservation), H24 (anomaly detection completeness)
 9. **Act on new findings:**
-   - H4: LL tie-breaking positional bias (instance 0 preference) — consider random tie-breaking option
+   - ~~H4: LL tie-breaking positional bias (instance 0 preference)~~ — **Fixed** in #565: random tie-breaking for LeastLoaded and WeightedScoring
    - H6: Counterfactual regret is structurally zero for weighted policies — document limitation; regret only meaningful for non-score-based policies
    - H7: Super-linear scaling is a general queueing property — document for capacity planning guidance
    - H20: Distribution median (not mean/tail) drives KV pressure — document for workload configuration guidance

@@ -37,9 +37,6 @@ type CrossModelLatencyModel struct {
 }
 
 func (m *CrossModelLatencyModel) StepTime(batch []*sim.Request) int64 {
-	if len(batch) == 0 {
-		return 0
-	}
 	var totalPrefillTokens, totalDecodeTokens int64
 	for _, req := range batch {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {

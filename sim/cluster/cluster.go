@@ -65,17 +65,22 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		})
 	}
 
+	// Extract PartitionedRNG before struct literal so routing policy can use SubsystemRouter.
+	// The routing policy exclusively owns the SubsystemRouter partition — do not reuse
+	// cs.rng.ForSubsystem(SubsystemRouter) elsewhere to avoid interleaving RNG draws.
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed))
+
 	cs := &ClusterSimulator{
 		config:               config,
 		instances:            instances,
-		rng:                  sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed)),
+		rng:                  rng,
 		preGeneratedRequests: requests,
 		clusterEvents:        make(ClusterEventQueue, 0),
 		admissionLatency:     config.AdmissionLatency,
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
 		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
-		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens),
+		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter)),
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}

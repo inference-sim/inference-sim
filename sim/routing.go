@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math/rand"
 )
 
 // RoutingSnapshot is a lightweight view of instance state for policy decisions.
@@ -103,8 +104,10 @@ func (rr *RoundRobin) Route(req *Request, state *RouterState) RoutingDecision {
 // LeastLoaded routes requests to the instance with minimum (QueueDepth + BatchSize + InFlightRequests).
 // InFlightRequests prevents pile-on at high request rates where multiple routing decisions
 // occur at the same timestamp before instance events process (#175).
-// Ties are broken by first occurrence in snapshot order (lowest index).
-type LeastLoaded struct{}
+// Ties are broken randomly when rng is non-nil; by first occurrence (lowest index) when rng is nil.
+type LeastLoaded struct {
+	rng *rand.Rand
+}
 
 // Route implements RoutingPolicy for LeastLoaded.
 func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
@@ -113,18 +116,29 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 		panic("LeastLoaded.Route: empty snapshots")
 	}
 
+	// Pass 1: find minimum load
 	minLoad := snapshots[0].EffectiveLoad()
-	target := snapshots[0]
-
 	for i := 1; i < len(snapshots); i++ {
-		load := snapshots[i].EffectiveLoad()
-		if load < minLoad {
+		if load := snapshots[i].EffectiveLoad(); load < minLoad {
 			minLoad = load
-			target = snapshots[i]
 		}
 	}
 
-	return NewRoutingDecision(target.ID, fmt.Sprintf("least-loaded (load=%d)", minLoad))
+	// Pass 2: collect all instances tied at minimum load
+	var tied []int
+	for i, snap := range snapshots {
+		if snap.EffectiveLoad() == minLoad {
+			tied = append(tied, i)
+		}
+	}
+
+	// Random tie-breaking when rng is non-nil; positional (first) when nil.
+	idx := tied[0]
+	if len(tied) > 1 && ll.rng != nil {
+		idx = tied[ll.rng.Intn(len(tied))]
+	}
+
+	return NewRoutingDecision(snapshots[idx].ID, fmt.Sprintf("least-loaded (load=%d)", minLoad))
 }
 
 // observerFunc is called after each routing decision to update stateful scorer state.
@@ -144,11 +158,13 @@ type observerFunc func(req *Request, targetInstance string)
 // Stateful scorers (prefix-affinity) register observers that update internal
 // state after each routing decision. Observers are called after argmax selection.
 //
-// Higher scores are preferred. Ties broken by first occurrence in snapshot order.
+// Higher scores are preferred. Ties broken randomly when rng is non-nil;
+// by first occurrence (lowest index) when rng is nil.
 type WeightedScoring struct {
 	scorers   []scorerFunc
 	weights   []float64 // normalized to sum to 1.0
 	observers []observerFunc
+	rng       *rand.Rand
 }
 
 // Route implements RoutingPolicy for WeightedScoring.
@@ -176,17 +192,32 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	}
 
 	// Argmax: select instance with highest composite score.
-	// Ties broken by first occurrence in snapshot order (strict >).
+	// Pass 1: find maximum score.
 	bestScore := -1.0
-	bestIdx := 0
-	for i, snap := range snapshots {
+	for _, snap := range snapshots {
 		if scores[snap.ID] > bestScore {
 			bestScore = scores[snap.ID]
-			bestIdx = i
 		}
 	}
 
-	// Notify observers of routing decision (stateful scorers update their state)
+	// Pass 2: collect all instances tied at maximum score.
+	// Exact float equality is correct here because identical instance states produce
+	// bitwise-identical scores (same accumulation order on same data per IEEE 754).
+	var tied []int
+	for i, snap := range snapshots {
+		if scores[snap.ID] == bestScore {
+			tied = append(tied, i)
+		}
+	}
+
+	// Random tie-breaking when rng is non-nil; positional (first) when nil.
+	bestIdx := tied[0]
+	if len(tied) > 1 && ws.rng != nil {
+		bestIdx = tied[ws.rng.Intn(len(tied))]
+	}
+
+	// Notify observers of routing decision (stateful scorers update their state).
+	// Uses post-tie-breaking bestIdx so prefix-affinity records the actual target.
 	for _, obs := range ws.observers {
 		obs(req, snapshots[bestIdx].ID)
 	}
@@ -230,8 +261,10 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 // For weighted scoring, scorerConfigs configures the scorer pipeline.
 // If scorerConfigs is nil/empty for "weighted", DefaultScorerConfigs() is used.
 // Non-weighted policies ignore scorerConfigs.
+// The rng parameter enables random tie-breaking for least-loaded and weighted policies;
+// nil preserves positional tie-breaking. Ignored by round-robin and always-busiest.
 // Panics on unrecognized names.
-func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64) RoutingPolicy {
+func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
@@ -239,7 +272,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 	case "", "round-robin":
 		return &RoundRobin{}
 	case "least-loaded":
-		return &LeastLoaded{}
+		return &LeastLoaded{rng: rng}
 	case "weighted":
 		if len(scorerConfigs) == 0 {
 			scorerConfigs = DefaultScorerConfigs()
@@ -254,7 +287,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 			}
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
-		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers}
+		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers, rng: rng}
 	case "always-busiest":
 		return &AlwaysBusiest{}
 	default:

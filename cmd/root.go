@@ -51,6 +51,7 @@ var (
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
 	latencyModelBackend string // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
+	maxModelLen         int    // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
 
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
@@ -414,6 +415,73 @@ var runCmd = &cobra.Command{
 					}
 				}
 			}
+
+			// Auto-derive --max-model-len from HF config when not explicitly set (R18).
+			// Mirrors vLLM's _auto_fit_max_model_len(): uses max_position_embeddings,
+			// applies rope_scaling factor for older models, then caps at KV-feasible max.
+			if !cmd.Flags().Changed("max-model-len") {
+				maxPosEmb := hfConfig.MustGetInt("max_position_embeddings", 0)
+				if maxPosEmb > 0 {
+					maxModelLen = maxPosEmb
+
+					// Apply rope_scaling factor matching vLLM's blacklist approach:
+					// vLLM excludes "su", "longrope", and "llama3" rope types from factor
+					// application (these types encode the full context in max_position_embeddings).
+					// All other types (linear, dynamic, yarn, default, etc.) apply the factor.
+					// For "yarn", vLLM uses original_max_position_embeddings as the base.
+					if ropeScaling, ok := hfConfig.Raw["rope_scaling"]; ok {
+						if ropeMap, ok := ropeScaling.(map[string]any); ok {
+							ropeType, _ := ropeMap["type"].(string)
+							if ropeType == "" {
+								ropeType, _ = ropeMap["rope_type"].(string) // some configs use rope_type
+							}
+							// Blacklist: these types already embed scaled context in max_position_embeddings
+							excluded := ropeType == "su" || ropeType == "longrope" || ropeType == "llama3"
+							if !excluded {
+								if factor, ok := ropeMap["factor"].(float64); ok && factor > 1.0 {
+									// For yarn, use original_max_position_embeddings as base if available
+									base := maxPosEmb
+									if ropeType == "yarn" {
+										if orig, ok := ropeMap["original_max_position_embeddings"].(float64); ok && int(orig) > 0 {
+											base = int(orig)
+										}
+									}
+									scaled := int(float64(base) * factor)
+									logrus.Infof("--latency-model: applying %s rope_scaling factor %.1f: %d → %d", ropeType, factor, base, scaled)
+									maxModelLen = scaled
+								}
+							}
+						}
+					}
+
+					logrus.Infof("--latency-model: auto-derived max-model-len=%d from max_position_embeddings", maxModelLen)
+				}
+			}
+
+			// Cap maxModelLen at KV-feasible maximum (matches vLLM's _maybe_limit_model_len).
+			// Without this, auto-derived max_position_embeddings can exceed KV capacity
+			// for models with large context windows on small GPU configs (e.g., 128K context, TP=1).
+			// Overflow-safe KV feasible max: compare in block space to avoid int64 multiplication overflow.
+			// Instead of computing totalKVBlocks * blockSizeTokens (which could overflow for extreme configs),
+			// we check whether ceil(maxModelLen / blockSizeTokens) > totalKVBlocks — the same comparison
+			// used in NewSimulator's startup validation.
+			if maxModelLen > 0 && blockSizeTokens > 0 {
+				blocksNeeded := int64(maxModelLen) / blockSizeTokens
+				if int64(maxModelLen)%blockSizeTokens != 0 {
+					blocksNeeded++
+				}
+				if blocksNeeded > totalKVBlocks {
+					kvFeasibleMax := int(totalKVBlocks * blockSizeTokens) // safe: totalKVBlocks * 16 fits int64 for all real GPUs
+					logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
+						maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
+					maxModelLen = kvFeasibleMax
+				}
+			}
+		}
+
+		// R3: Validate --max-model-len
+		if maxModelLen < 0 {
+			logrus.Fatalf("--max-model-len must be >= 0, got %d", maxModelLen)
 		}
 
 		// R3: Validate workload generation flags (before any synthesis path consumes them)
@@ -709,7 +777,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend, maxModelLen),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,
@@ -886,6 +954,7 @@ func init() {
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
 	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline, crossmodel")
+	runCmd.Flags().IntVar(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
 
 	// GuideLLM-style distribution-based workload generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")

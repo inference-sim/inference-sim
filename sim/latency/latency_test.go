@@ -49,7 +49,7 @@ func TestBlackboxLatencyModel_StepTime_MixedBatch_Positive(t *testing.T) {
 // TestBlackboxLatencyModel_StepTime_EmptyBatch verifies:
 // GIVEN an empty batch
 // WHEN StepTime is called
-// THEN the result MUST be non-negative (overhead-only baseline).
+// THEN the result MUST be >= 1 (LatencyModel interface contract: clock must advance).
 func TestBlackboxLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 	model := &BlackboxLatencyModel{
 		betaCoeffs:  []float64{1000, 10, 5},
@@ -58,10 +58,8 @@ func TestBlackboxLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 
 	result := model.StepTime([]*sim.Request{})
 
-	// THEN overhead-only baseline is non-negative
-	if result < 0 {
-		t.Errorf("StepTime(empty) = %d, want >= 0", result)
-	}
+	// THEN empty batch produces StepTime >= 1 (interface contract: clock must advance)
+	assert.GreaterOrEqual(t, result, int64(1), "empty batch must return >= 1 per LatencyModel contract")
 }
 
 // TestBlackboxLatencyModel_QueueingTime_Positive verifies:
@@ -187,10 +185,8 @@ func TestRooflineLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 
 	emptyResult := model.StepTime([]*sim.Request{})
 
-	// THEN empty batch result must be non-negative (overhead only)
-	if emptyResult < 0 {
-		t.Errorf("StepTime(empty) = %d, want >= 0", emptyResult)
-	}
+	// THEN empty batch result must be >= 1 (interface contract: clock must advance)
+	assert.GreaterOrEqual(t, emptyResult, int64(1), "empty batch must return >= 1 per LatencyModel contract")
 
 	// AND a non-empty batch must produce a longer step time
 	nonEmptyBatch := []*sim.Request{
@@ -231,7 +227,7 @@ func TestRooflineLatencyModel_QueueingTime_Positive(t *testing.T) {
 func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 	cfg := sim.SimConfig{
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0),
 	}
 
 	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -271,7 +267,7 @@ func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 func TestNewLatencyModel_RooflineMode(t *testing.T) {
 	cfg := sim.SimConfig{
 		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, "roofline"),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, "roofline", 0),
 	}
 
 	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -298,7 +294,7 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 func TestNewLatencyModel_InvalidRoofline(t *testing.T) {
 	cfg := sim.SimConfig{
 		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "roofline"),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "roofline", 0),
 	}
 
 	_, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -323,7 +319,7 @@ func TestNewLatencyModel_ShortAlphaCoeffs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			coeffs := sim.NewLatencyCoeffs(tc.beta, tc.alpha)
-			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, tc.backend)
+			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, tc.backend, 0)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for short AlphaCoeffs, got nil")
@@ -344,7 +340,7 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			coeffs := sim.NewLatencyCoeffs(tc.beta, []float64{100, 1, 100})
-			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "")
+			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for short BetaCoeffs, got nil")
@@ -356,7 +352,7 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 // TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError verifies BC-4: NaN in alpha rejected.
 func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{math.NaN(), 1.0, 100.0})
-	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, ""))
+	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0))
 	if err == nil {
 		t.Fatal("expected error for NaN AlphaCoeffs, got nil")
 	}
@@ -365,7 +361,7 @@ func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
 // TestNewLatencyModel_InfBetaCoeffs_ReturnsError verifies BC-4: Inf in beta rejected.
 func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs([]float64{math.Inf(1), 10, 5}, []float64{100, 1.0, 100.0})
-	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, ""))
+	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0))
 	if err == nil {
 		t.Fatal("expected error for Inf BetaCoeffs, got nil")
 	}
@@ -374,7 +370,7 @@ func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
 // TestNewLatencyModel_UnknownBackend_ReturnsError verifies BC-6: unknown backend → error.
 func TestNewLatencyModel_UnknownBackend_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs([]float64{1000, 10, 2}, []float64{500, 1, 100})
-	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "nonexistent")
+	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "nonexistent", 0)
 	_, err := NewLatencyModel(coeffs, hw)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "nonexistent")
@@ -398,7 +394,7 @@ func TestNewLatencyModel_NegativeCoefficients_ReturnsError(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			coeffs := sim.NewLatencyCoeffs(tc.beta, tc.alpha)
-			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "")
+			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for negative coefficient")
@@ -416,7 +412,7 @@ func TestNewLatencyModel_NegativeCoefficients_ReturnsError(t *testing.T) {
 // THEN the return value is >= 1 (livelock protection via R19)
 func TestBlackboxLatencyModel_StepTime_FloorAtOne(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs([]float64{0, 0, 0}, []float64{0, 0, 0})
-	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "")
+	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0)
 	model, err := NewLatencyModel(coeffs, hw)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)
@@ -466,4 +462,28 @@ func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T
 	if rooflineWith != rooflineEmpty {
 		t.Errorf("roofline: zero-output request should not change step time: with=%d empty=%d", rooflineWith, rooflineEmpty)
 	}
+}
+
+// TestAllBackends_StepTime_EmptyBatch_FloorAtOne verifies the LatencyModel
+// interface contract: all backends must return >= 1 for empty batch, even with zero coefficients.
+func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
+	emptyBatch := []*sim.Request{}
+
+	blackbox := &BlackboxLatencyModel{
+		betaCoeffs:  []float64{0, 0, 0}, // zero coefficients — worst case
+		alphaCoeffs: []float64{0, 0, 0},
+	}
+	assert.GreaterOrEqual(t, blackbox.StepTime(emptyBatch), int64(1),
+		"blackbox with zero coefficients must still return >= 1")
+
+	crossmodel := &CrossModelLatencyModel{
+		betaCoeffs:  []float64{0, 0, 0, 0}, // zero coefficients — worst case
+		alphaCoeffs: []float64{0, 0, 0},
+		numLayers:   1,
+		kvDimScaled: 0.0,
+		isMoE:       0.0,
+		isTP:        0.0,
+	}
+	assert.GreaterOrEqual(t, crossmodel.StepTime(emptyBatch), int64(1),
+		"crossmodel with zero coefficients must still return >= 1")
 }
