@@ -201,7 +201,7 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --prefill-instances, --decode-instances, --pd-decider)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
@@ -212,6 +212,7 @@ inference-sim/
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
 │   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor, event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording, observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon()). All workload generation external via InjectArrival().
 │   ├── admission.go           # AdmissionPolicy interface (accepts *RouterState), AlwaysAdmit, TokenBucket, RejectAll, NewAdmissionPolicy factory
+│   ├── disaggregation.go     # DisaggregationDecider interface, DisaggregationDecision type, NeverDisaggregate, AlwaysDisaggregate, NewDisaggregationDecider factory
 │   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() for canonical load calculation), RoutingDecision (with Priority hint), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), AlwaysBusiest templates, NewRoutingPolicy factory
 │   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs, IsValidScorer, DefaultScorerConfigs, newScorerWithObserver factory
 │   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer (proportional prefix matching)
@@ -249,11 +250,12 @@ inference-sim/
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
 │   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; Run() returns error
-│   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent
+│   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent, DisaggregationDecisionEvent (PD disaggregation pipeline)
 │   ├── counterfactual.go      # computeCounterfactual() for top-k candidate ranking and regret computation
 │   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
 │   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
-│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields; ToSimConfig() returns the embedded config
+│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields (PrefillInstances, DecodeInstances, PDDecider for PD disaggregation); ToSimConfig() returns the embedded config
+│   ├── pool.go                # PoolRole type, ValidatePoolTopology(), BuildPoolMembership() for PD disaggregation pool topology
 │   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
 ├── sim/workload/              # ServeGen-informed workload generation (PR10)
 │   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, v1→v2 auto-upgrade (UpgradeV1ToV2), IsValidSLOClass accessor
