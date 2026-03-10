@@ -25,7 +25,26 @@ type StepConfig struct {
 	DecodeRequests  []DecodeRequestConfig  `json:"decode_requests"`
 }
 
+// mlpMatrixCount returns the number of MLP weight matrices for bandwidth/FLOPs estimation.
+// Always returns 2 (up+down) to match llm-optimizer's convention: for SwiGLU models,
+// HF intermediate_size is already scaled so that 2 × d × intermediate ≈ 3 × d × (2/3 × 4d).
+// Using 3 with the raw intermediate_size over-predicts for models like Llama2-70B
+// whose intermediate_size exceeds the standard SwiGLU (2/3 × 4d) convention.
+//
+// NOTE: KV capacity (computeModelWeightBytes in kv_capacity.go) intentionally uses 3-matrix
+// SwiGLU to match the capacity_planner.py reference formula. The difference is deliberate:
+// roofline optimizes for step-time accuracy (calibrated to llm-optimizer), while KV capacity
+// optimizes for conservative weight estimation (over-counting weights is safer than OOM).
+func mlpMatrixCount(hiddenAct string) float64 {
+	_ = hiddenAct // reserved for future per-activation tuning
+	return 2
+}
+
 // --- Bento FLOPS Logic ---
+//
+// Precondition: config must pass ValidateRooflineConfig (NumHeads > 0, and when
+// NumLocalExperts > 1, NumExpertsPerTok must be > 0). Violating preconditions
+// produces silently incorrect results (zero MLP FLOPs, +Inf from division).
 func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) map[string]float64 {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
@@ -74,14 +93,24 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 	}
 
 	if includeMLP {
-		// SwiGLU Gating: Gate, Up, and Down (3 matrices)
-		flops["gemm_ops"] += 2 * newT * (3 * dModel * dFF) * nLayers
+		nMat := mlpMatrixCount(config.HiddenAct)
+		dExpert := dFF
+		if config.NumLocalExperts > 1 && config.MoEExpertFFNDim > 0 {
+			dExpert = float64(config.MoEExpertFFNDim)
+		}
+		mlpFlopsPerLayer := 2 * newT * (nMat * dModel * dExpert)
+		if config.NumLocalExperts > 1 {
+			mlpFlopsPerLayer *= float64(config.NumExpertsPerTok)
+		}
+		flops["gemm_ops"] += mlpFlopsPerLayer * nLayers
 	}
 
 	flops["total"] = flops["gemm_ops"] + flops["sram_ops"]
 	return flops
 }
 
+// Precondition: same as calculateTransformerFlops — config must pass
+// ValidateRooflineConfig. NumHeads > 0 required (division at dHead).
 func calculateMemoryAccessBytes(
 	config sim.ModelConfig,
 	sequenceLength int64,
@@ -109,7 +138,20 @@ func calculateMemoryAccessBytes(
 
 	// Weights: Loaded exactly once. (Static)
 	dKV := nKVHeads * dHead
-	weightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel) + (3 * dModel * dFF)
+	attnWeightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel)
+
+	nMat := mlpMatrixCount(config.HiddenAct)
+	dExpert := dFF
+	if config.NumLocalExperts > 1 && config.MoEExpertFFNDim > 0 {
+		dExpert = float64(config.MoEExpertFFNDim)
+	}
+	mlpWeightsPerLayer := nMat * dModel * dExpert
+	if config.NumLocalExperts > 1 {
+		// MoE: all E expert weights loaded from HBM per step
+		mlpWeightsPerLayer *= float64(config.NumLocalExperts)
+	}
+
+	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer
 	mem["model_weights"] = weightsPerLayer * nLayers * config.BytesPerParam
 
 	if includeKVCache {
@@ -146,6 +188,15 @@ func calculateMemoryAccessBytes(
 }
 
 // rooflineStepTime computes step latency using the roofline model.
+//
+// Models a single forward pass per step (matching vLLM chunked prefill):
+// all prefill and decode tokens are processed together, weights loaded once.
+// Uses single-crossover roofline: step_time = max(compute_time, memory_time).
+// No bandwidth haircut, no overhead terms.
+//
+// Compute uses phase-specific MFU: prefill tokens at MfuPrefill, decode at MfuDecode,
+// reflecting that prefill is compute-bound (large GEMMs) while decode is memory-bound.
+//
 // Precondition: ValidateRooflineConfig(modelConfig, hwConfig) must return nil
 // and tp must be > 0. Callers must validate before first call.
 func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, stepConfig StepConfig, tp int) int64 {
@@ -153,70 +204,42 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	tpFactor := float64(tp)
 	peakFlops := hwConfig.TFlopsPeak * 1e12
 	peakBW := hwConfig.BwPeakTBs * 1e12
-	effBW := peakBW * hwConfig.BwEffConstant
-	vectorPeak := peakFlops * 0.10 // Non-tensor core ops
 
-	var prefillComputeS, prefillMemoryS float64
-	var decodeComputeS, decodeMemoryS float64
-
-	// 1. PREFILL PHASE (Calculated as a single batched operation)
-	if len(stepConfig.PrefillRequests) > 0 {
-		var pGemmFlops, pVectorFlops, pDynamicBytes float64
-
-		for _, req := range stepConfig.PrefillRequests {
-			numTokens := int64(req.NumNewPrefillTokens)
-
-			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
-			pGemmFlops += f["gemm_ops"] / tpFactor
-			pVectorFlops += f["sram_ops"] / tpFactor
-
-			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
-			pDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
-		}
-
-		// Prefill Roofline: Weights + KV Cache are loaded once for the whole chunk
-		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-		pWeightBytes := baseMem["model_weights"] / tpFactor
-
-		prefillComputeS = (pGemmFlops / (peakFlops * hwConfig.MfuPrefill)) + (pVectorFlops / vectorPeak)
-		prefillMemoryS = (pWeightBytes + pDynamicBytes) / effBW
+	if len(stepConfig.PrefillRequests) == 0 && len(stepConfig.DecodeRequests) == 0 {
+		return 0
 	}
 
-	// 2. DECODE PHASE (Calculated as a single batched step)
-	if len(stepConfig.DecodeRequests) > 0 {
-		var dGemmFlops, dVectorFlops, dDynamicBytes float64
+	var totalComputeS float64
+	var totalDynamicBytes float64
 
-		for _, req := range stepConfig.DecodeRequests {
-			f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
-			dGemmFlops += f["gemm_ops"] / tpFactor
-			dVectorFlops += f["sram_ops"] / tpFactor
+	// 1. PREFILL FLOPs + dynamic memory (KV cache, activations)
+	for _, req := range stepConfig.PrefillRequests {
+		numTokens := int64(req.NumNewPrefillTokens)
 
-			m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
-			dDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
-		}
+		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
+		totalComputeS += f["total"] / tpFactor / (peakFlops * hwConfig.MfuPrefill)
 
-		// Decode Roofline: Every step must reload the weights
-		baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
-		dWeightBytes := baseMem["model_weights"] / tpFactor
-
-		decodeComputeS = (dGemmFlops / (peakFlops * hwConfig.MfuDecode)) + (dVectorFlops / vectorPeak)
-		decodeMemoryS = (dWeightBytes + dDynamicBytes) / effBW
+		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
+		totalDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
 	}
 
-	// 3. COMBINE AND ADD OVERHEADS
-	// We take the Max (bottleneck) for each phase independently
-	stepHardwareS := math.Max(prefillComputeS, prefillMemoryS) + math.Max(decodeComputeS, decodeMemoryS)
+	// 2. DECODE FLOPs + dynamic memory (KV cache, activations)
+	for _, req := range stepConfig.DecodeRequests {
+		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
+		totalComputeS += f["total"] / tpFactor / (peakFlops * hwConfig.MfuDecode)
 
-	// Parallelism & Launch Overheads
-	layerFloorS := (float64(modelConfig.NumLayers) * hwConfig.PerLayerOverhead) / 1e6
-
-	commOverheadS := 0.0
-	if tp > 1 {
-		// TP synchronization happens per layer
-		commOverheadS = (float64(modelConfig.NumLayers) * 2 * hwConfig.AllReduceLatency) / 1e6
+		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
+		totalDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
 	}
 
-	totalMicros := (stepHardwareS * 1e6) + (layerFloorS * 1e6) + (commOverheadS * 1e6) + hwConfig.TOverheadMicros
+	// 3. WEIGHTS loaded once per step (single forward pass, per Sarathi-Serve/vLLM V1)
+	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+	weightBytes := baseMem["model_weights"] / tpFactor
+
+	totalMemoryS := (weightBytes + totalDynamicBytes) / peakBW
+
+	// 4. ROOFLINE: single crossover
+	totalMicros := math.Max(totalComputeS, totalMemoryS) * 1e6
 
 	return int64(math.Round(totalMicros))
 }

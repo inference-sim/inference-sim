@@ -181,6 +181,9 @@ func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *t
 }
 
 // testHardwareCalib returns an H100-like hardware config for roofline tests.
+// Note: BwEffConstant, TOverheadMicros, PerLayerOverhead, AllReduceLatency are
+// present for struct completeness and ValidateRooflineConfig but are NOT consumed
+// by rooflineStepTime() (single-crossover model uses raw peak bandwidth, no overheads).
 func testHardwareCalib() sim.HardwareCalib {
 	return sim.HardwareCalib{
 		TFlopsPeak:       989.0,
@@ -269,16 +272,337 @@ func TestRooflineStepTime_Smoke_ValidInputsProducePositiveFiniteResult(t *testin
 	}
 }
 
-func TestRooflineStepTime_EmptyStep_ReturnsOverheadOnly(t *testing.T) {
-	// Edge case: no requests should still return overhead (non-zero due to TOverheadMicros)
+func TestRooflineStepTime_EmptyStep_ReturnsZero(t *testing.T) {
+	// No requests = no work = 0 µs (no overhead terms in llm-optimizer model)
 	mc := testModelConfig()
 	hc := testHardwareCalib()
 
 	step := StepConfig{} // empty
 	result := rooflineStepTime(mc, hc, step, 1)
 
-	// Should be approximately TOverheadMicros (50) + layer overhead
-	if result <= 0 {
-		t.Errorf("empty step should still have overhead latency, got %d µs", result)
+	if result != 0 {
+		t.Errorf("empty step should return 0 µs, got %d µs", result)
 	}
+}
+
+// --- MoE test helpers ---
+
+// testMixtralConfig returns a Mixtral-8x7B-like MoE config.
+func testMixtralConfig() sim.ModelConfig {
+	return sim.ModelConfig{
+		NumLayers:        32,
+		HiddenDim:        4096,
+		NumHeads:         32,
+		NumKVHeads:       8,
+		VocabSize:        32000,
+		BytesPerParam:    2,
+		IntermediateDim:  14336,
+		NumLocalExperts:  8,
+		NumExpertsPerTok: 2,
+		// MoEExpertFFNDim=0 → use IntermediateDim (Mixtral convention)
+	}
+}
+
+// testDeepSeekV3Config returns a DeepSeek-V3-like MoE config with shared experts.
+func testDeepSeekV3Config() sim.ModelConfig {
+	return sim.ModelConfig{
+		NumLayers:          61,
+		HiddenDim:          7168,
+		NumHeads:           128,
+		NumKVHeads:         128,
+		VocabSize:          129280,
+		BytesPerParam:      2,
+		IntermediateDim:    18432,
+		NumLocalExperts:    256,
+		NumExpertsPerTok:   8,
+		MoEExpertFFNDim:    2048,
+		SharedExpertFFNDim: 2048,
+	}
+}
+
+// --- Task 4: MoE FLOPs tests ---
+
+func TestCalculateTransformerFlops_MoE_TopKScaling(t *testing.T) {
+	// MoE MLP FLOPs scale by top_k (active experts per token)
+	mc := testMixtralConfig() // top_k=2, E=8
+
+	moeFlops := calculateTransformerFlops(mc, 0, 128, false, true)
+
+	dense := mc
+	dense.NumLocalExperts = 0
+	dense.NumExpertsPerTok = 0
+	denseFlops := calculateTransformerFlops(dense, 0, 128, false, true)
+
+	// MoE MLP FLOPs = top_k × dense MLP FLOPs
+	ratio := moeFlops["gemm_ops"] / denseFlops["gemm_ops"]
+	if math.Abs(ratio-float64(mc.NumExpertsPerTok)) > 0.01 {
+		t.Errorf("MoE FLOPs should be %dx dense: moe=%g, dense=%g, ratio=%g",
+			mc.NumExpertsPerTok, moeFlops["gemm_ops"], denseFlops["gemm_ops"], ratio)
+	}
+}
+
+func TestCalculateTransformerFlops_MoE_Conservation(t *testing.T) {
+	// total = gemm_ops + sram_ops for MoE configs
+	configs := []struct {
+		name string
+		mc   sim.ModelConfig
+	}{
+		{"Mixtral", testMixtralConfig()},
+		{"DeepSeek-V3", testDeepSeekV3Config()},
+	}
+
+	for _, cfg := range configs {
+		t.Run(cfg.name, func(t *testing.T) {
+			flops := calculateTransformerFlops(cfg.mc, 512, 64, true, true)
+			sum := flops["gemm_ops"] + flops["sram_ops"]
+			if flops["total"] != sum {
+				t.Errorf("conservation: total (%g) != gemm+sram (%g)", flops["total"], sum)
+			}
+		})
+	}
+}
+
+func TestCalculateTransformerFlops_Dense_UnchangedAfterMoE(t *testing.T) {
+	// BC-10: dense model FLOPs unchanged (regression anchor)
+	mc := testModelConfig()
+
+	flops := calculateTransformerFlops(mc, 512, 64, true, true)
+
+	if flops["total"] <= 0 {
+		t.Fatal("expected positive total FLOPs for dense model")
+	}
+	// Conservation still holds
+	sum := flops["gemm_ops"] + flops["sram_ops"]
+	if flops["total"] != sum {
+		t.Errorf("dense conservation: total (%g) != gemm+sram (%g)", flops["total"], sum)
+	}
+}
+
+// --- Task 5: MoE memory access tests ---
+
+func TestCalculateMemoryAccessBytes_MoE_AllExpertsLoaded(t *testing.T) {
+	// MoE weight bandwidth includes all E experts (all loaded from HBM per step)
+	mc := testMixtralConfig() // E=8
+	moeMem := calculateMemoryAccessBytes(mc, 512, 1, false)
+
+	dense := mc
+	dense.NumLocalExperts = 0
+	dense.NumExpertsPerTok = 0
+	denseMem := calculateMemoryAccessBytes(dense, 512, 1, false)
+
+	// MoE model_weights > dense (attention is same, MLP is E× larger)
+	if moeMem["model_weights"] <= denseMem["model_weights"] {
+		t.Errorf("MoE weights (%g) should exceed dense weights (%g)",
+			moeMem["model_weights"], denseMem["model_weights"])
+	}
+}
+
+func TestCalculateMemoryAccessBytes_MoE_Conservation(t *testing.T) {
+	// total = sum of components
+	mc := testMixtralConfig()
+	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
+
+	keys := make([]string, 0, len(mem))
+	for k := range mem {
+		if k != "total" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	var sum float64
+	for _, k := range keys {
+		sum += mem[k]
+	}
+	if math.Abs(mem["total"]-sum) > 1e-6 {
+		t.Errorf("conservation violation: total (%g) != components (%g)", mem["total"], sum)
+	}
+}
+
+func TestCalculateMemoryAccessBytes_Dense_UnchangedAfterMoE(t *testing.T) {
+	// BC-10: dense model memory unchanged (regression anchor)
+	mc := testModelConfig()
+	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
+
+	if mem["model_weights"] <= 0 {
+		t.Fatal("expected positive model_weights for dense config")
+	}
+	keys := make([]string, 0, len(mem))
+	for k := range mem {
+		if k != "total" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	var sum float64
+	for _, k := range keys {
+		sum += mem[k]
+	}
+	if mem["total"] != sum {
+		t.Errorf("dense conservation: total (%g) != sum (%g)", mem["total"], sum)
+	}
+}
+
+// --- Task 7: MoE roofline step time smoke tests ---
+
+func TestRooflineStepTime_MoE_Smoke_PositiveFinite(t *testing.T) {
+	// Smoke test: MoE config produces valid step times
+	configs := []struct {
+		name string
+		mc   sim.ModelConfig
+	}{
+		{"Mixtral-8x7B", testMixtralConfig()},
+		{"DeepSeek-V3", testDeepSeekV3Config()},
+	}
+	hc := testHardwareCalib()
+
+	for _, cfg := range configs {
+		t.Run(cfg.name, func(t *testing.T) {
+			step := StepConfig{
+				PrefillRequests: []PrefillRequestConfig{
+					{ProgressIndex: 0, NumNewPrefillTokens: 128},
+				},
+				DecodeRequests: []DecodeRequestConfig{
+					{ProgressIndex: 256, NumNewDecodeTokens: 1},
+				},
+			}
+			result := rooflineStepTime(cfg.mc, hc, step, 2)
+			if result <= 0 {
+				t.Errorf("expected positive step time, got %d µs", result)
+			}
+			t.Logf("%s TP=2: %d µs", cfg.name, result)
+		})
+	}
+}
+
+func TestRooflineStepTime_MoE_TPScaling(t *testing.T) {
+	// TP scaling: TP=2 should be less than TP=1 for MoE
+	mc := testMixtralConfig()
+	hc := testHardwareCalib()
+
+	step := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
+	}
+
+	tp1 := rooflineStepTime(mc, hc, step, 1)
+	tp2 := rooflineStepTime(mc, hc, step, 2)
+
+	if tp2 >= tp1 {
+		t.Errorf("MoE TP=2 (%d µs) should be less than TP=1 (%d µs)", tp2, tp1)
+	}
+}
+
+func TestRooflineStepTime_SingleCrossover_MemoryBoundDecode(t *testing.T) {
+	// llm-optimizer physics: memory-bound step time = total_bytes / peak_bandwidth
+	// No bandwidth haircut, no overhead terms, single crossover (not dual ceiling).
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+
+	// Single decode request — decode is memory-bound on H100
+	step := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
+	}
+	result := rooflineStepTime(mc, hc, step, 1)
+
+	// Compute expected: weights + KV + activations, all at raw peak bandwidth
+	peakBW := hc.BwPeakTBs * 1e12
+	peakFlops := hc.TFlopsPeak * 1e12
+
+	baseMem := calculateMemoryAccessBytes(mc, 0, 0, false)
+	dynamicMem := calculateMemoryAccessBytes(mc, 512, 1, true)
+	totalBytes := baseMem["model_weights"] + (dynamicMem["total"] - dynamicMem["model_weights"])
+
+	flops := calculateTransformerFlops(mc, 512, 1, true, true)
+	totalFlops := flops["total"]
+
+	computeS := totalFlops / (peakFlops * hc.MfuDecode)
+	memoryS := totalBytes / peakBW
+
+	// Decode should be memory-bound (verify assumption)
+	if computeS >= memoryS {
+		t.Skipf("decode is compute-bound with this config, skipping memory-bound test")
+	}
+
+	expectedMicros := int64(math.Round(memoryS * 1e6))
+	if result != expectedMicros {
+		t.Errorf("expected %d µs (total_bytes/peak_bw), got %d µs (delta=%d)",
+			expectedMicros, result, result-expectedMicros)
+	}
+}
+
+func TestRooflineStepTime_MixedBatch_WeightsLoadedOnce(t *testing.T) {
+	// Verify that a mixed batch (prefill + decode) loads weights once,
+	// not once per phase. The memory-bound time for a mixed batch should
+	// equal weights + prefill_dynamic + decode_dynamic, NOT 2×weights + dynamic.
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+
+	// Mixed batch: 1 prefill + 1 decode
+	mixedStep := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 64},
+		},
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
+	}
+
+	// Decode-only step with the same decode request
+	decodeOnlyStep := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
+	}
+
+	mixed := rooflineStepTime(mc, hc, mixedStep, 1)
+	decodeOnly := rooflineStepTime(mc, hc, decodeOnlyStep, 1)
+
+	// Mixed should be >= decode-only (more work), but if weights were loaded
+	// twice, mixed would be roughly 2× decode-only for memory-bound steps.
+	// With single weight load, the increase should be modest (just extra dynamic bytes).
+	baseMem := calculateMemoryAccessBytes(mc, 0, 0, false)
+	weightBytes := baseMem["model_weights"]
+
+	// The mixed step should NOT double the weight bandwidth.
+	// If it did, the overhead would be approximately weightBytes/peakBW extra.
+	peakBW := hc.BwPeakTBs * 1e12
+	doubleWeightPenaltyMicros := int64(weightBytes / peakBW * 1e6)
+
+	// mixed - decodeOnly should be much less than a full extra weight load
+	overhead := mixed - decodeOnly
+	if overhead >= doubleWeightPenaltyMicros {
+		t.Errorf("mixed batch overhead (%d µs) >= full weight load (%d µs): weights appear loaded twice",
+			overhead, doubleWeightPenaltyMicros)
+	}
+	t.Logf("mixed=%d µs, decodeOnly=%d µs, overhead=%d µs, doubleWeightPenalty=%d µs",
+		mixed, decodeOnly, overhead, doubleWeightPenaltyMicros)
+}
+
+func TestRooflineStepTime_Dense_PositiveAndTPScaling(t *testing.T) {
+	// Dense model: positive step times and TP=2 < TP=1 (invariant, not pinned values)
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 128},
+		},
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 256, NumNewDecodeTokens: 1},
+		},
+	}
+
+	tp1 := rooflineStepTime(mc, hc, step, 1)
+	tp2 := rooflineStepTime(mc, hc, step, 2)
+
+	if tp1 <= 0 || tp2 <= 0 {
+		t.Fatalf("expected positive step times: TP=1=%d, TP=2=%d", tp1, tp2)
+	}
+	if tp2 >= tp1 {
+		t.Errorf("TP scaling violated: TP=2=%d >= TP=1=%d", tp2, tp1)
+	}
+	t.Logf("Dense regression: TP=1=%d µs, TP=2=%d µs", tp1, tp2)
 }

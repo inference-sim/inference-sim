@@ -1,5 +1,9 @@
 # CrossModelLatencyModel Backend Implementation Plan
 
+> **NOTE (R15):** MoE threshold changed from `NumLocalExperts > 0` to `NumLocalExperts > 1` in
+> PR #559 (MoE roofline). Single-expert models are now treated as dense-equivalent across all
+> consumption paths. References to `> 0` in this completed plan reflect the original design.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add a third latency model backend that predicts GPU step time from model architecture features (layer count, KV dimensions, MoE routing, TP degree) using globally-fitted physics coefficients — enabling capacity planning for new models from their HuggingFace config.json alone, without dedicated profiling.

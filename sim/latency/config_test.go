@@ -539,3 +539,204 @@ func TestGetHWConfig_MemoryGiB_ParsedFromRealConfig(t *testing.T) {
 		})
 	}
 }
+
+// --- MoE config parsing tests (BC-15 through BC-18) ---
+
+func TestGetModelConfig_DeepSeekV3Style_ParsesMoEFields(t *testing.T) {
+	// BC-15, BC-17, BC-18: DeepSeek-V3-style config with explicit per-expert dim,
+	// shared experts, and num_routed_experts field name.
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 61,
+		"hidden_size": 7168,
+		"num_attention_heads": 128,
+		"num_key_value_heads": 128,
+		"vocab_size": 129280,
+		"intermediate_size": 18432,
+		"moe_intermediate_size": 2048,
+		"n_shared_experts": 1,
+		"num_routed_experts": 256,
+		"num_experts_per_tok": 8,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// BC-18: num_routed_experts resolved to NumLocalExperts
+	if cfg.NumLocalExperts != 256 {
+		t.Errorf("expected NumLocalExperts=256 from num_routed_experts, got %d", cfg.NumLocalExperts)
+	}
+	// BC-15: moe_intermediate_size → MoEExpertFFNDim
+	if cfg.MoEExpertFFNDim != 2048 {
+		t.Errorf("expected MoEExpertFFNDim=2048, got %d", cfg.MoEExpertFFNDim)
+	}
+	// BC-17: SharedExpertFFNDim = n_shared_experts (1) × per-expert dim (2048) = 2048
+	if cfg.SharedExpertFFNDim != 2048 {
+		t.Errorf("expected SharedExpertFFNDim=2048 (1 shared × 2048 per-expert), got %d", cfg.SharedExpertFFNDim)
+	}
+	if cfg.NumExpertsPerTok != 8 {
+		t.Errorf("expected NumExpertsPerTok=8, got %d", cfg.NumExpertsPerTok)
+	}
+}
+
+func TestGetModelConfig_MixtralStyle_NoPerExpertDim(t *testing.T) {
+	// BC-16: Mixtral-style config — no moe_intermediate_size field.
+	// MoEExpertFFNDim should remain 0 (fallback handled at calculation time).
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 32000,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16",
+		"num_local_experts": 8,
+		"num_experts_per_tok": 2
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.MoEExpertFFNDim != 0 {
+		t.Errorf("expected MoEExpertFFNDim=0 for Mixtral (no moe_intermediate_size), got %d", cfg.MoEExpertFFNDim)
+	}
+	if cfg.SharedExpertFFNDim != 0 {
+		t.Errorf("expected SharedExpertFFNDim=0 for Mixtral (no shared experts), got %d", cfg.SharedExpertFFNDim)
+	}
+}
+
+func TestGetModelConfig_Qwen2MoEStyle_SharedExpertDimExplicit(t *testing.T) {
+	// BC-17 variant: Qwen2-MoE has shared_expert_intermediate_size explicitly
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 24,
+		"hidden_size": 2048,
+		"num_attention_heads": 16,
+		"num_key_value_heads": 16,
+		"vocab_size": 151936,
+		"intermediate_size": 5632,
+		"moe_intermediate_size": 2560,
+		"shared_expert_intermediate_size": 5632,
+		"torch_dtype": "bfloat16",
+		"num_local_experts": 60,
+		"num_experts_per_tok": 4
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.MoEExpertFFNDim != 2560 {
+		t.Errorf("expected MoEExpertFFNDim=2560, got %d", cfg.MoEExpertFFNDim)
+	}
+	// Explicit shared_expert_intermediate_size takes precedence
+	if cfg.SharedExpertFFNDim != 5632 {
+		t.Errorf("expected SharedExpertFFNDim=5632 (explicit field), got %d", cfg.SharedExpertFFNDim)
+	}
+}
+
+// --- MoE validation tests (BC-12, BC-13, BC-14) ---
+
+func TestValidateRooflineConfig_MoE_ExpertsWithoutActive_ReturnsError(t *testing.T) {
+	// BC-12: experts > 0, active = 0
+	mc := sim.ModelConfig{
+		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+		NumLocalExperts: 8, NumExpertsPerTok: 0,
+	}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err == nil {
+		t.Fatal("expected error for experts > 0 with active = 0")
+	}
+	if !strings.Contains(err.Error(), "active") {
+		t.Errorf("expected error mentioning 'active', got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_MoE_ActiveExceedsTotal_ReturnsError(t *testing.T) {
+	// BC-13: active > total
+	mc := sim.ModelConfig{
+		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+		NumLocalExperts: 8, NumExpertsPerTok: 10,
+	}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err == nil {
+		t.Fatal("expected error for active > total experts")
+	}
+}
+
+func TestValidateRooflineConfig_MoE_NegativeDimensions_ReturnsError(t *testing.T) {
+	// BC-14: negative MoE dimensions
+	tests := []struct {
+		name string
+		mc   sim.ModelConfig
+	}{
+		{
+			"negative MoEExpertFFNDim",
+			sim.ModelConfig{
+				NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+				NumLocalExperts: 8, NumExpertsPerTok: 2, MoEExpertFFNDim: -1,
+			},
+		},
+		{
+			"negative SharedExpertFFNDim",
+			sim.ModelConfig{
+				NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+				NumLocalExperts: 8, NumExpertsPerTok: 2, SharedExpertFFNDim: -1,
+			},
+		},
+		{
+			"negative NumLocalExperts",
+			sim.ModelConfig{
+				NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+				NumLocalExperts: -1,
+			},
+		},
+	}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := latency.ValidateRooflineConfig(tt.mc, hc)
+			if err == nil {
+				t.Fatal("expected error for negative MoE dimension")
+			}
+		})
+	}
+}
+
+func TestValidateRooflineConfig_MoE_ValidConfig_ReturnsNil(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2,
+		IntermediateDim: 14336,
+		NumLocalExperts: 8, NumExpertsPerTok: 2,
+	}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, BwEffConstant: 0.7, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err != nil {
+		t.Errorf("expected nil error for valid MoE config, got: %v", err)
+	}
+}
