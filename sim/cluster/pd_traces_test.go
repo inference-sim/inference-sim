@@ -92,6 +92,9 @@ func TestPDTrace_DisaggMode_AllRecordTypesPresent(t *testing.T) {
 		if kv.DecodeInstanceID == "" {
 			t.Errorf("KVTransfers[%d]: DecodeInstanceID empty", i)
 		}
+		if kv.TransferStartTime <= 0 {
+			t.Errorf("KVTransfers[%d]: TransferStartTime=%d, want > 0", i, kv.TransferStartTime)
+		}
 		if kv.TransferDuration <= 0 {
 			t.Errorf("KVTransfers[%d]: TransferDuration=%d, want > 0", i, kv.TransferDuration)
 		}

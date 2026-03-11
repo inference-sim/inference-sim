@@ -112,7 +112,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Statement:** `decode_enqueue_time >= transfer_complete_time` for every disaggregated request. Decode scheduling cannot precede KV data availability.
 
-**Verification:** `sim/cluster/pd_traces_test.go` — phase-causality tests. DecodeRoutingEvent fires only after KVTransferCompletedEvent for the same parent request ID.
+**Verification:** `sim/cluster/disaggregation_test.go` — phase-causality tests. DecodeRoutingEvent fires only after KVTransferCompletedEvent for the same parent request ID.
 
 ---
 
