@@ -131,6 +131,31 @@ Request → Admission → Disaggregation Decision
 
 PD-specific metrics appear in the `=== PD Metrics ===` output section. See [Metrics & Results](results.md#pd-disaggregation-metrics) for field descriptions, and [Configuration Reference](../reference/configuration.md#pd-disaggregation) for all flags.
 
+### PD Troubleshooting
+
+**No `=== PD Metrics ===` section in output?**
+
+- Check that `--pd-decider always` is set. Without it, requests use standard routing even if pool flags are set.
+- Verify `--num-instances == --prefill-instances + --decode-instances`. Topology validation fails silently if these don't add up.
+
+**`Disaggregated Requests` count is lower than expected?**
+
+- If decode pool KV capacity is exhausted, decode sub-requests are dropped (`DroppedUnservable` counter). Increase `--total-kv-blocks` for decode instances or reduce `--decode-instances` to fewer, larger instances.
+
+**High `Load Imbalance Ratio`?**
+
+- Ratio >> 1.0 means one pool is bottlenecked. Compare `PrefillThroughput` vs `DecodeThroughput`: if prefill is faster, add decode instances; if decode is faster, add prefill instances.
+- Use `--snapshot-refresh-interval 0` when PD disaggregation is active for Immediate routing signal freshness. Periodic snapshots (interval > 0) can cause routing oscillation in disaggregated pipelines.
+
+### Known Simplifications
+
+The BLIS PD model is a Phase 1 simulation approximation. Key differences from production vLLM / llm-d:
+
+- **Atomic KV transfer**: KV blocks are transferred atomically after prefill completes. Incremental (pipelined) transfer is not modeled.
+- **No cross-instance preemption**: In vLLM, a new decode arrival may evict existing decode requests' KV blocks from GPU memory. BLIS treats each instance independently — decode arrivals do not trigger preemption of in-flight requests on the same instance.
+- **No transfer retry**: If a decode instance has insufficient KV capacity, the request is dropped (counted in `DroppedUnservable`). No retry or fallback routing is attempted.
+- **Fixed pool sizes**: Pool membership is static for the duration of the simulation. Dynamic autoscaling is planned for a future PR.
+
 ## Further Reading
 
 - [Cluster Architecture](../concepts/architecture.md) — internal mechanics of the shared-clock event loop

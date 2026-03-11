@@ -117,6 +117,50 @@ Examples:
 - See `VLLMBatchFormation` in `sim/batch_formation.go` for the vLLM FCFS + chunked-prefill + preemption strategy
 - See `preemptForTokens` for the KV allocation + eviction loop pattern
 
+## Adding a New Disaggregation Decider
+
+To add a new disaggregation decider (e.g., a threshold-based decider that disaggregates only long prefills):
+
+1. **Implement `DisaggregationDecider`** in `sim/disaggregation.go`:
+   ```go
+   type PrefixThresholdDecider struct{ MinPrefillTokens int }
+   func (d *PrefixThresholdDecider) Decide(req *sim.Request) DisaggregationDecision {
+       if len(req.InputTokens) >= d.MinPrefillTokens {
+           return DisaggregationDecisionDisaggregate
+       }
+       return DisaggregationDecisionLocal
+   }
+   ```
+2. **Register in `NewDisaggregationDecider` factory** in `sim/disaggregation.go`: add a `case` branch for the new decider name (e.g., `"prefix-threshold"`). The decider name is supplied via `--pd-decider` CLI flag and stored in `DeploymentConfig.PDDecider`.
+3. **Add CLI parameter** if the decider needs configuration (e.g., `--pd-prefill-threshold-tokens`). Full wiring:
+   - Add a field to `DeploymentConfig` in `sim/cluster/deployment.go`:
+     ```go
+     PDPrefillThresholdTokens int // minimum input tokens to disaggregate
+     ```
+   - Add a flag in `cmd/root.go` (alongside the other `--pd-*` flags):
+     ```go
+     runCmd.Flags().IntVar(&pdPrefillThresholdTokens, "pd-prefill-threshold-tokens", 0,
+         "Minimum input token count to trigger disaggregation (used with --pd-decider prefix-threshold)")
+     ```
+   - Validate and wire in the `runCmd` handler (inside the `if prefillInstances > 0` block):
+     ```go
+     cfg.PDPrefillThresholdTokens = pdPrefillThresholdTokens
+     ```
+   - Pass the parameter to your decider in the factory `case`:
+     ```go
+     case "prefix-threshold":
+         return &PrefixThresholdDecider{MinPrefillTokens: cfg.PDPrefillThresholdTokens}, nil
+     ```
+4. **Add behavioral tests** — disaggregation decision for short vs long requests, boundary value (exactly at threshold), zero-threshold.
+5. Extension friction: **2–3 touch points** (implementation + factory + optional CLI flag).
+
+**Contract:** `Decide()` must be pure — no side effects, no access to cluster state. It receives only the `*sim.Request` (input tokens available pre-routing).
+
+Examples:
+- See `NeverDisaggregate` in `sim/disaggregation.go` for the simplest implementation (always returns `DisaggregationDecisionLocal`)
+- See `AlwaysDisaggregate` for a decider that always routes to the PD pipeline
+- See `DisaggregationDecisionEvent.Execute()` in `sim/cluster/cluster_event.go` to understand how the decision is consumed in the cluster event pipeline
+
 ## Adding New Per-Request Metric Fields
 
 To add a new field to per-request JSON output (appears in `--results-path` output):

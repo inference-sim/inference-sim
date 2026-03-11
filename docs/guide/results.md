@@ -73,6 +73,8 @@ When PD disaggregation is active (`--prefill-instances` and `--decode-instances`
 
 **Load Imbalance Ratio note:** This metric measures throughput balance (sub-request completions/s per pool). In a correctly-sized disaggregated system, both pools complete the same number of sub-requests, so the ratio approaches 1.0 regardless of queue depth. To diagnose bottlenecks, compare `PrefillThroughput` vs `DecodeThroughput` directly and inspect P99 TTFT (for prefill backpressure) and P99 E2E (for decode backpressure).
 
+**JSON output note:** PD metrics are printed to stdout only. They do not appear in the per-request JSON results file (`--results-path`). The JSON file contains per-request latency fields (`ttft_ms`, `itl_ms`, `e2e_ms`) for every completed request, including requests processed via the PD pipeline.
+
 ## Per-SLO-Class Metrics
 
 When multiple SLO classes are present in the workload, BLIS prints per-class TTFT and E2E distributions. This lets you verify that `critical` requests meet SLOs even when `batch` traffic is heavy.
