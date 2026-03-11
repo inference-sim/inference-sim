@@ -205,9 +205,12 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			if cs.trace != nil {
 				// INV-PD-4 guarantees transfer_start ≤ transfer_complete via event priority ordering
 				// (KVTransferStartedEvent priority 5 < KVTransferCompletedEvent priority 6 < this priority 7).
-				// Defensive clamp: if ordering invariant is ever violated, record 0 rather than a negative duration.
+				// Defensive clamp: if ordering invariant is ever violated, warn and record 0.
+				// The warning makes INV-PD-4 violations detectable in operator logs (R1: no silent data loss).
 				transferDuration := e.parentReq.TransferCompleteTime - e.parentReq.TransferStartTime
 				if transferDuration < 0 {
+					logrus.Warnf("[cluster] INV-PD-4 violated: TransferCompleteTime (%d) < TransferStartTime (%d) for req %s; recording 0",
+						e.parentReq.TransferCompleteTime, e.parentReq.TransferStartTime, e.parentReq.ID)
 					transferDuration = 0
 				}
 				cs.trace.RecordKVTransfer(trace.KVTransferRecord{

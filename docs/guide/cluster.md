@@ -99,6 +99,31 @@ In PD (Prefill-Decode) disaggregated mode (`--prefill-instances`, `--decode-inst
 - **KVTransferRecord** — one per disaggregated request: transfer duration, block count, and instance pair
 - **DecodeRoutingRecord** — one per disaggregated request: which decode instance was chosen (with optional counterfactual)
 
+Example PD trace run with counterfactual analysis:
+
+```bash
+./blis run --model meta-llama/llama-3.1-8b-instruct \
+  --prefill-instances 2 --decode-instances 2 \
+  --rate 50 --num-requests 200 \
+  --trace-level decisions --summarize-trace --counterfactual-k 2
+```
+
+This adds a PD disaggregation summary to stdout:
+
+```
+=== PD Disaggregation Summary ===
+Disaggregation Decisions: 200
+  Disaggregated: 180
+KV Transfers: 180
+Mean Transfer Duration (µs): 42.3
+```
+
+Interpreting the output:
+- **Disaggregation Decisions** — total requests that reached the disaggregation decision point (includes both pooled and local paths)
+- **Disaggregated** — how many were routed to the prefill pool (remainder used standard routing)
+- **KV Transfers** — should equal `Disaggregated` for successful runs; a smaller number indicates decode-phase KV OOM drops (also shown in the Anomaly Counters section)
+- **Mean Transfer Duration** — average KV cache transfer latency in microseconds; tune `--pd-transfer-bandwidth` and `--pd-transfer-base-latency` to match your interconnect
+
 Use `--counterfactual-k N` to record the top-N alternative routing candidates and regret for both prefill and decode routing decisions.
 
 !!! info "Counterfactual regret for weighted policies"
