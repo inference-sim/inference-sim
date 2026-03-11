@@ -67,6 +67,8 @@ This auto-resolves both required inputs:
 1. **Model config** -- checks `model_configs/` for a cached `config.json`, fetches from HuggingFace on miss
 2. **Hardware config** -- uses the bundled `hardware_config.json`
 
+**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), and **A100-80** (alias for A100-SXM). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`) and reference it via `--hardware <name>`.
+
 For gated models (e.g., LLaMA), set `HF_TOKEN`:
 
 ```bash
