@@ -102,6 +102,13 @@ var (
 	decodeInstances  int    // Number of instances dedicated to decode
 	pdDecider        string // Disaggregation decider name
 
+	// PD KV transfer config (PR2)
+	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
+	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
+	pdKVBytesPerToken     int     // KV cache bytes per token for transfer duration
+	prefillRoutingScorers string  // Scorer weights for prefill pool routing
+	decodeRoutingScorers  string  // Scorer weights for decode pool routing
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -670,6 +677,18 @@ var runCmd = &cobra.Command{
 		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
+		// PD transfer parameter validation (R3, R11)
+		if prefillInstances > 0 {
+			if pdTransferBandwidth <= 0 || math.IsInf(pdTransferBandwidth, 0) || math.IsNaN(pdTransferBandwidth) {
+				logrus.Fatalf("--pd-transfer-bandwidth must be a finite positive number, got %f", pdTransferBandwidth)
+			}
+			if pdTransferBaseLatency < 0 || math.IsInf(pdTransferBaseLatency, 0) || math.IsNaN(pdTransferBaseLatency) {
+				logrus.Fatalf("--pd-transfer-base-latency must be a finite non-negative number, got %f", pdTransferBaseLatency)
+			}
+			if pdKVBytesPerToken <= 0 {
+				logrus.Fatalf("--pd-kv-bytes-per-token must be > 0, got %d", pdKVBytesPerToken)
+			}
+		}
 		if admissionLatency < 0 {
 			logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
 		}
@@ -707,6 +726,22 @@ var runCmd = &cobra.Command{
 		if routingPolicy != "weighted" && routingScorers != "" {
 			logrus.Warnf("--routing-scorers has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
 		}
+		// Parse per-pool scorer configs (PR2)
+		var prefillScorerCfgs, decodeScorerCfgs []sim.ScorerConfig
+		if prefillRoutingScorers != "" {
+			var err error
+			prefillScorerCfgs, err = sim.ParseScorerConfigs(prefillRoutingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --prefill-routing-scorers: %v", err)
+			}
+		}
+		if decodeRoutingScorers != "" {
+			var err error
+			decodeScorerCfgs, err = sim.ParseScorerConfigs(decodeRoutingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --decode-routing-scorers: %v", err)
+			}
+		}
 		if admissionPolicy == "token-bucket" {
 			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
 				tokenBucketCapacity, tokenBucketRefillRate)
@@ -741,9 +776,14 @@ var runCmd = &cobra.Command{
 			TraceLevel:              traceLevel,
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
-			PrefillInstances:       prefillInstances,
-			DecodeInstances:        decodeInstances,
-			PDDecider:              pdDecider,
+			PrefillInstances:        prefillInstances,
+			DecodeInstances:         decodeInstances,
+			PDDecider:               pdDecider,
+			PDTransferBandwidthGBps: pdTransferBandwidth,
+			PDTransferBaseLatencyMs: pdTransferBaseLatency,
+			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
+			PrefillScorerConfigs:    prefillScorerCfgs,
+			DecodeScorerConfigs:     decodeScorerCfgs,
 		}
 		cs := cluster.NewClusterSimulator(config, preGeneratedRequests)
 		if err := cs.Run(); err != nil {
@@ -964,6 +1004,13 @@ func init() {
 	runCmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
 	runCmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
 	runCmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always")
+
+	// PD KV transfer config (PR2)
+	runCmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
+	runCmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
+	runCmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
+	runCmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
+	runCmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
