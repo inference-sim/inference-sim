@@ -2,6 +2,8 @@ package cluster
 
 import (
 	"fmt"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // PoolRole identifies whether an instance serves as prefill or decode in PD disaggregation.
@@ -65,4 +67,16 @@ func BuildPoolMembership(instances []*InstanceSimulator, prefill, decode int) ma
 		membership[string(instances[i].ID())] = PoolRoleDecode
 	}
 	return membership
+}
+
+// FilterSnapshotsByPool returns only the snapshots for instances in the given pool role.
+// Order is preserved (stable relative to the input slice).
+func FilterSnapshotsByPool(snapshots []sim.RoutingSnapshot, membership map[string]PoolRole, role PoolRole) []sim.RoutingSnapshot {
+	filtered := make([]sim.RoutingSnapshot, 0, len(snapshots))
+	for _, snap := range snapshots {
+		if membership[snap.ID] == role {
+			filtered = append(filtered, snap)
+		}
+	}
+	return filtered
 }
