@@ -31,3 +31,40 @@ type RoutingRecord struct {
 	Candidates     []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
 	Regret         float64            // max(alternative scores) - score(chosen); 0 if chosen is best
 }
+
+// DisaggregationRecord captures a PD disaggregation decision.
+type DisaggregationRecord struct {
+	RequestID    string
+	Clock        int64
+	Disaggregate bool // true = routed to prefill pool; false = standard routing
+}
+
+// PrefillRoutingRecord captures a prefill pool routing decision with optional counterfactual analysis.
+type PrefillRoutingRecord struct {
+	ParentRequestID string
+	Clock           int64
+	ChosenInstance  string
+	Scores          map[string]float64 // from RoutingDecision.Scores (may be nil)
+	Candidates      []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
+	Regret          float64            // max(alternative scores) - score(chosen); 0 if chosen is best
+}
+
+// DecodeRoutingRecord captures a decode pool routing decision with optional counterfactual analysis.
+type DecodeRoutingRecord struct {
+	ParentRequestID string
+	Clock           int64
+	ChosenInstance  string
+	Scores          map[string]float64 // from RoutingDecision.Scores (may be nil)
+	Candidates      []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
+	Regret          float64            // max(alternative scores) - score(chosen); 0 if chosen is best
+}
+
+// KVTransferRecord captures a KV cache transfer event between prefill and decode instances.
+type KVTransferRecord struct {
+	ParentRequestID   string
+	TransferStartTime int64 // microseconds (sim clock)
+	TransferDuration  int64 // microseconds
+	NumKVBlocks       int64
+	PrefillInstanceID string
+	DecodeInstanceID  string
+}
