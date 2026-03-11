@@ -26,8 +26,8 @@
 
 | Rate | Metric | T2 (admission) | B2 (no admission) | Change |
 |------|--------|----------------|-------------------|--------|
-| 80% | Crit TTFT P99 | ~115,000 | ~136,000 | ~-15% |
-| 120% | Crit TTFT P99 | ~127,000 | ~119,000 | **+5.2% (worse)** |
+| 80% | Crit TTFT P99 | ~115,000 ms | ~136,000 ms | ~-15% |
+| 120% | Crit TTFT P99 | ~127,000 ms | ~119,000 ms | **+5.2% (worse)** |
 
 **PRIMARY claim (>20% critical TTFT P99 improvement): NOT SUPPORTED.**
 
@@ -39,7 +39,7 @@ At 80%, there's a modest ~15% improvement but this doesn't meet the >20% thresho
 
 | Metric | T2 | B2 | Change |
 |--------|----|----|--------|
-| Cluster TTFT P99 at 120% | ~1620 | ~1926 | **-15.6% (improved)** |
+| Cluster TTFT P99 at 120% | ~1620 ms | ~1926 ms | **-15.6% (improved)** |
 
 **CONFIRMED.** Cluster-wide metrics improve because rejected sheddable requests no longer consume scheduling and compute resources. This is the non-zero-sum benefit predicted by S8: admission control benefits ALL admitted requests, not just one class at the expense of another.
 
@@ -109,6 +109,8 @@ None filed. Both iterations produced clean experimental results with clear diagn
 - SLO-gated admission uses a global queue depth threshold. Per-instance thresholds or rate-based gating may behave differently.
 - The 23-30% rejection rate at 120% means a significant fraction of sheddable requests are lost. Production systems may need a fallback queue rather than hard rejection.
 - Not tested: combining admission with per-SLO prefill thresholds (S9/S10), which prior Strategy Evolution identified as the "zero-cost lever."
+
+**Capacity derivation:** With beta coefficients [6910, 17.67, 2.84] for llama-3.1-8b/H100/TP=2 and mean input=256, output=128: single-turn step time ≈ 11.8ms → ~85 req/s per instance → ~340 req/s for 4 instances. Multi-turn (3 rounds, context accumulation) increases effective per-request work ~2-3x, reducing capacity to ~113-170 req/s. At 300 req/s, the effective overload is ~175-265%, significantly higher than the "120%" label suggests.
 
 ---
 

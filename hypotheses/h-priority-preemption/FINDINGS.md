@@ -84,6 +84,8 @@ Iterations 1 and 2 showed that queue ordering and admission control cannot beat 
 - **DES limitation:** Results are from BLIS simulation, not production inference serving
 - **Circuit breaker:** Default 3 preemptions/step limits leverage; higher values untested
 
+**Capacity derivation:** With beta coefficients [6910, 17.67, 2.84] for llama-3.1-8b/H100/TP=2 and mean input=256, output=128: single-turn step time ≈ 11.8ms → ~85 req/s per instance → ~340 req/s for 4 instances. Multi-turn (3 rounds, context accumulation) increases effective per-request work ~2-3x, reducing capacity to ~113-170 req/s. At 300 req/s, the effective overload is ~175-265%, significantly higher than the "120%" label suggests.
+
 ## Evidence Quality
 | Claim | Evidence | Confidence |
 |-------|----------|------------|

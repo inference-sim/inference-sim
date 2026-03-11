@@ -1,5 +1,17 @@
 # FINDINGS: Heterogeneous Instance Pools (Strategy Evolution Iteration 5)
 
+**Experiment:** Strategy Evolution Iteration 5 — Heterogeneous Instance Pools
+**Date:** 2026-03-10
+**Branch:** `hypothesis-playground`
+**Status:** H-main NOT SUPPORTED (absolute); STRONGLY SUPPORTED (relative)
+**Resolution:** Confirmation with nuance
+**Family:** Cross-policy comparative
+**VV&UQ:** Validation
+**Type:** Statistical (Dominance)
+**Rounds:** 1
+
+---
+
 ## Executive Summary
 
 Physical isolation of critical traffic into a dedicated "fast lane" instance produces a **20.6x improvement** in critical TTFT P99 compared to a shared 4-instance pool, even when the fast lane itself is massively overloaded (7x its capacity). This confirms that **isolation dominates queue-management policies** -- the compound strategy (admission + preemption) on a shared pool achieves only 1.6x improvement on the same metric.
@@ -112,6 +124,23 @@ This is rare -- typically improving one class comes at the expense of another.
 3. **The experiment does not model cross-pool overflow.** In production, a heterogeneous pool system would need spillover logic for when one pool is saturated but another has capacity.
 
 4. **Multi-turn context accumulation inflates all numbers.** With 3 rounds and context accumulation, later turns have much longer prefills, which increases step time and queue depth across all configurations.
+
+## Scope and Limitations
+- **Operating point:** 300 req/s (extreme overload) with 4 instances, llama-3.1-8b/H100/TP=2
+- **Not tested:** Sub-saturation regimes, other models, real vLLM validation
+- **Multi-variable confound:** The fast lane (Sim A) differs from shared (Sim C) in 4+ dimensions (instances, request count, workload composition, batch size). Results demonstrate the potential of isolation but do not isolate which variable drives the improvement.
+- **DES limitation:** Results from BLIS simulation, not production inference serving
+
+**Capacity derivation:** With beta coefficients [6910, 17.67, 2.84] for llama-3.1-8b/H100/TP=2 and mean input=256, output=128: single-turn step time ≈ 11.8ms → ~85 req/s per instance → ~340 req/s for 4 instances. Multi-turn (3 rounds, context accumulation) increases effective per-request work ~2-3x, reducing capacity to ~113-170 req/s. At 300 req/s, the effective overload is ~175-265%, significantly higher than the "120%" label suggests.
+
+## Evidence Quality
+| Claim | Evidence | Confidence |
+|-------|----------|------------|
+| 20.6x critical TTFT improvement | 3 seeds, consistent direction | High (ratio) / Low (absolute values) |
+| Pareto improvement | All classes better in split | Medium (confounded by unequal request counts) |
+
+## Implications for Users
+Physical instance isolation provides dramatic SLO improvement at the cost of dedicated capacity. Users with strict critical SLO requirements should consider dedicated instance pools. However, elastic priority batching (Iteration 6) achieves ~80% of the benefit without dedicated pools.
 
 ## Recommendations for Next Iteration
 

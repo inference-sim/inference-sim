@@ -135,6 +135,8 @@ None filed. The experiment cleanly refutes the primary hypothesis and confirms t
 - **Sample size:** 1500 requests per rate point, 3 seeds. P99 based on ~3 observations for critical class.
 - **DES limitation:** Step-quantized priority recomputation may not reflect continuous-time systems (real vLLM has finer-grained scheduling). The deadline mechanism *might* work in a system with more frequent priority updates.
 
+**Capacity derivation:** With beta coefficients [6910, 17.67, 2.84] for llama-3.1-8b/H100/TP=2 and mean input=256, output=128: single-turn step time ≈ 11.8ms → ~85 req/s per instance → ~340 req/s for 4 instances. Multi-turn (3 rounds, context accumulation) increases effective per-request work ~2-3x, reducing capacity to ~113-170 req/s. At 300 req/s, the effective overload is ~175-265%, significantly higher than the "120%" label suggests.
+
 ## Evidence Quality
 | Claim | Evidence | Confidence |
 |-------|----------|------------|
