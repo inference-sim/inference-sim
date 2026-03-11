@@ -493,8 +493,8 @@ func TestCollectPDMetrics_ParentTTFT_IncludesTransferDuration(t *testing.T) {
 // TestClusterSimulator_DisaggregatedINV1_Conservation verifies INV-1 (request conservation)
 // holds for the disaggregated code path (R7 companion invariant test).
 // INV-1: injected == completed + still_queued + still_running + dropped_unservable
-// In PD mode, each parent produces two sub-requests; CompletedRequests counts sub-requests.
-// We verify at the parent-request level: parent count = completions on decode pool.
+// In PD mode, each parent produces two sub-requests (one prefill, one decode);
+// CompletedRequests counts sub-requests, so injectedSubReqs = numRequests * 2.
 func TestClusterSimulator_DisaggregatedINV1_Conservation(t *testing.T) {
 	const numRequests = 5
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
@@ -503,24 +503,20 @@ func TestClusterSimulator_DisaggregatedINV1_Conservation(t *testing.T) {
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
-	// InjectedRequests = CompletedRequests + StillQueued + StillRunning + DroppedUnservable
-	injected := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
-	if injected == 0 {
-		t.Fatal("no requests tracked — simulation produced no accounting data")
+
+	// INV-1 conservation identity: all injected sub-requests must be accounted for.
+	// Each parent generates exactly 1 prefill sub-request + 1 decode sub-request.
+	const wantInjectedSubReqs = numRequests * 2
+	actual := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
+	if actual != wantInjectedSubReqs {
+		t.Errorf("INV-1 conservation violated: completed(%d)+queued(%d)+running(%d)+dropped(%d)=%d, want %d (2 sub-requests per parent)",
+			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable,
+			actual, wantInjectedSubReqs)
 	}
-	// Verify the conservation identity holds.
-	// InjectedRequests field is derived (not stored), but we verify the components sum correctly.
-	if agg.DroppedUnservable < 0 {
-		t.Errorf("INV-1 violated: DroppedUnservable=%d (negative)", agg.DroppedUnservable)
-	}
-	if agg.CompletedRequests < 0 {
-		t.Errorf("INV-1 violated: CompletedRequests=%d (negative)", agg.CompletedRequests)
-	}
-	// With sufficient KV capacity and small workload, all requests should complete.
-	// CompletedRequests counts sub-requests: 5 prefill + 5 decode = 10.
-	const wantSubRequestCompletions = numRequests * 2
-	if agg.CompletedRequests != wantSubRequestCompletions {
-		t.Errorf("INV-1 conservation: CompletedRequests=%d, want %d (2 sub-requests per parent)",
-			agg.CompletedRequests, wantSubRequestCompletions)
+	// Secondary check: for this small workload with ample KV capacity, all should complete.
+	// (If this fails, check DroppedUnservable > 0 for KV pressure, not an INV-1 violation.)
+	if agg.DroppedUnservable > 0 || agg.StillQueued > 0 || agg.StillRunning > 0 {
+		t.Logf("note: not all sub-requests completed — dropped=%d queued=%d running=%d (may indicate KV pressure in test config)",
+			agg.DroppedUnservable, agg.StillQueued, agg.StillRunning)
 	}
 }

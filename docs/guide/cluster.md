@@ -107,6 +107,30 @@ The cluster uses `(timestamp, priority, seqID)` ordering for deterministic event
 
 BLIS is work-conserving (INV-8): it never idles while requests wait. After every step completion, if the WaitQ has requests, a new StepEvent is immediately scheduled. Real systems may have scheduling delays not modeled here.
 
+## PD Disaggregation Mode
+
+BLIS supports prefill-decode disaggregation, where prefill and decode steps run on separate instance pools:
+
+```bash
+./blis run --model meta-llama/llama-3.1-8b-instruct \
+  --prefill-instances 2 --decode-instances 4 \
+  --pd-decider always \
+  --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05
+```
+
+!!! warning "Set `--pd-decider always`"
+    Without `--pd-decider always`, setting `--prefill-instances` and `--decode-instances` has no effect — requests use standard routing across all instances and no PD metrics are collected.
+
+In PD mode, the pipeline changes:
+
+```
+Request → Admission → Disaggregation Decision
+  → Prefill Routing (prefill pool) → Prefill Instance → KV Transfer
+    → Decode Routing (decode pool) → Decode Instance → Completion
+```
+
+PD-specific metrics appear in the `=== PD Metrics ===` output section. See [Metrics & Results](results.md#pd-disaggregation-metrics) for field descriptions, and [Configuration Reference](../reference/configuration.md#pd-disaggregation) for all flags.
+
 ## Further Reading
 
 - [Cluster Architecture](../concepts/architecture.md) — internal mechanics of the shared-clock event loop

@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"math"
 	"sort"
 
@@ -63,10 +64,11 @@ func CollectPDMetrics(
 		return nil
 	}
 	if aggregated == nil {
-		// Guard: aggregated must be non-nil for TTFT lookup and SimEndedTime access.
+		// R1: aggregated is required for TTFT lookup and SimEndedTime access.
 		// In production, aggregated comes from cs.AggregatedMetrics() which is always
-		// non-nil after Run(). This guard protects callers passing hand-constructed inputs.
-		return nil
+		// non-nil after Run(). A nil aggregated with non-empty parents is a programming
+		// error in the caller — panic rather than silently dropping all parent data.
+		panic("CollectPDMetrics: aggregated is nil with non-empty parents (programming error)")
 	}
 
 	// Sort by ID for deterministic processing (R2).
@@ -138,9 +140,10 @@ func collectPoolThroughput(
 	for _, id := range ids {
 		m := metricsByID[id]
 		if m == nil {
-			// Guard: nil metrics pointer from caller (e.g., test helpers or external integrations).
+			// R1: nil metrics pointer is a programming error in the caller.
 			// In production, PerInstanceMetricsByID() always returns non-nil pointers from inst.Metrics().
-			continue
+			// A nil entry from a test helper signals incorrect test setup — panic to make the error visible.
+			panic(fmt.Sprintf("collectPoolThroughput: nil *sim.Metrics for instance %q (programming error)", id))
 		}
 		switch poolMembership[id] {
 		case PoolRolePrefill:

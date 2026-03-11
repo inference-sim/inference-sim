@@ -35,7 +35,7 @@ PR3 adds a new `pd_metrics.go` module to `sim/cluster/` that computes disaggrega
 
 **Adjacent blocks:** `sim/cluster/cluster.go` (new accessors), `sim/cluster/metrics.go` (extends `RawMetrics`), `cmd/root.go` (output wiring), `sim/metrics.go` (source of `RequestTTFTs`).
 
-**Key insight (DEVIATION flag):** Parent TTFT requires no new arithmetic. Because `KVTransferCompletedEvent.Execute` (pd_events.go:118-127) creates the decode sub-request with `ArrivalTime = orig.ArrivalTime`, the base simulator's TTFT recording at `sim/metrics.go` already computes `req.FirstTokenTime = now - req.ArrivalTime` relative to the original arrival. Therefore `aggregated.RequestTTFTs[parent.DecodeSubReqID]` equals parent-level TTFT directly — no additional calculation needed.
+**Key insight (UPDATED — original plan used DecodeSubReqID, implementation uses PrefillSubReqID):** Parent TTFT is read from `aggregated.RequestTTFTs[parent.PrefillSubReqID]`. The prefill sub-request records TTFT when `req.ProgressIndex == len(req.InputTokens)` (prefill completion = first token generated on the prefill instance). The decode sub-request enters with `ProgressIndex = inputLen` already set (via `AllocateTransferredKV`) and never triggers the TTFT condition — so only `PrefillSubReqID` has a TTFT entry. The measured value does NOT include KV transfer time, decode queue wait, or decode compute time.
 
 **DEVIATION:** `CompletionTime` field on `ParentRequest` is defined but never set in PR2. This PR does not set it (out of scope). Load imbalance uses throughput proxy (completions per pool / duration) rather than queue-depth time-series (which is not available post-simulation).
 
@@ -48,8 +48,8 @@ PR3 adds a new `pd_metrics.go` module to `sim/cluster/` that computes disaggrega
 **BC-1: Parent TTFT accuracy**
 - GIVEN a disaggregated request completed through the full prefill→transfer→decode path
 - WHEN `CollectPDMetrics` is called with the completed `[]*ParentRequest` and aggregated metrics containing `RequestTTFTs`
-- THEN `PDMetrics.ParentTTFT` contains the elapsed time from the original request's arrival to its first decode token, equal to the value stored in `aggregated.RequestTTFTs[parent.DecodeSubReqID]`
-- MECHANISM: Decode sub-request is created with `ArrivalTime = orig.ArrivalTime` (pd_events.go:123), so the base simulator's TTFT measurement already captures parent-level elapsed time.
+- THEN `PDMetrics.ParentTTFT` contains the elapsed time from the original request's arrival to prefill completion (first token on the prefill instance), equal to the value stored in `aggregated.RequestTTFTs[parent.PrefillSubReqID]`
+- MECHANISM: TTFT is recorded by `sim/simulator.go` when `req.ProgressIndex == len(req.InputTokens)`. The prefill sub-request processes from ProgressIndex=0 → inputLen, triggering the TTFT condition. The decode sub-request enters with ProgressIndex=inputLen already set and increments to inputLen+1 on its first step — it never triggers the TTFT condition. So only the prefill sub-request records TTFT.
 
 **BC-2: Transfer duration correctness**
 - GIVEN a `ParentRequest` with both `TransferStartTime > 0` and `TransferCompleteTime > 0`
@@ -165,7 +165,7 @@ printPDMetrics(w, pd)              (new guarded print, root.go — nil-safe)
 
 ### E) Review Guide
 
-**THE TRICKY PART:** The parent TTFT insight. Because the decode sub-request is created with `ArrivalTime = orig.ArrivalTime` (pd_events.go:123), `RequestTTFTs[decodeSubReqID]` already equals parent-level TTFT with no extra arithmetic. Reviewers should verify this is correct by tracing: `sim/metrics.go:397` computes `req.FirstTokenTime = now + currStepAdvance + ... - req.ArrivalTime`. If `req.ArrivalTime = orig.ArrivalTime` for the decode sub-req, this is relative to the original arrival. ✓
+**THE TRICKY PART — UPDATED:** The implementation uses `PrefillSubReqID`, NOT `DecodeSubReqID`. TTFT is recorded by the simulator when `req.ProgressIndex == len(req.InputTokens)`. The prefill sub-request traverses from ProgressIndex=0 to inputLen and triggers this condition (recording TTFT in `RequestTTFTs[prefillSubReqID]`). The decode sub-request enters with ProgressIndex=inputLen already set (pre-allocated by `AllocateTransferredKV`) and increments to inputLen+1 on its first step — so the TTFT condition fires at ProgressIndex==inputLen, which was already the entry value, BEFORE the first increment. Actually, the decode sub-req bypasses TTFT recording entirely because the check is `ProgressIndex == inputLen` AFTER the increment step, meaning ProgressIndex is inputLen+1 when evaluated. Reviewers should verify: (1) that `pd_metrics.go` reads `p.PrefillSubReqID` (not DecodeSubReqID), and (2) that the prefill sub-request TTFT key appears in `aggregated.RequestTTFTs`. The ParentTTFT measurement covers: arrival → prefill_queue_wait → prefill_compute. It does NOT include KV transfer time or decode queue latency. ✓
 
 **WHAT TO SCRUTINIZE:** BC-1 (TTFT correctness), BC-7 (nil return for non-disaggregated), BC-10 (R11 division guard). Also check BC-9: that `printPDMetrics` is truly guarded and existing output sections are not affected.
 
