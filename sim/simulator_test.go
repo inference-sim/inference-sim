@@ -1931,3 +1931,93 @@ func TestSimulator_ChunkedPrefill_MaxModelLen_NoSpuriousCap(t *testing.T) {
 			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
 	}
 }
+
+// TestEnqueueRequest_AutoFill_MaxOutputLen verifies the engine-level auto-fill
+// that sets MaxOutputLen = maxModelLen - len(InputTokens) when the client doesn't
+// provide a budget (BC-1..BC-4, BC-8, BC-10).
+func TestEnqueueRequest_AutoFill_MaxOutputLen(t *testing.T) {
+	tests := []struct {
+		name           string
+		maxModelLen    int64
+		inputLen       int
+		initialMOL     int
+		expectedMOL    int
+		expectEnqueued bool
+		desc           string
+	}{
+		{
+			name:           "BC-1: auto-fill when client omits budget",
+			maxModelLen:    1000,
+			inputLen:       200,
+			initialMOL:     0,
+			expectedMOL:    800, // 1000 - 200
+			expectEnqueued: true,
+			desc:           "MaxOutputLen auto-filled to remaining context window",
+		},
+		{
+			name:           "BC-2: no auto-fill when client sets budget",
+			maxModelLen:    1000,
+			inputLen:       200,
+			initialMOL:     300,
+			expectedMOL:    300, // unchanged
+			expectEnqueued: true,
+			desc:           "client-provided MaxOutputLen preserved",
+		},
+		{
+			name:           "BC-3: no auto-fill in unlimited mode",
+			maxModelLen:    0,
+			inputLen:       200,
+			initialMOL:     0,
+			expectedMOL:    0, // unchanged
+			expectEnqueued: true,
+			desc:           "maxModelLen=0 means unlimited, no auto-fill",
+		},
+		{
+			name:           "BC-4: no auto-fill when input exceeds context",
+			maxModelLen:    100,
+			inputLen:       150,
+			initialMOL:     0,
+			expectedMOL:    0, // unchanged (Guard 1 handles rejection)
+			expectEnqueued: false,
+			desc:           "input >= maxModelLen, Guard 1 drops it",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := SimConfig{
+				KVCacheConfig:       NewKVCacheConfig(1000000, 16, 0, 0, 0, 0),
+				BatchConfig:         NewBatchConfig(256, 4096, 0),
+				LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{0, 0, 0}),
+				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", tc.maxModelLen),
+				Horizon:             1000000,
+				Seed:                42,
+			}
+			s := mustNewSimulator(t, cfg)
+
+			req := &Request{
+				ID:           "test-req",
+				InputTokens:  make([]int, tc.inputLen),
+				OutputTokens: make([]int, 100),
+				MaxOutputLen: tc.initialMOL,
+				State:        StateQueued,
+			}
+
+			s.EnqueueRequest(req)
+
+			if tc.expectEnqueued {
+				if s.WaitQ.Len() != 1 {
+					t.Fatalf("expected request enqueued, WaitQ.Len()=%d", s.WaitQ.Len())
+				}
+				if req.MaxOutputLen != tc.expectedMOL {
+					t.Errorf("MaxOutputLen = %d, want %d (%s)",
+						req.MaxOutputLen, tc.expectedMOL, tc.desc)
+				}
+			} else {
+				if s.WaitQ.Len() != 0 {
+					t.Fatalf("expected request dropped, WaitQ.Len()=%d", s.WaitQ.Len())
+				}
+			}
+		})
+	}
+}

@@ -261,6 +261,14 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // All guards mirror real vLLM behavior where oversized requests are rejected
 // before entering the engine.
 func (sim *Simulator) EnqueueRequest(r *Request) {
+	// Auto-fill: if client didn't set a budget, cap at remaining context window.
+	// Mirrors vLLM input_processor.py:554: max_tokens = max_model_len - seq_len.
+	// Only fires when maxModelLen > 0 (unlimited mode has nothing to cap against)
+	// and input fits (Guard 1 handles the input >= maxModelLen rejection).
+	if r.MaxOutputLen == 0 && sim.maxModelLen > 0 && int64(len(r.InputTokens)) < sim.maxModelLen {
+		r.MaxOutputLen = int(sim.maxModelLen) - len(r.InputTokens)
+	}
+
 	// Guard 0: Negative MaxOutputLen check (R3)
 	if r.MaxOutputLen < 0 {
 		logrus.Warnf("dropping request %s: MaxOutputLen %d is negative",
