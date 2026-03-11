@@ -1567,7 +1567,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 			Horizon:             10_000_000,
 			Seed:                42,
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0, 0, 0, false),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}), // zero alpha
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "", maxModelLen),
 		},

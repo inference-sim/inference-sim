@@ -1888,7 +1888,7 @@ func TestSimulator_ChunkedPrefill_MaxModelLen_NoSpuriousCap(t *testing.T) {
 		Horizon:             10_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 64), // LongPrefillTokenThreshold=64
+		BatchConfig:         NewBatchConfig(256, 2048, 64, 0, 0, false), // LongPrefillTokenThreshold=64
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 500),
 	}
