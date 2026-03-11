@@ -72,7 +72,7 @@ Maps to `ModelHardwareConfig`.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
-| `--hardware` | string | "" | GPU type (e.g., `H100`, `A100`). If empty, loaded from `defaults.yaml`. |
+| `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json`. |
 | `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
 | `--vllm-version` | string | "" | vLLM version string. If empty, loaded from `defaults.yaml`. |
 | `--max-model-len` | int64 | 0 | Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's `--max-model-len`. Auto-derived from `max_position_embeddings` in HuggingFace `config.json` for roofline/crossmodel backends. Applies `rope_scaling` factor for types `linear`, `dynamic`, `yarn`, `default`, `mrope`; excludes `su`, `longrope`, `llama3`; skips entirely for `gemma3` models. Capped at KV-feasible maximum. |
