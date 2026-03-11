@@ -43,6 +43,16 @@ cd inference-sim
 go build -o blis main.go
 ```
 
+**Environment setup (optional):**
+
+Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid HuggingFace rate limits. Public models like Qwen3 work without a token.
+
+```bash
+export HF_TOKEN=your_token_here
+```
+
+See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
+
 ---
 
 ## Supported Models
