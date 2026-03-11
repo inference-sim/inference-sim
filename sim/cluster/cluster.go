@@ -31,8 +31,10 @@ type ClusterSimulator struct {
 	routingPolicy        sim.RoutingPolicy
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
-	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
-	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
+	preGeneratedRequests    []*sim.Request              // Pre-generated requests (all workload paths unified)
+	inFlightRequests        map[string]int              // instance ID → dispatched-but-not-completed count (#463)
+	poolMembership          map[string]PoolRole         // instance ID → pool role (nil when disaggregation disabled)
+	disaggregationDecider   sim.DisaggregationDecider   // PD disaggregation decider (nil when disabled)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -83,6 +85,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter)),
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
+	}
+
+	// PD disaggregation: validate topology and build pool membership
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+		cs.poolMembership = BuildPoolMembership(instances, config.PrefillInstances, config.DecodeInstances)
+		cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
+		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
+			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
 	}
 
 	// Startup warning: horizon too small for pipeline (BC-1)
@@ -254,6 +267,24 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 // Returns 0 if AlwaysAdmit is used or if no requests were rejected by TokenBucket.
 func (c *ClusterSimulator) RejectedRequests() int {
 	return c.rejectedRequests
+}
+
+// poolsConfigured returns true if PD disaggregation pool topology is active.
+func (c *ClusterSimulator) poolsConfigured() bool {
+	return c.poolMembership != nil
+}
+
+// PoolMembership returns a copy of the pool role membership map (R8: no exported mutable maps).
+// Returns nil when disaggregation is disabled.
+func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
+	if c.poolMembership == nil {
+		return nil
+	}
+	result := make(map[string]PoolRole, len(c.poolMembership))
+	for k, v := range c.poolMembership {
+		result[k] = v
+	}
+	return result
 }
 
 // Trace returns the decision trace collected during simulation.

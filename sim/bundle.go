@@ -62,7 +62,8 @@ var (
 	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
 	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
 	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
-	validLatencyBackends   = map[string]bool{"": true, "blackbox": true, "roofline": true, "crossmodel": true}
+	validLatencyBackends          = map[string]bool{"": true, "blackbox": true, "roofline": true, "crossmodel": true}
+	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true}
 )
 
 // IsValidAdmissionPolicy returns true if name is a recognized admission policy.
@@ -94,6 +95,12 @@ func IsValidLatencyBackend(name string) bool { return validLatencyBackends[name]
 
 // ValidLatencyBackendNames returns sorted valid latency backend names (excluding empty).
 func ValidLatencyBackendNames() []string { return validNamesList(validLatencyBackends) }
+
+// IsValidDisaggregationDecider returns true if name is a recognized disaggregation decider.
+func IsValidDisaggregationDecider(name string) bool { return validDisaggregationDeciders[name] }
+
+// ValidDisaggregationDeciderNames returns sorted valid disaggregation decider names (excluding empty).
+func ValidDisaggregationDeciderNames() []string { return validNamesList(validDisaggregationDeciders) }
 
 // validNamesList returns sorted non-empty keys from a validity map.
 func validNamesList(m map[string]bool) []string {

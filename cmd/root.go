@@ -97,6 +97,11 @@ var (
 	kvTransferBaseLatency   int64
 	snapshotRefreshInterval int64
 
+	// PD disaggregation config (PR1)
+	prefillInstances int    // Number of instances dedicated to prefill
+	decodeInstances  int    // Number of instances dedicated to decode
+	pdDecider        string // Disaggregation decider name
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -652,6 +657,19 @@ var runCmd = &cobra.Command{
 		if snapshotRefreshInterval < 0 {
 			logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
 		}
+		// PD disaggregation validation (R3: validate at CLI boundary)
+		if prefillInstances < 0 {
+			logrus.Fatalf("--prefill-instances must be >= 0, got %d", prefillInstances)
+		}
+		if decodeInstances < 0 {
+			logrus.Fatalf("--decode-instances must be >= 0, got %d", decodeInstances)
+		}
+		if !sim.IsValidDisaggregationDecider(pdDecider) {
+			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
+		}
+		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, numInstances); err != nil {
+			logrus.Fatalf("Invalid PD pool topology: %v", err)
+		}
 		if admissionLatency < 0 {
 			logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
 		}
@@ -723,6 +741,9 @@ var runCmd = &cobra.Command{
 			TraceLevel:              traceLevel,
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
+			PrefillInstances:       prefillInstances,
+			DecodeInstances:        decodeInstances,
+			PDDecider:              pdDecider,
 		}
 		cs := cluster.NewClusterSimulator(config, preGeneratedRequests)
 		if err := cs.Run(); err != nil {
@@ -938,6 +959,11 @@ func init() {
 	runCmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
 	runCmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	runCmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
+
+	// PD disaggregation config (PR1)
+	runCmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
+	runCmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
+	runCmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

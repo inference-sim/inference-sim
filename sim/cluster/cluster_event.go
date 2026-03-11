@@ -14,7 +14,7 @@ import (
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 1=Admission, 2=Routing
+	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation
 	Execute(*ClusterSimulator)
 }
 
@@ -125,13 +125,26 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		cs.rejectedRequests++
 		return
 	}
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &RoutingDecisionEvent{
-			time:    e.time + cs.routingLatency,
-			request: e.request,
-		},
-		seqID: cs.nextSeqID(),
-	})
+
+	// BC-PD-4: When pools are configured, schedule DisaggregationDecisionEvent
+	// between admission and routing. When not configured, go directly to routing.
+	if cs.poolsConfigured() {
+		heap.Push(&cs.clusterEvents, clusterEventEntry{
+			event: &DisaggregationDecisionEvent{
+				time:    e.time,
+				request: e.request,
+			},
+			seqID: cs.nextSeqID(),
+		})
+	} else {
+		heap.Push(&cs.clusterEvents, clusterEventEntry{
+			event: &RoutingDecisionEvent{
+				time:    e.time + cs.routingLatency,
+				request: e.request,
+			},
+			seqID: cs.nextSeqID(),
+		})
+	}
 }
 
 // RoutingDecisionEvent represents the routing decision point for a request.
@@ -190,4 +203,34 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 
 	// Should never reach here (policy contract ensures valid target)
 	panic(fmt.Sprintf("RoutingDecisionEvent: invalid TargetInstance %q", decision.TargetInstance))
+}
+
+// DisaggregationDecisionEvent represents the PD disaggregation decision point for a request.
+// Priority 3: processed after routing events at the same timestamp.
+// In PR1, both paths (disaggregate=true/false) schedule RoutingDecisionEvent.
+// PR2 will add actual bifurcation (prefill routing vs decode routing).
+type DisaggregationDecisionEvent struct {
+	time    int64
+	request *sim.Request
+}
+
+func (e *DisaggregationDecisionEvent) Timestamp() int64 { return e.time }
+func (e *DisaggregationDecisionEvent) Priority() int     { return 3 }
+
+// Execute calls the disaggregation decider and schedules a RoutingDecisionEvent.
+// In PR1, the decider's decision is logged but both paths lead to routing.
+func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
+	decision := cs.disaggregationDecider.Decide(e.request)
+	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, decision.Disaggregate)
+
+	// PR1: Both paths schedule RoutingDecisionEvent regardless of decision.
+	// PR2 will bifurcate: disaggregate=true → prefill pool routing,
+	// disaggregate=false → default routing.
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &RoutingDecisionEvent{
+			time:    e.time + cs.routingLatency,
+			request: e.request,
+		},
+		seqID: cs.nextSeqID(),
+	})
 }
