@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"math"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -112,4 +113,23 @@ func TestPrintPDMetrics_PrintsSection(t *testing.T) {
 	assert.Contains(t, output, "Load Imbalance Ratio:")
 	assert.Contains(t, output, "Parent TTFT")
 	assert.Contains(t, output, "KV Transfer Duration")
+}
+
+func TestPrintPDMetrics_LoadImbalanceRatio_OnePoolIdle(t *testing.T) {
+	// GIVEN PDMetrics with LoadImbalanceRatio = math.MaxFloat64 (BC-10: one pool idle sentinel)
+	var buf bytes.Buffer
+	pd := &cluster.PDMetrics{
+		DisaggregatedCount: 3,
+		PrefillThroughput:  5.0,
+		DecodeThroughput:   0.0,
+		LoadImbalanceRatio: math.MaxFloat64,
+	}
+
+	// WHEN we print the PD metrics
+	printPDMetrics(&buf, pd)
+
+	// THEN the output must say "inf (one pool idle)", not the raw sentinel value
+	output := buf.String()
+	assert.Contains(t, output, "inf (one pool idle)", "MaxFloat64 sentinel should display as 'inf (one pool idle)'")
+	assert.NotContains(t, output, "1.797", "raw sentinel value must not appear in output")
 }
