@@ -63,16 +63,15 @@ You should see JSON output on stdout with key fields:
 
 | Field | Description |
 |-------|-------------|
-| `completed_requests` | Number of requests that finished within the simulation horizon |
-| `responses_per_sec` | Request throughput (completed requests / simulated wall time) |
-| `tokens_per_sec` | Output token throughput |
-| `ttft_mean_ms`, `ttft_p99_ms` | **Time to First Token** — latency from request arrival to first output token (mean and p99) |
-| `e2e_mean_ms`, `e2e_p99_ms` | **End-to-End latency** — total time from arrival to final token |
-| `itl_mean_ms`, `itl_p99_ms` | **Inter-Token Latency** — time between consecutive output tokens (streaming smoothness) |
-| `preemption_count` | KV cache evictions (indicates memory pressure) |
-| `dropped_unservable` | Requests too large for the KV cache or exceeding `--max-model-len` |
+| `ttft_mean_ms`, `ttft_p99_ms` | **Time to First Token** — how long until the first token is generated |
+| `e2e_mean_ms`, `e2e_p99_ms` | **End-to-End latency** — total time from request arrival to final token |
+| `itl_mean_ms`, `itl_p99_ms` | **Inter-Token Latency** — time between consecutive output tokens |
+| `responses_per_sec` | Completed requests per simulated second |
+| `tokens_per_sec` | Output tokens generated per simulated second |
+| `completed_requests` | Number of requests that finished within the simulation window |
+| `preemption_count` | Number of times a running request was evicted to make room for others (0 = healthy) |
 
-Diagnostic output (log messages, timing) goes to stderr. Pipe stdout to `jq` for formatting: `./blis run --model qwen/qwen3-14b | jq .`
+Diagnostic logs go to stderr. Pipe stdout to `jq` for formatting: `./blis run --model qwen/qwen3-14b | jq .`
 
 ---
 
