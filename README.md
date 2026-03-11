@@ -45,7 +45,7 @@ go build -o blis main.go
 
 **Environment setup (optional):**
 
-Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid HuggingFace rate limits. Public models like Qwen3-14B work without a token.
+Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid HuggingFace rate limits.
 
 ```bash
 export HF_TOKEN=your_token_here
