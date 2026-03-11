@@ -94,7 +94,7 @@ See [Roofline Estimation](../concepts/roofline.md) for details on the analytical
 The latency model mode is selected based on available configuration:
 
 1. **Roofline mode** (default): Auto-resolves model config from HuggingFace and hardware config from bundled `hardware_config.json`. Requires `--hardware` and `--tp` (loaded from `defaults.yaml` when available).
-2. **Blackbox mode**: If `--latency-model blackbox` is set, or coefficients are provided via `--alpha-coeffs`/`--beta-coeffs`.
+2. **Blackbox mode**: If `--latency-model blackbox` is set. Uses trained alpha/beta coefficients from `defaults.yaml`. Requires a matching entry for the model/GPU/TP combination.
 3. **Cross-model mode**: If `--latency-model crossmodel` is set with `--hardware` and `--tp`. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from `crossmodel_defaults` in `defaults.yaml`. Architecture features derived from HuggingFace config.json. MoE-aware.
 4. **Trained-roofline mode**: If `--latency-model trained-roofline` is set with `--hardware` and `--tp`. Uses 10 globally-fitted coefficients (7 beta for roofline corrections + 3 alpha for CPU overhead) from `trained_roofline_defaults` in `defaults.yaml`. Achieves 7% MAPE on GPU combined step time.
 5. **Error**: If blackbox mode is selected and no coefficients can be resolved for the model/GPU/TP combination
@@ -330,22 +330,26 @@ models:
 
 ### Resolution Process
 
-When BLIS starts, it resolves latency coefficients and KV block counts through a layered process. Explicit CLI flags always take precedence (R18).
+When BLIS starts, it resolves latency configuration through a layered process. Explicit CLI flags always take precedence (R18).
 
-**Latency coefficient resolution:**
+**Hardware and TP defaults resolution (all backends):**
 
-1. If `--latency-model roofline` or `--latency-model crossmodel` is set:
+Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from `defaults.yaml` for the specified `--model` when those flags are not explicitly provided. This ensures analytical backends (roofline, crossmodel, trained-roofline) can auto-resolve without requiring explicit `--hardware` and `--tp` for models listed in `defaults.yaml`.
+
+**Backend-specific resolution:**
+
+1. If `--latency-model roofline` (default), `crossmodel`, or `trained-roofline`:
    - Auto-resolve model config: check `model_configs/` for existing `config.json`, fetch from HuggingFace on miss (set `HF_TOKEN` for gated models)
    - Auto-resolve hardware config from bundled `hardware_config.json`
-   - For roofline: load alpha coefficients and per-model KV blocks from `defaults.yaml` (beta coefficients are replaced by analytical computation). Warns if no per-model KV blocks found
-   - For crossmodel: load global alpha + beta coefficients from `crossmodel_defaults` in `defaults.yaml`, and per-model KV blocks if available
+   - For roofline: beta coefficients are computed analytically from model architecture and hardware specs
+   - For crossmodel: load global alpha + beta coefficients from `crossmodel_defaults` in `defaults.yaml`
+   - For trained-roofline: load global correction coefficients from `trained_roofline_defaults` in `defaults.yaml`
    - `--model-config-folder` and `--hardware-config` override auto-resolution when explicitly set
-2. If `--alpha-coeffs` and `--beta-coeffs` are not explicitly provided on the CLI and no analytical backend is selected:
+2. If `--latency-model blackbox`:
    - Look up the model in `defaults.yaml` using `--model`, `--hardware`, `--tp`, `--vllm-version`
    - Load alpha/beta coefficients from the matching entry
-3. If coefficients are still all-zero (no defaults found) but `--model-config-folder` and `--hardware-config` are provided:
-   - Enable roofline mode (implicit activation)
-4. If coefficients were explicitly provided via CLI (including explicit zeros):
+   - If no matching entry is found, exit with error suggesting roofline, crossmodel, or trained-roofline
+3. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
 
 **`--total-kv-blocks` resolution** (highest priority wins):
