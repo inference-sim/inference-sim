@@ -64,8 +64,8 @@ However, this comparison is not entirely fair since A and B have different reque
 
 | Metric | B (Bulk Pool) | C (Shared) | Improvement |
 |--------|---------------|------------|-------------|
-| Standard TTFT P99 (mean across seeds) | 2,442 s | 5,509 s | -55.6% |
-| Sheddable TTFT P99 (mean across seeds) | 5,844 s | 10,462 s | -44.1% |
+| Standard TTFT P99 (mean across seeds) | 2,442 ms | 5,509 ms | -55.6% |
+| Sheddable TTFT P99 (mean across seeds) | 5,844 ms | 10,462 ms | -44.1% |
 
 The bulk pool standard/sheddable P99 is dramatically BETTER than the shared baseline. This is counterintuitive -- removing 20% of traffic (critical) from the pool freed capacity, and the larger batch size (64) improved throughput for the remaining requests.
 
