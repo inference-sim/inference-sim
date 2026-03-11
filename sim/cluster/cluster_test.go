@@ -1580,7 +1580,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 	var requests []*sim.Request
 	numFit, numGuard1a, numGuard1b := 0, 0, 0
 
-	// 5 requests that fit (input=50, output=50, no budget → input < MaxModelLen)
+	// 5 requests that fit (input=50, output=50, no budget → auto-filled to 150, budget check passes)
 	for i := 0; i < 5; i++ {
 		req := &sim.Request{
 			ID:           fmt.Sprintf("fit_%d", i),

@@ -1204,14 +1204,14 @@ func TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary(t *testing.T) {
 	}
 	sim := mustNewSimulator(t, cfg)
 
-	// Case 1: MaxOutputLen=0, input fits → enqueued (input-only check)
-	// Even though len(OutputTokens)=1000 would exceed MaxModelLen=512 if peeked at,
-	// the control plane doesn't see actual output length — only runtime stop handles it.
+	// Case 1: MaxOutputLen=0 → auto-filled to 312 (512-200), input+budget=512 ≤ 512 → enqueued.
+	// Auto-fill sets MaxOutputLen=312 (remaining context). Guard 1 budget check passes (200+312=512).
+	// The control plane still doesn't peek at len(OutputTokens) (INV-9 preserved).
 	reqFits := &Request{
 		ID:           "input_fits_oracle",
 		InputTokens:  make([]int, 200),
 		OutputTokens: make([]int, 1000), // actual output exceeds context, but control plane can't see this
-		MaxOutputLen: 0,                 // no client budget → input-only check
+		MaxOutputLen: 0,                 // auto-filled to maxModelLen - input = 312
 		State:        StateQueued,
 	}
 	sim.EnqueueRequest(reqFits)
@@ -1411,7 +1411,7 @@ func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
 	}
 	sim := mustNewSimulator(t, cfg)
 
-	// MaxOutputLen=0 means input-only check (50 < 100), so enqueue succeeds.
+	// MaxOutputLen=0 → auto-filled to 50 (100-50). Guard 1 budget check: 50+50=100 ≤ 100 → enqueued.
 	// But actual OutputTokens=200 means ProgressIndex will exceed MaxModelLen=100.
 	req := &Request{
 		ID:           "will_be_capped",
