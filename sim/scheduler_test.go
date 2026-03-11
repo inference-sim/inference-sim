@@ -240,7 +240,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		Horizon:             10000000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(1, 2048, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(1, 2048, 0, 0, 0, false),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		PolicyConfig:        NewPolicyConfig("slo-based", "priority-fcfs"),
 	}
@@ -289,7 +289,7 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 		Horizon:             10000000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(1, 2048, 0, 0, 0), // force sequential: only 1 at a time
+		BatchConfig:         NewBatchConfig(1, 2048, 0, 0, 0, false), // force sequential: only 1 at a time
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		// PriorityPolicy and Scheduler left empty (defaults)
 	}
@@ -358,7 +358,7 @@ func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 		Horizon:       10000000,
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:   NewBatchConfig(256, 2048, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0, 0, 0, false),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 100}), // zero queueing delay so both queue at arrival time
 		PolicyConfig:  NewPolicyConfig("", "sjf"),
 	}
@@ -407,7 +407,7 @@ func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
 		Horizon:       10000000,
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:   NewBatchConfig(1, 2048, 0, 0, 0), // only 1 slot: forces sequential scheduling
+		BatchConfig:   NewBatchConfig(1, 2048, 0, 0, 0, false), // only 1 slot: forces sequential scheduling
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		PolicyConfig:  NewPolicyConfig("slo-based", "priority-fcfs"),
 	}

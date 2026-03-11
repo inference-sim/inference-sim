@@ -22,13 +22,14 @@ func TestNewKVCacheConfig_FieldEquivalence(t *testing.T) {
 }
 
 func TestNewBatchConfig_FieldEquivalence(t *testing.T) {
-	got := NewBatchConfig(10, 1000, 200, 5.0, 7)
+	got := NewBatchConfig(10, 1000, 200, 5.0, 7, true)
 	want := BatchConfig{
 		MaxRunningReqs:                10,
 		MaxScheduledTokens:            1000,
 		LongPrefillTokenThreshold:     200,
 		PriorityPreemptionMargin:      5.0,
 		MaxPriorityPreemptionsPerStep: 7,
+		SLOAwareKVEviction:            true,
 	}
 	assert.Equal(t, want, got)
 }
@@ -105,7 +106,7 @@ func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 					t.Errorf("panic message %q should contain %q", msg, tc.wantContains)
 				}
 			}()
-			NewBatchConfig(tc.maxRunning, tc.maxTokens, tc.prefillThresh, tc.preemptionMargin, tc.maxPreemptionsPerStep)
+			NewBatchConfig(tc.maxRunning, tc.maxTokens, tc.prefillThresh, tc.preemptionMargin, tc.maxPreemptionsPerStep, false)
 		})
 	}
 }

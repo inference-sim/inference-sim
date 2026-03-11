@@ -41,6 +41,7 @@ var (
 	longPrefillTokenThreshold    int64   // Max length of prefill beyond which chunked prefill is triggered
 	priorityPreemptionMargin          float64 // Priority difference threshold for preempting running requests (0 = disabled)
 	maxPriorityPreemptionsPerStep int     // Max priority preemptions per step (circuit breaker, R19). 0 = default (3).
+	sloAwareKVEviction            bool    // When true, KV preemption targets lowest-priority request instead of tail
 	rate                      float64   // Requests arrival per second
 	numRequests               int       // Number of requests
 	prefixTokens              int       // Prefix Token Count
@@ -954,7 +955,7 @@ var runCmd = &cobra.Command{
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold, priorityPreemptionMargin, maxPriorityPreemptionsPerStep),
+				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold, priorityPreemptionMargin, maxPriorityPreemptionsPerStep, sloAwareKVEviction),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend, maxModelLen),
 				PolicyConfig:        sim.NewPolicyConfigWithOverride(priorityPolicy, scheduler, priorityOverride),
@@ -1138,6 +1139,7 @@ func init() {
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
 	runCmd.Flags().Float64Var(&priorityPreemptionMargin, "priority-preemption-margin", 0, "Priority difference threshold for preempting running requests (0 = disabled)")
 	runCmd.Flags().IntVar(&maxPriorityPreemptionsPerStep, "max-priority-preemptions-per-step", 0, "Max priority preemptions per step (0 = default of 3, R19 circuit breaker)")
+	runCmd.Flags().BoolVar(&sloAwareKVEviction, "slo-aware-kv-eviction", false, "When true, KV preemption targets lowest-priority running request instead of tail")
 
 	// BLIS model configs
 	runCmd.Flags().StringVar(&model, "model", "", "LLM name")

@@ -29,6 +29,7 @@ type BatchContext struct {
 	PrefillTokenThreshold    int64
 	PriorityPreemptionMargin      float64 // from BatchConfig; if > 0, enables priority-based preemption in Phase 2
 	MaxPriorityPreemptionsPerStep int     // circuit breaker: max priority preemptions per step (R19). 0 = use default (3).
+	SLOAwareKVEviction            bool    // if true, KV preemption targets lowest-priority running request instead of tail
 	Now                           int64
 	StepCount                     int
 	ComputedTokens                map[string]int64
@@ -209,8 +210,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 }
 
 // preemptForTokens tries to allocate numNewTokens of KV blocks for req,
-// evicting from the batch tail if needed. Returns false if allocation is
-// impossible (cache too small or request was itself evicted).
+// evicting from the batch if needed. When SLOAwareKVEviction is enabled,
+// evicts the lowest-priority running request; otherwise evicts from the tail.
+// Returns false if allocation is impossible (cache too small or request was
+// itself evicted).
 func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64) bool {
 	for {
 		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int64{}); !ok {
@@ -222,20 +225,31 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			}
 
 			result.PreemptionHappened = true
-			preemptedRequest := result.RunningBatch.Requests[len(result.RunningBatch.Requests)-1]
-			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", ctx.Now, preemptedRequest.ID)
-			result.RunningBatch.Requests = result.RunningBatch.Requests[:len(result.RunningBatch.Requests)-1]
+
+			// Determine eviction target: lowest-priority (SLO-aware) or tail (default)
+			evictIdx := len(result.RunningBatch.Requests) - 1
+			if ctx.SLOAwareKVEviction {
+				evictIdx = findLowestPriorityRunning(result.RunningBatch.Requests)
+			}
+
+			preemptedRequest := result.RunningBatch.Requests[evictIdx]
+			logrus.Warnf("[tick %07d] preemption: evicting %s (pri=%.1f) to make room", ctx.Now, preemptedRequest.ID, preemptedRequest.Priority)
+
+			// Remove by swap-to-tail-then-truncate (preserves O(1) removal)
+			lastIdx := len(result.RunningBatch.Requests) - 1
+			if evictIdx != lastIdx {
+				result.RunningBatch.Requests[evictIdx] = result.RunningBatch.Requests[lastIdx]
+			}
+			result.RunningBatch.Requests = result.RunningBatch.Requests[:lastIdx]
 
 			result.Preempted = append(result.Preempted, PreemptedRequest{
 				Request: preemptedRequest,
 			})
 
-			// Defensive: restore token budget if preempted request was already
-			// scheduled in this step. Currently unreachable with head-to-tail
-			// iteration + tail-only eviction (evicted requests are always
-			// unvisited, so NumNewTokens is 0 from the FormBatch entry zeroing).
-			// Guards against future iteration order changes (e.g., priority-based
-			// eviction that could evict an already-visited request).
+			// Restore token budget if preempted request was already visited
+			// in this step (NumNewTokens > 0). With SLO-aware eviction this
+			// is reachable: findLowestPriorityRunning may select a request at
+			// evictIdx < reqIndex that was already visited and allocated tokens.
 			if preemptedRequest.NumNewTokens > 0 {
 				*tokenBudget += int64(preemptedRequest.NumNewTokens)
 				preemptedRequest.NumNewTokens = 0

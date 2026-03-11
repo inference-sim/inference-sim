@@ -12,7 +12,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 	// We also verify the factory returns a working implementation.
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0, false),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -47,7 +47,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(10, 50, 0, 0, 0), // tight token budget
+		BatchConfig:         NewBatchConfig(10, 50, 0, 0, 0, false), // tight token budget
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -100,7 +100,7 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(200, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(2, 10000, 0, 0, 0), // tight batch size limit
+		BatchConfig:         NewBatchConfig(2, 10000, 0, 0, 0, false), // tight batch size limit
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -155,7 +155,7 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 	// 3 blocks * 16 tokens/block = 48 token capacity
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0, false),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -221,7 +221,7 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // very tight
-		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0, false),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -276,7 +276,7 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0), // very small
-		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0, false),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -321,7 +321,7 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // limited KV blocks
-		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0, false),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -429,7 +429,7 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 	// 6 blocks * 16 tokens = 96 token capacity
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(6, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10000, 0, 0, 0, false),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -540,11 +540,12 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 			0, 0, 0, 0,
 		),
 		BatchConfig: NewBatchConfig(
-			256,  // max running reqs
-			2048, // max scheduled tokens
-			0,    // long prefill threshold (disabled)
-			0,    // priority preemption margin (disabled)
-			0,    // max priority preemptions per step (default)
+			256,   // max running reqs
+			2048,  // max scheduled tokens
+			0,     // long prefill threshold (disabled)
+			0,     // priority preemption margin (disabled)
+			0,     // max priority preemptions per step (default)
+			false, // SLO-aware KV eviction (disabled)
 		),
 		LatencyCoeffs: NewLatencyCoeffs(
 			[]float64{5752.705191348184, 17.25086436834028, 5.999143920128404},   // beta

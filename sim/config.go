@@ -35,6 +35,7 @@ type BatchConfig struct {
 	LongPrefillTokenThreshold     int64   // threshold for long prefill chunking
 	PriorityPreemptionMargin      float64 // if > 0, enables priority-based preemption in Phase 2: a waiting request preempts the lowest-priority running request when priority difference exceeds this margin. 0 = disabled (default).
 	MaxPriorityPreemptionsPerStep int     // circuit breaker: max priority preemptions per step (R19). 0 = use default (3).
+	SLOAwareKVEviction            bool    // if true, KV preemption targets lowest-priority running request instead of tail (default: false)
 }
 
 // NewBatchConfig creates a BatchConfig with all fields explicitly set.
@@ -43,7 +44,7 @@ type BatchConfig struct {
 // LongPrefillTokenThreshold must be >= 0 (0 means disabled),
 // PriorityPreemptionMargin must be >= 0 (0 means disabled),
 // MaxPriorityPreemptionsPerStep must be >= 0 (0 means use default of 3).
-func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64, priorityPreemptionMargin float64, maxPriorityPreemptionsPerStep int) BatchConfig {
+func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64, priorityPreemptionMargin float64, maxPriorityPreemptionsPerStep int, sloAwareKVEviction bool) BatchConfig {
 	if maxRunningReqs <= 0 {
 		panic(fmt.Sprintf("NewBatchConfig: MaxRunningReqs must be > 0, got %d", maxRunningReqs))
 	}
@@ -65,6 +66,7 @@ func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshol
 		LongPrefillTokenThreshold:     longPrefillTokenThreshold,
 		PriorityPreemptionMargin:      priorityPreemptionMargin,
 		MaxPriorityPreemptionsPerStep: maxPriorityPreemptionsPerStep,
+		SLOAwareKVEviction:            sloAwareKVEviction,
 	}
 }
 

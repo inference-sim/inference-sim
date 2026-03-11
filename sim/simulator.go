@@ -79,6 +79,7 @@ type Simulator struct {
 	maxModelLen                   int64   // max total sequence length (0 = unlimited)
 	priorityPreemptionMargin      float64 // from BatchConfig; if > 0, enables priority-based preemption
 	maxPriorityPreemptionsPerStep int     // circuit breaker: max priority preemptions per step (R19)
+	sloAwareKVEviction            bool    // if true, KV preemption targets lowest-priority instead of tail
 	rng                           *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
 	priorityPolicy             PriorityPolicy
 	scheduler                  InstanceScheduler
@@ -148,6 +149,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		maxModelLen:                cfg.MaxModelLen,
 		priorityPreemptionMargin:      cfg.PriorityPreemptionMargin,
 		maxPriorityPreemptionsPerStep: cfg.MaxPriorityPreemptionsPerStep,
+		sloAwareKVEviction:            cfg.SLOAwareKVEviction,
 		latencyModel:                  latencyModel,
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
@@ -419,6 +421,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		PrefillTokenThreshold:         sim.longPrefillTokenThreshold,
 		PriorityPreemptionMargin:      sim.priorityPreemptionMargin,
 		MaxPriorityPreemptionsPerStep: sim.maxPriorityPreemptionsPerStep,
+		SLOAwareKVEviction:            sim.sloAwareKVEviction,
 		Now:                           now,
 		StepCount:                     sim.stepCount,
 		ComputedTokens:                sim.reqNumComputedTokens,
