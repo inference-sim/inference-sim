@@ -1390,10 +1390,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#roofline-and-cross-model-modes" class="md-nav__link">
+  <a href="#analytical-modes-roofline-cross-model-trained-roofline" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Roofline and Cross-Model Modes
+        Analytical Modes (Roofline, Cross-Model, Trained-Roofline)
       
     </span>
   </a>
@@ -2279,10 +2279,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#roofline-and-cross-model-modes" class="md-nav__link">
+  <a href="#analytical-modes-roofline-cross-model-trained-roofline" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Roofline and Cross-Model Modes
+        Analytical Modes (Roofline, Cross-Model, Trained-Roofline)
       
     </span>
   </a>
@@ -2398,8 +2398,9 @@
 </table>
 <h2 id="quantized-variants">Quantized Variants<a class="headerlink" href="#quantized-variants" title="Permanent link">&para;</a></h2>
 <p>Red Hat AI (<code>redhatai/</code>) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, Qwen 2.5, and SmolLM3 3B (FP8 only). See <a href="https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml"><code>defaults.yaml</code></a> for the full list.</p>
-<h2 id="roofline-and-cross-model-modes">Roofline and Cross-Model Modes<a class="headerlink" href="#roofline-and-cross-model-modes" title="Permanent link">&para;</a></h2>
-<p>Any model with a HuggingFace <code>config.json</code> can use roofline mode (<code>--latency-model roofline</code>) or cross-model mode (<code>--latency-model crossmodel</code>). Both auto-fetch configs from HuggingFace on first use, caching them in <code>model_configs/</code>. Cross-model mode is MoE-aware and uses globally-fitted physics coefficients, making it the preferred choice for MoE models like Mixtral. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B, and Mixtral 8x7B.</p>
+<h2 id="analytical-modes-roofline-cross-model-trained-roofline">Analytical Modes (Roofline, Cross-Model, Trained-Roofline)<a class="headerlink" href="#analytical-modes-roofline-cross-model-trained-roofline" title="Permanent link">&para;</a></h2>
+<p>Any model with a HuggingFace <code>config.json</code> can use roofline mode (<code>--latency-model roofline</code>), cross-model mode (<code>--latency-model crossmodel</code>), or trained-roofline mode (<code>--latency-model trained-roofline</code>). All three auto-fetch configs from HuggingFace on first use, caching them in <code>model_configs/</code>.</p>
+<p><strong>Trained-roofline</strong> (recommended) applies learned correction factors to analytical roofline basis functions — 7% MAPE GPU combined step time across 4 architectures. <strong>Cross-model</strong> uses hand-engineered physics features with globally-fitted coefficients. <strong>Roofline</strong> uses pure analytical estimation (no learned corrections). All three are MoE-aware. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B, Mixtral 8x7B, and CodeLlama 34B.</p>
 <h2 id="adding-a-new-model">Adding a New Model<a class="headerlink" href="#adding-a-new-model" title="Permanent link">&para;</a></h2>
 <p>To add blackbox support for a new model:</p>
 <ol>
@@ -2412,7 +2413,7 @@
 <li>Place in <code>model_configs/&lt;model-name&gt;/config.json</code></li>
 <li>Run with <code>--latency-model roofline --hardware &lt;GPU&gt; --tp &lt;N&gt;</code></li>
 </ol>
-<p>Or let BLIS auto-fetch it with <code>--latency-model roofline</code>.</p>
+<p>Or let BLIS auto-fetch it with <code>--latency-model roofline</code> (or <code>trained-roofline</code> for higher accuracy).</p>
 
 
 

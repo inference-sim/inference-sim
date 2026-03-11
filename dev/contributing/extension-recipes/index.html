@@ -2453,18 +2453,22 @@
 <h2 id="adding-new-latency-model-backends">Adding New Latency Model Backends<a class="headerlink" href="#adding-new-latency-model-backends" title="Permanent link">&para;</a></h2>
 <p>To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-LLM, neural surrogate):</p>
 <ol>
-<li><strong>Implement the <code>LatencyModel</code> interface</strong> in <code>sim/latency/latency.go</code> (or a new file in <code>sim/latency/</code> for complex models) — 3 methods:</li>
+<li><strong>Implement the <code>LatencyModel</code> interface</strong> in <code>sim/latency/latency.go</code> (or a new file in <code>sim/latency/</code> for complex models) — 4 methods:</li>
 <li><code>StepTime(batch []*Request) int64</code> — estimate batch step duration from request states</li>
 <li><code>QueueingTime(req *Request) int64</code> — estimate arrival-to-queue delay</li>
 <li><code>OutputTokenProcessingTime() int64</code> — per-token post-processing overhead</li>
-<li><strong>Register in <code>NewLatencyModel</code> factory</strong> in <code>sim/latency/latency.go</code>: add a <code>case</code> branch in the <code>switch hw.Backend</code> block. The backend string (e.g., <code>"crossmodel"</code>) is set by the <code>--latency-model</code> CLI flag and stored in <code>ModelHardwareConfig.Backend</code>. The factory signature is <code>NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)</code>.</li>
+<li><code>PostDecodeFixedOverhead() int64</code> — fixed per-request completion overhead (return 0 if not applicable)</li>
+<li><strong>Register the backend name</strong> in <code>sim/bundle.go</code>: add <code>"your-backend": true</code> to <code>validLatencyBackends</code> map.</li>
+<li><strong>Register in <code>NewLatencyModel</code> factory</strong> in <code>sim/latency/latency.go</code>: add a <code>case</code> branch in the <code>switch hw.Backend</code> block. The backend string (e.g., <code>"trained-roofline"</code>) is set by the <code>--latency-model</code> CLI flag and stored in <code>ModelHardwareConfig.Backend</code>. The factory signature is <code>NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)</code>.</li>
+<li><strong>Add CLI wiring</strong> (if needed) in <code>cmd/root.go</code>: add a loading block for your backend's coefficients from <code>defaults.yaml</code>. If your backend needs a custom defaults section, add a struct to <code>cmd/default_config.go</code>.</li>
 <li><strong>Add behavioral tests</strong> in <code>sim/latency/</code> — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)</li>
-<li>Extension friction: <strong>2 touch points</strong> (implementation + factory branch)</li>
+<li>Extension friction: <strong>3-5 touch points</strong> (implementation + bundle map + factory branch; optionally CLI wiring + defaults struct)</li>
 </ol>
 <p>Examples:
 - See <code>BlackboxLatencyModel</code> in <code>sim/latency/latency.go</code> for a simple stateless model (alpha/beta regression)
 - See <code>RooflineLatencyModel</code> in <code>sim/latency/latency.go</code> for a model that uses hardware config (FLOPs/bandwidth)
-- See <code>CrossModelLatencyModel</code> in <code>sim/latency/crossmodel.go</code> for a physics-informed model that derives step time from HuggingFace architecture features (MoE-aware)</p>
+- See <code>CrossModelLatencyModel</code> in <code>sim/latency/crossmodel.go</code> for a physics-informed model that derives step time from HuggingFace architecture features (MoE-aware)
+- See <code>TrainedRooflineLatencyModel</code> in <code>sim/latency/trained_roofline.go</code> for a data-driven model with roofline basis functions × learned corrections (zero-allocation hot path, 7% MAPE)</p>
 <h2 id="adding-new-batch-formation-strategies">Adding New Batch Formation Strategies<a class="headerlink" href="#adding-new-batch-formation-strategies" title="Permanent link">&para;</a></h2>
 <p>To add a new batch formation strategy (e.g., disaggregated prefill/decode, speculative decoding, continuous batching without preemption):</p>
 <ol>

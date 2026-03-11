@@ -3050,7 +3050,7 @@
 <td><code>--latency-model</code></td>
 <td>string</td>
 <td>""</td>
-<td>Latency model backend: <code>blackbox</code> (default), <code>roofline</code>, <code>crossmodel</code>. When set to <code>roofline</code> or <code>crossmodel</code>, auto-fetches HuggingFace config.json and resolves hardware config. Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models.</td>
+<td>Latency model backend: <code>blackbox</code> (default), <code>roofline</code>, <code>crossmodel</code>, <code>trained-roofline</code>. When set to <code>roofline</code>, <code>crossmodel</code>, or <code>trained-roofline</code>, auto-fetches HuggingFace config.json and resolves hardware config. Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models. <code>trained-roofline</code> is recommended for new models (7% MAPE GPU step time).</td>
 </tr>
 <tr>
 <td><code>--model-config-folder</code></td>

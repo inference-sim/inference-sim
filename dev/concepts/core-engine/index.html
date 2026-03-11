@@ -3241,7 +3241,7 @@ Dequeue requests from the wait queue:
 <li><strong>Thrashing detection:</strong> Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter</li>
 </ul>
 <h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
-<p>BLIS predicts GPU step time through one of three latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
+<p>BLIS predicts GPU step time through one of four latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
 <h3 id="blackbox-model-default">Blackbox Model (Default)<a class="headerlink" href="#blackbox-model-default" title="Permanent link">&para;</a></h3>
 <p>Uses trained regression coefficients to predict step time:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
