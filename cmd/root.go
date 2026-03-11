@@ -447,6 +447,11 @@ var runCmd = &cobra.Command{
 					"Add trained_roofline_defaults to defaults.yaml or provide --beta-coeffs explicitly",
 					defaultsFilePath)
 			}
+			// Warn if alpha coefficients are zero (user provided --beta-coeffs but not --alpha-coeffs)
+			if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
+				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; "+
+					"QueueingTime, PostDecodeFixedOverhead, and OutputTokenProcessingTime will use zero alpha (may underestimate TTFT/E2E)")
+			}
 		}
 
 		if !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s

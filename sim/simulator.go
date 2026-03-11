@@ -334,11 +334,20 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	for _, v := range req.ITL {
 		itlSum += v
 	}
-	lat := req.FirstTokenTime + itlSum + sim.latencyModel.PostDecodeFixedOverhead()
+	// PostDecodeFixedOverhead: fixed per-request overhead at completion (e.g., response setup).
+	// Only applied to requests that went through a decode phase. Zero-output-token requests
+	// (prefill-only) skip this overhead since they never entered the post-decode path.
+	var postDecodeOverhead int64
+	if len(req.OutputTokens) > 0 {
+		postDecodeOverhead = sim.latencyModel.PostDecodeFixedOverhead()
+	}
+	lat := req.FirstTokenTime + itlSum + postDecodeOverhead
 	sim.Metrics.RequestE2Es[req.ID] = float64(lat)
 	logrus.Debugf("Finished req: ID: %s at time: %d", req.ID, lat+req.ArrivalTime)
 	if len(req.OutputTokens) > 0 {
-		reqTotalOutput := lat - req.FirstTokenTime
+		// Compute average ITL from itlSum directly (not from lat - FirstTokenTime)
+		// to avoid contaminating per-token ITL with the fixed post-decode overhead.
+		reqTotalOutput := itlSum
 		// TPOT calculation in vLLM excludes the first generated token.
 		// NOTE: For length-capped requests (BC-5), this denominator uses the
 		// pre-determined output token count rather than actual decode steps completed.
