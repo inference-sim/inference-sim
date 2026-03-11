@@ -94,10 +94,10 @@ See [Roofline Estimation](../concepts/roofline.md) for details on the analytical
 The latency model mode is selected based on available configuration:
 
 1. **Roofline mode** (default): Auto-resolves model config from HuggingFace and hardware config from bundled `hardware_config.json`. Requires `--hardware` and `--tp` (loaded from `defaults.yaml` when available).
-2. **Explicit blackbox mode**: If `--latency-model blackbox` is set, or coefficients are provided via `--alpha-coeffs`/`--beta-coeffs`.
-3. **Explicit cross-model mode**: If `--latency-model crossmodel` is set with `--hardware` and `--tp`. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from `crossmodel_defaults` in `defaults.yaml`. Architecture features derived from HuggingFace config.json. MoE-aware.
-4. **Implicit roofline mode**: If all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided
-5. **Error**: If no coefficients can be resolved and roofline inputs are incomplete
+2. **Blackbox mode**: If `--latency-model blackbox` is set, or coefficients are provided via `--alpha-coeffs`/`--beta-coeffs`.
+3. **Cross-model mode**: If `--latency-model crossmodel` is set with `--hardware` and `--tp`. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from `crossmodel_defaults` in `defaults.yaml`. Architecture features derived from HuggingFace config.json. MoE-aware.
+4. **Trained-roofline mode**: If `--latency-model trained-roofline` is set with `--hardware` and `--tp`. Uses 10 globally-fitted coefficients (7 beta for roofline corrections + 3 alpha for CPU overhead) from `trained_roofline_defaults` in `defaults.yaml`. Achieves 7% MAPE on GPU combined step time.
+5. **Error**: If blackbox mode is selected and no coefficients can be resolved for the model/GPU/TP combination
 
 ## Cluster Configuration
 

@@ -492,30 +492,16 @@ var runCmd = &cobra.Command{
 		// Blackbox mode: load alpha/beta coefficients and KV blocks from defaults.yaml.
 		// Skipped for analytical backends (roofline, crossmodel, trained-roofline) which
 		// load their own coefficients in their respective blocks above.
-		if (backend == "" || backend == "blackbox") && !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") {
+		if backend == "blackbox" && !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") {
 			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 			alphaCoeffs, betaCoeffs = newAlpha, newBeta
 			if !cmd.Flags().Changed("total-kv-blocks") {
 				totalKVBlocks = kvBlocks
 			}
 		}
-		// Implicit roofline detection: when no backend explicitly selected AND
-		// trained coefficients are all-zero AND config paths are provided.
-		// Guard uses backend == "" (not != "roofline") so that --latency-model blackbox
-		// explicitly prevents implicit detection — respecting user intent.
-		if backend == "" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
-			logrus.Warnf("Trying roofline approach for model=%v, TP=%v, GPU=%v, vllmVersion=%v\n", model, tensorParallelism, gpu, vllmVersion)
-			if len(modelConfigFolder) > 0 && len(hwConfigPath) > 0 && len(gpu) > 0 && tensorParallelism > 0 {
-				backend = "roofline"
-			} else if len(modelConfigFolder) == 0 {
-				logrus.Fatalf("Please provide model config folder containing config.json for model=%v\n", model)
-			} else if len(hwConfigPath) == 0 {
-				logrus.Fatalf("Please provide hardware config path (e.g. hardware_config.json)\n")
-			}
-		}
 		// Zero-coefficients safety guard: prevents silently running with zero step times
 		// when blackbox mode has no trained coefficients (would produce meaningless results).
-		if backend != "roofline" && backend != "crossmodel" && backend != "trained-roofline" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
+		if backend == "blackbox" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
 			logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
 				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, crossmodel, or trained-roofline",
 				model, gpu, tensorParallelism)

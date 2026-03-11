@@ -290,6 +290,32 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 	}
 }
 
+// TestNewLatencyModel_EmptyBackendDefaultsToRoofline verifies that Backend: ""
+// (Go zero value) dispatches to roofline mode, matching the CLI default behavior.
+// This ensures library consumers who omit Backend get roofline, not blackbox.
+func TestNewLatencyModel_EmptyBackendDefaultsToRoofline(t *testing.T) {
+	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
+	hw := sim.NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, "", 0)
+
+	model, err := NewLatencyModel(coeffs, hw)
+	if err != nil {
+		t.Fatalf("NewLatencyModel with empty Backend returned error: %v", err)
+	}
+
+	// Verify it behaves as roofline (produces positive step time from FLOPs/bandwidth)
+	batch := []*sim.Request{
+		{
+			InputTokens:   make([]int, 100),
+			ProgressIndex: 0,
+			NumNewTokens:  100,
+		},
+	}
+	result := model.StepTime(batch)
+	if result <= 0 {
+		t.Errorf("StepTime = %d, want > 0 (empty backend should default to roofline)", result)
+	}
+}
+
 // TestNewLatencyModel_InvalidRoofline verifies BC-8.
 func TestNewLatencyModel_InvalidRoofline(t *testing.T) {
 	cfg := sim.SimConfig{
