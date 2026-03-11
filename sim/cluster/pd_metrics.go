@@ -15,9 +15,12 @@ type PDMetrics struct {
 	DisaggregatedCount int
 
 	// ParentTTFT is the distribution of parent-level TTFT (microseconds).
-	// Parent TTFT = decode sub-request TTFT from aggregated.RequestTTFTs[DecodeSubReqID],
-	// which equals (first_token_time - original_arrival_time) because the decode
-	// sub-request is created with ArrivalTime = original request ArrivalTime.
+	// Parent TTFT = prefill sub-request TTFT from aggregated.RequestTTFTs[PrefillSubReqID].
+	// The prefill sub-request is constructed with ArrivalTime = original request ArrivalTime
+	// and records TTFT when ProgressIndex == inputLen (prefill completion = first token generated).
+	// In the BLIS PD model, the first output token is generated at prefill completion; the
+	// decode sub-request generates subsequent tokens. Decode sub-requests start with
+	// ProgressIndex = inputLen (pre-allocated) and never trigger TTFT recording.
 	// Values of 0.0 (missing key) are excluded (BC-11).
 	ParentTTFT Distribution
 
@@ -74,9 +77,12 @@ func CollectPDMetrics(
 			disaggCount++
 		}
 
-		// BC-1: parent TTFT from decode sub-request TTFT.
+		// BC-1: parent TTFT from prefill sub-request TTFT.
+		// The prefill sub-request's TTFT (RequestTTFTs[PrefillSubReqID]) = first_token_time -
+		// arrival_time, recorded when ProgressIndex == inputLen (prefill completion = first token).
+		// Decode sub-requests start with ProgressIndex = inputLen and never trigger TTFT recording.
 		// Missing key returns 0.0 in Go maps; exclude 0.0 values (BC-11).
-		if ttft := aggregated.RequestTTFTs[p.DecodeSubReqID]; ttft > 0 {
+		if ttft := aggregated.RequestTTFTs[p.PrefillSubReqID]; ttft > 0 {
 			ttftValues = append(ttftValues, ttft)
 		}
 

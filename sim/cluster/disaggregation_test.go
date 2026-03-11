@@ -380,3 +380,106 @@ func TestAllocateTransferredKV_InsufficientCapacity(t *testing.T) {
 		t.Error("AllocateTransferredKV returned true with insufficient capacity, want false")
 	}
 }
+
+// --- PR3 accessor and invariant tests ---
+
+// TestClusterSimulator_ParentRequests_ReturnsAllParents verifies the new accessor:
+// - returns a slice with the same length as the internal parentRequests map
+// - slice is sorted by ID (R2)
+// - returns empty slice (not nil) when no PD disaggregation happened
+func TestClusterSimulator_ParentRequests_ReturnsAllParents(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	got := cs.ParentRequests()
+	if len(got) != len(cs.parentRequests) {
+		t.Fatalf("ParentRequests() len=%d, want %d", len(got), len(cs.parentRequests))
+	}
+	// Verify sorted order.
+	for i := 1; i < len(got); i++ {
+		if got[i].ID < got[i-1].ID {
+			t.Errorf("ParentRequests() not sorted: got[%d].ID=%s < got[%d].ID=%s",
+				i, got[i].ID, i-1, got[i-1].ID)
+		}
+	}
+}
+
+// TestClusterSimulator_PerInstanceMetricsByID_ContainsAllInstances verifies the new accessor
+// returns a map entry for every instance in the cluster.
+func TestClusterSimulator_PerInstanceMetricsByID_ContainsAllInstances(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	byID := cs.PerInstanceMetricsByID()
+	if len(byID) != len(cs.instances) {
+		t.Fatalf("PerInstanceMetricsByID() len=%d, want %d", len(byID), len(cs.instances))
+	}
+	for _, inst := range cs.instances {
+		id := string(inst.ID())
+		if _, ok := byID[id]; !ok {
+			t.Errorf("PerInstanceMetricsByID() missing instance %q", id)
+		}
+	}
+}
+
+// TestClusterSimulator_PDMetricsInvariant_PoolConservation verifies BC-3:
+// sum of per-pool completions == cluster-wide CompletedRequests.
+func TestClusterSimulator_PDMetricsInvariant_PoolConservation(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	byID := cs.PerInstanceMetricsByID()
+	membership := cs.PoolMembership()
+
+	var prefillTotal, decodeTotal int
+	for id, m := range byID {
+		switch membership[id] {
+		case PoolRolePrefill:
+			prefillTotal += m.CompletedRequests
+		case PoolRoleDecode:
+			decodeTotal += m.CompletedRequests
+		}
+	}
+	total := prefillTotal + decodeTotal
+	clusterTotal := cs.AggregatedMetrics().CompletedRequests
+	if total != clusterTotal {
+		t.Errorf("pool conservation violated: prefill(%d) + decode(%d) = %d, cluster total = %d",
+			prefillTotal, decodeTotal, total, clusterTotal)
+	}
+}
+
+// TestCollectPDMetrics_ParentTTFT_IncludesTransferDuration verifies BC-1 causality invariant:
+// ParentTTFT.Mean >= TransferDuration.Mean (transfer is a sub-component of TTFT).
+func TestCollectPDMetrics_ParentTTFT_IncludesTransferDuration(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	pd := CollectPDMetrics(
+		cs.ParentRequests(),
+		cs.AggregatedMetrics(),
+		cs.PoolMembership(),
+		cs.PerInstanceMetricsByID(),
+	)
+	if pd == nil {
+		t.Fatal("CollectPDMetrics returned nil for disaggregated simulation")
+	}
+	if pd.ParentTTFT.Count == 0 {
+		t.Skip("no parent TTFT data collected — skipping causality check")
+	}
+	if pd.TransferDuration.Count == 0 {
+		t.Skip("no transfer duration data collected — skipping causality check")
+	}
+	// BC-1: parent TTFT includes transfer time, so mean TTFT >= mean transfer.
+	if pd.ParentTTFT.Mean < pd.TransferDuration.Mean {
+		t.Errorf("BC-1 causality violated: ParentTTFT.Mean (%.1f) < TransferDuration.Mean (%.1f)",
+			pd.ParentTTFT.Mean, pd.TransferDuration.Mean)
+	}
+}

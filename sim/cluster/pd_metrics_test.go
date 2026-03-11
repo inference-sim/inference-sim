@@ -18,10 +18,12 @@ func buildAggregatedWithTTFTs(ttfts map[string]float64, simEndedTime int64) *sim
 }
 
 // buildParentRequest creates a minimal ParentRequest for testing.
-func buildParentRequest(id string, decodeSubReqID string, transferStart, transferComplete int64) *ParentRequest {
+// prefillSubReqID is the ID used to look up TTFT in RequestTTFTs.
+func buildParentRequest(id string, prefillSubReqID string, transferStart, transferComplete int64) *ParentRequest {
 	return &ParentRequest{
 		ID:                   id,
-		DecodeSubReqID:       decodeSubReqID,
+		PrefillSubReqID:      prefillSubReqID,
+		DecodeSubReqID:       id + "_decode",
 		TransferStartTime:    transferStart,
 		TransferCompleteTime: transferComplete,
 	}
@@ -45,12 +47,12 @@ func TestCollectPDMetrics_NilWhenNoParents(t *testing.T) {
 // BC-1: ParentTTFT populated from aggregated.RequestTTFTs[DecodeSubReqID].
 func TestCollectPDMetrics_ParentTTFT(t *testing.T) {
 	parents := []*ParentRequest{
-		buildParentRequest("req-1", "req-1_decode", 100, 200),
-		buildParentRequest("req-2", "req-2_decode", 100, 200),
+		buildParentRequest("req-1", "req-1_prefill", 100, 200),
+		buildParentRequest("req-2", "req-2_prefill", 100, 200),
 	}
 	agg := buildAggregatedWithTTFTs(map[string]float64{
-		"req-1_decode": 5000.0,
-		"req-2_decode": 3000.0,
+		"req-1_prefill": 5000.0,
+		"req-2_prefill": 3000.0,
 	}, 1_000_000)
 
 	pd := CollectPDMetrics(parents, agg, nil, nil)
@@ -69,12 +71,12 @@ func TestCollectPDMetrics_ParentTTFT(t *testing.T) {
 // BC-11: TTFT value 0.0 (missing key in map) excluded from distribution.
 func TestCollectPDMetrics_TTFTExcludesMissing(t *testing.T) {
 	parents := []*ParentRequest{
-		buildParentRequest("req-1", "req-1_decode", 100, 200),
-		buildParentRequest("req-2", "req-2_decode", 100, 200), // no TTFT in map
+		buildParentRequest("req-1", "req-1_prefill", 100, 200),
+		buildParentRequest("req-2", "req-2_prefill", 100, 200), // no TTFT in map
 	}
 	agg := buildAggregatedWithTTFTs(map[string]float64{
-		"req-1_decode": 5000.0,
-		// req-2_decode missing → 0.0 default → excluded
+		"req-1_prefill": 5000.0,
+		// req-2_prefill missing → 0.0 default → excluded
 	}, 1_000_000)
 
 	pd := CollectPDMetrics(parents, agg, nil, nil)
@@ -92,12 +94,12 @@ func TestCollectPDMetrics_TTFTExcludesMissing(t *testing.T) {
 // BC-2: TransferDuration = TransferCompleteTime - TransferStartTime (microseconds).
 func TestCollectPDMetrics_TransferDuration(t *testing.T) {
 	parents := []*ParentRequest{
-		buildParentRequest("req-1", "req-1_decode", 1000, 1500), // duration = 500
-		buildParentRequest("req-2", "req-2_decode", 2000, 2300), // duration = 300
+		buildParentRequest("req-1", "req-1_prefill", 1000, 1500), // duration = 500
+		buildParentRequest("req-2", "req-2_prefill", 2000, 2300), // duration = 300
 	}
 	agg := buildAggregatedWithTTFTs(map[string]float64{
-		"req-1_decode": 5000.0,
-		"req-2_decode": 3000.0,
+		"req-1_prefill": 5000.0,
+		"req-2_prefill": 3000.0,
 	}, 1_000_000)
 
 	pd := CollectPDMetrics(parents, agg, nil, nil)
@@ -116,13 +118,13 @@ func TestCollectPDMetrics_TransferDuration(t *testing.T) {
 // BC-6: DisaggregatedCount counts parents with TransferCompleteTime > 0.
 func TestCollectPDMetrics_DisaggregatedCount(t *testing.T) {
 	parents := []*ParentRequest{
-		buildParentRequest("req-1", "req-1_decode", 100, 200),  // completed transfer
-		buildParentRequest("req-2", "req-2_decode", 0, 0),       // no transfer (local)
-		buildParentRequest("req-3", "req-3_decode", 100, 300),  // completed transfer
+		buildParentRequest("req-1", "req-1_prefill", 100, 200),  // completed transfer
+		buildParentRequest("req-2", "req-2_prefill", 0, 0),       // no transfer (local)
+		buildParentRequest("req-3", "req-3_prefill", 100, 300),  // completed transfer
 	}
 	agg := buildAggregatedWithTTFTs(map[string]float64{
-		"req-1_decode": 5000.0,
-		"req-3_decode": 3000.0,
+		"req-1_prefill": 5000.0,
+		"req-3_prefill": 3000.0,
 	}, 1_000_000)
 
 	pd := CollectPDMetrics(parents, agg, nil, nil)
@@ -140,11 +142,11 @@ func TestCollectPDMetrics_DisaggregatedCount(t *testing.T) {
 // BC-5: DecodeThroughput = decode_completions / simEndedTime (in seconds).
 func TestCollectPDMetrics_PerPoolThroughput(t *testing.T) {
 	parents := []*ParentRequest{
-		buildParentRequest("req-1", "req-1_decode", 100, 200),
+		buildParentRequest("req-1", "req-1_prefill", 100, 200),
 	}
 	// 2s sim, prefill has 10 completions, decode has 5 completions
 	simEndedUs := int64(2_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_decode": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
 	agg.CompletedRequests = 15
 
 	poolMembership := map[string]PoolRole{
@@ -178,9 +180,9 @@ func TestCollectPDMetrics_PerPoolThroughput(t *testing.T) {
 
 // BC-10 case 1: balanced pools → LoadImbalanceRatio close to 1.0.
 func TestCollectPDMetrics_LoadImbalanceRatio_Balanced(t *testing.T) {
-	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_decode", 100, 200)}
+	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
 	simEndedUs := int64(1_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_decode": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
 
 	poolMembership := map[string]PoolRole{
 		"instance_0": PoolRolePrefill,
@@ -206,9 +208,9 @@ func TestCollectPDMetrics_LoadImbalanceRatio_Balanced(t *testing.T) {
 
 // BC-10 case 2: imbalanced pools → LoadImbalanceRatio = max/min > 1.0.
 func TestCollectPDMetrics_LoadImbalanceRatio_Imbalanced(t *testing.T) {
-	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_decode", 100, 200)}
+	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
 	simEndedUs := int64(1_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_decode": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
 
 	poolMembership := map[string]PoolRole{
 		"instance_0": PoolRolePrefill,
@@ -236,9 +238,9 @@ func TestCollectPDMetrics_LoadImbalanceRatio_Imbalanced(t *testing.T) {
 
 // BC-10 case 3: one pool idle → LoadImbalanceRatio = math.MaxFloat64 (sentinel).
 func TestCollectPDMetrics_LoadImbalanceRatio_ZeroMinGuard(t *testing.T) {
-	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_decode", 100, 200)}
+	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
 	simEndedUs := int64(1_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_decode": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
 
 	poolMembership := map[string]PoolRole{
 		"instance_0": PoolRolePrefill,
@@ -264,9 +266,9 @@ func TestCollectPDMetrics_LoadImbalanceRatio_ZeroMinGuard(t *testing.T) {
 
 // BC-10 case 4: both pools idle → LoadImbalanceRatio = 1.0 (no-data sentinel).
 func TestCollectPDMetrics_LoadImbalanceRatio_BothZeroGuard(t *testing.T) {
-	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_decode", 100, 200)}
+	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
 	simEndedUs := int64(1_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_decode": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
 
 	poolMembership := map[string]PoolRole{
 		"instance_0": PoolRolePrefill,

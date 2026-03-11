@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -364,6 +365,35 @@ func (c *ClusterSimulator) PerInstanceMetrics() []*sim.Metrics {
 		metrics[i] = inst.Metrics()
 	}
 	return metrics
+}
+
+// ParentRequests returns a copy of all ParentRequest records sorted by ID.
+// Panics if called before Run() completes (BC-11).
+// Returns an empty slice when PD disaggregation is not active.
+func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
+	if !c.hasRun {
+		panic("ClusterSimulator.ParentRequests() called before Run()")
+	}
+	result := make([]*ParentRequest, 0, len(c.parentRequests))
+	for _, pr := range c.parentRequests {
+		result = append(result, pr)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+// PerInstanceMetricsByID returns a map of instance ID → *sim.Metrics.
+// Panics if called before Run() completes (BC-12).
+// The returned map is a new map (not a reference to internal state), consistent with R8.
+func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
+	if !c.hasRun {
+		panic("ClusterSimulator.PerInstanceMetricsByID() called before Run()")
+	}
+	result := make(map[string]*sim.Metrics, len(c.instances))
+	for _, inst := range c.instances {
+		result[string(inst.ID())] = inst.Metrics()
+	}
+	return result
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
