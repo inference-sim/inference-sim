@@ -498,11 +498,9 @@ var runCmd = &cobra.Command{
 		if backend == "blackbox" && !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") {
 			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 			alphaCoeffs, betaCoeffs = newAlpha, newBeta
-			if !cmd.Flags().Changed("total-kv-blocks") {
+			if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 				totalKVBlocks = kvBlocks
-				if kvBlocks > 0 {
-					kvBlocksFromDefaults = true
-				}
+				kvBlocksFromDefaults = true
 			}
 		}
 		// Blackbox mode: auto-calculate KV blocks when neither CLI flag nor
