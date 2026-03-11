@@ -109,6 +109,14 @@ You should see JSON output like:
 ./blis run --model qwen/qwen3-14b --latency-model roofline --hardware H100 --tp 1
 ```
 
+> **Tip:** Roofline, trained-roofline, and cross-model modes auto-fetch model configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid rate limits:
+>
+> ```bash
+> export HF_TOKEN=your_token_here
+> ```
+>
+> See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
+
 ### Convert workload formats
 
 ```bash

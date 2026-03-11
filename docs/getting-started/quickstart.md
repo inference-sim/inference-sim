@@ -70,6 +70,14 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
+> **Tip:** Roofline, trained-roofline, and cross-model modes auto-fetch model configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid rate limits:
+>
+> ```bash
+> export HF_TOKEN=your_token_here
+> ```
+>
+> See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
+
 ## What's Next
 
 - **[Tutorial: Capacity Planning](tutorial.md)** — Full walkthrough: find the right instance count for your workload
