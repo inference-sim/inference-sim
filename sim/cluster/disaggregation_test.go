@@ -187,7 +187,7 @@ func TestDisaggregation_RequestCompletesFullPath(t *testing.T) {
 	}
 
 	// BC-PD-9: Phase causality for each parent
-	for _, parent := range cs.parentRequests {
+	for _, parent := range cs.ParentRequests() {
 		if parent.TransferCompleteTime == 0 {
 			t.Errorf("parent %s: TransferCompleteTime not set", parent.ID)
 		}
