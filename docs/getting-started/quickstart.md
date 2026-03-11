@@ -31,8 +31,8 @@ BLIS prints deterministic JSON to stdout (diagnostic logs go to stderr). Pipe to
 
 | Field | What It Measures |
 |-------|-----------------|
-| `responses_per_sec` | Completed requests per simulated second. |
-| `tokens_per_sec` | Output tokens generated per simulated second. |
+| `responses_per_sec` | Completed requests per second. |
+| `tokens_per_sec` | Output tokens generated per second. |
 | `completed_requests` | How many requests finished within the simulation window. |
 | `total_input_tokens`, `total_output_tokens` | Total tokens processed across all completed requests. |
 

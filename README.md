@@ -83,8 +83,8 @@ You should see JSON output on stdout with key fields:
 | `ttft_mean_ms`, `ttft_p99_ms` | **Time to First Token** — how long until the first token is generated |
 | `e2e_mean_ms`, `e2e_p99_ms` | **End-to-End latency** — total time from request arrival to final token |
 | `itl_mean_ms`, `itl_p99_ms` | **Inter-Token Latency** — time between consecutive output tokens |
-| `responses_per_sec` | Completed requests per simulated second |
-| `tokens_per_sec` | Output tokens generated per simulated second |
+| `responses_per_sec` | Completed requests per second |
+| `tokens_per_sec` | Output tokens generated per second |
 | `completed_requests` | Number of requests that finished within the simulation window |
 | `preemption_count` | Number of times a running request was evicted to make room for others (0 = healthy) |
 
