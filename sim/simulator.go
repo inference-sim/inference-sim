@@ -245,22 +245,34 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 
 // EnqueueRequest adds a newly arrived request to the waiting queue.
-// Three guards prevent unservable requests from entering the queue:
+//
+// Preprocessing: auto-fills MaxOutputLen when the client doesn't set a budget
+// (MaxOutputLen == 0) and maxModelLen > 0. Sets MaxOutputLen = maxModelLen - len(InputTokens),
+// mirroring vLLM's input_processor.py:554 (max_tokens = max_model_len - seq_len).
+// Workload generators normally set MaxOutputLen = len(OutputTokens) (tight budget);
+// this auto-fill is a safety net for requests that bypass generators.
+//
+// Three guards then prevent unservable requests from entering the queue:
 //  0. MaxOutputLen validation (R3): drops requests with negative MaxOutputLen.
 //  1. MaxModelLen guard (when maxModelLen > 0): validates the request fits within
 //     the model's context window. First checks input >= maxModelLen (vLLM uses >=:
 //     input filling the entire context leaves no room for output). Then, when
 //     MaxOutputLen > 0 (client budget), checks input + budget <= maxModelLen.
-//     When MaxOutputLen == 0, the input check is sufficient (vLLM defaults
-//     max_tokens to max_model_len - seq_len; the runtime stop in processCompletions
-//     handles output growth). The control plane never peeks at len(OutputTokens) —
-//     respecting the oracle knowledge boundary (INV-9, #567).
 //  2. KV capacity guard (defense-in-depth, always active): drops requests whose input
 //     tokens alone require more KV blocks than total cache capacity (R19: livelock protection).
 //
 // All guards mirror real vLLM behavior where oversized requests are rejected
-// before entering the engine.
+// before entering the engine. The control plane never peeks at len(OutputTokens) —
+// respecting the oracle knowledge boundary (INV-9, #567).
 func (sim *Simulator) EnqueueRequest(r *Request) {
+	// Auto-fill: if client didn't set a budget, cap at remaining context window.
+	// Mirrors vLLM input_processor.py:554: max_tokens = max_model_len - seq_len.
+	// Only fires when maxModelLen > 0 (unlimited mode has nothing to cap against)
+	// and input fits (Guard 1 handles the input >= maxModelLen rejection).
+	if r.MaxOutputLen == 0 && sim.maxModelLen > 0 && int64(len(r.InputTokens)) < sim.maxModelLen {
+		r.MaxOutputLen = int(sim.maxModelLen) - len(r.InputTokens)
+	}
+
 	// Guard 0: Negative MaxOutputLen check (R3)
 	if r.MaxOutputLen < 0 {
 		logrus.Warnf("dropping request %s: MaxOutputLen %d is negative",
