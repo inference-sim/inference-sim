@@ -227,7 +227,7 @@ func TestRooflineLatencyModel_QueueingTime_Positive(t *testing.T) {
 func TestNewLatencyModel_BlackboxMode(t *testing.T) {
 	cfg := sim.SimConfig{
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "blackbox", 0),
 	}
 
 	model, err := NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
@@ -311,8 +311,8 @@ func TestNewLatencyModel_ShortAlphaCoeffs(t *testing.T) {
 		alpha   []float64
 		beta    []float64
 	}{
-		{"blackbox_empty_alpha", "", []float64{}, []float64{1, 2, 3}},
-		{"blackbox_short_alpha", "", []float64{1, 2}, []float64{1, 2, 3}},
+		{"blackbox_empty_alpha", "blackbox", []float64{}, []float64{1, 2, 3}},
+		{"blackbox_short_alpha", "blackbox", []float64{1, 2}, []float64{1, 2, 3}},
 		{"roofline_empty_alpha", "roofline", []float64{}, nil},
 		{"roofline_short_alpha", "roofline", []float64{1}, nil},
 	}
@@ -340,7 +340,7 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			coeffs := sim.NewLatencyCoeffs(tc.beta, []float64{100, 1, 100})
-			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0)
+			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "blackbox", 0)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for short BetaCoeffs, got nil")
@@ -352,7 +352,7 @@ func TestNewLatencyModel_ShortBetaCoeffs(t *testing.T) {
 // TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError verifies BC-4: NaN in alpha rejected.
 func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{math.NaN(), 1.0, 100.0})
-	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0))
+	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "blackbox", 0))
 	if err == nil {
 		t.Fatal("expected error for NaN AlphaCoeffs, got nil")
 	}
@@ -361,7 +361,7 @@ func TestNewLatencyModel_NaNAlphaCoeffs_ReturnsError(t *testing.T) {
 // TestNewLatencyModel_InfBetaCoeffs_ReturnsError verifies BC-4: Inf in beta rejected.
 func TestNewLatencyModel_InfBetaCoeffs_ReturnsError(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs([]float64{math.Inf(1), 10, 5}, []float64{100, 1.0, 100.0})
-	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0))
+	_, err := NewLatencyModel(coeffs, sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "blackbox", 0))
 	if err == nil {
 		t.Fatal("expected error for Inf BetaCoeffs, got nil")
 	}
@@ -394,7 +394,7 @@ func TestNewLatencyModel_NegativeCoefficients_ReturnsError(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			coeffs := sim.NewLatencyCoeffs(tc.beta, tc.alpha)
-			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0)
+			hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "blackbox", 0)
 			_, err := NewLatencyModel(coeffs, hw)
 			if err == nil {
 				t.Fatal("expected error for negative coefficient")
@@ -412,7 +412,7 @@ func TestNewLatencyModel_NegativeCoefficients_ReturnsError(t *testing.T) {
 // THEN the return value is >= 1 (livelock protection via R19)
 func TestBlackboxLatencyModel_StepTime_FloorAtOne(t *testing.T) {
 	coeffs := sim.NewLatencyCoeffs([]float64{0, 0, 0}, []float64{0, 0, 0})
-	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0)
+	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "blackbox", 0)
 	model, err := NewLatencyModel(coeffs, hw)
 	if err != nil {
 		t.Fatalf("NewLatencyModel: %v", err)

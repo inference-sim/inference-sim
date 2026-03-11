@@ -10,11 +10,11 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 - **Discrete-event simulation** for prefill, decode, and request scheduling
 - **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
-- **CPU-only inference cost model** via learned α/β coefficients
+- **CPU-only inference cost model** via analytical roofline estimation or learned α/β coefficients
 - **HuggingFace config.json support** for model architecture
 - **Dense and MoE model support** (Mixtral, DeepSeek-MoE, etc.)
 - **vLLM deployment configuration** (TP, PP, EP, batch limits)
-- **Three latency estimation modes**: blackbox (data-driven), roofline (analytical), and cross-model (physics-informed, MoE-aware)
+- **Four latency estimation modes**: roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed, MoE-aware), and trained-roofline (roofline × learned corrections)
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`) or custom distributions
 - **Trace replay**: replay recorded request traces for deterministic testing
 - **Multi-instance cluster simulation** with shared-clock event loop
@@ -32,19 +32,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 ## Supported Models
 
-### Dense Models
-- LLaMA 3.x (8B, 70B variants)
-- Qwen 2.5 (1.5B - 72B)
-- Mistral (7B, Small 24B)
-- Phi-4
-- CodeLlama
-- Granite
-
-### MoE Models
-- Mixtral 8x7B
-- (Additional MoE models supported via HuggingFace config.json)
-
-See [`defaults.yaml`](./defaults.yaml) for the full list of pre-trained model configurations.
+BLIS supports any dense transformer model with a HuggingFace `config.json` — the default roofline mode auto-fetches configs on first use. MoE (Mixture-of-Experts) models are also supported; Mixtral 8x7B has been validated end-to-end. See [`defaults.yaml`](./defaults.yaml) for models with additional pre-trained blackbox coefficients.
 
 ---
 
@@ -65,25 +53,26 @@ go build -o blis main.go
 
 ## Quick Start
 
-Run BLIS for `qwen/qwen3-14b` with default configs:
+Run BLIS for `qwen/qwen3-14b` with default configs (roofline mode auto-fetches model config from HuggingFace):
 
 ```bash
 ./blis run --model qwen/qwen3-14b
 ```
 
-You should see JSON output like:
+You should see JSON output on stdout with key fields:
 
-```json
-{
-  "completed_requests": 100,
-  "tokens_per_sec": 492.02,
-  "ttft_mean_ms": 25.08,
-  "e2e_mean_ms": 4541.01,
-  ...
-}
-```
+| Field | Description |
+|-------|-------------|
+| `completed_requests` | Number of requests that finished within the simulation horizon |
+| `responses_per_sec` | Request throughput (completed requests / simulated wall time) |
+| `tokens_per_sec` | Output token throughput |
+| `ttft_mean_ms`, `ttft_p99_ms` | **Time to First Token** — latency from request arrival to first output token (mean and p99) |
+| `e2e_mean_ms`, `e2e_p99_ms` | **End-to-End latency** — total time from arrival to final token |
+| `itl_mean_ms`, `itl_p99_ms` | **Inter-Token Latency** — time between consecutive output tokens (streaming smoothness) |
+| `preemption_count` | KV cache evictions (indicates memory pressure) |
+| `dropped_unservable` | Requests too large for the KV cache or exceeding `--max-model-len` |
 
-**Key metrics:** TTFT (Time to First Token) measures how quickly the first output token arrives. E2E (End-to-End) is the total request latency. `tokens_per_sec` is output token throughput.
+Diagnostic output (log messages, timing) goes to stderr. Pipe stdout to `jq` for formatting: `./blis run --model qwen/qwen3-14b | jq .`
 
 ---
 
@@ -103,10 +92,10 @@ You should see JSON output like:
   --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
 ```
 
-### Roofline mode (analytical, no trained coefficients)
+### Blackbox mode (explicit trained coefficients)
 
 ```bash
-./blis run --model qwen/qwen3-14b --latency-model roofline --hardware H100 --tp 1
+./blis run --model qwen/qwen3-14b --latency-model blackbox
 ```
 
 > **Tip:** Roofline, trained-roofline, and cross-model modes auto-fetch model configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid rate limits:
@@ -116,6 +105,8 @@ You should see JSON output like:
 > ```
 >
 > See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
+
+> **Note:** Since roofline is the default latency model, `HF_TOKEN` may be needed for the default run mode when using gated models. For public models like Qwen3, no token is required.
 
 ### Convert workload formats
 

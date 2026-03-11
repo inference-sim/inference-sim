@@ -6,7 +6,7 @@ This tutorial walks through a complete capacity planning exercise: determining h
 
 ## Step 1: Estimate Instance Capacity
 
-Before scaling up, measure the throughput of a single instance empirically. This works regardless of which [latency model](../guide/latency-models.md) you use (blackbox, roofline, trained-roofline, or crossmodel).
+Before scaling up, measure the throughput of a single instance empirically. The default roofline mode works out of the box for any model with a HuggingFace config.json. This step works regardless of which [latency model](../guide/latency-models.md) you use (roofline, blackbox, trained-roofline, or crossmodel).
 
 Run a single instance at low load to establish the baseline service rate:
 

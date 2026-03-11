@@ -1,10 +1,13 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`.
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/` (auto-fetched from HuggingFace on first use).
 
 !!! tip "Trained-Roofline: higher accuracy"
     For higher accuracy (7% MAPE GPU combined), use `--latency-model trained-roofline` which applies learned correction factors to these roofline basis functions. See [Trained-Roofline Mode](../guide/latency-models.md#trained-roofline-mode-recommended-for-new-models). For legacy MoE workflows, `--latency-model crossmodel` is also available — see [Cross-Model Mode](../guide/latency-models.md#cross-model-mode-physics-informed).
 
+
+!!! note "Scope: TP-only, FP16/BF16"
+    The roofline model currently accounts for tensor parallelism (TP) but does not model data parallelism (DP), expert parallelism (EP), or quantization effects (FP8, W4A16, W8A8). Incorporating DP/EP scheduling overhead and quantized compute/memory throughput is under active development.
 
 ## 1. Why Roofline?
 

@@ -13,6 +13,16 @@ cd inference-sim
 go build -o blis main.go
 ```
 
+## Environment Setup
+
+BLIS uses roofline mode by default, which auto-fetches model architecture configs from HuggingFace. For gated models (e.g., LLaMA), set `HF_TOKEN`:
+
+```bash
+export HF_TOKEN=your_token_here
+```
+
+Public models (e.g., Qwen3) work without a token. See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
+
 ## Verify the Build
 
 ```bash

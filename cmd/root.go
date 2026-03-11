@@ -241,13 +241,40 @@ var runCmd = &cobra.Command{
 		// hf_repo mapping in defaults.yaml preserves the original casing for API calls.
 		model = strings.ToLower(model)
 
+		// Early defaults resolution: load hardware/TP/vllm-version from defaults.yaml
+		// when not explicitly set via CLI flags. This runs BEFORE analytical backend
+		// blocks so that the default roofline mode can find --hardware and --tp values
+		// for models registered in defaults.yaml (e.g., qwen/qwen3-14b).
+		if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
+			hardware, tp, version := GetDefaultSpecs(model)
+			if tensorParallelism == 0 && tp > 0 {
+				logrus.Warnf("Finding default values of TP for model=%v\n", model)
+				logrus.Warnf("Using default tp=%v", tp)
+				tensorParallelism = tp
+			}
+			if gpu == "" && len(hardware) > 0 {
+				logrus.Warnf("Finding default values of hardware for model=%v\n", model)
+				logrus.Warnf("Using default GPU=%v", hardware)
+				gpu = hardware
+			}
+			if vllmVersion == "" && len(version) > 0 {
+				logrus.Warnf("Finding default values of vLLM version for model=%v\n", model)
+				logrus.Warnf("Using default vLLM version=%v", version)
+				vllmVersion = version
+			}
+		}
+
 		// --latency-model roofline: auto-resolve model config and hardware config
 		if backend == "roofline" {
 			if gpu == "" {
-				logrus.Fatalf("--latency-model roofline requires --hardware (GPU type)")
+				logrus.Fatalf("--latency-model roofline requires --hardware (GPU type). " +
+					"No default found in defaults.yaml for model=%s. " +
+					"Provide --hardware explicitly", model)
 			}
 			if tensorParallelism <= 0 {
-				logrus.Fatalf("--latency-model roofline requires --tp > 0")
+				logrus.Fatalf("--latency-model roofline requires --tp > 0. " +
+					"No default found in defaults.yaml for model=%s. " +
+					"Provide --tp explicitly", model)
 			}
 
 			// Warn if user also provided explicit beta coefficients — roofline replaces
@@ -317,10 +344,14 @@ var runCmd = &cobra.Command{
 		// --latency-model crossmodel: auto-resolve model config and load global coefficients
 		if backend == "crossmodel" {
 			if gpu == "" {
-				logrus.Fatalf("--latency-model crossmodel requires --hardware (GPU type)")
+				logrus.Fatalf("--latency-model crossmodel requires --hardware (GPU type). " +
+					"No default found in defaults.yaml for model=%s. " +
+					"Provide --hardware explicitly", model)
 			}
 			if tensorParallelism <= 0 {
-				logrus.Fatalf("--latency-model crossmodel requires --tp > 0")
+				logrus.Fatalf("--latency-model crossmodel requires --tp > 0. " +
+					"No default found in defaults.yaml for model=%s. " +
+					"Provide --tp explicitly", model)
 			}
 
 			// Resolve model config folder (same auto-fetch chain as roofline)
@@ -385,10 +416,14 @@ var runCmd = &cobra.Command{
 		// --latency-model trained-roofline: auto-resolve model config and load global coefficients
 		if backend == "trained-roofline" {
 			if gpu == "" {
-				logrus.Fatalf("--latency-model trained-roofline requires --hardware (GPU type)")
+				logrus.Fatalf("--latency-model trained-roofline requires --hardware (GPU type). " +
+					"No default found in defaults.yaml for model=%s. " +
+					"Provide --hardware explicitly", model)
 			}
 			if tensorParallelism <= 0 {
-				logrus.Fatalf("--latency-model trained-roofline requires --tp > 0")
+				logrus.Fatalf("--latency-model trained-roofline requires --tp > 0. " +
+					"No default found in defaults.yaml for model=%s. " +
+					"Provide --tp explicitly", model)
 			}
 
 			// Resolve model config folder (same auto-fetch chain as roofline/crossmodel)
@@ -454,31 +489,10 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		if !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
-			// GPU, TP, vLLM version configuration
-			hardware, tp, version := GetDefaultSpecs(model) // pick default config for tp, GPU, vllmVersion
-
-			// if tp args are missing, fall back to default
-			if tensorParallelism == 0 && tp > 0 {
-				logrus.Warnf("Finding default values of TP for model=%v\n", model)
-				logrus.Warnf("Using default tp=%v", tp)
-				tensorParallelism = tp
-			}
-
-			// if hardware args are missing, fall back to default
-			if gpu == "" && len(hardware) > 0 {
-				logrus.Warnf("Finding default values of hardware for model=%v\n", model)
-				logrus.Warnf("Using default GPU=%v", hardware)
-				gpu = hardware
-			}
-
-			// if vllm-version args are missing, fall back to default
-			if vllmVersion == "" && len(version) > 0 {
-				logrus.Warnf("Finding default values of vLLM version for model=%v\n", model)
-				logrus.Warnf("Using default vLLM version=%v", version)
-				vllmVersion = version
-			}
-
+		// Blackbox mode: load alpha/beta coefficients and KV blocks from defaults.yaml.
+		// Skipped for analytical backends (roofline, crossmodel, trained-roofline) which
+		// load their own coefficients in their respective blocks above.
+		if (backend == "" || backend == "blackbox") && !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") {
 			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 			alphaCoeffs, betaCoeffs = newAlpha, newBeta
 			if !cmd.Flags().Changed("total-kv-blocks") {
@@ -1109,7 +1123,7 @@ func init() {
 	runCmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline, crossmodel, trained-roofline")
+	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, crossmodel, trained-roofline")
 	runCmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
 
 	// GuideLLM-style distribution-based workload generation config

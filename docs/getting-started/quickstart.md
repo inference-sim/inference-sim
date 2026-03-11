@@ -8,30 +8,43 @@ Run your first BLIS simulation in 30 seconds.
 ./blis run --model qwen/qwen3-14b
 ```
 
-This runs 100 requests through a single inference instance using pre-trained coefficients for Qwen3 14B on an H100 GPU with TP=1.
+This runs 100 requests through a single inference instance using roofline mode (analytical estimation) for Qwen3 14B on an H100 GPU with TP=1. The model config is auto-fetched from HuggingFace on first use.
 
 ### Reading the Output
 
-The JSON output on stdout contains:
+BLIS prints deterministic JSON to stdout (diagnostic logs go to stderr). Pipe to `jq` for formatting:
 
-```json
-{
-  "ttft_mean_ms": 12.34,
-  "ttft_p99_ms": 45.67,
-  "e2e_mean_ms": 1234.56,
-  "e2e_p99_ms": 2345.67,
-  "itl_mean_ms": 8.91,
-  "responses_per_sec": 5.67,
-  "completed_requests": 100
-}
+```bash
+./blis run --model qwen/qwen3-14b | jq .
 ```
 
-| Metric | What It Measures |
-|--------|-----------------|
-| **TTFT** (Time To First Token) | Latency from request arrival to first output token — measures responsiveness |
-| **E2E** (End-to-End) | Total latency from arrival to final token — measures total request duration |
-| **ITL** (Inter-Token Latency) | Time between consecutive output tokens — measures streaming smoothness |
-| **responses_per_sec** | Throughput — requests completed per second |
+**Latency metrics** (all in milliseconds, with mean/p90/p95/p99 variants):
+
+| Field | What It Measures |
+|-------|-----------------|
+| `ttft_mean_ms`, `ttft_p99_ms` | **Time to First Token** — arrival to first output token. Measures responsiveness for interactive use. |
+| `e2e_mean_ms`, `e2e_p99_ms` | **End-to-End latency** — arrival to final token. Measures total request duration. |
+| `itl_mean_ms`, `itl_p99_ms` | **Inter-Token Latency** — time between consecutive output tokens. Measures streaming smoothness. |
+| `scheduling_delay_p99_ms` | Time from arrival to entering the running batch (includes queueing). |
+
+**Throughput and accounting:**
+
+| Field | What It Measures |
+|-------|-----------------|
+| `responses_per_sec` | Request throughput — completed requests per simulated second. |
+| `tokens_per_sec` | Output token throughput. |
+| `completed_requests` | Requests that finished within the simulation horizon. |
+| `injected_requests` | Total requests that entered the simulator (= completed + still_queued + still_running + dropped). |
+| `total_input_tokens`, `total_output_tokens` | Aggregate token counts across all completed requests. |
+
+**Health indicators:**
+
+| Field | What It Measures |
+|-------|-----------------|
+| `preemption_count` | KV cache evictions — indicates GPU memory pressure. Non-zero means the batch is too large for available KV blocks. |
+| `dropped_unservable` | Requests rejected because input tokens exceed KV cache capacity or `--max-model-len`. |
+| `kv_allocation_failures` | Failed KV block allocations (triggers preemption). |
+| `still_queued`, `still_running` | Requests not yet completed at simulation end — non-zero means the horizon was reached before all requests finished. |
 
 ## Cluster Mode
 
