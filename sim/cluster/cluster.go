@@ -35,6 +35,14 @@ type ClusterSimulator struct {
 	inFlightRequests        map[string]int              // instance ID → dispatched-but-not-completed count (#463)
 	poolMembership          map[string]PoolRole         // instance ID → pool role (nil when disaggregation disabled)
 	disaggregationDecider   sim.DisaggregationDecider   // PD disaggregation decider (nil when disabled)
+
+	// PD disaggregation state (PR2)
+	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
+	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
+	transfersInitiated        int
+	transfersCompleted        int
+	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
+	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -94,6 +102,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		}
 		cs.poolMembership = BuildPoolMembership(instances, config.PrefillInstances, config.DecodeInstances)
 		cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
+		cs.parentRequests = make(map[string]*ParentRequest)
+		cs.pendingPrefillCompletions = make(map[string]string)
+
+		// Per-pool routing policies (use separate RNG partitions to avoid fragile coupling)
+		if len(config.PrefillScorerConfigs) > 0 {
+			cs.prefillRoutingPolicy = sim.NewRoutingPolicy("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"))
+		}
+		if len(config.DecodeScorerConfigs) > 0 {
+			cs.decodeRoutingPolicy = sim.NewRoutingPolicy("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"))
+		}
+
 		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
 			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
 	}
@@ -197,6 +216,11 @@ func (c *ClusterSimulator) Run() error {
 						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore)
 					c.inFlightRequests[instID] = 0
 				}
+
+				// PD disaggregation: detect prefill sub-request completions and schedule KV transfer
+				if c.poolsConfigured() && c.poolMembership[instID] == PoolRolePrefill {
+					c.detectPrefillCompletions(inst)
+				}
 			}
 		}
 	}
@@ -242,6 +266,42 @@ func (c *ClusterSimulator) nextSeqID() int64 {
 	id := c.seqCounter
 	c.seqCounter++
 	return id
+}
+
+// buildPoolFilteredSnapshots constructs routing snapshots filtered to a specific pool role.
+// Preserves instance order from c.instances for determinism (R2).
+func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
+	allSnapshots := make([]sim.RoutingSnapshot, len(c.instances))
+	for i, inst := range c.instances {
+		snap := c.snapshotProvider.Snapshot(inst.ID(), c.clock)
+		snap.InFlightRequests = c.inFlightRequests[string(inst.ID())]
+		allSnapshots[i] = snap
+	}
+	return FilterSnapshotsByPool(allSnapshots, c.poolMembership, role)
+}
+
+// detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance
+// and schedules KV transfer events for each.
+func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
+	for subReqID, parentID := range c.pendingPrefillCompletions {
+		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
+			parent := c.parentRequests[parentID]
+			if parent == nil {
+				continue
+			}
+			parent.PrefillCompleteTime = c.clock
+			delete(c.pendingPrefillCompletions, subReqID)
+
+			// Schedule KV transfer
+			heap.Push(&c.clusterEvents, clusterEventEntry{
+				event: &KVTransferStartedEvent{
+					time:      c.clock,
+					parentReq: parent,
+				},
+				seqID: c.nextSeqID(),
+			})
+		}
+	}
 }
 
 // Clock returns the cluster's current simulation clock.
