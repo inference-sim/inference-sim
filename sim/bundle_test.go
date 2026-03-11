@@ -377,8 +377,9 @@ priority:
 	assert.Nil(t, bundle.Priority.Epsilon)
 }
 
-func TestLoadPolicyBundle_EpsilonZeroIsValid(t *testing.T) {
-	// R9: *float64 distinguishes zero from unset
+func TestLoadPolicyBundle_EpsilonZeroIsRejected(t *testing.T) {
+	// Epsilon=0 produces NaN (0/0) for unknown SLO classes with DefaultWeight=0.
+	// Validation must reject it.
 	yamlContent := `
 priority:
   policy: deadline-aware
@@ -387,12 +388,14 @@ priority:
 	path := writeTempYAML(t, yamlContent)
 	bundle, err := LoadPolicyBundle(path)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected parse error: %v", err)
 	}
 
 	assert.NotNil(t, bundle.Priority.Epsilon)
 	assert.Equal(t, 0.0, *bundle.Priority.Epsilon)
-	assert.NoError(t, bundle.Validate())
+	err = bundle.Validate()
+	assert.Error(t, err, "epsilon=0 should be rejected by validation")
+	assert.Contains(t, err.Error(), "epsilon must be > 0")
 }
 
 func TestPolicyBundle_Validate_InvalidPriorityParams(t *testing.T) {

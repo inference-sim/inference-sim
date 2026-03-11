@@ -143,6 +143,9 @@ func (b *PolicyBundle) Validate() error {
 	if err := validateFloat("epsilon", b.Priority.Epsilon); err != nil {
 		return err
 	}
+	if b.Priority.Epsilon != nil && *b.Priority.Epsilon <= 0 {
+		return fmt.Errorf("priority epsilon must be > 0, got %f", *b.Priority.Epsilon)
+	}
 	// Validate class_weights: all values must be finite
 	for cls, w := range b.Priority.ClassWeights {
 		if math.IsNaN(w) || math.IsInf(w, 0) {

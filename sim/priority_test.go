@@ -448,8 +448,10 @@ func TestNewPriorityPolicyFromConfig_FallsBackToNameFactory(t *testing.T) {
 	}
 }
 
-func TestNewPriorityPolicyFromConfig_EpsilonZero(t *testing.T) {
-	// R9: zero epsilon is a valid value (not "unset")
+func TestNewPriorityPolicyFromConfig_EpsilonZero_ClampedToFloor(t *testing.T) {
+	// Epsilon=0 is now clamped to 1e-9 in Compute() to prevent NaN (0/0).
+	// This test verifies the defensive floor produces a finite (very large) value
+	// instead of +Inf or NaN.
 	eps := 0.0
 	cfg := PriorityConfig{
 		Policy:  "deadline-aware",
@@ -458,14 +460,14 @@ func TestNewPriorityPolicyFromConfig_EpsilonZero(t *testing.T) {
 
 	policy := NewPriorityPolicyFromConfig(cfg)
 
-	// With epsilon=0, at exactly the deadline, denom=0.0, eps=0.0:
-	// the clamp condition (denom < eps) is false (0.0 < 0.0 is false),
-	// so urgency = weight / 0.0 = +Inf.
-	// This confirms R9: zero epsilon is used (not treated as "unset" = 0.01).
 	req := &Request{ID: "r1", ArrivalTime: 0, SLOClass: "critical"}
 	got := policy.Compute(req, 100_000) // exactly at default critical deadline
-	if !math.IsInf(got, 1) {
-		t.Errorf("expected +Inf urgency with epsilon=0 at deadline, got %f", got)
+	// With epsilon=0, the floor clamps to 1e-9, so urgency = 10.0 / 1e-9 = 1e10
+	if math.IsNaN(got) || math.IsInf(got, 0) {
+		t.Errorf("expected finite urgency with epsilon=0 (clamped to 1e-9), got %f", got)
+	}
+	if got <= 0 {
+		t.Errorf("expected positive urgency, got %f", got)
 	}
 }
 

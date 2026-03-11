@@ -86,8 +86,15 @@ func (d *DeadlineAwarePriority) Compute(req *Request, clock int64) float64 {
 	elapsed := float64(clock - req.ArrivalTime)
 	fraction := elapsed / float64(deadline)
 	denominator := 1.0 - fraction
-	if denominator < d.Epsilon {
-		denominator = d.Epsilon
+	// Clamp denominator to at least epsilon (prevents division by zero).
+	// Use max(epsilon, 1e-9) as a floor to prevent NaN when both weight
+	// and epsilon are 0 (e.g., unknown SLO class with DefaultWeight=0).
+	minDenom := d.Epsilon
+	if minDenom <= 0 {
+		minDenom = 1e-9
+	}
+	if denominator < minDenom {
+		denominator = minDenom
 	}
 	return weight / denominator
 }

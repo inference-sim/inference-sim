@@ -166,9 +166,16 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			lowest.ProgressIndex = 0
 			ctx.KVCache.ReleaseKVBlocks(lowest)
 			delete(ctx.ComputedTokens, lowest.ID)
-			// Enqueue at back (not front) so the high-priority waiting request
-			// that triggered this preemption gets scheduled first in the standard
-			// Phase 2 path that follows.
+			// Enqueue at back: the queue is already priority-sorted at step start,
+			// so the low-priority evicted request belongs behind the waiting
+			// high-priority request that triggered this preemption.
+			// Note: KV preemption uses PrependFront (different intent: immediate
+			// rescheduling after memory-driven eviction). Priority preemption
+			// intentionally sends to back because the request IS low-priority.
+			// Starvation is bounded by the circuit breaker (R19) limiting
+			// per-step preemptions, and by the queue's priority reordering
+			// at each step start giving the evicted request higher age-based
+			// priority over time.
 			ctx.WaitQ.Enqueue(lowest)
 
 			priorityPreemptionsThisStep++
@@ -210,8 +217,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 }
 
 // preemptForTokens tries to allocate numNewTokens of KV blocks for req,
-// evicting from the batch if needed. When SLOAwareKVEviction is enabled,
-// evicts the lowest-priority running request; otherwise evicts from the tail.
+// evicting from the batch tail if needed. When SLOAwareKVEviction is enabled,
+// evicts the lowest-priority request from the UNVISITED portion of the batch
+// (tail region, index >= current Phase 1 position) to avoid skipping requests
+// that the swap-to-tail-then-truncate would move behind the iterator.
 // Returns false if allocation is impossible (cache too small or request was
 // itself evicted).
 func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64) bool {
@@ -226,16 +235,42 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 
 			result.PreemptionHappened = true
 
-			// Determine eviction target: lowest-priority (SLO-aware) or tail (default)
+			// Determine eviction target. Always evict from the TAIL region
+			// (unvisited requests) to preserve Phase 1 iteration invariant.
+			// With SLO-aware eviction, find lowest priority among unvisited
+			// requests (tail portion); without, evict the absolute tail.
 			evictIdx := len(result.RunningBatch.Requests) - 1
-			if ctx.SLOAwareKVEviction {
-				evictIdx = findLowestPriorityRunning(result.RunningBatch.Requests)
+			if ctx.SLOAwareKVEviction && len(result.RunningBatch.Requests) > 1 {
+				// Find the request being processed (req) to determine the
+				// visited boundary. Requests at indices > reqPos are unvisited.
+				reqPos := -1
+				for i, r := range result.RunningBatch.Requests {
+					if r == req {
+						reqPos = i
+						break
+					}
+				}
+				// Search only among unvisited requests (index > reqPos).
+				// If reqPos is the last element, fall back to tail eviction.
+				searchStart := reqPos + 1
+				if searchStart < len(result.RunningBatch.Requests) {
+					evictIdx = searchStart
+					for i := searchStart + 1; i < len(result.RunningBatch.Requests); i++ {
+						if result.RunningBatch.Requests[i].Priority < result.RunningBatch.Requests[evictIdx].Priority {
+							evictIdx = i
+						}
+					}
+				}
+				// else: only the current request remains after it, fall back to tail
 			}
 
 			preemptedRequest := result.RunningBatch.Requests[evictIdx]
 			logrus.Warnf("[tick %07d] preemption: evicting %s (pri=%.1f) to make room", ctx.Now, preemptedRequest.ID, preemptedRequest.Priority)
 
-			// Remove by swap-to-tail-then-truncate (preserves O(1) removal)
+			// Remove by swap-to-tail-then-truncate (preserves O(1) removal).
+			// Safe because evictIdx >= reqPos+1 (unvisited region), so the
+			// swapped-in request from lastIdx is also in the unvisited region
+			// and will be visited by the Phase 1 iterator.
 			lastIdx := len(result.RunningBatch.Requests) - 1
 			if evictIdx != lastIdx {
 				result.RunningBatch.Requests[evictIdx] = result.RunningBatch.Requests[lastIdx]
