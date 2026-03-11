@@ -229,12 +229,25 @@ var runCmd = &cobra.Command{
 		// library level (factory case "", "roofline": dispatch).
 		backend := latencyModelBackend
 
+		// Alpha and beta coefficients must be provided together or not at all.
+		// Alpha controls queueing time, beta controls step time — one without
+		// the other produces nonsensical results.
+		alphaChanged := cmd.Flags().Changed("alpha-coeffs")
+		betaChanged := cmd.Flags().Changed("beta-coeffs")
+		if alphaChanged != betaChanged {
+			if alphaChanged {
+				logrus.Fatalf("--alpha-coeffs requires --beta-coeffs. " +
+					"Both coefficient sets are needed for blackbox mode")
+			}
+			logrus.Fatalf("--beta-coeffs requires --alpha-coeffs. " +
+				"Both coefficient sets are needed for blackbox mode")
+		}
+
 		// If both alpha and beta coefficients are explicitly provided but
 		// --latency-model was not, auto-switch to blackbox. Providing both
 		// coefficient sets is a clear signal the user wants trained blackbox
 		// estimation, not analytical roofline.
-		if !cmd.Flags().Changed("latency-model") &&
-			cmd.Flags().Changed("alpha-coeffs") && cmd.Flags().Changed("beta-coeffs") {
+		if !cmd.Flags().Changed("latency-model") && alphaChanged && betaChanged {
 			backend = "blackbox"
 			logrus.Infof("--alpha-coeffs and --beta-coeffs provided; using blackbox mode")
 		}
@@ -290,19 +303,14 @@ var runCmd = &cobra.Command{
 					"Provide --tp explicitly", model)
 			}
 
-			// Hard error if user explicitly requested roofline AND provided beta coefficients.
+			// Hard error if user explicitly requested roofline AND provided coefficients.
 			// Roofline computes step time analytically — beta coefficients are meaningless.
-			// (If user wants blackbox behavior, they should use --latency-model blackbox.)
-			if cmd.Flags().Changed("latency-model") && cmd.Flags().Changed("beta-coeffs") {
-				logrus.Fatalf("--beta-coeffs cannot be used with --latency-model roofline. " +
+			// Note: alphaChanged == betaChanged is guaranteed by the "both or neither"
+			// check above, so checking betaChanged implies both were provided.
+			if cmd.Flags().Changed("latency-model") && betaChanged {
+				logrus.Fatalf("--alpha-coeffs/--beta-coeffs cannot be used with --latency-model roofline. " +
 					"Roofline computes step time analytically. " +
 					"Use --latency-model blackbox if you want coefficient-based estimation")
-			}
-			// Warn (non-fatal) if beta-coeffs were provided without explicit --latency-model.
-			// The default is roofline, so beta coefficients will be silently ignored.
-			if !cmd.Flags().Changed("latency-model") && cmd.Flags().Changed("beta-coeffs") {
-				logrus.Warnf("--beta-coeffs provided but default mode is roofline (ignores beta coefficients). " +
-					"Use --latency-model blackbox to use coefficient-based step time estimation")
 			}
 
 			// Log when explicit overrides interact with --latency-model roofline
