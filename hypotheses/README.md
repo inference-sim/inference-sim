@@ -67,6 +67,9 @@ FINDINGS.md files in individual hypothesis directories may reference old file pa
 | H27 | Performance-regime | Chunked prefill (threshold=256) reduces short-request TTFT p99 by >=30% in bimodal workloads | **Confirmed** | 46-58% TTFT p99 reduction (avg 51.9%); chunking splits 2048-token prefills into 8 steps of ~11ms vs one ~43ms step; tradeoff: 60-69% TTFT increase for long requests |
 | H28 | Performance-regime | Chunked prefill (threshold=512) improves mean ITL by >15% for concurrent decode requests | **Refuted** | ITL improvement is effectively zero (-0.5%); decode-dominated step count (~255 steps) drowns out the rare prefill-co-batched steps; unexpected -13.3% short-request TTFT improvement |
 | H29 | Structural model | Stale routing snapshots (100ms vs 1ms) degrade TTFT p99 by >=20% for kv-utilization scorer | **Confirmed** | +242% to +548% TTFT p99 degradation; queue-depth negative control shows 0.0% change (Immediate mode); composite scorer mitigates ~99% of effect; dose-response monotonic with safe zone <5ms |
+| H-Deadline-Urgency | Cross-policy | Deadline-aware hyperbolic urgency reduces critical TTFT P99 >15% over static class weights | **Primary REFUTED** | Treatment ≡ B2 (static class weights) at all operating points; 92.6% improvement over age-only comes from class awareness alone, not urgency curve. S17: static weights are minimal sufficient mechanism. S18: time-dependent priority ineffective in step-quantized DES. |
+| H-SLO-Admission | Cross-policy | SLO-gated admission (reject sheddable under load) reduces critical TTFT P99 >20% over static class weights | **Partially confirmed** | Cluster P99 improved -15.6% (non-zero-sum, S8 confirmed), but critical P99 unchanged — dominated by multi-turn context accumulation cost. S19: admission targets cluster metrics, not per-class P99. S20: context accumulation dominates tail latency. |
+| H-Priority-Preemption | Cross-policy | Priority-based batch preemption (evict lowest-priority running request for high-priority waiting request) reduces critical TTFT P99 >50% | **Partially confirmed** | -20.9% critical TTFT P99 improvement — first mechanism across 3 Strategy Evolution iterations to beat static class weights. S21: batch-level preemption is the only lever that beats static class weights. S22: preemption leverage bounded by preemption-to-traffic ratio. |
 
 ## Running Experiments
 
@@ -90,7 +93,7 @@ Scripts are self-contained — they build the binary, run all experiment variant
 | **Robustness/failure-mode** | H5, H14, H-Overload, H-Overload-KV, H21, H22, H24 | — | Family complete |
 | **Performance-regime** | H7, H8, H11, H-Reasoning-KV, H27, H28 | — | Family complete |
 | **Workload/arrival** | H-Arrival, H16, H20 | — | Family complete |
-| **Cross-policy comparative** | Prefix-Affinity, H1-SJF, H2, H4, H6, H15, H17, H23 | H18 | 1 remaining |
+| **Cross-policy comparative** | Prefix-Affinity, H1-SJF, H2, H4, H6, H15, H17, H23, H-Deadline-Urgency, H-SLO-Admission, H-Priority-Preemption | H18 | 1 remaining |
 
 ## Hypothesis Tiers (priority from research.md)
 

@@ -295,6 +295,174 @@ func writeTempYAML(t *testing.T, content string) string {
 	return path
 }
 
+// --- Extended PriorityConfig tests ---
+
+func TestLoadPolicyBundle_DeadlineAwareWithParams(t *testing.T) {
+	// GIVEN a YAML bundle with deadline-aware priority and custom parameters
+	yamlContent := `
+priority:
+  policy: deadline-aware
+  class_weights:
+    critical: 20.0
+    standard: 8.0
+    sheddable: 2.0
+  deadlines:
+    critical: 50000
+    standard: 250000
+    sheddable: 1000000
+  epsilon: 0.05
+scheduler: priority-fcfs
+`
+	path := writeTempYAML(t, yamlContent)
+	bundle, err := LoadPolicyBundle(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// THEN PriorityConfig has the extended fields populated
+	assert.Equal(t, "deadline-aware", bundle.Priority.Policy)
+	assert.Equal(t, 20.0, bundle.Priority.ClassWeights["critical"])
+	assert.Equal(t, 8.0, bundle.Priority.ClassWeights["standard"])
+	assert.Equal(t, 2.0, bundle.Priority.ClassWeights["sheddable"])
+	assert.Equal(t, int64(50000), bundle.Priority.Deadlines["critical"])
+	assert.Equal(t, int64(250000), bundle.Priority.Deadlines["standard"])
+	assert.Equal(t, int64(1000000), bundle.Priority.Deadlines["sheddable"])
+	assert.NotNil(t, bundle.Priority.Epsilon)
+	assert.Equal(t, 0.05, *bundle.Priority.Epsilon)
+
+	// THEN validation passes
+	assert.NoError(t, bundle.Validate())
+}
+
+func TestLoadPolicyBundle_StaticClassWeightWithParams(t *testing.T) {
+	// GIVEN a YAML bundle with static-class-weight and custom weights
+	yamlContent := `
+priority:
+  policy: static-class-weight
+  class_weights:
+    critical: 100.0
+    batch: 0.5
+scheduler: priority-fcfs
+`
+	path := writeTempYAML(t, yamlContent)
+	bundle, err := LoadPolicyBundle(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assert.Equal(t, "static-class-weight", bundle.Priority.Policy)
+	assert.Equal(t, 100.0, bundle.Priority.ClassWeights["critical"])
+	assert.Equal(t, 0.5, bundle.Priority.ClassWeights["batch"])
+	assert.Nil(t, bundle.Priority.Deadlines)
+	assert.Nil(t, bundle.Priority.Epsilon)
+	assert.NoError(t, bundle.Validate())
+}
+
+func TestLoadPolicyBundle_PriorityParamsNilWhenAbsent(t *testing.T) {
+	// GIVEN a YAML bundle with only policy name (no extended fields)
+	yamlContent := `
+priority:
+  policy: deadline-aware
+`
+	path := writeTempYAML(t, yamlContent)
+	bundle, err := LoadPolicyBundle(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// THEN extended fields are nil (factory will use defaults)
+	assert.Equal(t, "deadline-aware", bundle.Priority.Policy)
+	assert.Nil(t, bundle.Priority.ClassWeights)
+	assert.Nil(t, bundle.Priority.Deadlines)
+	assert.Nil(t, bundle.Priority.Epsilon)
+}
+
+func TestLoadPolicyBundle_EpsilonZeroIsRejected(t *testing.T) {
+	// Epsilon=0 produces NaN (0/0) for unknown SLO classes with DefaultWeight=0.
+	// Validation must reject it.
+	yamlContent := `
+priority:
+  policy: deadline-aware
+  epsilon: 0.0
+`
+	path := writeTempYAML(t, yamlContent)
+	bundle, err := LoadPolicyBundle(path)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	assert.NotNil(t, bundle.Priority.Epsilon)
+	assert.Equal(t, 0.0, *bundle.Priority.Epsilon)
+	err = bundle.Validate()
+	assert.Error(t, err, "epsilon=0 should be rejected by validation")
+	assert.Contains(t, err.Error(), "epsilon must be > 0")
+}
+
+func TestPolicyBundle_Validate_InvalidPriorityParams(t *testing.T) {
+	// R3: Validate numeric parameters
+	tests := []struct {
+		name   string
+		bundle PolicyBundle
+		errMsg string
+	}{
+		{
+			name: "NaN class weight",
+			bundle: PolicyBundle{Priority: PriorityConfig{
+				Policy:       "deadline-aware",
+				ClassWeights: map[string]float64{"critical": math.NaN()},
+			}},
+			errMsg: "must be a finite number",
+		},
+		{
+			name: "Inf class weight",
+			bundle: PolicyBundle{Priority: PriorityConfig{
+				Policy:       "deadline-aware",
+				ClassWeights: map[string]float64{"critical": math.Inf(1)},
+			}},
+			errMsg: "must be a finite number",
+		},
+		{
+			name: "zero deadline",
+			bundle: PolicyBundle{Priority: PriorityConfig{
+				Policy:    "deadline-aware",
+				Deadlines: map[string]int64{"critical": 0},
+			}},
+			errMsg: "must be > 0",
+		},
+		{
+			name: "negative deadline",
+			bundle: PolicyBundle{Priority: PriorityConfig{
+				Policy:    "deadline-aware",
+				Deadlines: map[string]int64{"critical": -100},
+			}},
+			errMsg: "must be > 0",
+		},
+		{
+			name: "NaN epsilon",
+			bundle: PolicyBundle{Priority: PriorityConfig{
+				Policy:  "deadline-aware",
+				Epsilon: float64Ptr(math.NaN()),
+			}},
+			errMsg: "must be a finite number",
+		},
+		{
+			name: "negative epsilon",
+			bundle: PolicyBundle{Priority: PriorityConfig{
+				Policy:  "deadline-aware",
+				Epsilon: float64Ptr(-0.01),
+			}},
+			errMsg: "must be non-negative",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.bundle.Validate()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tc.errMsg)
+		})
+	}
+}
+
 func TestValidAdmissionPolicyNames_ReturnsAllNames(t *testing.T) {
 	// BC-7: Names derived from authoritative map
 	names := ValidAdmissionPolicyNames()

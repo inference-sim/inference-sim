@@ -38,7 +38,10 @@ var (
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
 	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
-	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
+	longPrefillTokenThreshold    int64   // Max length of prefill beyond which chunked prefill is triggered
+	priorityPreemptionMargin          float64 // Priority difference threshold for preempting running requests (0 = disabled)
+	maxPriorityPreemptionsPerStep int     // Max priority preemptions per step (circuit breaker, R19). 0 = default (3).
+	sloAwareKVEviction            bool    // When true, KV preemption targets lowest-priority request instead of tail
 	rate                      float64   // Requests arrival per second
 	numRequests               int       // Number of requests
 	prefixTokens              int       // Prefix Token Count
@@ -781,6 +784,12 @@ var runCmd = &cobra.Command{
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
 		}
+		if priorityPreemptionMargin < 0 {
+			logrus.Fatalf("--priority-preemption-margin must be >= 0, got %f", priorityPreemptionMargin)
+		}
+		if maxPriorityPreemptionsPerStep < 0 {
+			logrus.Fatalf("--max-priority-preemptions-per-step must be >= 0, got %d", maxPriorityPreemptionsPerStep)
+		}
 		// Changed() guard: unlike peer flags (default always positive), --horizon defaults
 		// to math.MaxInt64 which would fail <= 0. Only validate when user explicitly sets it.
 		if cmd.Flags().Changed("horizon") && simulationHorizon <= 0 {
@@ -789,6 +798,7 @@ var runCmd = &cobra.Command{
 
 		// Load policy bundle if specified (BC-6: CLI flags override YAML values)
 		var bundleScorerConfigs []sim.ScorerConfig // captured for use in weighted routing setup
+		var priorityOverride sim.PriorityPolicy    // pre-constructed from bundle params (nil = use factory)
 		if policyConfigPath != "" {
 			bundle, err := sim.LoadPolicyBundle(policyConfigPath)
 			if err != nil {
@@ -820,6 +830,11 @@ var runCmd = &cobra.Command{
 			if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
 				scheduler = bundle.Scheduler
 			}
+			// Pre-construct priority policy from bundle params when extended fields are present.
+			// This allows class_weights, deadlines, and epsilon to flow through to the simulator.
+			if bundle.Priority.ClassWeights != nil || bundle.Priority.Deadlines != nil || bundle.Priority.Epsilon != nil {
+				priorityOverride = sim.NewPriorityPolicyFromConfig(bundle.Priority)
+			}
 		}
 
 		// Validate policy names (catches CLI typos before they become panics)
@@ -830,6 +845,12 @@ var runCmd = &cobra.Command{
 			}
 			if tokenBucketRefillRate <= 0 || math.IsNaN(tokenBucketRefillRate) || math.IsInf(tokenBucketRefillRate, 0) {
 				logrus.Fatalf("--token-bucket-refill-rate must be a finite value > 0, got %v", tokenBucketRefillRate)
+			}
+		}
+		// SLO-gated reuses token-bucket-capacity as queue threshold (R3: validate when policy is selected)
+		if admissionPolicy == "slo-gated" {
+			if tokenBucketCapacity <= 0 || math.IsNaN(tokenBucketCapacity) || math.IsInf(tokenBucketCapacity, 0) {
+				logrus.Fatalf("--token-bucket-capacity (queue threshold for slo-gated) must be a finite value > 0, got %v", tokenBucketCapacity)
 			}
 		}
 
@@ -916,6 +937,10 @@ var runCmd = &cobra.Command{
 			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
 				tokenBucketCapacity, tokenBucketRefillRate)
 		}
+		if admissionPolicy == "slo-gated" {
+			logrus.Infof("SLO-gated admission: queue-threshold=%.0f (protected: critical, standard)",
+				tokenBucketCapacity)
+		}
 
 		// Log configuration after all config sources (CLI, workload spec, policy bundle) are resolved
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
@@ -930,10 +955,10 @@ var runCmd = &cobra.Command{
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
+				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold, priorityPreemptionMargin, maxPriorityPreemptionsPerStep, sloAwareKVEviction),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
+				PolicyConfig:        sim.NewPolicyConfigWithOverride(priorityPolicy, scheduler, priorityOverride),
 			},
 			NumInstances:            numInstances,
 			AdmissionPolicy:         admissionPolicy,
@@ -1010,6 +1035,15 @@ var runCmd = &cobra.Command{
 
 		// Print KV cache metrics if any nonzero (BC-1, BC-2)
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
+
+		// Print batch occupancy (GPU utilization proxy)
+		aggM := cs.AggregatedMetrics()
+		if aggM.TotalSteps > 0 && aggM.MaxRunningReqs > 0 {
+			occupancy := float64(aggM.TotalBatchSlots) / float64(aggM.TotalSteps*aggM.MaxRunningReqs)
+			fmt.Println("=== Batch Occupancy ===")
+			fmt.Printf("Avg Batch Occupancy: %.4f\n", occupancy)
+			fmt.Printf("Total Steps: %d\n", aggM.TotalSteps)
+		}
 
 		// Print per-SLO metrics if multiple SLO classes present (BC-3, BC-4, BC-10)
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
@@ -1103,6 +1137,9 @@ func init() {
 	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
 	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
+	runCmd.Flags().Float64Var(&priorityPreemptionMargin, "priority-preemption-margin", 0, "Priority difference threshold for preempting running requests (0 = disabled)")
+	runCmd.Flags().IntVar(&maxPriorityPreemptionsPerStep, "max-priority-preemptions-per-step", 0, "Max priority preemptions per step (0 = default of 3, R19 circuit breaker)")
+	runCmd.Flags().BoolVar(&sloAwareKVEviction, "slo-aware-kv-eviction", false, "When true, KV preemption targets lowest-priority running request instead of tail")
 
 	// BLIS model configs
 	runCmd.Flags().StringVar(&model, "model", "", "LLM name")
@@ -1129,7 +1166,7 @@ func init() {
 	runCmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
 
 	// Online routing pipeline config
-	runCmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket, reject-all")
+	runCmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket, slo-gated, reject-all")
 	runCmd.Flags().Int64Var(&admissionLatency, "admission-latency", 0, "Admission latency in microseconds")
 	runCmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
 	runCmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")

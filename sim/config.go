@@ -30,16 +30,21 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 
 // BatchConfig groups batch formation parameters.
 type BatchConfig struct {
-	MaxRunningReqs            int64 // max requests in RunningBatch
-	MaxScheduledTokens        int64 // max total new tokens across all requests in RunningBatch
-	LongPrefillTokenThreshold int64 // threshold for long prefill chunking
+	MaxRunningReqs                int64   // max requests in RunningBatch
+	MaxScheduledTokens            int64   // max total new tokens across all requests in RunningBatch
+	LongPrefillTokenThreshold     int64   // threshold for long prefill chunking
+	PriorityPreemptionMargin      float64 // if > 0, enables priority-based preemption in Phase 2: a waiting request preempts the lowest-priority running request when priority difference exceeds this margin. 0 = disabled (default).
+	MaxPriorityPreemptionsPerStep int     // circuit breaker: max priority preemptions per step (R19). 0 = use default (3).
+	SLOAwareKVEviction            bool    // if true, KV preemption targets lowest-priority running request instead of tail (default: false)
 }
 
 // NewBatchConfig creates a BatchConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
 // Panics on invalid values: MaxRunningReqs and MaxScheduledTokens must be > 0,
-// LongPrefillTokenThreshold must be >= 0 (0 means disabled).
-func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64) BatchConfig {
+// LongPrefillTokenThreshold must be >= 0 (0 means disabled),
+// PriorityPreemptionMargin must be >= 0 (0 means disabled),
+// MaxPriorityPreemptionsPerStep must be >= 0 (0 means use default of 3).
+func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64, priorityPreemptionMargin float64, maxPriorityPreemptionsPerStep int, sloAwareKVEviction bool) BatchConfig {
 	if maxRunningReqs <= 0 {
 		panic(fmt.Sprintf("NewBatchConfig: MaxRunningReqs must be > 0, got %d", maxRunningReqs))
 	}
@@ -49,10 +54,19 @@ func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshol
 	if longPrefillTokenThreshold < 0 {
 		panic(fmt.Sprintf("NewBatchConfig: LongPrefillTokenThreshold must be >= 0, got %d", longPrefillTokenThreshold))
 	}
+	if priorityPreemptionMargin < 0 {
+		panic(fmt.Sprintf("NewBatchConfig: PriorityPreemptionMargin must be >= 0, got %f", priorityPreemptionMargin))
+	}
+	if maxPriorityPreemptionsPerStep < 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxPriorityPreemptionsPerStep must be >= 0, got %d", maxPriorityPreemptionsPerStep))
+	}
 	return BatchConfig{
-		MaxRunningReqs:            maxRunningReqs,
-		MaxScheduledTokens:        maxScheduledTokens,
-		LongPrefillTokenThreshold: longPrefillTokenThreshold,
+		MaxRunningReqs:                maxRunningReqs,
+		MaxScheduledTokens:            maxScheduledTokens,
+		LongPrefillTokenThreshold:     longPrefillTokenThreshold,
+		PriorityPreemptionMargin:      priorityPreemptionMargin,
+		MaxPriorityPreemptionsPerStep: maxPriorityPreemptionsPerStep,
+		SLOAwareKVEviction:            sloAwareKVEviction,
 	}
 }
 
@@ -105,6 +119,11 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 type PolicyConfig struct {
 	PriorityPolicy string // "constant" (default) or "slo-based"
 	Scheduler      string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+
+	// PriorityOverride, if non-nil, is used directly by NewSimulator instead
+	// of constructing a policy from PriorityPolicy name via NewPriorityPolicy.
+	// This allows the CLI to pre-construct a parameterized policy from a YAML bundle.
+	PriorityOverride PriorityPolicy
 }
 
 // NewPolicyConfig creates a PolicyConfig with all fields explicitly set.
@@ -113,6 +132,16 @@ func NewPolicyConfig(priorityPolicy, scheduler string) PolicyConfig {
 	return PolicyConfig{
 		PriorityPolicy: priorityPolicy,
 		Scheduler:      scheduler,
+	}
+}
+
+// NewPolicyConfigWithOverride creates a PolicyConfig with a pre-constructed priority policy.
+// When PriorityOverride is set, NewSimulator uses it directly instead of the factory.
+func NewPolicyConfigWithOverride(priorityPolicy, scheduler string, override PriorityPolicy) PolicyConfig {
+	return PolicyConfig{
+		PriorityPolicy:   priorityPolicy,
+		Scheduler:        scheduler,
+		PriorityOverride: override,
 	}
 }
 

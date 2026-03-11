@@ -35,8 +35,14 @@ type RoutingConfig struct {
 }
 
 // PriorityConfig holds priority policy configuration.
+// ClassWeights and Deadlines are optional maps that parameterize
+// the "static-class-weight" and "deadline-aware" policies.
+// Epsilon uses *float64 per R9 (zero is a valid user value).
 type PriorityConfig struct {
-	Policy string `yaml:"policy"`
+	Policy       string             `yaml:"policy"`
+	ClassWeights map[string]float64 `yaml:"class_weights,omitempty"`
+	Deadlines    map[string]int64   `yaml:"deadlines,omitempty"`
+	Epsilon      *float64           `yaml:"epsilon,omitempty"`
 }
 
 // LoadPolicyBundle reads and parses a YAML policy configuration file.
@@ -58,9 +64,9 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 // Valid policy name registries. Unexported to prevent external mutation.
 // Used by Validate(), factory functions, and ValidatePolicyName().
 var (
-	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true}
+	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "slo-gated": true}
 	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
-	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
+	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true, "static-class-weight": true, "deadline-aware": true}
 	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
 	validLatencyBackends   = map[string]bool{"": true, "blackbox": true, "roofline": true, "crossmodel": true, "trained-roofline": true}
 )
@@ -132,6 +138,25 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if err := validateFloat("token_bucket_refill_rate", b.Admission.TokenBucketRefillRate); err != nil {
 		return err
+	}
+	// Validate priority config parameters (R3: validate all numeric parameters)
+	if err := validateFloat("epsilon", b.Priority.Epsilon); err != nil {
+		return err
+	}
+	if b.Priority.Epsilon != nil && *b.Priority.Epsilon <= 0 {
+		return fmt.Errorf("priority epsilon must be > 0, got %f", *b.Priority.Epsilon)
+	}
+	// Validate class_weights: all values must be finite
+	for cls, w := range b.Priority.ClassWeights {
+		if math.IsNaN(w) || math.IsInf(w, 0) {
+			return fmt.Errorf("priority class_weights[%q]: must be a finite number, got %v", cls, w)
+		}
+	}
+	// Validate deadlines: all values must be positive
+	for cls, d := range b.Priority.Deadlines {
+		if d <= 0 {
+			return fmt.Errorf("priority deadlines[%q]: must be > 0, got %d", cls, d)
+		}
 	}
 	// Validate scorer configs if present
 	scorerSeen := make(map[string]bool, len(b.Routing.Scorers))

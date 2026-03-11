@@ -13,7 +13,7 @@ func newTestInstance(id InstanceID, totalKVBlocks int64) *InstanceSimulator {
 		Horizon:             1000000,
 		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(totalKVBlocks, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0, 0, 0, false),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "", 0),
 	}

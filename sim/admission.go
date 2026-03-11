@@ -60,6 +60,48 @@ func (tb *TokenBucket) Admit(req *Request, state *RouterState) (bool, string) {
 	return false, "insufficient tokens"
 }
 
+// SLOGatedAdmission admits protected SLO classes unconditionally,
+// but rejects non-protected requests when total queue depth exceeds a threshold.
+// This provides non-zero-sum load management: rejected sheddable requests
+// free compute for admitted requests of all classes.
+type SLOGatedAdmission struct {
+	protectedClasses map[string]bool // SLO classes always admitted (unexported per R8)
+	queueThreshold   int             // total queue depth above which non-protected is rejected
+}
+
+// NewSLOGatedAdmission creates an SLOGatedAdmission policy.
+// Panics if queueThreshold <= 0 (R3: validate at construction).
+func NewSLOGatedAdmission(protectedClasses []string, queueThreshold int) *SLOGatedAdmission {
+	if queueThreshold <= 0 {
+		panic(fmt.Sprintf("NewSLOGatedAdmission: queueThreshold must be > 0, got %d", queueThreshold))
+	}
+	protected := make(map[string]bool, len(protectedClasses))
+	for _, cls := range protectedClasses {
+		protected[cls] = true
+	}
+	return &SLOGatedAdmission{
+		protectedClasses: protected,
+		queueThreshold:   queueThreshold,
+	}
+}
+
+// Admit checks whether the request should be admitted.
+// Protected SLO classes are always admitted. Non-protected classes are rejected
+// when the total queue depth across all instances exceeds the threshold.
+func (s *SLOGatedAdmission) Admit(req *Request, state *RouterState) (bool, string) {
+	if s.protectedClasses[req.SLOClass] {
+		return true, ""
+	}
+	totalQueueDepth := 0
+	for _, snap := range state.Snapshots {
+		totalQueueDepth += snap.QueueDepth
+	}
+	if totalQueueDepth > s.queueThreshold {
+		return false, fmt.Sprintf("slo-gated: %s rejected (queue %d > threshold %d)", req.SLOClass, totalQueueDepth, s.queueThreshold)
+	}
+	return true, ""
+}
+
 // RejectAll rejects all requests unconditionally (pathological template for testing).
 type RejectAll struct{}
 
@@ -83,6 +125,9 @@ func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPoli
 		return NewTokenBucket(capacity, refillRate)
 	case "reject-all":
 		return &RejectAll{}
+	case "slo-gated":
+		// capacity parameter reused as queue threshold for slo-gated
+		return NewSLOGatedAdmission([]string{"critical", "standard"}, int(capacity))
 	default:
 		panic(fmt.Sprintf("unhandled admission policy %q", name))
 	}

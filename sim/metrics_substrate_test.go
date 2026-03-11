@@ -49,7 +49,7 @@ func msConfig(horizon int64) SimConfig {
 		Horizon:             horizon,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 100000, 0),
+		BatchConfig:         NewBatchConfig(256, 100000, 0, 0, 0, false),
 		LatencyCoeffs:       NewLatencyCoeffs(msBeta(), msAlpha()),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "test-gpu", 1, "", 0),
 		PolicyConfig:        NewPolicyConfig("constant", "fcfs"),
@@ -845,4 +845,96 @@ func TestMetrics_ITLCount_MatchesInterTokenGaps(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ===============================================================================
+// BC-MS-16: Batch Occupancy Invariants
+//
+// TotalBatchSlots / (TotalSteps * MaxRunningReqs) ∈ [0, 1].
+// TotalSteps > 0 when requests are processed.
+// TotalBatchSlots > 0 when requests are processed.
+// MaxRunningReqs matches configured value.
+// ===============================================================================
+
+func TestMetrics_BatchOccupancy_BoundedZeroToOne(t *testing.T) {
+	cfg := msConfig(math.MaxInt64)
+	cfg.MaxRunningReqs = 10 // small to create non-trivial occupancy
+	s := mustNewSimulator(t, cfg)
+
+	for i := 0; i < 5; i++ {
+		r := &Request{
+			ID:           fmt.Sprintf("occ-%d", i),
+			InputTokens:  msMakeTokens(32),
+			OutputTokens: msMakeTokens(5),
+			ArrivalTime:  int64(i) * 100000,
+			State:        StateQueued,
+		}
+		s.InjectArrival(r)
+	}
+	s.Run()
+
+	if s.Metrics.CompletedRequests != 5 {
+		t.Fatalf("expected 5 completed, got %d", s.Metrics.CompletedRequests)
+	}
+
+	// BC-MS-16a: TotalSteps > 0
+	if s.Metrics.TotalSteps <= 0 {
+		t.Errorf("BC-MS-16a violated: TotalSteps = %d, expected > 0", s.Metrics.TotalSteps)
+	}
+
+	// BC-MS-16b: TotalBatchSlots > 0
+	if s.Metrics.TotalBatchSlots <= 0 {
+		t.Errorf("BC-MS-16b violated: TotalBatchSlots = %d, expected > 0", s.Metrics.TotalBatchSlots)
+	}
+
+	// BC-MS-16c: MaxRunningReqs matches config
+	if s.Metrics.MaxRunningReqs != 10 {
+		t.Errorf("BC-MS-16c violated: MaxRunningReqs = %d, expected 10", s.Metrics.MaxRunningReqs)
+	}
+
+	// BC-MS-16d: occupancy ∈ [0, 1]
+	occupancy := float64(s.Metrics.TotalBatchSlots) / float64(s.Metrics.TotalSteps*s.Metrics.MaxRunningReqs)
+	if occupancy < 0 || occupancy > 1.0 {
+		t.Errorf("BC-MS-16d violated: occupancy = %.4f, expected in [0, 1]", occupancy)
+	}
+	t.Logf("BC-MS-16: occupancy=%.4f, totalSteps=%d, totalBatchSlots=%d, maxRunningReqs=%d",
+		occupancy, s.Metrics.TotalSteps, s.Metrics.TotalBatchSlots, s.Metrics.MaxRunningReqs)
+}
+
+func TestMetrics_BatchOccupancy_HigherWithLargerBatch(t *testing.T) {
+	// Behavioral: more concurrent requests in the batch → higher occupancy.
+	// Compare tight batch (maxRunning=2) vs roomy batch (maxRunning=256)
+	// with the same 5 requests arriving simultaneously.
+
+	runWithMaxRunning := func(maxRunning int64) float64 {
+		cfg := msConfig(math.MaxInt64)
+		cfg.MaxRunningReqs = maxRunning
+		s := mustNewSimulator(t, cfg)
+		for i := 0; i < 5; i++ {
+			r := &Request{
+				ID:           fmt.Sprintf("batch-%d", i),
+				InputTokens:  msMakeTokens(32),
+				OutputTokens: msMakeTokens(5),
+				ArrivalTime:  0,
+				State:        StateQueued,
+			}
+			s.InjectArrival(r)
+		}
+		s.Run()
+		if s.Metrics.TotalSteps == 0 || s.Metrics.MaxRunningReqs == 0 {
+			return 0
+		}
+		return float64(s.Metrics.TotalBatchSlots) / float64(s.Metrics.TotalSteps*s.Metrics.MaxRunningReqs)
+	}
+
+	occTight := runWithMaxRunning(2)
+	occRoomy := runWithMaxRunning(256)
+
+	// With maxRunning=2 and 5 requests arriving at time 0: batch always has 2
+	// requests (occupancy = 2/2 = 1.0). With maxRunning=256: batch has at most
+	// 5 (occupancy = 5/256 ~= 0.02). So tight occupancy >> roomy occupancy.
+	if occTight <= occRoomy {
+		t.Errorf("Expected tight batch (%.4f) > roomy batch (%.4f)", occTight, occRoomy)
+	}
+	t.Logf("Occupancy: tight(max=2)=%.4f, roomy(max=256)=%.4f", occTight, occRoomy)
 }

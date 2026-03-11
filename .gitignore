@@ -89,3 +89,4 @@ traces.csv
 prompts.md
 
 actions-runner/
+hypotheses/*/results/
