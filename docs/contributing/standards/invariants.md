@@ -105,3 +105,49 @@ Invariants are properties that must hold at all times during and after simulatio
 **Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
 
 **Hypothesis family:** Structural model (same as INV-4, INV-7).
+
+---
+
+## PD Disaggregation Invariants (PR5)
+
+These invariants apply when PD disaggregation is enabled (`--prefill-instances` and `--decode-instances` configured).
+
+## INV-PD-1: KV Transfer Completeness
+
+**Statement:** `decode_enqueue_time >= transfer_complete_time` for every disaggregated request.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — integration tests verify phase ordering.
+
+**Code location:** `sim/cluster/pd_events.go` — `DecodeRoutingEvent` fires only after `KVTransferCompletedEvent`.
+
+## INV-PD-2: Pool Exclusivity
+
+**Statement:** Prefill sub-requests are routed only to prefill instances; decode sub-requests are routed only to decode instances.
+
+**Verification:** `sim/cluster/pool.go` — `buildPoolFilteredSnapshots(PoolRolePrefill/PoolRoleDecode)` filters snapshots before routing.
+
+**Code location:** `sim/cluster/pd_events.go` — `PrefillRoutingEvent` and `DecodeRoutingEvent` each call `buildPoolFilteredSnapshots` with the correct role.
+
+## INV-PD-3: Transfer Conservation
+
+**Statement:** `initiated_transfers == completed_transfers` at simulation end (no transfers lost in flight).
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestPrefixThreshold_TransferConservation`.
+
+**Code location:** `sim/cluster/cluster.go` — `transfersInitiated` and `transfersCompleted` counters; `KVTransferStartedEvent` increments initiated, `KVTransferCompletedEvent` increments completed.
+
+## INV-PD-4: Phase Causality
+
+**Statement:** `arrival ≤ prefill_enqueue ≤ prefill_complete ≤ transfer_start ≤ transfer_complete ≤ decode_enqueue ≤ completion` for every disaggregated request.
+
+**Verification:** Event ordering enforced by the DES event queue (INV-3 clock monotonicity guarantees no backward time).
+
+**Code location:** `sim/cluster/pd_events.go` — each event schedules the next at `e.time + delta`, preserving ordering.
+
+## INV-PD-5: Pool Stability
+
+**Statement:** Pool membership (prefill/decode/standard assignment per instance) is fixed after cluster initialization and never changes during simulation.
+
+**Verification:** `sim/cluster/pool.go` — `BuildPoolMembership()` called once in `NewClusterSimulator`; the resulting map is read-only thereafter.
+
+**Code location:** `sim/cluster/cluster.go` — `poolMembership` field set once in constructor; no mutation path exists after initialization.

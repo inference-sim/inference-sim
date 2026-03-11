@@ -164,10 +164,6 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 
 	logrus.Debugf("[cluster] decode req %s → instance %s", e.decodeSubReq.ID, decision.TargetInstance)
 
-	e.decodeSubReq.AssignedInstance = decision.TargetInstance
-	e.parentReq.DecodeInstanceID = decision.TargetInstance
-	e.parentReq.DecodeEnqueueTime = e.time
-
 	// Find target decode instance
 	for _, inst := range cs.instances {
 		if string(inst.ID()) == decision.TargetInstance {
@@ -175,9 +171,14 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			if ok := inst.AllocateTransferredKV(e.decodeSubReq); !ok {
 				logrus.Warnf("[cluster] decode instance %s: insufficient KV capacity for %s (%d input tokens)",
 					decision.TargetInstance, e.decodeSubReq.ID, len(e.decodeSubReq.InputTokens))
-				// Cannot proceed without KV — request effectively dropped
+				cs.droppedKVAllocations++ // R1: count dropped, never silent
 				return
 			}
+
+			// State assignment after successful allocation — DecodeInstanceID is fully populated.
+			e.decodeSubReq.AssignedInstance = decision.TargetInstance
+			e.parentReq.DecodeInstanceID = decision.TargetInstance
+			e.parentReq.DecodeEnqueueTime = e.time
 
 			cs.inFlightRequests[decision.TargetInstance]++
 			inst.InjectDecodeOnline(e.decodeSubReq)

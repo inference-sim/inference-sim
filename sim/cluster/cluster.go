@@ -36,6 +36,8 @@ type ClusterSimulator struct {
 	poolMembership          map[string]PoolRole         // instance ID → pool role (nil when disaggregation disabled)
 	disaggregationDecider   sim.DisaggregationDecider   // PD disaggregation decider (nil when disabled)
 
+	droppedKVAllocations      int               // R1: count of decode requests dropped due to KV OOM
+
 	// PD disaggregation state (PR2)
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
@@ -331,6 +333,12 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 // Returns 0 if AlwaysAdmit is used or if no requests were rejected by TokenBucket.
 func (c *ClusterSimulator) RejectedRequests() int {
 	return c.rejectedRequests
+}
+
+// DroppedKVAllocations returns the count of decode sub-requests dropped due to
+// insufficient KV capacity at the decode instance (R1: count dropped, never silent).
+func (c *ClusterSimulator) DroppedKVAllocations() int {
+	return c.droppedKVAllocations
 }
 
 // poolsConfigured returns true if PD disaggregation pool topology is active.
