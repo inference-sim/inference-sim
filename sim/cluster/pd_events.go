@@ -203,10 +203,17 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			// KVTransferRecord is recorded here so DecodeInstanceID is fully populated.
 			// Both TransferStartTime and TransferCompleteTime were set in earlier event handlers.
 			if cs.trace != nil {
+				// INV-PD-4 guarantees transfer_start ≤ transfer_complete via event priority ordering
+				// (KVTransferStartedEvent priority 5 < KVTransferCompletedEvent priority 6 < this priority 7).
+				// Defensive clamp: if ordering invariant is ever violated, record 0 rather than a negative duration.
+				transferDuration := e.parentReq.TransferCompleteTime - e.parentReq.TransferStartTime
+				if transferDuration < 0 {
+					transferDuration = 0
+				}
 				cs.trace.RecordKVTransfer(trace.KVTransferRecord{
 					ParentRequestID:   e.parentReq.ID,
 					TransferStartTime: e.parentReq.TransferStartTime,
-					TransferDuration:  e.parentReq.TransferCompleteTime - e.parentReq.TransferStartTime,
+					TransferDuration:  transferDuration,
 					NumKVBlocks:       e.parentReq.NumKVBlocks,
 					PrefillInstanceID: e.parentReq.PrefillInstanceID,
 					DecodeInstanceID:  e.parentReq.DecodeInstanceID,

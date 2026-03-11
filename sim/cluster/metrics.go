@@ -98,10 +98,11 @@ type RawMetrics struct {
 	TokensPerSec   float64
 
 	// Anomaly counters
-	PriorityInversions int
-	HOLBlockingEvents  int
-	RejectedRequests   int
-	DroppedUnservable  int
+	PriorityInversions   int
+	HOLBlockingEvents    int
+	RejectedRequests     int
+	DroppedUnservable    int
+	DroppedKVAllocations int // PD: decode sub-requests dropped due to KV OOM at decode routing time
 
 	// KV cache metrics (PR12)
 	CacheHitRate    float64
@@ -115,10 +116,13 @@ type RawMetrics struct {
 // when "constant" or "" (both map to ConstantPriority), inversions are
 // suppressed (always 0) since all requests share the same priority and
 // E2E differences reflect workload variance, not unfairness.
-func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, priorityPolicy string) *RawMetrics {
+// droppedKVAllocations is the count of decode sub-requests dropped due to KV OOM
+// during PD disaggregation; pass 0 for non-disaggregated simulations.
+func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, droppedKVAllocations int, priorityPolicy string) *RawMetrics {
 	raw := &RawMetrics{
-		RejectedRequests:  rejectedRequests,
-		DroppedUnservable: aggregated.DroppedUnservable,
+		RejectedRequests:     rejectedRequests,
+		DroppedUnservable:    aggregated.DroppedUnservable,
+		DroppedKVAllocations: droppedKVAllocations,
 	}
 
 	// Latency distributions

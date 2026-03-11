@@ -811,6 +811,7 @@ var runCmd = &cobra.Command{
 			cs.AggregatedMetrics(),
 			cs.PerInstanceMetrics(),
 			cs.RejectedRequests(),
+			cs.DroppedKVAllocations(),
 			priorityPolicy,
 		)
 

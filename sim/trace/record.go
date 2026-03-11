@@ -44,9 +44,11 @@ type PrefillRoutingRecord struct {
 	ParentRequestID string
 	Clock           int64
 	ChosenInstance  string
-	Scores          map[string]float64 // from RoutingDecision.Scores (may be nil)
-	Candidates      []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
-	Regret          float64            // max(alternative scores) - score(chosen); 0 if chosen is best
+	// Scores maps instance ID → composite routing score (higher = more preferred).
+	// Values are raw weighted-scorer outputs; not normalized. Nil when scoring is disabled.
+	Scores     map[string]float64 // from RoutingDecision.Scores (may be nil)
+	Candidates []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
+	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best
 }
 
 // DecodeRoutingRecord captures a decode pool routing decision with optional counterfactual analysis.
@@ -54,9 +56,11 @@ type DecodeRoutingRecord struct {
 	ParentRequestID string
 	Clock           int64
 	ChosenInstance  string
-	Scores          map[string]float64 // from RoutingDecision.Scores (may be nil)
-	Candidates      []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
-	Regret          float64            // max(alternative scores) - score(chosen); 0 if chosen is best
+	// Scores maps instance ID → composite routing score (higher = more preferred).
+	// Values are raw weighted-scorer outputs; not normalized. Nil when scoring is disabled.
+	Scores     map[string]float64 // from RoutingDecision.Scores (may be nil)
+	Candidates []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
+	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best
 }
 
 // KVTransferRecord captures a KV cache transfer event between prefill and decode instances.

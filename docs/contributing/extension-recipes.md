@@ -74,14 +74,22 @@ To add a new trace record type (e.g., `ScaleRecord` for autoscaling events):
 4. **Hook recording** into the cluster event pipeline (guard with `if cs.trace != nil` for zero-overhead default):
    - For standard routing events: `sim/cluster/cluster_event.go`
    - For PD disaggregation events: `sim/cluster/pd_events.go` (PrefillRoutingEvent and DecodeRoutingEvent). Note: `KVTransferRecord` is recorded in `DecodeRoutingEvent.Execute()` (not `KVTransferStartedEvent`) because `DecodeInstanceID` is only populated at decode routing time.
+   - **Pool-filtered snapshots:** PD routing events must pass `filteredSnapshots` (not `state.Snapshots`) to `computeCounterfactual()`. Pool-filtered snapshots contain only pool-member instances; passing full-cluster snapshots would produce candidates from the wrong pool.
 5. **Update `Summarize()`** in `sim/trace/summary.go` to aggregate the new record type
 6. **Update the `--summarize-trace` output block** in `cmd/root.go` to print the new summary fields (guard with a non-zero count check so they only appear when the feature is active)
 7. **Add behavioral tests** in `sim/trace/*_test.go`
+
+**Activation conditions for PD trace records:** PD-specific records (`DisaggregationRecord`, `PrefillRoutingRecord`, `DecodeRoutingRecord`, `KVTransferRecord`) are only emitted when **both** of the following are configured:
+- `--trace-level decisions` (or higher) — enables the trace recorder
+- `--prefill-instances N --decode-instances M` — enables PD disaggregation pool topology
+
+Setting `--trace-level decisions` alone (without pool flags) produces admission and standard routing records but zero PD records.
 
 Examples:
 - See `AdmissionRecord` in `sim/trace/record.go` for a simple record
 - See `RoutingRecord` with `CandidateScore` for a record with nested counterfactual data
 - See `computeCounterfactual()` in `sim/cluster/counterfactual.go` for derived computation that lives in `sim/cluster/` (not `sim/trace/`) because it needs `sim.RoutingSnapshot`
+- See `PrefillRoutingRecord`/`DecodeRoutingRecord` for records with pool-scoped counterfactual candidates
 
 ## Adding New Latency Model Backends
 
