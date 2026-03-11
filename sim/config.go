@@ -78,7 +78,7 @@ type ModelHardwareConfig struct {
 	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
 	GPU         string        // GPU type (e.g., "H100")
 	TP          int           // tensor parallelism degree
-	Backend     string        // latency model backend: "" or "roofline" (default), "blackbox", "crossmodel", "trained-roofline"
+	Backend     string        // latency model backend: "" or "blackbox" (library default), "roofline" (CLI default), "crossmodel", "trained-roofline"
 	MaxModelLen int64         // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
 }
 

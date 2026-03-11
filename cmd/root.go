@@ -224,10 +224,9 @@ var runCmd = &cobra.Command{
 				latencyModelBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
 		}
 
-		// Local copy of CLI-provided backend. This may be mutated by implicit
-		// detection (backend = "roofline") but the package-level latencyModelBackend
-		// is NEVER mutated inside Run — Cobra sets it before Run and it persists
-		// cleanly across process-level reuse.
+		// Local copy of CLI-provided backend (read-only within Run).
+		// The CLI default is "roofline"; library consumers who omit Backend get
+		// "blackbox" via the factory's case "", "blackbox": dispatch.
 		backend := latencyModelBackend
 
 		var modelConfig = sim.ModelConfig{}
@@ -311,12 +310,7 @@ var runCmd = &cobra.Command{
 			// Roofline replaces beta (step time) but still needs alpha
 			// (queueing time, output token processing) and KV cache capacity.
 			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-				if vllmVersion == "" {
-					_, _, ver := GetDefaultSpecs(model)
-					if len(ver) > 0 {
-						vllmVersion = ver
-					}
-				}
+				// vllmVersion already resolved by early defaults block (lines 248-265).
 				defAlpha, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if !cmd.Flags().Changed("alpha-coeffs") && !allZeros(defAlpha) {
 					alphaCoeffs = defAlpha
@@ -392,13 +386,8 @@ var runCmd = &cobra.Command{
 						}
 					}
 				}
-				// Also load KV blocks from per-model config if available
-				if vllmVersion == "" {
-					_, _, ver := GetDefaultSpecs(model)
-					if len(ver) > 0 {
-						vllmVersion = ver
-					}
-				}
+				// Also load KV blocks from per-model config if available.
+				// vllmVersion already resolved by early defaults block (lines 248-265).
 				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 					totalKVBlocks = kvBlocks
@@ -463,13 +452,8 @@ var runCmd = &cobra.Command{
 						}
 					}
 				}
-				// Also load KV blocks from per-model config if available
-				if vllmVersion == "" {
-					_, _, ver := GetDefaultSpecs(model)
-					if len(ver) > 0 {
-						vllmVersion = ver
-					}
-				}
+				// Also load KV blocks from per-model config if available.
+				// vllmVersion already resolved by early defaults block (lines 248-265).
 				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 					totalKVBlocks = kvBlocks
