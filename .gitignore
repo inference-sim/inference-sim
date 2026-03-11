@@ -88,4 +88,5 @@ traces.csv
 
 prompts.md
 
+.venv/
 actions-runner/
