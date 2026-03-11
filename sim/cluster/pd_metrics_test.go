@@ -261,8 +261,8 @@ func TestCollectPDMetrics_LoadImbalanceRatio_ZeroMinGuard(t *testing.T) {
 	if pd == nil {
 		t.Fatal("expected non-nil PDMetrics")
 	}
-	if pd.LoadImbalanceRatio < math.MaxFloat64/2 {
-		t.Errorf("expected LoadImbalanceRatio=MaxFloat64 (sentinel), got %.4f", pd.LoadImbalanceRatio)
+	if pd.LoadImbalanceRatio != math.MaxFloat64 {
+		t.Errorf("expected LoadImbalanceRatio=math.MaxFloat64 (one-pool-idle sentinel), got %v", pd.LoadImbalanceRatio)
 	}
 }
 
