@@ -97,6 +97,11 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-6 Determinism**: Same seed must produce byte-identical stdout across runs. Wall-clock timing goes to stderr.
 - **INV-7 Signal freshness**: Routing snapshot signals have tiered freshness — InFlightRequests (synchronous) vs QueueDepth/BatchSize/KVUtilization (Periodic when `--snapshot-refresh-interval > 0`, Immediate when 0). See `docs/contributing/standards/invariants.md` for the full hierarchy.
 - **INV-8 Work-conserving**: After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while work is waiting.
+- **INV-PD-1 KV completeness**: `decode_enqueue_time >= transfer_complete_time` for every disaggregated request.
+- **INV-PD-2 Pool exclusivity**: Prefill sub-requests on prefill instances only; decode on decode only.
+- **INV-PD-3 Transfer conservation**: `initiated_transfers == completed_transfers` at simulation end.
+- **INV-PD-4 Phase causality**: `arrival ≤ prefill_enqueue ≤ prefill_complete ≤ transfer_start ≤ transfer_complete ≤ decode_enqueue ≤ completion`.
+- **INV-PD-5 Pool stability**: Pool membership unchanged after initialization.
 
 ### Engineering Principles
 
@@ -201,7 +206,7 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --prefill-instances, --decode-instances, --pd-decider)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --prefill-instances, --decode-instances, --pd-decider, --pd-transfer-bandwidth, --pd-transfer-base-latency, --pd-kv-bytes-per-token, --prefill-routing-scorers, --decode-routing-scorers)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
@@ -250,7 +255,9 @@ inference-sim/
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
 │   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; Run() returns error
-│   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent, DisaggregationDecisionEvent (PD disaggregation pipeline)
+│   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent, DisaggregationDecisionEvent (PD disaggregation pipeline with bifurcation)
+│   ├── pd_events.go           # PrefillRoutingEvent, KVTransferStartedEvent, KVTransferCompletedEvent, DecodeRoutingEvent (PR2 disaggregated request flow)
+│   ├── parent_request.go      # ParentRequest type for tracking disaggregated request lifecycle across prefill and decode sub-requests
 │   ├── counterfactual.go      # computeCounterfactual() for top-k candidate ranking and regret computation
 │   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
 │   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
@@ -369,6 +376,18 @@ Request Arrival → Admission → Routing → WaitQueue → Batch Formation → 
                                       KV Allocation   Latency Estimation (alpha/beta, roofline, or cross-model)
 ```
 Note: Admission and Routing steps apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
+
+### Disaggregated Data Flow (PD mode)
+
+When `--prefill-instances` and `--decode-instances` are configured:
+```
+Request Arrival → Admission → Disaggregation Decision
+  → [disaggregate] → Prefill Routing (pool-filtered) → Prefill Instance → Prefill Complete
+    → KV Transfer Started → KV Transfer Completed
+    → Decode Routing (pool-filtered) → KV Pre-Allocation → Decode Instance → Completion
+  → [local] → Standard Routing → Any Instance → Completion
+```
+CLI flags: `--pd-transfer-bandwidth` (25 GB/s), `--pd-transfer-base-latency` (0.05 ms), `--pd-kv-bytes-per-token` (512), `--prefill-routing-scorers`, `--decode-routing-scorers`
 
 ## Project Governance Documents
 
