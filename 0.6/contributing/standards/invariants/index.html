@@ -1991,6 +1991,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#inv-9-oracle-knowledge-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-9: Oracle Knowledge Boundary
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2372,6 +2383,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#inv-9-oracle-knowledge-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-9: Oracle Knowledge Boundary
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2394,7 +2416,7 @@
 
 <h1 id="blis-system-invariants">BLIS System Invariants<a class="headerlink" href="#blis-system-invariants" title="Permanent link">&para;</a></h1>
 <p>Invariants are properties that must hold at all times during and after simulation. They are verified by invariant tests (see R7) and checked during self-audit (Step 4.75).</p>
-<p><strong>Hypothesis family mapping:</strong> INV-1 through INV-3, INV-5, and INV-6 belong to the <strong>Scheduler invariants (safety/liveness)</strong> family. INV-4 (KV cache conservation), INV-7 (signal freshness), and INV-8 (work-conserving property) belong to the <strong>Structural model</strong> family. See <code>docs/contributing/standards/experiments.md</code> for hypothesis family definitions.</p>
+<p><strong>Hypothesis family mapping:</strong> INV-1 through INV-3, INV-5, and INV-6 belong to the <strong>Scheduler invariants (safety/liveness)</strong> family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), and INV-9 (oracle knowledge boundary) belong to the <strong>Structural model</strong> family. See <code>docs/contributing/standards/experiments.md</code> for hypothesis family definitions.</p>
 <h2 id="inv-1-request-conservation">INV-1: Request Conservation<a class="headerlink" href="#inv-1-request-conservation" title="Permanent link">&para;</a></h2>
 <p><strong>Statement:</strong> <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable</code> at simulation end (all levels).</p>
 <p><strong>Full pipeline:</strong> <code>num_requests == injected_requests + rejected_requests</code> (from anomaly counters).</p>
@@ -2492,6 +2514,14 @@
 <p><strong>Additional evidence (hardening wave):</strong> Issue #349, fix #519 — Go <code>range</code> over mutable <code>RunningBatch.Requests</code> during <code>FormBatch</code> Phase 1 visited evicted requests, triggering 102K+ cascading preemptions with zero completions. The simulator never made forward progress (zero completed requests = INV-8 violation). See R21.</p>
 <p><strong>Code location:</strong> Search for <code>// Work-conserving:</code> comment in <code>sim/simulator.go</code> — the <code>else</code> branch of <code>len(remaining) &gt; 0</code> checks <code>WaitQ.Len() &gt; 0</code> and schedules a new <code>StepEvent</code>.</p>
 <p><strong>Hypothesis family:</strong> Structural model (same as INV-4, INV-7).</p>
+<hr />
+<h2 id="inv-9-oracle-knowledge-boundary">INV-9: Oracle Knowledge Boundary<a class="headerlink" href="#inv-9-oracle-knowledge-boundary" title="Permanent link">&para;</a></h2>
+<p><strong>Statement:</strong> Servability decisions — enqueue guard (<code>EnqueueRequest</code>), admission control (<code>AdmissionPolicy</code>), routing (<code>RoutingPolicy</code>), and priority scoring (<code>PriorityPolicy</code>) — must not read <code>Request.OutputTokens</code> or <code>len(Request.OutputTokens)</code>. The control plane uses <code>Request.MaxOutputLen</code> (client-declared output budget) for sequence-length checks against <code>MaxModelLen</code>. When <code>MaxOutputLen == 0</code> (no budget), only input length is checked; the runtime stop in <code>processCompletions</code> enforces output growth limits. Only the execution engine (<code>executeBatchStep</code>, <code>processCompletions</code>, <code>recordRequestCompletion</code>, <code>FormBatch</code> step planning) may access <code>OutputTokens</code> for token generation, completion detection, and per-step resource allocation.</p>
+<p><strong>Rationale:</strong> In real inference serving (vLLM), the engine does not know actual output length at admission time — only the client's declared <code>max_tokens</code> budget. BLIS's <code>Request.OutputTokens</code> is oracle knowledge (pre-determined for simulation). Using it for servability decisions would make the simulator's control plane behave differently from a real system, invalidating capacity planning results. See issue #567 ("Architectural Principle: Oracle Knowledge Boundary").</p>
+<p><strong>Scope:</strong> The boundary applies to <em>servability</em> decisions (admit/reject/route), not to all scheduler operations. <code>FormBatch</code> legitimately reads <code>OutputTokens</code> for decode-phase step planning (whether to allocate a decode token), which mirrors vLLM's scheduler reading sequence state for per-step execution. The distinction: "should this request enter the system?" (servability — no oracle) vs. "what should this request do in the current step?" (execution — oracle allowed).</p>
+<p><strong>Verification:</strong> <code>sim/simulator_test.go</code> — <code>TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary</code>: a request with <code>OutputTokens=1000</code> but <code>MaxOutputLen=0</code> and <code>MaxModelLen=512</code> is NOT rejected (input=200 &lt; 512 passes input-only check), proving the enqueue guard does not peek at <code>OutputTokens</code>. Grep-based verification: <code>admission.go</code>, <code>routing.go</code>, <code>routing_scorers.go</code>, <code>routing_prefix_scorer.go</code>, <code>scheduler.go</code>, <code>priority.go</code> contain zero references to <code>OutputTokens</code>.</p>
+<p><strong>Evidence:</strong> Issue #567 — the original implementation's BC-4 fallback (<code>effectiveMaxOutput = len(r.OutputTokens)</code>) violated this boundary. Fixed in the same PR after convergence review caught it.</p>
+<p><strong>Hypothesis family:</strong> Structural model (same as INV-4, INV-7, INV-8).</p>
 
 
 

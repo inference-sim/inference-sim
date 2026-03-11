@@ -2412,7 +2412,7 @@
 <p>This tutorial walks through a complete capacity planning exercise: determining how many inference instances you need to serve a target request rate while meeting latency SLOs.</p>
 <p><strong>Scenario:</strong> You're deploying LLaMA 3.1 8B on H100 GPUs with TP=2. Your SLO is TTFT p99 &lt; 500ms. You need to find the minimum number of instances for 500 requests/second.</p>
 <h2 id="step-1-estimate-instance-capacity">Step 1: Estimate Instance Capacity<a class="headerlink" href="#step-1-estimate-instance-capacity" title="Permanent link">&para;</a></h2>
-<p>Before scaling up, measure the throughput of a single instance empirically. This works regardless of which <a href="../../guide/latency-models/">latency model</a> you use (blackbox or roofline).</p>
+<p>Before scaling up, measure the throughput of a single instance empirically. This works regardless of which <a href="../../guide/latency-models/">latency model</a> you use (blackbox, roofline, trained-roofline, or crossmodel).</p>
 <p>Run a single instance at low load to establish the baseline service rate:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>

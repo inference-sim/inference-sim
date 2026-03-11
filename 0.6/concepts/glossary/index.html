@@ -946,6 +946,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#maxmodellen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MaxModelLen
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#oracle-knowledge-boundary-inv-9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Oracle Knowledge Boundary (INV-9)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pending-requests" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2763,6 +2785,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#maxmodellen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MaxModelLen
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#oracle-knowledge-boundary-inv-9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Oracle Knowledge Boundary (INV-9)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pending-requests" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3016,7 +3060,11 @@
 <h3 id="kv-cache">KV Cache<a class="headerlink" href="#kv-cache" title="Permanent link">&para;</a></h3>
 <p>GPU memory organized as blocks that store key-value tensors computed during attention. BLIS simulates block allocation, prefix sharing, LRU eviction, and optional CPU offloading without actual GPU memory. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
 <h3 id="latency-model">Latency Model<a class="headerlink" href="#latency-model" title="Permanent link">&para;</a></h3>
-<p>The component that predicts GPU execution time for a batch step. Three modes: <em>Blackbox</em> (trained regression coefficients), <em>Roofline</em> (analytical FLOPs/bandwidth estimation), and <em>Cross-Model</em> (physics-informed, MoE-aware). See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a>, <a href="../roofline/">Roofline Estimation</a>, and <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
+<p>The component that predicts GPU execution time for a batch step. Four modes: <em>Blackbox</em> (trained regression coefficients), <em>Roofline</em> (analytical FLOPs/bandwidth estimation), <em>Cross-Model</em> (physics-informed, MoE-aware), and <em>Trained-Roofline</em> (roofline basis functions × learned corrections from real vLLM traces). See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a>, <a href="../roofline/">Roofline Estimation</a>, and <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
+<h3 id="maxmodellen">MaxModelLen<a class="headerlink" href="#maxmodellen" title="Permanent link">&para;</a></h3>
+<p>Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's <code>--max-model-len</code>. When set (&gt; 0), requests whose input alone fills the context window (<code>input &gt;= MaxModelLen</code>) or whose input + output budget exceeds it are dropped before entering the wait queue. A runtime cap force-completes any request whose progress reaches this limit (defense-in-depth). Set to 0 for unlimited. Auto-derived from <code>max_position_embeddings</code> in roofline/crossmodel modes, with <code>rope_scaling</code> factor application and KV-feasible capping. See <a href="../../reference/configuration/#simulation-control">Configuration Reference</a>.</p>
+<h3 id="oracle-knowledge-boundary-inv-9">Oracle Knowledge Boundary (INV-9)<a class="headerlink" href="#oracle-knowledge-boundary-inv-9" title="Permanent link">&para;</a></h3>
+<p>The principle that control-plane decisions (admission, routing, scheduling, priority) must not read <code>Request.OutputTokens</code>. The actual output token count is oracle knowledge — known only after generation completes. The control plane uses <code>MaxOutputLen</code> (client-declared output budget) or input-only checks instead. Only the execution engine (batch step processing, completion detection) may access <code>OutputTokens</code> for token generation and determining when a request finishes. See <a href="../../contributing/standards/invariants/">Standards: Invariants</a>.</p>
 <h3 id="pending-requests">Pending Requests<a class="headerlink" href="#pending-requests" title="Permanent link">&para;</a></h3>
 <p>Requests that have been routed to an instance but not yet enqueued (the queueing event hasn't fired). Tracked per-instance to prevent routing pile-on at high arrival rates. Decremented when the <code>QueuedEvent</code> fires. See <a href="../architecture/#routing-pipeline">Cluster Architecture: Routing Pipeline</a>.</p>
 <h3 id="policy-bundle">Policy Bundle<a class="headerlink" href="#policy-bundle" title="Permanent link">&para;</a></h3>

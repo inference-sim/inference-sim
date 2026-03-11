@@ -2431,7 +2431,16 @@
 <h2 id="minimum-kv-block-requirements">Minimum KV Block Requirements<a class="headerlink" href="#minimum-kv-block-requirements" title="Permanent link">&para;</a></h2>
 <div class="admonition danger">
 <p class="admonition-title">DroppedUnservable rejection</p>
-<p>When <code>ceil(inputTokens / blockSize) &gt; TotalCapacity()</code>, BLIS drops the request as <strong>unservable</strong> — it physically cannot fit in memory. This mirrors vLLM's pre-engine rejection path.</p>
+<p>Requests are dropped as <strong>unservable</strong> (incrementing <code>DroppedUnservable</code>) in two cases:</p>
+<ol>
+<li><strong>MaxModelLen guard</strong> — when <code>--max-model-len</code> is set, requests whose total sequence length (input + output budget) exceeds the context window are rejected before entering the queue. This mirrors vLLM's <code>--max-model-len</code> validation.</li>
+<li><strong>KV capacity guard</strong> — when <code>ceil(inputTokens / blockSize) &gt; TotalCapacity()</code>, the request physically cannot fit in GPU memory. This mirrors vLLM's pre-engine rejection path.</li>
+</ol>
+<p>Both guards fire at enqueue time, before the request enters the wait queue.</p>
+</div>
+<div class="admonition info">
+<p class="admonition-title">Runtime length cap</p>
+<p>When <code>--max-model-len</code> is set, requests that grow beyond the limit during decode are force-completed. This is a defense-in-depth mechanism — under normal operation the enqueue guard prevents oversized requests, but the runtime cap protects against unbounded growth if a request bypasses the guard.</p>
 </div>
 <p>Compute the minimum blocks needed for your workload:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>min_blocks = ceil(max_input_tokens / block_size)
