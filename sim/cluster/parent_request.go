@@ -18,7 +18,13 @@ type ParentRequest struct {
 	TransferStartTime    int64
 	TransferCompleteTime int64
 	DecodeEnqueueTime    int64
-	CompletionTime       int64
+	// CompletionTime has two meanings depending on outcome:
+	//   - Successful decode: set by detectDecodeCompletions when the decode sub-request
+	//     finishes its last step. CompletionTime == actual decode completion time.
+	//   - Dropped at decode KV allocation: set to the DecodeRoutingEvent time (the point
+	//     when the drop was detected). CompletionTime < actual decode time (which never
+	//     happened). Use TransferCompleteTime > 0 && droppedAtDecodeKV counter to distinguish.
+	CompletionTime int64
 
 	// Instance assignment
 	PrefillInstanceID string

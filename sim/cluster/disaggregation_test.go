@@ -570,3 +570,27 @@ func TestClusterSimulator_DisaggregatedINV1_Conservation(t *testing.T) {
 			agg.DroppedUnservable, agg.StillQueued, agg.StillRunning)
 	}
 }
+
+// TestDisaggregation_INV_PD_1_DecodeEnqueueAfterTransfer verifies INV-PD-1 (KV Completeness):
+// decode_enqueue_time >= transfer_complete_time for every disaggregated request.
+// This is a standalone R7 companion invariant test for INV-PD-1.
+func TestDisaggregation_INV_PD_1_DecodeEnqueueAfterTransfer(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	parents := cs.ParentRequests()
+	if len(parents) == 0 {
+		t.Fatal("no parent requests recorded — PD pipeline did not execute")
+	}
+	for _, p := range parents {
+		if p.TransferCompleteTime == 0 {
+			continue // transfer never completed (e.g., dropped before transfer)
+		}
+		if p.DecodeEnqueueTime < p.TransferCompleteTime {
+			t.Errorf("INV-PD-1 violated for %s: DecodeEnqueueTime(%d) < TransferCompleteTime(%d)",
+				p.ID, p.DecodeEnqueueTime, p.TransferCompleteTime)
+		}
+	}
+}

@@ -126,9 +126,9 @@ To add a new disaggregation decider (e.g., a threshold-based decider that disagg
    type PrefixThresholdDecider struct{ MinPrefillTokens int }
    func (d *PrefixThresholdDecider) Decide(req *sim.Request) DisaggregationDecision {
        if len(req.InputTokens) >= d.MinPrefillTokens {
-           return DisaggregationDecisionDisaggregate
+           return DisaggregationDecision{Disaggregate: true}
        }
-       return DisaggregationDecisionLocal
+       return DisaggregationDecision{Disaggregate: false}
    }
    ```
 2. **Register in `NewDisaggregationDecider` factory** in `sim/disaggregation.go`: add a `case` branch for the new decider name (e.g., `"prefix-threshold"`). The decider name is supplied via `--pd-decider` CLI flag and stored in `DeploymentConfig.PDDecider`.
@@ -146,11 +146,21 @@ To add a new disaggregation decider (e.g., a threshold-based decider that disagg
      ```go
      cfg.PDPrefillThresholdTokens = pdPrefillThresholdTokens
      ```
-   - Pass the parameter to your decider in the factory `case`:
+   - Update the `NewDisaggregationDecider` factory signature to accept the new parameter, and add a `case` branch:
      ```go
-     case "prefix-threshold":
-         return &PrefixThresholdDecider{MinPrefillTokens: cfg.PDPrefillThresholdTokens}, nil
+     // sim/disaggregation.go — extend factory signature for config-bearing deciders:
+     func NewDisaggregationDecider(name string, minPrefillTokens int) DisaggregationDecider {
+         ...
+         case "prefix-threshold":
+             return &PrefixThresholdDecider{MinPrefillTokens: minPrefillTokens}
+         ...
+     }
      ```
+   - Update the call site in `sim/cluster/cluster.go` to pass the new parameter:
+     ```go
+     cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider, config.PDPrefillThresholdTokens)
+     ```
+   - Note: `NewDisaggregationDecider` lives in `sim/` and `DeploymentConfig` in `sim/cluster/`, so pass individual fields directly to avoid import cycles.
 4. **Add behavioral tests** — disaggregation decision for short vs long requests, boundary value (exactly at threshold), zero-threshold.
 5. Extension friction: **2–3 touch points** (implementation + factory + optional CLI flag).
 

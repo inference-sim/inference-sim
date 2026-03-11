@@ -142,6 +142,13 @@ PD-specific metrics appear in the `=== PD Metrics ===` output section. See [Metr
 
 - If decode pool KV capacity is exhausted, decode sub-requests are dropped (`DroppedUnservable` counter). Increase `--total-kv-blocks` for decode instances or reduce `--decode-instances` to fewer, larger instances.
 
+**High `DroppedUnservable` with PD disaggregation?**
+
+- BLIS uses hard drops when decode KV capacity is exhausted (no fallback routing or preemption). In production vLLM / llm-d, many of these scenarios are handled by preemption or fallback to another decode instance. To approximate production headroom, add at least 20% buffer to decode KV capacity:
+  ```bash
+  --total-kv-blocks 1200  # instead of 1000 (20% headroom)
+  ```
+
 **High `Load Imbalance Ratio`?**
 
 - Ratio >> 1.0 means one pool is bottlenecked. Compare `PrefillThroughput` vs `DecodeThroughput`: if prefill is faster, add decode instances; if decode is faster, add prefill instances.
