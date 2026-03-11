@@ -73,9 +73,10 @@ To add a new trace record type (e.g., `ScaleRecord` for autoscaling events):
 3. **Add a recording method** to `SimulationTrace` (e.g., `RecordScale(ScaleRecord)`)
 4. **Hook recording** into the cluster event pipeline (guard with `if cs.trace != nil` for zero-overhead default):
    - For standard routing events: `sim/cluster/cluster_event.go`
-   - For PD disaggregation events: `sim/cluster/pd_events.go` (PrefillRoutingEvent, DecodeRoutingEvent, KVTransferStartedEvent)
+   - For PD disaggregation events: `sim/cluster/pd_events.go` (PrefillRoutingEvent and DecodeRoutingEvent). Note: `KVTransferRecord` is recorded in `DecodeRoutingEvent.Execute()` (not `KVTransferStartedEvent`) because `DecodeInstanceID` is only populated at decode routing time.
 5. **Update `Summarize()`** in `sim/trace/summary.go` to aggregate the new record type
-6. **Add behavioral tests** in `sim/trace/*_test.go`
+6. **Update the `--summarize-trace` output block** in `cmd/root.go` to print the new summary fields (guard with a non-zero count check so they only appear when the feature is active)
+7. **Add behavioral tests** in `sim/trace/*_test.go`
 
 Examples:
 - See `AdmissionRecord` in `sim/trace/record.go` for a simple record
