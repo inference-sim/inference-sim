@@ -93,7 +93,7 @@ func TestCollectRawMetrics_BasicAggregation(t *testing.T) {
 	m.SimEndedTime = 1_000_000 // 1 second
 
 	// WHEN collecting RawMetrics
-	raw := CollectRawMetrics(m, nil, 0, 0, "")
+	raw := CollectRawMetrics(m, nil, 0, "")
 
 	// THEN TTFT distribution should be populated
 	if raw.TTFT.Count != 3 {
@@ -117,7 +117,7 @@ func TestCollectRawMetrics_BasicAggregation(t *testing.T) {
 // TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions verifies edge case.
 func TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions(t *testing.T) {
 	m := sim.NewMetrics()
-	raw := CollectRawMetrics(m, nil, 0, 0, "")
+	raw := CollectRawMetrics(m, nil, 0, "")
 	if raw.TTFT.Count != 0 {
 		t.Errorf("TTFT.Count: got %d, want 0", raw.TTFT.Count)
 	}
@@ -129,7 +129,7 @@ func TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions(t *testing.T)
 // TestCollectRawMetrics_RejectedRequests verifies rejected count is captured.
 func TestCollectRawMetrics_RejectedRequests(t *testing.T) {
 	m := sim.NewMetrics()
-	raw := CollectRawMetrics(m, nil, 42, 0, "")
+	raw := CollectRawMetrics(m, nil, 42, "")
 	if raw.RejectedRequests != 42 {
 		t.Errorf("RejectedRequests: got %d, want 42", raw.RejectedRequests)
 	}
@@ -142,25 +142,11 @@ func TestCollectRawMetrics_DroppedUnservable(t *testing.T) {
 	m.DroppedUnservable = 3
 
 	// WHEN collecting raw metrics
-	raw := CollectRawMetrics(m, nil, 0, 0, "")
+	raw := CollectRawMetrics(m, nil, 0, "")
 
 	// THEN DroppedUnservable is captured
 	if raw.DroppedUnservable != 3 {
 		t.Errorf("DroppedUnservable: got %d, want 3", raw.DroppedUnservable)
-	}
-}
-
-// TestCollectRawMetrics_DroppedKVAllocations verifies PD dropped-decode counter is propagated.
-func TestCollectRawMetrics_DroppedKVAllocations(t *testing.T) {
-	// GIVEN aggregated metrics with PD dropped KV allocations
-	m := sim.NewMetrics()
-
-	// WHEN collecting with droppedKVAllocations=5
-	raw := CollectRawMetrics(m, nil, 0, 5, "")
-
-	// THEN DroppedKVAllocations is captured (not silently lost)
-	if raw.DroppedKVAllocations != 5 {
-		t.Errorf("DroppedKVAllocations: got %d, want 5", raw.DroppedKVAllocations)
 	}
 }
 
@@ -361,7 +347,7 @@ func TestCollectRawMetrics_ConstantPriority_SuppressesInversions(t *testing.T) {
 	aggregated.SimEndedTime = 1_000_000
 
 	// WHEN collecting with constant priority policy
-	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, 0, "constant")
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "constant")
 
 	// THEN priority inversions should be suppressed
 	if raw.PriorityInversions != 0 {
@@ -384,7 +370,7 @@ func TestCollectRawMetrics_SLOBasedPriority_DetectsInversions(t *testing.T) {
 	aggregated.SimEndedTime = 1_000_000
 
 	// WHEN collecting with slo-based priority policy
-	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, 0, "slo-based")
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "slo-based")
 
 	// THEN priority inversions should be detected
 	if raw.PriorityInversions == 0 {
@@ -587,7 +573,7 @@ func TestPathological_RejectAll_AllRejected(t *testing.T) {
 		t.Fatalf("cs.Run: %v", err)
 	}
 
-	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), 0, "")
+	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "")
 
 	// ALL requests should be rejected
 	if raw.RejectedRequests == 0 {
@@ -609,7 +595,7 @@ func TestPathological_AlwaysBusiest_CausesImbalance(t *testing.T) {
 		t.Fatalf("cs.Run: %v", err)
 	}
 
-	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), 0, "")
+	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "")
 
 	// With always-busiest routing, all requests should pile onto one instance.
 	perInstance := cs.PerInstanceMetrics()
@@ -645,5 +631,18 @@ func TestJainFairnessIndex_Empty_ReturnsZero(t *testing.T) {
 	jfi := JainFairnessIndex(map[string]float64{})
 	if jfi != 0 {
 		t.Errorf("JainFairnessIndex(empty) = %f, want 0", jfi)
+	}
+}
+
+// TestCollectRawMetrics_PDFieldNilWhenNoDisagg verifies BC-9:
+// RawMetrics.PD is nil when disaggregation is not configured (standard path).
+func TestCollectRawMetrics_PDFieldNilWhenNoDisagg(t *testing.T) {
+	aggregated := sim.NewMetrics()
+	aggregated.SimEndedTime = 1_000_000
+	aggregated.CompletedRequests = 5
+
+	raw := CollectRawMetrics(aggregated, nil, 0, "")
+	if raw.PD != nil {
+		t.Errorf("RawMetrics.PD = non-nil in non-disaggregated path, want nil")
 	}
 }

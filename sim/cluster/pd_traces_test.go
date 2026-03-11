@@ -239,10 +239,11 @@ func TestPDTrace_DisaggMode_DisaggDecisionRecorded(t *testing.T) {
 	}
 }
 
-// TestPDTrace_NormalMode_DroppedKVAllocationsZero verifies R1 invariant:
-// under normal conditions (sufficient KV capacity) DroppedKVAllocations is zero.
-// This also verifies the DroppedKVAllocations() accessor returns a meaningful value.
-func TestPDTrace_NormalMode_DroppedKVAllocationsZero(t *testing.T) {
+// TestPDTrace_NormalMode_NoDroppedUnservable verifies R1 invariant:
+// under normal conditions (sufficient KV capacity) no decode sub-requests are
+// dropped due to KV OOM. Dropped decode KV allocations are folded into
+// DroppedUnservable in the aggregated metrics.
+func TestPDTrace_NormalMode_NoDroppedUnservable(t *testing.T) {
 	// GIVEN disaggregated simulation with ample KV capacity (100 blocks)
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
@@ -251,8 +252,8 @@ func TestPDTrace_NormalMode_DroppedKVAllocationsZero(t *testing.T) {
 	// WHEN run
 	mustRun(t, cs)
 
-	// THEN no decode requests were dropped due to KV OOM (R1: counter not silently hidden)
-	if cs.DroppedKVAllocations() != 0 {
-		t.Errorf("expected 0 dropped KV allocations under ample capacity, got %d", cs.DroppedKVAllocations())
+	// THEN no requests were dropped due to KV OOM (R1: counter not silently hidden)
+	if cs.AggregatedMetrics().DroppedUnservable != 0 {
+		t.Errorf("expected 0 DroppedUnservable under ample capacity, got %d", cs.AggregatedMetrics().DroppedUnservable)
 	}
 }

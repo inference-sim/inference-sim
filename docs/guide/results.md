@@ -54,6 +54,27 @@ When KV cache activity is nonzero, BLIS prints `=== KV Cache Metrics ===`:
 | **Cache Hit Rate** | Fraction of blocks served from prefix cache | Higher is better — indicates prefix reuse |
 | **KV Thrashing Rate** | Repeated preemption-reallocation cycles | > 0 indicates severe memory pressure |
 
+## PD Disaggregation Metrics
+
+When PD disaggregation is active (`--prefill-instances` and `--decode-instances` > 0), BLIS prints `=== PD Metrics ===`:
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| **Disaggregated Requests** | count | Number of parent requests that completed KV transfer (TransferCompleteTime > 0). Includes requests subsequently dropped due to decode KV exhaustion — those are also counted in `DroppedUnservable`, not separately subtracted here. |
+| **Prefill Throughput** | sub-req/s | Completed prefill sub-requests per second across all prefill instances. |
+| **Decode Throughput** | sub-req/s | Completed decode sub-requests per second across all decode instances. |
+| **Load Imbalance Ratio** | ratio | `max(PrefillRPS, DecodeRPS) / min(PrefillRPS, DecodeRPS)`. `1.0` = balanced; `inf (one pool idle)` = one pool has zero completions. |
+| **Parent TTFT (μs)** | microseconds | Distribution of prefill sub-request TTFT: `arrival_time → first token generated on prefill instance`. Includes admission delay + prefill queue wait + prefill compute time. **Does not include KV transfer time or decode queue latency.** |
+| **KV Transfer Duration (μs)** | microseconds | Distribution of `TransferCompleteTime - TransferStartTime`. Captures network transfer time only. |
+
+**Unit note:** `sub-req/s` counts sub-requests, not parent requests. In a fully disaggregated steady-state simulation, `PrefillThroughput ≈ DecodeThroughput ≈ responses_per_sec` in the JSON output, since each original request generates one prefill sub-request and one decode sub-request.
+
+**TTFT note:** In PD disaggregation, BLIS records `ParentTTFT` at prefill completion (when the prefill sub-request finishes computing the prompt). This differs from client-visible TTFT in production llm-d/vLLM deployments, where TTFT is measured at the first decode token (after KV transfer completes). `ParentTTFT` will be lower than client-visible TTFT by the sum of KV transfer time + decode queue wait + first decode step time.
+
+**Load Imbalance Ratio note:** This metric measures throughput balance (sub-request completions/s per pool) as an **aggregate over the full simulation**, not a real-time queue depth signal. In a correctly-sized disaggregated system, both pools complete the same number of sub-requests, so the ratio approaches 1.0. To diagnose bottlenecks, compare `PrefillThroughput` vs `DecodeThroughput` directly and inspect P99 TTFT (for prefill backpressure) and P99 E2E (for decode backpressure). A ratio near 1.0 does not guarantee real-time balance — one pool may queue while the other idles if arrival patterns are bursty.
+
+**JSON output note:** PD metrics are printed to stdout only. They do not appear in the per-request JSON results file (`--results-path`). The JSON file contains per-request latency fields (`ttft_ms`, `itl_ms`, `e2e_ms`) for every completed sub-request. In PD mode, each original request produces **two sub-requests** (one prefill, one decode), so the JSON file contains **2N rows** for N disaggregated requests. The decode sub-request row has near-zero TTFT (it enters the decode instance with input tokens already computed). The prefill sub-request row captures the prefill latency. For end-to-end analysis, join the two rows by request ID prefix (e.g., `"req-1_prefill"` and `"req-1_decode"`).
+
 ## Per-SLO-Class Metrics
 
 When multiple SLO classes are present in the workload, BLIS prints per-class TTFT and E2E distributions. This lets you verify that `critical` requests meet SLOs even when `batch` traffic is heavy.

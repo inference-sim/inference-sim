@@ -101,13 +101,15 @@ type RawMetrics struct {
 	PriorityInversions   int
 	HOLBlockingEvents    int
 	RejectedRequests     int
-	DroppedUnservable    int
-	DroppedKVAllocations int // PD: decode sub-requests dropped due to KV OOM at decode routing time
+	DroppedUnservable  int
 
 	// KV cache metrics (PR12)
 	CacheHitRate    float64
 	PreemptionRate  float64
 	KVThrashingRate float64
+
+	// PD disaggregation metrics (PR3). Nil when disaggregation is not active.
+	PD *PDMetrics
 }
 
 // CollectRawMetrics builds RawMetrics from aggregated and per-instance metrics.
@@ -116,13 +118,10 @@ type RawMetrics struct {
 // when "constant" or "" (both map to ConstantPriority), inversions are
 // suppressed (always 0) since all requests share the same priority and
 // E2E differences reflect workload variance, not unfairness.
-// droppedKVAllocations is the count of decode sub-requests dropped due to KV OOM
-// during PD disaggregation; pass 0 for non-disaggregated simulations.
-func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, droppedKVAllocations int, priorityPolicy string) *RawMetrics {
+func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, priorityPolicy string) *RawMetrics {
 	raw := &RawMetrics{
-		RejectedRequests:     rejectedRequests,
-		DroppedUnservable:    aggregated.DroppedUnservable,
-		DroppedKVAllocations: droppedKVAllocations,
+		RejectedRequests:  rejectedRequests,
+		DroppedUnservable: aggregated.DroppedUnservable,
 	}
 
 	// Latency distributions

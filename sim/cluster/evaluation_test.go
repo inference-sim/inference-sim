@@ -29,7 +29,7 @@ func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T)
 		t.Fatalf("cs.Run: %v", err)
 	}
 
-	rawMetrics := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), 0, "")
+	rawMetrics := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "")
 	traceSummary := trace.Summarize(cs.Trace())
 
 	// WHEN constructing EvaluationResult from real simulation output
