@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
 // PrefillRoutingEvent routes a prefill sub-request to a prefill pool instance.
@@ -37,6 +38,23 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	e.request.AssignedInstance = decision.TargetInstance
 	e.parentReq.PrefillInstanceID = decision.TargetInstance
 	e.parentReq.PrefillEnqueueTime = e.time
+
+	// Record prefill routing decision if tracing is enabled (BC-PD-17, BC-PD-19)
+	if cs.trace != nil {
+		record := trace.PrefillRoutingRecord{
+			ParentRequestID: e.parentReq.ID,
+			Clock:           cs.clock,
+			ChosenInstance:  decision.TargetInstance,
+			Scores:          copyScores(decision.Scores),
+		}
+		if cs.trace.Config.CounterfactualK > 0 {
+			record.Candidates, record.Regret = computeCounterfactual(
+				decision.TargetInstance, decision.Scores,
+				filteredSnapshots, cs.trace.Config.CounterfactualK,
+			)
+		}
+		cs.trace.RecordPrefillRouting(record)
+	}
 
 	// Register as pending prefill completion for detection in event loop
 	cs.pendingPrefillCompletions[e.request.ID] = e.parentReq.ID
@@ -175,6 +193,35 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 					decision.TargetInstance, e.decodeSubReq.ID, len(e.decodeSubReq.InputTokens))
 				// Cannot proceed without KV — request effectively dropped
 				return
+			}
+
+			// Record KV transfer and decode routing after successful KV allocation (BC-PD-17, BC-PD-19)
+			// Placement after AllocateTransferredKV ensures records only exist for requests that
+			// complete the decode phase (R1: no orphan records for dropped requests).
+			// KVTransferRecord is recorded here so DecodeInstanceID is fully populated.
+			// Both TransferStartTime and TransferCompleteTime were set in earlier event handlers.
+			if cs.trace != nil {
+				cs.trace.RecordKVTransfer(trace.KVTransferRecord{
+					ParentRequestID:   e.parentReq.ID,
+					TransferStartTime: e.parentReq.TransferStartTime,
+					TransferDuration:  e.parentReq.TransferCompleteTime - e.parentReq.TransferStartTime,
+					NumKVBlocks:       e.parentReq.NumKVBlocks,
+					PrefillInstanceID: e.parentReq.PrefillInstanceID,
+					DecodeInstanceID:  e.parentReq.DecodeInstanceID,
+				})
+				decodeRecord := trace.DecodeRoutingRecord{
+					ParentRequestID: e.parentReq.ID,
+					Clock:           cs.clock,
+					ChosenInstance:  decision.TargetInstance,
+					Scores:          copyScores(decision.Scores),
+				}
+				if cs.trace.Config.CounterfactualK > 0 {
+					decodeRecord.Candidates, decodeRecord.Regret = computeCounterfactual(
+						decision.TargetInstance, decision.Scores,
+						filteredSnapshots, cs.trace.Config.CounterfactualK,
+					)
+				}
+				cs.trace.RecordDecodeRouting(decodeRecord)
 			}
 
 			cs.inFlightRequests[decision.TargetInstance]++

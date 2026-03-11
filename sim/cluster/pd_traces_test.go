@@ -53,6 +53,117 @@ func TestPDTrace_NonDisaggMode_NoDisaggRecords(t *testing.T) {
 	}
 }
 
+// TestPDTrace_DisaggMode_AllRecordTypesPresent verifies BC-PD-17:
+// all 4 PD trace record types are emitted for each disaggregated request.
+func TestPDTrace_DisaggMode_AllRecordTypesPresent(t *testing.T) {
+	const numRequests = 5
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.TraceLevel = "decisions"
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, requests)
+
+	mustRun(t, cs)
+
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace")
+	}
+
+	// BC-PD-17: one record of each type per disaggregated request
+	if len(tr.Disaggregations) != numRequests {
+		t.Errorf("Disaggregations: expected %d, got %d", numRequests, len(tr.Disaggregations))
+	}
+	if len(tr.PrefillRoutings) != numRequests {
+		t.Errorf("PrefillRoutings: expected %d, got %d", numRequests, len(tr.PrefillRoutings))
+	}
+	if len(tr.KVTransfers) != numRequests {
+		t.Errorf("KVTransfers: expected %d, got %d", numRequests, len(tr.KVTransfers))
+	}
+	if len(tr.DecodeRoutings) != numRequests {
+		t.Errorf("DecodeRoutings: expected %d, got %d", numRequests, len(tr.DecodeRoutings))
+	}
+
+	// Verify KVTransfer records have both instance IDs and non-zero duration
+	for i, kv := range tr.KVTransfers {
+		if kv.PrefillInstanceID == "" {
+			t.Errorf("KVTransfers[%d]: PrefillInstanceID empty", i)
+		}
+		if kv.DecodeInstanceID == "" {
+			t.Errorf("KVTransfers[%d]: DecodeInstanceID empty", i)
+		}
+		if kv.TransferDuration <= 0 {
+			t.Errorf("KVTransfers[%d]: TransferDuration=%d, want > 0", i, kv.TransferDuration)
+		}
+		if kv.NumKVBlocks <= 0 {
+			t.Errorf("KVTransfers[%d]: NumKVBlocks=%d, want > 0", i, kv.NumKVBlocks)
+		}
+	}
+
+	// Verify per-pool routing records have non-empty chosen instances
+	for i, r := range tr.PrefillRoutings {
+		if r.ChosenInstance == "" {
+			t.Errorf("PrefillRoutings[%d]: ChosenInstance empty", i)
+		}
+		if r.ParentRequestID == "" {
+			t.Errorf("PrefillRoutings[%d]: ParentRequestID empty", i)
+		}
+	}
+	for i, r := range tr.DecodeRoutings {
+		if r.ChosenInstance == "" {
+			t.Errorf("DecodeRoutings[%d]: ChosenInstance empty", i)
+		}
+		if r.ParentRequestID == "" {
+			t.Errorf("DecodeRoutings[%d]: ParentRequestID empty", i)
+		}
+	}
+}
+
+// TestPDTrace_DisaggMode_Counterfactual verifies BC-PD-19:
+// per-pool routing records have counterfactual candidates when k > 0.
+func TestPDTrace_DisaggMode_Counterfactual(t *testing.T) {
+	// GIVEN disaggregated simulation with k=2, 2 prefill + 2 decode instances
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.TraceLevel = "decisions"
+	config.CounterfactualK = 2
+	config.RoutingPolicy = "weighted"
+	config.RoutingScorerConfigs = sim.DefaultScorerConfigs()
+	requests := newTestRequests(3)
+	cs := NewClusterSimulator(config, requests)
+
+	mustRun(t, cs)
+
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace")
+	}
+
+	// THEN prefill routing records have candidates (BC-PD-19)
+	for i, r := range tr.PrefillRoutings {
+		if len(r.Candidates) == 0 {
+			t.Errorf("PrefillRoutings[%d]: expected candidates with k=2, got none", i)
+		}
+		if len(r.Candidates) > 2 {
+			t.Errorf("PrefillRoutings[%d]: expected ≤2 candidates, got %d", i, len(r.Candidates))
+		}
+		if r.Regret < 0 {
+			t.Errorf("PrefillRoutings[%d]: Regret=%f, want ≥0", i, r.Regret)
+		}
+	}
+
+	// THEN decode routing records have candidates (BC-PD-19)
+	for i, r := range tr.DecodeRoutings {
+		if len(r.Candidates) == 0 {
+			t.Errorf("DecodeRoutings[%d]: expected candidates with k=2, got none", i)
+		}
+		if len(r.Candidates) > 2 {
+			t.Errorf("DecodeRoutings[%d]: expected ≤2 candidates, got %d", i, len(r.Candidates))
+		}
+		if r.Regret < 0 {
+			t.Errorf("DecodeRoutings[%d]: Regret=%f, want ≥0", i, r.Regret)
+		}
+	}
+}
+
 // TestPDTrace_DisaggMode_DisaggDecisionRecorded verifies disaggregation decisions are recorded.
 func TestPDTrace_DisaggMode_DisaggDecisionRecorded(t *testing.T) {
 	// GIVEN disaggregated simulation with trace enabled
