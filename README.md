@@ -45,7 +45,7 @@ go build -o blis main.go
 
 **Environment setup (optional):**
 
-Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid HuggingFace rate limits. Public models like Qwen3 work without a token.
+Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid HuggingFace rate limits. Public models like Qwen3-14B work without a token.
 
 ```bash
 export HF_TOKEN=your_token_here
@@ -87,8 +87,6 @@ You should see JSON output on stdout with key fields:
 | `tokens_per_sec` | Output tokens generated per simulated second |
 | `completed_requests` | Number of requests that finished within the simulation window |
 | `preemption_count` | Number of times a running request was evicted to make room for others (0 = healthy) |
-
-Diagnostic logs go to stderr. Pipe stdout to `jq` for formatting: `./blis run --model qwen/qwen3-14b | jq .`
 
 ---
 
