@@ -66,10 +66,11 @@ func GenerateReasoningRequests(
 		}
 
 		req := &sim.Request{
-			ID:          "", // assigned later
-			ArrivalTime: currentTime,
-			InputTokens: inputTokens,
+			ID:           "", // assigned later
+			ArrivalTime:  currentTime,
+			InputTokens:  inputTokens,
 			OutputTokens: outputTokens,
+			MaxOutputLen: len(outputTokens),
 			State:        sim.StateQueued,
 			TenantID:     tenantID,
 			SLOClass:     sloClass,

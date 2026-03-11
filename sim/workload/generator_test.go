@@ -1149,3 +1149,35 @@ func TestGenerateRequests_ReasoningClient_NoPrefixGroup_Unchanged(t *testing.T) 
 		}
 	}
 }
+
+// BC-5: Generator sets MaxOutputLen = len(OutputTokens) for all requests.
+func TestGenerateRequests_SetsMaxOutputLen(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		Category:      "language",
+		AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: "constant"},
+			InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 30}},
+		}},
+	}
+
+	requests, err := GenerateRequests(spec, 1_000_000, 42)
+	if err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected at least one request")
+	}
+
+	for i, req := range requests {
+		if req.MaxOutputLen != len(req.OutputTokens) {
+			t.Errorf("request %d: MaxOutputLen=%d, want len(OutputTokens)=%d",
+				i, req.MaxOutputLen, len(req.OutputTokens))
+		}
+	}
+}

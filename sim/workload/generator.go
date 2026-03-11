@@ -263,6 +263,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				ArrivalTime:      currentTime,
 				InputTokens:      inputTokens,
 				OutputTokens:     outputTokens,
+				MaxOutputLen:     len(outputTokens),
 				State:            sim.StateQueued,
 				ScheduledStepIdx: 0,
 				FinishedStepIdx:  0,
