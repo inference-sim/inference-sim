@@ -31,9 +31,9 @@ The most common experiment workflow for platform engineers:
 5. **Interpret:** Does the simulated TTFT p99 meet your SLO? If not, add instances or tune routing.
 
 ```bash
-# Example: Will 8 instances of LLaMA 3.1 8B handle 400 req/s at TTFT p99 < 500ms?
+# Example: Will 8 instances of Qwen3 14B handle 20 req/s at TTFT p99 < 500ms?
 ./blis run --model qwen/qwen3-14b \
-  --num-instances 8 --rate 400 --num-requests 2000 \
+  --num-instances 8 --rate 20 --num-requests 200 \
   --routing-policy weighted --seed 42
 ```
 

@@ -2,7 +2,7 @@
 
 This tutorial walks through a complete capacity planning exercise: determining how many inference instances you need to serve a target request rate while meeting latency SLOs.
 
-**Scenario:** You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 < 500ms. You need to find the minimum number of instances for 500 requests/second.
+**Scenario:** You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 < 500ms. You need to find the minimum number of instances for 20 requests/second.
 
 ## Step 1: Estimate Instance Capacity
 
@@ -16,39 +16,39 @@ Run a single instance at low load to establish the baseline service rate:
   --rate 10 --num-requests 50
 ```
 
-Check the `responses_per_sec` value in the output — this is the single-instance throughput at low utilization. For Qwen3 14B / H100 / TP=1 with default workload (512 input / 512 output tokens), you'll see roughly **57 requests/second**.
+Check the `responses_per_sec` value in the output — this is the single-instance throughput at low utilization. For Qwen3 14B / H100 / TP=1 with default workload (512 input / 512 output tokens), you'll see roughly **2.5 requests/second**.
 
-This means for 500 req/s, you need at minimum `ceil(500/57) ≈ 9` instances. Let's verify with simulation.
+This means for 20 req/s, you need at minimum `ceil(20/2.5) = 8` instances. Let's verify with simulation.
 
 ## Step 2: Baseline — Single Instance
 
 ```bash
 ./blis run \
   --model qwen/qwen3-14b \
-  --rate 50 --num-requests 200
+  --rate 2 --num-requests 50
 ```
 
-At 50 req/s (well below the ~57 req/s capacity), TTFT should be low. Note the `ttft_p99_ms` value — this is your best-case baseline.
+At 2 req/s (well below the ~2.5 req/s capacity), TTFT should be low. Note the `ttft_p99_ms` value — this is your best-case baseline.
 
 ## Step 3: Scale Up and Find the Saturation Point
 
-Run simulations at increasing instance counts for 500 req/s:
+Run simulations at increasing instance counts for 20 req/s:
 
 ```bash
-# 4 instances (~228 req/s capacity → heavily overloaded)
+# 4 instances (~10 req/s capacity → heavily overloaded)
 ./blis run \
   --model qwen/qwen3-14b \
-  --num-instances 4 --rate 500 --num-requests 2000
+  --num-instances 4 --rate 20 --num-requests 200
 
-# 8 instances (~456 req/s capacity → near saturation)
+# 8 instances (~20 req/s capacity → near saturation)
 ./blis run \
   --model qwen/qwen3-14b \
-  --num-instances 8 --rate 500 --num-requests 2000
+  --num-instances 8 --rate 20 --num-requests 200
 
-# 12 instances (~684 req/s capacity → comfortable headroom)
+# 12 instances (~30 req/s capacity → comfortable headroom)
 ./blis run \
   --model qwen/qwen3-14b \
-  --num-instances 12 --rate 500 --num-requests 2000
+  --num-instances 12 --rate 20 --num-requests 200
 ```
 
 Compare `ttft_p99_ms` across runs. You'll see:
@@ -76,25 +76,25 @@ Check the output for clues:
 
 ## Step 5: Compare Routing Policies
 
-With 12 instances at 500 req/s, compare routing strategies:
+With 12 instances at 20 req/s, compare routing strategies:
 
 ```bash
 # Round-robin (baseline)
 ./blis run \
   --model qwen/qwen3-14b \
-  --num-instances 12 --rate 500 --num-requests 2000 \
+  --num-instances 12 --rate 20 --num-requests 200 \
   --routing-policy round-robin
 
 # Weighted (default profile)
 ./blis run \
   --model qwen/qwen3-14b \
-  --num-instances 12 --rate 500 --num-requests 2000 \
+  --num-instances 12 --rate 20 --num-requests 200 \
   --routing-policy weighted
 
 # Least-loaded
 ./blis run \
   --model qwen/qwen3-14b \
-  --num-instances 12 --rate 500 --num-requests 2000 \
+  --num-instances 12 --rate 20 --num-requests 200 \
   --routing-policy least-loaded
 ```
 
@@ -103,7 +103,7 @@ For prefix-heavy workloads (like RAG with shared system prompts), try the prefix
 ```bash
 ./blis run \
   --model qwen/qwen3-14b \
-  --num-instances 12 --rate 500 --num-requests 2000 \
+  --num-instances 12 --rate 20 --num-requests 200 \
   --routing-policy weighted \
   --routing-scorers "prefix-affinity:5,queue-depth:1" \
   --prefix-tokens 512
@@ -116,7 +116,7 @@ For automated comparison across many configurations, use fitness evaluation:
 ```bash
 ./blis run \
   --model qwen/qwen3-14b \
-  --num-instances 12 --rate 500 --num-requests 2000 \
+  --num-instances 12 --rate 20 --num-requests 200 \
   --routing-policy weighted \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
 ```
@@ -126,7 +126,7 @@ For automated comparison across many configurations, use fitness evaluation:
 
 ## Step 7: Validate Against Your SLO
 
-Your SLO: TTFT p99 < 500ms at 500 req/s.
+Your SLO: TTFT p99 < 500ms at 20 req/s.
 
 From the simulations above, find the minimum instance count where `ttft_p99_ms < 500`. That's your capacity plan. Add 20-30% headroom for traffic spikes (real deployments see bursty traffic that exceeds the Poisson assumption).
 
