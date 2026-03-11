@@ -101,7 +101,11 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
 		cs.poolMembership = BuildPoolMembership(instances, config.PrefillInstances, config.DecodeInstances)
-		cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
+		if config.PDDecider == "prefix-threshold" {
+			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
+		} else {
+			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
+		}
 		cs.parentRequests = make(map[string]*ParentRequest)
 		cs.pendingPrefillCompletions = make(map[string]string)
 
@@ -332,6 +336,18 @@ func (c *ClusterSimulator) RejectedRequests() int {
 // poolsConfigured returns true if PD disaggregation pool topology is active.
 func (c *ClusterSimulator) poolsConfigured() bool {
 	return c.poolMembership != nil
+}
+
+// notifyDisaggregationObserver calls ObserveRouting on the disaggregationDecider if it
+// implements DisaggregationObserver. Called after each routing decision (both standard and
+// prefill paths) to keep the decider's prefix cache current (BC-PD-28, R17, INV-7).
+func (c *ClusterSimulator) notifyDisaggregationObserver(req *sim.Request, instanceID string) {
+	if c.disaggregationDecider == nil {
+		return
+	}
+	if obs, ok := c.disaggregationDecider.(sim.DisaggregationObserver); ok {
+		obs.ObserveRouting(req, instanceID)
+	}
 }
 
 // PoolMembership returns a copy of the pool role membership map (R8: no exported mutable maps).

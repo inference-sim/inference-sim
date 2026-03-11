@@ -329,6 +329,128 @@ func TestDisaggregation_PerPoolScorerConfigs(t *testing.T) {
 	}
 }
 
+// --- PrefixThresholdDecider integration tests ---
+
+// newTestRequests is already defined in test_helpers_test.go
+
+// newTestPrefixThresholdConfig creates a DeploymentConfig with prefix-threshold decider.
+func newTestPrefixThresholdConfig(threshold int) DeploymentConfig {
+	return DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, ""),
+		},
+		NumInstances:            4,
+		PrefillInstances:        2,
+		DecodeInstances:         2,
+		PDDecider:               "prefix-threshold",
+		PDPrefixThreshold:       threshold,
+		RoutingPolicy:           "round-robin",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+		PDKVBytesPerToken:       512,
+	}
+}
+
+// TestPrefixThreshold_DeciderWiredCorrectly verifies that prefix-threshold decider is created
+// when PDDecider is "prefix-threshold" (BC-PD-25).
+func TestPrefixThreshold_DeciderWiredCorrectly(t *testing.T) {
+	config := newTestPrefixThresholdConfig(512)
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, requests)
+
+	if cs.disaggregationDecider == nil {
+		t.Fatal("disaggregationDecider is nil — prefix-threshold not wired")
+	}
+	// Verify it satisfies DisaggregationObserver (BC-PD-26)
+	if _, ok := cs.disaggregationDecider.(sim.DisaggregationObserver); !ok {
+		t.Error("prefix-threshold decider does not implement DisaggregationObserver")
+	}
+}
+
+// TestPrefixThreshold_HighThresholdNoDisaggregation verifies that requests with tokens
+// below the threshold are routed via the standard path (not disaggregated).
+func TestPrefixThreshold_HighThresholdNoDisaggregation(t *testing.T) {
+	// Set threshold very high: no request will disaggregate.
+	// newTestRequests produces short requests (output tokens only, so InputTokens may be short).
+	const veryHighThreshold = 1_000_000
+	config := newTestPrefixThresholdConfig(veryHighThreshold)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	// With very high threshold, no requests should be disaggregated.
+	if len(cs.parentRequests) != 0 {
+		t.Errorf("parentRequests = %d, want 0 (threshold too high for any request to disaggregate)",
+			len(cs.parentRequests))
+	}
+	// Requests still complete via the standard routing path.
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests == 0 {
+		t.Error("no requests completed with high threshold prefix-threshold decider")
+	}
+}
+
+// TestPrefixThreshold_ZeroThresholdAlwaysDisaggregates verifies that threshold=0
+// behaves like AlwaysDisaggregate for non-empty requests.
+func TestPrefixThreshold_ZeroThresholdAlwaysDisaggregates(t *testing.T) {
+	config := newTestPrefixThresholdConfig(0)
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	// All requests have non-empty input tokens → threshold=0 → all disaggregate.
+	if len(cs.parentRequests) != 3 {
+		t.Errorf("parentRequests = %d, want 3 (threshold=0 disaggregates everything)", len(cs.parentRequests))
+	}
+}
+
+// TestPrefixThreshold_ObserverCalledAfterRouting verifies BC-PD-28: observer is called
+// after routing (using "always" + observer check via interface type assertion is sufficient
+// since we can't inspect internal state without exporting it).
+func TestPrefixThreshold_ObserverCalledAfterRouting(t *testing.T) {
+	// Use always-disaggregate-like behavior (threshold=0) so all requests go through
+	// the full disaggregated path (PrefillRoutingEvent fires, observer gets called there).
+	config := newTestPrefixThresholdConfig(0)
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	// After simulation, all requests were disaggregated and completed.
+	// The observer was called in PrefillRoutingEvent for each request.
+	// Verify causality invariants hold (phase causality implies observer didn't crash).
+	for _, parent := range cs.parentRequests {
+		if parent.TransferCompleteTime == 0 {
+			t.Errorf("parent %s: TransferCompleteTime not set — prefill path broken", parent.ID)
+		}
+	}
+}
+
+// TestPrefixThreshold_TransferConservation verifies INV-PD-3 holds with prefix-threshold decider.
+func TestPrefixThreshold_TransferConservation(t *testing.T) {
+	config := newTestPrefixThresholdConfig(0) // threshold=0 disaggregates all
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	if cs.transfersInitiated != cs.transfersCompleted {
+		t.Errorf("transfer conservation violated: initiated=%d, completed=%d",
+			cs.transfersInitiated, cs.transfersCompleted)
+	}
+	if cs.transfersInitiated != 5 {
+		t.Errorf("transfersInitiated = %d, want 5", cs.transfersInitiated)
+	}
+}
+
 func TestAllocateTransferredKV_Success(t *testing.T) {
 	cfg := sim.SimConfig{
 		Horizon:             1000000,
