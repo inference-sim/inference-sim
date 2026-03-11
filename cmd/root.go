@@ -224,10 +224,20 @@ var runCmd = &cobra.Command{
 				latencyModelBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
 		}
 
-		// Local copy of CLI-provided backend (read-only within Run).
+		// Local copy of CLI-provided backend.
 		// Default is "roofline" both at the CLI level (Cobra flag) and the
 		// library level (factory case "", "roofline": dispatch).
 		backend := latencyModelBackend
+
+		// If both alpha and beta coefficients are explicitly provided but
+		// --latency-model was not, auto-switch to blackbox. Providing both
+		// coefficient sets is a clear signal the user wants trained blackbox
+		// estimation, not analytical roofline.
+		if !cmd.Flags().Changed("latency-model") &&
+			cmd.Flags().Changed("alpha-coeffs") && cmd.Flags().Changed("beta-coeffs") {
+			backend = "blackbox"
+			logrus.Infof("--alpha-coeffs and --beta-coeffs provided; using blackbox mode")
+		}
 
 		var modelConfig = sim.ModelConfig{}
 		var hwConfig = sim.HardwareCalib{}
