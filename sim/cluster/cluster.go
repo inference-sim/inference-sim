@@ -42,6 +42,7 @@ type ClusterSimulator struct {
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
 	transfersInitiated        int
 	transfersCompleted        int
+	droppedAtDecodeKV         int               // decode sub-requests dropped due to KV allocation failure (R1, INV-1)
 	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 }
@@ -248,6 +249,10 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	c.aggregatedMetrics = c.aggregateMetrics()
+	// R1/INV-1: decode sub-requests dropped at KV allocation are not tracked by instance
+	// metrics. Account for them in the aggregated DroppedUnservable count so that
+	// injected_requests == completed + queued + running + dropped holds at cluster level.
+	c.aggregatedMetrics.DroppedUnservable += c.droppedAtDecodeKV
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {
@@ -288,7 +293,10 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
 			parent := c.parentRequests[parentID]
 			if parent == nil {
-				continue
+				// R1: nil parent is a programming error — pendingPrefillCompletions and parentRequests
+				// are always populated together in PrefillRoutingEvent.Execute(). Panic to make the
+				// invariant violation visible rather than silently leaking the map entry forever.
+				panic(fmt.Sprintf("detectPrefillCompletions: parentID %q not found in parentRequests (programming error)", parentID))
 			}
 			parent.PrefillCompleteTime = c.clock
 			delete(c.pendingPrefillCompletions, subReqID)

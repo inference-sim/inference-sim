@@ -62,6 +62,12 @@ func CollectPDMetrics(
 	if len(parents) == 0 {
 		return nil
 	}
+	if aggregated == nil {
+		// Guard: aggregated must be non-nil for TTFT lookup and SimEndedTime access.
+		// In production, aggregated comes from cs.AggregatedMetrics() which is always
+		// non-nil after Run(). This guard protects callers passing hand-constructed inputs.
+		return nil
+	}
 
 	// Sort by ID for deterministic processing (R2).
 	sorted := make([]*ParentRequest, len(parents))
@@ -131,6 +137,11 @@ func collectPoolThroughput(
 
 	for _, id := range ids {
 		m := metricsByID[id]
+		if m == nil {
+			// Guard: nil metrics pointer from caller (e.g., test helpers or external integrations).
+			// In production, PerInstanceMetricsByID() always returns non-nil pointers from inst.Metrics().
+			continue
+		}
 		switch poolMembership[id] {
 		case PoolRolePrefill:
 			prefillCompleted += m.CompletedRequests

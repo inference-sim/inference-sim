@@ -173,7 +173,9 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			if ok := inst.AllocateTransferredKV(e.decodeSubReq); !ok {
 				logrus.Warnf("[cluster] decode instance %s: insufficient KV capacity for %s (%d input tokens)",
 					decision.TargetInstance, e.decodeSubReq.ID, len(e.decodeSubReq.InputTokens))
-				// Cannot proceed without KV — request effectively dropped
+				// R1/INV-1: count the drop so aggregated DroppedUnservable remains accurate.
+				// droppedAtDecodeKV is added to aggregatedMetrics.DroppedUnservable after Run().
+				cs.droppedAtDecodeKV++
 				return
 			}
 

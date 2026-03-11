@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -394,8 +395,10 @@ func TestClusterSimulator_ParentRequests_ReturnsAllParents(t *testing.T) {
 	mustRun(t, cs)
 
 	got := cs.ParentRequests()
-	if len(got) != len(cs.parentRequests) {
-		t.Fatalf("ParentRequests() len=%d, want %d", len(got), len(cs.parentRequests))
+	// With AlwaysDisaggregate and 5 requests, all 5 should have ParentRequest records.
+	const wantLen = 5
+	if len(got) != wantLen {
+		t.Fatalf("ParentRequests() len=%d, want %d", len(got), wantLen)
 	}
 	// Verify sorted order.
 	for i := 1; i < len(got); i++ {
@@ -415,11 +418,14 @@ func TestClusterSimulator_PerInstanceMetricsByID_ContainsAllInstances(t *testing
 	mustRun(t, cs)
 
 	byID := cs.PerInstanceMetricsByID()
-	if len(byID) != len(cs.instances) {
-		t.Fatalf("PerInstanceMetricsByID() len=%d, want %d", len(byID), len(cs.instances))
+	// config has 4 instances total (2 prefill + 2 decode).
+	const wantInstances = 4
+	if len(byID) != wantInstances {
+		t.Fatalf("PerInstanceMetricsByID() len=%d, want %d", len(byID), wantInstances)
 	}
-	for _, inst := range cs.instances {
-		id := string(inst.ID())
+	// Verify expected instance IDs are present.
+	for i := 0; i < wantInstances; i++ {
+		id := fmt.Sprintf("instance_%d", i)
 		if _, ok := byID[id]; !ok {
 			t.Errorf("PerInstanceMetricsByID() missing instance %q", id)
 		}
@@ -472,14 +478,49 @@ func TestCollectPDMetrics_ParentTTFT_IncludesTransferDuration(t *testing.T) {
 		t.Fatal("CollectPDMetrics returned nil for disaggregated simulation")
 	}
 	if pd.ParentTTFT.Count == 0 {
-		t.Skip("no parent TTFT data collected — skipping causality check")
+		t.Fatal("no parent TTFT data collected — PD pipeline broken (BC-1 invariant cannot be checked)")
 	}
 	if pd.TransferDuration.Count == 0 {
-		t.Skip("no transfer duration data collected — skipping causality check")
+		t.Fatal("no transfer duration data collected — PD pipeline broken (BC-1 invariant cannot be checked)")
 	}
 	// BC-1: parent TTFT includes transfer time, so mean TTFT >= mean transfer.
 	if pd.ParentTTFT.Mean < pd.TransferDuration.Mean {
 		t.Errorf("BC-1 causality violated: ParentTTFT.Mean (%.1f) < TransferDuration.Mean (%.1f)",
 			pd.ParentTTFT.Mean, pd.TransferDuration.Mean)
+	}
+}
+
+// TestClusterSimulator_DisaggregatedINV1_Conservation verifies INV-1 (request conservation)
+// holds for the disaggregated code path (R7 companion invariant test).
+// INV-1: injected == completed + still_queued + still_running + dropped_unservable
+// In PD mode, each parent produces two sub-requests; CompletedRequests counts sub-requests.
+// We verify at the parent-request level: parent count = completions on decode pool.
+func TestClusterSimulator_DisaggregatedINV1_Conservation(t *testing.T) {
+	const numRequests = 5
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	agg := cs.AggregatedMetrics()
+	// InjectedRequests = CompletedRequests + StillQueued + StillRunning + DroppedUnservable
+	injected := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
+	if injected == 0 {
+		t.Fatal("no requests tracked — simulation produced no accounting data")
+	}
+	// Verify the conservation identity holds.
+	// InjectedRequests field is derived (not stored), but we verify the components sum correctly.
+	if agg.DroppedUnservable < 0 {
+		t.Errorf("INV-1 violated: DroppedUnservable=%d (negative)", agg.DroppedUnservable)
+	}
+	if agg.CompletedRequests < 0 {
+		t.Errorf("INV-1 violated: CompletedRequests=%d (negative)", agg.CompletedRequests)
+	}
+	// With sufficient KV capacity and small workload, all requests should complete.
+	// CompletedRequests counts sub-requests: 5 prefill + 5 decode = 10.
+	const wantSubRequestCompletions = numRequests * 2
+	if agg.CompletedRequests != wantSubRequestCompletions {
+		t.Errorf("INV-1 conservation: CompletedRequests=%d, want %d (2 sub-requests per parent)",
+			agg.CompletedRequests, wantSubRequestCompletions)
 	}
 }

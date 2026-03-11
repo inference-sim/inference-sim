@@ -44,7 +44,9 @@ func TestCollectPDMetrics_NilWhenNoParents(t *testing.T) {
 	}
 }
 
-// BC-1: ParentTTFT populated from aggregated.RequestTTFTs[DecodeSubReqID].
+// BC-1: ParentTTFT populated from aggregated.RequestTTFTs[PrefillSubReqID].
+// (Decode sub-requests start with ProgressIndex=inputLen and never trigger TTFT recording;
+// only the prefill sub-request records TTFT when ProgressIndex reaches inputLen.)
 func TestCollectPDMetrics_ParentTTFT(t *testing.T) {
 	parents := []*ParentRequest{
 		buildParentRequest("req-1", "req-1_prefill", 100, 200),
