@@ -583,8 +583,8 @@ var runCmd = &cobra.Command{
 			if !cmd.Flags().Changed("total-kv-blocks") && !kvBlocksFromDefaults {
 				kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
 				if kvParamsErr != nil {
-					logrus.Fatalf("--latency-model: could not extract KV capacity params: %v\n"+
-					"Set --total-kv-blocks explicitly to override", kvParamsErr)
+					logrus.Warnf("--latency-model: could not extract KV capacity params: %v. "+
+						"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", kvParamsErr, totalKVBlocks)
 				} else if hwConfig.MemoryGiB <= 0 {
 					logrus.Warnf("--latency-model: GPU memory capacity not available in hardware config; using current total-kv-blocks=%d. "+
 						"Add MemoryGiB to hardware_config.json or pass --total-kv-blocks explicitly", totalKVBlocks)
@@ -594,8 +594,8 @@ var runCmd = &cobra.Command{
 					}
 					autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, kvParams)
 					if calcErr != nil {
-						logrus.Fatalf("--latency-model: KV capacity auto-calculation failed: %v\n"+
-							"Set --total-kv-blocks explicitly to override", calcErr)
+						logrus.Warnf("--latency-model: KV capacity auto-calculation failed: %v. "+
+							"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", calcErr, totalKVBlocks)
 					} else {
 						totalKVBlocks = autoBlocks
 						logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, block_size=%d, MoE=%v)",
