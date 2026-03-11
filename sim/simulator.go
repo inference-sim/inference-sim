@@ -327,6 +327,13 @@ func (sim *Simulator) recordKVUsageMetrics(stepDuration int64) {
 // recordRequestCompletion records per-request metrics for a completed request.
 // Called after state transitions (req.State, req.ITL, req.FinishedStepIdx)
 // and KV cleanup are done.
+//
+// NOTE: E2E (lat) includes PostDecodeFixedOverhead and OutputTokenProcessingTime, both of
+// which model non-blocking CPU overhead (concurrent with GPU execution). These inflate
+// E2E and RequestCompletionTimes beyond the RequestLeftEvent timestamp by the overhead
+// amount. This is architecturally intentional: real vLLM's post-processing (detokenization,
+// response serialization) is non-blocking but still contributes to client-perceived latency.
+// For trained-roofline, PostDecodeFixedOverhead adds ~1.85ms to E2E; for other backends it's 0.
 func (sim *Simulator) recordRequestCompletion(req *Request) {
 	sim.Metrics.CompletedRequests++
 

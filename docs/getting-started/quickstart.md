@@ -59,7 +59,12 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 
-# With roofline mode (no pre-trained coefficients needed)
+# With trained-roofline mode (recommended for new models, 7% MAPE)
+./blis run --model meta-llama/llama-3.1-8b-instruct \
+  --latency-model trained-roofline --hardware H100 --tp 2 \
+  --num-instances 4 --rate 100 --num-requests 500
+
+# With pure roofline mode (analytical, no learned corrections)
 ./blis run --model meta-llama/llama-3.1-8b-instruct \
   --latency-model roofline --hardware H100 --tp 2 \
   --num-instances 4 --rate 100 --num-requests 500
