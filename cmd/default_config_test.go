@@ -59,7 +59,7 @@ func TestGetCoefficients_ReturnsModelDefaultKVBlocks(t *testing.T) {
 	// GIVEN a known model in defaults.yaml
 	alpha, beta, kvBlocks := GetCoefficients(
 		"meta-llama/llama-3.1-8b-instruct",
-		1, "H100", "vllm/vllm-openai:v0.8.4",
+		1, "H100", "vllm/vllm-openai:v0.11.0",
 		path,
 	)
 

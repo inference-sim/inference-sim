@@ -7,7 +7,7 @@ defaults:
   meta-llama/llama-3.1-8b-instruct:
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.8.4
+    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: meta-llama/Llama-3.1-8B-Instruct
   meta-llama/llama-3.3-70b-instruct:
     GPU: H100
@@ -62,17 +62,17 @@ defaults:
   qwen/qwen2.5-3b-instruct:
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.8.4
+    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: Qwen/Qwen2.5-3B-Instruct
   qwen/qwen3-14b:
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.8.4
+    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: Qwen/Qwen3-14B
   qwen/qwen2.5-7b-instruct:
     GPU: H100
-    tensor_parallelism: 4
-    vllm_version: vllm/vllm-openai:v0.8.4
+    tensor_parallelism: 1
+    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: Qwen/Qwen2.5-7B-Instruct
   redhatai/llama-3.1-nemotron-70b-instruct-hf-fp8-dynamic:
     GPU: H100
@@ -301,7 +301,7 @@ models:
   id: meta-llama/llama-3.1-8b-instruct
   tensor_parallelism: 1
   total_kv_blocks: 29205
-  vllm_version: vllm/vllm-openai:v0.8.4
+  vllm_version: vllm/vllm-openai:v0.11.0
 - GPU: A100-80
   alpha_coeffs:
   - 2943.6134268743335
@@ -720,7 +720,7 @@ models:
   id: qwen/qwen2.5-3b-instruct
   tensor_parallelism: 1
   total_kv_blocks: 117925
-  vllm_version: vllm/vllm-openai:v0.8.4
+  vllm_version: vllm/vllm-openai:v0.11.0
 - GPU: H100
   alpha_coeffs:
   - 8888.089034078324
@@ -733,7 +733,7 @@ models:
   id: qwen/qwen3-14b
   tensor_parallelism: 1
   total_kv_blocks: 17600
-  vllm_version: vllm/vllm-openai:v0.8.4
+  vllm_version: vllm/vllm-openai:v0.11.0
 - GPU: A100-80
   alpha_coeffs:
   - 8970.33939991319
@@ -761,7 +761,7 @@ models:
   id: qwen/qwen2.5-7b-instruct
   tensor_parallelism: 1
   total_kv_blocks: 67659
-  vllm_version: vllm/vllm-openai:v0.8.4
+  vllm_version: vllm/vllm-openai:v0.11.0
 - GPU: A100-80
   alpha_coeffs:
   - 7025.080179905166
