@@ -354,6 +354,13 @@ func (c *ClusterSimulator) Trace() *trace.SimulationTrace {
 	return c.trace
 }
 
+// DroppedKVAllocations returns the count of decode sub-requests dropped due to
+// KV cache OOM at decode routing time. Non-zero values indicate the cluster
+// ran out of KV memory on decode instances. R1: counted rather than silently dropped.
+func (c *ClusterSimulator) DroppedKVAllocations() int {
+	return c.droppedKVAllocations
+}
+
 // PerInstanceMetrics returns the metrics for each individual instance.
 // Panics if called before Run() has completed.
 func (c *ClusterSimulator) PerInstanceMetrics() []*sim.Metrics {

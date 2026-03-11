@@ -111,3 +111,75 @@ func TestSummarize_TargetDistribution_CountsPerInstance(t *testing.T) {
 		t.Errorf("expected i_1 count 1, got %d", summary.TargetDistribution["i_1"])
 	}
 }
+
+// TestSummarize_PDFields_DisaggregationCounting verifies that PD summary fields are
+// correctly counted: DisaggregationCount counts all decisions, DisaggregatedCount counts
+// only disaggregate=true records (R7: invariant test for new PD summary fields).
+func TestSummarize_PDFields_DisaggregationCounting(t *testing.T) {
+	// GIVEN a trace with 3 disaggregation decisions: 2 true, 1 false
+	st := NewSimulationTrace(TraceConfig{Level: TraceLevelDecisions})
+	st.RecordDisaggregation(DisaggregationRecord{RequestID: "r1", Disaggregate: true})
+	st.RecordDisaggregation(DisaggregationRecord{RequestID: "r2", Disaggregate: false})
+	st.RecordDisaggregation(DisaggregationRecord{RequestID: "r3", Disaggregate: true})
+
+	// WHEN summarized
+	summary := Summarize(st)
+
+	// THEN DisaggregationCount counts all decisions, DisaggregatedCount counts only true
+	if summary.DisaggregationCount != 3 {
+		t.Errorf("DisaggregationCount: expected 3, got %d", summary.DisaggregationCount)
+	}
+	if summary.DisaggregatedCount != 2 {
+		t.Errorf("DisaggregatedCount: expected 2, got %d", summary.DisaggregatedCount)
+	}
+	// KVTransferCount unaffected by disaggregation records alone
+	if summary.KVTransferCount != 0 {
+		t.Errorf("KVTransferCount: expected 0, got %d", summary.KVTransferCount)
+	}
+}
+
+// TestSummarize_PDFields_KVTransferMean verifies that MeanTransferDuration is
+// correctly computed from KVTransferRecords (R7: invariant test with known values).
+func TestSummarize_PDFields_KVTransferMean(t *testing.T) {
+	// GIVEN a trace with 3 KV transfers of known durations
+	st := NewSimulationTrace(TraceConfig{Level: TraceLevelDecisions})
+	st.RecordKVTransfer(KVTransferRecord{ParentRequestID: "r1", TransferDuration: 100})
+	st.RecordKVTransfer(KVTransferRecord{ParentRequestID: "r2", TransferDuration: 200})
+	st.RecordKVTransfer(KVTransferRecord{ParentRequestID: "r3", TransferDuration: 300})
+
+	// WHEN summarized
+	summary := Summarize(st)
+
+	// THEN KVTransferCount = 3 and MeanTransferDuration = 200 (exact)
+	if summary.KVTransferCount != 3 {
+		t.Errorf("KVTransferCount: expected 3, got %d", summary.KVTransferCount)
+	}
+	if summary.MeanTransferDuration != 200.0 {
+		t.Errorf("MeanTransferDuration: expected 200.0, got %.2f", summary.MeanTransferDuration)
+	}
+}
+
+// TestSummarize_PDFields_EmptyPDRecords_ZeroValues verifies that PD summary fields
+// are zero when no PD records are present (R7: boundary case).
+func TestSummarize_PDFields_EmptyPDRecords_ZeroValues(t *testing.T) {
+	// GIVEN a trace with no PD records (standard routing only)
+	st := NewSimulationTrace(TraceConfig{Level: TraceLevelDecisions})
+	st.RecordAdmission(AdmissionRecord{RequestID: "r1", Admitted: true})
+
+	// WHEN summarized
+	summary := Summarize(st)
+
+	// THEN all PD fields are zero
+	if summary.DisaggregationCount != 0 {
+		t.Errorf("DisaggregationCount: expected 0, got %d", summary.DisaggregationCount)
+	}
+	if summary.DisaggregatedCount != 0 {
+		t.Errorf("DisaggregatedCount: expected 0, got %d", summary.DisaggregatedCount)
+	}
+	if summary.KVTransferCount != 0 {
+		t.Errorf("KVTransferCount: expected 0, got %d", summary.KVTransferCount)
+	}
+	if summary.MeanTransferDuration != 0.0 {
+		t.Errorf("MeanTransferDuration: expected 0.0, got %.2f", summary.MeanTransferDuration)
+	}
+}

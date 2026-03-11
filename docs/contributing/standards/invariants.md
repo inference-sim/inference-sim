@@ -105,3 +105,44 @@ Invariants are properties that must hold at all times during and after simulatio
 **Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
 
 **Hypothesis family:** Structural model (same as INV-4, INV-7).
+
+---
+
+## INV-PD-1: KV Completeness
+
+**Statement:** `decode_enqueue_time >= transfer_complete_time` for every disaggregated request. Decode scheduling cannot precede KV data availability.
+
+**Verification:** `sim/cluster/pd_traces_test.go` — phase-causality tests. DecodeRoutingEvent fires only after KVTransferCompletedEvent for the same parent request ID.
+
+---
+
+## INV-PD-2: Pool Exclusivity
+
+**Statement:** Prefill sub-requests execute on prefill pool instances only; decode sub-requests execute on decode pool instances only. No cross-pool scheduling.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — pool exclusivity assertions. Pool membership is enforced by pool-filtered snapshot slices in PrefillRoutingEvent and DecodeRoutingEvent.
+
+---
+
+## INV-PD-3: Transfer Conservation
+
+**Statement:** `initiated_transfers == completed_transfers` at simulation end (when all requests complete before horizon).
+
+**Verification:** `sim/cluster/disaggregation_test.go` — TestDisaggregation_TransferConservation. Fields `cs.transfersInitiated` and `cs.transfersCompleted` track this.
+
+---
+
+## INV-PD-4: Phase Causality
+
+**Statement:** `arrival ≤ prefill_enqueue ≤ prefill_complete ≤ transfer_start ≤ transfer_complete ≤ decode_enqueue ≤ completion` for every disaggregated request.
+
+**Verification:** DES event ordering (timestamp, priority, seqID) enforces causality at each pipeline stage. PD events have explicit priority ordering: Disaggregation(3) → PrefillRouting(4) → KVTransferStarted(5) → KVTransferCompleted(6) → DecodeRouting(7).
+
+---
+
+## INV-PD-5: Pool Stability
+
+**Statement:** Pool membership (which instances are prefill vs. decode) is fixed at construction and does not change during simulation.
+
+**Verification:** `BuildPoolMembership()` in `sim/cluster/pool.go` runs once at `NewClusterSimulator()`. No runtime mutations to `cs.poolMembership`.
+

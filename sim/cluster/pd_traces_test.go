@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
 // TestPDTrace_NonDisaggMode_NoDisaggRecords verifies BC-PD-18:
@@ -165,7 +166,9 @@ func TestPDTrace_DisaggMode_Counterfactual(t *testing.T) {
 }
 
 // TestPDTrace_DisaggMode_Cardinality verifies the PD trace cardinality conservation law (R7):
-// every successfully disaggregated request produces exactly one record of each type.
+// with AlwaysDisaggregate, DisaggregatedCount == len(PrefillRoutings) == len(KVTransfers) == len(DecodeRoutings).
+// Note: len(Disaggregations) >= DisaggregatedCount (Disaggregations records ALL decisions, including disaggregate=false).
+// The general invariant is DisaggregatedCount == len(PrefillRoutings) == len(KVTransfers) == len(DecodeRoutings).
 func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
 	// GIVEN disaggregated simulation with trace enabled
 	const numRequests = 5
@@ -177,18 +180,24 @@ func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
 	// WHEN run
 	mustRun(t, cs)
 
-	// THEN trace record counts satisfy the cardinality conservation law:
-	// #Disaggregations == #PrefillRoutings == #KVTransfers == #DecodeRoutings
+	// THEN trace record counts satisfy the cardinality conservation law.
+	// With AlwaysDisaggregate: DisaggregatedCount == len(Disaggregations) == len(PrefillRoutings) == len(KVTransfers) == len(DecodeRoutings)
 	tr := cs.Trace()
 	if tr == nil {
 		t.Fatal("expected non-nil trace")
 	}
-	nd := len(tr.Disaggregations)
+	summary := trace.Summarize(tr)
+	disaggCount := summary.DisaggregatedCount
 	np := len(tr.PrefillRoutings)
 	nk := len(tr.KVTransfers)
 	nd2 := len(tr.DecodeRoutings)
-	if np != nd {
-		t.Errorf("cardinality violation: PrefillRoutings=%d != Disaggregations=%d", np, nd)
+	// With AlwaysDisaggregate, DisaggregatedCount == len(Disaggregations)
+	if disaggCount != len(tr.Disaggregations) {
+		t.Errorf("cardinality violation: DisaggregatedCount=%d != len(Disaggregations)=%d (AlwaysDisaggregate expects all true)", disaggCount, len(tr.Disaggregations))
+	}
+	// The general PD cardinality law: DisaggregatedCount == PrefillRoutings == KVTransfers == DecodeRoutings
+	if np != disaggCount {
+		t.Errorf("cardinality violation: PrefillRoutings=%d != DisaggregatedCount=%d", np, disaggCount)
 	}
 	if nk != np {
 		t.Errorf("cardinality violation: KVTransfers=%d != PrefillRoutings=%d", nk, np)
@@ -224,5 +233,23 @@ func TestPDTrace_DisaggMode_DisaggDecisionRecorded(t *testing.T) {
 		if r.RequestID == "" {
 			t.Errorf("disaggregation[%d]: RequestID empty", i)
 		}
+	}
+}
+
+// TestPDTrace_NormalMode_DroppedKVAllocationsZero verifies R1 invariant:
+// under normal conditions (sufficient KV capacity) DroppedKVAllocations is zero.
+// This also verifies the DroppedKVAllocations() accessor returns a meaningful value.
+func TestPDTrace_NormalMode_DroppedKVAllocationsZero(t *testing.T) {
+	// GIVEN disaggregated simulation with ample KV capacity (100 blocks)
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(config, requests)
+
+	// WHEN run
+	mustRun(t, cs)
+
+	// THEN no decode requests were dropped due to KV OOM (R1: counter not silently hidden)
+	if cs.DroppedKVAllocations() != 0 {
+		t.Errorf("expected 0 dropped KV allocations under ample capacity, got %d", cs.DroppedKVAllocations())
 	}
 }

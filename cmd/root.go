@@ -873,6 +873,14 @@ var runCmd = &cobra.Command{
 			}
 			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
 			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
+			// PD disaggregation summary (only printed when disaggregation was active)
+			if traceSummary.DisaggregationCount > 0 {
+				fmt.Println("=== PD Disaggregation Summary ===")
+				fmt.Printf("Disaggregation Decisions: %d\n", traceSummary.DisaggregationCount)
+				fmt.Printf("  Disaggregated: %d\n", traceSummary.DisaggregatedCount)
+				fmt.Printf("KV Transfers: %d\n", traceSummary.KVTransferCount)
+				fmt.Printf("Mean Transfer Duration (µs): %.2f\n", traceSummary.MeanTransferDuration)
+			}
 		}
 
 		logrus.Info("Simulation complete.")
