@@ -500,6 +500,40 @@ var runCmd = &cobra.Command{
 			alphaCoeffs, betaCoeffs = newAlpha, newBeta
 			if !cmd.Flags().Changed("total-kv-blocks") {
 				totalKVBlocks = kvBlocks
+				if kvBlocks > 0 {
+					kvBlocksFromDefaults = true
+				}
+			}
+		}
+		// Blackbox mode: auto-calculate KV blocks when neither CLI flag nor
+		// defaults.yaml provided a value. Uses cached model config (no HF fetch)
+		// and bundled hardware config. Best-effort — falls through silently if
+		// configs are unavailable (totalKVBlocks validation at line ~770 catches 0).
+		if backend == "blackbox" && !cmd.Flags().Changed("total-kv-blocks") && !kvBlocksFromDefaults {
+			baseDir := filepath.Dir(defaultsFilePath)
+			cachedDir, dirErr := bundledModelConfigDir(model, baseDir)
+			if dirErr == nil {
+				hfPath := filepath.Join(cachedDir, "config.json")
+				if _, statErr := os.Stat(hfPath); statErr == nil {
+					hfCfg, parseErr := latency.ParseHFConfig(hfPath)
+					if parseErr == nil {
+						mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
+						resolvedHW, hwPathErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+						if mcErr == nil && hwPathErr == nil {
+							hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
+							if hcErr == nil && hc.MemoryGiB > 0 {
+								kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
+								if kvErr == nil {
+									autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tensorParallelism, blockSizeTokens, kvParams)
+									if calcErr == nil {
+										totalKVBlocks = autoBlocks
+										logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d from cached model config", totalKVBlocks)
+									}
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 		// Zero-coefficients safety guard: prevents silently running with zero step times
