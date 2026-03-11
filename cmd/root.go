@@ -263,6 +263,10 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// Track whether defaults.yaml provided KV blocks (used to skip auto-calc).
+		// Precedence: (1) --total-kv-blocks CLI flag, (2) defaults.yaml, (3) auto-calc.
+		kvBlocksFromDefaults := false
+
 		// --latency-model roofline: auto-resolve model config and hardware config
 		if backend == "roofline" {
 			if gpu == "" {
@@ -306,18 +310,17 @@ var runCmd = &cobra.Command{
 			}
 			hwConfigPath = resolvedHW
 
-			// Optionally load totalKVBlocks from defaults.yaml (overridden by
-			// auto-calculation later). Roofline does NOT use alpha coefficients —
-			// QueueingTime and OutputTokenProcessingTime are zero by design.
+			// Load totalKVBlocks from defaults.yaml if available. Roofline does NOT
+			// use alpha coefficients — QueueingTime and OutputTokenProcessingTime
+			// are zero by design.
 			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
 				// vllmVersion already resolved by early defaults block (lines 248-265).
 				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 					totalKVBlocks = kvBlocks
+					kvBlocksFromDefaults = true
 					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
 				}
-				// No warning for missing KV blocks — roofline auto-calculates them
-				// from model architecture + GPU memory in the analytical backends block.
 			}
 		}
 
@@ -377,6 +380,7 @@ var runCmd = &cobra.Command{
 				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 					totalKVBlocks = kvBlocks
+					kvBlocksFromDefaults = true
 					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
 				}
 			}
@@ -443,6 +447,7 @@ var runCmd = &cobra.Command{
 				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 					totalKVBlocks = kvBlocks
+					kvBlocksFromDefaults = true
 					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
 				}
 			}
@@ -515,12 +520,10 @@ var runCmd = &cobra.Command{
 					modelConfig.NumLocalExperts, modelConfig.NumExpertsPerTok)
 			}
 
-			// KV capacity auto-calculation: derive total-kv-blocks from model + hardware
-			// when the user hasn't explicitly set --total-kv-blocks. This overrides the
-			// defaults.yaml value (loaded above) with a more accurate estimate derived
-			// from actual model architecture and GPU memory capacity.
-			// R18: cmd.Flags().Changed() ensures CLI flags always take precedence.
-			if !cmd.Flags().Changed("total-kv-blocks") {
+			// KV capacity auto-calculation: derive total-kv-blocks from model + hardware.
+			// Precedence: (1) --total-kv-blocks CLI flag, (2) defaults.yaml match,
+			// (3) auto-calculate from model architecture + GPU memory.
+			if !cmd.Flags().Changed("total-kv-blocks") && !kvBlocksFromDefaults {
 				kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
 				if kvParamsErr != nil {
 					logrus.Fatalf("--latency-model: could not extract KV capacity params: %v\n"+
