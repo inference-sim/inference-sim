@@ -23,6 +23,14 @@ export HF_TOKEN=your_token_here
 
 Public models (e.g., Qwen3) work without a token. See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
 
+!!! note "Air-gapped / offline environments"
+    The default roofline mode requires network access to HuggingFace on first run (configs are cached in `model_configs/` after that). For environments without internet access:
+
+    - Use **blackbox mode**: `./blis run --model <name> --latency-model blackbox` (uses pre-trained coefficients from `defaults.yaml`, no network needed)
+    - Or **pre-populate** `model_configs/<model>/config.json` and use `--model-config-folder`
+
+    For CI pipelines, set `HF_TOKEN` in your environment secrets to avoid rate limits on gated models.
+
 ## Verify the Build
 
 ```bash

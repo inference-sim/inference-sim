@@ -476,6 +476,9 @@ var runCmd = &cobra.Command{
 		// Blackbox mode: load alpha/beta coefficients and KV blocks from defaults.yaml.
 		// Skipped for analytical backends (roofline, crossmodel, trained-roofline) which
 		// load their own coefficients in their respective blocks above.
+		// Note: the old guard also checked len(modelConfigFolder)==0 && len(hwConfigPath)==0
+		// as part of implicit roofline detection. With explicit --latency-model selection,
+		// those guards are no longer needed — blackbox ignores model-config/hw-config paths.
 		if backend == "blackbox" && !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") {
 			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 			alphaCoeffs, betaCoeffs = newAlpha, newBeta
