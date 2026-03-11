@@ -240,7 +240,7 @@ When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache
 
 ## Latency Models
 
-BLIS predicts GPU step time through one of three latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
+BLIS predicts GPU step time through one of four latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
 
 ### Blackbox Model (Default)
 

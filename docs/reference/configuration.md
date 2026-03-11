@@ -83,7 +83,7 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "" | Latency model backend: `blackbox` (default), `roofline`, `crossmodel`. When set to `roofline` or `crossmodel`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. |
+| `--latency-model` | string | "" | Latency model backend: `blackbox` (default), `roofline`, `crossmodel`, `trained-roofline`. When set to `roofline`, `crossmodel`, or `trained-roofline`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-roofline` is recommended for new models (7% MAPE GPU step time). |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
 

@@ -1,6 +1,9 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`. For Mixture-of-Experts (MoE) models, use `--latency-model crossmodel` instead — see [Cross-Model Mode](../guide/latency-models.md#cross-model-mode-physics-informed).
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`.
+
+!!! tip "Trained-Roofline: higher accuracy"
+    For higher accuracy (7% MAPE GPU combined), use `--latency-model trained-roofline` which applies learned correction factors to these roofline basis functions. See [Trained-Roofline Mode](../guide/latency-models.md#trained-roofline-mode-recommended-for-new-models). For legacy MoE workflows, `--latency-model crossmodel` is also available — see [Cross-Model Mode](../guide/latency-models.md#cross-model-mode-physics-informed).
 
 
 ## 1. Why Roofline?

@@ -382,6 +382,78 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// --latency-model trained-roofline: auto-resolve model config and load global coefficients
+		if backend == "trained-roofline" {
+			if gpu == "" {
+				logrus.Fatalf("--latency-model trained-roofline requires --hardware (GPU type)")
+			}
+			if tensorParallelism <= 0 {
+				logrus.Fatalf("--latency-model trained-roofline requires --tp > 0")
+			}
+
+			// Resolve model config folder (same auto-fetch chain as roofline/crossmodel)
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			modelConfigFolder = resolved
+
+			// Resolve hardware config
+			resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			hwConfigPath = resolvedHW
+
+			// Load trained-roofline defaults from defaults.yaml (R18: use Flags().Changed)
+			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
+				data, readErr := os.ReadFile(defaultsFilePath)
+				if readErr != nil {
+					logrus.Warnf("--latency-model trained-roofline: failed to read %s: %v", defaultsFilePath, readErr)
+				} else {
+					var cfg Config
+					decoder := yaml.NewDecoder(bytes.NewReader(data))
+					decoder.KnownFields(true) // R10: strict YAML parsing
+					if yamlErr := decoder.Decode(&cfg); yamlErr != nil {
+						logrus.Fatalf("--latency-model trained-roofline: failed to parse %s: %v", defaultsFilePath, yamlErr)
+					}
+					if cfg.TrainedRooflineDefaults != nil {
+						if !cmd.Flags().Changed("beta-coeffs") {
+							betaCoeffs = cfg.TrainedRooflineDefaults.BetaCoeffs
+							logrus.Infof("--latency-model: loaded trained-roofline beta coefficients from defaults.yaml")
+						}
+						if !cmd.Flags().Changed("alpha-coeffs") {
+							alphaCoeffs = cfg.TrainedRooflineDefaults.AlphaCoeffs
+							logrus.Infof("--latency-model: loaded trained-roofline alpha coefficients from defaults.yaml")
+						}
+					}
+				}
+				// Also load KV blocks from per-model config if available
+				if vllmVersion == "" {
+					_, _, ver := GetDefaultSpecs(model)
+					if len(ver) > 0 {
+						vllmVersion = ver
+					}
+				}
+				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
+				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
+					totalKVBlocks = kvBlocks
+					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
+				}
+			}
+			// Validate trained-roofline coefficients were loaded
+			if !cmd.Flags().Changed("beta-coeffs") && (len(betaCoeffs) < 7 || allZeros(betaCoeffs)) {
+				logrus.Fatalf("--latency-model trained-roofline: no trained_roofline_defaults found in %s and no --beta-coeffs provided. "+
+					"Add trained_roofline_defaults to defaults.yaml or provide --beta-coeffs explicitly",
+					defaultsFilePath)
+			}
+			// Warn if alpha coefficients are zero (user provided --beta-coeffs but not --alpha-coeffs)
+			if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
+				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; "+
+					"QueueingTime, PostDecodeFixedOverhead, and OutputTokenProcessingTime will use zero alpha (may underestimate TTFT/E2E)")
+			}
+		}
+
 		if !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
 			// GPU, TP, vLLM version configuration
 			hardware, tp, version := GetDefaultSpecs(model) // pick default config for tp, GPU, vllmVersion
@@ -429,14 +501,14 @@ var runCmd = &cobra.Command{
 		}
 		// Zero-coefficients safety guard: prevents silently running with zero step times
 		// when blackbox mode has no trained coefficients (would produce meaningless results).
-		if backend != "roofline" && backend != "crossmodel" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
+		if backend != "roofline" && backend != "crossmodel" && backend != "trained-roofline" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
 			logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
-				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, or use --latency-model crossmodel",
+				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, crossmodel, or trained-roofline",
 				model, gpu, tensorParallelism)
 		}
 		// Analytical backends (roofline, crossmodel): parse HFConfig once, use for
 		// both model config extraction and KV capacity auto-calculation.
-		if backend == "roofline" || backend == "crossmodel" {
+		if backend == "roofline" || backend == "crossmodel" || backend == "trained-roofline" {
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
 			hfConfig, err := latency.ParseHFConfig(hfPath)
 			if err != nil {
@@ -1037,7 +1109,7 @@ func init() {
 	runCmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline, crossmodel")
+	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline, crossmodel, trained-roofline")
 	runCmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
 
 	// GuideLLM-style distribution-based workload generation config

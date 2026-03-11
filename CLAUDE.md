@@ -242,6 +242,7 @@ inference-sim/
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/               # Latency model implementations (PKG-2)
 │   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── trained_roofline.go    # TrainedRooflineLatencyModel: roofline basis functions × learned corrections (7β + 3α from training pipeline)
 │   ├── crossmodel.go          # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
 │   ├── kv_capacity.go         # CalculateKVBlocks: auto-derive total KV cache blocks from model architecture + GPU memory; KVCapacityParams, ExtractKVCapacityParams, computeModelWeightBytes
@@ -342,7 +343,7 @@ inference-sim/
 
 ### Latency Estimation
 
-Three modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--latency-model` flag:
+Four modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--latency-model` flag:
 
 1. **Blackbox mode** (default): Uses trained alpha/beta coefficients from `defaults.yaml`
    - Alpha coefficients: queueing time estimation
@@ -360,12 +361,19 @@ Three modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`)
    - MoE-aware: correctly models sparse activation patterns (unlike roofline which overestimates ~4x for MoE)
    - **`--latency-model crossmodel`**: Same auto-fetch chain as roofline. Usage: `./blis run --model <name> --latency-model crossmodel --hardware <GPU> --tp <N>`
 
+4. **Trained-roofline mode**: Roofline basis functions × learned correction coefficients via `sim/latency/trained_roofline.go`
+   - Uses 10 globally-fitted coefficients — 7 beta (prefill/decode roofline corrections, weight loading, TP communication, per-layer overhead, per-request scheduling, per-step overhead) + 3 alpha (API processing, post-decode fixed, per-output-token) — from `trained_roofline_defaults` in `defaults.yaml`
+   - Computes 6 analytical basis functions from HuggingFace `config.json` and hardware specs, applies learned β corrections
+   - Achieves 7% MAPE on GPU combined step time (test split) across 4 architectures (137K real vLLM requests)
+   - Key difference from pure roofline: no MFU scaling (β₁/β₂ ARE the corrections); 3-matrix SwiGLU (not roofline's 2-matrix)
+   - **`--latency-model trained-roofline`**: Same auto-fetch chain as roofline/crossmodel. Usage: `./blis run --model <name> --latency-model trained-roofline --hardware <GPU> --tp <N>`
+
 ### Key Data Flow
 
 ```
 Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
                                             ↓              ↓
-                                      KV Allocation   Latency Estimation (alpha/beta, roofline, or cross-model)
+                                      KV Allocation   Latency Estimation (alpha/beta, roofline, cross-model, or trained-roofline)
 ```
 Note: Admission and Routing steps apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
 

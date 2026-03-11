@@ -66,3 +66,5 @@ func (m *CrossModelLatencyModel) QueueingTime(req *sim.Request) int64 {
 func (m *CrossModelLatencyModel) OutputTokenProcessingTime() int64 {
 	return int64(m.alphaCoeffs[2])
 }
+
+func (m *CrossModelLatencyModel) PostDecodeFixedOverhead() int64 { return 0 }
