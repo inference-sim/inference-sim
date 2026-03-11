@@ -247,6 +247,24 @@ func BenchmarkTrainedRoofline_StepTime(b *testing.B) {
 	}
 }
 
+// --- Zero-allocation enforcement test ---
+
+func TestTrainedRoofline_StepTime_ZeroAllocs(t *testing.T) {
+	model := newLlama7bModel()
+	batch := make([]*sim.Request, 8)
+	for i := range batch {
+		if i < 2 {
+			batch[i] = makePrefillRequest(512, 512)
+		} else {
+			batch[i] = makeDecodeRequest(512, 100)
+		}
+	}
+	allocs := testing.AllocsPerRun(100, func() {
+		_ = model.StepTime(batch)
+	})
+	assert.Equal(t, float64(0), allocs, "StepTime must be allocation-free on the hot path")
+}
+
 // --- Regression: verify non-negative for degenerate but valid inputs ---
 
 func TestTrainedRoofline_StepTime_NeverNegative(t *testing.T) {

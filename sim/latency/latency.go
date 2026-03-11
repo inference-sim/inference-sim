@@ -223,9 +223,13 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			return nil, err
 		}
 		headDimTR := hw.ModelConfig.HiddenDim / hw.ModelConfig.NumHeads
+		// Defensive copy of coefficient slices to enforce the "frozen at construction" contract.
+		// This prevents callers from mutating coefficients after construction.
+		betaCopy := append([]float64(nil), coeffs.BetaCoeffs...)
+		alphaCopy := append([]float64(nil), coeffs.AlphaCoeffs...)
 		return &TrainedRooflineLatencyModel{
-			betaCoeffs:  coeffs.BetaCoeffs,
-			alphaCoeffs: coeffs.AlphaCoeffs,
+			betaCoeffs:  betaCopy,
+			alphaCoeffs: alphaCopy,
 			numLayers:   hw.ModelConfig.NumLayers,
 			hiddenDim:   hw.ModelConfig.HiddenDim,
 			numHeads:    hw.ModelConfig.NumHeads,
