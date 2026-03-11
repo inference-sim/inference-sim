@@ -173,12 +173,21 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			if ok := inst.AllocateTransferredKV(e.decodeSubReq); !ok {
 				logrus.Warnf("[cluster] decode instance %s: insufficient KV capacity for %s (%d input tokens)",
 					decision.TargetInstance, e.decodeSubReq.ID, len(e.decodeSubReq.InputTokens))
-				// Cannot proceed without KV — request effectively dropped
+				// R1/INV-1: count the drop so aggregated DroppedUnservable remains accurate.
+				// droppedAtDecodeKV is added to aggregatedMetrics.DroppedUnservable after Run().
+				cs.droppedAtDecodeKV++
+				// Mark parent CompletionTime so ParentRequests() doesn't contain records in
+				// limbo (TransferCompleteTime set but CompletionTime = 0). The parent is
+				// permanently dropped — set CompletionTime to the current event time so
+				// post-run analysis can distinguish dropped-at-decode from in-flight.
+				e.parentReq.CompletionTime = e.time
 				return
 			}
 
 			cs.inFlightRequests[decision.TargetInstance]++
-			inst.InjectDecodeOnline(e.decodeSubReq)
+			// INV-PD-4: register decode sub-request for CompletionTime detection.
+			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
+			inst.InjectDecodeOnline(e.decodeSubReq, e.time)
 			return
 		}
 	}

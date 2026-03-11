@@ -105,3 +105,53 @@ Invariants are properties that must hold at all times during and after simulatio
 **Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
 
 **Hypothesis family:** Structural model (same as INV-4, INV-7).
+
+---
+
+## INV-PD-1: KV Completeness
+
+**Statement:** `decode_enqueue_time >= transfer_complete_time` for every disaggregated request. The decode sub-request is only routed after KV transfer completes.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PhaseCausality` verifies the full causal chain. `DecodeRoutingEvent.Execute()` fires only from `KVTransferCompletedEvent.Execute()`, enforcing this by construction.
+
+**Hypothesis family:** Scheduler invariants (safety/liveness).
+
+---
+
+## INV-PD-2: Pool Exclusivity
+
+**Statement:** Prefill sub-requests execute only on prefill pool instances; decode sub-requests execute only on decode pool instances.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PrefillRoutedToPrefillPool` and `TestDisaggregation_DecodeRoutedToDecodePool`. `PrefillRoutingEvent` and `DecodeRoutingEvent` use pool-filtered snapshot lists, making off-pool routing structurally impossible.
+
+**Hypothesis family:** Structural model.
+
+---
+
+## INV-PD-3: Transfer Conservation
+
+**Statement:** `initiated_transfers == completed_transfers` at simulation end (when KV transfer bandwidth is always positive).
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_TransferConservation`. `KVTransferStartedEvent` increments `transfersInitiated`; `KVTransferCompletedEvent` increments `transfersCompleted`. Every started transfer schedules exactly one completion event.
+
+**Hypothesis family:** Scheduler invariants (safety/liveness).
+
+---
+
+## INV-PD-4: Phase Causality
+
+**Statement:** `arrival ≤ prefill_enqueue ≤ prefill_complete ≤ transfer_start ≤ transfer_complete ≤ decode_enqueue ≤ completion` for every disaggregated request.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PhaseCausality` asserts this ordering for all completed parent requests.
+
+**Hypothesis family:** Scheduler invariants (safety/liveness).
+
+---
+
+## INV-PD-5: Pool Stability
+
+**Statement:** Pool membership (`PoolRole` per instance) does not change after `NewClusterSimulator` initialization.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PoolStability`. `poolMembership` is set once in `NewClusterSimulator` and never mutated during `Run()`.
+
+**Hypothesis family:** Structural model.

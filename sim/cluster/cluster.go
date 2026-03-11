@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -39,8 +40,10 @@ type ClusterSimulator struct {
 	// PD disaggregation state (PR2)
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
+	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID (for CompletionTime)
 	transfersInitiated        int
 	transfersCompleted        int
+	droppedAtDecodeKV         int               // decode sub-requests dropped due to KV allocation failure (R1, INV-1)
 	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 }
@@ -104,6 +107,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		cs.parentRequests = make(map[string]*ParentRequest)
 		cs.pendingPrefillCompletions = make(map[string]string)
+		cs.pendingDecodeCompletions = make(map[string]string)
 
 		// Per-pool routing policies (use separate RNG partitions to avoid fragile coupling)
 		if len(config.PrefillScorerConfigs) > 0 {
@@ -217,9 +221,14 @@ func (c *ClusterSimulator) Run() error {
 					c.inFlightRequests[instID] = 0
 				}
 
-				// PD disaggregation: detect prefill sub-request completions and schedule KV transfer
-				if c.poolsConfigured() && c.poolMembership[instID] == PoolRolePrefill {
-					c.detectPrefillCompletions(inst)
+				// PD disaggregation: detect prefill/decode sub-request completions
+				if c.poolsConfigured() {
+					switch c.poolMembership[instID] {
+					case PoolRolePrefill:
+						c.detectPrefillCompletions(inst)
+					case PoolRoleDecode:
+						c.detectDecodeCompletions(inst)
+					}
 				}
 			}
 		}
@@ -247,6 +256,10 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	c.aggregatedMetrics = c.aggregateMetrics()
+	// R1/INV-1: decode sub-requests dropped at KV allocation are not tracked by instance
+	// metrics. Account for them in the aggregated DroppedUnservable count so that
+	// injected_requests == completed + queued + running + dropped holds at cluster level.
+	c.aggregatedMetrics.DroppedUnservable += c.droppedAtDecodeKV
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {
@@ -282,25 +295,68 @@ func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.Routi
 
 // detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance
 // and schedules KV transfer events for each.
+// Keys are processed in sorted order (R2) to ensure deterministic seqID assignment (INV-6).
 func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
-	for subReqID, parentID := range c.pendingPrefillCompletions {
-		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
-			parent := c.parentRequests[parentID]
-			if parent == nil {
-				continue
-			}
-			parent.PrefillCompleteTime = c.clock
-			delete(c.pendingPrefillCompletions, subReqID)
+	completionTimes := inst.Metrics().RequestCompletionTimes
 
-			// Schedule KV transfer
-			heap.Push(&c.clusterEvents, clusterEventEntry{
-				event: &KVTransferStartedEvent{
-					time:      c.clock,
-					parentReq: parent,
-				},
-				seqID: c.nextSeqID(),
-			})
+	// R2/INV-6: collect and sort keys before processing so seqIDs are deterministic
+	// across runs regardless of Go's map iteration order.
+	subReqIDs := make([]string, 0, len(c.pendingPrefillCompletions))
+	for subReqID := range c.pendingPrefillCompletions {
+		if _, completed := completionTimes[subReqID]; completed {
+			subReqIDs = append(subReqIDs, subReqID)
 		}
+	}
+	sort.Strings(subReqIDs)
+
+	for _, subReqID := range subReqIDs {
+		parentID := c.pendingPrefillCompletions[subReqID]
+		parent := c.parentRequests[parentID]
+		if parent == nil {
+			// R1: nil parent is a programming error — pendingPrefillCompletions and parentRequests
+			// are always populated together in PrefillRoutingEvent.Execute(). Panic to make the
+			// invariant violation visible rather than silently leaking the map entry forever.
+			panic(fmt.Sprintf("detectPrefillCompletions: parentID %q not found in parentRequests (programming error)", parentID))
+		}
+		parent.PrefillCompleteTime = c.clock
+		delete(c.pendingPrefillCompletions, subReqID)
+
+		// Schedule KV transfer
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &KVTransferStartedEvent{
+				time:      c.clock,
+				parentReq: parent,
+			},
+			seqID: c.nextSeqID(),
+		})
+	}
+}
+
+// detectDecodeCompletions checks for newly completed decode sub-requests on the given instance
+// and records CompletionTime on the parent request, completing INV-PD-4.
+// Keys are processed in sorted order (R2) to ensure deterministic processing (INV-6).
+func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
+	completionTimes := inst.Metrics().RequestCompletionTimes
+
+	// R2/INV-6: collect and sort keys before processing.
+	subReqIDs := make([]string, 0, len(c.pendingDecodeCompletions))
+	for subReqID := range c.pendingDecodeCompletions {
+		if _, completed := completionTimes[subReqID]; completed {
+			subReqIDs = append(subReqIDs, subReqID)
+		}
+	}
+	sort.Strings(subReqIDs)
+
+	for _, subReqID := range subReqIDs {
+		parentID := c.pendingDecodeCompletions[subReqID]
+		parent := c.parentRequests[parentID]
+		if parent == nil {
+			// R1: nil parent is a programming error — pendingDecodeCompletions and parentRequests
+			// are always populated together in DecodeRoutingEvent.Execute().
+			panic(fmt.Sprintf("detectDecodeCompletions: parentID %q not found in parentRequests (programming error)", parentID))
+		}
+		parent.CompletionTime = c.clock
+		delete(c.pendingDecodeCompletions, subReqID)
 	}
 }
 
@@ -364,6 +420,35 @@ func (c *ClusterSimulator) PerInstanceMetrics() []*sim.Metrics {
 		metrics[i] = inst.Metrics()
 	}
 	return metrics
+}
+
+// ParentRequests returns a copy of all ParentRequest records sorted by ID.
+// Panics if called before Run() completes (BC-11).
+// Returns an empty slice when PD disaggregation is not active.
+func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
+	if !c.hasRun {
+		panic("ClusterSimulator.ParentRequests() called before Run()")
+	}
+	result := make([]*ParentRequest, 0, len(c.parentRequests))
+	for _, pr := range c.parentRequests {
+		result = append(result, pr)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+// PerInstanceMetricsByID returns a map of instance ID → *sim.Metrics.
+// Panics if called before Run() completes (BC-12).
+// The returned map is a new map (not a reference to internal state), consistent with R8.
+func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
+	if !c.hasRun {
+		panic("ClusterSimulator.PerInstanceMetricsByID() called before Run()")
+	}
+	result := make(map[string]*sim.Metrics, len(c.instances))
+	for _, inst := range c.instances {
+		result[string(inst.ID())] = inst.Metrics()
+	}
+	return result
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
