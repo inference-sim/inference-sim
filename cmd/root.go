@@ -306,32 +306,18 @@ var runCmd = &cobra.Command{
 			}
 			hwConfigPath = resolvedHW
 
-			// Load alpha coefficients and totalKVBlocks from defaults.yaml.
-			// Roofline replaces beta (step time) but still needs alpha
-			// (queueing time, output token processing) and KV cache capacity.
+			// Optionally load totalKVBlocks from defaults.yaml (overridden by
+			// auto-calculation later). Roofline does NOT use alpha coefficients —
+			// QueueingTime and OutputTokenProcessingTime are zero by design.
 			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
 				// vllmVersion already resolved by early defaults block (lines 248-265).
-				defAlpha, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-				if !cmd.Flags().Changed("alpha-coeffs") && !allZeros(defAlpha) {
-					alphaCoeffs = defAlpha
-					logrus.Infof("--latency-model: loaded alpha coefficients from defaults.yaml for queueing time estimation")
-				}
+				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
 					totalKVBlocks = kvBlocks
 					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
-				} else if !cmd.Flags().Changed("total-kv-blocks") {
-					logrus.Warnf("--latency-model: no trained total-kv-blocks found for model=%s, GPU=%s, TP=%d; "+
-						"using default %d. Consider setting --total-kv-blocks explicitly for accurate KV cache simulation",
-						model, gpu, tensorParallelism, totalKVBlocks)
 				}
-				if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
-					logrus.Warnf("--latency-model: no trained alpha coefficients found for model=%s, GPU=%s, TP=%d; "+
-						"queueing time and output token processing time will use zero alpha (may underestimate TTFT/ITL)",
-						model, gpu, tensorParallelism)
-				}
-			} else {
-				logrus.Warnf("--latency-model: defaults file %s not found; alpha coefficients and total-kv-blocks not loaded. "+
-					"Queueing time estimation will use zero alpha coefficients", defaultsFilePath)
+				// No warning for missing KV blocks — roofline auto-calculates them
+				// from model architecture + GPU memory in the analytical backends block.
 			}
 		}
 
