@@ -282,9 +282,9 @@ inference-sim/
 │   ├── convert.go             # Format converters: ConvertServeGen, ConvertCSVTrace, ConvertPreset, ComposeSpecs
 │   ├── cohort.go              # CohortSpec expansion: diurnal, spike, drain patterns → lifecycle windows
 │   └── synthesis.go           # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
-├── sim/trace/                 # Decision trace recording (PR13)
-│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
-│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
+├── sim/trace/                 # Decision trace recording (PR13, extended in PR4)
+│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods (RecordAdmission, RecordRouting, RecordDisaggregation, RecordPrefillRouting, RecordDecodeRouting, RecordKVTransfer)
+│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore, DisaggregationRecord, PrefillRoutingRecord, DecodeRoutingRecord, KVTransferRecord (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
 ├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
