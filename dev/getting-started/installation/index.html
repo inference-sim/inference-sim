@@ -2354,7 +2354,7 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
 </code></pre></div>
 <h2 id="verify-the-build">Verify the Build<a class="headerlink" href="#verify-the-build" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span>
 </code></pre></div>
 <p>You should see JSON output on stdout containing fields like <code>ttft_mean_ms</code>, <code>e2e_mean_ms</code>, and <code>responses_per_sec</code>. This confirms BLIS is working correctly.</p>
 <h2 id="optional-local-documentation">Optional: Local Documentation<a class="headerlink" href="#optional-local-documentation" title="Permanent link">&para;</a></h2>

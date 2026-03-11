@@ -2777,7 +2777,7 @@
 <h1 id="workload-specifications">Workload Specifications<a class="headerlink" href="#workload-specifications" title="Permanent link">&para;</a></h1>
 <p>This guide covers how to define the traffic patterns BLIS simulates — from simple CLI flags to complex multi-client YAML workload specs.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Quick example: workload-spec YAML</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>examples/multiturn-chat-demo.yaml
 </code></pre></div>
 <h2 id="workload-modes">Workload Modes<a class="headerlink" href="#workload-modes" title="Permanent link">&para;</a></h2>
@@ -2838,7 +2838,7 @@
 <a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">128</span>
 </code></pre></div>
 <p>Pair with prefix-affinity routing for cache reuse:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>chat.yaml<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:3,queue-depth:2&quot;</span>
 </code></pre></div>
@@ -2865,7 +2865,7 @@
 <a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">64</span>
 </code></pre></div>
 <p>Run with aggressive prefix-affinity to maximize cache reuse:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>rag.yaml<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:3,queue-depth:1&quot;</span>
 </code></pre></div>
@@ -2952,7 +2952,7 @@
 <p>Context accumulation means round N sees all prior input+output tokens as prefix, creating growing KV cache pressure across rounds.</p>
 <h2 id="cli-distribution-mode-default">CLI Distribution Mode (Default)<a class="headerlink" href="#cli-distribution-mode-default" title="Permanent link">&para;</a></h2>
 <p>The simplest way to generate traffic:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>--prompt-tokens<span class="w"> </span><span class="m">512</span><span class="w"> </span>--prompt-tokens-stdev<span class="w"> </span><span class="m">256</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span>--output-tokens<span class="w"> </span><span class="m">256</span><span class="w"> </span>--output-tokens-stdev<span class="w"> </span><span class="m">128</span>
@@ -3240,7 +3240,7 @@
 <h3 id="named-presets-from-defaultsyaml">Named Presets from defaults.yaml<a class="headerlink" href="#named-presets-from-defaultsyaml" title="Permanent link">&para;</a></h3>
 <p>BLIS ships with preset workload profiles in <code>defaults.yaml</code>. Use them via the CLI or the convert command:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Run directly with a named preset</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span>--workload<span class="w"> </span>chatbot
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--workload<span class="w"> </span>chatbot
 <a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
 <a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Convert a preset to a v2 WorkloadSpec YAML for customization</span>
 <a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>./blis<span class="w"> </span>convert<span class="w"> </span>preset<span class="w"> </span>--name<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">100</span><span class="w"> </span>&gt;<span class="w"> </span>chatbot.yaml

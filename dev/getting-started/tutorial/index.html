@@ -2410,38 +2410,38 @@
 
 <h1 id="tutorial-capacity-planning">Tutorial: Capacity Planning<a class="headerlink" href="#tutorial-capacity-planning" title="Permanent link">&para;</a></h1>
 <p>This tutorial walks through a complete capacity planning exercise: determining how many inference instances you need to serve a target request rate while meeting latency SLOs.</p>
-<p><strong>Scenario:</strong> You're deploying LLaMA 3.1 8B on H100 GPUs with TP=2. Your SLO is TTFT p99 &lt; 500ms. You need to find the minimum number of instances for 500 requests/second.</p>
+<p><strong>Scenario:</strong> You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 &lt; 500ms. You need to find the minimum number of instances for 20 requests/second.</p>
 <h2 id="step-1-estimate-instance-capacity">Step 1: Estimate Instance Capacity<a class="headerlink" href="#step-1-estimate-instance-capacity" title="Permanent link">&para;</a></h2>
 <p>Before scaling up, measure the throughput of a single instance empirically. This works regardless of which <a href="../../guide/latency-models/">latency model</a> you use (blackbox, roofline, trained-roofline, or crossmodel).</p>
 <p>Run a single instance at low load to establish the baseline service rate:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">50</span>
 </code></pre></div>
-<p>Check the <code>responses_per_sec</code> value in the output — this is the single-instance throughput at low utilization. For LLaMA 3.1 8B / H100 / TP=2 with default workload (512 input / 512 output tokens), you'll see roughly <strong>57 requests/second</strong>.</p>
-<p>This means for 500 req/s, you need at minimum <code>ceil(500/57) ≈ 9</code> instances. Let's verify with simulation.</p>
+<p>Check the <code>responses_per_sec</code> value in the output — this is the single-instance throughput at low utilization. For Qwen3 14B / H100 / TP=1 with default workload (512 input / 512 output tokens), you'll see roughly <strong>2.5 requests/second</strong>.</p>
+<p>This means for 20 req/s, you need at minimum <code>ceil(20/2.5) = 8</code> instances. Let's verify with simulation.</p>
 <h2 id="step-2-baseline-single-instance">Step 2: Baseline — Single Instance<a class="headerlink" href="#step-2-baseline-single-instance" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">50</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">2</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">50</span>
 </code></pre></div>
-<p>At 50 req/s (well below the ~57 req/s capacity), TTFT should be low. Note the <code>ttft_p99_ms</code> value — this is your best-case baseline.</p>
+<p>At 2 req/s (well below the ~2.5 req/s capacity), TTFT should be low. Note the <code>ttft_p99_ms</code> value — this is your best-case baseline.</p>
 <h2 id="step-3-scale-up-and-find-the-saturation-point">Step 3: Scale Up and Find the Saturation Point<a class="headerlink" href="#step-3-scale-up-and-find-the-saturation-point" title="Permanent link">&para;</a></h2>
-<p>Run simulations at increasing instance counts for 500 req/s:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 4 instances (~228 req/s capacity → heavily overloaded)</span>
+<p>Run simulations at increasing instance counts for 20 req/s:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 4 instances (~10 req/s capacity → heavily overloaded)</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># 8 instances (~456 req/s capacity → near saturation)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># 8 instances (~20 req/s capacity → near saturation)</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># 12 instances (~684 req/s capacity → comfortable headroom)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># 12 instances (~30 req/s capacity → comfortable headroom)</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span>
 </code></pre></div>
 <p>Compare <code>ttft_p99_ms</code> across runs. You'll see:</p>
 <ul>
@@ -2467,29 +2467,29 @@
 <li>Low <code>preemption_count</code> + low <code>scheduling_delay</code> + high TTFT → compute saturation</li>
 </ul>
 <h2 id="step-5-compare-routing-policies">Step 5: Compare Routing Policies<a class="headerlink" href="#step-5-compare-routing-policies" title="Permanent link">&para;</a></h2>
-<p>With 12 instances at 500 req/s, compare routing strategies:</p>
+<p>With 12 instances at 20 req/s, compare routing strategies:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Round-robin (baseline)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span>--routing-policy<span class="w"> </span>round-robin
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Weighted (default profile)</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="c1"># Least-loaded</span>
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">  </span>--routing-policy<span class="w"> </span>least-loaded
 </code></pre></div>
 <p>For prefix-heavy workloads (like RAG with shared system prompts), try the prefix-affinity-dominant profile:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:5,queue-depth:1&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span>--prefix-tokens<span class="w"> </span><span class="m">512</span>
@@ -2497,8 +2497,8 @@
 <h2 id="step-6-evaluate-with-fitness-scores">Step 6: Evaluate with Fitness Scores<a class="headerlink" href="#step-6-evaluate-with-fitness-scores" title="Permanent link">&para;</a></h2>
 <p>For automated comparison across many configurations, use fitness evaluation:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span>--fitness-weights<span class="w"> </span><span class="s2">&quot;p99_ttft:3,mean_e2e:1,throughput:2&quot;</span>
 </code></pre></div>
@@ -2507,7 +2507,7 @@
 <p>Fitness scores use <code>1/(1+x/1000)</code> normalization for latency metrics, which compresses large raw differences into small score differences. A 38% TTFT improvement may appear as only an 8% fitness score difference. Always examine raw metrics alongside fitness scores.</p>
 </div>
 <h2 id="step-7-validate-against-your-slo">Step 7: Validate Against Your SLO<a class="headerlink" href="#step-7-validate-against-your-slo" title="Permanent link">&para;</a></h2>
-<p>Your SLO: TTFT p99 &lt; 500ms at 500 req/s.</p>
+<p>Your SLO: TTFT p99 &lt; 500ms at 20 req/s.</p>
 <p>From the simulations above, find the minimum instance count where <code>ttft_p99_ms &lt; 500</code>. That's your capacity plan. Add 20-30% headroom for traffic spikes (real deployments see bursty traffic that exceeds the Poisson assumption).</p>
 <h2 id="key-takeaways">Key Takeaways<a class="headerlink" href="#key-takeaways" title="Permanent link">&para;</a></h2>
 <ol>
