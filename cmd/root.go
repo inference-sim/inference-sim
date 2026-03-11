@@ -814,6 +814,14 @@ var runCmd = &cobra.Command{
 			priorityPolicy,
 		)
 
+		// Collect PD disaggregation metrics if disaggregation was active (PR3).
+		rawMetrics.PD = cluster.CollectPDMetrics(
+			cs.ParentRequests(),
+			cs.AggregatedMetrics(),
+			cs.PoolMembership(),
+			cs.PerInstanceMetricsByID(),
+		)
+
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
 			if err != nil {
@@ -847,6 +855,9 @@ var runCmd = &cobra.Command{
 
 		// Print KV cache metrics if any nonzero (BC-1, BC-2)
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
+
+		// Print PD disaggregation metrics if active (PR3)
+		printPDMetrics(os.Stdout, rawMetrics.PD)
 
 		// Print per-SLO metrics if multiple SLO classes present (BC-3, BC-4, BC-10)
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
@@ -888,6 +899,31 @@ func printKVCacheMetrics(w io.Writer, preemptionRate, cacheHitRate, kvThrashingR
 	_, _ = fmt.Fprintf(w, "Preemption Rate: %.4f\n", preemptionRate)
 	_, _ = fmt.Fprintf(w, "Cache Hit Rate: %.4f\n", cacheHitRate)
 	_, _ = fmt.Fprintf(w, "KV Thrashing Rate: %.4f\n", kvThrashingRate)
+}
+
+// printPDMetrics prints disaggregation-aware metrics when PD disaggregation was active.
+// No-op when pd is nil (disaggregation not active, BC-7).
+func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
+	if pd == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== PD Metrics ===")
+	_, _ = fmt.Fprintf(w, "Disaggregated Requests: %d\n", pd.DisaggregatedCount)
+	_, _ = fmt.Fprintf(w, "Prefill Throughput: %.4f sub-req/s\n", pd.PrefillThroughput)
+	_, _ = fmt.Fprintf(w, "Decode Throughput: %.4f sub-req/s\n", pd.DecodeThroughput)
+	if pd.LoadImbalanceRatio >= math.MaxFloat64/2 {
+		_, _ = fmt.Fprintf(w, "Load Imbalance Ratio: inf (one pool idle)\n")
+	} else {
+		_, _ = fmt.Fprintf(w, "Load Imbalance Ratio: %.4f\n", pd.LoadImbalanceRatio)
+	}
+	if pd.ParentTTFT.Count > 0 {
+		_, _ = fmt.Fprintf(w, "Parent TTFT (μs): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
+			pd.ParentTTFT.Mean, pd.ParentTTFT.P50, pd.ParentTTFT.P95, pd.ParentTTFT.P99)
+	}
+	if pd.TransferDuration.Count > 0 {
+		_, _ = fmt.Fprintf(w, "KV Transfer Duration (μs): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
+			pd.TransferDuration.Mean, pd.TransferDuration.P50, pd.TransferDuration.P95, pd.TransferDuration.P99)
+	}
 }
 
 // printPerSLOMetrics prints per-SLO-class latency distributions when multiple classes exist.

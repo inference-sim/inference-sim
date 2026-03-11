@@ -76,3 +76,40 @@ func TestPrintPerSLOMetrics_SingleClass_NoOutput(t *testing.T) {
 	// THEN no output (single class = no differentiation)
 	assert.Empty(t, buf.String())
 }
+
+func TestPrintPDMetrics_NilDoesNotPrint(t *testing.T) {
+	// GIVEN nil PDMetrics (disaggregation not active)
+	var buf bytes.Buffer
+
+	// WHEN we print nil pd
+	printPDMetrics(&buf, nil)
+
+	// THEN no output (BC-7: nil pd means no disaggregation)
+	assert.Empty(t, buf.String())
+}
+
+func TestPrintPDMetrics_PrintsSection(t *testing.T) {
+	// GIVEN non-nil PDMetrics with realistic values
+	var buf bytes.Buffer
+	pd := &cluster.PDMetrics{
+		DisaggregatedCount: 5,
+		PrefillThroughput:  10.5,
+		DecodeThroughput:   9.8,
+		LoadImbalanceRatio: 1.07,
+		ParentTTFT:         cluster.Distribution{Mean: 5000, P50: 4800, P95: 7000, P99: 8000, Count: 5},
+		TransferDuration:   cluster.Distribution{Mean: 53, P50: 50, P95: 70, P99: 80, Count: 5},
+	}
+
+	// WHEN we print the PD metrics
+	printPDMetrics(&buf, pd)
+
+	// THEN the output must contain the PD section with key fields
+	output := buf.String()
+	assert.Contains(t, output, "=== PD Metrics ===")
+	assert.Contains(t, output, "Disaggregated Requests: 5")
+	assert.Contains(t, output, "Prefill Throughput:")
+	assert.Contains(t, output, "Decode Throughput:")
+	assert.Contains(t, output, "Load Imbalance Ratio:")
+	assert.Contains(t, output, "Parent TTFT")
+	assert.Contains(t, output, "KV Transfer Duration")
+}
