@@ -1,9 +1,13 @@
 # H-Elastic-Batching: Strategy Evolution Iteration 6
 
 **Status:** CONFIRMED
+**Resolution:** Clean confirmation — elastic batching achieves dual objective
+**Family:** Strategy Evolution
+**VV&UQ:** Validation
+**Type:** Statistical (Dominance)
 **Date:** 2026-03-10
+**Rounds:** 1
 **Branch:** `main` (hypothesis-playground worktree)
-**Experiment family:** Strategy Evolution
 **Classification:** Mechanism validation
 
 ## Hypothesis
@@ -37,6 +41,8 @@ The key insight: **small batches create SLO-throughput conflict.** With maxRunni
 **Workload:** Gamma CV=2.0, multi-turn (3 rounds, 500ms think time, context accumulation), 20/40/40 critical/standard/sheddable, input mean=256, output mean=128. 1500 requests per run. Fast-lane: 500 requests, critical-only.
 
 **Seeds:** 42, 123, 456 (3 runs per configuration, 18 total).
+
+**Capacity derivation:** With beta coefficients [6910, 17.67, 2.84] for llama-3.1-8b/H100/TP=2 and mean input=256, output=128: single-turn step time is approximately 11.8ms, giving ~85 req/s per instance and ~340 req/s for 4 instances. Multi-turn (3 rounds, context accumulation) increases effective per-request work ~2-3x, reducing capacity to ~113-170 req/s. At 300 req/s, the effective overload is ~175-265%, significantly higher than the nominal "120%" label suggests.
 
 **New metrics:** Avg batch occupancy = sum(batch_size_per_step) / (total_steps x maxRunningReqs). Measures what fraction of batch capacity is utilized across all steps.
 
@@ -72,7 +78,7 @@ Compared to the Iter 3 small-batch approach, elastic batching delivers **69x bet
 
 The critical insight from this experiment: **throughput is determined by batch size, not preemption policy.** Large-batch and elastic have nearly identical throughput (167 vs 161 req/s) and batch occupancy (0.836 vs 0.847). The 3.5% throughput reduction is the cost of ~242 preemptions per run — a negligible overhead.
 
-Meanwhile, critical TTFT P99 drops from 410s (large-batch) to 88s (elastic) — a 4.7x improvement. The preemption mechanism is surgically effective: it only fires when a critical request's priority (10.0) exceeds the lowest running request's priority (1.0 for sheddable) by more than the margin (4.0). Standard requests (priority 5.0) are NOT preempted: 10.0 - 5.0 = 5.0 > 4.0 but 5.0 - 1.0 = 4.0 which is NOT > 4.0. This means only sheddable requests are evicted for critical ones.
+Meanwhile, critical TTFT P99 drops from 410s (large-batch) to 88s (elastic) — a 4.7x improvement. The preemption mechanism fires when the priority difference between a waiting request and the lowest-priority running request is NOT less than the margin (4.0). With the strict less-than comparison in `batch_formation.go`, a difference of exactly 4.0 still triggers preemption. This means all three cross-tier preemptions are active: critical preempts standard (diff=5), critical preempts sheddable (diff=9), and standard preempts sheddable (diff=4). In practice, the ~242 preemptions per run are dominated by critical-vs-sheddable because critical requests have the strongest priority signal.
 
 ### Finding 3: Small batch at overload is catastrophic
 
@@ -110,10 +116,12 @@ The metric correctly captures that small-batch has higher occupancy-per-slot but
 
 ### Why elastic batching works
 
-The priority preemption margin of 4.0 creates a selective filter:
-- **Critical (pri=10) vs Sheddable (pri=1):** difference = 9 > 4.0 => preempt
-- **Critical (pri=10) vs Standard (pri=5):** difference = 5 > 4.0 => preempt
-- **Standard (pri=5) vs Sheddable (pri=1):** difference = 4 NOT > 4.0 => no preempt
+The priority preemption margin of 4.0 uses strict less-than comparison (`next.Priority - lowest.Priority < margin`). When the difference is NOT less than the margin, preemption triggers:
+- **Critical (pri=10) vs Sheddable (pri=1):** difference = 9, 9 < 4.0 is FALSE => preempt
+- **Critical (pri=10) vs Standard (pri=5):** difference = 5, 5 < 4.0 is FALSE => preempt
+- **Standard (pri=5) vs Sheddable (pri=1):** difference = 4, 4 < 4.0 is FALSE => preempt
+
+With margin=4.0, ALL higher tiers preempt ALL lower tiers. The margin threshold is exclusive: a difference exactly equal to the margin still triggers preemption. To prevent standard from preempting sheddable, the margin would need to be >4.0 (e.g., 4.1 or 5.0).
 
 With the circuit breaker at 10 (raised from default 3), up to 10 sheddable/standard requests can be evicted per step when critical requests are waiting. At 120% load with 64-slot batches, this is sufficient to ensure critical requests rarely wait more than a few steps.
 
@@ -151,6 +159,22 @@ The 242 average preemptions per run (across 1500 requests) means ~16% of request
 3. **Admission control is redundant** when elastic batching is active — the batch-level mechanism provides finer-grained protection.
 4. **Fast-lane remains necessary** for sub-50ms SLO targets, but elastic batching closes the gap to 1.65x.
 5. **The configurable circuit breaker** (raised from 3 to 10) enables elastic batching without requiring code changes for different load profiles.
+
+## Scope and Limitations
+- **Operating point:** 120% capacity (300 req/s), 4 instances, llama-3.1-8b-instruct/H100/TP=2
+- **Not tested:** Other models, GPU types, TP configurations, real vLLM validation
+- **Sample size:** 1500 requests, 3 seeds per config (18 total runs)
+- **DES limitation:** Results are from BLIS simulation, not production inference serving
+
+## Evidence Quality
+| Claim | Evidence | Confidence |
+|-------|----------|------------|
+| 4.7x critical TTFT improvement | 3 seeds, elastic/large-batch ratio 0.21 | High |
+| Equivalent batch occupancy | 3 seeds, occ ratio 1.01 | High |
+| Admission control redundant | elastic+adm worse on both TTFT and throughput | Medium (1 threshold tested) |
+
+## Implications for Users
+Elastic priority batching (large batch + priority preemption) is the recommended configuration for SLO-differentiated workloads. It eliminates the batch-size vs. SLO-attainment trade-off. Do not combine with admission control -- the batch-level mechanism provides finer-grained protection.
 
 ## Reproduction
 

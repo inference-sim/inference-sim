@@ -4,6 +4,11 @@
 **Date:** 2026-03-10
 **Branch:** `hypothesis-playground`
 **Status:** H-main PRIMARY REFUTED; class-awareness mechanism CONFIRMED
+**Resolution:** Clean refutation — deadline urgency adds no value over static class weights
+**Family:** Cross-policy comparative
+**VV&UQ:** Validation
+**Type:** Statistical (Dominance)
+**Rounds:** 1
 
 ---
 
@@ -129,3 +134,14 @@ None filed. The experiment cleanly refutes the primary hypothesis and confirms t
 - **Not tested:** Other models, GPU types, TP configurations, real vLLM validation
 - **Sample size:** 1500 requests per rate point, 3 seeds. P99 based on ~3 observations for critical class.
 - **DES limitation:** Step-quantized priority recomputation may not reflect continuous-time systems (real vLLM has finer-grained scheduling). The deadline mechanism *might* work in a system with more frequent priority updates.
+
+## Evidence Quality
+| Claim | Evidence | Confidence |
+|-------|----------|------------|
+| Treatment equivalent to B2 | Byte-identical at 30%/80%, +7.7% at 120% | High |
+| 92.6% improvement over B1 | 3 seeds, consistent | High |
+| Uniform deadlines catastrophic | +317-422% degradation | High |
+| Single-turn shows no effect | Byte-identical | High |
+
+## Implications for Users
+Do not use DeadlineAwarePriority -- StaticClassWeight achieves the same results with simpler configuration. Class-awareness (knowing which SLO class a request belongs to) is the key ingredient, not time-dependent urgency curves.

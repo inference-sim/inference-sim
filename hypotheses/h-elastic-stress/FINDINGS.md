@@ -1,9 +1,13 @@
 # H-Elastic-Stress: Stress Testing Elastic Priority Batching
 
 **Status:** CONFIRMED (with boundary conditions)
+**Resolution:** Confirmation with boundary — 6/8 strong benefit, 2/8 no effect (test design artifact)
+**Family:** Strategy Evolution
+**VV&UQ:** Validation
+**Type:** Statistical (Dominance)
 **Date:** 2026-03-10
+**Rounds:** 1
 **Branch:** `main` (hypothesis-playground worktree)
-**Experiment family:** Strategy Evolution (Iteration 8)
 **Classification:** Generalization boundary probing
 **Depends on:** H-Elastic-Generalization (Iteration 7)
 
@@ -46,6 +50,8 @@ Iteration 7 established universal benefit across 12 workload variants but used f
 | S8 | 16 | 1200 (120%) | default | standard | Very large cluster |
 
 Total: 8 variants x 2 configs x 3 seeds = 48 runs.
+
+**Capacity derivation:** With beta coefficients [6910, 17.67, 2.84] for llama-3.1-8b/H100/TP=2 and mean input=256, output=128: single-turn step time is approximately 11.8ms, giving ~85 req/s per instance. Multi-turn (3 rounds, context accumulation) increases effective per-request work ~2-3x, reducing per-instance capacity to ~28-43 req/s. The "120%" labels are based on single-turn capacity estimates; actual overload with multi-turn context is significantly higher.
 
 ## Results
 
@@ -176,6 +182,24 @@ The Iter 8 scale test does NOT show that elastic batching fails at large cluster
 4. **Cluster scale testing requires proportional request counts**: The apparent "no effect" at 8 and 16 instances is a test design artifact from fixed 500-request budget. Per-instance batch occupancy of 29-53% means no contention arises. This does not indicate a mechanism failure.
 
 5. **The dual-objective principle survives all stress conditions**: Across 20 total variants (12 from Iter 7 + 8 from Iter 8), elastic batching produces strong benefit in every scenario where the batch reaches near-full occupancy. The only boundary condition is insufficient queue contention, which is a workload intensity property, not a mechanism limitation.
+
+## Scope and Limitations
+- **Operating point:** 120% capacity, 2-16 instances, llama-3.1-8b-instruct/H100/TP=2
+- **Not tested:** Other models, GPU types, TP configurations, real vLLM validation
+- **Sample size:** 500 requests per variant, 3 seeds (48 total runs)
+- **DES limitation:** Results are from BLIS simulation, not production inference serving
+- **Scale test caveat:** 8/16 instance results are test design artifacts (fixed 500-request budget); does not indicate mechanism failure at scale
+
+## Evidence Quality
+| Claim | Evidence | Confidence |
+|-------|----------|------------|
+| KV pressure orthogonal to elastic | S3/S4 identical ratio to reference | High |
+| Scale "no effect" is test artifact | Per-instance occupancy analysis | High |
+| ParetoLogNormal strongest benefit | 0.155 ratio, low per-seed variance | High |
+| Occupancy improvement under KV pressure | S4 +7.4% occ ratio | Medium (1 KV level) |
+
+## Implications for Users
+Elastic priority batching works under KV pressure and with asymmetric request sizes. When deploying at large cluster scale, ensure sufficient per-instance load to create batch contention. The mechanism requires near-full batches to activate.
 
 ## Reproduction
 

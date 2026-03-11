@@ -3,6 +3,11 @@
 **Date:** 2026-03-10
 **Branch:** `hypothesis-playground`
 **Status:** Complete (re-run with corrected batch constraint)
+**Resolution:** Confirmation with nuance — 35.5% improvement (exceeds 25% threshold), super-additivity seed-dependent
+**Family:** Cross-policy comparative
+**VV&UQ:** Validation
+**Type:** Statistical (Dominance + Interaction)
+**Rounds:** 1
 
 ---
 
@@ -34,6 +39,8 @@ All configurations include `--max-num-running-reqs 32` to create realistic batch
 Common: `--model meta-llama/llama-3.1-8b-instruct --tp 2 --hardware H100 --num-instances 4 --routing-scorers prefix-affinity:3,queue-depth:2 --scheduler priority-fcfs --priority-policy static-class-weight --num-requests 1500`
 
 Rate: 300 req/s (120% capacity). Seeds: 42, 123, 456.
+
+**Capacity derivation:** With beta coefficients [6910, 17.67, 2.84] for llama-3.1-8b/H100/TP=2 and mean input=256, output=128: single-turn step time is approximately 11.8ms, giving ~85 req/s per instance and ~340 req/s for 4 instances. Multi-turn (3 rounds, context accumulation) increases effective per-request work ~2-3x, reducing capacity to ~113-170 req/s. At 300 req/s with maxRunningReqs=32, the effective overload is substantially higher than the nominal "120%" label suggests.
 
 ---
 
@@ -196,6 +203,25 @@ In seed 42, admission actually worsens critical P99 (+10.3%) while preemption he
 6. **The control (T4-uniform) validates class sensitivity.** With uniform SLO, all mechanisms become inert (0 rejections, no priority differential for preemption), producing <2% difference from baseline.
 
 ---
+
+## Scope and Limitations
+- **Operating point:** 120% capacity (300 req/s), 4 instances, llama-3.1-8b-instruct/H100/TP=2, maxRunningReqs=32
+- **Not tested:** Other models, GPU types, TP configurations, real vLLM validation
+- **Sample size:** 1500 requests, 3 seeds per config (15 total runs). P99 based on ~262 critical observations per seed.
+- **DES limitation:** Results are from BLIS simulation, not production inference serving
+- **Batch constraint critical:** Results require `--max-num-running-reqs 32` (production-realistic); default 256 shows zero preemptions
+
+## Evidence Quality
+| Claim | Evidence | Confidence |
+|-------|----------|------------|
+| T4 reduces critical P99 by >25% | 35.5% mean across 3 seeds | High |
+| Preemption is dominant lever | T3 +29.3% vs T2 +10.9% | High |
+| Super-additivity is conditional | 2/3 seeds super, 1/3 sub | Medium (seed-dependent) |
+| T2 best for cluster health | T2 lowest cluster P99 in 3/3 seeds | High |
+| Control validates class sensitivity | T4-uniform 1.5% diff from B2 | High |
+
+## Implications for Users
+The full compound strategy (StaticClassWeight + SLO-gated admission + priority preemption) provides the best critical-class protection. Use admission control for cluster health, preemption for per-class SLO differentiation. Ensure batch size is production-realistic (32-128) to activate the preemption mechanism.
 
 ## Reproduction
 

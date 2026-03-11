@@ -45,6 +45,9 @@ def parse_per_slo_metrics(filepath):
             E2E:  mean=<val> p99=<val> (n=<count>)
 
     Returns dict of class -> {ttft_mean, ttft_p99, e2e_mean, e2e_p99, ttft_n, e2e_n}
+
+    Note: Per-SLO output from BLIS is in TICKS (microseconds). We convert to ms
+    here to match cluster JSON output (which uses _ms suffix fields).
     """
     path = Path(filepath)
     if not path.exists():
@@ -65,12 +68,13 @@ def parse_per_slo_metrics(filepath):
         re.MULTILINE,
     ):
         cls = m.group(1).rstrip(":")
+        # Convert ticks (us) to ms
         result[cls] = {
-            "ttft_mean": float(m.group(2)),
-            "ttft_p99": float(m.group(3)),
+            "ttft_mean": float(m.group(2)) / 1000.0,
+            "ttft_p99": float(m.group(3)) / 1000.0,
             "ttft_n": int(m.group(4)),
-            "e2e_mean": float(m.group(5)),
-            "e2e_p99": float(m.group(6)),
+            "e2e_mean": float(m.group(5)) / 1000.0,
+            "e2e_p99": float(m.group(6)) / 1000.0,
             "e2e_n": int(m.group(7)),
         }
     return result

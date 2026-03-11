@@ -1,7 +1,12 @@
 # H-Joint-KV-Scheduling: Joint KV-Scheduling Optimization
 
 **Status:** CONFIRMED (super-additive interaction at moderate KV pressure)
+**Resolution:** Confirmation with nuance — super-additive only at moderate KV pressure
+**Family:** Cross-policy comparative
+**VV&UQ:** Validation
+**Type:** Statistical (Interaction)
 **Date:** 2026-03-11
+**Rounds:** 1
 **Seeds:** 42, 123, 456 (3 seeds per config)
 **Total runs:** 48 (2x2x4 design, 3 seeds)
 
@@ -33,6 +38,8 @@ When both operate jointly, critical requests are fully shielded at both layers, 
 - Workload: gamma CV=2.0, multi-turn (3 rounds, 500ms think, accumulate)
 - SLO mix: 20% critical, 40% standard, 40% sheddable
 - Input: gaussian mean=256, Output: gaussian mean=128
+
+**Capacity derivation:** With beta coefficients [6910, 17.67, 2.84] for llama-3.1-8b/H100/TP=2 and mean input=256, output=128: single-turn step time is approximately 11.8ms, giving ~85 req/s per instance and ~340 req/s for 4 instances. Multi-turn (3 rounds, context accumulation) increases effective per-request work ~2-3x, reducing capacity to ~113-170 req/s. At 300 req/s, the effective overload is ~175-265%, significantly higher than the nominal "120%" label suggests.
 
 ### KV pressure calibration
 
@@ -151,6 +158,24 @@ The JOINT optimization **improves** critical TTFT P99 by 5.8x but **degrades** c
 4. **Cluster-level metrics are misleading for SLO-differentiated policies**: Always use per-SLO metrics when evaluating priority-aware mechanisms.
 
 5. **The cost is to sheddable, not throughput**: At moderate pressure, throughput is maintained (-0.5%) while sheddable TTFT P99 increases 1.58x. This is the designed trade-off.
+
+## Scope and Limitations
+- **Operating point:** 120% capacity (300 req/s), 4 instances, llama-3.1-8b-instruct/H100/TP=2
+- **Not tested:** Other models, GPU types, TP configurations, real vLLM validation
+- **Sample size:** 300 requests, 3 seeds per config (48 total runs)
+- **DES limitation:** Results are from BLIS simulation, not production inference serving
+- **KV=5000 and KV=2000 identical:** Both in "abundant" regime — only 2 effective KV pressure levels tested
+
+## Evidence Quality
+| Claim | Evidence | Confidence |
+|-------|----------|------------|
+| Super-additive at moderate KV (1500) | 2.09x interaction ratio, variance collapse | High |
+| Three distinct regimes | 4 KV levels, clear transitions | High |
+| Throughput maintained at moderate pressure | -0.5% at KV=1500 | High |
+| Throughput cost at extreme pressure | -9.7% at KV=1200 | High |
+
+## Implications for Users
+Joint KV-scheduling optimization is most valuable when KV pressure is moderate (neither abundant nor extreme). Configure SLO-aware KV eviction alongside elastic batching when operating near KV capacity limits. At abundant KV, SLO-aware eviction adds no value. At extreme KV pressure, only KV eviction matters.
 
 ## Reproducibility
 

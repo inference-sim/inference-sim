@@ -4,6 +4,11 @@
 **Date:** 2026-03-10
 **Branch:** `hypothesis-playground`
 **Status:** H-main PARTIALLY CONFIRMED (+20.9% vs target >50%)
+**Resolution:** Partial — 20.9% improvement (exceeds 20% but not 50% target)
+**Family:** Cross-policy comparative
+**VV&UQ:** Validation
+**Type:** Statistical (Dominance)
+**Rounds:** 1
 
 ---
 
@@ -19,10 +24,12 @@
 
 | Rate | Crit TTFT P99 Improvement vs B2 | Sheddable Degradation | Cluster P99 Change | Preemptions |
 |------|---------------------------------|----------------------|--------------------| ------------|
-| 80% | ~+15% | ~+0.2% | ~+0.3% | ~12 |
+| 80% | +3.3% (inconclusive, per-seed: +14.9%, -6.8%, +1.9%) | +0.8% | +1.2% | ~26 |
 | 120% | **+20.9%** | +0.4% | +0.5% | ~27 |
 
-**PARTIALLY CONFIRMED.** The mechanism works — 20.9% critical TTFT P99 improvement — but falls short of the predicted 50%. The shortfall is because:
+At 80% load, the result is inconclusive: seed 42 shows +14.9% improvement, seed 123 shows -6.8% (worse), and seed 456 shows +1.9%. The mean (+3.3%) is dominated by seed variance.
+
+**PARTIALLY CONFIRMED.** The mechanism works at 120% — 20.9% critical TTFT P99 improvement — but falls short of the predicted 50%. The shortfall is because:
 
 1. **Circuit breaker limits leverage:** Max 3 preemptions per step means only ~27 out of ~1500 requests trigger preemptions. The critical-request-to-preemption ratio is only 1.8%.
 2. **Recomputation cost:** Preempted sheddable requests restart from ProgressIndex=0, consuming compute on their second attempt. This partially offsets the queue depth reduction.
@@ -69,6 +76,24 @@ Iterations 1 and 2 showed that queue ordering and admission control cannot beat 
 | **3** | **PriorityPreemption** | **-20.9%** | +0.5% | First mechanism to beat B2 |
 
 ---
+
+## Scope and Limitations
+- **Operating point:** 80% and 120% capacity, 4 instances, llama-3.1-8b-instruct/H100/TP=2
+- **Not tested:** Other models, GPU types, TP configurations, real vLLM validation
+- **Sample size:** 1500 requests, 3 seeds per rate point. P99 based on ~300 critical observations per seed.
+- **DES limitation:** Results are from BLIS simulation, not production inference serving
+- **Circuit breaker:** Default 3 preemptions/step limits leverage; higher values untested
+
+## Evidence Quality
+| Claim | Evidence | Confidence |
+|-------|----------|------------|
+| 20.9% critical P99 improvement at 120% | 3 seeds: -17.5%, -26.0%, -19.3% | High |
+| 80% improvement inconclusive | 3 seeds: +14.9%, -6.8%, +1.9% (mean +3.3%) | Low |
+| Cluster P99 within 20% | +0.5% mean | High |
+| Mechanism specificity confirmed | 0.0% diff with uniform SLO, 0 preemptions | High |
+
+## Implications for Users
+Priority preemption is the only mechanism that improves critical TTFT P99 over static class weights. Use it when per-class SLO differentiation is needed. The circuit breaker (3/step default) limits leverage; for stronger effect, increase via `--max-priority-preemptions-per-step`.
 
 ## Next Iteration Direction
 

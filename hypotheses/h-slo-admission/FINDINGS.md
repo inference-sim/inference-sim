@@ -4,6 +4,11 @@
 **Date:** 2026-03-10
 **Branch:** `hypothesis-playground`
 **Status:** H-main NOT SUPPORTED; non-zero-sum mechanism CONFIRMED
+**Resolution:** Partial — primary refuted, secondary confirmed
+**Family:** Cross-policy comparative
+**VV&UQ:** Validation
+**Type:** Statistical (Dominance)
+**Rounds:** 1
 
 ---
 
@@ -75,11 +80,11 @@ At 80%, there's a modest ~15% improvement but this doesn't meet the >20% thresho
 
 **Implication:** Admission control is effective for overall system health (mean metrics, cluster P99, throughput) but does not help the tail of specific SLO classes when the tail is dominated by per-request compute cost rather than queueing delay.
 
-### S20: Multi-turn context accumulation dominates tail latency, not queue depth
+### S20: Admission control helps cluster metrics but not critical P99 when critical traffic still competes for queue slots
 
-**Evidence:** Critical TTFT P99 at 120% is ~110,000-130,000ms across all configurations (B2, T2, all thresholds). This value is insensitive to queue management because it reflects the prefill cost of round-2/3 requests with 640-1024 accumulated tokens. Queue depth management (admission, scheduling) cannot reduce per-request prefill time.
+**Evidence:** Critical TTFT P99 at 120% is ~110,000-130,000us (~110-130ms) across all configurations (B2, T2, all thresholds). Shedding sheddable requests (40% of traffic) reduces total queue depth, but critical (20%) still competes with standard (40%) for queue slots. At 120% load, the remaining 60% of traffic still creates substantial queueing pressure. A 1024-token prefill costs only ~25ms, but the P99 is ~120ms -- the excess is queue wait, not prefill cost. The issue is that admission control does not shed enough traffic to meaningfully reduce the queue for critical requests.
 
-**Implication:** For multi-turn workloads, tail latency improvement requires addressing the per-request compute cost: chunked prefill (S9/S10), context windowing, or prompt compression — not scheduling or admission.
+**Implication:** For SLO-differentiated workloads under overload, admission control alone is insufficient to protect critical P99 because the critical class still faces queueing from standard-class traffic. Batch-level priority preemption (Iteration 3) or dedicated fast-lane instances are needed to bypass the queue entirely.
 
 ---
 
@@ -106,6 +111,17 @@ None filed. Both iterations produced clean experimental results with clear diagn
 - Not tested: combining admission with per-SLO prefill thresholds (S9/S10), which prior Strategy Evolution identified as the "zero-cost lever."
 
 ---
+
+## Evidence Quality
+| Claim | Evidence | Confidence |
+|-------|----------|------------|
+| Admission does not help critical P99 | 3 seeds, +5.2% at 120% | High |
+| Non-zero-sum cluster benefit | -15.6% cluster P99 improvement | High |
+| Threshold insensitivity | 3 thresholds, none >15% improvement | Medium |
+| Control validated | Byte-identical with uniform SLO | High |
+
+## Implications for Users
+SLO-gated admission is effective for cluster-wide health metrics but does not help critical-class tail latency. Use it as a load-shedding mechanism for cluster stability, not as an SLO-differentiation tool. Batch-level preemption (Iteration 3) is needed for per-class P99 improvement.
 
 ## Next Iteration Direction
 

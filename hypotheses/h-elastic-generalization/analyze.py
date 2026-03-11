@@ -22,6 +22,9 @@ def parse_per_slo_metrics(filepath):
     """Extract per-SLO-class TTFT from BLIS text output.
 
     Returns dict: {slo_class: {"ttft_mean": float, "ttft_p99": float, ...}}
+
+    Note: Per-SLO output from BLIS is in TICKS (microseconds). We convert to ms
+    here to match cluster JSON output (which uses _ms suffix fields).
     """
     content = Path(filepath).read_text()
     slo_metrics = {}
@@ -34,12 +37,13 @@ def parse_per_slo_metrics(filepath):
     )
     for m in slo_pattern.finditer(content):
         cls = m.group(1)
+        # Convert ticks (us) to ms
         slo_metrics[cls] = {
-            "ttft_mean": float(m.group(2)),
-            "ttft_p99": float(m.group(3)),
+            "ttft_mean": float(m.group(2)) / 1000.0,
+            "ttft_p99": float(m.group(3)) / 1000.0,
             "ttft_n": int(m.group(4)),
-            "e2e_mean": float(m.group(5)),
-            "e2e_p99": float(m.group(6)),
+            "e2e_mean": float(m.group(5)) / 1000.0,
+            "e2e_p99": float(m.group(6)) / 1000.0,
             "e2e_n": int(m.group(7)),
         }
     return slo_metrics

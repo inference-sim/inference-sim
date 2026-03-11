@@ -1,9 +1,13 @@
 # H-Elastic-Generalization: Generalization Sweep for Elastic Priority Batching
 
 **Status:** CONFIRMED
+**Resolution:** Universal confirmation across 12 workload variants
+**Family:** Strategy Evolution
+**VV&UQ:** Validation
+**Type:** Statistical (Dominance)
 **Date:** 2026-03-10
+**Rounds:** 1
 **Branch:** `main` (hypothesis-playground worktree)
-**Experiment family:** Strategy Evolution
 **Classification:** Generalization validation
 **Depends on:** H-Elastic-Batching (Iteration 6)
 
@@ -52,6 +56,8 @@ This sweep tests whether the result holds across 12 workload variants spanning 4
 | W12 | 300 | 120% | constant | multi-turn | 20/40/40 | Zero burstiness |
 
 Total: 12 variants x 2 configs x 3 seeds = 72 runs.
+
+**Capacity derivation:** With beta coefficients [6910, 17.67, 2.84] for llama-3.1-8b/H100/TP=2 and mean input=256, output=128: single-turn step time is approximately 11.8ms, giving ~85 req/s per instance and ~340 req/s for 4 instances. Multi-turn (3 rounds, context accumulation) increases effective per-request work ~2-3x, reducing capacity to ~113-170 req/s. At 300 req/s, the effective overload is ~175-265%, significantly higher than the nominal "120%" label suggests. The "120%" label is based on the single-turn capacity estimate of ~250 req/s.
 
 ## Results
 
@@ -157,7 +163,7 @@ No variant showed ratio above 0.50. The mechanism is universally beneficial acro
 ### Predicted failure modes (untested)
 - **100% critical (uniform priority):** With no priority differentiation, preemption cannot trigger. Elastic degenerates to large-batch.
 - **Very small batch (maxRunning < 10):** With few slots, preempting 1-2 requests per step has larger throughput impact. The small-batch catastrophe from H-Elastic-Batching applies.
-- **Near-zero margin (margin < 1.0):** Too aggressive -- preempts standard for critical (only 5.0 difference), causing thrashing.
+- **Near-zero margin (margin < 1.0):** Too aggressive -- preempts even within-tier requests with small priority differences, causing thrashing.
 
 ## Conclusions
 
@@ -172,6 +178,23 @@ No variant showed ratio above 0.50. The mechanism is universally beneficial acro
 5. **Zero occupancy cost confirmed universally**: Elastic never reduces GPU utilization. Average occupancy improves by +2.1% across all variants.
 
 6. **The dual-objective principle is a general law**: Large batches for throughput + priority preemption for SLO differentiation is not a workload-specific trick. It works because batch size and preemption operate on orthogonal axes (capacity vs. ordering), and this orthogonality holds regardless of workload characteristics.
+
+## Scope and Limitations
+- **Operating point:** 50-200% capacity, 4 instances, llama-3.1-8b-instruct/H100/TP=2
+- **Not tested:** Other models, GPU types, TP configurations, real vLLM validation, cluster scales other than 4 instances
+- **Sample size:** 500 requests per variant, 3 seeds (72 total runs). P99 based on ~100 critical observations per variant.
+- **DES limitation:** Results are from BLIS simulation, not production inference serving
+
+## Evidence Quality
+| Claim | Evidence | Confidence |
+|-------|----------|------------|
+| Universal strong benefit (12/12) | All ratios < 0.50, 3 seeds each | High |
+| Load modulates magnitude | 3 load levels, consistent trend | High |
+| Critical fraction is secondary modulator | W6 (50% crit) ratio 0.347 vs 0.237 avg | Medium (1 variant) |
+| Zero occupancy cost | All occ ratios 1.005-1.041 | High |
+
+## Implications for Users
+Elastic priority batching generalizes across all tested workload dimensions. No workload-specific tuning is needed. The only dimension that weakens the benefit is high critical fraction (>50%), which is rare in production.
 
 ## Reproduction
 
