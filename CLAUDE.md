@@ -241,7 +241,7 @@ inference-sim/
 │   ├── tiered.go              # TieredKVCache (GPU+CPU offload/reload)
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/               # Latency model implementations (PKG-2)
-│   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── latency.go             # RooflineLatencyModel (default, analytical FLOPs/bandwidth), BlackboxLatencyModel (alpha/beta regression), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
 │   ├── trained_roofline.go    # TrainedRooflineLatencyModel: roofline basis functions × learned corrections (7β + 3α from training pipeline)
 │   ├── crossmodel.go          # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
@@ -296,7 +296,7 @@ inference-sim/
 │   │   ├── routing.md         # Routing policies
 │   │   ├── admission.md       # Admission control
 │   │   ├── scheduling.md      # Scheduling & priority
-│   │   ├── latency-models.md  # Latency models (blackbox + roofline)
+│   │   ├── latency-models.md  # Latency models (roofline + blackbox)
 │   │   ├── kv-cache.md        # KV cache & memory management
 │   │   ├── workloads.md       # Workload specifications
 │   │   ├── cluster.md         # Cluster simulation

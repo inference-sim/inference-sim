@@ -1,6 +1,6 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships four backends -- blackbox (data-driven), roofline (analytical), cross-model (physics-informed), and trained-roofline (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships four backends -- roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed), and trained-roofline (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.
 
 ```bash
 # Roofline mode (default) — analytical estimation from model architecture
@@ -188,13 +188,13 @@ Where each basis function (T_pf_compute, T_pf_kv, etc.) is a full analytical roo
 
 ## When to Use Which
 
-| Aspect | Blackbox | Roofline (default) | Cross-Model | Trained-Roofline |
+| Aspect | Roofline (default) | Blackbox | Cross-Model | Trained-Roofline |
 |--------|-------------------|----------|-------------|------------------|
-| **When to use** | Model has per-model coefficients in `defaults.yaml` | Quick analytical estimate | Hand-engineered physics features | **Recommended** for new models (best accuracy without per-model training) |
-| **Data required** | `defaults.yaml` entry for model/GPU/TP | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
-| **GPU step time accuracy** | Highest (per-model) | Good (analytical) | Good (7 global params) | **7% MAPE** (10 global params, roofline × corrections) |
-| **MoE support** | If trained | No (dense only) | Yes (binary indicator) | Yes (per-expert FLOPs + effective expert count) |
-| **Alpha model** | α₀ + α₁·inputLen | Same as blackbox | Same as blackbox | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
+| **When to use** | Quick analytical estimate | Model has per-model coefficients in `defaults.yaml` | Hand-engineered physics features | **Recommended** for new models (best accuracy without per-model training) |
+| **Data required** | HF `config.json` + `--hardware` + `--tp` | `defaults.yaml` entry for model/GPU/TP | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
+| **GPU step time accuracy** | Good (analytical) | Highest (per-model) | Good (7 global params) | **7% MAPE** (10 global params, roofline × corrections) |
+| **MoE support** | No (dense only) | If trained | Yes (binary indicator) | Yes (per-expert FLOPs + effective expert count) |
+| **Alpha model** | Same as blackbox | α₀ + α₁·inputLen | Same as blackbox | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
 | **PostDecodeFixedOverhead** | 0 | 0 | 0 | α₁ (~1.85ms) |
 
 !!! tip "Choosing the right mode"
