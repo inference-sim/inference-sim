@@ -290,12 +290,19 @@ var runCmd = &cobra.Command{
 					"Provide --tp explicitly", model)
 			}
 
-			// Warn if user also provided explicit beta coefficients — roofline replaces
-			// step time estimation. Alpha coefficients are still used for queueing time
-			// and output token processing time.
-			if !allZeros(betaCoeffs) {
-				logrus.Warnf("--latency-model roofline replaces --beta-coeffs with analytical step time estimation. " +
-					"Alpha coefficients are still used for queueing time and output token processing")
+			// Hard error if user explicitly requested roofline AND provided beta coefficients.
+			// Roofline computes step time analytically — beta coefficients are meaningless.
+			// (If user wants blackbox behavior, they should use --latency-model blackbox.)
+			if cmd.Flags().Changed("latency-model") && cmd.Flags().Changed("beta-coeffs") {
+				logrus.Fatalf("--beta-coeffs cannot be used with --latency-model roofline. " +
+					"Roofline computes step time analytically. " +
+					"Use --latency-model blackbox if you want coefficient-based estimation")
+			}
+			// Warn (non-fatal) if beta-coeffs were provided without explicit --latency-model.
+			// The default is roofline, so beta coefficients will be silently ignored.
+			if !cmd.Flags().Changed("latency-model") && cmd.Flags().Changed("beta-coeffs") {
+				logrus.Warnf("--beta-coeffs provided but default mode is roofline (ignores beta coefficients). " +
+					"Use --latency-model blackbox to use coefficient-based step time estimation")
 			}
 
 			// Log when explicit overrides interact with --latency-model roofline
