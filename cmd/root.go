@@ -98,9 +98,10 @@ var (
 	snapshotRefreshInterval int64
 
 	// PD disaggregation config (PR1)
-	prefillInstances int    // Number of instances dedicated to prefill
-	decodeInstances  int    // Number of instances dedicated to decode
-	pdDecider        string // Disaggregation decider name
+	prefillInstances  int    // Number of instances dedicated to prefill
+	decodeInstances   int    // Number of instances dedicated to decode
+	pdDecider         string // Disaggregation decider name
+	pdPrefixThreshold int    // Non-cached token threshold for prefix-threshold decider
 
 	// PD KV transfer config (PR2)
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
@@ -674,6 +675,9 @@ var runCmd = &cobra.Command{
 		if !sim.IsValidDisaggregationDecider(pdDecider) {
 			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
 		}
+		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
+			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
+		}
 		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
@@ -779,6 +783,7 @@ var runCmd = &cobra.Command{
 			PrefillInstances:        prefillInstances,
 			DecodeInstances:         decodeInstances,
 			PDDecider:               pdDecider,
+			PDPrefixThreshold:       pdPrefixThreshold,
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
@@ -1003,7 +1008,8 @@ func init() {
 	// PD disaggregation config (PR1)
 	runCmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
 	runCmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
-	runCmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always")
+	runCmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold")
+	runCmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
 
 	// PD KV transfer config (PR2)
 	runCmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
