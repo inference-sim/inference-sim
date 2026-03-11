@@ -110,8 +110,9 @@ To add a new prefill-decode disaggregation decider (e.g., adaptive-rate, popular
    - Add name to `validDisaggregationDeciders` in `sim/bundle.go`
    - Add `case` to `NewDisaggregationDecider` in `sim/disaggregation.go`
 3. **Update CLI flag description** in `cmd/root.go` (`--pd-decider` flag help text)
-4. **Add behavioral tests** in `sim/disaggregation_test.go` and cluster integration tests in `sim/cluster/disaggregation_test.go`
-5. Extension friction: **3 touch points** (implementation + bundle registration + CLI description)
+4. **Update `docs/reference/configuration.md`** — add a row to the Disaggregation Deciders table under `## PD Disaggregation`
+5. **Add behavioral tests** in `sim/disaggregation_test.go` and cluster integration tests in `sim/cluster/disaggregation_test.go`
+6. Extension friction: **4 touch points** (implementation + bundle registration + CLI description + documentation)
 
 ### Stateful decider with observer (needs routing feedback to update internal state)
 

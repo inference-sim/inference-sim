@@ -146,7 +146,7 @@ See [Cluster Architecture: Scorer Composition](../concepts/architecture.md#score
 
 Prefill-decode (PD) disaggregation splits the prefill and decode phases across separate instance pools. Prefill instances process the initial prompt tokens; decode instances generate output tokens. KV cache state is transferred between pools after prefill completes.
 
-PD disaggregation requires `--prefill-instances` and `--decode-instances` to be configured alongside `--num-instances`. See [Cluster Architecture: PD Disaggregation](../concepts/architecture.md#pd-disaggregation) for the end-to-end flow.
+PD disaggregation requires `--prefill-instances` and `--decode-instances` to be configured alongside `--num-instances`. The pool sizes must satisfy `prefill + decode ≤ num-instances`; any remaining instances receive locally-routed (non-disaggregated) requests via the standard routing path.
 
 ### Disaggregation Deciders
 
