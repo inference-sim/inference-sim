@@ -379,4 +379,5 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--workload-traces-filepath`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` |
+| **PD Disaggregation** | `--prefill-instances`, `--decode-instances`, `--pd-decider` (`never`\|`always`\|`prefix-threshold`), `--pd-prefix-threshold`, `--pd-transfer-bandwidth`, `--pd-transfer-base-latency`, `--pd-kv-bytes-per-token`, `--prefill-routing-scorers`, `--decode-routing-scorers` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--results-path`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |

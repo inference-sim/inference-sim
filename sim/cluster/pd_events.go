@@ -181,6 +181,11 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 
 			cs.inFlightRequests[decision.TargetInstance]++
 			inst.InjectDecodeOnline(e.decodeSubReq)
+			// Note: notifyDisaggregationObserver is intentionally NOT called here.
+			// The decode sub-request carries the same InputTokens as the original request
+			// whose prefix was already recorded in ObserveRouting during PrefillRoutingEvent.
+			// Calling it again would be a no-op (RecordBlocks re-touches the same hashes).
+			// Standard (non-disaggregated) routing notifies via RoutingDecisionEvent instead.
 			return
 		}
 	}

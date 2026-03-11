@@ -91,6 +91,7 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 		PrefillInstances:        prefill,
 		DecodeInstances:         decode,
 		PDDecider:               "always",
+		PDPrefixThreshold:       512,
 		RoutingPolicy:           "round-robin",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
@@ -356,22 +357,9 @@ func newTestPrefixThresholdConfig(threshold int) DeploymentConfig {
 	}
 }
 
-// TestPrefixThreshold_DeciderWiredCorrectly verifies that prefix-threshold decider is created
-// when PDDecider is "prefix-threshold" (BC-PD-25).
-func TestPrefixThreshold_DeciderWiredCorrectly(t *testing.T) {
-	config := newTestPrefixThresholdConfig(512)
-	requests := newTestRequests(3)
-
-	cs := NewClusterSimulator(config, requests)
-
-	if cs.disaggregationDecider == nil {
-		t.Fatal("disaggregationDecider is nil — prefix-threshold not wired")
-	}
-	// Verify it satisfies DisaggregationObserver (BC-PD-26)
-	if _, ok := cs.disaggregationDecider.(sim.DisaggregationObserver); !ok {
-		t.Error("prefix-threshold decider does not implement DisaggregationObserver")
-	}
-}
+// Compile-time check: PrefixThresholdDecider satisfies DisaggregationObserver (BC-PD-26).
+// Interface conformance is verified at the unit level (sim/disaggregation_test.go).
+var _ sim.DisaggregationObserver = &sim.PrefixThresholdDecider{}
 
 // TestPrefixThreshold_HighThresholdNoDisaggregation verifies that requests with tokens
 // below the threshold are routed via the standard path (not disaggregated).

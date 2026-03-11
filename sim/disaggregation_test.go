@@ -147,10 +147,19 @@ func TestNewPrefixThresholdDecider_PanicsOnZeroBlockSize(t *testing.T) {
 	NewPrefixThresholdDecider(512, 0)
 }
 
+// noopDisaggregationObserver is a no-op DisaggregationObserver used in tests to satisfy R13:
+// DisaggregationObserver must work for >=2 backends (not tightly coupled to PrefixThresholdDecider).
+// Any future stateful decider (e.g., adaptive-rate, popularity-based) should also implement it.
+type noopDisaggregationObserver struct{}
+
+func (*noopDisaggregationObserver) ObserveRouting(_ *Request, _ string) {}
+
 // TestPrefixThresholdDecider_Interface verifies PrefixThresholdDecider satisfies both interfaces.
+// Also verifies DisaggregationObserver is a general extension point (R13: works for >=2 backends).
 func TestPrefixThresholdDecider_Interface(t *testing.T) {
 	var _ DisaggregationDecider = &PrefixThresholdDecider{}
 	var _ DisaggregationObserver = &PrefixThresholdDecider{}
+	var _ DisaggregationObserver = &noopDisaggregationObserver{} // R13: second backend
 }
 
 // TestPrefixThresholdDecider_EmptyTokens verifies BC-PD-20: empty input returns Disaggregate=false.
@@ -237,10 +246,11 @@ func TestPrefixThresholdDecider_CacheAware(t *testing.T) {
 	decider.Decide(prefixReq)
 	decider.ObserveRouting(prefixReq, "instance_0")
 
-	// New request: same 640-token prefix + 600 new tokens = 1240 tokens total.
-	// Without cache: 1240 > 512 → would disaggregate.
-	// With cache: cached = 40 blocks * 16 = 640 tokens; non-cached = 1240 - 640 = 600 > 512 → still disaggregate.
-	// Use 200 new tokens instead: non-cached = 200 <= 512 → should NOT disaggregate.
+	// New request: same 640-token prefix + 200 new tokens = 840 tokens total.
+	// Cached: 40 blocks * 16 = 640 tokens. Non-cached: 840 - 640 = 200 tokens.
+	// 200 <= 512 threshold → should NOT disaggregate.
+	// (Using 600 new tokens would give 1240 total; non-cached = 1240 - 640 = 600 > 512
+	// which would still disaggregate — 200 was chosen so the cache benefit is decisive.)
 	extended := make([]int, len(prefix)+200)
 	copy(extended, prefix)
 	for i := len(prefix); i < len(extended); i++ {
