@@ -400,25 +400,54 @@ func TestPrefixThreshold_ZeroThresholdAlwaysDisaggregates(t *testing.T) {
 	}
 }
 
-// TestPrefixThreshold_ObserverCalledAfterRouting verifies BC-PD-28: observer is called
-// after routing (using "always" + observer check via interface type assertion is sufficient
-// since we can't inspect internal state without exporting it).
-func TestPrefixThreshold_ObserverCalledAfterRouting(t *testing.T) {
-	// Use always-disaggregate-like behavior (threshold=0) so all requests go through
-	// the full disaggregated path (PrefillRoutingEvent fires, observer gets called there).
-	config := newTestPrefixThresholdConfig(0)
-	requests := newTestRequests(3)
+// TestPrefixThreshold_ObserverWarmsCache verifies BC-PD-28: the DisaggregationObserver
+// is called after routing and warms the prefix cache, causing a subsequent request with
+// the same prefix to be routed locally (not disaggregated).
+//
+// Setup: blockSize=16, threshold=150.
+//   req1: 192 tokens (12 complete blocks). nonCached=192 > 150 → disaggregates.
+//         Observer records 12 blocks in the global cache.
+//   req2 (arrives later): same 192-token prefix + 58 unique tokens = 250 total.
+//         nonCached = 250 - 12*16 = 58 ≤ 150 → NOT disaggregated (proves observer ran).
+//         Without observer call: nonCached = 250 > 150 → would disaggregate.
+func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
+	const threshold = 150 // between cached-case nonCached=58 and uncached-case nonCached=192
+	config := newTestPrefixThresholdConfig(threshold)
 
-	cs := NewClusterSimulator(config, requests)
+	// Shared prefix: 192 tokens = exactly 12 complete blocks (blockSize=16).
+	sharedPrefix := make([]int, 192)
+	for i := range sharedPrefix {
+		sharedPrefix[i] = i + 1
+	}
+	// req2 tokens: same prefix + 58 unique suffix = 250 total.
+	req2Tokens := make([]int, 250)
+	copy(req2Tokens, sharedPrefix)
+	for i := 192; i < 250; i++ {
+		req2Tokens[i] = 10000 + i
+	}
+	output := []int{1, 2, 3, 4, 5}
+
+	req1 := &sim.Request{
+		ID: "req-prefix-1", InputTokens: sharedPrefix, OutputTokens: output,
+		ArrivalTime: 0, State: sim.StateQueued,
+	}
+	// req2 arrives after req1 fully processes (observer called during req1's PrefillRoutingEvent).
+	req2 := &sim.Request{
+		ID: "req-prefix-2", InputTokens: req2Tokens, OutputTokens: output,
+		ArrivalTime: 1_000_000_000, State: sim.StateQueued,
+	}
+
+	cs := NewClusterSimulator(config, []*sim.Request{req1, req2})
 	mustRun(t, cs)
 
-	// After simulation, all requests were disaggregated and completed.
-	// The observer was called in PrefillRoutingEvent for each request.
-	// Verify causality invariants hold (phase causality implies observer didn't crash).
-	for _, parent := range cs.parentRequests {
-		if parent.TransferCompleteTime == 0 {
-			t.Errorf("parent %s: TransferCompleteTime not set — prefill path broken", parent.ID)
-		}
+	// BC-PD-28a: req1 disaggregates (192 uncached tokens > threshold=150, empty cache).
+	if _, ok := cs.parentRequests["req-prefix-1"]; !ok {
+		t.Error("BC-PD-28: req1 (192 uncached tokens, threshold=150) should have disaggregated")
+	}
+	// BC-PD-28b: req2 does NOT disaggregate (58 non-cached tokens ≤ threshold=150 after cache warmup).
+	// If observer was not called, req2 would have 250 non-cached tokens > 150 and would disaggregate.
+	if _, ok := cs.parentRequests["req-prefix-2"]; ok {
+		t.Error("BC-PD-28: req2 (58 non-cached after cache warmup, threshold=150) should not disaggregate — observer must have been called for req1")
 	}
 }
 
