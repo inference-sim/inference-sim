@@ -203,9 +203,10 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			// KVTransferRecord is recorded here so DecodeInstanceID is fully populated.
 			// Both TransferStartTime and TransferCompleteTime were set in earlier event handlers.
 			if cs.trace != nil {
-				// INV-PD-4 guarantees transfer_start ≤ transfer_complete via event priority ordering
-				// (KVTransferStartedEvent priority 5 < KVTransferCompletedEvent priority 6 < this priority 7).
-				// Defensive clamp: if ordering invariant is ever violated, warn and record 0.
+				// INV-PD-4 guarantees transfer_start ≤ transfer_complete via timestamp sequencing:
+				// KVTransferStartedEvent.Execute() schedules completion at T+duration where duration >= 1µs,
+				// so the completion event always fires at a strictly later timestamp.
+				// Defensive clamp: if the ordering invariant is ever violated, warn and record 0.
 				// The warning makes INV-PD-4 violations detectable in operator logs (R1: no silent data loss).
 				transferDuration := e.parentReq.TransferCompleteTime - e.parentReq.TransferStartTime
 				if transferDuration < 0 {

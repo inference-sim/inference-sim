@@ -208,6 +208,8 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 // DisaggregationDecisionEvent represents the PD disaggregation decision point for a request.
 // Priority 3: processed after routing events at the same timestamp.
 // Bifurcates: disaggregate=true → PrefillRoutingEvent, disaggregate=false → RoutingDecisionEvent.
+// For a single request, this event always precedes the event it schedules, since that event is
+// pushed at T+routingLatency from within Execute() and will fire at a later timestamp.
 type DisaggregationDecisionEvent struct {
 	time    int64
 	request *sim.Request

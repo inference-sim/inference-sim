@@ -33,6 +33,9 @@ type RoutingRecord struct {
 }
 
 // DisaggregationRecord captures a PD disaggregation decision.
+// When Disaggregate=true, the request follows the disaggregated path and a paired
+// PrefillRoutingRecord, KVTransferRecord, and DecodeRoutingRecord are guaranteed to exist
+// for the same ParentRequestID (unless the decode KV allocation fails).
 type DisaggregationRecord struct {
 	RequestID    string
 	Clock        int64
@@ -48,7 +51,7 @@ type PrefillRoutingRecord struct {
 	// Values are raw weighted-scorer outputs; not normalized. Nil when scoring is disabled.
 	Scores     map[string]float64 // from RoutingDecision.Scores (may be nil)
 	Candidates []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
-	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best
+	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best; always >= 0
 }
 
 // DecodeRoutingRecord captures a decode pool routing decision with optional counterfactual analysis.
@@ -60,14 +63,16 @@ type DecodeRoutingRecord struct {
 	// Values are raw weighted-scorer outputs; not normalized. Nil when scoring is disabled.
 	Scores     map[string]float64 // from RoutingDecision.Scores (may be nil)
 	Candidates []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
-	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best
+	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best; always >= 0
 }
 
 // KVTransferRecord captures a KV cache transfer event between prefill and decode instances.
+// TransferDuration is always >= 0; negative values are clamped to 0 with a warning in
+// DecodeRoutingEvent.Execute() (sim/cluster/pd_events.go) if INV-PD-4 is ever violated.
 type KVTransferRecord struct {
 	ParentRequestID   string
 	TransferStartTime int64 // microseconds (sim clock)
-	TransferDuration  int64 // microseconds
+	TransferDuration  int64 // microseconds; >= 0 (clamped at recording site)
 	NumKVBlocks       int64
 	PrefillInstanceID string
 	DecodeInstanceID  string

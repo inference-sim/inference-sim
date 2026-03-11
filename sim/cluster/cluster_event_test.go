@@ -319,7 +319,7 @@ func TestAdmissionDecisionEvent_NoPools_SchedulesRouting(t *testing.T) {
 }
 
 // TestDisaggregationDecisionEvent_SchedulesRouting verifies that
-// DisaggregationDecisionEvent.Execute always schedules RoutingDecisionEvent in PR1.
+// DisaggregationDecisionEvent.Execute with NeverDisaggregate schedules RoutingDecisionEvent (local routing path).
 func TestDisaggregationDecisionEvent_SchedulesRouting(t *testing.T) {
 	config := newTestDeploymentConfig(4)
 	config.PrefillInstances = 2

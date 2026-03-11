@@ -136,7 +136,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Statement:** `arrival ≤ prefill_enqueue ≤ prefill_complete ≤ transfer_start ≤ transfer_complete ≤ decode_enqueue ≤ completion` for every disaggregated request.
 
-**Verification:** DES event ordering (timestamp, priority, seqID) enforces causality at each pipeline stage. PD events have explicit priority ordering: Disaggregation(3) → PrefillRouting(4) → KVTransferStarted(5) → KVTransferCompleted(6) → DecodeRouting(7).
+**Verification:** DES event ordering (timestamp, priority, seqID) enforces causality at each pipeline stage. The `transfer_start ≤ transfer_complete` segment is specifically guaranteed by timestamp sequencing: `KVTransferStartedEvent.Execute()` schedules `KVTransferCompletedEvent` at `T+duration` where `duration >= 1µs`, so the completion always fires at a strictly later timestamp. Priority ordering (Disaggregation(3) → PrefillRouting(4) → KVTransferStarted(5) → KVTransferCompleted(6) → DecodeRouting(7)) resolves same-timestamp ties within a single pipeline step.
 
 ---
 
