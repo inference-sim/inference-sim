@@ -23,7 +23,7 @@ func msClusterConfig(numInstances int) DeploymentConfig {
 			Horizon:             math.MaxInt64,
 			Seed:                42,
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 100000, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 100000, 0, 0, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{5000, 10, 3}, []float64{1000, 2, 500}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "test-gpu", 1, "", 0),
 			PolicyConfig:        sim.NewPolicyConfig("constant", "fcfs"),

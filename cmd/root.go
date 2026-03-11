@@ -39,7 +39,8 @@ var (
 	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
 	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
 	longPrefillTokenThreshold    int64   // Max length of prefill beyond which chunked prefill is triggered
-	priorityPreemptionMargin     float64 // Priority difference threshold for preempting running requests (0 = disabled)
+	priorityPreemptionMargin          float64 // Priority difference threshold for preempting running requests (0 = disabled)
+	maxPriorityPreemptionsPerStep int     // Max priority preemptions per step (circuit breaker, R19). 0 = default (3).
 	rate                      float64   // Requests arrival per second
 	numRequests               int       // Number of requests
 	prefixTokens              int       // Prefix Token Count
@@ -785,6 +786,9 @@ var runCmd = &cobra.Command{
 		if priorityPreemptionMargin < 0 {
 			logrus.Fatalf("--priority-preemption-margin must be >= 0, got %f", priorityPreemptionMargin)
 		}
+		if maxPriorityPreemptionsPerStep < 0 {
+			logrus.Fatalf("--max-priority-preemptions-per-step must be >= 0, got %d", maxPriorityPreemptionsPerStep)
+		}
 		// Changed() guard: unlike peer flags (default always positive), --horizon defaults
 		// to math.MaxInt64 which would fail <= 0. Only validate when user explicitly sets it.
 		if cmd.Flags().Changed("horizon") && simulationHorizon <= 0 {
@@ -950,7 +954,7 @@ var runCmd = &cobra.Command{
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold, priorityPreemptionMargin),
+				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold, priorityPreemptionMargin, maxPriorityPreemptionsPerStep),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend, maxModelLen),
 				PolicyConfig:        sim.NewPolicyConfigWithOverride(priorityPolicy, scheduler, priorityOverride),
@@ -1030,6 +1034,15 @@ var runCmd = &cobra.Command{
 
 		// Print KV cache metrics if any nonzero (BC-1, BC-2)
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
+
+		// Print batch occupancy (GPU utilization proxy)
+		aggM := cs.AggregatedMetrics()
+		if aggM.TotalSteps > 0 && aggM.MaxRunningReqs > 0 {
+			occupancy := float64(aggM.TotalBatchSlots) / float64(aggM.TotalSteps*aggM.MaxRunningReqs)
+			fmt.Println("=== Batch Occupancy ===")
+			fmt.Printf("Avg Batch Occupancy: %.4f\n", occupancy)
+			fmt.Printf("Total Steps: %d\n", aggM.TotalSteps)
+		}
 
 		// Print per-SLO metrics if multiple SLO classes present (BC-3, BC-4, BC-10)
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
@@ -1124,6 +1137,7 @@ func init() {
 	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
 	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
 	runCmd.Flags().Float64Var(&priorityPreemptionMargin, "priority-preemption-margin", 0, "Priority difference threshold for preempting running requests (0 = disabled)")
+	runCmd.Flags().IntVar(&maxPriorityPreemptionsPerStep, "max-priority-preemptions-per-step", 0, "Max priority preemptions per step (0 = default of 3, R19 circuit breaker)")
 
 	// BLIS model configs
 	runCmd.Flags().StringVar(&model, "model", "", "LLM name")

@@ -22,12 +22,13 @@ func TestNewKVCacheConfig_FieldEquivalence(t *testing.T) {
 }
 
 func TestNewBatchConfig_FieldEquivalence(t *testing.T) {
-	got := NewBatchConfig(10, 1000, 200, 5.0)
+	got := NewBatchConfig(10, 1000, 200, 5.0, 7)
 	want := BatchConfig{
-		MaxRunningReqs:            10,
-		MaxScheduledTokens:        1000,
-		LongPrefillTokenThreshold: 200,
-		PriorityPreemptionMargin:  5.0,
+		MaxRunningReqs:                10,
+		MaxScheduledTokens:            1000,
+		LongPrefillTokenThreshold:     200,
+		PriorityPreemptionMargin:      5.0,
+		MaxPriorityPreemptionsPerStep: 7,
 	}
 	assert.Equal(t, want, got)
 }
@@ -76,19 +77,21 @@ func TestNewKVCacheConfig_ZeroValues_NoDefaults(t *testing.T) {
 
 func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 	tests := []struct {
-		name            string
-		maxRunning      int64
-		maxTokens       int64
-		prefillThresh   int64
-		preemptionMargin float64
-		wantContains    string
+		name                string
+		maxRunning          int64
+		maxTokens           int64
+		prefillThresh       int64
+		preemptionMargin    float64
+		maxPreemptionsPerStep int
+		wantContains        string
 	}{
-		{"zero_max_running", 0, 2048, 0, 0, "MaxRunningReqs"},
-		{"negative_max_running", -1, 2048, 0, 0, "MaxRunningReqs"},
-		{"zero_max_tokens", 256, 0, 0, 0, "MaxScheduledTokens"},
-		{"negative_max_tokens", 256, -1, 0, 0, "MaxScheduledTokens"},
-		{"negative_prefill", 256, 2048, -1, 0, "LongPrefillTokenThreshold"},
-		{"negative_preemption_margin", 256, 2048, 0, -1.0, "PriorityPreemptionMargin"},
+		{"zero_max_running", 0, 2048, 0, 0, 0, "MaxRunningReqs"},
+		{"negative_max_running", -1, 2048, 0, 0, 0, "MaxRunningReqs"},
+		{"zero_max_tokens", 256, 0, 0, 0, 0, "MaxScheduledTokens"},
+		{"negative_max_tokens", 256, -1, 0, 0, 0, "MaxScheduledTokens"},
+		{"negative_prefill", 256, 2048, -1, 0, 0, "LongPrefillTokenThreshold"},
+		{"negative_preemption_margin", 256, 2048, 0, -1.0, 0, "PriorityPreemptionMargin"},
+		{"negative_max_preemptions_per_step", 256, 2048, 0, 0, -1, "MaxPriorityPreemptionsPerStep"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -102,7 +105,7 @@ func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 					t.Errorf("panic message %q should contain %q", msg, tc.wantContains)
 				}
 			}()
-			NewBatchConfig(tc.maxRunning, tc.maxTokens, tc.prefillThresh, tc.preemptionMargin)
+			NewBatchConfig(tc.maxRunning, tc.maxTokens, tc.prefillThresh, tc.preemptionMargin, tc.maxPreemptionsPerStep)
 		})
 	}
 }

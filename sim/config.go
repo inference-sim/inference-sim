@@ -30,18 +30,20 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 
 // BatchConfig groups batch formation parameters.
 type BatchConfig struct {
-	MaxRunningReqs            int64   // max requests in RunningBatch
-	MaxScheduledTokens        int64   // max total new tokens across all requests in RunningBatch
-	LongPrefillTokenThreshold int64   // threshold for long prefill chunking
-	PriorityPreemptionMargin  float64 // if > 0, enables priority-based preemption in Phase 2: a waiting request preempts the lowest-priority running request when priority difference exceeds this margin. 0 = disabled (default).
+	MaxRunningReqs                int64   // max requests in RunningBatch
+	MaxScheduledTokens            int64   // max total new tokens across all requests in RunningBatch
+	LongPrefillTokenThreshold     int64   // threshold for long prefill chunking
+	PriorityPreemptionMargin      float64 // if > 0, enables priority-based preemption in Phase 2: a waiting request preempts the lowest-priority running request when priority difference exceeds this margin. 0 = disabled (default).
+	MaxPriorityPreemptionsPerStep int     // circuit breaker: max priority preemptions per step (R19). 0 = use default (3).
 }
 
 // NewBatchConfig creates a BatchConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
 // Panics on invalid values: MaxRunningReqs and MaxScheduledTokens must be > 0,
 // LongPrefillTokenThreshold must be >= 0 (0 means disabled),
-// PriorityPreemptionMargin must be >= 0 (0 means disabled).
-func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64, priorityPreemptionMargin float64) BatchConfig {
+// PriorityPreemptionMargin must be >= 0 (0 means disabled),
+// MaxPriorityPreemptionsPerStep must be >= 0 (0 means use default of 3).
+func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold int64, priorityPreemptionMargin float64, maxPriorityPreemptionsPerStep int) BatchConfig {
 	if maxRunningReqs <= 0 {
 		panic(fmt.Sprintf("NewBatchConfig: MaxRunningReqs must be > 0, got %d", maxRunningReqs))
 	}
@@ -54,11 +56,15 @@ func NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshol
 	if priorityPreemptionMargin < 0 {
 		panic(fmt.Sprintf("NewBatchConfig: PriorityPreemptionMargin must be >= 0, got %f", priorityPreemptionMargin))
 	}
+	if maxPriorityPreemptionsPerStep < 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxPriorityPreemptionsPerStep must be >= 0, got %d", maxPriorityPreemptionsPerStep))
+	}
 	return BatchConfig{
-		MaxRunningReqs:            maxRunningReqs,
-		MaxScheduledTokens:        maxScheduledTokens,
-		LongPrefillTokenThreshold: longPrefillTokenThreshold,
-		PriorityPreemptionMargin:  priorityPreemptionMargin,
+		MaxRunningReqs:                maxRunningReqs,
+		MaxScheduledTokens:            maxScheduledTokens,
+		LongPrefillTokenThreshold:     longPrefillTokenThreshold,
+		PriorityPreemptionMargin:      priorityPreemptionMargin,
+		MaxPriorityPreemptionsPerStep: maxPriorityPreemptionsPerStep,
 	}
 }
 

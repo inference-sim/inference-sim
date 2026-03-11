@@ -45,7 +45,7 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 				Horizon:             math.MaxInt64,
 				Seed:                tc.Seed,
 				KVCacheConfig:       NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-				BatchConfig:         NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold, 0),
+				BatchConfig:         NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold, 0, 0),
 				LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, "", tc.MaxModelLen),
 			})
@@ -156,7 +156,7 @@ func TestSimulator_WorkloadRNG_NotNil(t *testing.T) {
 		Horizon:             1000000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, "", 0),
 	})
@@ -178,7 +178,7 @@ func TestSimulator_DeterministicWorkload(t *testing.T) {
 		Horizon:             math.MaxInt64,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 0),
 	}
@@ -223,7 +223,7 @@ func newTestSimConfig() SimConfig {
 		Horizon:             math.MaxInt64,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, "", 0),
 	}
@@ -563,7 +563,7 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 		Horizon:             math.MaxInt64,
 		Seed:                99,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation", "H100", 1, "", 0),
 	}
@@ -620,7 +620,7 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 		Horizon:             500_000, // 0.5 seconds in ticks
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation-finite", "H100", 1, "", 0),
 	}
@@ -685,7 +685,7 @@ func TestSimulator_Causality_FullChain_ArrivalToCompletion(t *testing.T) {
 		Horizon:             math.MaxInt64,
 		Seed:                77,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-causality", "H100", 1, "", 0),
 	}
@@ -741,7 +741,7 @@ func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 		Horizon:             math.MaxInt64,
 		Seed:                55,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-monotonicity", "H100", 1, "", 0),
 	}
@@ -784,7 +784,7 @@ func TestInjectArrival_BeyondHorizon_Warns(t *testing.T) {
 		Horizon:             1000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(10, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{50, 0.1, 50}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -809,7 +809,7 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 		Horizon:             math.MaxInt64,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-determinism", "H100", 1, "", 0),
 	}
@@ -889,7 +889,7 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 				Horizon:             math.MaxInt64,
 				Seed:                42,
 				KVCacheConfig:       NewKVCacheConfig(10000, 16, tt.kvCPUBlocks, 0.8, 100.0, 0),
-				BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+				BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 				LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-kv-conservation", "H100", 1, "", 0),
 			}
@@ -960,7 +960,7 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 		Horizon:             math.MaxInt64,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(1, 2048, 0, 0), // KEY: only one request can run at a time
+		BatchConfig:         NewBatchConfig(1, 2048, 0, 0, 0), // KEY: only one request can run at a time
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-work-conserving", "H100", 1, "", 0),
 	}
@@ -1037,7 +1037,7 @@ func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
 		Horizon:       1_000_000,
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(10, 16, 0, 0, 0, 0),
-		BatchConfig:   NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -1090,7 +1090,7 @@ func TestEnqueueRequest_NormalInput_Enqueued(t *testing.T) {
 		Horizon:       1_000_000,
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:   NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -1135,7 +1135,7 @@ func TestEnqueueRequest_MaxModelLen_Exceeded_Dropped(t *testing.T) {
 		Horizon:             1_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 512),
 	}
@@ -1170,7 +1170,7 @@ func TestEnqueueRequest_MaxModelLen_Zero_FallsThroughToKV(t *testing.T) {
 		Horizon:             1_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
@@ -1198,7 +1198,7 @@ func TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary(t *testing.T) {
 		Horizon:             1_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 512),
 	}
@@ -1261,7 +1261,7 @@ func TestEnqueueRequest_InputEqualsMaxModelLen_Dropped(t *testing.T) {
 		Horizon:             1_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 512),
 	}
@@ -1291,7 +1291,7 @@ func TestEnqueueRequest_ExactFit_Accepted(t *testing.T) {
 		Horizon:             1_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 512),
 	}
@@ -1317,7 +1317,7 @@ func TestEnqueueRequest_NegativeMaxOutputLen_Dropped(t *testing.T) {
 		Horizon:             1_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 512),
 	}
@@ -1352,7 +1352,7 @@ func TestProcessCompletions_RuntimeLengthCap(t *testing.T) {
 		Horizon:             1_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 100),
 	}
@@ -1405,7 +1405,7 @@ func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
 		Horizon:             10_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 100),
 	}
@@ -1462,7 +1462,7 @@ func TestSimulator_Conservation_WithMaxModelLen_Drops(t *testing.T) {
 		Horizon:             10_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 200),
 	}
@@ -1633,7 +1633,7 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 		Horizon:       10_000_000,
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(50, 16, 0, 0, 0, 0),
-		BatchConfig:   NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -1699,7 +1699,7 @@ func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
 		Horizon:       10_000_000,
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(5, 16, 0, 0, 0, 0),
-		BatchConfig:   NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -1748,7 +1748,7 @@ func TestRequestLifecycle_ValidTransitions(t *testing.T) {
 		Horizon:       math.MaxInt64,
 		Seed:          42,
 		KVCacheConfig: NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:   NewBatchConfig(1, 2048, 0, 0),
+		BatchConfig:   NewBatchConfig(1, 2048, 0, 0, 0),
 		LatencyCoeffs: NewLatencyCoeffs([]float64{100, 1, 1}, []float64{50, 0.1, 50}),
 	})
 
@@ -1797,7 +1797,7 @@ func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:       100_000_000,
 		KVCacheConfig: NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:   NewBatchConfig(100, 10000, 100, 0),
+		BatchConfig:   NewBatchConfig(100, 10000, 100, 0, 0),
 		LatencyCoeffs: NewLatencyCoeffs(
 			[]float64{1000, 10, 2},
 			[]float64{500, 1, 1000},
@@ -1855,7 +1855,7 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             100000,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0, 0, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{NumHeads: 0}, HardwareCalib{}, "", "", 0, "", 0),
 	}

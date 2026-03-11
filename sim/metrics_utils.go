@@ -70,6 +70,8 @@ type MetricsOutput struct {
 	PreemptionCount         int64            `json:"preemption_count"`
 	DroppedUnservable       int              `json:"dropped_unservable"`
 	LengthCappedRequests    int              `json:"length_capped_requests"`
+	AvgBatchOccupancy       float64          `json:"avg_batch_occupancy"`
+	TotalSteps              int64            `json:"total_steps"`
 	Requests                []RequestMetrics `json:"requests,omitempty"`
 }
 

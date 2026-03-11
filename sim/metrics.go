@@ -31,6 +31,11 @@ type Metrics struct {
 	DroppedUnservable    int // Requests dropped at enqueue: negative MaxOutputLen (R3), MaxModelLen violation, or input exceeds KV capacity (R19)
 	LengthCappedRequests int // Requests force-completed by runtime MaxModelLen cap (BC-5 defense-in-depth)
 
+	// Batch occupancy tracking (GPU utilization proxy)
+	TotalBatchSlots int64 // sum of len(RunningBatch) across all steps
+	TotalSteps      int64 // total number of steps executed
+	MaxRunningReqs  int64 // MaxRunningReqs from config (for computing occupancy)
+
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	ITLSum  int64 // Total ITL sum across requests (in ticks)
 
@@ -79,6 +84,12 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		PreemptionCount:      m.PreemptionCount,
 		DroppedUnservable:    m.DroppedUnservable,
 		LengthCappedRequests: m.LengthCappedRequests,
+		TotalSteps:          m.TotalSteps,
+	}
+
+	// Compute average batch occupancy (R11: guard division by zero)
+	if m.TotalSteps > 0 && m.MaxRunningReqs > 0 {
+		output.AvgBatchOccupancy = float64(m.TotalBatchSlots) / float64(m.TotalSteps*m.MaxRunningReqs)
 	}
 
 	if m.CompletedRequests > 0 {

@@ -27,10 +27,11 @@ type BatchContext struct {
 	MaxScheduledTokens       int64
 	MaxRunningReqs           int64
 	PrefillTokenThreshold    int64
-	PriorityPreemptionMargin float64 // from BatchConfig; if > 0, enables priority-based preemption in Phase 2
-	Now                      int64
-	StepCount                int
-	ComputedTokens           map[string]int64
+	PriorityPreemptionMargin      float64 // from BatchConfig; if > 0, enables priority-based preemption in Phase 2
+	MaxPriorityPreemptionsPerStep int     // circuit breaker: max priority preemptions per step (R19). 0 = use default (3).
+	Now                           int64
+	StepCount                     int
+	ComputedTokens                map[string]int64
 }
 
 // ScheduledRequest carries metadata about a newly scheduled request.
@@ -117,16 +118,20 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 
 	// Phase 2: Dequeue new requests from wait queue.
 	// Priority preemption: when the batch is full and a high-priority request is waiting,
-	// evict the lowest-priority running request to make room (R19: max 3 per step).
+	// evict the lowest-priority running request to make room (R19: configurable circuit breaker).
 	priorityPreemptionsThisStep := 0
+	maxPriorityPreemptions := ctx.MaxPriorityPreemptionsPerStep
+	if maxPriorityPreemptions <= 0 {
+		maxPriorityPreemptions = 3 // default circuit breaker limit
+	}
 	for ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
 		batchFull := len(result.RunningBatch.Requests) >= int(ctx.MaxRunningReqs)
 
 		if batchFull {
 			// Priority preemption: evict lowest-priority running request if a much
 			// higher-priority request is waiting.
-			if ctx.PriorityPreemptionMargin <= 0 || priorityPreemptionsThisStep >= 3 {
-				break // Disabled or circuit breaker (R19: max 3 priority preemptions per step)
+			if ctx.PriorityPreemptionMargin <= 0 || priorityPreemptionsThisStep >= maxPriorityPreemptions {
+				break // Disabled or circuit breaker (R19: configurable limit per step)
 			}
 			next := ctx.WaitQ.Peek()
 			lowestIdx := findLowestPriorityRunning(result.RunningBatch.Requests)
