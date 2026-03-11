@@ -225,8 +225,8 @@ var runCmd = &cobra.Command{
 		}
 
 		// Local copy of CLI-provided backend (read-only within Run).
-		// The CLI default is "roofline"; library consumers who omit Backend get
-		// "blackbox" via the factory's case "", "blackbox": dispatch.
+		// Default is "roofline" both at the CLI level (Cobra flag) and the
+		// library level (factory case "", "roofline": dispatch).
 		backend := latencyModelBackend
 
 		var modelConfig = sim.ModelConfig{}

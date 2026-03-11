@@ -290,23 +290,19 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 	}
 }
 
-// TestNewLatencyModel_EmptyBackendDefaultsToBlackbox verifies that Backend: ""
-// (Go zero value) dispatches to blackbox mode, preserving library backward compat.
-// The CLI default is "roofline" (passed explicitly via Cobra flag default), but
-// library consumers who omit Backend get blackbox for backward compatibility.
-func TestNewLatencyModel_EmptyBackendDefaultsToBlackbox(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs(
-		[]float64{1000, 10, 5},   // beta: step time estimation
-		[]float64{100, 1, 100},   // alpha: queueing time estimation
-	)
-	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 0, "", 0)
+// TestNewLatencyModel_EmptyBackendDefaultsToRoofline verifies that Backend: ""
+// (Go zero value) dispatches to roofline mode, consistent with the CLI default.
+// Library consumers who omit Backend get the same default as CLI users.
+func TestNewLatencyModel_EmptyBackendDefaultsToRoofline(t *testing.T) {
+	coeffs := sim.NewLatencyCoeffs(nil, []float64{100, 1, 100})
+	hw := sim.NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, "", 0)
 
 	model, err := NewLatencyModel(coeffs, hw)
 	if err != nil {
 		t.Fatalf("NewLatencyModel with empty Backend returned error: %v", err)
 	}
 
-	// Verify it behaves as blackbox (produces positive step time from beta coefficients)
+	// Verify it behaves as roofline (produces positive step time from FLOPs/bandwidth)
 	batch := []*sim.Request{
 		{
 			InputTokens:   make([]int, 100),
@@ -316,7 +312,7 @@ func TestNewLatencyModel_EmptyBackendDefaultsToBlackbox(t *testing.T) {
 	}
 	result := model.StepTime(batch)
 	if result <= 0 {
-		t.Errorf("StepTime = %d, want > 0 (empty backend should default to blackbox)", result)
+		t.Errorf("StepTime = %d, want > 0 (empty backend should default to roofline)", result)
 	}
 }
 

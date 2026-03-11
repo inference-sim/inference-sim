@@ -126,7 +126,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 		return nil, err
 	}
 	switch hw.Backend {
-	case "roofline":
+	case "", "roofline":
 		if hw.TP <= 0 {
 			return nil, fmt.Errorf("latency model: roofline requires TP > 0, got %d", hw.TP)
 		}
@@ -243,7 +243,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			flopsPeakUs: hw.HWConfig.TFlopsPeak * 1e6,
 			bwHbmUs:     hw.HWConfig.BwPeakTBs * 1e6,
 		}, nil
-	case "", "blackbox":
+	case "blackbox":
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 		if len(coeffs.BetaCoeffs) < 3 {
 			return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(coeffs.BetaCoeffs))
