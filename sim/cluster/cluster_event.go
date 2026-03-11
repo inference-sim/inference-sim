@@ -207,8 +207,7 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 
 // DisaggregationDecisionEvent represents the PD disaggregation decision point for a request.
 // Priority 3: processed after routing events at the same timestamp.
-// In PR1, both paths (disaggregate=true/false) schedule RoutingDecisionEvent.
-// PR2 will add actual bifurcation (prefill routing vs decode routing).
+// Bifurcates: disaggregate=true → PrefillRoutingEvent, disaggregate=false → RoutingDecisionEvent.
 type DisaggregationDecisionEvent struct {
 	time    int64
 	request *sim.Request
@@ -217,19 +216,46 @@ type DisaggregationDecisionEvent struct {
 func (e *DisaggregationDecisionEvent) Timestamp() int64 { return e.time }
 func (e *DisaggregationDecisionEvent) Priority() int     { return 3 }
 
-// Execute calls the disaggregation decider and schedules a RoutingDecisionEvent.
-// In PR1, the decider's decision is logged but both paths lead to routing.
+// Execute calls the disaggregation decider and bifurcates the request flow.
+// disaggregate=true: splits request into prefill sub-request, schedules PrefillRoutingEvent.
+// disaggregate=false: schedules standard RoutingDecisionEvent (unchanged path).
 func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	decision := cs.disaggregationDecider.Decide(e.request)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, decision.Disaggregate)
 
-	// PR1: Both paths schedule RoutingDecisionEvent regardless of decision.
-	// PR2 will bifurcate: disaggregate=true → prefill pool routing,
-	// disaggregate=false → default routing.
+	if !decision.Disaggregate {
+		// Local path: standard routing (unchanged)
+		heap.Push(&cs.clusterEvents, clusterEventEntry{
+			event: &RoutingDecisionEvent{
+				time:    e.time + cs.routingLatency,
+				request: e.request,
+			},
+			seqID: cs.nextSeqID(),
+		})
+		return
+	}
+
+	// Disaggregated path: split request and route to prefill pool
+	parent := NewParentRequest(e.request, cs.config.BlockSizeTokens)
+	cs.parentRequests[parent.ID] = parent
+
+	// Create prefill sub-request: same input, no output (completes after prefill)
+	prefillSubReq := &sim.Request{
+		ID:          parent.PrefillSubReqID,
+		InputTokens: e.request.InputTokens,
+		// OutputTokens intentionally nil: zero-output request completes at prefill end
+		State:       sim.StateQueued,
+		ArrivalTime: e.request.ArrivalTime,
+		TenantID:    e.request.TenantID,
+		SLOClass:    e.request.SLOClass,
+		Model:       e.request.Model,
+	}
+
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &RoutingDecisionEvent{
-			time:    e.time + cs.routingLatency,
-			request: e.request,
+		event: &PrefillRoutingEvent{
+			time:      e.time + cs.routingLatency,
+			request:   prefillSubReq,
+			parentReq: parent,
 		},
 		seqID: cs.nextSeqID(),
 	})

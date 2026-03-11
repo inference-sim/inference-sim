@@ -270,18 +270,21 @@ func TestAdmissionDecisionEvent_PoolsConfigured_SchedulesDisaggregation(t *testi
 		t.Fatal("expected at least one completed request with pools configured")
 	}
 
-	// INV-1: Request conservation
+	// INV-1: Request conservation (with disaggregation, sub-requests are counted)
+	// Each parent produces 1 prefill sub-request + 1 decode sub-request = 2 completed per parent.
 	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
-	if total != numRequests {
+	expectedSubRequests := numRequests * 2 // prefill + decode per parent
+	if total != expectedSubRequests {
 		t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
-			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, total, numRequests)
+			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, total, expectedSubRequests)
 	}
 
-	// INV-5: Causality — for every completed request, TTFT >= 0 and E2E >= TTFT
+	// INV-5: Causality — for every completed request with TTFT, E2E >= TTFT.
+	// Decode sub-requests (suffix "_decode") skip prefill and do not record TTFT (by design).
 	for reqID, e2e := range m.RequestE2Es {
 		ttft, hasTTFT := m.RequestTTFTs[reqID]
 		if !hasTTFT {
-			t.Errorf("INV-5 causality: request %q has E2E but no TTFT", reqID)
+			continue // Decode sub-requests don't have TTFT
 		}
 		if ttft < 0 {
 			t.Errorf("INV-5 causality: request %q TTFT = %v < 0", reqID, ttft)
