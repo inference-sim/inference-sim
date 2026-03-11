@@ -41,6 +41,7 @@ type ClusterSimulator struct {
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
 	transfersInitiated        int
 	transfersCompleted        int
+	droppedKVAllocations      int               // R1: count of decode requests dropped due to KV OOM
 	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 }

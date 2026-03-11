@@ -9,6 +9,12 @@ type TraceSummary struct {
 	MaxRegret          float64
 	UniqueTargets      int
 	TargetDistribution map[string]int // instance ID → count of requests routed
+
+	// PD disaggregation summary (zero when disaggregation is not configured)
+	DisaggregationCount    int // number of disaggregation decisions recorded
+	DisaggregatedCount     int // number of requests routed to prefill pool (Disaggregate=true)
+	KVTransferCount        int // number of completed KV transfers
+	MeanTransferDuration   float64 // mean KV transfer duration in microseconds
 }
 
 // Summarize computes aggregate statistics from a SimulationTrace.
@@ -43,6 +49,23 @@ func Summarize(st *SimulationTrace) *TraceSummary {
 	}
 
 	summary.UniqueTargets = len(summary.TargetDistribution)
+
+	// PD disaggregation summary
+	summary.DisaggregationCount = len(st.Disaggregations)
+	for _, d := range st.Disaggregations {
+		if d.Disaggregate {
+			summary.DisaggregatedCount++
+		}
+	}
+
+	summary.KVTransferCount = len(st.KVTransfers)
+	if len(st.KVTransfers) > 0 {
+		totalDuration := int64(0)
+		for _, kv := range st.KVTransfers {
+			totalDuration += kv.TransferDuration
+		}
+		summary.MeanTransferDuration = float64(totalDuration) / float64(len(st.KVTransfers))
+	}
 
 	return summary
 }

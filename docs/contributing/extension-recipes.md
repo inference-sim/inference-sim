@@ -71,7 +71,9 @@ To add a new trace record type (e.g., `ScaleRecord` for autoscaling events):
 1. **Define the record struct** in `sim/trace/record.go` (pure data, no `sim/` dependency)
 2. **Add a slice field** to `SimulationTrace` in `sim/trace/trace.go` (e.g., `Scales []ScaleRecord`)
 3. **Add a recording method** to `SimulationTrace` (e.g., `RecordScale(ScaleRecord)`)
-4. **Hook recording** into the cluster event pipeline in `sim/cluster/cluster_event.go` (guard with `if cs.trace != nil` for zero-overhead default)
+4. **Hook recording** into the cluster event pipeline (guard with `if cs.trace != nil` for zero-overhead default):
+   - For standard routing events: `sim/cluster/cluster_event.go`
+   - For PD disaggregation events: `sim/cluster/pd_events.go` (PrefillRoutingEvent, DecodeRoutingEvent, KVTransferStartedEvent)
 5. **Update `Summarize()`** in `sim/trace/summary.go` to aggregate the new record type
 6. **Add behavioral tests** in `sim/trace/*_test.go`
 

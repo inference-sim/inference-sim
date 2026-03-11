@@ -92,6 +92,15 @@ The trace summary shows:
 - **Target Distribution** — how many requests went to each instance
 - **Mean/Max Regret** — how much better an alternative routing decision could have been
 
+In PD (Prefill-Decode) disaggregated mode (`--prefill-instances`, `--decode-instances`), the trace additionally captures per-request PD pipeline events:
+
+- **DisaggregationRecord** — one per admitted request: whether it was routed to the prefill pool or handled locally
+- **PrefillRoutingRecord** — one per disaggregated request: which prefill instance was chosen (with optional counterfactual)
+- **KVTransferRecord** — one per disaggregated request: transfer duration, block count, and instance pair
+- **DecodeRoutingRecord** — one per disaggregated request: which decode instance was chosen (with optional counterfactual)
+
+Use `--counterfactual-k N` to record the top-N alternative routing candidates and regret for both prefill and decode routing decisions.
+
 !!! info "Counterfactual regret for weighted policies"
     For score-based policies (weighted, least-loaded), counterfactual regret is **structurally zero** — the chosen instance is always the highest-scoring one. Regret is only meaningful for non-score-based policies like round-robin.
 

@@ -164,6 +164,40 @@ func TestPDTrace_DisaggMode_Counterfactual(t *testing.T) {
 	}
 }
 
+// TestPDTrace_DisaggMode_Cardinality verifies the PD trace cardinality conservation law (R7):
+// every successfully disaggregated request produces exactly one record of each type.
+func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
+	// GIVEN disaggregated simulation with trace enabled
+	const numRequests = 5
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.TraceLevel = "decisions"
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, requests)
+
+	// WHEN run
+	mustRun(t, cs)
+
+	// THEN trace record counts satisfy the cardinality conservation law:
+	// #Disaggregations == #PrefillRoutings == #KVTransfers == #DecodeRoutings
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace")
+	}
+	nd := len(tr.Disaggregations)
+	np := len(tr.PrefillRoutings)
+	nk := len(tr.KVTransfers)
+	nd2 := len(tr.DecodeRoutings)
+	if np != nd {
+		t.Errorf("cardinality violation: PrefillRoutings=%d != Disaggregations=%d", np, nd)
+	}
+	if nk != np {
+		t.Errorf("cardinality violation: KVTransfers=%d != PrefillRoutings=%d", nk, np)
+	}
+	if nd2 != nk {
+		t.Errorf("cardinality violation: DecodeRoutings=%d != KVTransfers=%d", nd2, nk)
+	}
+}
+
 // TestPDTrace_DisaggMode_DisaggDecisionRecorded verifies disaggregation decisions are recorded.
 func TestPDTrace_DisaggMode_DisaggDecisionRecorded(t *testing.T) {
 	// GIVEN disaggregated simulation with trace enabled
