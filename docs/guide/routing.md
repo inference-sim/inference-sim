@@ -4,7 +4,7 @@ This guide covers how BLIS distributes incoming requests across instances in clu
 
 ```bash
 # Quick example: compare round-robin vs weighted routing
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 100 --num-requests 500 \
   --routing-policy weighted --trace-level decisions --summarize-trace
 ```

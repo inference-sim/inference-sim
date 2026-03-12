@@ -49,6 +49,14 @@ func TestLoadTraceV2Requests_CorrectTokenCounts(t *testing.T) {
 	if requests[1].ArrivalTime != 100000 {
 		t.Errorf("request 1 arrival = %d, want 100000", requests[1].ArrivalTime)
 	}
+
+	// BC-6: MaxOutputLen = len(OutputTokens)
+	if requests[0].MaxOutputLen != len(requests[0].OutputTokens) {
+		t.Errorf("request 0 MaxOutputLen = %d, want %d", requests[0].MaxOutputLen, len(requests[0].OutputTokens))
+	}
+	if requests[1].MaxOutputLen != len(requests[1].OutputTokens) {
+		t.Errorf("request 1 MaxOutputLen = %d, want %d", requests[1].MaxOutputLen, len(requests[1].OutputTokens))
+	}
 }
 
 func TestLoadTraceV2Requests_PrefixGroup_SharedTokens(t *testing.T) {

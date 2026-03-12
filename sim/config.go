@@ -78,14 +78,18 @@ type ModelHardwareConfig struct {
 	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
 	GPU         string        // GPU type (e.g., "H100")
 	TP          int           // tensor parallelism degree
-	Backend     string        // latency model backend: "" or "blackbox" (default), "roofline", "crossmodel"
+	Backend     string        // latency model backend: "" or "blackbox" (default), "roofline", "crossmodel", "trained-roofline"
+	MaxModelLen int64         // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
 // Parameter order matches struct field order.
 func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
-	model, gpu string, tp int, backend string) ModelHardwareConfig {
+	model, gpu string, tp int, backend string, maxModelLen int64) ModelHardwareConfig {
+	if maxModelLen < 0 {
+		panic(fmt.Sprintf("NewModelHardwareConfig: MaxModelLen must be >= 0, got %d", maxModelLen))
+	}
 	return ModelHardwareConfig{
 		ModelConfig: modelConfig,
 		HWConfig:    hwConfig,
@@ -93,6 +97,7 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 		GPU:         gpu,
 		TP:          tp,
 		Backend:     backend,
+		MaxModelLen: maxModelLen,
 	}
 }
 

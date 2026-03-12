@@ -5,10 +5,10 @@ Run your first BLIS simulation in 30 seconds.
 ## Single-Instance Simulation
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct
+./blis run --model qwen/qwen3-14b
 ```
 
-This runs 100 requests through a single inference instance using pre-trained coefficients for LLaMA 3.1 8B on an H100 GPU with TP=2.
+This runs 100 requests through a single inference instance using pre-trained coefficients for Qwen3 14B on an H100 GPU with TP=1.
 
 ### Reading the Output
 
@@ -39,7 +39,7 @@ Scale to 4 instances with routing:
 
 ```bash
 ./blis run \
-  --model meta-llama/llama-3.1-8b-instruct \
+  --model qwen/qwen3-14b \
   --num-instances 4 \
   --routing-policy weighted \
   --rate 100 --num-requests 500
@@ -51,19 +51,32 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
 
 ```bash
 # Higher traffic rate
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 500 --num-requests 2000
 
 # With decision tracing (see where each request was routed)
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 
-# With roofline mode (no pre-trained coefficients needed)
-./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --latency-model roofline --hardware H100 --tp 2 \
+# With trained-roofline mode (recommended for new models, 7% MAPE)
+./blis run --model qwen/qwen3-14b \
+  --latency-model trained-roofline --hardware H100 --tp 1 \
+  --num-instances 4 --rate 100 --num-requests 500
+
+# With pure roofline mode (analytical, no learned corrections)
+./blis run --model qwen/qwen3-14b \
+  --latency-model roofline --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
+
+> **Tip:** Roofline, trained-roofline, and cross-model modes auto-fetch model configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid rate limits:
+>
+> ```bash
+> export HF_TOKEN=your_token_here
+> ```
+>
+> See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
 
 ## What's Next
 

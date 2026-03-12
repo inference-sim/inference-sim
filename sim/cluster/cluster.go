@@ -559,6 +559,7 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.PreemptionCount += m.PreemptionCount
 		merged.KVAllocationFailures += m.KVAllocationFailures
 		merged.DroppedUnservable += m.DroppedUnservable
+		merged.LengthCappedRequests += m.LengthCappedRequests
 		merged.CacheHitRate += m.CacheHitRate
 		merged.KVThrashingRate += m.KVThrashingRate
 		merged.StillQueued += m.StillQueued

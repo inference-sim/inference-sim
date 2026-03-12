@@ -14,7 +14,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 	bf := NewBatchFormation()
 	if bf == nil {
@@ -49,7 +49,7 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 50, 0), // tight token budget
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -102,7 +102,7 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(200, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(2, 10000, 0), // tight batch size limit
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -157,7 +157,7 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -223,7 +223,7 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // very tight
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -278,7 +278,7 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0), // very small
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -323,7 +323,7 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // limited KV blocks
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -431,7 +431,7 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(6, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 	bf := NewBatchFormation()
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -548,7 +548,7 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 			[]float64{5752.705191348184, 17.25086436834028, 5.999143920128404},   // beta
 			[]float64{232.46191091038054, 1.752360364195244, 3357.4400353290152}, // alpha
 		),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 		PolicyConfig:        NewPolicyConfig("constant", "fcfs"),
 	}
 

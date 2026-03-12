@@ -29,9 +29,11 @@ All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for
 
 Red Hat AI (`redhatai/`) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, Qwen 2.5, and SmolLM3 3B (FP8 only). See [`defaults.yaml`](https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml) for the full list.
 
-## Roofline and Cross-Model Modes
+## Analytical Modes (Roofline, Cross-Model, Trained-Roofline)
 
-Any model with a HuggingFace `config.json` can use roofline mode (`--latency-model roofline`) or cross-model mode (`--latency-model crossmodel`). Both auto-fetch configs from HuggingFace on first use, caching them in `model_configs/`. Cross-model mode is MoE-aware and uses globally-fitted physics coefficients, making it the preferred choice for MoE models like Mixtral. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B, and Mixtral 8x7B.
+Any model with a HuggingFace `config.json` can use roofline mode (`--latency-model roofline`), cross-model mode (`--latency-model crossmodel`), or trained-roofline mode (`--latency-model trained-roofline`). All three auto-fetch configs from HuggingFace on first use, caching them in `model_configs/`.
+
+**Trained-roofline** (recommended) applies learned correction factors to analytical roofline basis functions — 7% MAPE GPU combined step time across 4 architectures. **Cross-model** uses hand-engineered physics features with globally-fitted coefficients. **Roofline** uses pure analytical estimation (no learned corrections). All three are MoE-aware. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B, Mixtral 8x7B, and CodeLlama 34B.
 
 ## Adding a New Model
 
@@ -46,4 +48,4 @@ To add roofline support:
 2. Place in `model_configs/<model-name>/config.json`
 3. Run with `--latency-model roofline --hardware <GPU> --tp <N>`
 
-Or let BLIS auto-fetch it with `--latency-model roofline`.
+Or let BLIS auto-fetch it with `--latency-model roofline` (or `trained-roofline` for higher accuracy).

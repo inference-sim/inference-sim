@@ -179,21 +179,55 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// Intermediate dim: Falcon/GLM use "ffn_hidden_size" instead of "intermediate_size".
 	intermediateDim := getIntWithFallbacks("intermediate_size", "ffn_hidden_size")
 
-	// MoE fields: 0 = dense model (zero-value safe)
+	// MoE expert count: extended resolution chain (design D4).
+	// Threshold is > 1: single-expert models (num_local_experts=1) are dense-equivalent.
+	// This matches ExtractKVCapacityParams semantics (R23 code path parity).
 	numLocalExperts := getInt("num_local_experts")
+	if numLocalExperts <= 1 {
+		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
+			if v := getInt(key); v > 1 {
+				numLocalExperts = v
+				break
+			}
+		}
+	}
 	numExpertsPerTok := getInt("num_experts_per_tok")
 
+	// MoE per-expert FFN dimension (design Section 4.2)
+	// When present and nonzero, takes precedence over general intermediate dim.
+	moeExpertFFNDim := getInt("moe_intermediate_size")
+
+	// Shared expert FFN dimension resolution (design D3, D5)
+	// Priority: explicit shared_expert_intermediate_size > n_shared_experts × per-expert dim
+	var sharedExpertFFNDim int
+	if v := getInt("shared_expert_intermediate_size"); v > 0 {
+		sharedExpertFFNDim = v
+	} else if nShared := getInt("n_shared_experts"); nShared > 0 {
+		// Compute total shared dim from count × per-expert dim
+		perExpert := moeExpertFFNDim
+		if perExpert == 0 {
+			perExpert = intermediateDim // Mixtral convention
+		}
+		sharedExpertFFNDim = nShared * perExpert
+	}
+
+	// Activation function: used by KV capacity for SwiGLU detection (3-matrix weight estimation).
+	// Roofline step time currently uses 2-matrix for all activations (see mlpMatrixCount).
+	hiddenAct := hf.MustGetString("hidden_act", "")
+
 	modelConfig := &sim.ModelConfig{
-		// From HFConfig.Raw
-		NumLayers:        getInt("num_hidden_layers"),
-		HiddenDim:        getInt("hidden_size"),
-		VocabSize:        getInt("vocab_size"),
-		IntermediateDim:  intermediateDim,
-		NumHeads:         numHeads,
-		NumKVHeads:       numKVHeads,
-		BytesPerParam:    float64(bytesPerParam),
-		NumLocalExperts:  numLocalExperts,
-		NumExpertsPerTok: numExpertsPerTok,
+		NumLayers:          getInt("num_hidden_layers"),
+		HiddenDim:          getInt("hidden_size"),
+		VocabSize:          getInt("vocab_size"),
+		IntermediateDim:    intermediateDim,
+		NumHeads:           numHeads,
+		NumKVHeads:         numKVHeads,
+		BytesPerParam:      float64(bytesPerParam),
+		NumLocalExperts:    numLocalExperts,
+		NumExpertsPerTok:   numExpertsPerTok,
+		MoEExpertFFNDim:    moeExpertFFNDim,
+		SharedExpertFFNDim: sharedExpertFFNDim,
+		HiddenAct:          hiddenAct,
 	}
 	return modelConfig, nil
 }
@@ -227,14 +261,40 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 	if invalidPositiveFloat(hc.BwPeakTBs) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.BwPeakTBs must be a valid positive number, got %v", hc.BwPeakTBs))
 	}
-	if invalidPositiveFloat(hc.BwEffConstant) {
-		problems = append(problems, fmt.Sprintf("HardwareCalib.BwEffConstant must be a valid positive number, got %v", hc.BwEffConstant))
-	}
 	if invalidPositiveFloat(hc.MfuPrefill) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuPrefill must be a valid positive number, got %v", hc.MfuPrefill))
 	}
 	if invalidPositiveFloat(hc.MfuDecode) {
 		problems = append(problems, fmt.Sprintf("HardwareCalib.MfuDecode must be a valid positive number, got %v", hc.MfuDecode))
+	}
+
+	// MoE consistency checks (design Section 4.6)
+	if mc.NumLocalExperts < 0 {
+		problems = append(problems, fmt.Sprintf(
+			"MoE: NumLocalExperts must be >= 0, got %d", mc.NumLocalExperts))
+	}
+	if mc.NumLocalExperts > 1 && mc.NumExpertsPerTok <= 0 {
+		problems = append(problems, fmt.Sprintf(
+			"MoE: NumLocalExperts=%d but active experts per token (NumExpertsPerTok) must be > 0",
+			mc.NumLocalExperts))
+	}
+	if mc.NumExpertsPerTok > mc.NumLocalExperts && mc.NumLocalExperts > 1 {
+		problems = append(problems, fmt.Sprintf(
+			"MoE: NumExpertsPerTok (%d) cannot exceed NumLocalExperts (%d)",
+			mc.NumExpertsPerTok, mc.NumLocalExperts))
+	}
+	if mc.NumLocalExperts == 0 && mc.NumExpertsPerTok > 0 {
+		problems = append(problems, fmt.Sprintf(
+			"MoE: NumExpertsPerTok=%d but NumLocalExperts=0 (inconsistent)",
+			mc.NumExpertsPerTok))
+	}
+	if mc.MoEExpertFFNDim < 0 {
+		problems = append(problems, fmt.Sprintf(
+			"MoE: MoEExpertFFNDim must be >= 0, got %d", mc.MoEExpertFFNDim))
+	}
+	if mc.SharedExpertFFNDim < 0 {
+		problems = append(problems, fmt.Sprintf(
+			"MoE: SharedExpertFFNDim must be >= 0, got %d", mc.SharedExpertFFNDim))
 	}
 
 	// MemoryGiB is optional (0 = no auto-calculation).

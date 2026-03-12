@@ -65,10 +65,10 @@ go build -o blis main.go
 
 ## Quick Start
 
-Run BLIS for `meta-llama/llama-3.1-8b-instruct` with default configs:
+Run BLIS for `qwen/qwen3-14b` with default configs:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct
+./blis run --model qwen/qwen3-14b
 ```
 
 You should see JSON output like:
@@ -92,13 +92,13 @@ You should see JSON output like:
 ### Multi-client workload specification
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct --workload-spec examples/servegen-language.yaml
+./blis run --model qwen/qwen3-14b --workload-spec examples/servegen-language.yaml
 ```
 
 ### Cluster simulation with weighted routing
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --routing-policy weighted \
   --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
 ```
@@ -106,8 +106,16 @@ You should see JSON output like:
 ### Roofline mode (analytical, no trained coefficients)
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct --latency-model roofline --hardware H100 --tp 2
+./blis run --model qwen/qwen3-14b --latency-model roofline --hardware H100 --tp 1
 ```
+
+> **Tip:** Roofline, trained-roofline, and cross-model modes auto-fetch model configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid rate limits:
+>
+> ```bash
+> export HF_TOKEN=your_token_here
+> ```
+>
+> See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
 
 ### Convert workload formats
 

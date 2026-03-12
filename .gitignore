@@ -59,16 +59,7 @@ largesweep/
 *.zip
 
 # Training data pipeline (large data files — keep .py and .md only)
-training/default_args/
-training/vllm/
-training/replay_data/
-training/model_configs/
-training/__pycache__/
-training/*.csv
-training/*.pdf
-training/*.boxnote
-training/hftoken.txt
-training/cmd/
+training
 
 # Hypothesis experiment output (generated, reproducible from run.sh)
 hypotheses/*/output/
@@ -96,3 +87,5 @@ saturation_regimes.xlsx
 traces.csv
 
 prompts.md
+
+actions-runner/

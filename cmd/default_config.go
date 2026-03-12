@@ -29,12 +29,21 @@ type Config struct {
 	Defaults           map[string]DefaultConfig `yaml:"defaults"`
 	Version            string                   `yaml:"version"`
 	Workloads          map[string]Workload      `yaml:"workloads"`
-	CrossModelDefaults *CrossModelDefaults       `yaml:"crossmodel_defaults,omitempty"`
+	CrossModelDefaults       *CrossModelDefaults       `yaml:"crossmodel_defaults,omitempty"`
+	TrainedRooflineDefaults  *TrainedRooflineDefaults  `yaml:"trained_roofline_defaults,omitempty"`
 }
 
 // CrossModelDefaults holds globally-fitted physics coefficients for cross-model latency estimation.
 // These are model-independent: a single set works across architectures via config.json features.
 type CrossModelDefaults struct {
+	BetaCoeffs  []float64 `yaml:"beta_coeffs"`
+	AlphaCoeffs []float64 `yaml:"alpha_coeffs"`
+}
+
+// TrainedRooflineDefaults holds globally-fitted roofline correction coefficients.
+// These are model-independent: analytical basis functions from config.json scale the coefficients.
+// BetaCoeffs has 7 elements (β₁-β₇), AlphaCoeffs has 3 elements (α₀-α₂).
+type TrainedRooflineDefaults struct {
 	BetaCoeffs  []float64 `yaml:"beta_coeffs"`
 	AlphaCoeffs []float64 `yaml:"alpha_coeffs"`
 }

@@ -40,7 +40,7 @@ Controls GPU and CPU memory simulation for key-value cache blocks. Maps to `KVCa
 | `--kv-transfer-bandwidth` | float64 | 100.0 | GPU-CPU transfer rate in blocks/tick. Required > 0 when CPU blocks > 0. |
 | `--kv-transfer-base-latency` | int64 | 0 | Fixed per-transfer latency in ticks. |
 
-\* The effective value of `--total-kv-blocks` depends on the latency backend — see [Resolution Process](#resolution-process) for the full priority chain. In blackbox mode, `defaults.yaml` overrides the 1,000,000 CLI default per model (e.g., `llama-3.1-8b/H100/TP=2` uses 132,139 blocks). In roofline or crossmodel mode, the value is auto-calculated from model architecture and GPU memory via `CalculateKVBlocks`, which supersedes the `defaults.yaml` value. Explicit `--total-kv-blocks` always takes precedence.
+\* The effective value of `--total-kv-blocks` depends on the latency backend — see [Resolution Process](#resolution-process) for the full priority chain. In blackbox mode, `defaults.yaml` overrides the 1,000,000 CLI default per model (e.g., `qwen3-14b/H100/TP=1` uses 17,600 blocks). In roofline or crossmodel mode, the value is auto-calculated from model architecture and GPU memory via `CalculateKVBlocks`, which supersedes the `defaults.yaml` value. Explicit `--total-kv-blocks` always takes precedence.
 
 ## Batch Formation
 
@@ -71,10 +71,11 @@ Maps to `ModelHardwareConfig`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--model` | string | (required) | LLM model name (e.g., `meta-llama/llama-3.1-8b-instruct`). |
+| `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
 | `--hardware` | string | "" | GPU type (e.g., `H100`, `A100`). If empty, loaded from `defaults.yaml`. |
 | `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
 | `--vllm-version` | string | "" | vLLM version string. If empty, loaded from `defaults.yaml`. |
+| `--max-model-len` | int64 | 0 | Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's `--max-model-len`. Auto-derived from `max_position_embeddings` in HuggingFace `config.json` for roofline/crossmodel backends. Applies `rope_scaling` factor for types `linear`, `dynamic`, `yarn`, `default`, `mrope`; excludes `su`, `longrope`, `llama3`; skips entirely for `gemma3` models. Capped at KV-feasible maximum. |
 
 ### Roofline Mode
 
@@ -82,7 +83,7 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "" | Latency model backend: `blackbox` (default), `roofline`, `crossmodel`. When set to `roofline` or `crossmodel`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. |
+| `--latency-model` | string | "" | Latency model backend: `blackbox` (default), `roofline`, `crossmodel`, `trained-roofline`. When set to `roofline`, `crossmodel`, or `trained-roofline`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-roofline` is recommended for new models (7% MAPE GPU step time). |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
 
@@ -373,11 +374,11 @@ The `defaults.yaml` file serves as a model registry and workload preset store:
 ```yaml
 # Section 1: Hardware/TP mappings (keyed by model ID)
 defaults:
-  meta-llama/llama-3.1-8b-instruct:
+  qwen/qwen3-14b:
     GPU: H100
-    tensor_parallelism: 2
-    vllm_version: vllm/vllm-openai:v0.8.4
-    hf_repo: meta-llama/Llama-3.1-8B-Instruct
+    tensor_parallelism: 1
+    vllm_version: vllm/vllm-openai:v0.11.0
+    hf_repo: Qwen/Qwen3-14B
 
 # Section 2: Workload presets
 workloads:
@@ -390,13 +391,13 @@ workloads:
 
 # Section 3: Trained coefficients (keyed by model+GPU+TP)
 models:
-  - id: meta-llama/llama-3.1-8b-instruct
+  - id: qwen/qwen3-14b
     GPU: H100
-    tensor_parallelism: 2
-    vllm_version: vllm/vllm-openai:v0.8.4
-    alpha_coeffs: [1601.35, 3.51, 1805.54]
-    beta_coeffs: [6910.42, 17.67, 2.84]
-    total_kv_blocks: 132139
+    tensor_parallelism: 1
+    vllm_version: vllm/vllm-openai:v0.11.0
+    alpha_coeffs: [8888.09, 0.18, 0.0]
+    beta_coeffs: [13578.19, 39.44, 27.32]
+    total_kv_blocks: 17600
 ```
 
 ### Resolution Process
@@ -423,7 +424,7 @@ When BLIS starts, it resolves latency coefficients and KV block counts through a
 
 1. **Explicit CLI flag** — if `--total-kv-blocks` is set, that value is used regardless of backend
 2. **Auto-calculation** (roofline/crossmodel only) — when `MemoryGiB > 0` in the hardware config, `CalculateKVBlocks` derives the block count from model architecture and GPU memory, superseding the `defaults.yaml` value. Three failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the `defaults.yaml` value (layer 3) or hardcoded default (layer 4); (b) if model architecture params cannot be extracted from `config.json`, BLIS exits with an error; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS exits with an error. Only the `MemoryGiB`-missing case is a graceful fallback — other failures are fatal. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`); models with other activations (e.g., Falcon's `gelu`) should set `--total-kv-blocks` explicitly
-3. **`defaults.yaml`** — per-model block count loaded for the model/GPU/TP combination (e.g., 132,139 for llama-3.1-8b/H100/TP=2). For roofline/crossmodel with `MemoryGiB > 0`, this value is superseded by auto-calculation (layer 2). It remains the effective value only for blackbox mode or when `MemoryGiB` is unavailable in the hardware config
+3. **`defaults.yaml`** — per-model block count loaded for the model/GPU/TP combination (e.g., 17,600 for qwen3-14b/H100/TP=1). For roofline/crossmodel with `MemoryGiB > 0`, this value is superseded by auto-calculation (layer 2). It remains the effective value only for blackbox mode or when `MemoryGiB` is unavailable in the hardware config
 4. **Hardcoded default** — 1,000,000 (CLI flag default, used only when no other source provides a value)
 
 ## Coefficient Calibration
@@ -447,7 +448,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **KVCacheConfig** | `--total-kv-blocks`, `--block-size-in-tokens`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency` |
 | **BatchConfig** | `--max-num-running-reqs`, `--max-num-scheduled-tokens`, `--long-prefill-token-threshold` |
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
-| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config` |
+| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--workload-traces-filepath`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` |

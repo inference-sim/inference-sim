@@ -2,7 +2,7 @@
 
 Invariants are properties that must hold at all times during and after simulation. They are verified by invariant tests (see R7) and checked during self-audit (Step 4.75).
 
-**Hypothesis family mapping:** INV-1 through INV-3, INV-5, and INV-6 belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation), INV-7 (signal freshness), and INV-8 (work-conserving property) belong to the **Structural model** family. See `docs/contributing/standards/experiments.md` for hypothesis family definitions.
+**Hypothesis family mapping:** INV-1 through INV-3, INV-5, and INV-6 belong to the **Scheduler invariants (safety/liveness)** family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), and INV-9 (oracle knowledge boundary) belong to the **Structural model** family. See `docs/contributing/standards/experiments.md` for hypothesis family definitions.
 
 ## INV-1: Request Conservation
 
@@ -105,6 +105,22 @@ Invariants are properties that must hold at all times during and after simulatio
 **Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
 
 **Hypothesis family:** Structural model (same as INV-4, INV-7).
+
+---
+
+## INV-9: Oracle Knowledge Boundary
+
+**Statement:** Servability decisions — enqueue guard (`EnqueueRequest`), admission control (`AdmissionPolicy`), routing (`RoutingPolicy`), and priority scoring (`PriorityPolicy`) — must not read `Request.OutputTokens` or `len(Request.OutputTokens)`. The control plane uses `Request.MaxOutputLen` (client-declared output budget) for sequence-length checks against `MaxModelLen`. When `MaxOutputLen == 0` (no budget), only input length is checked; the runtime stop in `processCompletions` enforces output growth limits. Only the execution engine (`executeBatchStep`, `processCompletions`, `recordRequestCompletion`, `FormBatch` step planning) may access `OutputTokens` for token generation, completion detection, and per-step resource allocation.
+
+**Rationale:** In real inference serving (vLLM), the engine does not know actual output length at admission time — only the client's declared `max_tokens` budget. BLIS's `Request.OutputTokens` is oracle knowledge (pre-determined for simulation). Using it for servability decisions would make the simulator's control plane behave differently from a real system, invalidating capacity planning results. See issue #567 ("Architectural Principle: Oracle Knowledge Boundary").
+
+**Scope:** The boundary applies to *servability* decisions (admit/reject/route), not to all scheduler operations. `FormBatch` legitimately reads `OutputTokens` for decode-phase step planning (whether to allocate a decode token), which mirrors vLLM's scheduler reading sequence state for per-step execution. The distinction: "should this request enter the system?" (servability — no oracle) vs. "what should this request do in the current step?" (execution — oracle allowed).
+
+**Verification:** `sim/simulator_test.go` — `TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary`: a request with `OutputTokens=1000` but `MaxOutputLen=0` and `MaxModelLen=512` is NOT rejected (input=200 < 512 passes input-only check), proving the enqueue guard does not peek at `OutputTokens`. Grep-based verification: `admission.go`, `routing.go`, `routing_scorers.go`, `routing_prefix_scorer.go`, `scheduler.go`, `priority.go` contain zero references to `OutputTokens`.
+
+**Evidence:** Issue #567 — the original implementation's BC-4 fallback (`effectiveMaxOutput = len(r.OutputTokens)`) violated this boundary. Fixed in the same PR after convergence review caught it.
+
+**Hypothesis family:** Structural model (same as INV-4, INV-7, INV-8).
 
 ---
 

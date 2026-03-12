@@ -102,6 +102,7 @@ type RawMetrics struct {
 	HOLBlockingEvents    int
 	RejectedRequests     int
 	DroppedUnservable    int
+	LengthCappedRequests int
 
 	// KV cache metrics (PR12)
 	CacheHitRate    float64
@@ -120,8 +121,9 @@ type RawMetrics struct {
 // E2E differences reflect workload variance, not unfairness.
 func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, priorityPolicy string) *RawMetrics {
 	raw := &RawMetrics{
-		RejectedRequests:  rejectedRequests,
-		DroppedUnservable: aggregated.DroppedUnservable,
+		RejectedRequests:     rejectedRequests,
+		DroppedUnservable:    aggregated.DroppedUnservable,
+		LengthCappedRequests: aggregated.LengthCappedRequests,
 	}
 
 	// Latency distributions
