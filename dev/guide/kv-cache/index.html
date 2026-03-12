@@ -2439,8 +2439,8 @@
 <p>Both guards fire at enqueue time, before the request enters the wait queue.</p>
 </div>
 <div class="admonition info">
-<p class="admonition-title">Runtime length cap</p>
-<p>When <code>--max-model-len</code> is set, requests that grow beyond the limit during decode are force-completed. This is a defense-in-depth mechanism — under normal operation the enqueue guard prevents oversized requests, but the runtime cap protects against unbounded growth if a request bypasses the guard.</p>
+<p class="admonition-title">Proactive MaxModelLen cap</p>
+<p>When <code>--max-model-len</code> is set, a three-part enforcement matches vLLM's scheduler semantics: (1) <code>FormBatch</code> proactively clamps token scheduling to <code>maxModelLen - 1 - ProgressIndex</code>, (2) <code>executeBatchStep</code> skips decode when no tokens are allocated, and (3) <code>processCompletions</code> force-completes requests at the <code>maxModelLen - 1</code> boundary. Output per length-capped request: <code>maxModelLen - 1 - inputLen</code> tokens.</p>
 </div>
 <p>Compute the minimum blocks needed for your workload:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>min_blocks = ceil(max_input_tokens / block_size)
