@@ -95,18 +95,22 @@ Examples:
 
 To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-LLM, neural surrogate):
 
-1. **Implement the `LatencyModel` interface** in `sim/latency/latency.go` (or a new file in `sim/latency/` for complex models) — 3 methods:
+1. **Implement the `LatencyModel` interface** in `sim/latency/latency.go` (or a new file in `sim/latency/` for complex models) — 4 methods:
    - `StepTime(batch []*Request) int64` — estimate batch step duration from request states
    - `QueueingTime(req *Request) int64` — estimate arrival-to-queue delay
    - `OutputTokenProcessingTime() int64` — per-token post-processing overhead
-2. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"crossmodel"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
-3. **Add behavioral tests** in `sim/latency/` — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)
-4. Extension friction: **2 touch points** (implementation + factory branch)
+   - `PostDecodeFixedOverhead() int64` — fixed per-request completion overhead (return 0 if not applicable)
+2. **Register the backend name** in `sim/bundle.go`: add `"your-backend": true` to `validLatencyBackends` map.
+3. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"trained-roofline"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
+4. **Add CLI wiring** (if needed) in `cmd/root.go`: add a loading block for your backend's coefficients from `defaults.yaml`. If your backend needs a custom defaults section, add a struct to `cmd/default_config.go`.
+5. **Add behavioral tests** in `sim/latency/` — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)
+6. Extension friction: **3-5 touch points** (implementation + bundle map + factory branch; optionally CLI wiring + defaults struct)
 
 Examples:
 - See `BlackboxLatencyModel` in `sim/latency/latency.go` for a simple stateless model (alpha/beta regression)
 - See `RooflineLatencyModel` in `sim/latency/latency.go` for a model that uses hardware config (FLOPs/bandwidth)
 - See `CrossModelLatencyModel` in `sim/latency/crossmodel.go` for a physics-informed model that derives step time from HuggingFace architecture features (MoE-aware)
+- See `TrainedRooflineLatencyModel` in `sim/latency/trained_roofline.go` for a data-driven model with roofline basis functions × learned corrections (zero-allocation hot path, 7% MAPE)
 
 ## Adding New Disaggregation Deciders
 

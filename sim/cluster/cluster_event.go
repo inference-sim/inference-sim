@@ -256,7 +256,7 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	prefillSubReq := &sim.Request{
 		ID:          parent.PrefillSubReqID,
 		InputTokens: e.request.InputTokens,
-		// OutputTokens intentionally nil: zero-output request completes at prefill end
+		// No output tokens assigned: zero-output sub-request completes at prefill end
 		State:       sim.StateQueued,
 		ArrivalTime: e.request.ArrivalTime,
 		TenantID:    e.request.TenantID,

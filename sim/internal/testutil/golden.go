@@ -38,7 +38,7 @@ type GoldenTestCase struct {
 	Seed                      int64         `json:"seed"`
 	MaxNumRunningReqs         int64         `json:"max-num-running-reqs"`
 	MaxNumScheduledTokens     int64         `json:"max-num-scheduled-tokens"`
-	MaxModelLen               int           `json:"max-model-len"`
+	MaxModelLen               int64         `json:"max-model-len"`
 	TotalKVBlocks             int64         `json:"total-kv-blocks"`
 	BlockSizeInTokens         int64         `json:"block-size-in-tokens"`
 	LongPrefillTokenThreshold int64         `json:"long-prefill-token-threshold"`

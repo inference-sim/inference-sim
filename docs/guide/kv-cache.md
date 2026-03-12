@@ -4,7 +4,7 @@ This guide covers KV cache allocation, prefix caching, tiered GPU+CPU offload, a
 
 ```bash
 # Quick example: simulate with reduced KV blocks to observe preemptions
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --total-kv-blocks 5000 --rate 50 --num-requests 200
 ```
 
@@ -17,7 +17,7 @@ KV cache is allocated in **blocks** of `--block-size-in-tokens` tokens (default:
 | `--total-kv-blocks` | Per-model* | Total GPU-tier KV blocks |
 | `--block-size-in-tokens` | 16 | Tokens per block |
 
-*In blackbox mode, `defaults.yaml` overrides the 1,000,000 CLI default per model (e.g., LLaMA 3.1 8B / H100 / TP=2: 132,139 blocks). In roofline or crossmodel mode, the block count is auto-calculated from model architecture and GPU memory, superseding the `defaults.yaml` value. Explicit `--total-kv-blocks` always wins. See [Configuration Reference](../reference/configuration.md#resolution-process).
+*In blackbox mode, `defaults.yaml` overrides the 1,000,000 CLI default per model (e.g., Qwen3 14B / H100 / TP=1: 17,600 blocks). In roofline or crossmodel mode, the block count is auto-calculated from model architecture and GPU memory, superseding the `defaults.yaml` value. Explicit `--total-kv-blocks` always wins. See [Configuration Reference](../reference/configuration.md#resolution-process).
 
 !!! tip "Block size affects prefix cache granularity"
     Prefix caching uses block-aligned hashing (`hash.ComputeBlockHashes`). Smaller block sizes increase cache hit granularity but also increase allocation overhead. Choose block size relative to your typical prefix lengths.
@@ -29,7 +29,7 @@ When requests share common prefixes (e.g., system prompts in RAG), BLIS can reus
 Prefix caching is automatic when using the `prefix-affinity` scorer with `weighted` routing:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --routing-policy weighted \
   --routing-scorers "prefix-affinity:3,queue-depth:1" \
   --prefix-tokens 512 --rate 100 --num-requests 500
@@ -38,7 +38,15 @@ Prefix caching is automatic when using the `prefix-affinity` scorer with `weight
 ## Minimum KV Block Requirements
 
 !!! danger "DroppedUnservable rejection"
-    When `ceil(inputTokens / blockSize) > TotalCapacity()`, BLIS drops the request as **unservable** — it physically cannot fit in memory. This mirrors vLLM's pre-engine rejection path.
+    Requests are dropped as **unservable** (incrementing `DroppedUnservable`) in two cases:
+
+    1. **MaxModelLen guard** — when `--max-model-len` is set, requests whose total sequence length (input + output budget) exceeds the context window are rejected before entering the queue. This mirrors vLLM's `--max-model-len` validation.
+    2. **KV capacity guard** — when `ceil(inputTokens / blockSize) > TotalCapacity()`, the request physically cannot fit in GPU memory. This mirrors vLLM's pre-engine rejection path.
+
+    Both guards fire at enqueue time, before the request enters the wait queue.
+
+!!! info "Runtime length cap"
+    When `--max-model-len` is set, requests that grow beyond the limit during decode are force-completed. This is a defense-in-depth mechanism — under normal operation the enqueue guard prevents oversized requests, but the runtime cap protects against unbounded growth if a request bypasses the guard.
 
 Compute the minimum blocks needed for your workload:
 
@@ -53,7 +61,7 @@ For a workload with max 7,000 input tokens and block size 16: `ceil(7000/16) = 4
 BLIS models tiered KV cache with GPU→CPU offloading:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --kv-cpu-blocks 50000 \
   --kv-offload-threshold 0.9 \
   --kv-transfer-bandwidth 100.0 \
@@ -74,7 +82,7 @@ Long prefill sequences can cause **head-of-line (HOL) blocking** — a 2,048-tok
 Chunked prefill splits long prefills into smaller chunks:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --long-prefill-token-threshold 256 \
   --rate 100 --num-requests 500
 ```
@@ -101,7 +109,7 @@ Preemption rates spike non-linearly as KV blocks decrease past a threshold. The 
 # Sweep KV blocks to find the cliff
 for blocks in 100000 50000 20000 10000 5000 3000; do
   echo "=== blocks=$blocks ==="
-  ./blis run --model meta-llama/llama-3.1-8b-instruct \
+  ./blis run --model qwen/qwen3-14b \
     --total-kv-blocks $blocks --rate 50 --num-requests 200 2>/dev/null \
     | grep -E "preemption_count|completed_requests"
 done

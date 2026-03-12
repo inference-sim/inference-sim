@@ -15,7 +15,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 go build -o blis main.go
 
 # Run with default model
-./blis run --model meta-llama/llama-3.1-8b-instruct
+./blis run --model qwen/qwen3-14b
 
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
@@ -97,6 +97,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-6 Determinism**: Same seed must produce byte-identical stdout across runs. Wall-clock timing goes to stderr.
 - **INV-7 Signal freshness**: Routing snapshot signals have tiered freshness — InFlightRequests (synchronous) vs QueueDepth/BatchSize/KVUtilization (Periodic when `--snapshot-refresh-interval > 0`, Immediate when 0). See `docs/contributing/standards/invariants.md` for the full hierarchy.
 - **INV-8 Work-conserving**: After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while work is waiting.
+- **INV-9 Oracle knowledge boundary**: Servability decisions (enqueue guard, admission, routing, priority) must not read `Request.OutputTokens`. The control plane uses `MaxOutputLen` (client budget) or input-only checks. Only the execution engine may access `OutputTokens` for token generation and completion detection. See `docs/contributing/standards/invariants.md`.
 - **INV-PD-1 KV completeness**: `decode_enqueue_time >= transfer_complete_time` for every disaggregated request.
 - **INV-PD-2 Pool exclusivity**: Prefill sub-requests on prefill instances only; decode on decode only.
 - **INV-PD-3 Transfer conservation**: `initiated_transfers == completed_transfers` at simulation end.
@@ -206,7 +207,7 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --prefill-instances, --decode-instances, --pd-decider, --pd-prefix-threshold, --pd-transfer-bandwidth, --pd-transfer-base-latency, --pd-kv-bytes-per-token, --prefill-routing-scorers, --decode-routing-scorers)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --prefill-instances, --decode-instances, --pd-decider, --pd-prefix-threshold, --pd-transfer-bandwidth, --pd-transfer-base-latency, --pd-kv-bytes-per-token, --prefill-routing-scorers, --decode-routing-scorers)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
@@ -215,7 +216,7 @@ inference-sim/
 ├── sim/                       # Core single-instance simulator
 │   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, LatencyCoeffs, ModelHardwareConfig, PolicyConfig, WorkloadConfig) — composed into SimConfig via embedding (R16)
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
-│   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor, event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording, observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon()). All workload generation external via InjectArrival().
+│   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor (validates MaxModelLen vs KV capacity), event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording, EnqueueRequest (MaxModelLen + KV capacity guards), processCompletions (runtime length cap), observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon()). All workload generation external via InjectArrival().
 │   ├── admission.go           # AdmissionPolicy interface (accepts *RouterState), AlwaysAdmit, TokenBucket, RejectAll, NewAdmissionPolicy factory
 │   ├── disaggregation.go     # DisaggregationDecider interface, DisaggregationDecision type, NeverDisaggregate, AlwaysDisaggregate, NewDisaggregationDecider factory; DisaggregationObserver interface; PrefixThresholdDecider (prefix-aware, router-side cache, globalVirtualInstance), NewPrefixThresholdDecider(threshold, blockSize)
 │   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() for canonical load calculation), RoutingDecision (with Priority hint), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), AlwaysBusiest templates, NewRoutingPolicy factory
@@ -228,7 +229,7 @@ inference-sim/
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, RequestLeft)
-│   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted), Request lifecycle and state machine, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.)
+│   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted), Request lifecycle and state machine, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.), MaxOutputLen (client output budget for enqueue guard)
 │   ├── kv_store.go            # KVStore interface (11 methods: +SetClock, +ConsumePendingTransferLatency), NewKVStoreFromConfig registration variable, MustNewKVCacheState/MustNewKVStoreFromConfig nil-guarded wrappers
 │   ├── batch.go               # Batch struct
 │   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (FCFS + chunked-prefill + preemption), NewBatchFormation() factory
@@ -236,7 +237,7 @@ inference-sim/
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
-│   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/); HardwareCalib includes MemoryGiB (used by KV capacity auto-calculation in roofline/crossmodel modes)
+│   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/); HardwareCalib includes MemoryGiB (used by KV capacity auto-calculation in roofline/crossmodel modes). Note: MaxModelLen is int64 (aligned with ProgressIndex, TotalKVBlocks, BlockSizeTokens).
 │   └── internal/              # Shared internal packages
 │       ├── hash/              # Block-level hashing for prefix cache
 │       ├── testutil/          # Shared test infrastructure (golden dataset loading)
@@ -247,6 +248,7 @@ inference-sim/
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/               # Latency model implementations (PKG-2)
 │   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── trained_roofline.go    # TrainedRooflineLatencyModel: roofline basis functions × learned corrections (7β + 3α from training pipeline)
 │   ├── crossmodel.go          # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
 │   ├── kv_capacity.go         # CalculateKVBlocks: auto-derive total KV cache blocks from model architecture + GPU memory; KVCapacityParams, ExtractKVCapacityParams, computeModelWeightBytes
@@ -351,7 +353,7 @@ inference-sim/
 
 ### Latency Estimation
 
-Three modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--latency-model` flag:
+Four modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--latency-model` flag:
 
 1. **Blackbox mode** (default): Uses trained alpha/beta coefficients from `defaults.yaml`
    - Alpha coefficients: queueing time estimation
@@ -369,12 +371,19 @@ Three modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`)
    - MoE-aware: correctly models sparse activation patterns (unlike roofline which overestimates ~4x for MoE)
    - **`--latency-model crossmodel`**: Same auto-fetch chain as roofline. Usage: `./blis run --model <name> --latency-model crossmodel --hardware <GPU> --tp <N>`
 
+4. **Trained-roofline mode**: Roofline basis functions × learned correction coefficients via `sim/latency/trained_roofline.go`
+   - Uses 10 globally-fitted coefficients — 7 beta (prefill/decode roofline corrections, weight loading, TP communication, per-layer overhead, per-request scheduling, per-step overhead) + 3 alpha (API processing, post-decode fixed, per-output-token) — from `trained_roofline_defaults` in `defaults.yaml`
+   - Computes 6 analytical basis functions from HuggingFace `config.json` and hardware specs, applies learned β corrections
+   - Achieves 7% MAPE on GPU combined step time (test split) across 4 architectures (137K real vLLM requests)
+   - Key difference from pure roofline: no MFU scaling (β₁/β₂ ARE the corrections); 3-matrix SwiGLU (not roofline's 2-matrix)
+   - **`--latency-model trained-roofline`**: Same auto-fetch chain as roofline/crossmodel. Usage: `./blis run --model <name> --latency-model trained-roofline --hardware <GPU> --tp <N>`
+
 ### Key Data Flow
 
 ```
 Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
                                             ↓              ↓
-                                      KV Allocation   Latency Estimation (alpha/beta, roofline, or cross-model)
+                                      KV Allocation   Latency Estimation (alpha/beta, roofline, cross-model, or trained-roofline)
 ```
 Note: Admission and Routing steps apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
 
@@ -395,7 +404,7 @@ CLI flags: `--pd-decider` (never/always/prefix-threshold), `--pd-prefix-threshol
 ### Standards (what rules apply)
 
 - `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
-- `docs/contributing/standards/invariants.md`: **8 system invariants** (INV-1 through INV-8) — with verification strategies
+- `docs/contributing/standards/invariants.md`: **9 system invariants** (INV-1 through INV-9) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/contributing/convergence.md`), findings classification
 

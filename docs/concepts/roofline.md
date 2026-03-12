@@ -1,6 +1,9 @@
 # Roofline Step Time Estimation Logic
 
-This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`. For Mixture-of-Experts (MoE) models, use `--latency-model crossmodel` instead — see [Cross-Model Mode](../guide/latency-models.md#cross-model-mode-physics-informed).
+This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/`.
+
+!!! tip "Trained-Roofline: higher accuracy"
+    For higher accuracy (7% MAPE GPU combined), use `--latency-model trained-roofline` which applies learned correction factors to these roofline basis functions. See [Trained-Roofline Mode](../guide/latency-models.md#trained-roofline-mode-recommended-for-new-models). For legacy MoE workflows, `--latency-model crossmodel` is also available — see [Cross-Model Mode](../guide/latency-models.md#cross-model-mode-physics-informed).
 
 
 ## 1. Why Roofline?
@@ -57,7 +60,7 @@ The final step time is the sum of independent phases and overheads:
 The simplest way to run roofline mode is with `--latency-model roofline`, which auto-resolves the model config:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct --latency-model roofline --hardware H100 --tp 1
+./blis run --model qwen/qwen3-14b --latency-model roofline --hardware H100 --tp 1
 ```
 
 The flag automatically:
@@ -70,7 +73,7 @@ For models not in `defaults.yaml`, add an `hf_repo` entry mapping the BLIS model
 
 Alternatively, download the `config.json` manually:
 
-* Download the `config.json` for the LLM of your choice into `model_configs/`. [This](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct/blob/main/config.json) is an example config.json for `meta-llama/Llama-3.3-70B-Instruct`. The recommended file structure is `model_configs/llama-3.1-8b-instruct/config.json`.
+* Download the `config.json` for the LLM of your choice into `model_configs/`. [This](https://huggingface.co/Qwen/Qwen3-14B/blob/main/config.json) is an example config.json for `Qwen/Qwen3-14B`. The recommended file structure is `model_configs/qwen3-14b/config.json`.
 
 ### Adding a new GPU
 
@@ -79,15 +82,11 @@ Alternatively, download the `config.json` manually:
 ```json
 {
     "<GPU_name>": {
-        "TFlopsPeak":        989.5,
-        "BwPeakTBs":         3.35,
-        "BwEffConstant":     0.72,
-        "TOverheadMicros":   500.0,
-        "perLayerOverhead":  20.0,
-        "mfuPrefill":        0.65,
-        "mfuDecode":         0.12,
-        "allReduceLatency":  20.0,
-        "MemoryGiB":         80.0
+        "TFlopsPeak":  989.5,
+        "BwPeakTBs":   3.35,
+        "mfuPrefill":  0.45,
+        "mfuDecode":   0.30,
+        "MemoryGiB":   80.0
     }
 }
 ```
@@ -96,12 +95,8 @@ Alternatively, download the `config.json` manually:
 |-------|-------------|
 | `TFlopsPeak` | Peak BF16 TFLOPS from GPU datasheet |
 | `BwPeakTBs` | Peak HBM bandwidth in TB/s from GPU datasheet |
-| `BwEffConstant` | Fraction of peak BW achieved in practice (0-1) |
-| `TOverheadMicros` | Per-step overhead in microseconds |
-| `perLayerOverhead` | CPU scheduling overhead per transformer layer in microseconds |
-| `mfuPrefill` | Static MFU for prefill (used when MFU database is unavailable) |
-| `mfuDecode` | Static MFU for decode (used when MFU database is unavailable) |
-| `allReduceLatency` | All-reduce latency in microseconds (multi-GPU TP) |
+| `mfuPrefill` | Model FLOPS Utilization for prefill phase (compute-bound) |
+| `mfuDecode` | Model FLOPS Utilization for decode phase (memory-bound) |
 | `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or crossmodel mode is active and the flag is not explicitly set. |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.

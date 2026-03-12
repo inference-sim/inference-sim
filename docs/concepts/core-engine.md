@@ -2,7 +2,7 @@
 
 This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see [Cluster Architecture](architecture.md).
 
-> **Canonical sources:** System invariants (INV-1 through INV-8) are defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
+> **Canonical sources:** System invariants (INV-1 through INV-9) are defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
 
 ## Overview
 
@@ -100,7 +100,7 @@ Requests follow a linear state machine with one exception (preemption):
 stateDiagram-v2
     [*] --> Arrival
     Arrival --> Queued : alpha queueing delay
-    Arrival --> DroppedUnservable : input too large for KV cache
+    Arrival --> DroppedUnservable : exceeds MaxModelLen or KV capacity
 
     state "Queued" as Queued
     note right of Queued
@@ -169,7 +169,12 @@ Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and the
 
 ### Dropped Requests
 
-Requests whose input tokens require more KV blocks than the total cache capacity are dropped at enqueue time with a `DroppedUnservable` counter increment. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.
+Requests are dropped as unservable at enqueue time (incrementing `DroppedUnservable`) via two guards:
+
+1. **MaxModelLen guard** — when `--max-model-len` is set, requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the runtime stop in `processCompletions` handles output growth).
+2. **KV capacity guard** — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.
+
+Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, when `--max-model-len` is set, a runtime length cap force-completes any request whose `ProgressIndex` reaches `MaxModelLen` during decode (defense-in-depth).
 
 ## Batch Formation
 
@@ -235,7 +240,7 @@ When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache
 
 ## Latency Models
 
-BLIS predicts GPU step time through one of three latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
+BLIS predicts GPU step time through one of four latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
 
 ### Blackbox Model (Default)
 

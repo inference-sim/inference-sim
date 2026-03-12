@@ -279,7 +279,7 @@ BLIS has four extension types. Identify which type your change is, then follow t
 When adding a new model configuration:
 
 1. Add an entry to the `defaults:` section with `GPU`, `tensor_parallelism`, and `vllm_version`
-2. Add an `hf_repo` field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., `hf_repo: meta-llama/Llama-3.1-8B-Instruct`). This enables `--latency-model roofline` auto-fetch. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit `hf_repo` — document why with a YAML comment.
+2. Add an `hf_repo` field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., `hf_repo: Qwen/Qwen3-14B`). This enables `--latency-model roofline` auto-fetch. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit `hf_repo` — document why with a YAML comment.
 3. If trained coefficients exist, add a corresponding entry to the `models:` list
 
 ### Policy Template (lightest — ~3 files)
@@ -377,7 +377,7 @@ Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key 
 |---|---|---|
 | `CLAUDE.md` | Code architecture, file organization, CLI flags, compact rule/invariant tables | Always — authoritative for current codebase state |
 | `docs/contributing/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
-| `docs/contributing/standards/invariants.md` | 8 system invariants (INV-1 through INV-8) with verification strategies | When touching request lifecycle, KV cache, or metrics |
+| `docs/contributing/standards/invariants.md` | 9 system invariants (INV-1 through INV-9) with verification strategies | When touching request lifecycle, KV cache, or metrics |
 | `docs/contributing/standards/experiments.md` | Experiment taxonomy, rigor requirements, findings classification | When running hypothesis experiments |
 | `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
 | `docs/concepts/` | System architecture, core engine, concepts glossary, roofline estimation | When learning how BLIS works before contributing |

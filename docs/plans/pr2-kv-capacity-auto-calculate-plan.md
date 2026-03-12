@@ -1,5 +1,9 @@
 # PR2: Auto-Calculate KV Blocks in Roofline Mode — Implementation Plan
 
+> **NOTE (R15):** `KVCapacityParams` struct gained `MoEExpertFFNDim` and `SharedExpertFFNDim`
+> fields in PR #559 (MoE roofline). Raw struct literals in this completed plan are missing
+> these fields. Use `NewKVCapacityParams(...)` (6 args) for current construction.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Automatically derive `total_kv_blocks` from the model architecture and GPU memory that the user has already provided in roofline mode, eliminating the unrealistic 1M-block default and matching the llm-d-benchmark `capacity_planner.py` reference formula.

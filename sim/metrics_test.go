@@ -381,3 +381,30 @@ func TestSaveResults_DroppedUnservable_InJSON(t *testing.T) {
 		t.Errorf("InjectedRequests = %d, want 2 (should include dropped)", output.InjectedRequests)
 	}
 }
+
+// BC-3: LengthCappedRequests appears in JSON output
+func TestSaveResults_LengthCappedRequests_InJSON(t *testing.T) {
+	m := NewMetrics()
+	m.LengthCappedRequests = 3
+	m.CompletedRequests = 3
+	m.SimEndedTime = 1_000_000
+
+	tmpFile := filepath.Join(t.TempDir(), "test_output.json")
+	if err := m.SaveResults("test", 10_000_000, 100, tmpFile); err != nil {
+		t.Fatalf("SaveResults returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("reading output: %v", err)
+	}
+
+	var output MetricsOutput
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+
+	if output.LengthCappedRequests != 3 {
+		t.Errorf("LengthCappedRequests in JSON = %d, want 3", output.LengthCappedRequests)
+	}
+}

@@ -1,8 +1,9 @@
 // Package latency provides latency model implementations for the BLIS simulator.
 // The LatencyModel interface is defined in sim/ (parent package).
 // This package provides BlackboxLatencyModel (alpha/beta regression),
-// RooflineLatencyModel (analytical FLOPs/bandwidth), and
-// CrossModelLatencyModel (physics-informed cross-model step time).
+// RooflineLatencyModel (analytical FLOPs/bandwidth),
+// CrossModelLatencyModel (physics-informed cross-model step time), and
+// TrainedRooflineLatencyModel (roofline basis functions × learned corrections).
 package latency
 
 import (
@@ -51,6 +52,8 @@ func (m *BlackboxLatencyModel) OutputTokenProcessingTime() int64 {
 	return int64(m.alphaCoeffs[2])
 }
 
+func (m *BlackboxLatencyModel) PostDecodeFixedOverhead() int64 { return 0 }
+
 // RooflineLatencyModel estimates latency using analytical FLOPs/bandwidth roofline model.
 // Step time is computed via rooflineStepTime(); overhead estimates use alpha coefficients.
 type RooflineLatencyModel struct {
@@ -91,6 +94,8 @@ func (m *RooflineLatencyModel) QueueingTime(req *sim.Request) int64 {
 func (m *RooflineLatencyModel) OutputTokenProcessingTime() int64 {
 	return int64(m.alphaCoeffs[2])
 }
+
+func (m *RooflineLatencyModel) PostDecodeFixedOverhead() int64 { return 0 }
 
 // validateCoeffs checks for NaN, Inf, or negative values in a coefficient slice.
 func validateCoeffs(name string, coeffs []float64) error {
@@ -176,6 +181,67 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			kvDimScaled: kvDimScaled,
 			isMoE:       isMoE,
 			isTP:        isTP,
+		}, nil
+	case "trained-roofline":
+		// TrainedRooflineLatencyModel: roofline basis functions × learned corrections.
+		// Requires model architecture (config.json) and hardware specs for basis functions.
+		if hw.TP <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires TP > 0, got %d", hw.TP)
+		}
+		if hw.ModelConfig.NumLayers <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires NumLayers > 0, got %d", hw.ModelConfig.NumLayers)
+		}
+		if hw.ModelConfig.NumHeads <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires NumHeads > 0, got %d", hw.ModelConfig.NumHeads)
+		}
+		if hw.ModelConfig.HiddenDim <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires HiddenDim > 0, got %d", hw.ModelConfig.HiddenDim)
+		}
+		if hw.ModelConfig.IntermediateDim <= 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires IntermediateDim > 0, got %d", hw.ModelConfig.IntermediateDim)
+		}
+		if hw.ModelConfig.NumHeads%hw.TP != 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires NumHeads (%d) divisible by TP (%d)", hw.ModelConfig.NumHeads, hw.TP)
+		}
+		numKVHeadsTR := hw.ModelConfig.NumKVHeads
+		if numKVHeadsTR == 0 {
+			numKVHeadsTR = hw.ModelConfig.NumHeads // MHA fallback
+		}
+		if numKVHeadsTR%hw.TP != 0 {
+			return nil, fmt.Errorf("latency model: trained-roofline requires NumKVHeads (%d) divisible by TP (%d)", numKVHeadsTR, hw.TP)
+		}
+		if invalidPositiveFloat(hw.HWConfig.TFlopsPeak) {
+			return nil, fmt.Errorf("latency model: trained-roofline requires valid TFlopsPeak > 0, got %v", hw.HWConfig.TFlopsPeak)
+		}
+		if invalidPositiveFloat(hw.HWConfig.BwPeakTBs) {
+			return nil, fmt.Errorf("latency model: trained-roofline requires valid BwPeakTBs > 0, got %v", hw.HWConfig.BwPeakTBs)
+		}
+		if len(coeffs.BetaCoeffs) < 7 {
+			return nil, fmt.Errorf("latency model: trained-roofline BetaCoeffs requires at least 7 elements, got %d", len(coeffs.BetaCoeffs))
+		}
+		if err := validateCoeffs("BetaCoeffs", coeffs.BetaCoeffs); err != nil {
+			return nil, err
+		}
+		headDimTR := hw.ModelConfig.HiddenDim / hw.ModelConfig.NumHeads
+		// Defensive copy of coefficient slices to enforce the "frozen at construction" contract.
+		// This prevents callers from mutating coefficients after construction.
+		betaCopy := append([]float64(nil), coeffs.BetaCoeffs...)
+		alphaCopy := append([]float64(nil), coeffs.AlphaCoeffs...)
+		return &TrainedRooflineLatencyModel{
+			betaCoeffs:  betaCopy,
+			alphaCoeffs: alphaCopy,
+			numLayers:   hw.ModelConfig.NumLayers,
+			hiddenDim:   hw.ModelConfig.HiddenDim,
+			numHeads:    hw.ModelConfig.NumHeads,
+			headDim:     headDimTR,
+			dKV:         numKVHeadsTR * headDimTR,
+			dFF:         hw.ModelConfig.IntermediateDim,
+			kEff:        max(1, hw.ModelConfig.NumExpertsPerTok), // matches training: k_eff = max(1, k)
+			numExperts:  hw.ModelConfig.NumLocalExperts,
+			isMoE:       hw.ModelConfig.NumLocalExperts > 0,
+			tp:          hw.TP,
+			flopsPeakUs: hw.HWConfig.TFlopsPeak * 1e6,
+			bwHbmUs:     hw.HWConfig.BwPeakTBs * 1e6,
 		}, nil
 	case "", "blackbox":
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.

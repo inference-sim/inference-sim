@@ -47,7 +47,7 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 				KVCacheConfig:       NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 				BatchConfig:         NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 				LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, ""),
+				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, "", tc.MaxModelLen),
 			})
 
 			requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
@@ -158,7 +158,7 @@ func TestSimulator_WorkloadRNG_NotNil(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, "", 0),
 	})
 
 	rng := sim.WorkloadRNG()
@@ -180,7 +180,7 @@ func TestSimulator_DeterministicWorkload(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 0),
 	}
 
 	requests := testGenerateRequests(42, math.MaxInt64, 10.0/1e6, 50,
@@ -225,7 +225,7 @@ func newTestSimConfig() SimConfig {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, "", 0),
 	}
 }
 
@@ -330,7 +330,7 @@ func TestMustNewLatencyModel_NilFunc_Panics(t *testing.T) {
 		}
 	}()
 	coeffs := NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3})
-	hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "")
+	hw := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0)
 	_, _ = MustNewLatencyModel(coeffs, hw) //nolint:errcheck // expected to panic before returning
 }
 
@@ -344,6 +344,45 @@ func TestNewSimulator_NilLatencyModel_ReturnsError(t *testing.T) {
 	if err.Error() != "NewSimulator: latencyModel must not be nil" {
 		t.Errorf("unexpected error message: %v", err)
 	}
+}
+
+// BC-1: KV cache too small for MaxModelLen → error
+func TestNewSimulator_MaxModelLen_KVTooSmall(t *testing.T) {
+	cfg := newTestSimConfig()
+	// 1024 tokens / 16 block size = 64 blocks needed, but only 50 available
+	cfg.ModelHardwareConfig = NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 1024)
+	cfg.KVCacheConfig = NewKVCacheConfig(50, 16, 0, 0, 0, 0)
+
+	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("MustNewLatencyModel: %v", err)
+	}
+	_, err = NewSimulator(cfg, kvStore, latencyModel)
+	if err == nil {
+		t.Fatal("expected error when KV cache too small for MaxModelLen")
+	}
+	if !strings.Contains(err.Error(), "KV cache too small for MaxModelLen") {
+		t.Errorf("error should mention KV cache too small, got: %v", err)
+	}
+}
+
+// BC-1: KV cache sufficient for MaxModelLen → no error
+func TestNewSimulator_MaxModelLen_KVSufficient(t *testing.T) {
+	cfg := newTestSimConfig()
+	// 1024 tokens / 16 block size = 64 blocks needed, 100 available
+	cfg.ModelHardwareConfig = NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 1024)
+	cfg.KVCacheConfig = NewKVCacheConfig(100, 16, 0, 0, 0, 0)
+	_ = mustNewSimulator(t, cfg) // should not error
+}
+
+// BC-3: MaxModelLen=0 bypasses the KV check
+func TestNewSimulator_MaxModelLen_Zero_NoValidation(t *testing.T) {
+	cfg := newTestSimConfig()
+	// MaxModelLen=0 (default) — no validation even with small KV cache
+	cfg.ModelHardwareConfig = NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 0)
+	cfg.KVCacheConfig = NewKVCacheConfig(1, 16, 0, 0, 0, 0)
+	_ = mustNewSimulator(t, cfg) // should not error
 }
 
 // TestNewSimulator_NoWorkload_EmptyQueue verifies that a SimConfig with no injected
@@ -526,7 +565,7 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation", "H100", 1, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation", "H100", 1, "", 0),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -583,7 +622,7 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation-finite", "H100", 1, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-conservation-finite", "H100", 1, "", 0),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -648,7 +687,7 @@ func TestSimulator_Causality_FullChain_ArrivalToCompletion(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-causality", "H100", 1, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-causality", "H100", 1, "", 0),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -704,7 +743,7 @@ func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-monotonicity", "H100", 1, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-monotonicity", "H100", 1, "", 0),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -747,7 +786,7 @@ func TestInjectArrival_BeyondHorizon_Warns(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{50, 0.1, 50}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 	req := &Request{
@@ -772,7 +811,7 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-determinism", "H100", 1, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-determinism", "H100", 1, "", 0),
 	}
 
 	// Run 1
@@ -852,7 +891,7 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 				KVCacheConfig:       NewKVCacheConfig(10000, 16, tt.kvCPUBlocks, 0.8, 100.0, 0),
 				BatchConfig:         NewBatchConfig(256, 2048, 0),
 				LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-kv-conservation", "H100", 1, ""),
+				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-kv-conservation", "H100", 1, "", 0),
 			}
 
 			sim := mustNewSimulator(t, cfg)
@@ -923,7 +962,7 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // KEY: only one request can run at a time
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-work-conserving", "H100", 1, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-work-conserving", "H100", 1, "", 0),
 	}
 
 	s := mustNewSimulator(t, cfg)
@@ -1087,6 +1126,502 @@ func TestEnqueueRequest_NormalInput_Enqueued(t *testing.T) {
 	// AND TotalInputTokens must include the request's tokens
 	if sim.Metrics.TotalInputTokens != 100 {
 		t.Errorf("TotalInputTokens = %d, want 100", sim.Metrics.TotalInputTokens)
+	}
+}
+
+// BC-2: Request with explicit budget exceeding MaxModelLen is dropped
+func TestEnqueueRequest_MaxModelLen_Exceeded_Dropped(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 512),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Request: 300 input + 300 budget = 600 > MaxModelLen(512)
+	req := &Request{
+		ID:           "too_long",
+		InputTokens:  make([]int, 300),
+		OutputTokens: make([]int, 300),
+		MaxOutputLen: 300, // client declares output budget
+		State:        StateQueued,
+	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+
+	sim.EnqueueRequest(req)
+
+	if sim.WaitQ.Len() != 0 {
+		t.Errorf("WaitQ.Len() = %d, want 0", sim.WaitQ.Len())
+	}
+	if sim.Metrics.DroppedUnservable != 1 {
+		t.Errorf("DroppedUnservable = %d, want 1", sim.Metrics.DroppedUnservable)
+	}
+	if _, exists := sim.Metrics.Requests[req.ID]; exists {
+		t.Error("dropped request should be removed from Metrics.Requests")
+	}
+}
+
+// BC-3: MaxModelLen=0 falls through to KV check only
+func TestEnqueueRequest_MaxModelLen_Zero_FallsThroughToKV(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Large request that fits KV (100 tokens, 1000 blocks available) but would fail MaxModelLen if it were set
+	req := &Request{
+		ID:           "large_but_fits_kv",
+		InputTokens:  make([]int, 100),
+		OutputTokens: make([]int, 1000),
+		State:        StateQueued,
+	}
+
+	sim.EnqueueRequest(req)
+
+	if sim.WaitQ.Len() != 1 {
+		t.Errorf("WaitQ.Len() = %d, want 1 (MaxModelLen=0 should not reject)", sim.WaitQ.Len())
+	}
+}
+
+// BC-4: MaxOutputLen=0 → input-only check (oracle knowledge boundary: control plane
+// never peeks at len(OutputTokens)). Runtime stop enforces output growth limit.
+func TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 512),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Case 1: MaxOutputLen=0 → auto-filled to 312 (512-200), input+budget=512 ≤ 512 → enqueued.
+	// Auto-fill sets MaxOutputLen=312 (remaining context). Guard 1 budget check passes (200+312=512).
+	// The control plane still doesn't peek at len(OutputTokens) (INV-9 preserved).
+	reqFits := &Request{
+		ID:           "input_fits_oracle",
+		InputTokens:  make([]int, 200),
+		OutputTokens: make([]int, 1000), // actual output exceeds context, but control plane can't see this
+		MaxOutputLen: 0,                 // auto-filled to maxModelLen - input = 312
+		State:        StateQueued,
+	}
+	sim.EnqueueRequest(reqFits)
+	if sim.WaitQ.Len() != 1 {
+		t.Errorf("WaitQ.Len() = %d, want 1 (MaxOutputLen=0 should only check input)", sim.WaitQ.Len())
+	}
+
+	// Case 2: MaxOutputLen=0, input exceeds MaxModelLen → dropped
+	reqInputTooBig := &Request{
+		ID:           "input_too_big",
+		InputTokens:  make([]int, 600), // 600 > 512
+		OutputTokens: make([]int, 10),
+		MaxOutputLen: 0,
+		State:        StateQueued,
+	}
+	sim.Metrics.Requests[reqInputTooBig.ID] = NewRequestMetrics(reqInputTooBig, 0)
+	sim.EnqueueRequest(reqInputTooBig)
+	if sim.WaitQ.Len() != 1 {
+		t.Errorf("WaitQ.Len() = %d, want 1 (input exceeds MaxModelLen)", sim.WaitQ.Len())
+	}
+	if sim.Metrics.DroppedUnservable != 1 {
+		t.Errorf("DroppedUnservable = %d, want 1", sim.Metrics.DroppedUnservable)
+	}
+
+	// Case 3: MaxOutputLen=400 (client budget) → total: 200 + 400 = 600 > 512 → dropped
+	reqBudgetExceeds := &Request{
+		ID:           "budget_exceeds",
+		InputTokens:  make([]int, 200),
+		OutputTokens: make([]int, 100), // actual output is 100, but client budget says 400
+		MaxOutputLen: 400,
+		State:        StateQueued,
+	}
+	sim.Metrics.Requests[reqBudgetExceeds.ID] = NewRequestMetrics(reqBudgetExceeds, 0)
+	sim.EnqueueRequest(reqBudgetExceeds)
+	if sim.WaitQ.Len() != 1 {
+		t.Errorf("WaitQ.Len() = %d, want 1 (budget-exceeded request should be dropped)", sim.WaitQ.Len())
+	}
+	if sim.Metrics.DroppedUnservable != 2 {
+		t.Errorf("DroppedUnservable = %d, want 2", sim.Metrics.DroppedUnservable)
+	}
+}
+
+// Boundary test: input == maxModelLen with no budget → dropped (vLLM uses >= at serving.py:1542).
+// A request whose input fills the entire context leaves no room for output.
+func TestEnqueueRequest_InputEqualsMaxModelLen_Dropped(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 512),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// input == MaxModelLen: fills the entire context, no room for output
+	req := &Request{
+		ID:           "exact_boundary",
+		InputTokens:  make([]int, 512), // == MaxModelLen
+		OutputTokens: make([]int, 10),
+		State:        StateQueued,
+	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+	sim.EnqueueRequest(req)
+
+	if sim.WaitQ.Len() != 0 {
+		t.Errorf("WaitQ.Len() = %d, want 0 (input==MaxModelLen should be rejected)", sim.WaitQ.Len())
+	}
+	if sim.Metrics.DroppedUnservable != 1 {
+		t.Errorf("DroppedUnservable = %d, want 1", sim.Metrics.DroppedUnservable)
+	}
+}
+
+// Boundary test: input + budget == maxModelLen → accepted (exact fit, not exceeded).
+func TestEnqueueRequest_ExactFit_Accepted(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 512),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// input=200 + budget=312 = 512 == MaxModelLen → exact fit, should be accepted
+	req := &Request{
+		ID:           "exact_fit",
+		InputTokens:  make([]int, 200),
+		OutputTokens: make([]int, 312),
+		MaxOutputLen: 312,
+		State:        StateQueued,
+	}
+	sim.EnqueueRequest(req)
+	if sim.WaitQ.Len() != 1 {
+		t.Errorf("WaitQ.Len() = %d, want 1 (exact fit should be accepted)", sim.WaitQ.Len())
+	}
+}
+
+// BC-7: Negative MaxOutputLen → warning + dropped
+func TestEnqueueRequest_NegativeMaxOutputLen_Dropped(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 512),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	req := &Request{
+		ID:           "neg_budget",
+		InputTokens:  make([]int, 100),
+		OutputTokens: make([]int, 50),
+		MaxOutputLen: -1,
+		State:        StateQueued,
+	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+	sim.EnqueueRequest(req)
+
+	if sim.WaitQ.Len() != 0 {
+		t.Errorf("WaitQ.Len() = %d, want 0 (negative MaxOutputLen should be dropped)", sim.WaitQ.Len())
+	}
+	if sim.Metrics.DroppedUnservable != 1 {
+		t.Errorf("DroppedUnservable = %d, want 1", sim.Metrics.DroppedUnservable)
+	}
+	if _, exists := sim.Metrics.Requests["neg_budget"]; exists {
+		t.Error("Metrics.Requests should not contain dropped request")
+	}
+}
+
+// BC-5: Runtime length cap force-completes request at MaxModelLen boundary.
+// This is a defense-in-depth test: we directly place a request in the running batch
+// with ProgressIndex already at MaxModelLen to simulate bypass of enqueue guard.
+func TestProcessCompletions_RuntimeLengthCap(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 100),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Create a request with ProgressIndex at MaxModelLen boundary (bypassing enqueue guard)
+	req := &Request{
+		ID:           "length_capped",
+		InputTokens:  make([]int, 50),
+		OutputTokens: make([]int, 200), // would normally be longer than MaxModelLen
+		State:        StateRunning,
+		ProgressIndex: 100, // == MaxModelLen → should be force-completed
+		ArrivalTime:  0,
+	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+	sim.RunningBatch = &Batch{Requests: []*Request{req}}
+
+	// Simulate processCompletions
+	remaining := sim.processCompletions(1000, 5000)
+
+	// THEN the request is force-completed
+	if len(remaining) != 0 {
+		t.Errorf("remaining = %d, want 0 (length-capped request should be completed)", len(remaining))
+	}
+	if req.State != StateCompleted {
+		t.Errorf("req.State = %s, want completed", req.State)
+	}
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
+	}
+
+	// BC-2: LengthCappedRequests counter incremented
+	if sim.Metrics.LengthCappedRequests != 1 {
+		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
+	}
+
+	// Conservation: no requests lost
+	if sim.WaitQ.Len()+len(remaining)+sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("conservation violated: queued=%d + remaining=%d + completed=%d != 1",
+			sim.WaitQ.Len(), len(remaining), sim.Metrics.CompletedRequests)
+	}
+}
+
+// BC-5: End-to-end runtime length cap via sim.Run()
+// Injects a request that passes the enqueue guard (MaxOutputLen=0 → input-only check)
+// but has OutputTokens exceeding MaxModelLen. The runtime cap in processCompletions
+// should force-complete the request at the MaxModelLen boundary.
+func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             10_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 100),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// MaxOutputLen=0 → auto-filled to 50 (100-50). Guard 1 budget check: 50+50=100 ≤ 100 → enqueued.
+	// But actual OutputTokens=200 means ProgressIndex will exceed MaxModelLen=100.
+	req := &Request{
+		ID:           "will_be_capped",
+		InputTokens:  GenerateRandomTokenIDs(sim.WorkloadRNG(), 50),
+		OutputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 200),
+		ArrivalTime:  0,
+		State:        StateQueued,
+	}
+	sim.InjectArrival(req)
+
+	sim.Run()
+
+	// Request completes (force-completed at MaxModelLen boundary)
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
+	}
+	if sim.Metrics.LengthCappedRequests != 1 {
+		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
+	}
+	// INV-1: conservation holds
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != 1 {
+		t.Errorf("INV-1: completed(%d)+queued(%d)+running(%d)+dropped(%d) = %d, want 1",
+			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
+	}
+	// Output was truncated below the full 200
+	if sim.Metrics.TotalOutputTokens >= 200 {
+		t.Errorf("TotalOutputTokens = %d, want < 200 (force-completion should truncate)", sim.Metrics.TotalOutputTokens)
+	}
+	if sim.Metrics.TotalOutputTokens == 0 {
+		t.Error("TotalOutputTokens = 0, want > 0 (some decode work should have happened)")
+	}
+	// Regression anchor: MaxModelLen(100) - input(50) = 50 decode steps
+	if sim.Metrics.TotalOutputTokens != 50 {
+		t.Errorf("TotalOutputTokens = %d, want 50 (regression anchor)", sim.Metrics.TotalOutputTokens)
+	}
+	// KV blocks released
+	if sim.KVCache.UsedBlocks() != 0 {
+		t.Errorf("UsedBlocks = %d, want 0 (KV blocks should be released after force-completion)", sim.KVCache.UsedBlocks())
+	}
+}
+
+// BC-7: INV-1 conservation holds when MaxModelLen drops requests.
+// End-to-end test: inject mix of requests (some exceed budget, some fit),
+// run to completion, verify injected == completed + dropped.
+func TestSimulator_Conservation_WithMaxModelLen_Drops(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             10_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 200),
+	}
+	sim := mustNewSimulator(t, cfg)
+	rng := sim.WorkloadRNG()
+
+	// Inject 20 requests: 10 that fit (input=50, output=50, budget=100 → 150 < 200)
+	// and 10 that exceed (input=50, output=50, budget=200 → 250 > 200)
+	numInjected := 0
+	for i := 0; i < 10; i++ {
+		req := &Request{
+			ID:           fmt.Sprintf("fits_%d", i),
+			InputTokens:  GenerateRandomTokenIDs(rng, 50),
+			OutputTokens: GenerateRandomTokenIDs(rng, 50),
+			MaxOutputLen: 100,
+			ArrivalTime:  int64(i * 100000),
+			State:        StateQueued,
+		}
+		sim.InjectArrival(req)
+		numInjected++
+	}
+	for i := 0; i < 10; i++ {
+		req := &Request{
+			ID:           fmt.Sprintf("exceeds_%d", i),
+			InputTokens:  GenerateRandomTokenIDs(rng, 50),
+			OutputTokens: GenerateRandomTokenIDs(rng, 50),
+			MaxOutputLen: 200, // 50 + 200 = 250 > MaxModelLen(200)
+			ArrivalTime:  int64(i * 100000),
+			State:        StateQueued,
+		}
+		sim.InjectArrival(req)
+		numInjected++
+	}
+
+	sim.Run()
+
+	// INV-1: injected == completed + still_queued + still_running + dropped
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued +
+		sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != numInjected {
+		t.Errorf("INV-1 violation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
+			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued,
+			sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable,
+			total, numInjected)
+	}
+
+	// Verify: 10 requests should be dropped, 10 should complete
+	if sim.Metrics.DroppedUnservable != 10 {
+		t.Errorf("DroppedUnservable = %d, want 10", sim.Metrics.DroppedUnservable)
+	}
+	if sim.Metrics.CompletedRequests != 10 {
+		t.Errorf("CompletedRequests = %d, want 10", sim.Metrics.CompletedRequests)
+	}
+}
+
+// BC-1: Negative MaxModelLen rejected by NewSimulator (defense-in-depth for struct literal bypass)
+func TestNewSimulator_NegativeMaxModelLen_Error(t *testing.T) {
+	cfg := newTestSimConfig()
+	cfg.MaxModelLen = -5 // bypass canonical constructor's panic to test NewSimulator validation
+	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
+	if err != nil {
+		t.Fatalf("MustNewLatencyModel: %v", err)
+	}
+	_, err = NewSimulator(cfg, kvStore, latencyModel)
+	if err == nil {
+		t.Fatal("expected error for negative MaxModelLen")
+	}
+	if !strings.Contains(err.Error(), "MaxModelLen") {
+		t.Errorf("error %q should mention MaxModelLen", err.Error())
+	}
+}
+
+// R3: NewModelHardwareConfig panics on negative MaxModelLen
+func TestNewModelHardwareConfig_NegativeMaxModelLen_Panics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for negative MaxModelLen")
+		}
+		msg := fmt.Sprintf("%v", r)
+		if !strings.Contains(msg, "MaxModelLen") {
+			t.Errorf("panic message %q should contain MaxModelLen", msg)
+		}
+	}()
+	NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", -1)
+}
+
+// INV-9: Oracle Knowledge Boundary — control-plane functions must not reference OutputTokens.
+// This is a structural enforcement test: it reads the source files for servability-decision
+// functions and verifies zero references to OutputTokens.
+func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T) {
+	// Control-plane files in sim/ that must not reference OutputTokens.
+	// These files contain no metric-aggregate names like TotalOutputTokens,
+	// so a whole-file scan is safe and maximally conservative.
+	simControlPlaneFiles := []string{
+		"admission.go",
+		"routing.go",
+		"routing_scorers.go",
+		"routing_prefix_scorer.go",
+		"scheduler.go",
+		"priority.go",
+	}
+
+	for _, filename := range simControlPlaneFiles {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", filename, err)
+		}
+		content := string(data)
+		if strings.Contains(content, "OutputTokens") {
+			t.Errorf("INV-9 violation: %s references OutputTokens — control-plane code must not access oracle output length", filename)
+		}
+	}
+
+	// Cluster control-plane files that handle *Request in the routing pipeline.
+	// These files may contain TotalOutputTokens (metric aggregation, not oracle access),
+	// so we use line-level scanning with TotalOutputTokens exclusion.
+	clusterControlPlaneFiles := []string{
+		"cluster/cluster.go",
+		"cluster/cluster_event.go",
+		"cluster/snapshot.go",
+		"cluster/counterfactual.go",
+	}
+
+	for _, filename := range clusterControlPlaneFiles {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", filename, err)
+		}
+		for lineNum, line := range strings.Split(string(data), "\n") {
+			// Remove known-safe metric aggregate names, then check for remaining OutputTokens
+			cleaned := strings.ReplaceAll(line, "TotalOutputTokens", "")
+			if strings.Contains(cleaned, "OutputTokens") {
+				t.Errorf("INV-9 violation: %s line %d references OutputTokens — control-plane code must not access oracle output length",
+					filename, lineNum+1)
+			}
+		}
+	}
+
+	// Additionally verify EnqueueRequest specifically (it's in simulator.go, which
+	// also contains execution-engine code that legitimately uses OutputTokens).
+	data, err := os.ReadFile("simulator.go")
+	if err != nil {
+		t.Fatalf("failed to read simulator.go: %v", err)
+	}
+	content := string(data)
+	// Extract EnqueueRequest function body (between "func (sim *Simulator) EnqueueRequest" and the next "func ")
+	startIdx := strings.Index(content, "func (sim *Simulator) EnqueueRequest")
+	if startIdx < 0 {
+		t.Fatal("EnqueueRequest function not found in simulator.go")
+	}
+	endIdx := strings.Index(content[startIdx+1:], "\nfunc ")
+	if endIdx < 0 {
+		t.Fatal("could not find end of EnqueueRequest function")
+	}
+	enqueueBody := content[startIdx : startIdx+1+endIdx]
+	if strings.Contains(enqueueBody, "OutputTokens") {
+		t.Error("INV-9 violation: EnqueueRequest references OutputTokens — enqueue guard must not access oracle output length")
 	}
 }
 
@@ -1322,7 +1857,7 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{NumHeads: 0}, HardwareCalib{}, "", "", 0, ""),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{NumHeads: 0}, HardwareCalib{}, "", "", 0, "", 0),
 	}
 
 	// WHEN NewSimulator is called
@@ -1339,5 +1874,150 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 	}
 	if sim == nil {
 		t.Error("expected non-nil simulator")
+	}
+}
+
+// BC-7: Chunked prefill + MaxModelLen — no spurious force-completion.
+// GIVEN LongPrefillTokenThreshold=64, MaxModelLen=500, input=200, output=50
+// WHEN the request undergoes multi-chunk prefill (4 chunks: 64,64,64,8)
+// THEN the request completes normally (peak ProgressIndex=249 < 500),
+//
+//	LengthCappedRequests==0, TTFT recorded, TotalOutputTokens==49.
+func TestSimulator_ChunkedPrefill_MaxModelLen_NoSpuriousCap(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             10_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 64), // LongPrefillTokenThreshold=64
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 500),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	req := &Request{
+		ID:           "chunked_prefill",
+		InputTokens:  GenerateRandomTokenIDs(sim.WorkloadRNG(), 200),
+		OutputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 50),
+		ArrivalTime:  0,
+		State:        StateQueued,
+	}
+	sim.InjectArrival(req)
+	sim.Run()
+
+	// Request completes normally (no force-completion)
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
+	}
+	if sim.Metrics.LengthCappedRequests != 0 {
+		t.Errorf("LengthCappedRequests = %d, want 0 (no spurious force-completion during chunked prefill)", sim.Metrics.LengthCappedRequests)
+	}
+
+	// TTFT recorded — verifies TTFT fires on final prefill chunk (ProgressIndex=200), not intermediate chunks
+	ttft, hasTTFT := sim.Metrics.RequestTTFTs["chunked_prefill"]
+	if !hasTTFT || ttft <= 0 {
+		t.Errorf("TTFT not recorded (hasTTFT=%v, ttft=%v); expected positive TTFT after chunked prefill", hasTTFT, ttft)
+	}
+
+	// TotalOutputTokens: decode runs PI 201→249 = 49 tokens.
+	// Normal completion fires at PI == 200 + max(50,1) - 1 = 249.
+	if sim.Metrics.TotalOutputTokens != 49 {
+		t.Errorf("TotalOutputTokens = %d, want 49 (decode PI 201→249)", sim.Metrics.TotalOutputTokens)
+	}
+
+	// INV-1 conservation
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != 1 {
+		t.Errorf("INV-1: completed(%d)+queued(%d)+running(%d)+dropped(%d) = %d, want 1",
+			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
+	}
+}
+
+// TestEnqueueRequest_AutoFill_MaxOutputLen verifies the engine-level auto-fill
+// that sets MaxOutputLen = maxModelLen - len(InputTokens) when the client doesn't
+// provide a budget (BC-1..BC-4, BC-8, BC-10).
+func TestEnqueueRequest_AutoFill_MaxOutputLen(t *testing.T) {
+	tests := []struct {
+		name           string
+		maxModelLen    int64
+		inputLen       int
+		initialMOL     int
+		expectedMOL    int
+		expectEnqueued bool
+		desc           string
+	}{
+		{
+			name:           "BC-1: auto-fill when client omits budget",
+			maxModelLen:    1000,
+			inputLen:       200,
+			initialMOL:     0,
+			expectedMOL:    800, // 1000 - 200
+			expectEnqueued: true,
+			desc:           "MaxOutputLen auto-filled to remaining context window",
+		},
+		{
+			name:           "BC-2: no auto-fill when client sets budget",
+			maxModelLen:    1000,
+			inputLen:       200,
+			initialMOL:     300,
+			expectedMOL:    300, // unchanged
+			expectEnqueued: true,
+			desc:           "client-provided MaxOutputLen preserved",
+		},
+		{
+			name:           "BC-3: no auto-fill in unlimited mode",
+			maxModelLen:    0,
+			inputLen:       200,
+			initialMOL:     0,
+			expectedMOL:    0, // unchanged
+			expectEnqueued: true,
+			desc:           "maxModelLen=0 means unlimited, no auto-fill",
+		},
+		{
+			name:           "BC-4: no auto-fill when input exceeds context",
+			maxModelLen:    100,
+			inputLen:       150,
+			initialMOL:     0,
+			expectedMOL:    0, // unchanged (Guard 1 handles rejection)
+			expectEnqueued: false,
+			desc:           "input >= maxModelLen, Guard 1 drops it",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := SimConfig{
+				KVCacheConfig:       NewKVCacheConfig(1000000, 16, 0, 0, 0, 0),
+				BatchConfig:         NewBatchConfig(256, 4096, 0),
+				LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{0, 0, 0}),
+				ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", tc.maxModelLen),
+				Horizon:             1000000,
+				Seed:                42,
+			}
+			s := mustNewSimulator(t, cfg)
+
+			req := &Request{
+				ID:           "test-req",
+				InputTokens:  make([]int, tc.inputLen),
+				OutputTokens: make([]int, 100),
+				MaxOutputLen: tc.initialMOL,
+				State:        StateQueued,
+			}
+
+			s.EnqueueRequest(req)
+
+			if tc.expectEnqueued {
+				if s.WaitQ.Len() != 1 {
+					t.Fatalf("expected request enqueued, WaitQ.Len()=%d", s.WaitQ.Len())
+				}
+				if req.MaxOutputLen != tc.expectedMOL {
+					t.Errorf("MaxOutputLen = %d, want %d (%s)",
+						req.MaxOutputLen, tc.expectedMOL, tc.desc)
+				}
+			} else {
+				if s.WaitQ.Len() != 0 {
+					t.Fatalf("expected request dropped, WaitQ.Len()=%d", s.WaitQ.Len())
+				}
+			}
+		})
 	}
 }

@@ -51,6 +51,7 @@ var (
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
 	latencyModelBackend string // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
+	maxModelLen         int64  // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
 
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
@@ -113,6 +114,87 @@ var (
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
+
+// applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
+// Returns the (possibly scaled) value and whether scaling was applied.
+// modelType is the HuggingFace model_type string (empty if not present).
+// ropeScaling is the raw rope_scaling value from config.json (nil if not present).
+//
+// Blacklist approach matching vLLM's _get_and_verify_max_len:
+// Types "su", "longrope", "llama3" are excluded (these encode full context in max_position_embeddings).
+// All other types (linear, dynamic, yarn, default, mrope, etc.) apply the factor.
+// "mrope" is intentionally NOT excluded: vLLM normalizes mrope → "default" via patch_rope_scaling_dict
+// and then applies the factor. BLIS reads raw JSON where mrope falls through the blacklist — same result.
+// For "yarn", original_max_position_embeddings is used as base when present.
+// gemma3 model_type skips rope_scaling entirely (max_position_embeddings is pre-scaled).
+// Uses substring match to handle both "gemma3" (top-level) and "gemma3_text" (after text_config pivot).
+func applyRopeScaling(maxPosEmb int, modelType string, ropeScaling any) (scaled int, applied bool) {
+	// R3: degenerate base guard
+	if maxPosEmb <= 0 {
+		return maxPosEmb, false
+	}
+
+	// gemma3 model_type: skip rope_scaling entirely (BC-3).
+	// Note: ParseHFConfig's text_config pivot overwrites model_type from "gemma3" to
+	// "gemma3_text" for multimodal models. Use strings.Contains to match both variants,
+	// aligning with vLLM's substring check ("gemma3" not in hf_config.model_type).
+	if strings.Contains(modelType, "gemma3") {
+		return maxPosEmb, false
+	}
+
+	// No rope_scaling present
+	if ropeScaling == nil {
+		return maxPosEmb, false
+	}
+
+	// rope_scaling must be a JSON object (map[string]any)
+	ropeMap, ok := ropeScaling.(map[string]any)
+	if !ok {
+		return maxPosEmb, false
+	}
+
+	// Read type (some configs use "rope_type" instead of "type")
+	ropeType, _ := ropeMap["type"].(string)
+	if ropeType == "" {
+		ropeType, _ = ropeMap["rope_type"].(string)
+	}
+
+	// Blacklist: these types already embed scaled context in max_position_embeddings
+	if ropeType == "su" || ropeType == "longrope" || ropeType == "llama3" {
+		return maxPosEmb, false
+	}
+
+	// Extract factor
+	factor, ok := ropeMap["factor"].(float64)
+	if !ok || factor <= 1.0 {
+		return maxPosEmb, false
+	}
+
+	// NaN/Inf defense-in-depth (standard JSON can't produce these, but non-standard sources might)
+	if math.IsNaN(factor) || math.IsInf(factor, 0) {
+		return maxPosEmb, false
+	}
+
+	// For yarn, use original_max_position_embeddings as base if available (BC-4)
+	base := maxPosEmb
+	if ropeType == "yarn" {
+		if orig, ok := ropeMap["original_max_position_embeddings"].(float64); ok && orig > 0 {
+			// Overflow guard on original_max_position_embeddings
+			if orig >= float64(math.MaxInt) {
+				return maxPosEmb, false
+			}
+			base = int(orig)
+		}
+	}
+
+	// Compute scaled value with overflow guard
+	product := float64(base) * factor
+	if product >= float64(math.MaxInt) || product < 0 {
+		return maxPosEmb, false
+	}
+
+	return int(product), true
+}
 
 // rootCmd is the base command for the CLI
 var rootCmd = &cobra.Command{
@@ -313,6 +395,78 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// --latency-model trained-roofline: auto-resolve model config and load global coefficients
+		if backend == "trained-roofline" {
+			if gpu == "" {
+				logrus.Fatalf("--latency-model trained-roofline requires --hardware (GPU type)")
+			}
+			if tensorParallelism <= 0 {
+				logrus.Fatalf("--latency-model trained-roofline requires --tp > 0")
+			}
+
+			// Resolve model config folder (same auto-fetch chain as roofline/crossmodel)
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			modelConfigFolder = resolved
+
+			// Resolve hardware config
+			resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			hwConfigPath = resolvedHW
+
+			// Load trained-roofline defaults from defaults.yaml (R18: use Flags().Changed)
+			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
+				data, readErr := os.ReadFile(defaultsFilePath)
+				if readErr != nil {
+					logrus.Warnf("--latency-model trained-roofline: failed to read %s: %v", defaultsFilePath, readErr)
+				} else {
+					var cfg Config
+					decoder := yaml.NewDecoder(bytes.NewReader(data))
+					decoder.KnownFields(true) // R10: strict YAML parsing
+					if yamlErr := decoder.Decode(&cfg); yamlErr != nil {
+						logrus.Fatalf("--latency-model trained-roofline: failed to parse %s: %v", defaultsFilePath, yamlErr)
+					}
+					if cfg.TrainedRooflineDefaults != nil {
+						if !cmd.Flags().Changed("beta-coeffs") {
+							betaCoeffs = cfg.TrainedRooflineDefaults.BetaCoeffs
+							logrus.Infof("--latency-model: loaded trained-roofline beta coefficients from defaults.yaml")
+						}
+						if !cmd.Flags().Changed("alpha-coeffs") {
+							alphaCoeffs = cfg.TrainedRooflineDefaults.AlphaCoeffs
+							logrus.Infof("--latency-model: loaded trained-roofline alpha coefficients from defaults.yaml")
+						}
+					}
+				}
+				// Also load KV blocks from per-model config if available
+				if vllmVersion == "" {
+					_, _, ver := GetDefaultSpecs(model)
+					if len(ver) > 0 {
+						vllmVersion = ver
+					}
+				}
+				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
+				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
+					totalKVBlocks = kvBlocks
+					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
+				}
+			}
+			// Validate trained-roofline coefficients were loaded
+			if !cmd.Flags().Changed("beta-coeffs") && (len(betaCoeffs) < 7 || allZeros(betaCoeffs)) {
+				logrus.Fatalf("--latency-model trained-roofline: no trained_roofline_defaults found in %s and no --beta-coeffs provided. "+
+					"Add trained_roofline_defaults to defaults.yaml or provide --beta-coeffs explicitly",
+					defaultsFilePath)
+			}
+			// Warn if alpha coefficients are zero (user provided --beta-coeffs but not --alpha-coeffs)
+			if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
+				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; "+
+					"QueueingTime, PostDecodeFixedOverhead, and OutputTokenProcessingTime will use zero alpha (may underestimate TTFT/E2E)")
+			}
+		}
+
 		if !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") && len(modelConfigFolder) == 0 && len(hwConfigPath) == 0 { // default all 0s
 			// GPU, TP, vLLM version configuration
 			hardware, tp, version := GetDefaultSpecs(model) // pick default config for tp, GPU, vllmVersion
@@ -360,14 +514,14 @@ var runCmd = &cobra.Command{
 		}
 		// Zero-coefficients safety guard: prevents silently running with zero step times
 		// when blackbox mode has no trained coefficients (would produce meaningless results).
-		if backend != "roofline" && backend != "crossmodel" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
+		if backend != "roofline" && backend != "crossmodel" && backend != "trained-roofline" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
 			logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
-				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, or use --latency-model crossmodel",
+				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, crossmodel, or trained-roofline",
 				model, gpu, tensorParallelism)
 		}
 		// Analytical backends (roofline, crossmodel): parse HFConfig once, use for
 		// both model config extraction and KV capacity auto-calculation.
-		if backend == "roofline" || backend == "crossmodel" {
+		if backend == "roofline" || backend == "crossmodel" || backend == "trained-roofline" {
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
 			hfConfig, err := latency.ParseHFConfig(hfPath)
 			if err != nil {
@@ -390,13 +544,15 @@ var runCmd = &cobra.Command{
 					"Roofline step time estimates may be inaccurate for quantized models",
 					modelConfig.BytesPerParam)
 			}
-			// Check for MoE model indicators in the raw HF config (roofline-only warning;
-			// crossmodel handles MoE explicitly via the beta2 dispatch term)
-			if backend == "roofline" {
-				if hfConfig.MustGetInt("num_local_experts", 0) > 1 {
-					logrus.Warnf("--latency-model: model appears to be MoE (Mixture-of-Experts). " +
-						"Roofline estimation assumes dense transformers and may overestimate MoE latency")
-				}
+			// MoE informational note: roofline models per-routed-expert FLOPs (top_k active)
+			// and all-expert weight bandwidth (E experts loaded from HBM per step).
+			// Shared expert FLOPs/weights and gate/router weights are NOT modeled in
+			// roofline step time (they are included in KV capacity weight estimation).
+			// Remaining approximations: no expert-load-imbalance or MoE dispatch overhead.
+			if backend == "roofline" && modelConfig.NumLocalExperts > 1 {
+				logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). "+
+					"Roofline models per-expert FLOPs and active weights; dispatch overhead is not modeled",
+					modelConfig.NumLocalExperts, modelConfig.NumExpertsPerTok)
 			}
 
 			// KV capacity auto-calculation: derive total-kv-blocks from model + hardware
@@ -427,6 +583,73 @@ var runCmd = &cobra.Command{
 					}
 				}
 			}
+
+			// Auto-derive --max-model-len from HF config when not explicitly set (R18).
+			// Mirrors vLLM's _auto_fit_max_model_len(): uses max_position_embeddings,
+			// applies rope_scaling factor for older models, then caps at KV-feasible max.
+			if !cmd.Flags().Changed("max-model-len") {
+				maxPosEmb := hfConfig.MustGetInt("max_position_embeddings", 0)
+				if maxPosEmb > 0 {
+					maxModelLen = int64(maxPosEmb)
+
+					// Apply rope_scaling factor via pure function (extracted for testability).
+					// See applyRopeScaling godoc for blacklist details and vLLM fidelity notes.
+					modelType, _ := hfConfig.Raw["model_type"].(string)
+					scaled, applied := applyRopeScaling(maxPosEmb, modelType, hfConfig.Raw["rope_scaling"])
+					if applied {
+						// Recover rope type and factor for diagnostic logging
+						ropeType := ""
+						factor := 0.0
+						if ropeMap, ok := hfConfig.Raw["rope_scaling"].(map[string]any); ok {
+							ropeType, _ = ropeMap["type"].(string)
+							if ropeType == "" {
+								ropeType, _ = ropeMap["rope_type"].(string)
+							}
+							factor, _ = ropeMap["factor"].(float64)
+						}
+						logrus.Infof("--latency-model: applying %s rope_scaling factor %.1f: %d → %d", ropeType, factor, maxPosEmb, scaled)
+						maxModelLen = int64(scaled)
+					} else if strings.Contains(modelType, "gemma3") {
+						logrus.Infof("--latency-model: skipping rope_scaling for gemma3 (max_position_embeddings is pre-scaled)")
+					} else if ropeScaling, ok := hfConfig.Raw["rope_scaling"]; ok && ropeScaling != nil {
+						// Factor not applied — could be excluded type, missing/invalid factor, or overflow
+						if ropeMap, ok := ropeScaling.(map[string]any); ok {
+							if _, hasKey := ropeMap["factor"]; hasKey {
+								logrus.Warnf("--latency-model: rope_scaling.factor present but not applied (excluded type, invalid value, or overflow); using max_position_embeddings as-is")
+							}
+						} else {
+							logrus.Warnf("--latency-model: rope_scaling present but not a JSON object (type %T); ignoring", ropeScaling)
+						}
+					}
+
+					logrus.Infof("--latency-model: auto-derived max-model-len=%d from max_position_embeddings", maxModelLen)
+				}
+			}
+
+			// Cap maxModelLen at KV-feasible maximum (matches vLLM's _maybe_limit_model_len).
+			// Without this, auto-derived max_position_embeddings can exceed KV capacity
+			// for models with large context windows on small GPU configs (e.g., 128K context, TP=1).
+			// Overflow-safe KV feasible max: compare in block space to avoid int64 multiplication overflow.
+			// Instead of computing totalKVBlocks * blockSizeTokens (which could overflow for extreme configs),
+			// we check whether ceil(maxModelLen / blockSizeTokens) > totalKVBlocks — the same comparison
+			// used in NewSimulator's startup validation.
+			if maxModelLen > 0 && blockSizeTokens > 0 {
+				blocksNeeded := maxModelLen / blockSizeTokens
+				if maxModelLen%blockSizeTokens != 0 {
+					blocksNeeded++
+				}
+				if blocksNeeded > totalKVBlocks {
+					kvFeasibleMax := totalKVBlocks * blockSizeTokens // product bounded by maxModelLen (blocksNeeded > totalKVBlocks)
+					logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
+						maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
+					maxModelLen = kvFeasibleMax
+				}
+			}
+		}
+
+		// R3: Validate --max-model-len
+		if maxModelLen < 0 {
+			logrus.Fatalf("--max-model-len must be >= 0, got %d", maxModelLen)
 		}
 
 		// R3: Validate workload generation flags (before any synthesis path consumes them)
@@ -772,7 +995,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend, maxModelLen),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,
@@ -856,12 +1079,13 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.DroppedUnservable > 0 || cs.DroppedKVAllocations() > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || cs.DroppedKVAllocations() > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
 			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
+			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 			if cs.DroppedKVAllocations() > 0 {
 				fmt.Printf("Dropped KV Allocations: %d\n", cs.DroppedKVAllocations())
 			}
@@ -1007,7 +1231,8 @@ func init() {
 	runCmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline, crossmodel")
+	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "", "Latency model backend: blackbox (default), roofline, crossmodel, trained-roofline")
+	runCmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
 
 	// GuideLLM-style distribution-based workload generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")

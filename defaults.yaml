@@ -7,7 +7,7 @@ defaults:
   meta-llama/llama-3.1-8b-instruct:
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.8.4
+    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: meta-llama/Llama-3.1-8B-Instruct
   meta-llama/llama-3.3-70b-instruct:
     GPU: H100
@@ -62,17 +62,17 @@ defaults:
   qwen/qwen2.5-3b-instruct:
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.8.4
+    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: Qwen/Qwen2.5-3B-Instruct
   qwen/qwen3-14b:
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.8.4
+    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: Qwen/Qwen3-14B
   qwen/qwen2.5-7b-instruct:
     GPU: H100
-    tensor_parallelism: 4
-    vllm_version: vllm/vllm-openai:v0.8.4
+    tensor_parallelism: 1
+    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: Qwen/Qwen2.5-7B-Instruct
   redhatai/llama-3.1-nemotron-70b-instruct-hf-fp8-dynamic:
     GPU: H100
@@ -301,7 +301,7 @@ models:
   id: meta-llama/llama-3.1-8b-instruct
   tensor_parallelism: 1
   total_kv_blocks: 29205
-  vllm_version: vllm/vllm-openai:v0.8.4
+  vllm_version: vllm/vllm-openai:v0.11.0
 - GPU: A100-80
   alpha_coeffs:
   - 2943.6134268743335
@@ -720,7 +720,7 @@ models:
   id: qwen/qwen2.5-3b-instruct
   tensor_parallelism: 1
   total_kv_blocks: 117925
-  vllm_version: vllm/vllm-openai:v0.8.4
+  vllm_version: vllm/vllm-openai:v0.11.0
 - GPU: H100
   alpha_coeffs:
   - 8888.089034078324
@@ -733,7 +733,7 @@ models:
   id: qwen/qwen3-14b
   tensor_parallelism: 1
   total_kv_blocks: 17600
-  vllm_version: vllm/vllm-openai:v0.8.4
+  vllm_version: vllm/vllm-openai:v0.11.0
 - GPU: A100-80
   alpha_coeffs:
   - 8970.33939991319
@@ -761,7 +761,7 @@ models:
   id: qwen/qwen2.5-7b-instruct
   tensor_parallelism: 1
   total_kv_blocks: 67659
-  vllm_version: vllm/vllm-openai:v0.8.4
+  vllm_version: vllm/vllm-openai:v0.11.0
 - GPU: A100-80
   alpha_coeffs:
   - 7025.080179905166
@@ -1749,4 +1749,11 @@ crossmodel_defaults:
   beta_coeffs: [116.110, 1226.868, 19.943, 9445.157]
   # α₀=pre-scheduling fixed overhead, α₁=per-token preprocessing (≈0), α₂=per-output-token processing.
   alpha_coeffs: [13732.0, 0.0, 860.6]
+trained_roofline_defaults:
+  # Globally-fitted roofline correction coefficients from training/output/fit/coefficients.json.
+  # Fitted via 3-phase NNLS from 13 experiments (4 models × 3-4 profiles, 137K requests).
+  # β₁-β₄ are dimensionless roofline corrections, β₅ is µs/layer, β₆ is µs/req, β₇ is µs/step.
+  beta_coeffs: [0.7726491335309499, 1.127489556719325, 1.0559901872766853, 0.0, 43.500541908701074, 48.80613214319187, 0.0]
+  # α₀=API processing overhead (µs), α₁=post-decode fixed (µs), α₂=per-output-token detokenization (µs/tok).
+  alpha_coeffs: [9315.338771116985, 1849.5902371340574, 1.7079389122469397]
 version: 0.0.1

@@ -4,7 +4,7 @@ This guide covers how to read BLIS output — from the primary JSON metrics to a
 
 ```bash
 # Quick example: run with all diagnostic output enabled
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 200 --num-requests 1000 \
   --trace-level decisions --summarize-trace \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
@@ -42,7 +42,7 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
 | **Priority Inversions** | A lower-priority request was scheduled before a higher-priority one | Check scheduler choice — use `priority-fcfs` for SLO workloads |
 | **HOL Blocking Events** | A long prefill blocked shorter requests | Enable chunked prefill: `--long-prefill-token-threshold 256` |
 | **Rejected Requests** | Admission policy rejected the request | Check token bucket capacity or admission policy |
-| **Dropped Unservable** | Request needs more KV blocks than exist | Increase `--total-kv-blocks` or reduce max input tokens |
+| **Dropped Unservable** | Request exceeds `--max-model-len` context window or needs more KV blocks than exist | Check `--max-model-len` setting; increase `--total-kv-blocks` or reduce max input tokens |
 | **Dropped KV Allocations** | Decode sub-request could not allocate KV blocks at the decode instance (PD mode only) | Increase `--total-kv-blocks` on decode instances or reduce decode pool load |
 
 ## KV Cache Metrics
@@ -129,7 +129,7 @@ BLIS models non-GPU overhead (tokenization, API serialization) as `alpha` coeffi
 For detailed analysis, save per-request data:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --rate 100 --num-requests 500 --results-path results.json
 ```
 

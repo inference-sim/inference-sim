@@ -1,5 +1,9 @@
 # Hardening: CLI Validation, Canonical Constructor, Dead Field Removal, Tiered Cache Test
 
+> **NOTE (R15):** `NewKVCapacityParams` signature was extended from 4 to 6 positional args
+> in PR #559 (MoE roofline). Code snippets in this completed plan reference the original
+> 4-arg signature. See `sim/latency/kv_capacity.go` for the current signature.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Close four independent hardening gaps: CLI validation for distribution-mode token flags, canonical constructor for KV capacity params, removal of a dead `Streaming` field from the simulator, and a round-trip test proving the tiered KV cache reload mechanism exercises hierarchical hashes.
