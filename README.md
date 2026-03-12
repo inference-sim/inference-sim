@@ -104,15 +104,15 @@ See the [supported models catalog](docs/reference/models.md#blackbox-coefficient
 ### Convert workload formats
 
 ```bash
-blis convert preset --name chatbot --rate 10 --num-requests 100
-blis convert csv-trace --file trace.csv
-blis convert servegen --path data/
+./blis convert preset --name chatbot --rate 10 --num-requests 100
+./blis convert csv-trace --file trace.csv
+./blis convert servegen --path data/
 ```
 
 ### Compose multiple workload specs
 
 ```bash
-blis compose --from spec1.yaml --from spec2.yaml
+./blis compose --from spec1.yaml --from spec2.yaml
 ```
 
 For comprehensive usage guides, see the [Documentation](#documentation) section below.
@@ -144,8 +144,8 @@ inference-sim/
 ├── cmd/                    # CLI commands
 │   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, --latency-model, etc.)
 │   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
-│   ├── convert.go          # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
-│   ├── compose.go          # `blis compose` for merging v2 specs
+│   ├── convert.go          # `./blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
+│   ├── compose.go          # `./blis compose` for merging v2 specs
 │   ├── hfconfig.go         # HuggingFace config resolution (--latency-model auto-fetch into model_configs/)
 │   └── default_config.go   # defaults.yaml loading (includes GetHFRepo for HF repo mapping)
 ├── sim/                    # Core simulation engine
