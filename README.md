@@ -55,19 +55,6 @@ See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-toke
 
 ---
 
-## Supported Models
-
-BLIS supports any dense transformer model with a HuggingFace `config.json` — the default roofline mode auto-fetches configs on first use. MoE (Mixture-of-Experts) models are also supported. The following models have been validated end-to-end:
-
-- [Llama-2-7B](https://huggingface.co/meta-llama/Llama-2-7b-hf) / [Llama-2-70B](https://huggingface.co/meta-llama/Llama-2-70b-hf)
-- [Qwen3-14B](https://huggingface.co/Qwen/Qwen3-14B)
-- [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1) (MoE)
-- [CodeLlama-34B](https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf)
-
-For blackbox mode (`--latency-model blackbox`), which uses pre-trained per-model coefficients, see the [supported models catalog](docs/reference/models.md#blackbox-coefficient-catalog).
-
----
-
 ## Quick Start
 
 Run BLIS for `qwen/qwen3-14b` with default configs (roofline mode auto-fetches model config from HuggingFace):
