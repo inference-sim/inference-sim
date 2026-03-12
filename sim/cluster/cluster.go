@@ -55,13 +55,24 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
-	simCfg := config.ToSimConfig()
+	// Build pool membership from indices BEFORE instance construction
+	// so we can resolve per-pool configs for each instance (INV-P2-1).
+	var prePoolMembership map[string]PoolRole
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		prePoolMembership = BuildPoolMembershipFromIndices(
+			config.NumInstances, config.PrefillInstances, config.DecodeInstances,
+		)
+	}
+
 	instances := make([]*InstanceSimulator, config.NumInstances)
 	for idx := range instances {
-		instances[idx] = NewInstanceSimulator(
-			InstanceID(fmt.Sprintf("instance_%d", idx)),
-			simCfg,
-		)
+		id := InstanceID(fmt.Sprintf("instance_%d", idx))
+		role := PoolRole(0)
+		if prePoolMembership != nil {
+			role = prePoolMembership[string(id)]
+		}
+		simCfg := config.resolveConfigForRole(role)
+		instances[idx] = NewInstanceSimulator(id, simCfg)
 	}
 	// Build instance map for snapshot provider
 	instanceMap := make(map[InstanceID]*InstanceSimulator, len(instances))
@@ -113,7 +124,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		if config.PDTransferBaseLatencyMs < 0 {
 			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be >= 0 when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
 		}
-		cs.poolMembership = BuildPoolMembership(instances, config.PrefillInstances, config.DecodeInstances)
+		cs.poolMembership = prePoolMembership
 		if config.PDDecider == "prefix-threshold" {
 			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
 		} else {

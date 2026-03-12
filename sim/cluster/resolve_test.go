@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"math"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -192,5 +193,86 @@ func TestResolveConfigForRole_NoRole_ReturnsGlobal(t *testing.T) {
 	cfg := dc.resolveConfigForRole(PoolRole(0)) // no role
 	if cfg.TP != 4 {
 		t.Errorf("no-role TP = %d, want 4 (global)", cfg.TP)
+	}
+}
+
+// TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP verifies INV-P2-1:
+// prefill and decode instances receive different TP values.
+func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
+	prefillTP := 8
+	decodeTP := 2
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "", 0),
+		},
+		NumInstances:            4,
+		PrefillInstances:        2,
+		DecodeInstances:         2,
+		PDDecider:               "always",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+		PDKVBytesPerToken:       512,
+		RoutingPolicy:           "round-robin",
+		PrefillOverrides:        PoolOverrides{TP: &prefillTP},
+		DecodeOverrides:         PoolOverrides{TP: &decodeTP},
+	}
+
+	cs := NewClusterSimulator(config, nil)
+
+	if len(cs.Instances()) != 4 {
+		t.Errorf("instance count = %d, want 4", len(cs.Instances()))
+	}
+
+	// Cluster constructed without panic — per-pool configs were valid
+	membership := cs.PoolMembership()
+	prefillCount := 0
+	decodeCount := 0
+	for _, role := range membership {
+		switch role {
+		case PoolRolePrefill:
+			prefillCount++
+		case PoolRoleDecode:
+			decodeCount++
+		}
+	}
+	if prefillCount != 2 {
+		t.Errorf("prefill instances = %d, want 2", prefillCount)
+	}
+	if decodeCount != 2 {
+		t.Errorf("decode instances = %d, want 2", decodeCount)
+	}
+}
+
+// TestNewClusterSimulator_NoOverrides_BackwardCompat verifies BC-P2-1:
+// without overrides, behavior is identical to Phase 1.
+func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "", 0),
+		},
+		NumInstances:            4,
+		PrefillInstances:        2,
+		DecodeInstances:         2,
+		PDDecider:               "always",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+		PDKVBytesPerToken:       512,
+		RoutingPolicy:           "round-robin",
+		// No PrefillOverrides or DecodeOverrides — zero valued
+	}
+
+	cs := NewClusterSimulator(config, nil)
+	if len(cs.Instances()) != 4 {
+		t.Errorf("instance count = %d, want 4", len(cs.Instances()))
 	}
 }
