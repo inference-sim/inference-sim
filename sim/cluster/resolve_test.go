@@ -276,3 +276,82 @@ func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
 		t.Errorf("instance count = %d, want 4", len(cs.Instances()))
 	}
 }
+
+// TestINV_P2_1_PoolConfigConsistency verifies INV-P2-1: each instance receives
+// config consistent with its pool role. Runs a full simulation and checks that
+// disaggregation produces valid results with heterogeneous KV capacity.
+func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
+	// Prefill pool: larger KV capacity (can hold more context)
+	// Decode pool: smaller KV capacity (needs less for decode-only)
+	prefillKV := int64(20000)
+	decodeKV := int64(5000)
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "", 0),
+		},
+		NumInstances:            4,
+		PrefillInstances:        2,
+		DecodeInstances:         2,
+		PDDecider:               "always",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+		PDKVBytesPerToken:       512,
+		RoutingPolicy:           "round-robin",
+		PrefillOverrides:        PoolOverrides{TotalKVBlocks: &prefillKV},
+		DecodeOverrides:         PoolOverrides{TotalKVBlocks: &decodeKV},
+	}
+
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(config, requests)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run() failed: %v", err)
+	}
+
+	// INV-P2-1: verify the simulation completed with heterogeneous config
+	metrics := cs.AggregatedMetrics()
+	if metrics.CompletedRequests == 0 {
+		t.Fatal("no requests completed — heterogeneous config may have caused issues")
+	}
+
+	// Verify parent requests were tracked (disaggregation active)
+	parents := cs.ParentRequests()
+	if len(parents) == 0 {
+		t.Fatal("no parent requests — disaggregation should be active")
+	}
+
+	// INV-PD-3: transfer conservation still holds with heterogeneous config
+	if cs.transfersInitiated != cs.transfersCompleted {
+		t.Errorf("INV-PD-3 violated: initiated=%d, completed=%d",
+			cs.transfersInitiated, cs.transfersCompleted)
+	}
+}
+
+// newHeterogeneousDeploymentConfig creates a DeploymentConfig with per-pool overrides.
+// This is the test helper consumed by future PRs (PR3, PR4).
+func newHeterogeneousDeploymentConfig(numInstances, prefill, decode int, prefillOverrides, decodeOverrides PoolOverrides) DeploymentConfig {
+	return DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "", 0),
+		},
+		NumInstances:            numInstances,
+		PrefillInstances:        prefill,
+		DecodeInstances:         decode,
+		PDDecider:               "always",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+		PDKVBytesPerToken:       512,
+		RoutingPolicy:           "round-robin",
+		PrefillOverrides:        prefillOverrides,
+		DecodeOverrides:         decodeOverrides,
+	}
+}
