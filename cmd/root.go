@@ -300,9 +300,10 @@ var runCmd = &cobra.Command{
 				missing = append(missing, "--tp (tensor parallelism)")
 			}
 			if len(missing) > 0 {
-				logrus.Fatalf("--latency-model roofline requires %s. "+
+				logrus.Fatalf("Roofline mode (the default) requires %s. "+
 					"No defaults found in defaults.yaml for model=%s. "+
-					"Provide these flags explicitly", strings.Join(missing, " and "), model)
+					"Provide these flags explicitly, or use --latency-model blackbox for offline coefficient-based estimation",
+					strings.Join(missing, " and "), model)
 			}
 
 			// Hard error if user explicitly requested roofline AND provided coefficients.
