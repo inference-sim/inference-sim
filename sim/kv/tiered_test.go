@@ -395,6 +395,72 @@ func TestTieredKVCache_ReleaseKVBlocks_PreservesGPUHashes(t *testing.T) {
 	assert.Equal(t, 2, len(cached), "prefix should still be cached on GPU after release")
 }
 
+// --- BC-5: CPU extends GPU prefix lifetime ---
+
+func TestTieredKVCache_CPUExtendsGPUPrefixLifetime(t *testing.T) {
+	// BC-5: GIVEN a block on both GPU and CPU, WHEN GPU evicts it (popFreeBlock),
+	// THEN the CPU copy survives and can be reloaded by a future request.
+	//
+	// Setup: 6 GPU blocks, blockSize=2. Prefix [1,2,3,4,5,6] = 3 blocks.
+	// Fill GPU completely to evict prefix. Release 2 fillers → 2 free.
+	// Request 3-block prefix: need 3, have 2 free → GPU alloc fails → reload.
+	// Reload loads 2 blocks from CPU (limited by free count).
+	// cpuHitCount > 0 and transfer latency > 0 prove CPU extended prefix lifetime.
+	gpu := NewKVCacheState(6, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10) // baseLat=10
+
+	// Step 1: Allocate 3-block prefix, mirror to CPU, release
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	tiered.AllocateKVBlocks(req, 0, 6, []int64{})
+	tiered.MirrorToCPU([]*sim.Request{req})
+	tiered.ReleaseKVBlocks(req)
+
+	// Step 2: Fill GPU completely to evict prefix hashes
+	for i := 0; i < 6; i++ {
+		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 20, i*2 + 21}}
+		tiered.AllocateKVBlocks(f, 0, 2, []int64{})
+	}
+
+	// Step 3: Release 2 fillers → 4 used, 2 free. Need 3 → fails → reload.
+	tiered.ReleaseKVBlocks(&sim.Request{ID: "f0"})
+	tiered.ReleaseKVBlocks(&sim.Request{ID: "f1"})
+
+	// Step 4: Re-request prefix — triggers targeted reload from CPU
+	newReq := &sim.Request{ID: "new", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	tiered.AllocateKVBlocks(newReq, 0, 6, []int64{}) // may partially succeed
+
+	// THEN: CPU hits > 0 (prefix blocks found on CPU after GPU eviction)
+	assert.Greater(t, tiered.cpuHitCount, int64(0), "CPU should provide reload hits")
+
+	// AND: Transfer latency accumulated (proves CPU→GPU transfer occurred)
+	lat := tiered.ConsumePendingTransferLatency()
+	assert.Greater(t, lat, int64(0), "reload should accumulate transfer latency")
+}
+
+// --- KVThrashingRate tests ---
+
+func TestTieredKVCache_KVThrashingRate_ReturnsCPUEvictionRate(t *testing.T) {
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 2, 0.0, 1.0, 0) // tiny CPU: 2 blocks
+
+	// Mirror 3 blocks → 1 eviction
+	r1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	tiered.AllocateKVBlocks(r1, 0, 6, []int64{})
+	tiered.MirrorToCPU([]*sim.Request{r1})
+	// 3 blocks mirrored, CPU capacity=2, so 1 eviction
+
+	rate := tiered.KVThrashingRate()
+	// evictionCount=1, mirrorCount=3 → rate = 1/3 ≈ 0.333
+	assert.InDelta(t, 1.0/3.0, rate, 0.01, "KVThrashingRate should return CPU eviction rate")
+}
+
+func TestTieredKVCache_KVThrashingRate_ZeroMirrors(t *testing.T) {
+	// R11: Returns 0 when mirrorCount == 0 (no division by zero)
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
+	assert.Equal(t, 0.0, tiered.KVThrashingRate())
+}
+
 // --- Validation tests (kept from old file) ---
 
 func TestCpuTier_Validation_ZeroCapacity_Panics(t *testing.T) {
