@@ -72,7 +72,7 @@ Maps to `ModelHardwareConfig`.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
-| `--hardware` | string | "" | GPU type (e.g., `H100`, `A100`). If empty, loaded from `defaults.yaml`. |
+| `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json`. |
 | `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
 | `--vllm-version` | string | "" | vLLM version string. If empty, loaded from `defaults.yaml`. |
 | `--max-model-len` | int64 | 0 | Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's `--max-model-len`. Auto-derived from `max_position_embeddings` in HuggingFace `config.json` for roofline/crossmodel backends. Applies `rope_scaling` factor for types `linear`, `dynamic`, `yarn`, `default`, `mrope`; excludes `su`, `longrope`, `llama3`; skips entirely for `gemma3` models. Capped at KV-feasible maximum. |
@@ -83,7 +83,7 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "" | Latency model backend: `blackbox` (default), `roofline`, `crossmodel`, `trained-roofline`. When set to `roofline`, `crossmodel`, or `trained-roofline`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-roofline` is recommended for new models (7% MAPE GPU step time). |
+| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `blackbox`, `crossmodel`, `trained-roofline`. When set to `roofline`, `crossmodel`, or `trained-roofline`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-roofline` is recommended for new models (7% MAPE GPU step time). |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
 
@@ -93,11 +93,11 @@ See [Roofline Estimation](../concepts/roofline.md) for details on the analytical
 
 The latency model mode is selected based on available configuration:
 
-1. **Blackbox mode** (default): If coefficients are provided via CLI flags or loaded from `defaults.yaml`
-2. **Explicit roofline mode**: If `--latency-model roofline` is set with `--hardware` and `--tp`. Model config is auto-resolved: `model_configs/` (local) → HuggingFace fetch → error. Alpha coefficients and `total_kv_blocks` are loaded from `defaults.yaml` when available. Beta coefficients are replaced by analytical roofline computation. Note: `--latency-model blackbox` explicitly prevents implicit roofline detection (respecting user intent).
-3. **Explicit cross-model mode**: If `--latency-model crossmodel` is set with `--hardware` and `--tp`. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from `crossmodel_defaults` in `defaults.yaml`. Architecture features derived from HuggingFace config.json. MoE-aware.
-4. **Implicit roofline mode**: If all coefficients are zero and all four of `--model-config-folder`, `--hardware-config`, `--hardware`, and `--tp` are provided
-5. **Error**: If no coefficients can be resolved and roofline inputs are incomplete
+1. **Roofline mode** (default): Auto-resolves model config from HuggingFace and hardware config from bundled `hardware_config.json`. Requires `--hardware` and `--tp` (loaded from `defaults.yaml` when available).
+2. **Blackbox mode**: If `--latency-model blackbox` is set. Uses trained alpha/beta coefficients from `defaults.yaml`. Requires a matching entry for the model/GPU/TP combination.
+3. **Cross-model mode**: If `--latency-model crossmodel` is set with `--hardware` and `--tp`. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from `crossmodel_defaults` in `defaults.yaml`. Architecture features derived from HuggingFace config.json. MoE-aware.
+4. **Trained-roofline mode**: If `--latency-model trained-roofline` is set with `--hardware` and `--tp`. Uses 10 globally-fitted coefficients (7 beta for roofline corrections + 3 alpha for CPU overhead) from `trained_roofline_defaults` in `defaults.yaml`. Achieves 7% MAPE on GPU combined step time.
+5. **Error**: If blackbox mode is selected and no coefficients can be resolved for the model/GPU/TP combination
 
 ## Cluster Configuration
 
@@ -330,22 +330,26 @@ models:
 
 ### Resolution Process
 
-When BLIS starts, it resolves latency coefficients and KV block counts through a layered process. Explicit CLI flags always take precedence (R18).
+When BLIS starts, it resolves latency configuration through a layered process. Explicit CLI flags always take precedence (R18).
 
-**Latency coefficient resolution:**
+**Hardware and TP defaults resolution (all backends):**
 
-1. If `--latency-model roofline` or `--latency-model crossmodel` is set:
+Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from `defaults.yaml` for the specified `--model` when those flags are not explicitly provided. This ensures analytical backends (roofline, crossmodel, trained-roofline) can auto-resolve without requiring explicit `--hardware` and `--tp` for models listed in `defaults.yaml`.
+
+**Backend-specific resolution:**
+
+1. If `--latency-model roofline` (default), `crossmodel`, or `trained-roofline`:
    - Auto-resolve model config: check `model_configs/` for existing `config.json`, fetch from HuggingFace on miss (set `HF_TOKEN` for gated models)
    - Auto-resolve hardware config from bundled `hardware_config.json`
-   - For roofline: load alpha coefficients and per-model KV blocks from `defaults.yaml` (beta coefficients are replaced by analytical computation). Warns if no per-model KV blocks found
-   - For crossmodel: load global alpha + beta coefficients from `crossmodel_defaults` in `defaults.yaml`, and per-model KV blocks if available
+   - For roofline: beta coefficients are computed analytically from model architecture and hardware specs
+   - For crossmodel: load global alpha + beta coefficients from `crossmodel_defaults` in `defaults.yaml`
+   - For trained-roofline: load global correction coefficients from `trained_roofline_defaults` in `defaults.yaml`
    - `--model-config-folder` and `--hardware-config` override auto-resolution when explicitly set
-2. If `--alpha-coeffs` and `--beta-coeffs` are not explicitly provided on the CLI and no analytical backend is selected:
+2. If `--latency-model blackbox`:
    - Look up the model in `defaults.yaml` using `--model`, `--hardware`, `--tp`, `--vllm-version`
    - Load alpha/beta coefficients from the matching entry
-3. If coefficients are still all-zero (no defaults found) but `--model-config-folder` and `--hardware-config` are provided:
-   - Enable roofline mode (implicit activation)
-4. If coefficients were explicitly provided via CLI (including explicit zeros):
+   - If no matching entry is found, exit with error suggesting roofline, crossmodel, or trained-roofline
+3. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
 
 **`--total-kv-blocks` resolution** (highest priority wins):

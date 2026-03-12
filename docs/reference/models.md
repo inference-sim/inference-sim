@@ -1,8 +1,12 @@
 # Supported Models
 
-All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for blackbox mode. Models with a HuggingFace `config.json` in `model_configs/` additionally support [roofline mode](../guide/latency-models.md#roofline-mode-analytical).
+BLIS supports any dense transformer model with a HuggingFace `config.json`. The default roofline mode auto-fetches configs on first use — no setup required. MoE (Mixture-of-Experts) models are also supported; Mixtral 8x7B has been validated end-to-end.
 
-## Dense Models
+## Blackbox Coefficient Catalog
+
+The models below have pre-trained alpha/beta coefficients in [`defaults.yaml`](https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml) for [blackbox mode](../guide/latency-models.md#blackbox-mode) (`--latency-model blackbox`). Blackbox mode offers slightly higher accuracy for these specific model/GPU/TP combinations due to per-model fitting.
+
+### Dense Models
 
 | Model | Sizes |
 |-------|-------|
@@ -17,7 +21,7 @@ All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for
 | OpenAI GPT-OSS | 20B, 120B |
 | Qwen 2.5 | 7B |
 
-## MoE Models
+### MoE Models
 
 | Model | Architecture |
 |-------|-------------|
@@ -25,27 +29,27 @@ All models below have pre-trained alpha/beta coefficients in `defaults.yaml` for
 | LLaMA 4 Scout | 17B, 16 experts |
 | Mixtral | 8x7B |
 
-## Quantized Variants
+### Quantized Variants
 
 Red Hat AI (`redhatai/`) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, Qwen 2.5, and SmolLM3 3B (FP8 only). See [`defaults.yaml`](https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml) for the full list.
 
-## Analytical Modes (Roofline, Cross-Model, Trained-Roofline)
+## Validated Architectures
 
-Any model with a HuggingFace `config.json` can use roofline mode (`--latency-model roofline`), cross-model mode (`--latency-model crossmodel`), or trained-roofline mode (`--latency-model trained-roofline`). All three auto-fetch configs from HuggingFace on first use, caching them in `model_configs/`.
+The analytical modes (roofline, cross-model, trained-roofline) have been validated against real vLLM measurements on these architectures:
 
-**Trained-roofline** (recommended) applies learned correction factors to analytical roofline basis functions — 7% MAPE GPU combined step time across 4 architectures. **Cross-model** uses hand-engineered physics features with globally-fitted coefficients. **Roofline** uses pure analytical estimation (no learned corrections). All three are MoE-aware. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B, Mixtral 8x7B, and CodeLlama 34B.
+- Qwen 2.5 1.5B/3B, Qwen 3 14B
+- LLaMA 2 7B/70B
+- CodeLlama 34B
+- Mixtral 8x7B (MoE)
 
-## Adding a New Model
+**Trained-roofline** achieves 7% MAPE GPU combined step time across these architectures. Any other model with a HuggingFace `config.json` will work — it just hasn't been formally validated.
 
-To add blackbox support for a new model:
+!!! note "Parallelism and quantization"
+    The analytical latency models (roofline, cross-model, trained-roofline) currently model tensor parallelism (TP) only. Data parallelism (DP), expert parallelism (EP), and quantization effects (FP8, W4A16, W8A8) are under active development. For quantized model deployments, use blackbox mode with calibrated coefficients for best accuracy.
 
-1. Calibrate alpha/beta coefficients using live vLLM profiling (see [Configuration: Coefficient Calibration](configuration.md#coefficient-calibration))
+## Adding Blackbox Coefficients
+
+To calibrate blackbox coefficients for a new model:
+
+1. Run live vLLM profiling (see [Coefficient Calibration](configuration.md#coefficient-calibration))
 2. Add the entry to `defaults.yaml`
-
-To add roofline support:
-
-1. Download the model's `config.json` from HuggingFace
-2. Place in `model_configs/<model-name>/config.json`
-3. Run with `--latency-model roofline --hardware <GPU> --tp <N>`
-
-Or let BLIS auto-fetch it with `--latency-model roofline` (or `trained-roofline` for higher accuracy).

@@ -10,11 +10,11 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 - **Discrete-event simulation** for prefill, decode, and request scheduling
 - **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
-- **CPU-only inference cost model** via learned α/β coefficients
+- **CPU-only inference cost model** via analytical roofline estimation or learned α/β coefficients
 - **HuggingFace config.json support** for model architecture
 - **Dense and MoE model support** (Mixtral, DeepSeek-MoE, etc.)
 - **vLLM deployment configuration** (TP, PP, EP, batch limits)
-- **Three latency estimation modes**: blackbox (data-driven), roofline (analytical), and cross-model (physics-informed, MoE-aware)
+- **Four latency estimation modes**: roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed, MoE-aware), and trained-roofline (roofline × learned corrections)
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`) or custom distributions
 - **Trace replay**: replay recorded request traces for deterministic testing
 - **Multi-instance cluster simulation** with shared-clock event loop
@@ -30,24 +30,6 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 ---
 
-## Supported Models
-
-### Dense Models
-- LLaMA 3.x (8B, 70B variants)
-- Qwen 2.5 (1.5B - 72B)
-- Mistral (7B, Small 24B)
-- Phi-4
-- CodeLlama
-- Granite
-
-### MoE Models
-- Mixtral 8x7B
-- (Additional MoE models supported via HuggingFace config.json)
-
-See [`defaults.yaml`](./defaults.yaml) for the full list of pre-trained model configurations.
-
----
-
 ## Installation
 
 **Requirements:**
@@ -56,34 +38,42 @@ See [`defaults.yaml`](./defaults.yaml) for the full list of pre-trained model co
 **Build the binary:**
 
 ```bash
-git clone git@github.com:inference-sim/inference-sim.git
+git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
 ```
+
+**Environment setup (optional):**
+
+Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid HuggingFace rate limits.
+
+```bash
+export HF_TOKEN=your_token_here
+```
+
+See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
 
 ---
 
 ## Quick Start
 
-Run BLIS for `qwen/qwen3-14b` with default configs:
+Run BLIS for `qwen/qwen3-14b` with default configs (auto-fetches model config from HuggingFace):
 
 ```bash
 ./blis run --model qwen/qwen3-14b
 ```
 
-You should see JSON output like:
+You should see JSON output on stdout with key fields:
 
-```json
-{
-  "completed_requests": 100,
-  "tokens_per_sec": 492.02,
-  "ttft_mean_ms": 25.08,
-  "e2e_mean_ms": 4541.01,
-  ...
-}
-```
-
-**Key metrics:** TTFT (Time to First Token) measures how quickly the first output token arrives. E2E (End-to-End) is the total request latency. `tokens_per_sec` is output token throughput.
+| Field | Description |
+|-------|-------------|
+| `ttft_mean_ms`, `ttft_p99_ms` | **Time to First Token** — how long until the first token is generated |
+| `e2e_mean_ms`, `e2e_p99_ms` | **End-to-End latency** — total time from request arrival to final token |
+| `itl_mean_ms`, `itl_p99_ms` | **Inter-Token Latency** — time between consecutive output tokens |
+| `responses_per_sec` | Completed requests per second |
+| `tokens_per_sec` | Output tokens generated per second |
+| `completed_requests` | Number of requests that finished within the simulation window |
+| `preemption_count` | Number of times a running request was evicted to make room for others (0 = healthy) |
 
 ---
 
@@ -103,32 +93,26 @@ You should see JSON output like:
   --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
 ```
 
-### Roofline mode (analytical, no trained coefficients)
+### Blackbox mode (explicit trained coefficients)
 
 ```bash
-./blis run --model qwen/qwen3-14b --latency-model roofline --hardware H100 --tp 1
+./blis run --model qwen/qwen3-14b --latency-model blackbox
 ```
 
-> **Tip:** Roofline, trained-roofline, and cross-model modes auto-fetch model configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid rate limits:
->
-> ```bash
-> export HF_TOKEN=your_token_here
-> ```
->
-> See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
+See the [supported models catalog](docs/reference/models.md#blackbox-coefficient-catalog) for models with pre-trained coefficients.
 
 ### Convert workload formats
 
 ```bash
-blis convert preset --name chatbot --rate 10 --num-requests 100
-blis convert csv-trace --file trace.csv
-blis convert servegen --path data/
+./blis convert preset --name chatbot --rate 10 --num-requests 100
+./blis convert csv-trace --file trace.csv
+./blis convert servegen --path data/
 ```
 
 ### Compose multiple workload specs
 
 ```bash
-blis compose --from spec1.yaml --from spec2.yaml
+./blis compose --from spec1.yaml --from spec2.yaml
 ```
 
 For comprehensive usage guides, see the [Documentation](#documentation) section below.
@@ -160,8 +144,8 @@ inference-sim/
 ├── cmd/                    # CLI commands
 │   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, --latency-model, etc.)
 │   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
-│   ├── convert.go          # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
-│   ├── compose.go          # `blis compose` for merging v2 specs
+│   ├── convert.go          # `./blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
+│   ├── compose.go          # `./blis compose` for merging v2 specs
 │   ├── hfconfig.go         # HuggingFace config resolution (--latency-model auto-fetch into model_configs/)
 │   └── default_config.go   # defaults.yaml loading (includes GetHFRepo for HF repo mapping)
 ├── sim/                    # Core simulation engine

@@ -17,7 +17,7 @@ KV cache is allocated in **blocks** of `--block-size-in-tokens` tokens (default:
 | `--total-kv-blocks` | Per-model* | Total GPU-tier KV blocks |
 | `--block-size-in-tokens` | 16 | Tokens per block |
 
-*In blackbox mode, `defaults.yaml` overrides the 1,000,000 CLI default per model (e.g., Qwen3 14B / H100 / TP=1: 17,600 blocks). In roofline or crossmodel mode, the block count is auto-calculated from model architecture and GPU memory, superseding the `defaults.yaml` value. Explicit `--total-kv-blocks` always wins. See [Configuration Reference](../reference/configuration.md#resolution-process).
+*In blackbox mode (when using `--latency-model blackbox`), `defaults.yaml` overrides the 1,000,000 CLI default per model (e.g., Qwen3 14B / H100 / TP=1: 17,600 blocks). In roofline or crossmodel mode, the block count is auto-calculated from model architecture and GPU memory, superseding the `defaults.yaml` value. Explicit `--total-kv-blocks` always wins. See [Configuration Reference](../reference/configuration.md#resolution-process).
 
 !!! tip "Block size affects prefix cache granularity"
     Prefix caching uses block-aligned hashing (`hash.ComputeBlockHashes`). Smaller block sizes increase cache hit granularity but also increase allocation overhead. Choose block size relative to your typical prefix lengths.

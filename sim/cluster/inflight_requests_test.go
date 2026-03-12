@@ -27,6 +27,7 @@ func TestClusterSimulator_InFlightRequests_VisibleInRoutingState(t *testing.T) {
 			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
 		},
 		NumInstances:    1,
 		RoutingLatency:  100, // Creates window where pending is visible
@@ -95,6 +96,7 @@ func TestClusterSimulator_InFlightRequests_CounterfactualIncludesInFlight(t *tes
 			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
 		},
 		NumInstances:    1,
 		RoutingLatency:  100, // Creates pending state visible to routing
@@ -156,6 +158,7 @@ func TestClusterSimulator_InFlightRequests_DrainsToZeroAfterCompletion(t *testin
 			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
 		},
 		NumInstances:         2,
 		RoutingPolicy:        "weighted",
@@ -191,6 +194,7 @@ func TestClusterSimulator_InFlightRequests_DroppedUnservable_Decrements(t *testi
 			KVCacheConfig: sim.NewKVCacheConfig(5, 16, 0, 0, 0, 0), // Very small — will force drops
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
 		},
 		NumInstances: 1,
 	}
@@ -240,6 +244,7 @@ func TestClusterSimulator_InFlightRequests_CompletionBasedDecrement(t *testing.T
 			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
 		},
 		NumInstances:    1,
 		RoutingLatency:  100,
