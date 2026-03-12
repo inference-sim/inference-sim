@@ -12,10 +12,10 @@ This runs 100 requests through a single inference instance using roofline mode (
 
 ### Reading the Output
 
-BLIS prints deterministic JSON to stdout (diagnostic logs go to stderr). Pipe to `jq` for formatting:
+BLIS prints a `=== Simulation Metrics ===` header followed by pretty-printed JSON to stdout. Diagnostic logs go to stderr. To suppress logs and see only results:
 
 ```bash
-./blis run --model qwen/qwen3-14b | jq .
+./blis run --model qwen/qwen3-14b 2>/dev/null
 ```
 
 **Latency metrics** (all in milliseconds, reported as mean/p90/p95/p99):
