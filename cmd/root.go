@@ -917,6 +917,9 @@ func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
 	}
 	_, _ = fmt.Fprintln(w, "=== PD Metrics ===")
 	_, _ = fmt.Fprintf(w, "Disaggregated Requests: %d\n", pd.DisaggregatedCount)
+	if pd.DroppedAtDecodeKV > 0 {
+		_, _ = fmt.Fprintf(w, "Dropped at Decode KV: %d\n", pd.DroppedAtDecodeKV)
+	}
 	_, _ = fmt.Fprintf(w, "Prefill Throughput: %.4f sub-req/s\n", pd.PrefillThroughput)
 	_, _ = fmt.Fprintf(w, "Decode Throughput: %.4f sub-req/s\n", pd.DecodeThroughput)
 	if pd.LoadImbalanceRatio == math.MaxFloat64 {

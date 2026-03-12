@@ -178,7 +178,7 @@ To add a new disaggregation decider (e.g., a threshold-based decider that disagg
 **Contract:** `Decide()` must be pure — no side effects, no access to cluster state. It receives only the `*sim.Request` (input tokens available pre-routing).
 
 Examples:
-- See `NeverDisaggregate` in `sim/disaggregation.go` for the simplest implementation (always returns `DisaggregationDecisionLocal`)
+- See `NeverDisaggregate` in `sim/disaggregation.go` for the simplest implementation (always returns `DisaggregationDecision{Disaggregate: false}`)
 - See `AlwaysDisaggregate` for a decider that always routes to the PD pipeline
 - See `DisaggregationDecisionEvent.Execute()` in `sim/cluster/cluster_event.go` to understand how the decision is consumed in the cluster event pipeline
 

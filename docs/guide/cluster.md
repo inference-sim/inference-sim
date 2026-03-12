@@ -170,7 +170,7 @@ PD-specific metrics appear in the `=== PD Metrics ===` output section. See [Metr
 **No `=== PD Metrics ===` section in output?**
 
 - Check that `--pd-decider always` is set. Without it, requests use standard routing even if pool flags are set.
-- Verify `--num-instances == --prefill-instances + --decode-instances`. BLIS exits with a fatal error if these don't add up — check the error message for details.
+- Verify `--prefill-instances + --decode-instances <= --num-instances`. BLIS exits with a fatal error if the sum exceeds total instances — check the error message for details.
 
 **`Disaggregated Requests` count is lower than expected?**
 

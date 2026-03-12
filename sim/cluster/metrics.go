@@ -101,7 +101,7 @@ type RawMetrics struct {
 	PriorityInversions   int
 	HOLBlockingEvents    int
 	RejectedRequests     int
-	DroppedUnservable  int
+	DroppedUnservable    int
 
 	// KV cache metrics (PR12)
 	CacheHitRate    float64

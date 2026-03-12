@@ -103,6 +103,16 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
+		// R3: validate PD transfer parameters at construction time.
+		if config.PDKVBytesPerToken <= 0 {
+			panic(fmt.Sprintf("ClusterSimulator: PDKVBytesPerToken must be > 0 when PD is enabled, got %d", config.PDKVBytesPerToken))
+		}
+		if config.PDTransferBandwidthGBps <= 0 {
+			panic(fmt.Sprintf("ClusterSimulator: PDTransferBandwidthGBps must be > 0 when PD is enabled, got %f", config.PDTransferBandwidthGBps))
+		}
+		if config.PDTransferBaseLatencyMs < 0 {
+			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be >= 0 when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
+		}
 		cs.poolMembership = BuildPoolMembership(instances, config.PrefillInstances, config.DecodeInstances)
 		cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		cs.parentRequests = make(map[string]*ParentRequest)
@@ -261,6 +271,23 @@ func (c *ClusterSimulator) Run() error {
 	// injected_requests == completed + queued + running + dropped holds at cluster level.
 	c.aggregatedMetrics.DroppedUnservable += c.droppedAtDecodeKV
 
+	// Post-simulation PD diagnostics
+	if c.poolsConfigured() {
+		// INV-PD-3: transfer conservation — initiated_transfers == completed_transfers.
+		if c.transfersInitiated != c.transfersCompleted {
+			logrus.Warnf("[cluster] INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
+				c.transfersInitiated, c.transfersCompleted)
+		}
+		// Orphaned pending completions at horizon — in-flight disaggregated requests
+		// that never completed their pipeline phase.
+		if n := len(c.pendingPrefillCompletions); n > 0 {
+			logrus.Warnf("[cluster] %d prefill sub-requests still pending at horizon (never completed)", n)
+		}
+		if n := len(c.pendingDecodeCompletions); n > 0 {
+			logrus.Warnf("[cluster] %d decode sub-requests still pending at horizon (never completed)", n)
+		}
+	}
+
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {
 		if c.rejectedRequests > 0 {
@@ -313,9 +340,9 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		parentID := c.pendingPrefillCompletions[subReqID]
 		parent := c.parentRequests[parentID]
 		if parent == nil {
-			// R1: nil parent is a programming error — pendingPrefillCompletions and parentRequests
-			// are always populated together in PrefillRoutingEvent.Execute(). Panic to make the
-			// invariant violation visible rather than silently leaking the map entry forever.
+			// R1: nil parent is a programming error — parentRequests is populated in
+			// DisaggregationDecisionEvent.Execute() and pendingPrefillCompletions in
+			// PrefillRoutingEvent.Execute(). Both are guaranteed set before this fires.
 			panic(fmt.Sprintf("detectPrefillCompletions: parentID %q not found in parentRequests (programming error)", parentID))
 		}
 		parent.PrefillCompleteTime = c.clock
@@ -351,8 +378,9 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		parentID := c.pendingDecodeCompletions[subReqID]
 		parent := c.parentRequests[parentID]
 		if parent == nil {
-			// R1: nil parent is a programming error — pendingDecodeCompletions and parentRequests
-			// are always populated together in DecodeRoutingEvent.Execute().
+			// R1: nil parent is a programming error — parentRequests is populated in
+			// DisaggregationDecisionEvent.Execute() and pendingDecodeCompletions in
+			// DecodeRoutingEvent.Execute().
 			panic(fmt.Sprintf("detectDecodeCompletions: parentID %q not found in parentRequests (programming error)", parentID))
 		}
 		parent.CompletionTime = c.clock

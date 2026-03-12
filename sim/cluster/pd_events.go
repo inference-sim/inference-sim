@@ -25,6 +25,9 @@ func (e *PrefillRoutingEvent) Priority() int     { return 4 }
 // Execute routes the prefill sub-request to a prefill pool instance using pool-filtered snapshots.
 func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRolePrefill)
+	if len(filteredSnapshots) == 0 {
+		panic(fmt.Sprintf("PrefillRoutingEvent: no instances in prefill pool (poolMembership has %d entries)", len(cs.poolMembership)))
+	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
 
 	policy := cs.prefillRoutingPolicy
@@ -170,6 +173,9 @@ func (e *DecodeRoutingEvent) Priority() int     { return 7 }
 // Execute routes the decode sub-request to a decode pool instance, pre-allocates KV, and injects.
 func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleDecode)
+	if len(filteredSnapshots) == 0 {
+		panic(fmt.Sprintf("DecodeRoutingEvent: no instances in decode pool (poolMembership has %d entries)", len(cs.poolMembership)))
+	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
 
 	policy := cs.decodeRoutingPolicy
