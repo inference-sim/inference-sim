@@ -14,7 +14,7 @@ import (
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation
+	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation, 4=PrefillRouting, 5=KVTransferStarted, 6=KVTransferCompleted, 7=DecodeRouting
 	Execute(*ClusterSimulator)
 }
 
@@ -208,6 +208,8 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 // DisaggregationDecisionEvent represents the PD disaggregation decision point for a request.
 // Priority 3: processed after routing events at the same timestamp.
 // Bifurcates: disaggregate=true → PrefillRoutingEvent, disaggregate=false → RoutingDecisionEvent.
+// For a single request, this event always precedes the event it schedules, since that event is
+// pushed at T+routingLatency from within Execute() and will fire at a later timestamp.
 type DisaggregationDecisionEvent struct {
 	time    int64
 	request *sim.Request
@@ -222,6 +224,15 @@ func (e *DisaggregationDecisionEvent) Priority() int     { return 3 }
 func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	decision := cs.disaggregationDecider.Decide(e.request)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, decision.Disaggregate)
+
+	// Record disaggregation decision if tracing is enabled (BC-PD-17)
+	if cs.trace != nil {
+		cs.trace.RecordDisaggregation(trace.DisaggregationRecord{
+			RequestID:    e.request.ID,
+			Clock:        cs.clock,
+			Disaggregate: decision.Disaggregate,
+		})
+	}
 
 	if !decision.Disaggregate {
 		// Local path: standard routing (unchanged)

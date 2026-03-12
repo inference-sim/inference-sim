@@ -176,6 +176,9 @@ func TestClusterSimulator_WithPools(t *testing.T) {
 	config.PrefillInstances = 2
 	config.DecodeInstances = 2
 	config.PDDecider = "always"
+	config.PDTransferBandwidthGBps = 25.0
+	config.PDTransferBaseLatencyMs = 0.05
+	config.PDKVBytesPerToken = 512
 
 	cs := NewClusterSimulator(config, nil)
 

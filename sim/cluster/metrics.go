@@ -98,10 +98,10 @@ type RawMetrics struct {
 	TokensPerSec   float64
 
 	// Anomaly counters
-	PriorityInversions int
-	HOLBlockingEvents  int
-	RejectedRequests   int
-	DroppedUnservable  int
+	PriorityInversions   int
+	HOLBlockingEvents    int
+	RejectedRequests     int
+	DroppedUnservable    int
 
 	// KV cache metrics (PR12)
 	CacheHitRate    float64

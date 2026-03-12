@@ -44,6 +44,11 @@ type PDMetrics struct {
 	//   - 1.0 when both pools have 0 completions (no-data)
 	//   - math.MaxFloat64 when one pool is idle (extreme imbalance)
 	LoadImbalanceRatio float64
+
+	// DroppedAtDecodeKV is the number of requests that completed KV transfer but
+	// were dropped because the decode instance had insufficient KV capacity.
+	// These parent requests have CompletionTime set but DecodeInstanceID empty.
+	DroppedAtDecodeKV int
 }
 
 // CollectPDMetrics computes disaggregation-aware metrics from post-simulation state.
@@ -77,12 +82,18 @@ func CollectPDMetrics(
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 
 	var ttftValues, transferValues []float64
-	var disaggCount int
+	var disaggCount, droppedAtDecodeKV int
 
 	for _, p := range sorted {
 		// BC-6: count requests that completed KV transfer.
 		if p.TransferCompleteTime > 0 {
 			disaggCount++
+		}
+
+		// Count requests dropped at decode KV allocation: completed transfer but
+		// never assigned to a decode instance (DecodeInstanceID remains empty).
+		if p.TransferCompleteTime > 0 && p.DecodeInstanceID == "" {
+			droppedAtDecodeKV++
 		}
 
 		// BC-1: parent TTFT from prefill sub-request TTFT.
@@ -106,6 +117,7 @@ func CollectPDMetrics(
 		ParentTTFT:         NewDistribution(ttftValues),
 		TransferDuration:   NewDistribution(transferValues),
 		LoadImbalanceRatio: 1.0,
+		DroppedAtDecodeKV:  droppedAtDecodeKV,
 	}
 
 	pd.PrefillThroughput, pd.DecodeThroughput, pd.LoadImbalanceRatio =

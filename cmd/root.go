@@ -884,6 +884,14 @@ var runCmd = &cobra.Command{
 			}
 			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
 			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
+			// PD disaggregation summary (only printed when disaggregation was active)
+			if traceSummary.DisaggregationCount > 0 {
+				fmt.Println("=== PD Disaggregation Summary ===")
+				fmt.Printf("Disaggregation Decisions: %d\n", traceSummary.DisaggregationCount)
+				fmt.Printf("  Disaggregated: %d\n", traceSummary.DisaggregatedCount)
+				fmt.Printf("KV Transfers: %d\n", traceSummary.KVTransferCount)
+				fmt.Printf("Mean Transfer Duration (µs): %.2f\n", traceSummary.MeanTransferDuration)
+			}
 		}
 
 		logrus.Info("Simulation complete.")
@@ -909,6 +917,9 @@ func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
 	}
 	_, _ = fmt.Fprintln(w, "=== PD Metrics ===")
 	_, _ = fmt.Fprintf(w, "Disaggregated Requests: %d\n", pd.DisaggregatedCount)
+	if pd.DroppedAtDecodeKV > 0 {
+		_, _ = fmt.Fprintf(w, "Dropped at Decode KV: %d\n", pd.DroppedAtDecodeKV)
+	}
 	_, _ = fmt.Fprintf(w, "Prefill Throughput: %.4f sub-req/s\n", pd.PrefillThroughput)
 	_, _ = fmt.Fprintf(w, "Decode Throughput: %.4f sub-req/s\n", pd.DecodeThroughput)
 	if pd.LoadImbalanceRatio == math.MaxFloat64 {

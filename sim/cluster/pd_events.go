@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
 // PrefillRoutingEvent routes a prefill sub-request to a prefill pool instance.
@@ -24,6 +25,9 @@ func (e *PrefillRoutingEvent) Priority() int     { return 4 }
 // Execute routes the prefill sub-request to a prefill pool instance using pool-filtered snapshots.
 func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRolePrefill)
+	if len(filteredSnapshots) == 0 {
+		panic(fmt.Sprintf("PrefillRoutingEvent: no instances in prefill pool (poolMembership has %d entries)", len(cs.poolMembership)))
+	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
 
 	policy := cs.prefillRoutingPolicy
@@ -37,6 +41,23 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	e.request.AssignedInstance = decision.TargetInstance
 	e.parentReq.PrefillInstanceID = decision.TargetInstance
 	e.parentReq.PrefillEnqueueTime = e.time
+
+	// Record prefill routing decision if tracing is enabled (BC-PD-17, BC-PD-19)
+	if cs.trace != nil {
+		record := trace.PrefillRoutingRecord{
+			ParentRequestID: e.parentReq.ID,
+			Clock:           cs.clock,
+			ChosenInstance:  decision.TargetInstance,
+			Scores:          copyScores(decision.Scores),
+		}
+		if cs.trace.Config.CounterfactualK > 0 {
+			record.Candidates, record.Regret = computeCounterfactual(
+				decision.TargetInstance, decision.Scores,
+				filteredSnapshots, cs.trace.Config.CounterfactualK,
+			)
+		}
+		cs.trace.RecordPrefillRouting(record)
+	}
 
 	// Register as pending prefill completion for detection in event loop
 	cs.pendingPrefillCompletions[e.request.ID] = e.parentReq.ID
@@ -152,6 +173,9 @@ func (e *DecodeRoutingEvent) Priority() int     { return 7 }
 // Execute routes the decode sub-request to a decode pool instance, pre-allocates KV, and injects.
 func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleDecode)
+	if len(filteredSnapshots) == 0 {
+		panic(fmt.Sprintf("DecodeRoutingEvent: no instances in decode pool (poolMembership has %d entries)", len(cs.poolMembership)))
+	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
 
 	policy := cs.decodeRoutingPolicy
@@ -161,10 +185,6 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 	decision := policy.Route(e.decodeSubReq, state)
 
 	logrus.Debugf("[cluster] decode req %s → instance %s", e.decodeSubReq.ID, decision.TargetInstance)
-
-	e.decodeSubReq.AssignedInstance = decision.TargetInstance
-	e.parentReq.DecodeInstanceID = decision.TargetInstance
-	e.parentReq.DecodeEnqueueTime = e.time
 
 	// Find target decode instance
 	for _, inst := range cs.instances {
@@ -182,6 +202,51 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 				// post-run analysis can distinguish dropped-at-decode from in-flight.
 				e.parentReq.CompletionTime = e.time
 				return
+			}
+
+			// Set state after successful allocation (R5: no partial state on failure path)
+			e.decodeSubReq.AssignedInstance = decision.TargetInstance
+			e.parentReq.DecodeInstanceID = decision.TargetInstance
+			e.parentReq.DecodeEnqueueTime = e.time
+
+			// Record KV transfer and decode routing after successful KV allocation (BC-PD-17, BC-PD-19)
+			// Placement after AllocateTransferredKV ensures records only exist for requests that
+			// complete the decode phase (R1: no orphan records for dropped requests).
+			// KVTransferRecord is recorded here so DecodeInstanceID is fully populated.
+			// Both TransferStartTime and TransferCompleteTime were set in earlier event handlers.
+			if cs.trace != nil {
+				// INV-PD-4 guarantees transfer_start ≤ transfer_complete via timestamp sequencing:
+				// KVTransferStartedEvent.Execute() schedules completion at T+duration where duration >= 1µs,
+				// so the completion event always fires at a strictly later timestamp.
+				// Defensive clamp: if the ordering invariant is ever violated, warn and record 0.
+				// The warning makes INV-PD-4 violations detectable in operator logs (R1: no silent data loss).
+				transferDuration := e.parentReq.TransferCompleteTime - e.parentReq.TransferStartTime
+				if transferDuration < 0 {
+					logrus.Warnf("[cluster] INV-PD-4 violated: TransferCompleteTime (%d) < TransferStartTime (%d) for req %s; recording 0",
+						e.parentReq.TransferCompleteTime, e.parentReq.TransferStartTime, e.parentReq.ID)
+					transferDuration = 0
+				}
+				cs.trace.RecordKVTransfer(trace.KVTransferRecord{
+					ParentRequestID:   e.parentReq.ID,
+					TransferStartTime: e.parentReq.TransferStartTime,
+					TransferDuration:  transferDuration,
+					NumKVBlocks:       e.parentReq.NumKVBlocks,
+					PrefillInstanceID: e.parentReq.PrefillInstanceID,
+					DecodeInstanceID:  e.parentReq.DecodeInstanceID,
+				})
+				decodeRecord := trace.DecodeRoutingRecord{
+					ParentRequestID: e.parentReq.ID,
+					Clock:           cs.clock,
+					ChosenInstance:  decision.TargetInstance,
+					Scores:          copyScores(decision.Scores),
+				}
+				if cs.trace.Config.CounterfactualK > 0 {
+					decodeRecord.Candidates, decodeRecord.Regret = computeCounterfactual(
+						decision.TargetInstance, decision.Scores,
+						filteredSnapshots, cs.trace.Config.CounterfactualK,
+					)
+				}
+				cs.trace.RecordDecodeRouting(decodeRecord)
 			}
 
 			cs.inFlightRequests[decision.TargetInstance]++

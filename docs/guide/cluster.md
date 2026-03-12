@@ -92,6 +92,40 @@ The trace summary shows:
 - **Target Distribution** — how many requests went to each instance
 - **Mean/Max Regret** — how much better an alternative routing decision could have been
 
+In PD (Prefill-Decode) disaggregated mode (`--prefill-instances`, `--decode-instances`), the trace additionally captures per-request PD pipeline events:
+
+- **DisaggregationRecord** — one per admitted request: whether it was routed to the prefill pool or handled locally
+- **PrefillRoutingRecord** — one per disaggregated request: which prefill instance was chosen (with optional counterfactual)
+- **KVTransferRecord** — one per disaggregated request: transfer duration, block count, and instance pair
+- **DecodeRoutingRecord** — one per disaggregated request: which decode instance was chosen (with optional counterfactual)
+
+Example PD trace run with counterfactual analysis:
+
+```bash
+./blis run --model meta-llama/llama-3.1-8b-instruct \
+  --prefill-instances 2 --decode-instances 2 \
+  --rate 50 --num-requests 200 \
+  --trace-level decisions --summarize-trace --counterfactual-k 2
+```
+
+This adds a PD disaggregation summary to stdout:
+
+```
+=== PD Disaggregation Summary ===
+Disaggregation Decisions: 200
+  Disaggregated: 180
+KV Transfers: 180
+Mean Transfer Duration (µs): 42.3
+```
+
+Interpreting the output:
+- **Disaggregation Decisions** — total requests that reached the disaggregation decision point (includes both pooled and local paths)
+- **Disaggregated** — how many were routed to the prefill pool (remainder used standard routing)
+- **KV Transfers** — should equal `Disaggregated` for successful runs; a smaller number indicates decode-phase KV OOM drops (also shown in the Anomaly Counters section)
+- **Mean Transfer Duration** — average KV cache transfer latency in microseconds; tune `--pd-transfer-bandwidth` and `--pd-transfer-base-latency` to match your interconnect
+
+Use `--counterfactual-k N` to record the top-N alternative routing candidates and regret for both prefill and decode routing decisions.
+
 !!! info "Counterfactual regret for weighted policies"
     For score-based policies (weighted, least-loaded), counterfactual regret is **structurally zero** — the chosen instance is always the highest-scoring one. Regret is only meaningful for non-score-based policies like round-robin.
 
@@ -136,7 +170,7 @@ PD-specific metrics appear in the `=== PD Metrics ===` output section. See [Metr
 **No `=== PD Metrics ===` section in output?**
 
 - Check that `--pd-decider always` is set. Without it, requests use standard routing even if pool flags are set.
-- Verify `--num-instances == --prefill-instances + --decode-instances`. BLIS exits with a fatal error if these don't add up — check the error message for details.
+- Verify `--prefill-instances + --decode-instances <= --num-instances`. BLIS exits with a fatal error if the sum exceeds total instances — check the error message for details.
 
 **`Disaggregated Requests` count is lower than expected?**
 

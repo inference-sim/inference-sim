@@ -574,6 +574,102 @@ func TestClusterSimulator_DisaggregatedINV1_Conservation(t *testing.T) {
 // TestDisaggregation_INV_PD_1_DecodeEnqueueAfterTransfer verifies INV-PD-1 (KV Completeness):
 // decode_enqueue_time >= transfer_complete_time for every disaggregated request.
 // This is a standalone R7 companion invariant test for INV-PD-1.
+// TestDisaggregation_DecodeKVAllocationFailure verifies INV-1 conservation when
+// decode KV allocation fails (request dropped mid-pipeline). Uses very small KV
+// cache on decode instances to force allocation failures.
+func TestDisaggregation_DecodeKVAllocationFailure(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	// Small KV cache: 10 blocks of 16 tokens. Requests have ~100 input tokens,
+	// requiring ceil(100/16)=7 blocks each. First decode sub-request fits (7 of 10),
+	// but subsequent ones fail as blocks remain held by in-progress requests.
+	config.KVCacheConfig = sim.NewKVCacheConfig(10, 16, 0, 0, 0, 0)
+	// Use bounded horizon to prevent livelock when KV is exhausted.
+	config.Horizon = 50_000_000
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	agg := cs.AggregatedMetrics()
+
+	// With 2-block KV, the first decode allocation may succeed (if input <= 32 tokens
+	// after prefill consumed some), but subsequent ones will fail. At minimum, some
+	// requests must be dropped.
+	if agg.DroppedUnservable == 0 {
+		t.Fatal("expected DroppedUnservable > 0 with small decode KV cache")
+	}
+
+	// INV-1: conservation must hold. Each parent generates 2 sub-requests.
+	// droppedAtDecodeKV is folded into DroppedUnservable, so the identity is:
+	// completed + queued + running + dropped == numRequests * 2.
+	actual := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
+	wantTotal := len(requests) * 2
+	if actual != wantTotal {
+		t.Errorf("INV-1 conservation violated with KV drops: completed(%d)+queued(%d)+running(%d)+dropped(%d)=%d, want %d",
+			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable, actual, wantTotal)
+	}
+
+	// Verify PDMetrics surfaces the drops
+	parents := cs.ParentRequests()
+	if len(parents) == 0 {
+		t.Fatal("no parent requests recorded — PD pipeline did not execute")
+	}
+	pd := CollectPDMetrics(parents, agg, cs.PoolMembership(), cs.PerInstanceMetricsByID())
+	if pd == nil {
+		t.Fatal("CollectPDMetrics returned nil for disaggregated simulation")
+	}
+	if pd.DroppedAtDecodeKV == 0 {
+		t.Error("PDMetrics.DroppedAtDecodeKV should be > 0 when decode KV allocation fails")
+	}
+}
+
+// TestDisaggregation_NegativeTransferDurationClamp verifies the defensive INV-PD-4 clamp
+// in DecodeRoutingEvent.Execute: if TransferCompleteTime < TransferStartTime (should never
+// happen in normal operation), transfer duration is clamped to 0 and a warning is logged.
+func TestDisaggregation_NegativeTransferDurationClamp(t *testing.T) {
+	// This tests the defensive path by constructing a DecodeRoutingEvent with a
+	// manipulated ParentRequest where TransferCompleteTime < TransferStartTime.
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.TraceLevel = "decisions"
+	requests := newTestRequests(1)
+
+	cs := NewClusterSimulator(config, requests)
+
+	// Manually construct a parent request with inverted transfer timestamps
+	parent := NewParentRequest(requests[0], 16)
+	parent.TransferStartTime = 2000
+	parent.TransferCompleteTime = 1000 // Inverted: complete < start
+	parent.PrefillInstanceID = string(cs.instances[0].ID())
+
+	decodeSubReq := &sim.Request{
+		ID:          parent.DecodeSubReqID,
+		InputTokens: requests[0].InputTokens,
+		State:       sim.StateQueued,
+	}
+
+	// Execute the decode routing event directly
+	event := &DecodeRoutingEvent{
+		time:         2000,
+		parentReq:    parent,
+		decodeSubReq: decodeSubReq,
+	}
+	event.Execute(cs)
+
+	// The trace should contain a KVTransferRecord with TransferDuration == 0 (clamped)
+	records := cs.trace.KVTransfers
+	if len(records) == 0 {
+		// If KV allocation failed (insufficient capacity), no record is written.
+		// In that case, the clamp path was not reached. Check DroppedAtDecodeKV instead.
+		if cs.droppedAtDecodeKV > 0 {
+			t.Skip("decode KV allocation failed before reaching transfer duration clamp")
+		}
+		t.Fatal("expected KVTransferRecord to be recorded")
+	}
+	if records[0].TransferDuration != 0 {
+		t.Errorf("TransferDuration = %d, want 0 (clamped from negative)", records[0].TransferDuration)
+	}
+}
+
 func TestDisaggregation_INV_PD_1_DecodeEnqueueAfterTransfer(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
