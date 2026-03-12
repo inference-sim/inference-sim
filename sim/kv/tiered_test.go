@@ -363,6 +363,38 @@ func TestTieredKVCache_MirrorToCPU_SkipsPartialAndUnhashedBlocks(t *testing.T) {
 	assert.Equal(t, int64(0), tiered.mirrorCount)
 }
 
+// --- GPU prefix preservation test (BC-3) ---
+
+func TestTieredKVCache_ReleaseKVBlocks_PreservesGPUHashes(t *testing.T) {
+	// BC-3: GIVEN a request with cached prefix blocks
+	// WHEN ReleaseKVBlocks is called
+	// THEN freed blocks stay on GPU with hashes intact
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
+
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(req, 0, 4, []int64{})
+
+	// Capture hashes before release
+	h0 := gpu.Blocks[gpu.RequestMap["r1"][0]].Hash
+	h1 := gpu.Blocks[gpu.RequestMap["r1"][1]].Hash
+	assert.NotEmpty(t, h0)
+	assert.NotEmpty(t, h1)
+
+	// WHEN
+	tiered.ReleaseKVBlocks(req)
+
+	// THEN: hashes still in GPU HashToBlock (NOT removed by offload)
+	_, h0InGPU := gpu.HashToBlock[h0]
+	_, h1InGPU := gpu.HashToBlock[h1]
+	assert.True(t, h0InGPU, "block 0 hash should remain on GPU after release")
+	assert.True(t, h1InGPU, "block 1 hash should remain on GPU after release")
+
+	// AND: GetCachedBlocks still finds the prefix
+	cached := tiered.GetCachedBlocks([]int{1, 2, 3, 4})
+	assert.Equal(t, 2, len(cached), "prefix should still be cached on GPU after release")
+}
+
 // --- Validation tests (kept from old file) ---
 
 func TestCpuTier_Validation_ZeroCapacity_Panics(t *testing.T) {
