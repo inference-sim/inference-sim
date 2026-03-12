@@ -32,13 +32,13 @@ When a team decides to serve an LLM at scale, they face a cascade of interconnec
 - **Which model fits our hardware budget** while still meeting our latency targets?
 - **How should we route requests** across instances to keep response times low?
 
-These questions are deeply intertwined. Changing the number of instances affects routing behavior, which affects queue depths, which affects latency. Traditional back-of-the-envelope math can't capture these dynamics. And running experiments on real GPUs is slow, expensive, and hard to reproduce.
+These questions are deeply intertwined. Changing the number of instances affects routing behavior, which affects queue depths, which affects latency. Consider a concrete scenario: your 4-instance cluster handles steady traffic fine, but a product launch doubles your request rate overnight. Queues back up, time-to-first-token spikes from 20ms to 2 seconds, and your KV cache starts evicting in-progress requests. Do you need 8 instances or would 6 with a better routing policy suffice? Traditional back-of-the-envelope math can't capture these dynamics. And running experiments on real GPUs is slow, expensive, and hard to reproduce.
 
 ## The Insight: A Flight Simulator for LLM Infrastructure
 
 The aerospace industry doesn't test new wing designs by building full aircraft and hoping for the best. They simulate. The same principle applies to inference infrastructure.
 
-**BLIS** (Blackbox Inference Simulator) is a discrete-event simulator purpose-built for LLM serving systems. It models the full lifecycle of every request, from arrival through routing, queuing, batching, and token generation, and produces the same metrics you'd measure in production: time to first token, inter-token latency, throughput, and KV cache utilization.
+**BLIS** (Blackbox Inference Simulator) is a discrete-event simulator purpose-built for LLM serving systems. Rather than modeling time as a continuous flow, a discrete-event simulator advances by jumping from one meaningful event to the next — a request arrives, a batch is scheduled, a token is generated — which makes it both fast and precise. BLIS models the full lifecycle of every request, from arrival through routing, queuing, batching, and token generation, and produces the same metrics you'd measure in production: time to first token, inter-token latency, throughput, and KV cache utilization.
 
 The key difference: **it runs on your laptop in seconds, with no GPUs required.** BLIS models the end-to-end journey of every request, as faithfully as possible to real serving systems, from cluster-level routing decisions down to per-token batch scheduling.
 
@@ -149,6 +149,6 @@ Watch `ttft_p99_ms` and `scheduling_delay_p99_ms` climb as the instances saturat
 
 ## The Bottom Line
 
-GPU infrastructure is too expensive for guesswork. BLIS gives you a way to explore your deployment design space (model choices, instance counts, routing policies, memory configurations) before committing real resources. The cost of a simulation is measured in seconds of laptop time. The cost of getting it wrong in production is measured in dollars, downtime, and user experience.
+GPU infrastructure is too expensive for guesswork. BLIS gives you a way to explore your deployment design space (model choices, instance counts, routing policies, memory configurations) before committing real resources. The cost of a simulation is measured in seconds of laptop time. The cost of getting it wrong in production is measured in dollars, downtime, and user experience. Simulation turns infrastructure planning from an expensive trial-and-error process into a disciplined engineering practice.
 
 See the [installation guide](../../getting-started/installation.md) for prerequisites and build details, or jump straight to the [capacity planning tutorial](../../getting-started/tutorial.md).
