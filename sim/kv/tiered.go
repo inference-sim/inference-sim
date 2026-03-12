@@ -3,48 +3,164 @@ package kv
 import (
 	"fmt"
 	"math"
-	"sort"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// offloadedBlock represents a KV block offloaded from GPU to CPU tier.
-type offloadedBlock struct {
-	OriginalID  int64  // block ID on GPU tier
-	Tokens      []int  // token content (for reload)
-	Hash        string // prefix hash (for cache hit detection)
-	OffloadTime int64  // clock time when offloaded (for thrashing detection)
+// cpuBlock represents a KV block mirrored from GPU to CPU tier.
+// Identified by content hash (not GPU block ID) for content-addressable reload.
+type cpuBlock struct {
+	hash   string    // prefix hash (map key, identifies content)
+	tokens []int     // token content (for GPU reload); pre-allocated slice, copy-into
+	prev   *cpuBlock // LRU doubly-linked list: older block
+	next   *cpuBlock // LRU doubly-linked list: newer block
 }
 
-// cpuTier is a simple capacity-tracked block store for CPU-offloaded blocks.
+// cpuTier is an LRU cache of mirrored GPU blocks, keyed by content hash.
+// All operations are O(1) via hash map + doubly-linked list.
 type cpuTier struct {
-	blocks   map[int64]*offloadedBlock // keyed by original GPU block ID
-	capacity int64
-	used     int64
+	blocks    map[string]*cpuBlock // hash → block, O(1) lookup
+	lruHead   *cpuBlock            // oldest (evict first)
+	lruTail   *cpuBlock            // newest (most recently stored/touched)
+	capacity  int64
+	used      int64
+	blockSize int64 // tokens per block (for pre-allocation)
+
+	// Pre-allocated token slices for CPU blocks (eliminates per-mirror GC pressure).
+	// Pool of free slices returned on eviction, consumed on store.
+	freeTokenSlices [][]int
+
+	evictionCount int64 // total CPU LRU evictions
 }
 
-// TieredKVCache composes a GPU KVCacheState with a simple CPU tier.
-// Delegates all normal operations to GPU; offloads cached free blocks when GPU utilization exceeds threshold.
+// newCpuTier creates a CPU tier with pre-allocated token storage.
+func newCpuTier(capacity int64, blockSize int64) *cpuTier {
+	if capacity <= 0 {
+		panic(fmt.Sprintf("newCpuTier: capacity must be > 0, got %d", capacity))
+	}
+	if blockSize <= 0 {
+		panic(fmt.Sprintf("newCpuTier: blockSize must be > 0, got %d", blockSize))
+	}
+	slices := make([][]int, capacity)
+	for i := int64(0); i < capacity; i++ {
+		slices[i] = make([]int, blockSize)
+	}
+	return &cpuTier{
+		blocks:          make(map[string]*cpuBlock),
+		capacity:        capacity,
+		blockSize:       blockSize,
+		freeTokenSlices: slices,
+	}
+}
+
+// store adds a block to the CPU tier. If at capacity, evicts LRU-oldest first.
+// If the hash already exists, this is a no-op (use touch instead).
+func (c *cpuTier) store(hash string, tokens []int) {
+	if _, exists := c.blocks[hash]; exists {
+		return // already present — caller should use touch
+	}
+	// Evict if at capacity
+	if c.used >= c.capacity {
+		c.evictHead()
+	}
+	// Get a pre-allocated token slice from pool, or allocate as fallback
+	var tokSlice []int
+	if len(c.freeTokenSlices) > 0 {
+		tokSlice = c.freeTokenSlices[len(c.freeTokenSlices)-1]
+		c.freeTokenSlices = c.freeTokenSlices[:len(c.freeTokenSlices)-1]
+		copy(tokSlice, tokens)
+	} else {
+		tokSlice = append([]int{}, tokens...) // fallback: allocate
+	}
+	blk := &cpuBlock{hash: hash, tokens: tokSlice}
+	c.blocks[hash] = blk
+	c.appendToTail(blk)
+	c.used++
+}
+
+// touch moves an existing block to the LRU tail (most recently used).
+// No-op if hash not found.
+func (c *cpuTier) touch(hash string) {
+	blk, exists := c.blocks[hash]
+	if !exists {
+		return
+	}
+	c.unlink(blk)
+	c.appendToTail(blk)
+}
+
+// lookup returns the cpuBlock for a hash, or nil if not found.
+func (c *cpuTier) lookup(hash string) *cpuBlock {
+	return c.blocks[hash]
+}
+
+// evictHead removes the LRU-oldest block and returns its token slice to the pool.
+func (c *cpuTier) evictHead() {
+	if c.lruHead == nil {
+		return
+	}
+	victim := c.lruHead
+	c.unlink(victim)
+	delete(c.blocks, victim.hash)
+	c.used--
+	c.evictionCount++
+	// Return token slice to pool
+	c.freeTokenSlices = append(c.freeTokenSlices, victim.tokens)
+	victim.tokens = nil
+}
+
+// appendToTail inserts a block at the LRU tail (most recent).
+func (c *cpuTier) appendToTail(blk *cpuBlock) {
+	blk.next = nil
+	blk.prev = c.lruTail
+	if c.lruTail != nil {
+		c.lruTail.next = blk
+	} else {
+		c.lruHead = blk
+	}
+	c.lruTail = blk
+}
+
+// unlink removes a block from the LRU doubly-linked list.
+func (c *cpuTier) unlink(blk *cpuBlock) {
+	if blk.prev != nil {
+		blk.prev.next = blk.next
+	} else {
+		c.lruHead = blk.next
+	}
+	if blk.next != nil {
+		blk.next.prev = blk.prev
+	} else {
+		c.lruTail = blk.prev
+	}
+	blk.prev = nil
+	blk.next = nil
+}
+
+// TieredKVCache composes a GPU KVCacheState with a CPU tier that mirrors in-use blocks.
+// GPU prefix cache is preserved on release (vLLM v1 model). CPU tier serves as a secondary
+// cache that extends prefix lifetime beyond GPU eviction.
 type TieredKVCache struct {
-	gpu              *KVCacheState
-	cpu              cpuTier
-	offloadThreshold float64
+	gpu               *KVCacheState
+	cpu               *cpuTier
 	transferBandwidth float64
-	baseLatency      int64
-	clock            int64 // updated externally for thrashing detection
+	baseLatency       int64
 
 	// Transfer latency accumulator (query-and-clear)
 	pendingLatency int64
 
 	// Metrics counters
-	offloadCount int64
 	cpuHitCount  int64
-	cpuMissCount   int64
-	thrashingCount int64
+	cpuMissCount int64
+	mirrorCount  int64 // total blocks stored to CPU via MirrorToCPU
 }
 
 // NewTieredKVCache creates a TieredKVCache.
 // Panics if gpu is nil, cpuBlocks is non-positive, bandwidth is non-positive/NaN/Inf, or threshold is NaN/Inf.
+// The threshold parameter is deprecated in the vLLM v1 mirror model and is ignored.
+// A deprecation warning is logged if threshold != 0.
 func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth float64, baseLat int64) *TieredKVCache {
 	if gpu == nil {
 		panic("NewTieredKVCache: gpu must not be nil")
@@ -58,13 +174,14 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 	if cpuBlocks <= 0 {
 		panic(fmt.Sprintf("NewTieredKVCache: cpuBlocks must be > 0, got %d", cpuBlocks))
 	}
+	// BC-7: Log deprecation warning if threshold is set to non-default
+	if threshold != 0 {
+		logrus.Warn("KVOffloadThreshold is deprecated in vLLM v1 mirror model and will be ignored. " +
+			"GPU prefix cache is now preserved on release; CPU tier is populated via MirrorToCPU.")
+	}
 	return &TieredKVCache{
-		gpu: gpu,
-		cpu: cpuTier{
-			blocks:   make(map[int64]*offloadedBlock),
-			capacity: cpuBlocks,
-		},
-		offloadThreshold:  threshold,
+		gpu:               gpu,
+		cpu:               newCpuTier(cpuBlocks, gpu.BlockSizeTokens),
 		transferBandwidth: bandwidth,
 		baseLatency:       baseLat,
 	}
@@ -108,67 +225,9 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 	return false
 }
 
-// tryReloadFromCPU attempts to reload blocks from CPU to GPU hash table.
-// Iterates in deterministic order (sorted by block ID) for reproducibility.
-// Returns true if any blocks were reloaded.
-//
-// Limitation: each reload reuses a GPU free block (pop + re-append). If only 1 GPU free
-// block is available and multiple CPU blocks are reloaded, each reload overwrites the
-// previous block's content in the same GPU slot. The last-reloaded block survives in the
-// hash table; earlier ones are lost. This is acceptable because GetCachedBlocks walks
-// prefixes sequentially — only the longest contiguous cached prefix matters.
+// tryReloadFromCPU is a stub — replaced by reloadPrefixFromCPU in Task 3.
 func (t *TieredKVCache) tryReloadFromCPU() bool {
-	// Sort CPU block IDs for deterministic iteration order
-	cpuBlockIDs := make([]int64, 0, len(t.cpu.blocks))
-	for id := range t.cpu.blocks {
-		cpuBlockIDs = append(cpuBlockIDs, id)
-	}
-	sort.Slice(cpuBlockIDs, func(i, j int) bool { return cpuBlockIDs[i] < cpuBlockIDs[j] })
-
-	reloaded := false
-	for _, cpuBlockID := range cpuBlockIDs {
-		offloaded := t.cpu.blocks[cpuBlockID]
-		if offloaded.Hash == "" {
-			continue
-		}
-		// Check if this hash is already on GPU (no need to reload)
-		if _, inGPU := t.gpu.HashToBlock[offloaded.Hash]; inGPU {
-			continue
-		}
-		// Reload: pop a GPU free block, fill with CPU content
-		blk := t.gpu.popFreeBlock()
-		if blk == nil {
-			break // no GPU free blocks available
-		}
-		blk.Tokens = append([]int{}, offloaded.Tokens...)
-		blk.Hash = offloaded.Hash
-		blk.RefCount = 0
-		blk.InUse = false
-		t.gpu.HashToBlock[offloaded.Hash] = blk.ID
-		t.gpu.appendToFreeList(blk)
-
-		// Accumulate transfer latency: baseLatency + ceil(blockSize / bandwidth)
-		// Uses float64 to avoid division by zero when bandwidth < 1.0
-		blockSize := float64(t.gpu.BlockSize())
-		transferTicks := int64(math.Ceil(blockSize / t.transferBandwidth))
-		t.pendingLatency += t.baseLatency + transferTicks
-
-		// Check thrashing (BC-6): offload followed by reload within 1000 ticks.
-		// Guard: t.clock > 0 skips detection when SetClock was never called (clock=0
-		// is the Go zero-value). In the DES event loop, SetClock(now) is always called
-		// before any batch processing, and the first realistic offload+reload cycle
-		// occurs at clock > 0 (step time > 0 from beta0). Relies on INV-3 (clock monotonicity).
-		if t.clock > 0 && t.clock-offloaded.OffloadTime < 1000 {
-			t.thrashingCount++
-		}
-
-		// Remove from CPU
-		delete(t.cpu.blocks, cpuBlockID)
-		t.cpu.used--
-		t.cpuHitCount++
-		reloaded = true
-	}
-	return reloaded
+	return false
 }
 
 func (t *TieredKVCache) GetCachedBlocks(tokens []int) []int64 {
@@ -177,7 +236,8 @@ func (t *TieredKVCache) GetCachedBlocks(tokens []int) []int64 {
 
 func (t *TieredKVCache) ReleaseKVBlocks(req *sim.Request) {
 	t.gpu.ReleaseKVBlocks(req)
-	t.maybeOffload()
+	// No offload — freed blocks stay on GPU free list with hashes intact (BC-3).
+	// Hashes are cleared only when popFreeBlock() reuses the slot.
 }
 
 func (t *TieredKVCache) BlockSize() int64    { return t.gpu.BlockSize() }
@@ -208,68 +268,19 @@ func (t *TieredKVCache) ConsumePendingTransferLatency() int64 {
 	return lat
 }
 
-// KVThrashingRate returns the fraction of offloads followed by a reload within 1000 ticks.
+// KVThrashingRate returns the CPU eviction rate: cpuEvictionCount / mirrorCount.
+// Semantic change from pre-v1: was thrashingCount/offloadCount (rapid offload→reload).
+// Now measures CPU tier eviction pressure. Returns 0 when mirrorCount == 0 (R11).
 func (t *TieredKVCache) KVThrashingRate() float64 {
-	if t.offloadCount == 0 {
+	if t.mirrorCount == 0 {
 		return 0
 	}
-	return float64(t.thrashingCount) / float64(t.offloadCount)
+	return float64(t.cpu.evictionCount) / float64(t.mirrorCount)
 }
 
-// SetClock updates the clock for thrashing detection timestamps.
-func (t *TieredKVCache) SetClock(clock int64) {
-	t.clock = clock
-}
+// SetClock is a no-op in vLLM v1 model (thrashing detection removed).
+func (t *TieredKVCache) SetClock(_ int64) {}
 
 // MirrorToCPU copies newly-completed full blocks from batch requests to CPU tier.
 // Stub — full implementation in Task 4.
 func (t *TieredKVCache) MirrorToCPU(_ []*sim.Request) {}
-
-// maybeOffload preserves cached content by moving free blocks with hashes from GPU to CPU.
-// Activated when GPU utilization exceeds threshold after a release. Since offloaded blocks
-// are already free, this doesn't reduce UsedBlocks — the threshold controls activation,
-// and the loop runs until no more cached free blocks remain or CPU is full.
-func (t *TieredKVCache) maybeOffload() {
-	for t.gpu.TotalCapacity() > 0 {
-		util := float64(t.gpu.UsedBlocks()) / float64(t.gpu.TotalCapacity())
-		if util <= t.offloadThreshold {
-			break
-		}
-		if t.cpu.used >= t.cpu.capacity {
-			break // CPU full (BC-10)
-		}
-		// Find a free block with cached content to offload
-		blk := t.findCachedFreeBlock()
-		if blk == nil {
-			break // No cached free blocks to offload
-		}
-		// Copy to CPU
-		t.cpu.blocks[blk.ID] = &offloadedBlock{
-			OriginalID:  blk.ID,
-			Tokens:      append([]int{}, blk.Tokens...),
-			Hash:        blk.Hash,
-			OffloadTime: t.clock,
-		}
-		t.cpu.used++
-		t.offloadCount++
-		// Remove from GPU free list and hash table
-		t.gpu.removeFromFreeList(blk)
-		delete(t.gpu.HashToBlock, blk.Hash)
-		blk.Hash = ""
-		blk.Tokens = nil
-		// Re-add to free list as empty block (at tail — will be popped last)
-		t.gpu.appendToFreeList(blk)
-	}
-}
-
-// findCachedFreeBlock walks the GPU free list to find a block with cached content (Hash != "").
-func (t *TieredKVCache) findCachedFreeBlock() *KVBlock {
-	blk := t.gpu.FreeHead
-	for blk != nil {
-		if blk.Hash != "" {
-			return blk
-		}
-		blk = blk.NextFree
-	}
-	return nil
-}
