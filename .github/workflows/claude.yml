@@ -24,21 +24,6 @@ jobs:
     runs-on: [self-hosted]
 
     steps:
-      - name: Check actor permissions
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const actor = context.actor;
-            const { data: permLevel } = await github.rest.repos.getCollaboratorPermissionLevel({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              username: actor
-            });
-            const allowed = ['admin', 'maintain', 'write'];
-            if (!allowed.includes(permLevel.permission)) {
-              core.setFailed(`User ${actor} has '${permLevel.permission}' permission. Only admin, maintain, or write access can invoke @claude.`);
-            }
-
       - name: Resolve PR head for fork PRs
         id: pr-info
         if: github.event_name == 'issue_comment' && github.event.issue.pull_request
