@@ -145,7 +145,14 @@ At the default rate of 1 req/s across 4 instances, this cluster has plenty of he
   --rate 500 --num-requests 2000 --routing-policy weighted
 ```
 
-Watch `ttft_p99_ms` and `scheduling_delay_p99_ms` climb as the instances saturate. The [capacity planning tutorial](../../getting-started/tutorial.md) walks through exactly how to find the tipping point and right-size your cluster.
+At 500 req/s, the cluster saturates and the numbers tell the story:
+
+| Metric | 1 req/s | 500 req/s |
+|--------|---------|-----------|
+| **ttft_p99_ms** | 21.63 | 7095.72 |
+| **scheduling_delay_p99_ms** | 0 | 7066.10 |
+
+Users now wait **7 seconds** for the first token instead of 21 milliseconds — nearly all of it spent in the queue. The [capacity planning tutorial](../../getting-started/tutorial.md) walks through how to find the tipping point and right-size your cluster.
 
 ## The Bottom Line
 
