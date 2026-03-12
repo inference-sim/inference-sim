@@ -2039,7 +2039,7 @@ func TestSimulator_ProactiveCap_EliminatesOvershoot(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 100),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 100),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2081,7 +2081,7 @@ func TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 2),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 2),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2118,7 +2118,7 @@ func TestProcessCompletions_LengthCapped_MetricsRefreshed(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 100),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "blackbox", 100),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2154,7 +2154,7 @@ func TestRecordRequestCompletion_LengthCapped_ITL(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 100),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "blackbox", 100),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2189,7 +2189,7 @@ func TestRecordRequestCompletion_NormalRequest_ITL(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "blackbox", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
