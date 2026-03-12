@@ -111,6 +111,16 @@ var (
 	prefillRoutingScorers string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
+	// Per-pool hardware overrides (Phase 2, PR1)
+	prefillTP           int    // TP for prefill pool (0 = use global)
+	decodeTP            int    // TP for decode pool (0 = use global)
+	prefillHardware     string // GPU for prefill pool ("" = use global)
+	decodeHardware      string // GPU for decode pool ("" = use global)
+	prefillLatencyModel string // Latency backend for prefill pool ("" = use global)
+	decodeLatencyModel  string // Latency backend for prefill pool ("" = use global)
+	prefillMaxModelLen  int64  // Max model len for prefill pool (0 = use global)
+	decodeMaxModelLen   int64  // Max model len for decode pool (0 = use global)
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -984,6 +994,33 @@ var runCmd = &cobra.Command{
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs)
 
+		// Build per-pool hardware overrides (R18: CLI flags take precedence)
+		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+		if cmd.Flags().Changed("prefill-tp") {
+			prefillOverrides.TP = &prefillTP
+		}
+		if cmd.Flags().Changed("decode-tp") {
+			decodeOverrides.TP = &decodeTP
+		}
+		if prefillHardware != "" {
+			prefillOverrides.GPU = prefillHardware
+		}
+		if decodeHardware != "" {
+			decodeOverrides.GPU = decodeHardware
+		}
+		if prefillLatencyModel != "" {
+			prefillOverrides.LatencyBackend = prefillLatencyModel
+		}
+		if decodeLatencyModel != "" {
+			decodeOverrides.LatencyBackend = decodeLatencyModel
+		}
+		if cmd.Flags().Changed("prefill-max-model-len") {
+			prefillOverrides.MaxModelLen = &prefillMaxModelLen
+		}
+		if cmd.Flags().Changed("decode-max-model-len") {
+			decodeOverrides.MaxModelLen = &decodeMaxModelLen
+		}
+
 		startTime := time.Now() // Get current time (start)
 
 		// Unified cluster path (used for all values of numInstances)
@@ -1018,6 +1055,8 @@ var runCmd = &cobra.Command{
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,
+			PrefillOverrides:        prefillOverrides,
+			DecodeOverrides:         decodeOverrides,
 		}
 		cs := cluster.NewClusterSimulator(config, preGeneratedRequests)
 		if err := cs.Run(); err != nil {
@@ -1298,6 +1337,16 @@ func init() {
 	runCmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	runCmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	runCmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
+
+	// Per-pool hardware overrides (Phase 2, PR1)
+	runCmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism for prefill pool (0 = use global --tp)")
+	runCmd.Flags().IntVar(&decodeTP, "decode-tp", 0, "Tensor parallelism for decode pool (0 = use global --tp)")
+	runCmd.Flags().StringVar(&prefillHardware, "prefill-hardware", "", "GPU type for prefill pool (empty = use global --hardware)")
+	runCmd.Flags().StringVar(&decodeHardware, "decode-hardware", "", "GPU type for decode pool (empty = use global --hardware)")
+	runCmd.Flags().StringVar(&prefillLatencyModel, "prefill-latency-model", "", "Latency model backend for prefill pool (empty = use global --latency-model)")
+	runCmd.Flags().StringVar(&decodeLatencyModel, "decode-latency-model", "", "Latency model backend for decode pool (empty = use global --latency-model)")
+	runCmd.Flags().Int64Var(&prefillMaxModelLen, "prefill-max-model-len", 0, "Max model length for prefill pool (0 = use global --max-model-len)")
+	runCmd.Flags().Int64Var(&decodeMaxModelLen, "decode-max-model-len", 0, "Max model length for decode pool (0 = use global --max-model-len)")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
