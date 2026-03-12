@@ -1389,6 +1389,8 @@ func TestProcessCompletions_RuntimeLengthCap(t *testing.T) {
 		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
 	}
 
+	// Note: LengthCapped flag check deferred to Task 4 (field added in Task 3)
+
 	// Conservation: no requests lost
 	if sim.WaitQ.Len()+len(remaining)+sim.Metrics.CompletedRequests != 1 {
 		t.Errorf("conservation violated: queued=%d + remaining=%d + completed=%d != 1",
@@ -1444,9 +1446,9 @@ func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
 	if sim.Metrics.TotalOutputTokens == 0 {
 		t.Error("TotalOutputTokens = 0, want > 0 (some decode work should have happened)")
 	}
-	// Regression anchor: MaxModelLen(100) - input(50) = 50 decode steps
-	if sim.Metrics.TotalOutputTokens != 50 {
-		t.Errorf("TotalOutputTokens = %d, want 50 (regression anchor)", sim.Metrics.TotalOutputTokens)
+	// Regression anchor: proactive cap stops at MaxModelLen(100)-1-input(50) = 49 decode tokens
+	if sim.Metrics.TotalOutputTokens != 49 {
+		t.Errorf("TotalOutputTokens = %d, want 49 (regression anchor)", sim.Metrics.TotalOutputTokens)
 	}
 	// KV blocks released
 	if sim.KVCache.UsedBlocks() != 0 {
@@ -2019,5 +2021,84 @@ func TestEnqueueRequest_AutoFill_MaxOutputLen(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSimulator_ProactiveCap_EliminatesOvershoot verifies BC-1 end-to-end:
+// Output is MaxModelLen-1-input (49), not MaxModelLen-input (50).
+func TestSimulator_ProactiveCap_EliminatesOvershoot(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             10_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 100),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	req := &Request{
+		ID:           "proactive_test",
+		InputTokens:  GenerateRandomTokenIDs(sim.WorkloadRNG(), 50),
+		OutputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 200),
+		ArrivalTime:  0,
+		State:        StateQueued,
+	}
+	sim.InjectArrival(req)
+	sim.Run()
+
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Fatalf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
+	}
+	// Key: 49 tokens (MaxModelLen-1-input = 100-1-50), not 50 (old behavior)
+	if sim.Metrics.TotalOutputTokens != 49 {
+		t.Errorf("TotalOutputTokens = %d, want 49 (proactive cap: 100-1-50=49)", sim.Metrics.TotalOutputTokens)
+	}
+	// BC-5 fires at shifted boundary (PI >= maxModelLen-1)
+	if sim.Metrics.LengthCappedRequests != 1 {
+		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
+	}
+	// INV-1 conservation
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != 1 {
+		t.Errorf("INV-1 violated: %d+%d+%d+%d = %d, want 1",
+			sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning, sim.Metrics.DroppedUnservable, total)
+	}
+}
+
+// TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput verifies BC-11:
+// With MaxModelLen=2 and input=1, the proactive cap allows 0 decode tokens.
+func TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             10_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 2),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	req := &Request{
+		ID:           "boundary_2",
+		InputTokens:  GenerateRandomTokenIDs(sim.WorkloadRNG(), 1),
+		OutputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 10),
+		ArrivalTime:  0,
+		State:        StateQueued,
+	}
+	sim.InjectArrival(req)
+	sim.Run()
+
+	// MaxModelLen=2, input=1: proactive cap allows max(0, 2-1-1)=0 decode tokens
+	if sim.Metrics.TotalOutputTokens != 0 {
+		t.Errorf("TotalOutputTokens = %d, want 0 (MaxModelLen=2, input=1)", sim.Metrics.TotalOutputTokens)
+	}
+	if sim.Metrics.LengthCappedRequests != 1 {
+		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
+	}
+	// INV-1 conservation
+	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != 1 {
+		t.Errorf("INV-1 violated: %d", total)
 	}
 }

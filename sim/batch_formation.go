@@ -93,6 +93,14 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				numNewTokens = ctx.PrefillTokenThreshold
 			}
 			numNewTokens = min(numNewTokens, tokenBudget)
+			// Proactive MaxModelLen cap (BC-1): match vLLM scheduler.py:773-774.
+			// Note: the enqueue guard (len(InputTokens) < maxModelLen) guarantees
+			// maxAllowed >= 1 during prefill, so this clamp only reduces chunk size,
+			// never eliminates it. Defense-in-depth for bypass scenarios.
+			if ctx.MaxModelLen > 0 {
+				maxAllowed := max(ctx.MaxModelLen-1-req.ProgressIndex, 0)
+				numNewTokens = min(numNewTokens, maxAllowed)
+			}
 
 			if canSchedule := v.preemptForTokens(req, numNewTokens, &result, ctx, &tokenBudget); !canSchedule {
 				break
@@ -105,12 +113,23 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// Decode phase: allocate 1 token
 		if req.ProgressIndex >= util.Len64(req.InputTokens) && len(req.OutputTokens) > 0 {
 			decodeTokens := int64(1)
-			if canSchedule := v.preemptForTokens(req, decodeTokens, &result, ctx, &tokenBudget); !canSchedule {
-				break
+			// Proactive MaxModelLen cap (BC-1): skip decode at boundary.
+			// Equivalent to max(0, maxModelLen-1-PI) < 1, specialized for single-token decode.
+			// Note: when decodeTokens=0, the request stays in RunningBatch with its
+			// previously-allocated KV blocks for one zero-work step until processCompletions
+			// releases them via ReleaseKVBlocks. Under tight KV pressure this transiently
+			// reduces available blocks by the request's allocation.
+			if ctx.MaxModelLen > 0 && req.ProgressIndex+decodeTokens > ctx.MaxModelLen-1 {
+				decodeTokens = 0
 			}
-			tokenBudget--
-			req.NumNewTokens = 1
-			ctx.ComputedTokens[req.ID] += 1
+			if decodeTokens > 0 {
+				if canSchedule := v.preemptForTokens(req, decodeTokens, &result, ctx, &tokenBudget); !canSchedule {
+					break
+				}
+				tokenBudget--
+				req.NumNewTokens = 1
+				ctx.ComputedTokens[req.ID] += 1
+			}
 		}
 		reqIndex++
 	}
@@ -127,6 +146,12 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		}
 		numNewTokens = min(numNewTokens, tokenBudget)
 		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
+		// Proactive MaxModelLen cap (BC-2): BLIS safety extension (vLLM only caps running requests).
+		// For valid enqueued requests (input < maxModelLen), this is a no-op.
+		if ctx.MaxModelLen > 0 {
+			maxAllowed := max(ctx.MaxModelLen-1-startIndex, 0)
+			numNewTokens = min(numNewTokens, maxAllowed)
+		}
 		endIndex := startIndex + numNewTokens
 
 		if ok := ctx.KVCache.AllocateKVBlocks(next, startIndex, endIndex, cachedBlocks); !ok {
