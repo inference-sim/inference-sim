@@ -27,6 +27,7 @@ type BatchContext struct {
 	MaxScheduledTokens    int64
 	MaxRunningReqs        int64
 	PrefillTokenThreshold int64
+	MaxModelLen           int64 // 0 = unlimited (proactive cap disabled)
 	Now                   int64
 	StepCount             int
 	ComputedTokens        map[string]int64

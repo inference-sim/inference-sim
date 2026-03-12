@@ -415,6 +415,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		MaxScheduledTokens:    sim.maxScheduledTokens,
 		MaxRunningReqs:        sim.maxRunningReqs,
 		PrefillTokenThreshold: sim.longPrefillTokenThreshold,
+		MaxModelLen:           sim.maxModelLen,
 		Now:                   now,
 		StepCount:             sim.stepCount,
 		ComputedTokens:        sim.reqNumComputedTokens,
