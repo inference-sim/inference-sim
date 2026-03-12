@@ -681,6 +681,9 @@ var runCmd = &cobra.Command{
 		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
 			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
 		}
+		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 && decodeInstances == 0 {
+			logrus.Fatalf("--pd-decider=%q requires --prefill-instances and --decode-instances to be set (both are 0)", pdDecider)
+		}
 		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}

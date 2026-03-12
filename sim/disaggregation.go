@@ -62,11 +62,6 @@ const globalVirtualInstance = "__global__"
 //
 // Signal freshness (R17): ObserveRouting is called synchronously within the event loop,
 // so the cache state is always current at decision time.
-//
-// R13 compliance: This interface is designed for any stateful decider that needs routing
-// feedback — not tightly coupled to PrefixThresholdDecider. Future stateful deciders
-// (e.g., adaptive-rate, popularity-based) should implement this interface.
-// See disaggregation_test.go for the no-op reference implementation.
 type DisaggregationObserver interface {
 	ObserveRouting(req *Request, instanceID string)
 }
@@ -105,11 +100,8 @@ func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixThresholdDecider
 }
 
 // Decide returns Disaggregate=true when non-cached token count exceeds the threshold.
-// Empty requests (len(InputTokens) == 0) always return Disaggregate=false (trivially no prefill).
-// Caches block hashes for reuse by ObserveRouting on the non-disaggregated path.
-// On the disaggregated path ObserveRouting receives the prefill sub-request (ID: reqID+"_prefill"),
-// which does not match cachedReqID (reqID), so hashes are recomputed — the optimization
-// only fires for standard (non-disaggregated) routing where the same request object is used.
+// Empty requests (len(InputTokens) == 0) always return Disaggregate=false.
+// Caches block hashes for reuse by ObserveRouting when the same request is routed next.
 func (p *PrefixThresholdDecider) Decide(req *Request) DisaggregationDecision {
 	if len(req.InputTokens) == 0 {
 		return DisaggregationDecision{Disaggregate: false}
@@ -122,13 +114,8 @@ func (p *PrefixThresholdDecider) Decide(req *Request) DisaggregationDecision {
 }
 
 // ObserveRouting updates the prefix cache after a routing decision, recording the request's
-// block hashes under globalVirtualInstance. Reuses hashes computed by Decide when the
-// request ID matches (only effective on the non-disaggregated path; on the disaggregated
-// path ObserveRouting receives the prefill sub-request whose ID differs from what Decide
-// received, so hashes are recomputed from the same InputTokens — same result, no correctness
-// risk, just an additional ComputeBlockHashes call).
-// The nil check on cachedHashes guards against the edge case where cachedReqID is ""
-// and req.ID is also "" (both zero-values); the nil guard forces recomputation.
+// block hashes under globalVirtualInstance. Reuses hashes from Decide when the request ID
+// matches; otherwise recomputes (e.g., disaggregated path where sub-request ID differs).
 func (p *PrefixThresholdDecider) ObserveRouting(req *Request, _ string) {
 	if req == nil || len(req.InputTokens) == 0 {
 		return

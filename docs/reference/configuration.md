@@ -116,7 +116,7 @@ Prefill-Decode (PD) disaggregation splits each request into a prefill sub-reques
 |------|------|---------|-------------|
 | `--prefill-instances` | int | 0 | Number of prefill pool instances. 0 = PD disaggregation disabled. |
 | `--decode-instances` | int | 0 | Number of decode pool instances. 0 = PD disaggregation disabled. |
-| `--pd-decider` | string | "never" | Disaggregation decider: `never` (all requests use standard routing), `always` (all requests are disaggregated). |
+| `--pd-decider` | string | "never" | Disaggregation decider: `never` (standard routing), `always` (all disaggregated), `prefix-threshold` (cache-aware threshold). |
 | `--pd-transfer-bandwidth` | float64 | 25 | KV transfer bandwidth in GB/s. Typical values: 25 GB/s (RDMA CX7), 64 GB/s (PCIe5 p2p), 450 GB/s (NVLink4). |
 | `--pd-transfer-base-latency` | float64 | 0.05 | KV transfer base latency in milliseconds (fixed overhead added to every transfer). |
 | `--pd-kv-bytes-per-token` | int | 512 | KV cache bytes per token for transfer size estimation. Depends on model precision and head dimensions. |

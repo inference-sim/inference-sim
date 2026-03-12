@@ -255,11 +255,8 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			// INV-PD-4: register decode sub-request for CompletionTime detection.
 			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
 			inst.InjectDecodeOnline(e.decodeSubReq, e.time)
-			// Note: notifyDisaggregationObserver is intentionally NOT called here.
-			// The decode sub-request carries the same InputTokens as the original request
-			// whose prefix was already recorded in ObserveRouting during PrefillRoutingEvent.
-			// Calling it again would be a no-op (RecordBlocks re-touches the same hashes).
-			// Standard (non-disaggregated) routing notifies via RoutingDecisionEvent instead.
+			// Observer not called: prefix was already recorded during PrefillRoutingEvent.
+			// Decode sub-request has the same InputTokens, so re-notification is a no-op.
 			return
 		}
 	}

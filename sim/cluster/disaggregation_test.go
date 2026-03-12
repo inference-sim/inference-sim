@@ -425,9 +425,9 @@ func TestPrefixThreshold_HighThresholdNoDisaggregation(t *testing.T) {
 	mustRun(t, cs)
 
 	// With very high threshold, no requests should be disaggregated.
-	if len(cs.parentRequests) != 0 {
-		t.Errorf("parentRequests = %d, want 0 (threshold too high for any request to disaggregate)",
-			len(cs.parentRequests))
+	if len(cs.ParentRequests()) != 0 {
+		t.Errorf("ParentRequests = %d, want 0 (threshold too high for any request to disaggregate)",
+			len(cs.ParentRequests()))
 	}
 	// Requests still complete via the standard routing path.
 	m := cs.AggregatedMetrics()
@@ -446,8 +446,8 @@ func TestPrefixThreshold_ZeroThresholdAlwaysDisaggregates(t *testing.T) {
 	mustRun(t, cs)
 
 	// All requests have non-empty input tokens → threshold=0 → all disaggregate.
-	if len(cs.parentRequests) != 3 {
-		t.Errorf("parentRequests = %d, want 3 (threshold=0 disaggregates everything)", len(cs.parentRequests))
+	if len(cs.ParentRequests()) != 3 {
+		t.Errorf("ParentRequests = %d, want 3 (threshold=0 disaggregates everything)", len(cs.ParentRequests()))
 	}
 }
 
@@ -492,12 +492,13 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 	mustRun(t, cs)
 
 	// BC-PD-28a: req1 disaggregates (192 uncached tokens > threshold=150, empty cache).
-	if _, ok := cs.parentRequests["req-prefix-1"]; !ok {
+	parents := cs.ParentRequests()
+	if findParent(parents, "req-prefix-1") == nil {
 		t.Error("BC-PD-28: req1 (192 uncached tokens, threshold=150) should have disaggregated")
 	}
 	// BC-PD-28b: req2 does NOT disaggregate (58 non-cached tokens ≤ threshold=150 after cache warmup).
 	// If observer was not called, req2 would have 250 non-cached tokens > 150 and would disaggregate.
-	if _, ok := cs.parentRequests["req-prefix-2"]; ok {
+	if findParent(parents, "req-prefix-2") != nil {
 		t.Error("BC-PD-28: req2 (58 non-cached after cache warmup, threshold=150) should not disaggregate — observer must have been called for req1")
 	}
 }
@@ -510,12 +511,22 @@ func TestPrefixThreshold_TransferConservation(t *testing.T) {
 	cs := NewClusterSimulator(config, requests)
 	mustRun(t, cs)
 
-	if cs.transfersInitiated != cs.transfersCompleted {
-		t.Errorf("transfer conservation violated: initiated=%d, completed=%d",
-			cs.transfersInitiated, cs.transfersCompleted)
+	// INV-PD-3: every disaggregated request must have both TransferStartTime and TransferCompleteTime set.
+	parents := cs.ParentRequests()
+	if len(parents) != 5 {
+		t.Fatalf("ParentRequests = %d, want 5 (threshold=0 disaggregates all)", len(parents))
 	}
-	if cs.transfersInitiated != 5 {
-		t.Errorf("transfersInitiated = %d, want 5", cs.transfersInitiated)
+	for _, p := range parents {
+		if p.TransferStartTime == 0 {
+			t.Errorf("parent %s: TransferStartTime not set", p.ID)
+		}
+		if p.TransferCompleteTime == 0 {
+			t.Errorf("parent %s: TransferCompleteTime not set", p.ID)
+		}
+		if p.TransferCompleteTime < p.TransferStartTime {
+			t.Errorf("parent %s: TransferCompleteTime (%d) < TransferStartTime (%d)",
+				p.ID, p.TransferCompleteTime, p.TransferStartTime)
+		}
 	}
 }
 
@@ -795,11 +806,11 @@ func TestDisaggregation_NegativeTransferDurationClamp(t *testing.T) {
 	event.Execute(cs)
 
 	// The trace should contain a KVTransferRecord with TransferDuration == 0 (clamped)
-	records := cs.trace.KVTransfers
+	records := cs.Trace().KVTransfers
 	if len(records) == 0 {
 		// If KV allocation failed (insufficient capacity), no record is written.
-		// In that case, the clamp path was not reached. Check DroppedAtDecodeKV instead.
-		if cs.droppedAtDecodeKV > 0 {
+		// In that case, the clamp path was not reached. Check DroppedKVAllocations instead.
+		if cs.DroppedKVAllocations() > 0 {
 			t.Skip("decode KV allocation failed before reaching transfer duration clamp")
 		}
 		t.Fatal("expected KVTransferRecord to be recorded")

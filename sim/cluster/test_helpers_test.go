@@ -75,3 +75,13 @@ func newTestRequests(n int) []*sim.Request {
 	return testGenerateRequests(42, math.MaxInt64, 10.0/1e6, n,
 		0, 100, 20, 10, 200, 50, 10, 10, 100)
 }
+
+// findParent returns the ParentRequest with the given ID, or nil if not found.
+func findParent(parents []*ParentRequest, id string) *ParentRequest {
+	for _, p := range parents {
+		if p.ID == id {
+			return p
+		}
+	}
+	return nil
+}
