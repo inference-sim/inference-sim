@@ -41,6 +41,7 @@ type Request struct {
 	ScheduledStepIdx int     // Step index when this request got scheduled (waiting -> running)
 	FinishedStepIdx  int     // Step index when this request finished (running -> completed)
 	NumNewTokens     int     // Number of new tokens to be generated in the current step
+	LengthCapped     bool    // Set when force-completed by runtime MaxModelLen cap (BC-5)
 	ITL              []int64  // List of inter-token latencies
 	Priority         float64  // Scheduling priority score, recomputed each step by PriorityPolicy.
 	                          // Higher = more urgent. Set by Simulator.Step() and optionally by
