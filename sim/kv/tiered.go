@@ -7,6 +7,8 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
+	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
 // cpuBlock represents a KV block mirrored from GPU to CPU tier.
@@ -192,10 +194,8 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 	if ok {
 		return true
 	}
-	// GPU allocation failed — try to reload blocks from CPU to GPU hash table.
-	// After reload, re-check cached blocks: reloaded hashes may now match the request's prefix,
-	// reducing the number of new blocks needed.
-	reloaded := t.tryReloadFromCPU()
+	// GPU allocation failed — try targeted CPU reload for this request's prefix.
+	reloaded := t.reloadPrefixFromCPU(req.InputTokens)
 	if reloaded {
 		// Re-compute cached blocks now that CPU content is back on GPU
 		newCached := t.gpu.GetCachedBlocks(req.InputTokens)
@@ -203,9 +203,6 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 		if newStart > startIndex {
 			if newStart >= endIndex {
 				// Entire requested range is cached after reload.
-				// For new requests, commit cached blocks (capped at endIndex)
-				// to RequestMap so ReleaseKVBlocks can track them.
-				// Running requests already have blocks in RequestMap.
 				if _, exists := t.gpu.RequestMap[req.ID]; !exists {
 					blocksNeeded := (endIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
 					if blocksNeeded > int64(len(newCached)) {
@@ -225,9 +222,68 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 	return false
 }
 
-// tryReloadFromCPU is a stub — replaced by reloadPrefixFromCPU in Task 3.
-func (t *TieredKVCache) tryReloadFromCPU() bool {
-	return false
+// reloadPrefixFromCPU attempts to reload prefix-matching blocks from CPU to GPU.
+// Computes hierarchical block hashes for the given token prefix and checks CPU for each.
+// Reloaded blocks are placed back on the GPU free list with valid hashes (not allocated).
+// Returns true if any blocks were reloaded.
+//
+// The maxReloads guard ensures we never pop the same GPU free block twice —
+// each reload uses a distinct free block. Without this, pop+append creates
+// a cycle where block A's hash is destroyed on the second pop.
+func (t *TieredKVCache) reloadPrefixFromCPU(tokens []int) bool {
+	n := util.Len64(tokens) / t.gpu.BlockSize()
+	maxReloads := t.gpu.countFreeBlocks() // limit to distinct free blocks
+	prevHash := ""
+	reloaded := false
+	reloadCount := int64(0)
+	for i := int64(0); i < n; i++ {
+		start := i * t.gpu.BlockSize()
+		end := start + t.gpu.BlockSize()
+		h := hash.HashBlock(prevHash, tokens[start:end])
+
+		// Already on GPU — skip
+		if _, inGPU := t.gpu.HashToBlock[h]; inGPU {
+			prevHash = h
+			continue
+		}
+
+		// Check CPU
+		cpuBlk := t.cpu.lookup(h)
+		if cpuBlk == nil {
+			break // First miss — hierarchical hashing means later blocks are useless
+		}
+
+		// Guard: don't re-pop a previously-reloaded block
+		if reloadCount >= maxReloads {
+			break
+		}
+
+		// Reload: pop GPU free block, fill with CPU content, re-append to free list
+		gpuBlk := t.gpu.popFreeBlock()
+		if gpuBlk == nil {
+			break
+		}
+		gpuBlk.Tokens = append(gpuBlk.Tokens[:0], cpuBlk.tokens...)
+		gpuBlk.Hash = h
+		gpuBlk.RefCount = 0
+		gpuBlk.InUse = false
+		t.gpu.HashToBlock[h] = gpuBlk.ID
+		t.gpu.appendToFreeList(gpuBlk)
+
+		// Accumulate transfer latency
+		blockSize := float64(t.gpu.BlockSize())
+		transferTicks := int64(math.Ceil(blockSize / t.transferBandwidth))
+		t.pendingLatency += t.baseLatency + transferTicks
+
+		// Touch CPU block to refresh LRU recency (block is actively needed)
+		t.cpu.touch(h)
+
+		t.cpuHitCount++
+		reloaded = true
+		reloadCount++
+		prevHash = h
+	}
+	return reloaded
 }
 
 func (t *TieredKVCache) GetCachedBlocks(tokens []int) []int64 {
