@@ -270,17 +270,17 @@ var runCmd = &cobra.Command{
 		if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
 			hardware, tp, version := GetDefaultSpecs(model)
 			if tensorParallelism == 0 && tp > 0 {
-				logrus.Warnf("Finding default values of TP for model=%v\n", model)
+				logrus.Warnf("Finding default values of TP for model=%v", model)
 				logrus.Warnf("Using default tp=%v", tp)
 				tensorParallelism = tp
 			}
 			if gpu == "" && len(hardware) > 0 {
-				logrus.Warnf("Finding default values of hardware for model=%v\n", model)
+				logrus.Warnf("Finding default values of hardware for model=%v", model)
 				logrus.Warnf("Using default GPU=%v", hardware)
 				gpu = hardware
 			}
 			if vllmVersion == "" && len(version) > 0 {
-				logrus.Warnf("Finding default values of vLLM version for model=%v\n", model)
+				logrus.Warnf("Finding default values of vLLM version for model=%v", model)
 				logrus.Warnf("Using default vLLM version=%v", version)
 				vllmVersion = version
 			}
