@@ -2486,7 +2486,7 @@
 </tbody>
 </table>
 <h2 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h2>
-<p>Long prefill sequences can cause <strong>head-of-line (HOL) blocking</strong> — a 2,048-token prefill takes ~43ms, blocking shorter requests from starting.</p>
+<p>Long prefill sequences can cause <strong>head-of-line (HOL) blocking</strong> — a 2,048-token prefill takes ~97ms on Qwen3-14B / H100 / TP=1 (roofline mode), blocking shorter requests from starting.</p>
 <p>Chunked prefill splits long prefills into smaller chunks:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--long-prefill-token-threshold<span class="w"> </span><span class="m">256</span><span class="w"> </span><span class="se">\</span>

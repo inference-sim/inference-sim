@@ -658,10 +658,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-baseline-single-instance" class="md-nav__link">
+  <a href="#step-2-baseline-single-instance-at-low-load" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Baseline — Single Instance
+        Step 2: Baseline — Single Instance at Low Load
       
     </span>
   </a>
@@ -2301,10 +2301,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-baseline-single-instance" class="md-nav__link">
+  <a href="#step-2-baseline-single-instance-at-low-load" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Baseline — Single Instance
+        Step 2: Baseline — Single Instance at Low Load
       
     </span>
   </a>
@@ -2410,48 +2410,56 @@
 
 <h1 id="tutorial-capacity-planning">Tutorial: Capacity Planning<a class="headerlink" href="#tutorial-capacity-planning" title="Permanent link">&para;</a></h1>
 <p>This tutorial walks through a complete capacity planning exercise: determining how many inference instances you need to serve a target request rate while meeting latency SLOs.</p>
-<p><strong>Scenario:</strong> You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 &lt; 500ms. You need to find the minimum number of instances for 20 requests/second.</p>
+<p><strong>Scenario:</strong> You're deploying Qwen3 14B on H100 GPUs with TP=1. Your SLO is TTFT p99 &lt; 500ms. You need to find the minimum number of instances for 200 requests/second.</p>
 <h2 id="step-1-estimate-instance-capacity">Step 1: Estimate Instance Capacity<a class="headerlink" href="#step-1-estimate-instance-capacity" title="Permanent link">&para;</a></h2>
-<p>Before scaling up, measure the throughput of a single instance empirically. The default roofline mode works out of the box for any model with a HuggingFace config.json. This step works regardless of which <a href="../../guide/latency-models/">latency model</a> you use (roofline, blackbox, trained-roofline, or crossmodel).</p>
-<p>Run a single instance at low load to establish the baseline service rate:</p>
+<p>Before scaling up, measure the throughput of a single instance under load. Run enough requests at a high arrival rate to saturate the instance — this reveals the maximum throughput with continuous batching:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">50</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span>
 </code></pre></div>
-<p>Check the <code>responses_per_sec</code> value in the output — this is the single-instance throughput at low utilization. For Qwen3 14B / H100 / TP=1 with default workload (512 input / 512 output tokens), you'll see roughly <strong>2.5 requests/second</strong>.</p>
-<p>This means for 20 req/s, you need at minimum <code>ceil(20/2.5) = 8</code> instances. Let's verify with simulation.</p>
-<h2 id="step-2-baseline-single-instance">Step 2: Baseline — Single Instance<a class="headerlink" href="#step-2-baseline-single-instance" title="Permanent link">&para;</a></h2>
+<p>Check the <code>responses_per_sec</code> value in the output. For Qwen3 14B / H100 / TP=1 with default workload (512 input / 512 output tokens), a saturated instance handles roughly <strong>17 requests/second</strong>.</p>
+<div class="admonition note">
+<p class="admonition-title">Why measure at high load?</p>
+<p>With continuous batching, throughput depends on batch size. At low arrival rates (e.g., <code>--rate 2</code>), requests trickle in one at a time and the instance processes only ~2 req/s — not because it's slow, but because there's nothing else to batch. At saturation, many concurrent requests share each decode step, amortizing overhead and reaching ~17 req/s. Always measure capacity under load.</p>
+</div>
+<p>This means for 200 req/s, you need at minimum <code>ceil(200/17) = 12</code> instances. Let's verify with simulation.</p>
+<div class="admonition info">
+<p class="admonition-title"><code>--rate</code> is the total arrival rate</p>
+<p>The <code>--rate</code> flag specifies the <strong>total</strong> arrival rate across the cluster, not per-instance. With <code>--rate 200 --num-instances 8</code>, each instance receives roughly 200/8 = 25 req/s (distributed by the routing policy).</p>
+</div>
+<h2 id="step-2-baseline-single-instance-at-low-load">Step 2: Baseline — Single Instance at Low Load<a class="headerlink" href="#step-2-baseline-single-instance-at-low-load" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">2</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">50</span>
 </code></pre></div>
-<p>At 2 req/s (well below the ~2.5 req/s capacity), TTFT should be low. Note the <code>ttft_p99_ms</code> value — this is your best-case baseline.</p>
+<p>At 2 req/s (well below capacity), TTFT p99 is around 50ms. Note this value — this is your best-case baseline that won't improve further with more instances.</p>
 <h2 id="step-3-scale-up-and-find-the-saturation-point">Step 3: Scale Up and Find the Saturation Point<a class="headerlink" href="#step-3-scale-up-and-find-the-saturation-point" title="Permanent link">&para;</a></h2>
-<p>Run simulations at increasing instance counts for 20 req/s:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 4 instances (~10 req/s capacity → heavily overloaded)</span>
+<p>Run simulations at increasing instance counts for 200 req/s:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 4 instances (50 req/s per instance vs ~17 saturated capacity → heavily overloaded)</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># 8 instances (~20 req/s capacity → near saturation)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># 8 instances (25 req/s per instance → still above capacity but batching helps)</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># 12 instances (~30 req/s capacity → comfortable headroom)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># 12 instances (~17 req/s per instance → balanced, near baseline)</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span>
 </code></pre></div>
-<p>Compare <code>ttft_p99_ms</code> across runs. You'll see:</p>
+<p>Compare the cluster-level <code>ttft_p99_ms</code> across runs:</p>
 <ul>
-<li><strong>4 instances:</strong> TTFT p99 extremely high (queue growing without bound)</li>
-<li><strong>8 instances:</strong> TTFT p99 elevated (close to saturation, <code>excess = λ/k - μ</code> is small but positive)</li>
-<li><strong>12 instances:</strong> TTFT p99 near baseline (sufficient capacity)</li>
+<li><strong>4 instances:</strong> TTFT p99 around 1,500ms — the per-instance arrival rate (50 req/s) far exceeds capacity (~17 req/s), so requests queue up and wait</li>
+<li><strong>8 instances:</strong> TTFT p99 drops to around 60ms — per-instance arrival rate (25 req/s) is above single-request capacity but manageable with continuous batching</li>
+<li><strong>12 instances:</strong> TTFT p99 around 54ms — near baseline, with comfortable headroom</li>
 </ul>
 <div class="admonition tip">
-<p class="admonition-title">Understanding DES saturation</p>
-<p>In a discrete-event simulator, saturation manifests as <strong>unbounded queue growth</strong>: when the arrival rate exceeds the per-instance service rate, the WaitQ grows at <code>excess = λ/k - μ</code> requests per second, where λ is the total arrival rate, k is the instance count, and μ is the per-instance service rate. Unlike real systems with CPU load metrics, the DES signal for saturation is queue depth growth rate.</p>
+<p class="admonition-title">Understanding saturation</p>
+<p><strong>Saturation means requests arrive faster than they can be served, so the queue grows continuously.</strong> In queueing theory terms, the per-instance excess rate is <code>excess = λ/k - μ</code>, where λ is the total arrival rate (200 req/s), k is the instance count, and μ is the per-instance service rate (~17 req/s). When excess &gt; 0, the queue grows at that rate and TTFT degrades.</p>
+<p>The improvement from 4→8 instances is dramatic (1,500ms → 60ms) because the excess rate drops from ~33 req/s to ~8 req/s per instance — a much larger relative change than the 2x instance count would suggest.</p>
 </div>
 <h2 id="step-4-identify-the-bottleneck-type">Step 4: Identify the Bottleneck Type<a class="headerlink" href="#step-4-identify-the-bottleneck-type" title="Permanent link">&para;</a></h2>
 <p>When TTFT is high, there are three possible causes:</p>
@@ -2467,29 +2475,29 @@
 <li>Low <code>preemption_count</code> + low <code>scheduling_delay</code> + high TTFT → compute saturation</li>
 </ul>
 <h2 id="step-5-compare-routing-policies">Step 5: Compare Routing Policies<a class="headerlink" href="#step-5-compare-routing-policies" title="Permanent link">&para;</a></h2>
-<p>With 12 instances at 20 req/s, compare routing strategies:</p>
+<p>With 8 instances at 200 req/s (near saturation), compare routing strategies:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Round-robin (baseline)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span>--routing-policy<span class="w"> </span>round-robin
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Weighted (default profile)</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="c1"># Least-loaded</span>
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">  </span>--routing-policy<span class="w"> </span>least-loaded
 </code></pre></div>
-<p>For prefix-heavy workloads (like RAG with shared system prompts), try the prefix-affinity-dominant profile:</p>
+<p>With uniform workloads (same prompt/output distribution), routing policies produce similar results because all instances are roughly equally loaded. Routing differentiation becomes meaningful with <strong>heterogeneous workloads</strong> — for example, prefix-heavy traffic where <code>prefix-affinity</code> routing concentrates same-prefix requests on the same instance for KV cache reuse:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:5,queue-depth:1&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span>--prefix-tokens<span class="w"> </span><span class="m">512</span>
@@ -2498,23 +2506,24 @@
 <p>For automated comparison across many configurations, use fitness evaluation:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">20</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">12</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span>--fitness-weights<span class="w"> </span><span class="s2">&quot;p99_ttft:3,mean_e2e:1,throughput:2&quot;</span>
 </code></pre></div>
+<p>The fitness score is a weighted sum of normalized metrics — <strong>higher is better</strong>. Each latency metric is normalized to a [0, 1] range using <code>1/(1+x/1000)</code>, and throughput is normalized to [0, 1] using <code>throughput/max_throughput</code>. With weights <code>p99_ttft:3, mean_e2e:1, throughput:2</code>, the score is a weighted sum out of a theoretical maximum of 6.0 (the sum of all weights).</p>
 <div class="admonition warning">
 <p class="admonition-title">Fitness score normalization</p>
-<p>Fitness scores use <code>1/(1+x/1000)</code> normalization for latency metrics, which compresses large raw differences into small score differences. A 38% TTFT improvement may appear as only an 8% fitness score difference. Always examine raw metrics alongside fitness scores.</p>
+<p>The <code>1/(1+x/1000)</code> normalization compresses large raw differences into small score differences. A 38% TTFT improvement may appear as only an 8% fitness score difference. Always examine raw metrics (<code>ttft_p99_ms</code>, <code>e2e_mean_ms</code>, <code>responses_per_sec</code>) alongside fitness scores when making capacity decisions.</p>
 </div>
 <h2 id="step-7-validate-against-your-slo">Step 7: Validate Against Your SLO<a class="headerlink" href="#step-7-validate-against-your-slo" title="Permanent link">&para;</a></h2>
-<p>Your SLO: TTFT p99 &lt; 500ms at 20 req/s.</p>
-<p>From the simulations above, find the minimum instance count where <code>ttft_p99_ms &lt; 500</code>. That's your capacity plan. Add 20-30% headroom for traffic spikes (real deployments see bursty traffic that exceeds the Poisson assumption).</p>
+<p>Your SLO: TTFT p99 &lt; 500ms at 200 req/s.</p>
+<p>From the simulations above, 8 instances already meet the SLO (TTFT p99 ~60ms), and 12 instances provide comfortable headroom (~54ms). Add 20-30% headroom for traffic spikes (real deployments see bursty traffic that exceeds the Poisson assumption).</p>
 <h2 id="key-takeaways">Key Takeaways<a class="headerlink" href="#key-takeaways" title="Permanent link">&para;</a></h2>
 <ol>
-<li><strong>Compute capacity first</strong> — estimate <code>1/step_time</code> per instance from beta coefficients</li>
-<li><strong>Saturation is non-linear</strong> — TTFT degrades super-linearly as you approach capacity. Scaling from 4→8 instances produces a 7x improvement, not 2x (queue growth rate drops faster than linear)</li>
+<li><strong>Measure capacity under load</strong> — run at high arrival rates (e.g., <code>--rate 500</code>) to measure saturated throughput; low-load measurements underestimate capacity due to small batch sizes</li>
+<li><strong>Saturation is non-linear</strong> — TTFT degrades super-linearly as you approach capacity. Scaling from 4→8 instances can produce a 25x improvement, not just 2x, because the per-instance excess rate drops dramatically</li>
 <li><strong>Check the bottleneck type</strong> — preemption count, scheduling delay, and raw TTFT tell you whether to add instances, add memory, or tune batch size</li>
-<li><strong>Routing matters at scale</strong> — routing policy choice can change TTFT p99 by 3x at high request rates</li>
+<li><strong>Routing matters for heterogeneous workloads</strong> — with uniform traffic, routing policies produce similar results; with prefix-heavy or mixed-SLO workloads, prefix-affinity and load-aware routing provide meaningful differentiation</li>
 <li><strong>Deterministic replay</strong> — use <code>--seed</code> to get identical results for A/B comparisons</li>
 </ol>
 <h2 id="whats-next">What's Next<a class="headerlink" href="#whats-next" title="Permanent link">&para;</a></h2>

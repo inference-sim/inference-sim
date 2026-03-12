@@ -2524,7 +2524,7 @@
 <li><a href="https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1">Mixtral-8x7B</a> (MoE)</li>
 <li><a href="https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf">CodeLlama-34B</a></li>
 </ul>
-<p>For gated models (e.g., LLaMA), set <code>HF_TOKEN</code>:</p>
+<p>Set <code>HF_TOKEN</code> to access gated models (e.g., <a href="https://huggingface.co/meta-llama/Llama-2-7b-hf">Llama-2</a>) and avoid rate limits:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>

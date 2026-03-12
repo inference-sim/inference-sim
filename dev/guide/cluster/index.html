@@ -2508,12 +2508,13 @@
 <p>All instances share the same SimConfig (model, GPU, TP, KV blocks). BLIS does not currently model heterogeneous fleets (mixed GPU types or TP configurations).</p>
 </div>
 <h2 id="scaling-and-saturation">Scaling and Saturation<a class="headerlink" href="#scaling-and-saturation" title="Permanent link">&para;</a></h2>
-<p>Instance scaling produces <strong>super-linear</strong> TTFT improvement near saturation. Doubling from 4→8 instances at near-capacity (rate=500) improves TTFT p99 by 7.4x, not 2x.</p>
+<p>Instance scaling produces <strong>super-linear</strong> TTFT improvement near saturation. With the default model (Qwen3-14B / H100 / TP=1, ~17 req/s per instance at saturation), scaling from 4→12 instances at rate=200 improves TTFT p99 from ~1,500ms to ~54ms.</p>
 <p>This happens because the per-instance queue growth rate <code>excess = λ/k - μ</code> drops faster than linearly:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>4 instances: excess = 500/4 - 57.4 = 67.6 req/s per instance → rapid queue growth
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>8 instances: excess = 500/8 - 57.4 = 5.1 req/s per instance  → minimal queueing
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>4 instances:  excess = 200/4 - 17  = 33 req/s per instance   → rapid queue growth
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>8 instances:  excess = 200/8 - 17  = 8 req/s per instance    → near saturation
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>12 instances: excess = 200/12 - 17 = -0.3 req/s per instance → balanced (sub-saturation)
 </code></pre></div>
-<p>At sub-saturation (rate=100): scaling effect vanishes (1.06x).</p>
+<p>At sub-saturation (excess ≤ 0): TTFT converges to the baseline (~54ms) and further scaling provides diminishing returns.</p>
 <h2 id="admission-control">Admission Control<a class="headerlink" href="#admission-control" title="Permanent link">&para;</a></h2>
 <p>For rate-limiting and traffic shaping policies, see the <a href="../admission/">Admission Control</a> page.</p>
 <h2 id="admission-and-routing-latency">Admission and Routing Latency<a class="headerlink" href="#admission-and-routing-latency" title="Permanent link">&para;</a></h2>

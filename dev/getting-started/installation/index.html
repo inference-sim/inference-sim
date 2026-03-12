@@ -2376,7 +2376,7 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
 </code></pre></div>
 <h2 id="environment-setup">Environment Setup<a class="headerlink" href="#environment-setup" title="Permanent link">&para;</a></h2>
-<p>BLIS uses roofline mode by default, which auto-fetches model architecture configs from HuggingFace. For gated models (e.g., LLaMA), set <code>HF_TOKEN</code>:</p>
+<p>BLIS uses roofline mode by default, which auto-fetches model architecture configs from HuggingFace. Set <code>HF_TOKEN</code> to access gated models (e.g., <a href="https://huggingface.co/meta-llama/Llama-2-7b-hf">Llama-2</a>) and avoid rate limits:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
 </code></pre></div>
 <p>Public models (e.g., Qwen3) work without a token. See <a href="https://huggingface.co/docs/hub/en/security-tokens">HuggingFace access tokens</a> to create a token.</p>

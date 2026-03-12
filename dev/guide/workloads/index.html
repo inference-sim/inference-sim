@@ -3118,7 +3118,7 @@
 <h2 id="estimating-capacity-for-your-workload">Estimating Capacity for Your Workload<a class="headerlink" href="#estimating-capacity-for-your-workload" title="Permanent link">&para;</a></h2>
 <div class="admonition warning">
 <p class="admonition-title">CLI mode and YAML mode have different defaults</p>
-<p>CLI mode uses <code>--prompt-tokens 512, --output-tokens 512</code> by default (step time ~17.4ms, capacity ~57 req/s per instance). YAML workloads define their own distributions — a YAML with mean=256/128 has step time ~11.8ms, capacity ~85 req/s. Don't reuse capacity estimates across modes.</p>
+<p>CLI mode uses <code>--prompt-tokens 512, --output-tokens 512</code> by default. With the default roofline latency model (Qwen3-14B / H100 / TP=1), a saturated single instance handles ~17 req/s. YAML workloads define their own distributions — a YAML with shorter sequences (e.g., mean=256/128) will have higher per-instance throughput. Don't reuse capacity estimates across modes or models.</p>
 </div>
 <h2 id="multi-client-composition">Multi-Client Composition<a class="headerlink" href="#multi-client-composition" title="Permanent link">&para;</a></h2>
 <p>Use <code>blis compose</code> to merge multiple workload specs into a single spec:</p>
