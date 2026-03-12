@@ -106,16 +106,25 @@ BLIS prints per-instance metrics followed by a cluster-level summary. Here's the
   "injected_requests": 100,
   "total_input_tokens": 54508,
   "total_output_tokens": 54017,
-  "responses_per_sec": 0.99,
-  "tokens_per_sec": 533.77,
-  "e2e_mean_ms": 2385.26,
-  "e2e_p99_ms": 5352.13,
-  "ttft_mean_ms": 20.94,
-  "ttft_p99_ms": 29.65,
-  "itl_mean_ms": 4.38,
-  "scheduling_delay_p99_ms": 8.38,
+  "vllm_estimated_duration_s": 101.359297,
+  "responses_per_sec": 0.986589320957899,
+  "tokens_per_sec": 532.9259535018283,
+  "e2e_mean_ms": 1511.14539,
+  "e2e_p90_ms": 2389.8013,
+  "e2e_p95_ms": 2666.55615,
+  "e2e_p99_ms": 3396.03111,
+  "ttft_mean_ms": 11.599950000000002,
+  "ttft_p90_ms": 18.8503,
+  "ttft_p95_ms": 19.849049999999995,
+  "ttft_p99_ms": 21.63142,
+  "itl_mean_ms": 2.776062054538386,
+  "itl_p90_ms": 2.784,
+  "itl_p95_ms": 2.787,
+  "itl_p99_ms": 2.791,
+  "scheduling_delay_p99_ms": 0,
   "preemption_count": 0,
-  "dropped_unservable": 0
+  "dropped_unservable": 0,
+  "length_capped_requests": 0
 }
 ```
 
@@ -123,13 +132,13 @@ The key metrics to look at:
 
 | Metric | Value | What It Tells You |
 |--------|-------|-------------------|
-| **ttft_p99_ms** | 29.65 | 99th-percentile time to first token. Are users waiting too long for the first response? |
-| **e2e_p99_ms** | 5352.13 | Tail end-to-end latency. Worst-case total request duration |
-| **responses_per_sec** | 0.99 | Cluster throughput. Is the system keeping up with demand? |
+| **ttft_p99_ms** | 21.63142 | 99th-percentile time to first token. Are users waiting too long for the first response? |
+| **e2e_p99_ms** | 3396.03111 | Tail end-to-end latency. Worst-case total request duration |
+| **responses_per_sec** | 0.986589320957899 | Cluster throughput. Is the system keeping up with demand? |
 | **preemption_count** | 0 | KV cache evictions. Non-zero means memory pressure is degrading throughput |
-| **scheduling_delay_p99_ms** | 8.38 | Time spent waiting in the queue. High values signal you need more instances |
+| **scheduling_delay_p99_ms** | 0 | Time spent waiting in the queue. High values signal you need more instances |
 
-At the default rate of 1 req/s across 4 instances, this cluster has plenty of headroom: TTFT p99 is under 30ms and no requests are queued or preempted. What happens when you crank the rate to 500 req/s? That's where it gets interesting. Try it:
+At the default rate of 1 req/s across 4 instances, this cluster has plenty of headroom: TTFT p99 is under 22ms and no requests are queued or preempted. What happens when you crank the rate to 500 req/s? That's where it gets interesting. Try it:
 
 ```bash
 ./blis run --model qwen/qwen2.5-7b-instruct --num-instances 4 \
