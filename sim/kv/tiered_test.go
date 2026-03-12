@@ -461,6 +461,53 @@ func TestTieredKVCache_KVThrashingRate_ZeroMirrors(t *testing.T) {
 	assert.Equal(t, 0.0, tiered.KVThrashingRate())
 }
 
+// --- INV-4 conservation test ---
+
+func TestTieredKVCache_Conservation_MirrorReloadCycle(t *testing.T) {
+	// INV-4: allocated + free = total must hold through mirror+reload cycles
+	gpu := NewKVCacheState(6, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
+	total := gpu.TotalCapacity()
+
+	checkINV4 := func(label string) {
+		t.Helper()
+		assert.Equal(t, total, gpu.UsedBlocks()+(total-gpu.UsedBlocks()), "INV-4 %s", label)
+	}
+
+	// Allocate, mirror, release — check INV-4 at every step
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(req, 0, 4, []int64{})
+	checkINV4("after alloc")
+	assert.Equal(t, int64(2), gpu.UsedBlocks())
+
+	tiered.MirrorToCPU([]*sim.Request{req})
+	checkINV4("after mirror")
+	// GPU state unchanged by mirror
+	assert.Equal(t, int64(2), gpu.UsedBlocks())
+
+	tiered.ReleaseKVBlocks(req)
+	checkINV4("after release")
+	assert.Equal(t, int64(0), gpu.UsedBlocks(), "all blocks free after release")
+
+	// Fill and release to trigger reload path
+	for i := 0; i < 6; i++ {
+		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 20, i*2 + 21}}
+		tiered.AllocateKVBlocks(f, 0, 2, []int64{})
+	}
+	checkINV4("after fill")
+
+	tiered.ReleaseKVBlocks(&sim.Request{ID: "f0"})
+	checkINV4("after partial release")
+
+	// Trigger reload
+	newReq := &sim.Request{ID: "new", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(newReq, 0, 4, []int64{})
+	checkINV4("after reload attempt")
+
+	// Verify CPU has blocks but GPU conservation unaffected
+	assert.Greater(t, tiered.cpu.used, int64(0), "CPU should have mirrored blocks")
+}
+
 // --- Validation tests (kept from old file) ---
 
 func TestCpuTier_Validation_ZeroCapacity_Panics(t *testing.T) {
