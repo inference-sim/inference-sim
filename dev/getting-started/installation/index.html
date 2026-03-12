@@ -613,6 +613,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#environment-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#verify-the-build" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2279,6 +2290,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#environment-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#verify-the-build" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2353,20 +2375,34 @@
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>inference-sim
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
 </code></pre></div>
+<h2 id="environment-setup">Environment Setup<a class="headerlink" href="#environment-setup" title="Permanent link">&para;</a></h2>
+<p>BLIS uses roofline mode by default, which auto-fetches model architecture configs from HuggingFace. For gated models (e.g., LLaMA), set <code>HF_TOKEN</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
+</code></pre></div>
+<p>Public models (e.g., Qwen3) work without a token. See <a href="https://huggingface.co/docs/hub/en/security-tokens">HuggingFace access tokens</a> to create a token.</p>
+<div class="admonition note">
+<p class="admonition-title">Air-gapped / offline environments</p>
+<p>The default roofline mode requires network access to HuggingFace on first run (configs are cached in <code>model_configs/</code> after that). For environments without internet access:</p>
+<ul>
+<li>Use <strong>blackbox mode</strong>: <code>./blis run --model &lt;name&gt; --latency-model blackbox</code> (uses pre-trained coefficients from <code>defaults.yaml</code>, no network needed)</li>
+<li>Or <strong>pre-populate</strong> <code>model_configs/&lt;model&gt;/config.json</code> and use <code>--model-config-folder</code></li>
+</ul>
+<p>For CI pipelines, set <code>HF_TOKEN</code> in your environment secrets to avoid rate limits on gated models.</p>
+</div>
 <h2 id="verify-the-build">Verify the Build<a class="headerlink" href="#verify-the-build" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span>
 </code></pre></div>
 <p>You should see JSON output on stdout containing fields like <code>ttft_mean_ms</code>, <code>e2e_mean_ms</code>, and <code>responses_per_sec</code>. This confirms BLIS is working correctly.</p>
 <h2 id="optional-local-documentation">Optional: Local Documentation<a class="headerlink" href="#optional-local-documentation" title="Permanent link">&para;</a></h2>
 <p>To preview the documentation site locally:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material<span class="o">==</span><span class="m">9</span>.7.3
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>mkdocs<span class="w"> </span>serve
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material<span class="o">==</span><span class="m">9</span>.7.3
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>mkdocs<span class="w"> </span>serve
 </code></pre></div>
 <p>Then open <a href="http://localhost:8000">http://localhost:8000</a>.</p>
 <h2 id="optional-linter">Optional: Linter<a class="headerlink" href="#optional-linter" title="Permanent link">&para;</a></h2>
 <p>For contributors, install the linter used in CI:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>go<span class="w"> </span>install<span class="w"> </span>github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>go<span class="w"> </span>install<span class="w"> </span>github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...
 </code></pre></div>
 <h2 id="whats-next">What's Next<a class="headerlink" href="#whats-next" title="Permanent link">&para;</a></h2>
 <ul>

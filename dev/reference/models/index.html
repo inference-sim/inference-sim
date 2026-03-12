@@ -1357,6 +1357,18 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#blackbox-coefficient-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Blackbox Coefficient Catalog
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Blackbox Coefficient Catalog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#dense-models" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1366,8 +1378,8 @@
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
+        
+          <li class="md-nav__item">
   <a href="#moe-models" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1377,8 +1389,8 @@
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
+        
+          <li class="md-nav__item">
   <a href="#quantized-variants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1388,12 +1400,17 @@
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#analytical-modes-roofline-cross-model-trained-roofline" class="md-nav__link">
+  <a href="#validated-architectures" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Analytical Modes (Roofline, Cross-Model, Trained-Roofline)
+        Validated Architectures
       
     </span>
   </a>
@@ -1401,10 +1418,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#adding-a-new-model" class="md-nav__link">
+  <a href="#adding-blackbox-coefficients" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Adding a New Model
+        Adding Blackbox Coefficients
       
     </span>
   </a>
@@ -2246,6 +2263,18 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#blackbox-coefficient-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Blackbox Coefficient Catalog
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Blackbox Coefficient Catalog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#dense-models" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2255,8 +2284,8 @@
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
+        
+          <li class="md-nav__item">
   <a href="#moe-models" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2266,8 +2295,8 @@
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
+        
+          <li class="md-nav__item">
   <a href="#quantized-variants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2277,12 +2306,17 @@
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#analytical-modes-roofline-cross-model-trained-roofline" class="md-nav__link">
+  <a href="#validated-architectures" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Analytical Modes (Roofline, Cross-Model, Trained-Roofline)
+        Validated Architectures
       
     </span>
   </a>
@@ -2290,10 +2324,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#adding-a-new-model" class="md-nav__link">
+  <a href="#adding-blackbox-coefficients" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Adding a New Model
+        Adding Blackbox Coefficients
       
     </span>
   </a>
@@ -2321,8 +2355,10 @@
 
 
 <h1 id="supported-models">Supported Models<a class="headerlink" href="#supported-models" title="Permanent link">&para;</a></h1>
-<p>All models below have pre-trained alpha/beta coefficients in <code>defaults.yaml</code> for blackbox mode. Models with a HuggingFace <code>config.json</code> in <code>model_configs/</code> additionally support <a href="../../guide/latency-models/#roofline-mode-analytical">roofline mode</a>.</p>
-<h2 id="dense-models">Dense Models<a class="headerlink" href="#dense-models" title="Permanent link">&para;</a></h2>
+<p>BLIS supports any dense transformer model with a HuggingFace <code>config.json</code>. The default roofline mode auto-fetches configs on first use — no setup required. MoE (Mixture-of-Experts) models are also supported; Mixtral 8x7B has been validated end-to-end.</p>
+<h2 id="blackbox-coefficient-catalog">Blackbox Coefficient Catalog<a class="headerlink" href="#blackbox-coefficient-catalog" title="Permanent link">&para;</a></h2>
+<p>The models below have pre-trained alpha/beta coefficients in <a href="https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml"><code>defaults.yaml</code></a> for <a href="../../guide/latency-models/#blackbox-mode">blackbox mode</a> (<code>--latency-model blackbox</code>). Blackbox mode offers slightly higher accuracy for these specific model/GPU/TP combinations due to per-model fitting.</p>
+<h3 id="dense-models">Dense Models<a class="headerlink" href="#dense-models" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2373,7 +2409,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="moe-models">MoE Models<a class="headerlink" href="#moe-models" title="Permanent link">&para;</a></h2>
+<h3 id="moe-models">MoE Models<a class="headerlink" href="#moe-models" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2396,24 +2432,27 @@
 </tr>
 </tbody>
 </table>
-<h2 id="quantized-variants">Quantized Variants<a class="headerlink" href="#quantized-variants" title="Permanent link">&para;</a></h2>
+<h3 id="quantized-variants">Quantized Variants<a class="headerlink" href="#quantized-variants" title="Permanent link">&para;</a></h3>
 <p>Red Hat AI (<code>redhatai/</code>) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, Qwen 2.5, and SmolLM3 3B (FP8 only). See <a href="https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml"><code>defaults.yaml</code></a> for the full list.</p>
-<h2 id="analytical-modes-roofline-cross-model-trained-roofline">Analytical Modes (Roofline, Cross-Model, Trained-Roofline)<a class="headerlink" href="#analytical-modes-roofline-cross-model-trained-roofline" title="Permanent link">&para;</a></h2>
-<p>Any model with a HuggingFace <code>config.json</code> can use roofline mode (<code>--latency-model roofline</code>), cross-model mode (<code>--latency-model crossmodel</code>), or trained-roofline mode (<code>--latency-model trained-roofline</code>). All three auto-fetch configs from HuggingFace on first use, caching them in <code>model_configs/</code>.</p>
-<p><strong>Trained-roofline</strong> (recommended) applies learned correction factors to analytical roofline basis functions — 7% MAPE GPU combined step time across 4 architectures. <strong>Cross-model</strong> uses hand-engineered physics features with globally-fitted coefficients. <strong>Roofline</strong> uses pure analytical estimation (no learned corrections). All three are MoE-aware. Tested architectures include Qwen 2.5 1.5B/3B, Qwen 3 14B, LLaMA 2 7B/70B, Mixtral 8x7B, and CodeLlama 34B.</p>
-<h2 id="adding-a-new-model">Adding a New Model<a class="headerlink" href="#adding-a-new-model" title="Permanent link">&para;</a></h2>
-<p>To add blackbox support for a new model:</p>
+<h2 id="validated-architectures">Validated Architectures<a class="headerlink" href="#validated-architectures" title="Permanent link">&para;</a></h2>
+<p>The analytical modes (roofline, cross-model, trained-roofline) have been validated against real vLLM measurements on these architectures:</p>
+<ul>
+<li>Qwen 2.5 1.5B/3B, Qwen 3 14B</li>
+<li>LLaMA 2 7B/70B</li>
+<li>CodeLlama 34B</li>
+<li>Mixtral 8x7B (MoE)</li>
+</ul>
+<p><strong>Trained-roofline</strong> achieves 7% MAPE GPU combined step time across these architectures. Any other model with a HuggingFace <code>config.json</code> will work — it just hasn't been formally validated.</p>
+<div class="admonition note">
+<p class="admonition-title">Parallelism and quantization</p>
+<p>The analytical latency models (roofline, cross-model, trained-roofline) currently model tensor parallelism (TP) only. Data parallelism (DP), expert parallelism (EP), and quantization effects (FP8, W4A16, W8A8) are under active development. For quantized model deployments, use blackbox mode with calibrated coefficients for best accuracy.</p>
+</div>
+<h2 id="adding-blackbox-coefficients">Adding Blackbox Coefficients<a class="headerlink" href="#adding-blackbox-coefficients" title="Permanent link">&para;</a></h2>
+<p>To calibrate blackbox coefficients for a new model:</p>
 <ol>
-<li>Calibrate alpha/beta coefficients using live vLLM profiling (see <a href="../configuration/#coefficient-calibration">Configuration: Coefficient Calibration</a>)</li>
+<li>Run live vLLM profiling (see <a href="../configuration/#coefficient-calibration">Coefficient Calibration</a>)</li>
 <li>Add the entry to <code>defaults.yaml</code></li>
 </ol>
-<p>To add roofline support:</p>
-<ol>
-<li>Download the model's <code>config.json</code> from HuggingFace</li>
-<li>Place in <code>model_configs/&lt;model-name&gt;/config.json</code></li>
-<li>Run with <code>--latency-model roofline --hardware &lt;GPU&gt; --tp &lt;N&gt;</code></li>
-</ol>
-<p>Or let BLIS auto-fetch it with <code>--latency-model roofline</code> (or <code>trained-roofline</code> for higher accuracy).</p>
 
 
 

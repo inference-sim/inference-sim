@@ -2337,77 +2337,118 @@
 <h2 id="single-instance-simulation">Single-Instance Simulation<a class="headerlink" href="#single-instance-simulation" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b
 </code></pre></div>
-<p>This runs 100 requests through a single inference instance using pre-trained coefficients for Qwen3 14B on an H100 GPU with TP=1.</p>
+<p>This runs 100 requests through a single inference instance using roofline mode (analytical estimation) for Qwen3 14B on an H100 GPU with TP=1. The model config is auto-fetched from HuggingFace on first use.</p>
 <h3 id="reading-the-output">Reading the Output<a class="headerlink" href="#reading-the-output" title="Permanent link">&para;</a></h3>
-<p>The JSON output on stdout contains:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;ttft_mean_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">12.34</span><span class="p">,</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">&quot;ttft_p99_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">45.67</span><span class="p">,</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">&quot;e2e_mean_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1234.56</span><span class="p">,</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">&quot;e2e_p99_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2345.67</span><span class="p">,</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">&quot;itl_mean_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">8.91</span><span class="p">,</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">&quot;responses_per_sec&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">5.67</span><span class="p">,</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">&quot;completed_requests&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">}</span>
-</code></pre></div>
+<p>BLIS prints diagnostic logs to stderr and results to stdout. You'll see log lines (prefixed with <code>INFO</code> or <code>WARN</code>) followed by a <code>=== Simulation Metrics ===</code> header and pretty-printed JSON:</p>
+<p><strong>Latency metrics</strong> (all in milliseconds, reported as mean/p90/p95/p99):</p>
 <table>
 <thead>
 <tr>
-<th>Metric</th>
+<th>Field</th>
 <th>What It Measures</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>TTFT</strong> (Time To First Token)</td>
-<td>Latency from request arrival to first output token — measures responsiveness</td>
+<td><code>ttft_mean_ms</code>, <code>ttft_p99_ms</code></td>
+<td><strong>Time to First Token</strong> — how long until the first output token is generated. Lower is better for interactive use.</td>
 </tr>
 <tr>
-<td><strong>E2E</strong> (End-to-End)</td>
-<td>Total latency from arrival to final token — measures total request duration</td>
+<td><code>e2e_mean_ms</code>, <code>e2e_p99_ms</code></td>
+<td><strong>End-to-End latency</strong> — total time from request arrival to final output token.</td>
 </tr>
 <tr>
-<td><strong>ITL</strong> (Inter-Token Latency)</td>
-<td>Time between consecutive output tokens — measures streaming smoothness</td>
+<td><code>itl_mean_ms</code>, <code>itl_p99_ms</code></td>
+<td><strong>Inter-Token Latency</strong> — time between consecutive output tokens. Lower means smoother streaming.</td>
 </tr>
 <tr>
-<td><strong>responses_per_sec</strong></td>
-<td>Throughput — requests completed per second</td>
+<td><code>scheduling_delay_p99_ms</code></td>
+<td>Wait time from request arrival until processing begins (includes any queueing).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Throughput:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What It Measures</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>responses_per_sec</code></td>
+<td>Completed requests per second.</td>
+</tr>
+<tr>
+<td><code>tokens_per_sec</code></td>
+<td>Output tokens generated per second.</td>
+</tr>
+<tr>
+<td><code>completed_requests</code></td>
+<td>How many requests finished within the simulation window.</td>
+</tr>
+<tr>
+<td><code>total_input_tokens</code>, <code>total_output_tokens</code></td>
+<td>Total tokens processed across all completed requests.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Health indicators:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What It Measures</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>preemption_count</code></td>
+<td>Number of times a running request was evicted to make room for others. Non-zero suggests the system is overloaded.</td>
+</tr>
+<tr>
+<td><code>dropped_unservable</code></td>
+<td>Requests rejected because they were too large for the configured memory or context length.</td>
+</tr>
+<tr>
+<td><code>still_queued</code>, <code>still_running</code></td>
+<td>Requests not yet completed when the simulation ended. Non-zero means the workload outlasted the simulation window.</td>
 </tr>
 </tbody>
 </table>
 <h2 id="cluster-mode">Cluster Mode<a class="headerlink" href="#cluster-mode" title="Permanent link">&para;</a></h2>
 <p>Scale to 4 instances with routing:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <p>This simulates a 4-instance cluster receiving 100 requests/second. The <code>weighted</code> routing policy uses the default scorer profile (<code>prefix-affinity:3, queue-depth:2, kv-utilization:2</code>) to distribute requests across instances.</p>
 <h2 id="try-different-configurations">Try Different Configurations<a class="headerlink" href="#try-different-configurations" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Higher traffic rate</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># With decision tracing (see where each request was routed)</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span>--trace-level<span class="w"> </span>decisions<span class="w"> </span>--summarize-trace
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="c1"># With trained-roofline mode (recommended for new models, 7% MAPE)</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1"># With pure roofline mode (analytical, no learned corrections)</span>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Higher traffic rate</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># With decision tracing (see where each request was routed)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>--trace-level<span class="w"> </span>decisions<span class="w"> </span>--summarize-trace
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># With trained-roofline mode (recommended for new models, 7% MAPE)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="c1"># With pure roofline mode (analytical, no learned corrections)</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">  </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <blockquote>
 <p><strong>Tip:</strong> Roofline, trained-roofline, and cross-model modes auto-fetch model configs from HuggingFace. Set <code>HF_TOKEN</code> to access gated models (e.g., LLaMA) and avoid rate limits:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span>your_token_here
 </code></pre></div>
 <p>See <a href="https://huggingface.co/docs/hub/en/security-tokens">HuggingFace access tokens</a> to create a token.</p>
 </blockquote>

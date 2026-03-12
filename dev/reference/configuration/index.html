@@ -3012,7 +3012,7 @@
 <td><code>--hardware</code></td>
 <td>string</td>
 <td>""</td>
-<td>GPU type (e.g., <code>H100</code>, <code>A100</code>). If empty, loaded from <code>defaults.yaml</code>.</td>
+<td>GPU type. Bundled options: <code>H100</code>, <code>A100-SXM</code>, <code>A100-80</code>. If empty, loaded from <code>defaults.yaml</code>. Add new GPUs to <code>hardware_config.json</code>.</td>
 </tr>
 <tr>
 <td><code>--tp</code></td>
@@ -3049,8 +3049,8 @@
 <tr>
 <td><code>--latency-model</code></td>
 <td>string</td>
-<td>""</td>
-<td>Latency model backend: <code>blackbox</code> (default), <code>roofline</code>, <code>crossmodel</code>, <code>trained-roofline</code>. When set to <code>roofline</code>, <code>crossmodel</code>, or <code>trained-roofline</code>, auto-fetches HuggingFace config.json and resolves hardware config. Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models. <code>trained-roofline</code> is recommended for new models (7% MAPE GPU step time).</td>
+<td>"roofline"</td>
+<td>Latency model backend: <code>roofline</code> (default), <code>blackbox</code>, <code>crossmodel</code>, <code>trained-roofline</code>. When set to <code>roofline</code>, <code>crossmodel</code>, or <code>trained-roofline</code>, auto-fetches HuggingFace config.json and resolves hardware config. Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models. <code>trained-roofline</code> is recommended for new models (7% MAPE GPU step time).</td>
 </tr>
 <tr>
 <td><code>--model-config-folder</code></td>
@@ -3070,11 +3070,11 @@
 <h3 id="latency-mode-selection">Latency Mode Selection<a class="headerlink" href="#latency-mode-selection" title="Permanent link">&para;</a></h3>
 <p>The latency model mode is selected based on available configuration:</p>
 <ol>
-<li><strong>Blackbox mode</strong> (default): If coefficients are provided via CLI flags or loaded from <code>defaults.yaml</code></li>
-<li><strong>Explicit roofline mode</strong>: If <code>--latency-model roofline</code> is set with <code>--hardware</code> and <code>--tp</code>. Model config is auto-resolved: <code>model_configs/</code> (local) → HuggingFace fetch → error. Alpha coefficients and <code>total_kv_blocks</code> are loaded from <code>defaults.yaml</code> when available. Beta coefficients are replaced by analytical roofline computation. Note: <code>--latency-model blackbox</code> explicitly prevents implicit roofline detection (respecting user intent).</li>
-<li><strong>Explicit cross-model mode</strong>: If <code>--latency-model crossmodel</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. Architecture features derived from HuggingFace config.json. MoE-aware.</li>
-<li><strong>Implicit roofline mode</strong>: If all coefficients are zero and all four of <code>--model-config-folder</code>, <code>--hardware-config</code>, <code>--hardware</code>, and <code>--tp</code> are provided</li>
-<li><strong>Error</strong>: If no coefficients can be resolved and roofline inputs are incomplete</li>
+<li><strong>Roofline mode</strong> (default): Auto-resolves model config from HuggingFace and hardware config from bundled <code>hardware_config.json</code>. Requires <code>--hardware</code> and <code>--tp</code> (loaded from <code>defaults.yaml</code> when available).</li>
+<li><strong>Blackbox mode</strong>: If <code>--latency-model blackbox</code> is set. Uses trained alpha/beta coefficients from <code>defaults.yaml</code>. Requires a matching entry for the model/GPU/TP combination.</li>
+<li><strong>Cross-model mode</strong>: If <code>--latency-model crossmodel</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. Architecture features derived from HuggingFace config.json. MoE-aware.</li>
+<li><strong>Trained-roofline mode</strong>: If <code>--latency-model trained-roofline</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 10 globally-fitted coefficients (7 beta for roofline corrections + 3 alpha for CPU overhead) from <code>trained_roofline_defaults</code> in <code>defaults.yaml</code>. Achieves 7% MAPE on GPU combined step time.</li>
+<li><strong>Error</strong>: If blackbox mode is selected and no coefficients can be resolved for the model/GPU/TP combination</li>
 </ol>
 <h2 id="cluster-configuration">Cluster Configuration<a class="headerlink" href="#cluster-configuration" title="Permanent link">&para;</a></h2>
 <p>With <code>--num-instances 1</code> (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no admission or routing layer. With <code>--num-instances N</code> (N &gt; 1), the cluster simulation activates: requests pass through the admission and routing pipeline before reaching per-instance wait queues. See <a href="../../concepts/architecture/">Cluster Architecture</a> for the multi-instance pipeline and <a href="../../concepts/core-engine/">Core Engine</a> for single-instance internals.</p>
@@ -3505,21 +3505,23 @@
 <a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="w">    </span><span class="nt">total_kv_blocks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">17600</span>
 </code></pre></div>
 <h3 id="resolution-process">Resolution Process<a class="headerlink" href="#resolution-process" title="Permanent link">&para;</a></h3>
-<p>When BLIS starts, it resolves latency coefficients and KV block counts through a layered process. Explicit CLI flags always take precedence (R18).</p>
-<p><strong>Latency coefficient resolution:</strong></p>
+<p>When BLIS starts, it resolves latency configuration through a layered process. Explicit CLI flags always take precedence (R18).</p>
+<p><strong>Hardware and TP defaults resolution (all backends):</strong></p>
+<p>Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from <code>defaults.yaml</code> for the specified <code>--model</code> when those flags are not explicitly provided. This ensures analytical backends (roofline, crossmodel, trained-roofline) can auto-resolve without requiring explicit <code>--hardware</code> and <code>--tp</code> for models listed in <code>defaults.yaml</code>.</p>
+<p><strong>Backend-specific resolution:</strong></p>
 <ol>
-<li>If <code>--latency-model roofline</code> or <code>--latency-model crossmodel</code> is set:</li>
+<li>If <code>--latency-model roofline</code> (default), <code>crossmodel</code>, or <code>trained-roofline</code>:</li>
 <li>Auto-resolve model config: check <code>model_configs/</code> for existing <code>config.json</code>, fetch from HuggingFace on miss (set <code>HF_TOKEN</code> for gated models)</li>
 <li>Auto-resolve hardware config from bundled <code>hardware_config.json</code></li>
-<li>For roofline: load alpha coefficients and per-model KV blocks from <code>defaults.yaml</code> (beta coefficients are replaced by analytical computation). Warns if no per-model KV blocks found</li>
-<li>For crossmodel: load global alpha + beta coefficients from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>, and per-model KV blocks if available</li>
+<li>For roofline: beta coefficients are computed analytically from model architecture and hardware specs</li>
+<li>For crossmodel: load global alpha + beta coefficients from <code>crossmodel_defaults</code> in <code>defaults.yaml</code></li>
+<li>For trained-roofline: load global correction coefficients from <code>trained_roofline_defaults</code> in <code>defaults.yaml</code></li>
 <li><code>--model-config-folder</code> and <code>--hardware-config</code> override auto-resolution when explicitly set</li>
-<li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are not explicitly provided on the CLI and no analytical backend is selected:</li>
+<li>If <code>--latency-model blackbox</code>:</li>
 <li>Look up the model in <code>defaults.yaml</code> using <code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code></li>
 <li>Load alpha/beta coefficients from the matching entry</li>
-<li>If coefficients are still all-zero (no defaults found) but <code>--model-config-folder</code> and <code>--hardware-config</code> are provided:</li>
-<li>Enable roofline mode (implicit activation)</li>
-<li>If coefficients were explicitly provided via CLI (including explicit zeros):</li>
+<li>If no matching entry is found, exit with error suggesting roofline, crossmodel, or trained-roofline</li>
+<li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are explicitly provided via CLI:</li>
 <li>Use them directly, no <code>defaults.yaml</code> lookup</li>
 </ol>
 <p><strong><code>--total-kv-blocks</code> resolution</strong> (highest priority wins):</p>
