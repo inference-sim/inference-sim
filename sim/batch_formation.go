@@ -119,9 +119,12 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		next := ctx.WaitQ.Peek()
 
 		// Handle decode-only requests (PD disaggregation: KV pre-allocated by transfer).
-		// When ProgressIndex >= inputLen, the request skips prefill and starts in decode phase.
+		// When ProgressIndex > 0 and >= inputLen, the request skips prefill and starts in decode phase.
+		// The ProgressIndex > 0 guard ensures this path only fires for PD decode sub-requests
+		// (where AllocateTransferredKV explicitly set ProgressIndex = inputLen), not for
+		// pathological zero-input requests in non-PD mode (where ProgressIndex is always 0).
 		inputLen := util.Len64(next.InputTokens)
-		if next.ProgressIndex >= inputLen && len(next.OutputTokens) > 0 {
+		if next.ProgressIndex > 0 && next.ProgressIndex >= inputLen && len(next.OutputTokens) > 0 {
 			decodeTokens := int64(1)
 			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {
 				break
