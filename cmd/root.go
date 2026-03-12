@@ -292,15 +292,17 @@ var runCmd = &cobra.Command{
 
 		// --latency-model roofline: auto-resolve model config and hardware config
 		if backend == "roofline" {
+			var missing []string
 			if gpu == "" {
-				logrus.Fatalf("--latency-model roofline requires --hardware (GPU type). " +
-					"No default found in defaults.yaml for model=%s. " +
-					"Provide --hardware explicitly", model)
+				missing = append(missing, "--hardware (GPU type)")
 			}
 			if tensorParallelism <= 0 {
-				logrus.Fatalf("--latency-model roofline requires --tp > 0. " +
-					"No default found in defaults.yaml for model=%s. " +
-					"Provide --tp explicitly", model)
+				missing = append(missing, "--tp (tensor parallelism)")
+			}
+			if len(missing) > 0 {
+				logrus.Fatalf("--latency-model roofline requires %s. "+
+					"No defaults found in defaults.yaml for model=%s. "+
+					"Provide these flags explicitly", strings.Join(missing, " and "), model)
 			}
 
 			// Hard error if user explicitly requested roofline AND provided coefficients.
@@ -351,15 +353,17 @@ var runCmd = &cobra.Command{
 
 		// --latency-model crossmodel: auto-resolve model config and load global coefficients
 		if backend == "crossmodel" {
+			var missing []string
 			if gpu == "" {
-				logrus.Fatalf("--latency-model crossmodel requires --hardware (GPU type). " +
-					"No default found in defaults.yaml for model=%s. " +
-					"Provide --hardware explicitly", model)
+				missing = append(missing, "--hardware (GPU type)")
 			}
 			if tensorParallelism <= 0 {
-				logrus.Fatalf("--latency-model crossmodel requires --tp > 0. " +
-					"No default found in defaults.yaml for model=%s. " +
-					"Provide --tp explicitly", model)
+				missing = append(missing, "--tp (tensor parallelism)")
+			}
+			if len(missing) > 0 {
+				logrus.Fatalf("--latency-model crossmodel requires %s. "+
+					"No defaults found in defaults.yaml for model=%s. "+
+					"Provide these flags explicitly", strings.Join(missing, " and "), model)
 			}
 
 			// Resolve model config folder (same auto-fetch chain as roofline)
@@ -419,15 +423,17 @@ var runCmd = &cobra.Command{
 
 		// --latency-model trained-roofline: auto-resolve model config and load global coefficients
 		if backend == "trained-roofline" {
+			var missing []string
 			if gpu == "" {
-				logrus.Fatalf("--latency-model trained-roofline requires --hardware (GPU type). " +
-					"No default found in defaults.yaml for model=%s. " +
-					"Provide --hardware explicitly", model)
+				missing = append(missing, "--hardware (GPU type)")
 			}
 			if tensorParallelism <= 0 {
-				logrus.Fatalf("--latency-model trained-roofline requires --tp > 0. " +
-					"No default found in defaults.yaml for model=%s. " +
-					"Provide --tp explicitly", model)
+				missing = append(missing, "--tp (tensor parallelism)")
+			}
+			if len(missing) > 0 {
+				logrus.Fatalf("--latency-model trained-roofline requires %s. "+
+					"No defaults found in defaults.yaml for model=%s. "+
+					"Provide these flags explicitly", strings.Join(missing, " and "), model)
 			}
 
 			// Resolve model config folder (same auto-fetch chain as roofline/crossmodel)
