@@ -57,7 +57,7 @@ See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-toke
 
 ## Quick Start
 
-Run BLIS for `qwen/qwen3-14b` with default configs (roofline mode auto-fetches model config from HuggingFace):
+Run BLIS for `qwen/qwen3-14b` with default configs (auto-fetches model config from HuggingFace):
 
 ```bash
 ./blis run --model qwen/qwen3-14b
