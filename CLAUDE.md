@@ -254,14 +254,15 @@ inference-sim/
 │   └── register.go            # init()-based registration of NewLatencyModelFunc into sim/
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
-│   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; Run() returns error
+│   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; Run() returns error; accessors: ParentRequests() (sorted slice), PerInstanceMetricsByID() (map copy)
 │   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent, DisaggregationDecisionEvent (PD disaggregation pipeline with bifurcation)
 │   ├── pd_events.go           # PrefillRoutingEvent, KVTransferStartedEvent, KVTransferCompletedEvent, DecodeRoutingEvent (PR2 disaggregated request flow)
 │   ├── parent_request.go      # ParentRequest type for tracking disaggregated request lifecycle across prefill and decode sub-requests
 │   ├── counterfactual.go      # computeCounterfactual() for top-k candidate ranking and regret computation
 │   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
-│   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
+│   ├── metrics.go             # RawMetrics (includes PD *PDMetrics, nil when disaggregation inactive), Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
 │   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields (PrefillInstances, DecodeInstances, PDDecider, PDPrefixThreshold for PD disaggregation); ToSimConfig() returns the embedded config
+│   ├── pd_metrics.go          # PDMetrics struct (DisaggregatedCount, ParentTTFT, TransferDuration, PrefillThroughput, DecodeThroughput, LoadImbalanceRatio), CollectPDMetrics (pure function, post-simulation), collectPoolThroughput (R2, R11)
 │   ├── pool.go                # PoolRole type, ValidatePoolTopology(), BuildPoolMembership() for PD disaggregation pool topology
 │   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
 ├── sim/workload/              # ServeGen-informed workload generation (PR10)
@@ -282,9 +283,9 @@ inference-sim/
 │   ├── convert.go             # Format converters: ConvertServeGen, ConvertCSVTrace, ConvertPreset, ComposeSpecs
 │   ├── cohort.go              # CohortSpec expansion: diurnal, spike, drain patterns → lifecycle windows
 │   └── synthesis.go           # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
-├── sim/trace/                 # Decision trace recording (PR13)
-│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
-│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
+├── sim/trace/                 # Decision trace recording (PR13, extended in PR4)
+│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods (RecordAdmission, RecordRouting, RecordDisaggregation, RecordPrefillRouting, RecordDecodeRouting, RecordKVTransfer)
+│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore, DisaggregationRecord, PrefillRoutingRecord, DecodeRoutingRecord, KVTransferRecord (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
 ├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets

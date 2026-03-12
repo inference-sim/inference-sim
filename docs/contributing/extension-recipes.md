@@ -71,14 +71,25 @@ To add a new trace record type (e.g., `ScaleRecord` for autoscaling events):
 1. **Define the record struct** in `sim/trace/record.go` (pure data, no `sim/` dependency)
 2. **Add a slice field** to `SimulationTrace` in `sim/trace/trace.go` (e.g., `Scales []ScaleRecord`)
 3. **Add a recording method** to `SimulationTrace` (e.g., `RecordScale(ScaleRecord)`)
-4. **Hook recording** into the cluster event pipeline in `sim/cluster/cluster_event.go` (guard with `if cs.trace != nil` for zero-overhead default)
+4. **Hook recording** into the cluster event pipeline (guard with `if cs.trace != nil` for zero-overhead default):
+   - For standard routing events: `sim/cluster/cluster_event.go`
+   - For PD disaggregation events: `sim/cluster/pd_events.go` (PrefillRoutingEvent and DecodeRoutingEvent). Note: `KVTransferRecord` is recorded in `DecodeRoutingEvent.Execute()` (not `KVTransferStartedEvent`) because `DecodeInstanceID` is only populated at decode routing time.
+   - **Pool-filtered snapshots:** PD routing events must pass `filteredSnapshots` (not `state.Snapshots`) to `computeCounterfactual()`. Pool-filtered snapshots contain only pool-member instances; passing full-cluster snapshots would produce candidates from the wrong pool.
 5. **Update `Summarize()`** in `sim/trace/summary.go` to aggregate the new record type
-6. **Add behavioral tests** in `sim/trace/*_test.go`
+6. **Update the `--summarize-trace` output block** in `cmd/root.go` to print the new summary fields (guard with a non-zero count check so they only appear when the feature is active)
+7. **Add behavioral tests** in `sim/trace/*_test.go`
+
+**Activation conditions for PD trace records:** PD-specific records (`DisaggregationRecord`, `PrefillRoutingRecord`, `DecodeRoutingRecord`, `KVTransferRecord`) are only emitted when **both** of the following are configured:
+- `--trace-level decisions` (or higher) — enables the trace recorder
+- `--prefill-instances N --decode-instances M` — enables PD disaggregation pool topology
+
+Setting `--trace-level decisions` alone (without pool flags) produces admission and standard routing records but zero PD records.
 
 Examples:
 - See `AdmissionRecord` in `sim/trace/record.go` for a simple record
 - See `RoutingRecord` with `CandidateScore` for a record with nested counterfactual data
 - See `computeCounterfactual()` in `sim/cluster/counterfactual.go` for derived computation that lives in `sim/cluster/` (not `sim/trace/`) because it needs `sim.RoutingSnapshot`
+- See `PrefillRoutingRecord`/`DecodeRoutingRecord` for records with pool-scoped counterfactual candidates
 
 ## Adding New Latency Model Backends
 
@@ -173,6 +184,60 @@ To add a new batch formation strategy (e.g., disaggregated prefill/decode, specu
 Examples:
 - See `VLLMBatchFormation` in `sim/batch_formation.go` for the vLLM FCFS + chunked-prefill + preemption strategy
 - See `preemptForTokens` for the KV allocation + eviction loop pattern
+
+## Adding a New Disaggregation Decider
+
+To add a new disaggregation decider (e.g., a threshold-based decider that disaggregates only long prefills):
+
+1. **Implement `DisaggregationDecider`** in `sim/disaggregation.go`:
+   ```go
+   type PrefixThresholdDecider struct{ MinPrefillTokens int }
+   func (d *PrefixThresholdDecider) Decide(req *sim.Request) DisaggregationDecision {
+       if len(req.InputTokens) >= d.MinPrefillTokens {
+           return DisaggregationDecision{Disaggregate: true}
+       }
+       return DisaggregationDecision{Disaggregate: false}
+   }
+   ```
+2. **Register in `NewDisaggregationDecider` factory** in `sim/disaggregation.go`: add a `case` branch for the new decider name (e.g., `"prefix-threshold"`). The decider name is supplied via `--pd-decider` CLI flag and stored in `DeploymentConfig.PDDecider`.
+3. **Add CLI parameter** if the decider needs configuration (e.g., `--pd-prefill-threshold-tokens`). Full wiring:
+   - Add a field to `DeploymentConfig` in `sim/cluster/deployment.go`:
+     ```go
+     PDPrefillThresholdTokens int // minimum input tokens to disaggregate
+     ```
+   - Add a flag in `cmd/root.go` (alongside the other `--pd-*` flags):
+     ```go
+     runCmd.Flags().IntVar(&pdPrefillThresholdTokens, "pd-prefill-threshold-tokens", 0,
+         "Minimum input token count to trigger disaggregation (used with --pd-decider prefix-threshold)")
+     ```
+   - Validate and wire in the `runCmd` handler (inside the `if prefillInstances > 0` block):
+     ```go
+     cfg.PDPrefillThresholdTokens = pdPrefillThresholdTokens
+     ```
+   - Update the `NewDisaggregationDecider` factory signature to accept the new parameter, and add a `case` branch:
+     ```go
+     // sim/disaggregation.go — extend factory signature for config-bearing deciders:
+     func NewDisaggregationDecider(name string, minPrefillTokens int) DisaggregationDecider {
+         ...
+         case "prefix-threshold":
+             return &PrefixThresholdDecider{MinPrefillTokens: minPrefillTokens}
+         ...
+     }
+     ```
+   - Update the call site in `sim/cluster/cluster.go` to pass the new parameter:
+     ```go
+     cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider, config.PDPrefillThresholdTokens)
+     ```
+   - Note: `NewDisaggregationDecider` lives in `sim/` and `DeploymentConfig` in `sim/cluster/`, so pass individual fields directly to avoid import cycles.
+4. **Add behavioral tests** — disaggregation decision for short vs long requests, boundary value (exactly at threshold), zero-threshold.
+5. Extension friction: **2–3 touch points** (implementation + factory + optional CLI flag).
+
+**Contract:** `Decide()` must be pure — no side effects, no access to cluster state. It receives only the `*sim.Request` (input tokens available pre-routing).
+
+Examples:
+- See `NeverDisaggregate` in `sim/disaggregation.go` for the simplest implementation (always returns `DisaggregationDecision{Disaggregate: false}`)
+- See `AlwaysDisaggregate` for a decider that always routes to the PD pipeline
+- See `DisaggregationDecisionEvent.Execute()` in `sim/cluster/cluster_event.go` to understand how the decision is consumed in the cluster event pipeline
 
 ## Adding New Per-Request Metric Fields
 

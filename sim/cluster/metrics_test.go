@@ -633,3 +633,16 @@ func TestJainFairnessIndex_Empty_ReturnsZero(t *testing.T) {
 		t.Errorf("JainFairnessIndex(empty) = %f, want 0", jfi)
 	}
 }
+
+// TestCollectRawMetrics_PDFieldNilWhenNoDisagg verifies BC-9:
+// RawMetrics.PD is nil when disaggregation is not configured (standard path).
+func TestCollectRawMetrics_PDFieldNilWhenNoDisagg(t *testing.T) {
+	aggregated := sim.NewMetrics()
+	aggregated.SimEndedTime = 1_000_000
+	aggregated.CompletedRequests = 5
+
+	raw := CollectRawMetrics(aggregated, nil, 0, "")
+	if raw.PD != nil {
+		t.Errorf("RawMetrics.PD = non-nil in non-disaggregated path, want nil")
+	}
+}

@@ -247,13 +247,17 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 // pre-allocated (via PD disaggregation transfer). Bypasses the oversized-request guard
 // (blocks already allocated, guard would leak them) and does NOT increment TotalInputTokens
 // (input tokens were already counted by the prefill sub-request).
+// currentTime is the cluster clock at injection time — used for the StepEvent to avoid
+// scheduling it in the past (INV-PD-4: decode completion must be >= decode enqueue time).
 // Triggers StepEvent if the instance is idle (INV-8: work-conserving).
-func (sim *Simulator) EnqueueDecodeSubRequest(r *Request) {
+func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, currentTime int64) {
 	sim.WaitQ.Enqueue(r)
 	// Do NOT add len(r.InputTokens) to TotalInputTokens — already counted by prefill sub-request.
-	// Trigger StepEvent if idle (work-conserving: INV-8)
+	// Trigger StepEvent if idle (work-conserving: INV-8).
+	// Use currentTime (cluster clock) not sim.Clock (stale instance clock) to avoid scheduling
+	// the StepEvent in the past — which would make CompletionTime < DecodeEnqueueTime.
 	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) && sim.stepEvent == nil {
-		step := &StepEvent{time: sim.Clock}
+		step := &StepEvent{time: currentTime}
 		sim.stepEvent = step
 		sim.Schedule(step)
 	}

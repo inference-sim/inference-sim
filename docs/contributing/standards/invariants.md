@@ -108,46 +108,50 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ---
 
-## PD Disaggregation Invariants (PR5)
+## INV-PD-1: KV Completeness
 
-These invariants apply when PD disaggregation is enabled (`--prefill-instances` and `--decode-instances` configured).
+**Statement:** `decode_enqueue_time >= transfer_complete_time` for every disaggregated request. The decode sub-request is only routed after KV transfer completes.
 
-## INV-PD-1: KV Transfer Completeness
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PhaseCausality` verifies the full causal chain. `DecodeRoutingEvent.Execute()` fires only from `KVTransferCompletedEvent.Execute()`, enforcing this by construction.
 
-**Statement:** `decode_enqueue_time >= transfer_complete_time` for every disaggregated request.
+**Hypothesis family:** Scheduler invariants (safety/liveness).
 
-**Verification:** `sim/cluster/disaggregation_test.go` — integration tests verify phase ordering.
-
-**Code location:** `sim/cluster/pd_events.go` — `DecodeRoutingEvent` fires only after `KVTransferCompletedEvent`.
+---
 
 ## INV-PD-2: Pool Exclusivity
 
-**Statement:** Prefill sub-requests are routed only to prefill instances; decode sub-requests are routed only to decode instances.
+**Statement:** Prefill sub-requests execute only on prefill pool instances; decode sub-requests execute only on decode pool instances.
 
-**Verification:** `sim/cluster/pool.go` — `buildPoolFilteredSnapshots(PoolRolePrefill/PoolRoleDecode)` filters snapshots before routing.
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PrefillRoutedToPrefillPool` and `TestDisaggregation_DecodeRoutedToDecodePool`. `PrefillRoutingEvent` and `DecodeRoutingEvent` use pool-filtered snapshot lists, making off-pool routing structurally impossible.
 
-**Code location:** `sim/cluster/pd_events.go` — `PrefillRoutingEvent` and `DecodeRoutingEvent` each call `buildPoolFilteredSnapshots` with the correct role.
+**Hypothesis family:** Structural model.
+
+---
 
 ## INV-PD-3: Transfer Conservation
 
-**Statement:** `initiated_transfers == completed_transfers` at simulation end (no transfers lost in flight).
+**Statement:** `initiated_transfers == completed_transfers` at simulation end (when KV transfer bandwidth is always positive).
 
-**Verification:** `sim/cluster/disaggregation_test.go` — `TestPrefixThreshold_TransferConservation`.
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_TransferConservation`. `KVTransferStartedEvent` increments `transfersInitiated`; `KVTransferCompletedEvent` increments `transfersCompleted`. Every started transfer schedules exactly one completion event.
 
-**Code location:** `sim/cluster/cluster.go` — `transfersInitiated` and `transfersCompleted` counters; `KVTransferStartedEvent` increments initiated, `KVTransferCompletedEvent` increments completed.
+**Hypothesis family:** Scheduler invariants (safety/liveness).
+
+---
 
 ## INV-PD-4: Phase Causality
 
 **Statement:** `arrival ≤ prefill_enqueue ≤ prefill_complete ≤ transfer_start ≤ transfer_complete ≤ decode_enqueue ≤ completion` for every disaggregated request.
 
-**Verification:** Event ordering enforced by the DES event queue (INV-3 clock monotonicity guarantees no backward time).
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PhaseCausality` asserts this ordering for all completed parent requests.
 
-**Code location:** `sim/cluster/pd_events.go` — each event schedules the next at `e.time + delta`, preserving ordering.
+**Hypothesis family:** Scheduler invariants (safety/liveness).
+
+---
 
 ## INV-PD-5: Pool Stability
 
-**Statement:** Pool membership (prefill/decode/standard assignment per instance) is fixed after cluster initialization and never changes during simulation.
+**Statement:** Pool membership (`PoolRole` per instance) does not change after `NewClusterSimulator` initialization.
 
-**Verification:** `sim/cluster/pool.go` — `BuildPoolMembership()` called once in `NewClusterSimulator`; the resulting map is read-only thereafter.
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PoolStability`. `poolMembership` is set once in `NewClusterSimulator` and never mutated during `Run()`.
 
-**Code location:** `sim/cluster/cluster.go` — `poolMembership` field set once in constructor; no mutation path exists after initialization.
+**Hypothesis family:** Structural model.

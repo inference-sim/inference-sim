@@ -162,8 +162,10 @@ func (i *InstanceSimulator) AllocateTransferredKV(req *sim.Request) bool {
 // InjectDecodeOnline injects a decode sub-request with pre-allocated KV.
 // Bypasses the normal ArrivalEvent → QueuedEvent → EnqueueRequest chain to avoid
 // the oversized-request guard (KV already allocated) and TotalInputTokens double-counting.
+// currentTime is the cluster clock at injection — passed to EnqueueDecodeSubRequest to
+// avoid scheduling the idle StepEvent in the past (INV-PD-4).
 // Registers request in metrics and directly enqueues into wait queue.
-func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request) {
+func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request, currentTime int64) {
 	i.sim.Metrics.Requests[req.ID] = sim.NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
-	i.sim.EnqueueDecodeSubRequest(req)
+	i.sim.EnqueueDecodeSubRequest(req, currentTime)
 }

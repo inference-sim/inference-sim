@@ -98,15 +98,18 @@ type RawMetrics struct {
 	TokensPerSec   float64
 
 	// Anomaly counters
-	PriorityInversions int
-	HOLBlockingEvents  int
-	RejectedRequests   int
-	DroppedUnservable  int
+	PriorityInversions   int
+	HOLBlockingEvents    int
+	RejectedRequests     int
+	DroppedUnservable    int
 
 	// KV cache metrics (PR12)
 	CacheHitRate    float64
 	PreemptionRate  float64
 	KVThrashingRate float64
+
+	// PD disaggregation metrics (PR3). Nil when disaggregation is not active.
+	PD *PDMetrics
 }
 
 // CollectRawMetrics builds RawMetrics from aggregated and per-instance metrics.

@@ -258,6 +258,9 @@ func TestAdmissionDecisionEvent_PoolsConfigured_SchedulesDisaggregation(t *testi
 	config.PrefillInstances = 2
 	config.DecodeInstances = 2
 	config.PDDecider = "always"
+	config.PDTransferBandwidthGBps = 25.0
+	config.PDTransferBaseLatencyMs = 0.05
+	config.PDKVBytesPerToken = 512
 
 	numRequests := 3
 	cs := NewClusterSimulator(config, newTestRequests(numRequests))
@@ -319,12 +322,15 @@ func TestAdmissionDecisionEvent_NoPools_SchedulesRouting(t *testing.T) {
 }
 
 // TestDisaggregationDecisionEvent_SchedulesRouting verifies that
-// DisaggregationDecisionEvent.Execute always schedules RoutingDecisionEvent in PR1.
+// DisaggregationDecisionEvent.Execute with NeverDisaggregate schedules RoutingDecisionEvent (local routing path).
 func TestDisaggregationDecisionEvent_SchedulesRouting(t *testing.T) {
 	config := newTestDeploymentConfig(4)
 	config.PrefillInstances = 2
 	config.DecodeInstances = 2
 	config.PDDecider = "never"
+	config.PDTransferBandwidthGBps = 25.0
+	config.PDTransferBaseLatencyMs = 0.05
+	config.PDKVBytesPerToken = 512
 
 	numRequests := 5
 	cs := NewClusterSimulator(config, newTestRequests(numRequests))
