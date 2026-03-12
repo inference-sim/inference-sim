@@ -69,6 +69,16 @@ func TestKVStore_SetClock_InterfaceSatisfied(t *testing.T) {
 	store.SetClock(500)
 }
 
+func TestKVStore_MirrorToCPU_InterfaceSatisfied(t *testing.T) {
+	// BC-8: Both implementations satisfy KVStore interface including MirrorToCPU
+	var store sim.KVStore
+	store = NewKVCacheState(100, 16)
+	store.MirrorToCPU(nil) // no-op, no panic
+
+	store = NewTieredKVCache(NewKVCacheState(100, 16), 50, 0.8, 1.0, 10)
+	store.MirrorToCPU(nil) // tiered stub, nil batch is safe
+}
+
 // setupTieredWithLatency creates a TieredKVCache and triggers natural offload+reload
 // to accumulate pendingLatency without direct field access.
 // Returns the tiered cache with non-zero pendingLatency.

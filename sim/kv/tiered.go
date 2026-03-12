@@ -221,6 +221,10 @@ func (t *TieredKVCache) SetClock(clock int64) {
 	t.clock = clock
 }
 
+// MirrorToCPU copies newly-completed full blocks from batch requests to CPU tier.
+// Stub — full implementation in Task 4.
+func (t *TieredKVCache) MirrorToCPU(_ []*sim.Request) {}
+
 // maybeOffload preserves cached content by moving free blocks with hashes from GPU to CPU.
 // Activated when GPU utilization exceeds threshold after a release. Since offloaded blocks
 // are already free, this doesn't reduce UsedBlocks — the threshold controls activation,
