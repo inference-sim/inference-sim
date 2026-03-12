@@ -140,3 +140,57 @@ func TestResolvePoolConfig_DoesNotMutateGlobal(t *testing.T) {
 		t.Errorf("global.TP mutated: %d, want %d", global.TP, origTP)
 	}
 }
+
+func TestResolveConfigForRole_Prefill(t *testing.T) {
+	tp := 8
+	dc := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "", 0),
+		},
+		PrefillOverrides: PoolOverrides{TP: &tp},
+	}
+
+	cfg := dc.resolveConfigForRole(PoolRolePrefill)
+	if cfg.TP != 8 {
+		t.Errorf("prefill TP = %d, want 8", cfg.TP)
+	}
+}
+
+func TestResolveConfigForRole_Decode(t *testing.T) {
+	tp := 2
+	dc := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "", 0),
+		},
+		DecodeOverrides: PoolOverrides{TP: &tp},
+	}
+
+	cfg := dc.resolveConfigForRole(PoolRoleDecode)
+	if cfg.TP != 2 {
+		t.Errorf("decode TP = %d, want 2", cfg.TP)
+	}
+}
+
+func TestResolveConfigForRole_NoRole_ReturnsGlobal(t *testing.T) {
+	tp := 8
+	dc := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "", 0),
+		},
+		PrefillOverrides: PoolOverrides{TP: &tp},
+	}
+
+	cfg := dc.resolveConfigForRole(PoolRole(0)) // no role
+	if cfg.TP != 4 {
+		t.Errorf("no-role TP = %d, want 4 (global)", cfg.TP)
+	}
+}
