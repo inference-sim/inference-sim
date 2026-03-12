@@ -99,16 +99,6 @@ You should see JSON output on stdout with key fields:
 ./blis run --model qwen/qwen3-14b --latency-model blackbox
 ```
 
-> **Tip:** Roofline, trained-roofline, and cross-model modes auto-fetch model configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid rate limits:
->
-> ```bash
-> export HF_TOKEN=your_token_here
-> ```
->
-> See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
-
-> **Note:** Since roofline is the default latency model, `HF_TOKEN` may be needed for the default run mode when using gated models. For public models like Qwen3, no token is required.
-
 ### Convert workload formats
 
 ```bash
