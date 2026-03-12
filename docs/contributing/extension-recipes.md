@@ -107,7 +107,7 @@ To add a new batch formation strategy (e.g., disaggregated prefill/decode, specu
 
 1. **Implement the `BatchFormation` interface** in `sim/batch_formation.go` (or a new file for complex strategies) — 1 method:
    - `FormBatch(ctx BatchContext) BatchResult` — compose the running batch for the next step
-   - The implementation receives `BatchContext` with: RunningBatch, WaitQ, KVCache, token budget, batch size limit, chunked prefill threshold, simulation time, step count, and ComputedTokens map
+   - The implementation receives `BatchContext` with: RunningBatch, WaitQ, KVCache, token budget, batch size limit, chunked prefill threshold, MaxModelLen (0 = unlimited; implementations should clamp token scheduling to `maxModelLen-1-ProgressIndex` when > 0), simulation time, step count, and ComputedTokens map
    - The implementation MUST update `ctx.ComputedTokens[req.ID]` for each request that receives new tokens (Phase 2 of `Step()` reads this map to advance `ProgressIndex`)
    - The implementation may mutate `WaitQ` (dequeue/prepend) and `KVCache` (allocate/release) during batch formation
    - The implementation MUST NOT schedule events or record metrics — return decisions in `BatchResult`, the Simulator applies them

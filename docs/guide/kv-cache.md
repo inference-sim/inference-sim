@@ -45,8 +45,8 @@ Prefix caching is automatic when using the `prefix-affinity` scorer with `weight
 
     Both guards fire at enqueue time, before the request enters the wait queue.
 
-!!! info "Runtime length cap"
-    When `--max-model-len` is set, requests that grow beyond the limit during decode are force-completed. This is a defense-in-depth mechanism — under normal operation the enqueue guard prevents oversized requests, but the runtime cap protects against unbounded growth if a request bypasses the guard.
+!!! info "Proactive MaxModelLen cap"
+    When `--max-model-len` is set, a three-part enforcement matches vLLM's scheduler semantics: (1) `FormBatch` proactively clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, (2) `executeBatchStep` skips decode when no tokens are allocated, and (3) `processCompletions` force-completes requests at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - 1 - inputLen` tokens.
 
 Compute the minimum blocks needed for your workload:
 

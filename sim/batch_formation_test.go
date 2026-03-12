@@ -29,6 +29,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
 		PrefillTokenThreshold: 0,
+		MaxModelLen:           0,
 		Now:                   0,
 		StepCount:             0,
 		ComputedTokens:        make(map[string]int64),
@@ -72,6 +73,7 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 		MaxScheduledTokens:    50,
 		MaxRunningReqs:        10,
 		PrefillTokenThreshold: 0,
+		MaxModelLen:           0,
 		Now:                   1000,
 		StepCount:             1,
 		ComputedTokens:        make(map[string]int64),
@@ -125,6 +127,7 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        2,
 		PrefillTokenThreshold: 0,
+		MaxModelLen:           0,
 		Now:                   1000,
 		StepCount:             1,
 		ComputedTokens:        make(map[string]int64),
@@ -191,6 +194,7 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
 		PrefillTokenThreshold: 0,
+		MaxModelLen:           0,
 		Now:                   5000,
 		StepCount:             5,
 		ComputedTokens:        computedTokens,
@@ -253,6 +257,7 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
 		PrefillTokenThreshold: 0,
+		MaxModelLen:           0,
 		Now:                   5000,
 		StepCount:             5,
 		ComputedTokens:        computedTokens,
@@ -295,6 +300,7 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
 		PrefillTokenThreshold: 0,
+		MaxModelLen:           0,
 		Now:                   0,
 		StepCount:             0,
 		ComputedTokens:        make(map[string]int64),
@@ -345,6 +351,7 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
 		PrefillTokenThreshold: 0,
+		MaxModelLen:           0,
 		Now:                   1000,
 		StepCount:             1,
 		ComputedTokens:        make(map[string]int64),
@@ -398,6 +405,7 @@ func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 		RunningBatch:   &Batch{Requests: []*Request{victim}},
 		WaitQ:          &WaitQueue{},
 		KVCache:        kv,
+		MaxModelLen:    0,
 		ComputedTokens: computedTokens,
 		Now:            1000,
 	}
@@ -475,6 +483,7 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 		MaxScheduledTokens:    10000,
 		MaxRunningReqs:        10,
 		PrefillTokenThreshold: 0,
+		MaxModelLen:           0,
 		Now:                   5000,
 		StepCount:             5,
 		ComputedTokens:        computedTokens,
@@ -597,4 +606,110 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 	t.Logf("Results: completed=%d, queued=%d, running=%d, dropped=%d, preemptions=%d",
 		sim.Metrics.CompletedRequests, sim.Metrics.StillQueued, sim.Metrics.StillRunning,
 		sim.Metrics.DroppedUnservable, sim.Metrics.PreemptionCount)
+}
+
+// TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Decode verifies BC-1:
+// Running request near MaxModelLen boundary gets decode tokens clamped to 0.
+func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Decode(t *testing.T) {
+	kvStore := MustNewKVCacheState(1000, 16)
+	bf := NewBatchFormation()
+
+	// Request at ProgressIndex=99, MaxModelLen=100 → decode clamped (99+1 > 100-1)
+	// No KV pre-allocation needed: FormBatch sets decodeTokens=0 at boundary,
+	// so preemptForTokens is never called. The request stays in the batch with NumNewTokens=0.
+	req := &Request{
+		ID:            "near_cap",
+		InputTokens:   make([]int, 50),
+		OutputTokens:  make([]int, 200),
+		State:         StateRunning,
+		ProgressIndex: 99,
+	}
+
+	ctx := BatchContext{
+		RunningBatch:       &Batch{Requests: []*Request{req}},
+		WaitQ:              &WaitQueue{},
+		KVCache:            kvStore,
+		MaxScheduledTokens: 2048,
+		MaxRunningReqs:     256,
+		PrefillTokenThreshold: 0,
+		MaxModelLen:        100,
+		Now:                0,
+		StepCount:          0,
+		ComputedTokens:     make(map[string]int64),
+	}
+	bf.FormBatch(ctx)
+
+	if req.NumNewTokens != 0 {
+		t.Errorf("NumNewTokens = %d, want 0 (proactive cap: PI+1 > maxModelLen-1)", req.NumNewTokens)
+	}
+}
+
+// TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Phase2 verifies BC-2:
+// New request prefill tokens clamped by MaxModelLen.
+func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Phase2(t *testing.T) {
+	kvStore := MustNewKVCacheState(1000, 16)
+	bf := NewBatchFormation()
+
+	// Defense-in-depth test: input=80 > MaxModelLen=50 would be rejected by
+	// EnqueueRequest in production. Testing FormBatch cap in isolation.
+	req := &Request{
+		ID:           "new_req",
+		InputTokens:  make([]int, 80),
+		OutputTokens: make([]int, 50),
+		State:        StateQueued,
+	}
+	wq := &WaitQueue{}
+	wq.Enqueue(req)
+
+	ctx := BatchContext{
+		RunningBatch:       &Batch{},
+		WaitQ:              wq,
+		KVCache:            kvStore,
+		MaxScheduledTokens: 2048,
+		MaxRunningReqs:     256,
+		PrefillTokenThreshold: 0,
+		MaxModelLen:        50,
+		Now:                0,
+		StepCount:          0,
+		ComputedTokens:     make(map[string]int64),
+	}
+	bf.FormBatch(ctx)
+
+	// Proactive cap: min(80, 2048, max(0, 50-1-0)) = min(80, 2048, 49) = 49
+	if req.NumNewTokens != 49 {
+		t.Errorf("NumNewTokens = %d, want 49 (proactive cap: max(0, 50-1-0)=49)", req.NumNewTokens)
+	}
+}
+
+// TestVLLMBatchFormation_MaxModelLen_Zero_NoClamp verifies BC-3.
+func TestVLLMBatchFormation_MaxModelLen_Zero_NoClamp(t *testing.T) {
+	kvStore := MustNewKVCacheState(10000, 16)
+	bf := NewBatchFormation()
+
+	req := &Request{
+		ID:           "unlimited",
+		InputTokens:  make([]int, 500),
+		OutputTokens: make([]int, 500),
+		State:        StateQueued,
+	}
+	wq := &WaitQueue{}
+	wq.Enqueue(req)
+
+	ctx := BatchContext{
+		RunningBatch:       &Batch{},
+		WaitQ:              wq,
+		KVCache:            kvStore,
+		MaxScheduledTokens: 10000,
+		MaxRunningReqs:     256,
+		PrefillTokenThreshold: 0,
+		MaxModelLen:        0, // unlimited
+		Now:                0,
+		StepCount:          0,
+		ComputedTokens:     make(map[string]int64),
+	}
+	bf.FormBatch(ctx)
+
+	if req.NumNewTokens != 500 {
+		t.Errorf("NumNewTokens = %d, want 500 (MaxModelLen=0 = no clamp)", req.NumNewTokens)
+	}
 }

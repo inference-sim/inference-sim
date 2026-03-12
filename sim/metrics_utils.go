@@ -23,6 +23,7 @@ type RequestMetrics struct {
 	TenantID         string  `json:"tenant_id,omitempty"`  // PR10: for per-tenant fairness
 	HandledBy        string  `json:"handled_by,omitempty"` // #181: instance that processed this request
 	Model            string  `json:"model,omitempty"`      // W0-1: model tag for per-model metrics
+	LengthCapped     bool    `json:"length_capped,omitempty"` // #588: per-request indicator for BC-5 force-completion
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
@@ -38,6 +39,7 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		TenantID:         req.TenantID,
 		HandledBy:        req.AssignedInstance,
 		Model:            req.Model,
+		LengthCapped:     req.LengthCapped,
 	}
 }
 

@@ -367,12 +367,15 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 		// Compute average ITL from itlSum directly (not from lat - FirstTokenTime)
 		// to avoid contaminating per-token ITL with the fixed post-decode overhead.
 		reqTotalOutput := itlSum
-		// TPOT calculation in vLLM excludes the first generated token.
-		// NOTE: For length-capped requests (BC-5), this denominator uses the
-		// pre-determined output token count rather than actual decode steps completed.
-		// The resulting average ITL (stored in RequestITLs) will be underestimated.
-		// Acceptable for a defense-in-depth path that should rarely fire.
-		sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
+		if req.LengthCapped {
+			// #588: Use actual decode step count for length-capped requests.
+			// len(req.OutputTokens) is the pre-determined count; len(req.ITL) is actual.
+			// TPOT convention: exclude first generated token → denominator is len(ITL)-1.
+			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.ITL)-1, 1))
+		} else {
+			// TPOT calculation in vLLM excludes the first generated token.
+			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
+		}
 	} else {
 		sim.Metrics.RequestITLs[req.ID] = 0
 	}
@@ -415,6 +418,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		MaxScheduledTokens:    sim.maxScheduledTokens,
 		MaxRunningReqs:        sim.maxRunningReqs,
 		PrefillTokenThreshold: sim.longPrefillTokenThreshold,
+		MaxModelLen:           sim.maxModelLen,
 		Now:                   now,
 		StepCount:             sim.stepCount,
 		ComputedTokens:        sim.reqNumComputedTokens,
@@ -467,10 +471,15 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
 		} else {
-			// this request goes through decode phase in this batch
-			req.ProgressIndex++
-			sim.Metrics.TotalOutputTokens++
-			req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
+			// Decode phase: only generate a token if FormBatch allocated one.
+			// Without this guard, a request at the MaxModelLen boundary (NumNewTokens=0
+			// from proactive cap) would get a phantom ProgressIndex increment.
+			// Also prevents phantom tokens from token budget exhaustion (pre-existing edge case).
+			if req.NumNewTokens > 0 {
+				req.ProgressIndex++
+				sim.Metrics.TotalOutputTokens++
+				req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
+			}
 		}
 		if req.ProgressIndex == util.Len64(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
@@ -526,22 +535,32 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 
 			// Record completion metrics
 			sim.recordRequestCompletion(req)
-		} else if sim.maxModelLen > 0 && req.ProgressIndex >= sim.maxModelLen {
-			// BC-5: Runtime length cap — defense-in-depth.
-			// Force-complete any request that has reached MaxModelLen.
-			// This should not fire under normal operation (enqueue guard prevents it),
-			// but protects against unbounded growth if a request bypasses the guard.
+		} else if sim.maxModelLen > 0 && req.ProgressIndex >= sim.maxModelLen-1 {
+			// BC-5: Proactive MaxModelLen cap — force-complete at boundary.
+			// After the proactive cap in FormBatch prevents scheduling tokens beyond
+			// maxModelLen-1, and the decode guard in executeBatchStep prevents phantom
+			// ProgressIndex increments, the request reaches PI=maxModelLen-1 and needs
+			// a completion path. This matches vLLM's effective behavior where the scheduler
+			// cap at max_model_len-1-num_computed prevents further scheduling.
+			// Note: vLLM completes length-capped requests via check_stop (num_tokens >= max_model_len)
+			// which fires AFTER the model appends the generated token, producing maxModelLen-input
+			// output tokens. BLIS completes at PI >= maxModelLen-1 (before the final token),
+			// producing maxModelLen-1-input tokens (1 fewer). This is because BLIS lacks vLLM's
+			// post-execution check_stop loop; processCompletions is the DES equivalent.
 			//
 			// NOTE (R23 exception): Final-token KV allocation is intentionally skipped here.
-			// R23 requires parallel code paths to apply equivalent transformations, but
-			// the normal completion path's AllocateKVBlocks for the last token (to commit
-			// it to the prefix cache) is not useful for a force-terminated request whose
-			// blocks are immediately released. The token at the cap boundary was already
-			// processed by executeBatchStep; the partially-filled last block is not
-			// committed to the prefix cache.
-			logrus.Warnf("[tick %07d] force-completing request %s: ProgressIndex %d >= MaxModelLen %d (length-capped)",
-				now, req.ID, req.ProgressIndex, sim.maxModelLen)
+			// The normal completion path's AllocateKVBlocks for the last token is not useful
+			// for a force-terminated request whose blocks are immediately released.
+			logrus.Warnf("[tick %07d] force-completing request %s: ProgressIndex %d >= MaxModelLen-1 %d (length-capped)",
+				now, req.ID, req.ProgressIndex, sim.maxModelLen-1)
 			sim.Metrics.LengthCappedRequests++
+			req.LengthCapped = true
+			// Refresh Metrics.Requests: NewRequestMetrics was called at enqueue before
+			// LengthCapped was known. Update so per-request JSON reflects the flag.
+			if rm, ok := sim.Metrics.Requests[req.ID]; ok {
+				rm.LengthCapped = true
+				sim.Metrics.Requests[req.ID] = rm
+			}
 			req.State = StateCompleted
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount
