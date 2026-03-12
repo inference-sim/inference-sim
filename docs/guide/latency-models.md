@@ -1,15 +1,15 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships four backends -- blackbox (data-driven), roofline (analytical), cross-model (physics-informed), and trained-roofline (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships four backends -- roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed), and trained-roofline (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.
 
 ```bash
-# Blackbox mode (default) — uses pre-trained per-model coefficients
+# Roofline mode (default) — analytical estimation from model architecture
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 100 --num-requests 500
 
-# Roofline mode — pure analytical estimation from model architecture
+# Blackbox mode — uses pre-trained per-model coefficients
 ./blis run --model qwen/qwen3-14b \
-  --latency-model roofline --hardware H100 --tp 1 \
+  --latency-model blackbox \
   --num-instances 4 --rate 100 --num-requests 500
 
 # Cross-model mode — physics-informed with hand-engineered features
@@ -23,7 +23,7 @@ The `LatencyModel` interface determines how BLIS estimates GPU step time for eac
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
-## Blackbox Mode (Default)
+## Blackbox Mode
 
 Blackbox mode uses trained regression coefficients from `defaults.yaml`, fit offline via Bayesian optimization against real vLLM measurements.
 
@@ -49,7 +49,7 @@ All alpha and beta coefficients must be non-negative. Negative values are reject
 !!! note "Alpha overhead is non-blocking"
     Alpha coefficients model CPU post-processing (tokenization, output serialization) that runs concurrently with GPU execution. Alpha time inflates TTFT and ITL metrics but does **not** block step scheduling -- the next batch step is scheduled at `now + stepTime` regardless of alpha overhead. This matches real vLLM's asynchronous post-processing pipeline.
 
-## Roofline Mode (Analytical)
+## Roofline Mode (Default)
 
 Roofline mode computes step time analytically from model architecture (FLOPs, parameter count) and hardware specifications (compute throughput, memory bandwidth). It does not require pre-trained coefficients, making it suitable for new models.
 
@@ -66,6 +66,15 @@ This auto-resolves both required inputs:
 
 1. **Model config** -- checks `model_configs/` for a cached `config.json`, fetches from HuggingFace on miss
 2. **Hardware config** -- uses the bundled `hardware_config.json`
+
+**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), and **A100-80** (alias for A100-SXM). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`) and reference it via `--hardware <name>`.
+
+**Validated models:** Any dense or MoE transformer with a HuggingFace `config.json` works. The following have been validated end-to-end:
+
+- [Llama-2-7B](https://huggingface.co/meta-llama/Llama-2-7b-hf) / [Llama-2-70B](https://huggingface.co/meta-llama/Llama-2-70b-hf)
+- [Qwen3-14B](https://huggingface.co/Qwen/Qwen3-14B)
+- [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1) (MoE)
+- [CodeLlama-34B](https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf)
 
 For gated models (e.g., LLaMA), set `HF_TOKEN`:
 
@@ -188,17 +197,20 @@ Where each basis function (T_pf_compute, T_pf_kv, etc.) is a full analytical roo
 
 ## When to Use Which
 
-| Aspect | Blackbox (default) | Roofline | Cross-Model | Trained-Roofline |
+| Aspect | Roofline (default) | Blackbox | Cross-Model | Trained-Roofline |
 |--------|-------------------|----------|-------------|------------------|
-| **When to use** | Model has per-model coefficients in `defaults.yaml` | Quick analytical estimate | Hand-engineered physics features | **Recommended** for new models (best accuracy without per-model training) |
-| **Data required** | `defaults.yaml` entry for model/GPU/TP | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
-| **GPU step time accuracy** | Highest (per-model) | Good (analytical) | Good (7 global params) | **7% MAPE** (10 global params, roofline × corrections) |
-| **MoE support** | If trained | No (dense only) | Yes (binary indicator) | Yes (per-expert FLOPs + effective expert count) |
-| **Alpha model** | α₀ + α₁·inputLen | Same as blackbox | Same as blackbox | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
+| **When to use** | Quick analytical estimate | Model has per-model coefficients in `defaults.yaml` | Hand-engineered physics features | **Recommended** for new models (best accuracy without per-model training) |
+| **Data required** | HF `config.json` + `--hardware` + `--tp` | `defaults.yaml` entry for model/GPU/TP | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
+| **GPU step time accuracy** | Good (analytical) | Highest (per-model) | Good (7 global params) | **7% MAPE** (10 global params, roofline × corrections) |
+| **MoE support** | No (dense only) | If trained | Yes (binary indicator) | Yes (per-expert FLOPs + effective expert count) |
+| **Alpha model** | Same as blackbox | α₀ + α₁·inputLen | Same as blackbox | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
 | **PostDecodeFixedOverhead** | 0 | 0 | 0 | α₁ (~1.85ms) |
 
 !!! tip "Choosing the right mode"
     **Trained-roofline** is the recommended default for any model with a HuggingFace `config.json` (7% MAPE GPU combined, MoE-aware, no per-model calibration needed). **Blackbox** for models with per-model coefficients in `defaults.yaml` (slightly higher accuracy due to per-model fitting). **Cross-model** for backward compatibility with existing crossmodel workflows. **Roofline** for pure analytical estimates when no learned corrections are desired.
+
+!!! warning "Current limitations"
+    All latency models currently assume single-GPU tensor parallelism (TP). Data parallelism (DP), expert parallelism (EP), and quantization effects (FP8, W4A16, W8A8) are not yet modeled in the analytical backends. These are under active development. For quantized deployments, blackbox mode with calibrated coefficients provides the most accurate results today.
 
 ## Pluggable Architecture
 

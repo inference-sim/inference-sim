@@ -241,7 +241,7 @@ inference-sim/
 │   ├── tiered.go              # TieredKVCache (GPU+CPU offload/reload)
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/               # Latency model implementations (PKG-2)
-│   ├── latency.go             # BlackboxLatencyModel (alpha/beta regression), RooflineLatencyModel (analytical FLOPs/bandwidth), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── latency.go             # RooflineLatencyModel (default, analytical FLOPs/bandwidth), BlackboxLatencyModel (alpha/beta regression), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
 │   ├── trained_roofline.go    # TrainedRooflineLatencyModel: roofline basis functions × learned corrections (7β + 3α from training pipeline)
 │   ├── crossmodel.go          # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
@@ -296,7 +296,7 @@ inference-sim/
 │   │   ├── routing.md         # Routing policies
 │   │   ├── admission.md       # Admission control
 │   │   ├── scheduling.md      # Scheduling & priority
-│   │   ├── latency-models.md  # Latency models (blackbox + roofline)
+│   │   ├── latency-models.md  # Latency models (roofline + blackbox)
 │   │   ├── kv-cache.md        # KV cache & memory management
 │   │   ├── workloads.md       # Workload specifications
 │   │   ├── cluster.md         # Cluster simulation
@@ -345,15 +345,15 @@ inference-sim/
 
 Four modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) based on `--latency-model` flag:
 
-1. **Blackbox mode** (default): Uses trained alpha/beta coefficients from `defaults.yaml`
-   - Alpha coefficients: queueing time estimation
-   - Beta coefficients: step time estimation based on batch features
-
-2. **Roofline mode**: Analytical FLOPs/bandwidth estimation via `sim/latency/roofline.go`
+1. **Roofline mode** (default): Analytical FLOPs/bandwidth estimation via `sim/latency/roofline.go`
    - Requires HuggingFace `config.json` in `model_configs/`
    - Requires `hardware_config.json` with GPU specs (including `MemoryGiB` for KV capacity auto-calculation)
    - **KV capacity auto-calculation**: When an analytical backend (`roofline` or `crossmodel`) is active and `--total-kv-blocks` is not explicitly set, `CalculateKVBlocks()` (in `sim/latency/kv_capacity.go`) derives the block count from model architecture + GPU memory, matching the llm-d-benchmark `capacity_planner.py` reference formula. Supports dense and MoE models.
-   - **`--latency-model roofline`**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./blis run --model <name> --latency-model roofline --hardware <GPU> --tp <N>`
+   - **`--latency-model roofline`**: Auto-resolves both configs — checks `model_configs/` first, fetches from HuggingFace on miss (creating `model_configs/` and writing into it), and uses bundled `hardware_config.json`. Simplifies usage to: `./blis run --model <name> --hardware <GPU> --tp <N>`
+
+2. **Blackbox mode**: Uses trained alpha/beta coefficients from `defaults.yaml`
+   - Alpha coefficients: queueing time estimation
+   - Beta coefficients: step time estimation based on batch features
 
 3. **Cross-model mode**: Physics-informed estimation via `sim/latency/crossmodel.go`
    - Uses 7 globally-fitted coefficients — 4 beta (per-layer overhead, KV bandwidth, MoE dispatch, TP sync) + 3 alpha (pre-scheduling, per-token preprocessing, output processing) — from `crossmodel_defaults` in `defaults.yaml`
@@ -373,7 +373,7 @@ Four modes, selected by `latency.NewLatencyModel()` factory (in `sim/latency/`) 
 ```
 Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
                                             ↓              ↓
-                                      KV Allocation   Latency Estimation (alpha/beta, roofline, cross-model, or trained-roofline)
+                                      KV Allocation   Latency Estimation (roofline, alpha/beta, cross-model, or trained-roofline)
 ```
 Note: Admission and Routing steps apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
 
