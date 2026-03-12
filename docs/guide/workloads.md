@@ -285,7 +285,7 @@ Requests can be tagged with SLO classes for per-class metric tracking:
 ## Estimating Capacity for Your Workload
 
 !!! warning "CLI mode and YAML mode have different defaults"
-    CLI mode uses `--prompt-tokens 512, --output-tokens 512` by default (step time ~17.4ms, capacity ~57 req/s per instance). YAML workloads define their own distributions — a YAML with mean=256/128 has step time ~11.8ms, capacity ~85 req/s. Don't reuse capacity estimates across modes.
+    CLI mode uses `--prompt-tokens 512, --output-tokens 512` by default. With the default roofline latency model (Qwen3-14B / H100 / TP=1), a saturated single instance handles ~17 req/s. YAML workloads define their own distributions — a YAML with shorter sequences (e.g., mean=256/128) will have higher per-instance throughput. Don't reuse capacity estimates across modes or models.
 
 ## Multi-Client Composition
 

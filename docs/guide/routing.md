@@ -74,7 +74,7 @@ BLIS models three signal freshness tiers:
 
 ### Staleness Impact
 
-At 5,000 req/s with 4 instances, ~45 routing decisions occur between KV utilization updates (~9ms step time). If using `kv-utilization:1` alone, all 45 decisions see the same stale utilization — severe load imbalance (3x worse TTFT p99).
+At high request rates, many routing decisions occur between KV utilization updates (step time varies by model — ~6ms for Qwen3-14B / H100 / TP=1 at low load, longer under batch saturation). If using `kv-utilization:1` alone, all decisions within one step see the same stale utilization — this can cause severe load imbalance.
 
 !!! tip "Safe zone for `--snapshot-refresh-interval`"
     Below **5ms** (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354%. The default composite profile (`prefix-affinity:3, queue-depth:2, kv-utilization:2`) is inherently resilient — queue-depth's Immediate signal corrects stale KV signals, mitigating ~99% of the effect.

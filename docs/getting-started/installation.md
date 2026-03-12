@@ -15,7 +15,7 @@ go build -o blis main.go
 
 ## Environment Setup
 
-BLIS uses roofline mode by default, which auto-fetches model architecture configs from HuggingFace. For gated models (e.g., LLaMA), set `HF_TOKEN`:
+BLIS uses roofline mode by default, which auto-fetches model architecture configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid rate limits:
 
 ```bash
 export HF_TOKEN=your_token_here

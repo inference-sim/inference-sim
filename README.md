@@ -8,19 +8,20 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 ## Features
 
+### Core
+
 - **Discrete-event simulation** for prefill, decode, and request scheduling
 - **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
 - **CPU-only inference cost model** via analytical roofline estimation or learned α/β coefficients
-- **HuggingFace config.json support** for model architecture
-- **Dense and MoE model support** (Mixtral, DeepSeek-MoE, etc.)
-- **vLLM deployment configuration** (TP, PP, EP, batch limits)
 - **Four latency estimation modes**: roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed, MoE-aware), and trained-roofline (roofline × learned corrections)
-- **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`) or custom distributions
-- **Trace replay**: replay recorded request traces for deterministic testing
-- **Multi-instance cluster simulation** with shared-clock event loop
-- **Pluggable routing policies**: round-robin, least-loaded, weighted-scoring
-- **Priority policies**: constant, slo-based (request prioritization)
-- **Instance schedulers**: fcfs, priority-fcfs, sjf (batch formation policies)
+- **Multi-instance cluster simulation** with shared-clock event loop and pluggable routing (round-robin, least-loaded, weighted-scoring)
+- **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`), custom distributions, or trace replay
+
+### Advanced
+
+- **Any HuggingFace model**: dense (Llama-2, Qwen3, etc.) and MoE (Mixtral, etc.) — auto-fetches model config on first run
+- **vLLM deployment configuration** (TP, chunk size, batch limits)
+- **Priority policies and instance schedulers**: constant, slo-based; fcfs, priority-fcfs, sjf
 - **Admission control**: always-admit or token-bucket rate limiting
 - **YAML policy configuration**: define all policies in a single config file (`--policy-config`)
 - **ServeGen-informed workload generation**: multi-client specs with Poisson/Gamma/Weibull/Constant arrivals (`--workload-spec`)
@@ -42,6 +43,8 @@ git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
 ```
+
+**Note:** On first run, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models like Qwen3). Subsequent runs use the cached config in `model_configs/`. For offline use, pass `--latency-model blackbox` (uses pre-trained coefficients, no network needed).
 
 **Environment setup (optional):**
 
@@ -90,7 +93,8 @@ You should see JSON output on stdout with key fields:
 ```bash
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --routing-policy weighted \
-  --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
+  --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2" \
+  --rate 100 --num-requests 500
 ```
 
 ### Blackbox mode (explicit trained coefficients)
@@ -104,12 +108,19 @@ See the [supported models catalog](docs/reference/models.md#blackbox-coefficient
 ### Convert workload formats
 
 ```bash
+# Generate a v2 workload spec YAML from a built-in preset
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
+
+# Convert a CSV request trace from production logs (requires your own trace.csv)
 ./blis convert csv-trace --file trace.csv
+
+# Import a ServeGen dataset directory (requires your own ServeGen data/)
 ./blis convert servegen --path data/
 ```
 
 ### Compose multiple workload specs
+
+Merge workload spec YAMLs produced by `blis convert` or written by hand (see [Workload Specifications](docs/guide/workloads.md)):
 
 ```bash
 ./blis compose --from spec1.yaml --from spec2.yaml
@@ -137,6 +148,9 @@ BLIS has a comprehensive documentation site built with MkDocs Material:
 ## Project Structure
 
 > For the authoritative file-level architecture documentation with interface names, method signatures, and module descriptions, see [`CLAUDE.md`](./CLAUDE.md).
+
+<details>
+<summary>Click to expand full directory tree</summary>
 
 ```
 inference-sim/
@@ -241,6 +255,8 @@ inference-sim/
 │   └── plans/              # Active implementation plans
 └── mkdocs.yml              # MkDocs Material site configuration
 ```
+
+</details>
 
 ---
 
