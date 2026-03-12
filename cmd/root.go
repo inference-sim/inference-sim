@@ -522,6 +522,35 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Please provide hardware config path (e.g. hardware_config.json)\n")
 			}
 		}
+		// Build per-pool hardware overrides (R18: CLI flags take precedence).
+		// Declared here (before analytical backend block) so per-pool KV auto-calc
+		// can modify them inside the analytical backend scope where hfConfig is available.
+		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+		if cmd.Flags().Changed("prefill-tp") {
+			prefillOverrides.TP = &prefillTP
+		}
+		if cmd.Flags().Changed("decode-tp") {
+			decodeOverrides.TP = &decodeTP
+		}
+		if prefillHardware != "" {
+			prefillOverrides.GPU = prefillHardware
+		}
+		if decodeHardware != "" {
+			decodeOverrides.GPU = decodeHardware
+		}
+		if prefillLatencyModel != "" {
+			prefillOverrides.LatencyBackend = prefillLatencyModel
+		}
+		if decodeLatencyModel != "" {
+			decodeOverrides.LatencyBackend = decodeLatencyModel
+		}
+		if cmd.Flags().Changed("prefill-max-model-len") {
+			prefillOverrides.MaxModelLen = &prefillMaxModelLen
+		}
+		if cmd.Flags().Changed("decode-max-model-len") {
+			decodeOverrides.MaxModelLen = &decodeMaxModelLen
+		}
+
 		// Zero-coefficients safety guard: prevents silently running with zero step times
 		// when blackbox mode has no trained coefficients (would produce meaningless results).
 		if backend != "roofline" && backend != "crossmodel" && backend != "trained-roofline" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
@@ -653,6 +682,77 @@ var runCmd = &cobra.Command{
 					logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
 						maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
 					maxModelLen = kvFeasibleMax
+				}
+			}
+
+			// Per-pool KV auto-calculation: when analytical backend is active and
+			// per-pool TP/GPU differs from global, recalculate KV blocks for each pool.
+			if prefillInstances > 0 || decodeInstances > 0 {
+				for _, poolInfo := range []struct {
+					name      string
+					overrides *cluster.PoolOverrides
+				}{
+					{"prefill", &prefillOverrides},
+					{"decode", &decodeOverrides},
+				} {
+					// Determine effective backend for this pool
+					effectiveBackend := backend
+					if poolInfo.overrides.LatencyBackend != "" {
+						effectiveBackend = poolInfo.overrides.LatencyBackend
+					}
+
+					// Only auto-calc for analytical backends
+					isAnalytical := effectiveBackend == "roofline" || effectiveBackend == "crossmodel" || effectiveBackend == "trained-roofline"
+					if !isAnalytical {
+						continue
+					}
+
+					// Determine effective TP and GPU for this pool
+					effectiveTP := tensorParallelism
+					if poolInfo.overrides.TP != nil {
+						effectiveTP = *poolInfo.overrides.TP
+					}
+					effectiveGPU := gpu
+					if poolInfo.overrides.GPU != "" {
+						effectiveGPU = poolInfo.overrides.GPU
+					}
+
+					// Skip if TP and GPU are same as global (global KV calc already done)
+					if effectiveTP == tensorParallelism && effectiveGPU == gpu && effectiveBackend == backend {
+						continue
+					}
+
+					// Resolve hardware config for pool's GPU
+					poolHWConfig := hwConfig
+					if effectiveGPU != gpu {
+						var hwErr error
+						poolHWConfig, hwErr = latency.GetHWConfig(hwConfigPath, effectiveGPU)
+						if hwErr != nil {
+							logrus.Fatalf("--%s pool: could not load hardware config for %s: %v",
+								poolInfo.name, effectiveGPU, hwErr)
+						}
+					}
+
+					if poolHWConfig.MemoryGiB <= 0 {
+						logrus.Warnf("--%s pool: GPU memory capacity not available for %s; using global total-kv-blocks",
+							poolInfo.name, effectiveGPU)
+						continue
+					}
+
+					kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
+					if kvParamsErr != nil {
+						logrus.Fatalf("--%s pool: could not extract KV capacity params: %v", poolInfo.name, kvParamsErr)
+					}
+
+					poolBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, poolHWConfig, effectiveTP, blockSizeTokens, kvParams)
+					if calcErr != nil {
+						logrus.Fatalf("--%s pool: KV capacity auto-calculation failed: %v\n"+
+							"Set --total-kv-blocks explicitly to override", poolInfo.name, calcErr)
+					}
+
+					poolInfo.overrides.TotalKVBlocks = &poolBlocks
+					logrus.Infof("--%s pool: auto-calculated total-kv-blocks=%d (GPU=%s, %.0f GiB, TP=%d)",
+						poolInfo.name, poolBlocks, effectiveGPU, poolHWConfig.MemoryGiB, effectiveTP)
 				}
 			}
 		}
@@ -993,33 +1093,6 @@ var runCmd = &cobra.Command{
 		// Log configuration after all config sources (CLI, workload spec, policy bundle) are resolved
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs)
-
-		// Build per-pool hardware overrides (R18: CLI flags take precedence)
-		var prefillOverrides, decodeOverrides cluster.PoolOverrides
-		if cmd.Flags().Changed("prefill-tp") {
-			prefillOverrides.TP = &prefillTP
-		}
-		if cmd.Flags().Changed("decode-tp") {
-			decodeOverrides.TP = &decodeTP
-		}
-		if prefillHardware != "" {
-			prefillOverrides.GPU = prefillHardware
-		}
-		if decodeHardware != "" {
-			decodeOverrides.GPU = decodeHardware
-		}
-		if prefillLatencyModel != "" {
-			prefillOverrides.LatencyBackend = prefillLatencyModel
-		}
-		if decodeLatencyModel != "" {
-			decodeOverrides.LatencyBackend = decodeLatencyModel
-		}
-		if cmd.Flags().Changed("prefill-max-model-len") {
-			prefillOverrides.MaxModelLen = &prefillMaxModelLen
-		}
-		if cmd.Flags().Changed("decode-max-model-len") {
-			decodeOverrides.MaxModelLen = &decodeMaxModelLen
-		}
 
 		startTime := time.Now() // Get current time (start)
 
