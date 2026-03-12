@@ -282,6 +282,87 @@ func TestTieredKVCache_TargetedReload_TouchesCPUOnReload(t *testing.T) {
 	assert.NotNil(t, tiered.cpu.lookup("h3"), "h3 should survive")
 }
 
+// --- MirrorToCPU tests (BC-1, BC-9) ---
+
+func TestTieredKVCache_MirrorToCPU_StoresNewBlocks(t *testing.T) {
+	// BC-1: GIVEN a running batch with full hashed blocks
+	// WHEN MirrorToCPU is called
+	// THEN new blocks are stored on CPU, GPU HashToBlock unchanged
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
+
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(req, 0, 4, []int64{})
+
+	gpuHashesBefore := len(gpu.HashToBlock)
+
+	// WHEN
+	tiered.MirrorToCPU([]*sim.Request{req})
+
+	// THEN: blocks are on CPU
+	assert.Equal(t, int64(2), tiered.cpu.used, "2 full blocks should be mirrored to CPU")
+	assert.Greater(t, tiered.mirrorCount, int64(0), "mirrorCount should increment")
+
+	// AND: GPU HashToBlock unchanged
+	assert.Equal(t, gpuHashesBefore, len(gpu.HashToBlock), "GPU HashToBlock must not change")
+}
+
+func TestTieredKVCache_MirrorToCPU_TouchesExistingBlocks(t *testing.T) {
+	// BC-1 (touch): GIVEN blocks already on CPU
+	// WHEN MirrorToCPU is called again
+	// THEN existing blocks are touched (refreshed in LRU)
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 3, 0.0, 1.0, 0) // small CPU: 3 blocks
+
+	// Allocate and mirror r1 (2 blocks)
+	r1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(r1, 0, 4, []int64{})
+	tiered.MirrorToCPU([]*sim.Request{r1})
+
+	// Mirror r2 (1 block) — now CPU has 3 blocks, full
+	r2 := &sim.Request{ID: "r2", InputTokens: []int{10, 20}}
+	tiered.AllocateKVBlocks(r2, 0, 2, []int64{})
+	tiered.MirrorToCPU([]*sim.Request{r2})
+	assert.Equal(t, int64(3), tiered.cpu.used)
+
+	// Touch r1's blocks by mirroring again
+	tiered.MirrorToCPU([]*sim.Request{r1})
+
+	// Now mirror r3 (1 block) — should evict r2's block (oldest untouched), not r1's
+	r3 := &sim.Request{ID: "r3", InputTokens: []int{30, 40}}
+	tiered.AllocateKVBlocks(r3, 0, 2, []int64{})
+	tiered.MirrorToCPU([]*sim.Request{r3})
+
+	// r1's blocks should survive (were touched), r2's should be evicted
+	h0r1 := gpu.Blocks[gpu.RequestMap["r1"][0]].Hash
+	h0r2 := gpu.Blocks[gpu.RequestMap["r2"][0]].Hash
+	assert.NotNil(t, tiered.cpu.lookup(h0r1), "r1's block should survive (was touched)")
+	assert.Nil(t, tiered.cpu.lookup(h0r2), "r2's block should be evicted (untouched, oldest)")
+}
+
+func TestTieredKVCache_MirrorToCPU_NilBatchSafe(t *testing.T) {
+	gpu := NewKVCacheState(10, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
+	// Should not panic
+	tiered.MirrorToCPU(nil)
+	tiered.MirrorToCPU([]*sim.Request{})
+	assert.Equal(t, int64(0), tiered.mirrorCount)
+}
+
+func TestTieredKVCache_MirrorToCPU_SkipsPartialAndUnhashedBlocks(t *testing.T) {
+	// Blocks with empty hash or not-full should not be mirrored
+	gpu := NewKVCacheState(10, 4) // blockSize=4
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
+
+	// Allocate 3 tokens into a 4-token block → partial block (no hash)
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3}}
+	tiered.AllocateKVBlocks(req, 0, 3, []int64{})
+
+	tiered.MirrorToCPU([]*sim.Request{req})
+	assert.Equal(t, int64(0), tiered.cpu.used, "partial block should not be mirrored")
+	assert.Equal(t, int64(0), tiered.mirrorCount)
+}
+
 // --- Validation tests (kept from old file) ---
 
 func TestCpuTier_Validation_ZeroCapacity_Panics(t *testing.T) {

@@ -338,5 +338,31 @@ func (t *TieredKVCache) KVThrashingRate() float64 {
 func (t *TieredKVCache) SetClock(_ int64) {}
 
 // MirrorToCPU copies newly-completed full blocks from batch requests to CPU tier.
-// Stub — full implementation in Task 4.
-func (t *TieredKVCache) MirrorToCPU(_ []*sim.Request) {}
+// For each request in the batch, all full blocks with hashes are processed:
+// - New blocks (not yet on CPU): stored at LRU tail
+// - Existing blocks (already on CPU): touched (moved to LRU tail)
+// GPU HashToBlock is never modified (read-only copy).
+// Called by Simulator.Step() after executeBatchStep(), before processCompletions().
+func (t *TieredKVCache) MirrorToCPU(batch []*sim.Request) {
+	for _, req := range batch {
+		blockIDs, exists := t.gpu.RequestMap[req.ID]
+		if !exists {
+			continue
+		}
+		for _, blockID := range blockIDs {
+			blk := t.gpu.Blocks[blockID]
+			// Only mirror full blocks with computed hashes
+			if blk.Hash == "" || util.Len64(blk.Tokens) < t.gpu.BlockSize() {
+				continue
+			}
+			if t.cpu.lookup(blk.Hash) != nil {
+				// Already on CPU — touch to refresh LRU recency
+				t.cpu.touch(blk.Hash)
+			} else {
+				// New block — store on CPU
+				t.cpu.store(blk.Hash, blk.Tokens)
+				t.mirrorCount++
+			}
+		}
+	}
+}
