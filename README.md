@@ -99,6 +99,8 @@ You should see JSON output on stdout with key fields:
 ./blis run --model qwen/qwen3-14b --latency-model blackbox
 ```
 
+See the [supported models catalog](docs/reference/models.md#blackbox-coefficient-catalog) for models with pre-trained coefficients.
+
 ### Convert workload formats
 
 ```bash
