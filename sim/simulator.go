@@ -367,12 +367,15 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 		// Compute average ITL from itlSum directly (not from lat - FirstTokenTime)
 		// to avoid contaminating per-token ITL with the fixed post-decode overhead.
 		reqTotalOutput := itlSum
-		// TPOT calculation in vLLM excludes the first generated token.
-		// NOTE: For length-capped requests (BC-5), this denominator uses the
-		// pre-determined output token count rather than actual decode steps completed.
-		// The resulting average ITL (stored in RequestITLs) will be underestimated.
-		// Acceptable for a defense-in-depth path that should rarely fire.
-		sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
+		if req.LengthCapped {
+			// #588: Use actual decode step count for length-capped requests.
+			// len(req.OutputTokens) is the pre-determined count; len(req.ITL) is actual.
+			// TPOT convention: exclude first generated token → denominator is len(ITL)-1.
+			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.ITL)-1, 1))
+		} else {
+			// TPOT calculation in vLLM excludes the first generated token.
+			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
+		}
 	} else {
 		sim.Metrics.RequestITLs[req.ID] = 0
 	}
@@ -549,6 +552,13 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			logrus.Warnf("[tick %07d] force-completing request %s: ProgressIndex %d >= MaxModelLen-1 %d (length-capped)",
 				now, req.ID, req.ProgressIndex, sim.maxModelLen-1)
 			sim.Metrics.LengthCappedRequests++
+			req.LengthCapped = true
+			// Refresh Metrics.Requests: NewRequestMetrics was called at enqueue before
+			// LengthCapped was known. Update so per-request JSON reflects the flag.
+			if rm, ok := sim.Metrics.Requests[req.ID]; ok {
+				rm.LengthCapped = true
+				sim.Metrics.Requests[req.ID] = rm
+			}
 			req.State = StateCompleted
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount

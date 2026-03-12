@@ -1389,7 +1389,10 @@ func TestProcessCompletions_RuntimeLengthCap(t *testing.T) {
 		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
 	}
 
-	// Note: LengthCapped flag check deferred to Task 4 (field added in Task 3)
+	// LengthCapped flag set on request
+	if !req.LengthCapped {
+		t.Error("req.LengthCapped = false, want true")
+	}
 
 	// Conservation: no requests lost
 	if sim.WaitQ.Len()+len(remaining)+sim.Metrics.CompletedRequests != 1 {
@@ -2075,7 +2078,7 @@ func TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 2),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "", 2),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2100,5 +2103,109 @@ func TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput(t *testing.T) {
 	total := sim.Metrics.CompletedRequests + sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
 	if total != 1 {
 		t.Errorf("INV-1 violated: %d", total)
+	}
+}
+
+// TestProcessCompletions_LengthCapped_MetricsRefreshed verifies BC-7:
+// After force-completion, Metrics.Requests has LengthCapped=true.
+func TestProcessCompletions_LengthCapped_MetricsRefreshed(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 100),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	req := &Request{
+		ID:            "capped",
+		InputTokens:   make([]int, 50),
+		OutputTokens:  make([]int, 200),
+		State:         StateRunning,
+		ProgressIndex: 99, // >= maxModelLen-1 (100-1=99) → BC-5 fires
+		ArrivalTime:   0,
+		ITL:           []int64{5000, 5000, 5000},
+	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+	sim.RunningBatch = &Batch{Requests: []*Request{req}}
+
+	sim.processCompletions(1000, 5000)
+
+	if !req.LengthCapped {
+		t.Error("req.LengthCapped = false, want true")
+	}
+	rm := sim.Metrics.Requests[req.ID]
+	if !rm.LengthCapped {
+		t.Error("Metrics.Requests[capped].LengthCapped = false, want true")
+	}
+}
+
+// TestRecordRequestCompletion_LengthCapped_ITL verifies BC-8:
+// Length-capped request uses len(req.ITL)-1 as ITL denominator.
+func TestRecordRequestCompletion_LengthCapped_ITL(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 100),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// 200 pre-determined output tokens, but only 3 actual decode steps (ITL entries)
+	req := &Request{
+		ID:             "capped_itl",
+		InputTokens:    make([]int, 50),
+		OutputTokens:   make([]int, 200),
+		State:          StateCompleted,
+		LengthCapped:   true,
+		ArrivalTime:    0,
+		FirstTokenTime: 10000,
+		ITL:            []int64{5000, 5000, 5000}, // 3 intervals, sum=15000
+	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+
+	sim.recordRequestCompletion(req)
+
+	// denominator = max(len(ITL)-1, 1) = max(3-1, 1) = 2 → avgITL = 15000/2 = 7500
+	gotITL := sim.Metrics.RequestITLs[req.ID]
+	if gotITL != 7500.0 {
+		t.Errorf("RequestITLs = %f, want 7500 (denom=max(len(ITL)-1,1)=2, not len(OutputTokens)-1=199)", gotITL)
+	}
+}
+
+// TestRecordRequestCompletion_NormalRequest_ITL verifies BC-9:
+// Non-capped request ITL denominator unchanged.
+func TestRecordRequestCompletion_NormalRequest_ITL(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "", "", 0, "", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	req := &Request{
+		ID:             "normal",
+		InputTokens:    make([]int, 50),
+		OutputTokens:   make([]int, 10),
+		State:          StateCompleted,
+		ArrivalTime:    0,
+		FirstTokenTime: 10000,
+		ITL:            []int64{5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000}, // 9 intervals
+	}
+	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+
+	sim.recordRequestCompletion(req)
+
+	// denominator = max(len(OutputTokens)-1, 1) = 9
+	gotITL := sim.Metrics.RequestITLs[req.ID]
+	if gotITL != 5000.0 {
+		t.Errorf("RequestITLs = %f, want 5000", gotITL)
 	}
 }
