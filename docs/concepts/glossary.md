@@ -74,7 +74,7 @@ The component that predicts GPU execution time for a batch step. Four modes: *Bl
 
 ### MaxModelLen
 
-Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len`. When set (> 0), requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. A runtime cap force-completes any request whose progress reaches this limit (defense-in-depth). Set to 0 for unlimited. Auto-derived from `max_position_embeddings` in roofline/crossmodel modes, with `rope_scaling` factor application and KV-feasible capping. See [Configuration Reference](../reference/configuration.md#simulation-control).
+Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len`. When set (> 0), requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. A three-part proactive cap matches vLLM `scheduler.py:773-774`: FormBatch clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, executeBatchStep skips decode when 0 tokens allocated, and processCompletions force-completes at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - 1 - inputLen`. Set to 0 for unlimited. Auto-derived from `max_position_embeddings` in roofline/crossmodel modes, with `rope_scaling` factor application and KV-feasible capping. See [Configuration Reference](../reference/configuration.md#simulation-control).
 
 ### Oracle Knowledge Boundary (INV-9)
 

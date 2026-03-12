@@ -174,7 +174,7 @@ Requests are dropped as unservable at enqueue time (incrementing `DroppedUnserva
 1. **MaxModelLen guard** — when `--max-model-len` is set, requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the runtime stop in `processCompletions` handles output growth).
 2. **KV capacity guard** — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.
 
-Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, when `--max-model-len` is set, a runtime length cap force-completes any request whose `ProgressIndex` reaches `MaxModelLen` during decode (defense-in-depth).
+Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, when `--max-model-len` is set, a proactive cap in `FormBatch` clamps token scheduling to `maxModelLen - 1 - ProgressIndex` (matching vLLM `scheduler.py:773-774`), a decode guard in `executeBatchStep` prevents phantom token generation when 0 tokens are allocated, and `processCompletions` force-completes any request whose `ProgressIndex` reaches `MaxModelLen - 1`. Output tokens per length-capped request: `MaxModelLen - 1 - len(InputTokens)`.
 
 ## Batch Formation
 

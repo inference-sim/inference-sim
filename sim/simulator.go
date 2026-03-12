@@ -542,9 +542,11 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// ProgressIndex increments, the request reaches PI=maxModelLen-1 and needs
 			// a completion path. This matches vLLM's effective behavior where the scheduler
 			// cap at max_model_len-1-num_computed prevents further scheduling.
-			// Note: vLLM's check_stop uses num_tokens >= max_model_len (unreachable safety net);
-			// BLIS uses >= maxModelLen-1 (the actual proactive-cap boundary) since BLIS has
-			// no output-streaming check_stop equivalent.
+			// Note: vLLM completes length-capped requests via check_stop (num_tokens >= max_model_len)
+			// which fires AFTER the model appends the generated token, producing maxModelLen-input
+			// output tokens. BLIS completes at PI >= maxModelLen-1 (before the final token),
+			// producing maxModelLen-1-input tokens (1 fewer). This is because BLIS lacks vLLM's
+			// post-execution check_stop loop; processCompletions is the DES equivalent.
 			//
 			// NOTE (R23 exception): Final-token KV allocation is intentionally skipped here.
 			// The normal completion path's AllocateKVBlocks for the last token is not useful

@@ -29,7 +29,7 @@ type Metrics struct {
 	StillQueued          int     // Requests still in wait queue at sim end
 	StillRunning         int     // Requests still in running batch at sim end
 	DroppedUnservable    int // Requests dropped at enqueue: negative MaxOutputLen (R3), MaxModelLen violation, or input exceeds KV capacity (R19)
-	LengthCappedRequests int // Requests force-completed by runtime MaxModelLen cap (BC-5 defense-in-depth)
+	LengthCappedRequests int // Requests force-completed at MaxModelLen-1 boundary (proactive cap)
 
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	ITLSum  int64 // Total ITL sum across requests (in ticks)
