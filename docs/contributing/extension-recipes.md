@@ -108,6 +108,63 @@ Examples:
 - See `RooflineLatencyModel` in `sim/latency/latency.go` for a model that uses hardware config (FLOPs/bandwidth)
 - See `CrossModelLatencyModel` in `sim/latency/crossmodel.go` for a physics-informed model that derives step time from HuggingFace architecture features (MoE-aware)
 
+## Adding New Disaggregation Deciders
+
+To add a new prefill-decode disaggregation decider (e.g., adaptive-rate, popularity-based, load-sensitive):
+
+**Two patterns:** stateless (simple case) and stateful with observer (for deciders that learn from routing decisions).
+
+### Stateless decider (no feedback needed)
+
+1. **Implement `DisaggregationDecider`** in `sim/disaggregation.go` — 1 method: `Decide(req *Request) DisaggregationDecision`. Return `Disaggregate: true` to route via the prefill pool, `false` to use standard routing.
+2. **Register in two places** (both required):
+   - Add name to `validDisaggregationDeciders` in `sim/bundle.go`
+   - Add `case` to `NewDisaggregationDecider` in `sim/disaggregation.go`
+3. **Update CLI flag description** in `cmd/root.go` (`--pd-decider` flag help text)
+4. **Update `docs/reference/configuration.md`** — add a row to the Disaggregation Deciders table under `## PD Disaggregation`
+5. **Add behavioral tests** in `sim/disaggregation_test.go` and cluster integration tests in `sim/cluster/disaggregation_test.go`
+6. Extension friction: **4 touch points** (implementation + bundle registration + CLI description + documentation)
+
+### Stateful decider with observer (needs routing feedback to update internal state)
+
+1. **Implement both `DisaggregationDecider` AND `DisaggregationObserver`** in `sim/disaggregation.go`:
+   - `Decide(req *Request) DisaggregationDecision` — make the disaggregation decision
+   - `ObserveRouting(req *Request, instanceID string)` — update internal state after routing
+
+2. **Create a dedicated constructor** (e.g., `NewMyDecider(param1, param2 int)`):
+   - Do NOT add a case to `NewDisaggregationDecider` — that factory is for parameter-free deciders.
+   - Instead, add a panic case: `case "my-decider": panic("use NewMyDecider(...) to construct my-decider")` so the factory fails loudly if called incorrectly
+   - Register in `validDisaggregationDeciders` (so `IsValidDisaggregationDecider` accepts the name)
+
+3. **Wire the constructor in `NewClusterSimulator`** in `sim/cluster/cluster.go`:
+   ```go
+   if config.PDDecider == "my-decider" {
+       cs.disaggregationDecider = sim.NewMyDecider(config.MyDeciderParam, ...)
+   } else {
+       cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
+   }
+   ```
+
+4. **Add config field** to `DeploymentConfig` in `sim/cluster/deployment.go` for any parameters:
+   ```go
+   MyDeciderParam int  // Description (>= 0, default X from CLI)
+   ```
+
+5. **Add CLI flag** in `cmd/root.go` and validate it (add validation before `ValidatePoolTopology`)
+
+6. **`notifyDisaggregationObserver` is already wired**: `ClusterSimulator` type-asserts the decider to `DisaggregationObserver` and calls `ObserveRouting` automatically after each routing decision. No changes needed to `cluster_event.go` or `pd_events.go`.
+   - Observer is called after: standard routing (`RoutingDecisionEvent`) and prefill routing (`PrefillRoutingEvent`)
+   - Observer is NOT called after decode routing (`DecodeRoutingEvent`) — decode sub-requests carry the same input tokens as the original, so prefix information was already recorded at prefill routing time
+
+7. **R13**: `DisaggregationObserver` is designed for >=2 backends. Add a no-op test implementation in your test file to satisfy R13.
+
+8. **Add behavioral tests** — both unit tests for `Decide/ObserveRouting` and cluster integration tests
+
+Examples:
+- See `PrefixThresholdDecider` in `sim/disaggregation.go` for a complete stateful decider with router-side `PrefixCacheIndex`
+- See `sim/cluster/cluster.go` for the constructor dispatch pattern
+- See `sim/cluster/disaggregation_test.go` for integration test examples
+
 ## Adding New Batch Formation Strategies
 
 To add a new batch formation strategy (e.g., disaggregated prefill/decode, speculative decoding, continuous batching without preemption):
@@ -127,60 +184,6 @@ To add a new batch formation strategy (e.g., disaggregated prefill/decode, specu
 Examples:
 - See `VLLMBatchFormation` in `sim/batch_formation.go` for the vLLM FCFS + chunked-prefill + preemption strategy
 - See `preemptForTokens` for the KV allocation + eviction loop pattern
-
-## Adding a New Disaggregation Decider
-
-To add a new disaggregation decider (e.g., a threshold-based decider that disaggregates only long prefills):
-
-1. **Implement `DisaggregationDecider`** in `sim/disaggregation.go`:
-   ```go
-   type PrefixThresholdDecider struct{ MinPrefillTokens int }
-   func (d *PrefixThresholdDecider) Decide(req *sim.Request) DisaggregationDecision {
-       if len(req.InputTokens) >= d.MinPrefillTokens {
-           return DisaggregationDecision{Disaggregate: true}
-       }
-       return DisaggregationDecision{Disaggregate: false}
-   }
-   ```
-2. **Register in `NewDisaggregationDecider` factory** in `sim/disaggregation.go`: add a `case` branch for the new decider name (e.g., `"prefix-threshold"`). The decider name is supplied via `--pd-decider` CLI flag and stored in `DeploymentConfig.PDDecider`.
-3. **Add CLI parameter** if the decider needs configuration (e.g., `--pd-prefill-threshold-tokens`). Full wiring:
-   - Add a field to `DeploymentConfig` in `sim/cluster/deployment.go`:
-     ```go
-     PDPrefillThresholdTokens int // minimum input tokens to disaggregate
-     ```
-   - Add a flag in `cmd/root.go` (alongside the other `--pd-*` flags):
-     ```go
-     runCmd.Flags().IntVar(&pdPrefillThresholdTokens, "pd-prefill-threshold-tokens", 0,
-         "Minimum input token count to trigger disaggregation (used with --pd-decider prefix-threshold)")
-     ```
-   - Validate and wire in the `runCmd` handler (inside the `if prefillInstances > 0` block):
-     ```go
-     cfg.PDPrefillThresholdTokens = pdPrefillThresholdTokens
-     ```
-   - Update the `NewDisaggregationDecider` factory signature to accept the new parameter, and add a `case` branch:
-     ```go
-     // sim/disaggregation.go — extend factory signature for config-bearing deciders:
-     func NewDisaggregationDecider(name string, minPrefillTokens int) DisaggregationDecider {
-         ...
-         case "prefix-threshold":
-             return &PrefixThresholdDecider{MinPrefillTokens: minPrefillTokens}
-         ...
-     }
-     ```
-   - Update the call site in `sim/cluster/cluster.go` to pass the new parameter:
-     ```go
-     cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider, config.PDPrefillThresholdTokens)
-     ```
-   - Note: `NewDisaggregationDecider` lives in `sim/` and `DeploymentConfig` in `sim/cluster/`, so pass individual fields directly to avoid import cycles.
-4. **Add behavioral tests** — disaggregation decision for short vs long requests, boundary value (exactly at threshold), zero-threshold.
-5. Extension friction: **2–3 touch points** (implementation + factory + optional CLI flag).
-
-**Contract:** `Decide()` must be pure — no side effects, no access to cluster state. It receives only the `*sim.Request` (input tokens available pre-routing).
-
-Examples:
-- See `NeverDisaggregate` in `sim/disaggregation.go` for the simplest implementation (always returns `DisaggregationDecision{Disaggregate: false}`)
-- See `AlwaysDisaggregate` for a decider that always routes to the PD pipeline
-- See `DisaggregationDecisionEvent.Execute()` in `sim/cluster/cluster_event.go` to understand how the decision is consumed in the cluster event pipeline
 
 ## Adding New Per-Request Metric Fields
 

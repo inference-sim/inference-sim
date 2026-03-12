@@ -67,6 +67,8 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 		if string(inst.ID()) == decision.TargetInstance {
 			cs.inFlightRequests[decision.TargetInstance]++
 			inst.InjectRequestOnline(e.request, e.time)
+			// BC-PD-28: Notify observer after prefill routing so decider can learn prefix (R17, INV-7)
+			cs.notifyDisaggregationObserver(e.request, decision.TargetInstance)
 			return
 		}
 	}
@@ -253,6 +255,8 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			// INV-PD-4: register decode sub-request for CompletionTime detection.
 			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
 			inst.InjectDecodeOnline(e.decodeSubReq, e.time)
+			// Observer not called: prefix was already recorded during PrefillRoutingEvent.
+			// Decode sub-request has the same InputTokens, so re-notification is a no-op.
 			return
 		}
 	}

@@ -43,6 +43,7 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
 | **HOL Blocking Events** | A long prefill blocked shorter requests | Enable chunked prefill: `--long-prefill-token-threshold 256` |
 | **Rejected Requests** | Admission policy rejected the request | Check token bucket capacity or admission policy |
 | **Dropped Unservable** | Request needs more KV blocks than exist | Increase `--total-kv-blocks` or reduce max input tokens |
+| **Dropped KV Allocations** | Decode sub-request could not allocate KV blocks at the decode instance (PD mode only) | Increase `--total-kv-blocks` on decode instances or reduce decode pool load |
 
 ## KV Cache Metrics
 

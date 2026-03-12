@@ -92,6 +92,7 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 		PrefillInstances:        prefill,
 		DecodeInstances:         decode,
 		PDDecider:               "always",
+		PDPrefixThreshold:       512,
 		RoutingPolicy:           "round-robin",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
@@ -380,6 +381,155 @@ func TestDisaggregation_PerPoolScorerConfigs(t *testing.T) {
 	}
 }
 
+// --- PrefixThresholdDecider integration tests ---
+
+// newTestRequests is already defined in test_helpers_test.go
+
+// newTestPrefixThresholdConfig creates a DeploymentConfig with prefix-threshold decider.
+func newTestPrefixThresholdConfig(threshold int) DeploymentConfig {
+	return DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, ""),
+		},
+		NumInstances:            4,
+		PrefillInstances:        2,
+		DecodeInstances:         2,
+		PDDecider:               "prefix-threshold",
+		PDPrefixThreshold:       threshold,
+		RoutingPolicy:           "round-robin",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+		PDKVBytesPerToken:       512,
+	}
+}
+
+// Compile-time check: PrefixThresholdDecider satisfies DisaggregationObserver (BC-PD-26).
+// Interface conformance is verified at the unit level (sim/disaggregation_test.go).
+var _ sim.DisaggregationObserver = &sim.PrefixThresholdDecider{}
+
+// TestPrefixThreshold_HighThresholdNoDisaggregation verifies that requests with tokens
+// below the threshold are routed via the standard path (not disaggregated).
+func TestPrefixThreshold_HighThresholdNoDisaggregation(t *testing.T) {
+	// Set threshold very high: no request will disaggregate.
+	// newTestRequests produces short requests (output tokens only, so InputTokens may be short).
+	const veryHighThreshold = 1_000_000
+	config := newTestPrefixThresholdConfig(veryHighThreshold)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	// With very high threshold, no requests should be disaggregated.
+	if len(cs.ParentRequests()) != 0 {
+		t.Errorf("ParentRequests = %d, want 0 (threshold too high for any request to disaggregate)",
+			len(cs.ParentRequests()))
+	}
+	// Requests still complete via the standard routing path.
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests == 0 {
+		t.Error("no requests completed with high threshold prefix-threshold decider")
+	}
+}
+
+// TestPrefixThreshold_ZeroThresholdAlwaysDisaggregates verifies that threshold=0
+// behaves like AlwaysDisaggregate for non-empty requests.
+func TestPrefixThreshold_ZeroThresholdAlwaysDisaggregates(t *testing.T) {
+	config := newTestPrefixThresholdConfig(0)
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	// All requests have non-empty input tokens → threshold=0 → all disaggregate.
+	if len(cs.ParentRequests()) != 3 {
+		t.Errorf("ParentRequests = %d, want 3 (threshold=0 disaggregates everything)", len(cs.ParentRequests()))
+	}
+}
+
+// TestPrefixThreshold_ObserverWarmsCache verifies BC-PD-28: the DisaggregationObserver
+// is called after routing and warms the prefix cache, causing a subsequent request with
+// the same prefix to be routed locally (not disaggregated).
+//
+// Setup: blockSize=16, threshold=150.
+//   req1: 192 tokens (12 complete blocks). nonCached=192 > 150 → disaggregates.
+//         Observer records 12 blocks in the global cache.
+//   req2 (arrives later): same 192-token prefix + 58 unique tokens = 250 total.
+//         nonCached = 250 - 12*16 = 58 ≤ 150 → NOT disaggregated (proves observer ran).
+//         Without observer call: nonCached = 250 > 150 → would disaggregate.
+func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
+	const threshold = 150 // between cached-case nonCached=58 and uncached-case nonCached=192
+	config := newTestPrefixThresholdConfig(threshold)
+
+	// Shared prefix: 192 tokens = exactly 12 complete blocks (blockSize=16).
+	sharedPrefix := make([]int, 192)
+	for i := range sharedPrefix {
+		sharedPrefix[i] = i + 1
+	}
+	// req2 tokens: same prefix + 58 unique suffix = 250 total.
+	req2Tokens := make([]int, 250)
+	copy(req2Tokens, sharedPrefix)
+	for i := 192; i < 250; i++ {
+		req2Tokens[i] = 10000 + i
+	}
+	output := []int{1, 2, 3, 4, 5}
+
+	req1 := &sim.Request{
+		ID: "req-prefix-1", InputTokens: sharedPrefix, OutputTokens: output,
+		ArrivalTime: 0, State: sim.StateQueued,
+	}
+	// req2 arrives after req1 fully processes (observer called during req1's PrefillRoutingEvent).
+	req2 := &sim.Request{
+		ID: "req-prefix-2", InputTokens: req2Tokens, OutputTokens: output,
+		ArrivalTime: 1_000_000_000, State: sim.StateQueued,
+	}
+
+	cs := NewClusterSimulator(config, []*sim.Request{req1, req2})
+	mustRun(t, cs)
+
+	// BC-PD-28a: req1 disaggregates (192 uncached tokens > threshold=150, empty cache).
+	parents := cs.ParentRequests()
+	if findParent(parents, "req-prefix-1") == nil {
+		t.Error("BC-PD-28: req1 (192 uncached tokens, threshold=150) should have disaggregated")
+	}
+	// BC-PD-28b: req2 does NOT disaggregate (58 non-cached tokens ≤ threshold=150 after cache warmup).
+	// If observer was not called, req2 would have 250 non-cached tokens > 150 and would disaggregate.
+	if findParent(parents, "req-prefix-2") != nil {
+		t.Error("BC-PD-28: req2 (58 non-cached after cache warmup, threshold=150) should not disaggregate — observer must have been called for req1")
+	}
+}
+
+// TestPrefixThreshold_TransferConservation verifies INV-PD-3 holds with prefix-threshold decider.
+func TestPrefixThreshold_TransferConservation(t *testing.T) {
+	config := newTestPrefixThresholdConfig(0) // threshold=0 disaggregates all
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	// INV-PD-3: every disaggregated request must have both TransferStartTime and TransferCompleteTime set.
+	parents := cs.ParentRequests()
+	if len(parents) != 5 {
+		t.Fatalf("ParentRequests = %d, want 5 (threshold=0 disaggregates all)", len(parents))
+	}
+	for _, p := range parents {
+		if p.TransferStartTime == 0 {
+			t.Errorf("parent %s: TransferStartTime not set", p.ID)
+		}
+		if p.TransferCompleteTime == 0 {
+			t.Errorf("parent %s: TransferCompleteTime not set", p.ID)
+		}
+		if p.TransferCompleteTime < p.TransferStartTime {
+			t.Errorf("parent %s: TransferCompleteTime (%d) < TransferStartTime (%d)",
+				p.ID, p.TransferCompleteTime, p.TransferStartTime)
+		}
+	}
+}
+
 func TestAllocateTransferredKV_Success(t *testing.T) {
 	cfg := sim.SimConfig{
 		Horizon:             1000000,
@@ -656,11 +806,11 @@ func TestDisaggregation_NegativeTransferDurationClamp(t *testing.T) {
 	event.Execute(cs)
 
 	// The trace should contain a KVTransferRecord with TransferDuration == 0 (clamped)
-	records := cs.trace.KVTransfers
+	records := cs.Trace().KVTransfers
 	if len(records) == 0 {
 		// If KV allocation failed (insufficient capacity), no record is written.
-		// In that case, the clamp path was not reached. Check DroppedAtDecodeKV instead.
-		if cs.droppedAtDecodeKV > 0 {
+		// In that case, the clamp path was not reached. Check DroppedKVAllocations instead.
+		if cs.DroppedKVAllocations() > 0 {
 			t.Skip("decode KV allocation failed before reaching transfer duration clamp")
 		}
 		t.Fatal("expected KVTransferRecord to be recorded")
