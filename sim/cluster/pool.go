@@ -69,6 +69,22 @@ func BuildPoolMembership(instances []*InstanceSimulator, prefill, decode int) ma
 	return membership
 }
 
+// BuildPoolMembershipFromIndices constructs a pool membership map from instance indices.
+// Uses the same instance ID naming convention as NewClusterSimulator: "instance_N".
+// This variant does not require constructed instances, enabling pool membership
+// computation before instance construction (needed for per-pool config resolution).
+// Caller must validate prefill+decode <= total before calling.
+func BuildPoolMembershipFromIndices(total, prefill, decode int) map[string]PoolRole {
+	membership := make(map[string]PoolRole, prefill+decode)
+	for i := 0; i < prefill; i++ {
+		membership[fmt.Sprintf("instance_%d", i)] = PoolRolePrefill
+	}
+	for i := prefill; i < prefill+decode; i++ {
+		membership[fmt.Sprintf("instance_%d", i)] = PoolRoleDecode
+	}
+	return membership
+}
+
 // FilterSnapshotsByPool returns only the snapshots for instances in the given pool role.
 // Order is preserved (stable relative to the input slice).
 func FilterSnapshotsByPool(snapshots []sim.RoutingSnapshot, membership map[string]PoolRole, role PoolRole) []sim.RoutingSnapshot {

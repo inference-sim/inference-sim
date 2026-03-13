@@ -466,7 +466,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 // executeBatchStep handles Phase 2: model execution (prefill + decode) for all requests
 // in the running batch. Returns the step time advance in ticks.
 func (sim *Simulator) executeBatchStep(now int64) int64 {
-	// Estimate step time via LatencyModel (blackbox or roofline, selected at construction)
+	// Estimate step time via LatencyModel (selected at construction)
 	currStepAdvance := sim.latencyModel.StepTime(sim.RunningBatch.Requests)
 
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)

@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -222,6 +223,71 @@ func TestClusterSimulator_InvalidPoolConfig_Panics(t *testing.T) {
 	config.PrefillInstances = 3
 	config.DecodeInstances = 3 // sum > 4
 	NewClusterSimulator(config, nil)
+}
+
+func TestBuildPoolMembershipFromIndices(t *testing.T) {
+	tests := []struct {
+		name    string
+		total   int
+		prefill int
+		decode  int
+	}{
+		{"2+2 of 4", 4, 2, 2},
+		{"1+3 of 4", 4, 1, 3},
+		{"3+1 of 6", 6, 3, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			membership := BuildPoolMembershipFromIndices(tc.total, tc.prefill, tc.decode)
+
+			// Verify total membership count
+			if len(membership) != tc.prefill+tc.decode {
+				t.Fatalf("membership count = %d, want %d", len(membership), tc.prefill+tc.decode)
+			}
+
+			// Verify prefill instances
+			for i := 0; i < tc.prefill; i++ {
+				id := fmt.Sprintf("instance_%d", i)
+				if membership[id] != PoolRolePrefill {
+					t.Errorf("instance %s role = %v, want prefill", id, membership[id])
+				}
+			}
+
+			// Verify decode instances
+			for i := tc.prefill; i < tc.prefill+tc.decode; i++ {
+				id := fmt.Sprintf("instance_%d", i)
+				if membership[id] != PoolRoleDecode {
+					t.Errorf("instance %s role = %v, want decode", id, membership[id])
+				}
+			}
+
+			// Verify unassigned instances have no role
+			for i := tc.prefill + tc.decode; i < tc.total; i++ {
+				id := fmt.Sprintf("instance_%d", i)
+				if _, ok := membership[id]; ok {
+					t.Errorf("instance %s should have no role, got %v", id, membership[id])
+				}
+			}
+		})
+	}
+}
+
+// BC-P2-5: new function produces same mapping as existing function
+func TestBuildPoolMembershipFromIndices_MatchesExistingFunction(t *testing.T) {
+	config := newTestDeploymentConfig(4)
+	cs := NewClusterSimulator(config, nil)
+
+	existingMembership := BuildPoolMembership(cs.instances, 2, 2)
+	newMembership := BuildPoolMembershipFromIndices(4, 2, 2)
+
+	if len(existingMembership) != len(newMembership) {
+		t.Fatalf("size mismatch: existing=%d, new=%d", len(existingMembership), len(newMembership))
+	}
+	for id, role := range existingMembership {
+		if newMembership[id] != role {
+			t.Errorf("id=%s: existing=%v, new=%v", id, role, newMembership[id])
+		}
+	}
 }
 
 // TestPoolRole_String verifies PoolRole has meaningful string representation.

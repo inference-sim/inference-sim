@@ -115,7 +115,7 @@ func validateCoeffs(name string, coeffs []float64) error {
 
 // NewLatencyModel creates the appropriate LatencyModel based on config.
 // Dispatches on hw.Backend: "roofline" → RooflineLatencyModel, "crossmodel" → CrossModelLatencyModel,
-// "" or "blackbox" → BlackboxLatencyModel.
+// "trained-roofline" → TrainedRooflineLatencyModel, "" or "blackbox" → BlackboxLatencyModel.
 // Returns error if coefficient slices are too short, contain NaN/Inf, or config validation fails.
 func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
 	// All implementations index alphaCoeffs[0..2]; validate upfront.
@@ -167,7 +167,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 		}
 		kvDimScaled := (float64(hw.ModelConfig.NumLayers) * float64(numKVHeads) * headDim / float64(hw.TP)) * 1e-6
 		var isMoE float64
-		if hw.ModelConfig.NumLocalExperts > 0 {
+		if hw.ModelConfig.NumLocalExperts > 1 {
 			isMoE = 1.0
 		}
 		var isTP float64
@@ -238,7 +238,7 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			dFF:         hw.ModelConfig.IntermediateDim,
 			kEff:        max(1, hw.ModelConfig.NumExpertsPerTok), // matches training: k_eff = max(1, k)
 			numExperts:  hw.ModelConfig.NumLocalExperts,
-			isMoE:       hw.ModelConfig.NumLocalExperts > 0,
+			isMoE:       hw.ModelConfig.NumLocalExperts > 1,
 			tp:          hw.TP,
 			flopsPeakUs: hw.HWConfig.TFlopsPeak * 1e6,
 			bwHbmUs:     hw.HWConfig.BwPeakTBs * 1e6,

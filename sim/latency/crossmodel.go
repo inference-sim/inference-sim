@@ -23,7 +23,7 @@ import (
 // Architecture features are computed once at construction and frozen:
 //
 //	kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6
-//	isMoE       = 1.0 if NumLocalExperts > 0, else 0.0
+//	isMoE       = 1.0 if NumLocalExperts > 1, else 0.0
 //	isTP        = 1.0 if TP > 1, else 0.0
 type CrossModelLatencyModel struct {
 	betaCoeffs  []float64 // [per_layer, kv_bw, moe_dispatch, tp_sync]
@@ -32,7 +32,7 @@ type CrossModelLatencyModel struct {
 	// Pre-computed architecture features (frozen at construction)
 	numLayers   int
 	kvDimScaled float64 // L × kvHeads × headDim / TP × 1e-6
-	isMoE       float64 // 1.0 if NumLocalExperts > 0
+	isMoE       float64 // 1.0 if NumLocalExperts > 1 (single-expert models are dense-equivalent)
 	isTP        float64 // 1.0 if TP > 1
 }
 

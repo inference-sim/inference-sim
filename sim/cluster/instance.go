@@ -124,7 +124,11 @@ func (i *InstanceSimulator) BatchSize() int {
 
 // KVUtilization returns the fraction of KV cache blocks in use.
 func (i *InstanceSimulator) KVUtilization() float64 {
-	return float64(i.sim.KVCache.UsedBlocks()) / float64(i.sim.KVCache.TotalCapacity())
+	total := i.sim.KVCache.TotalCapacity()
+	if total <= 0 {
+		return 0 // R11: defensive guard; validated at construction, should never reach here
+	}
+	return float64(i.sim.KVCache.UsedBlocks()) / float64(total)
 }
 
 // FreeKVBlocks returns the number of free KV cache blocks.

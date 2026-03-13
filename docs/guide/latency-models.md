@@ -133,7 +133,7 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 
 **Pre-trained coefficients** from real vLLM measurements across 4 architectures (7B-70B dense + 8x7B MoE) are stored in `crossmodel_defaults` in `defaults.yaml`. No per-model calibration needed.
 
-**MoE support:** Cross-model correctly handles Mixture-of-Experts models. The `β₂` term captures the per-token routing and expert dispatch overhead, activated when `num_local_experts > 0` in the model's HuggingFace config.json. The MoE indicator is binary (MoE vs dense); the specific active expert count (`num_experts_per_tok`) is parsed for future refinement but not yet used in the formula.
+**MoE support:** Cross-model correctly handles Mixture-of-Experts models. The `β₂` term captures the per-token routing and expert dispatch overhead, activated when `num_local_experts > 1` in the model's HuggingFace config.json (single-expert models are dense-equivalent). The MoE indicator is binary (MoE vs dense); the specific active expert count (`num_experts_per_tok`) is parsed for future refinement but not yet used in the formula.
 
 !!! warning "Dense model prefill limitation"
     For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, **blackbox mode with trained coefficients** provides more accurate estimates because its `β₁` term explicitly models per-prefill-token cost.

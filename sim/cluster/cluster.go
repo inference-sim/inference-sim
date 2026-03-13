@@ -55,13 +55,32 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
-	simCfg := config.ToSimConfig()
+	// Validate pool topology BEFORE building membership or constructing instances,
+	// so invalid configs fail fast before any allocation (R3).
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+	}
+
+	// Build pool membership from indices BEFORE instance construction
+	// so we can resolve per-pool configs for each instance (INV-P2-1).
+	var prePoolMembership map[string]PoolRole
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		prePoolMembership = BuildPoolMembershipFromIndices(
+			config.NumInstances, config.PrefillInstances, config.DecodeInstances,
+		)
+	}
+
 	instances := make([]*InstanceSimulator, config.NumInstances)
 	for idx := range instances {
-		instances[idx] = NewInstanceSimulator(
-			InstanceID(fmt.Sprintf("instance_%d", idx)),
-			simCfg,
-		)
+		id := InstanceID(fmt.Sprintf("instance_%d", idx))
+		role := PoolRole(0)
+		if prePoolMembership != nil {
+			role = prePoolMembership[string(id)]
+		}
+		simCfg := config.resolveConfigForRole(role)
+		instances[idx] = NewInstanceSimulator(id, simCfg)
 	}
 	// Build instance map for snapshot provider
 	instanceMap := make(map[InstanceID]*InstanceSimulator, len(instances))
@@ -98,11 +117,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}
 
-	// PD disaggregation: validate topology and build pool membership
+	// PD disaggregation: validate transfer parameters and build runtime state.
+	// Pool topology already validated above (before instance construction).
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
-		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
-			panic(fmt.Sprintf("ClusterSimulator: %v", err))
-		}
 		// R3: validate PD transfer parameters at construction time.
 		if config.PDKVBytesPerToken <= 0 {
 			panic(fmt.Sprintf("ClusterSimulator: PDKVBytesPerToken must be > 0 when PD is enabled, got %d", config.PDKVBytesPerToken))
@@ -113,7 +130,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		if config.PDTransferBaseLatencyMs < 0 {
 			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be >= 0 when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
 		}
-		cs.poolMembership = BuildPoolMembership(instances, config.PrefillInstances, config.DecodeInstances)
+		cs.poolMembership = prePoolMembership
 		if config.PDDecider == "prefix-threshold" {
 			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
 		} else {
@@ -230,7 +247,7 @@ func (c *ClusterSimulator) Run() error {
 			if delta > 0 {
 				c.inFlightRequests[instID] -= delta
 				if c.inFlightRequests[instID] < 0 {
-					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d) — bookkeeping bug",
+					logrus.Errorf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d) — bookkeeping bug",
 						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore)
 					c.inFlightRequests[instID] = 0
 				}
@@ -278,12 +295,16 @@ func (c *ClusterSimulator) Run() error {
 	// Post-simulation PD diagnostics
 	if c.poolsConfigured() {
 		// INV-PD-3: transfer conservation — initiated_transfers == completed_transfers.
+		// This is a hard invariant: a mismatch means the transfer pipeline lost or
+		// duplicated a transfer, producing corrupt PD metrics. Return an error so
+		// the caller can fail visibly rather than report misleading numbers.
 		if c.transfersInitiated != c.transfersCompleted {
-			logrus.Warnf("[cluster] INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
+			return fmt.Errorf("INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
 				c.transfersInitiated, c.transfersCompleted)
 		}
 		// Orphaned pending completions at horizon — in-flight disaggregated requests
-		// that never completed their pipeline phase.
+		// that never completed their pipeline phase. This is expected when horizon
+		// truncates requests mid-pipeline, so warn (not error).
 		if n := len(c.pendingPrefillCompletions); n > 0 {
 			logrus.Warnf("[cluster] %d prefill sub-requests still pending at horizon (never completed)", n)
 		}

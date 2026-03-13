@@ -23,7 +23,7 @@ type ParentRequest struct {
 	//     finishes its last step. CompletionTime == actual decode completion time.
 	//   - Dropped at decode KV allocation: set to the DecodeRoutingEvent time (the point
 	//     when the drop was detected). CompletionTime < actual decode time (which never
-	//     happened). Use TransferCompleteTime > 0 && droppedAtDecodeKV counter to distinguish.
+	//     happened). Use DecodeInstanceID == "" to distinguish dropped requests.
 	CompletionTime int64
 
 	// Instance assignment

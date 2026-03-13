@@ -111,6 +111,16 @@ var (
 	prefillRoutingScorers string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
+	// Per-pool hardware overrides (Phase 2, PR1)
+	prefillTP           int    // TP for prefill pool (0 = use global)
+	decodeTP            int    // TP for decode pool (0 = use global)
+	prefillHardware     string // GPU for prefill pool ("" = use global)
+	decodeHardware      string // GPU for decode pool ("" = use global)
+	prefillLatencyModel string // Latency backend for prefill pool ("" = use global)
+	decodeLatencyModel  string // Latency backend for decode pool ("" = use global)
+	prefillMaxModelLen  int64  // Max model len for prefill pool (0 = use global)
+	decodeMaxModelLen   int64  // Max model len for decode pool (0 = use global)
+
 	// results file path
 	resultsPath string // File to save BLIS results to
 )
@@ -512,6 +522,65 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Please provide hardware config path (e.g. hardware_config.json)\n")
 			}
 		}
+		// Build per-pool hardware overrides (R18: CLI flags take precedence).
+		// Declared here (before analytical backend block) so per-pool KV auto-calc
+		// can modify them inside the analytical backend scope where hfConfig is available.
+		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+		if cmd.Flags().Changed("prefill-tp") {
+			prefillOverrides.TP = &prefillTP
+		}
+		if cmd.Flags().Changed("decode-tp") {
+			decodeOverrides.TP = &decodeTP
+		}
+		if prefillHardware != "" {
+			prefillOverrides.GPU = prefillHardware
+		}
+		if decodeHardware != "" {
+			decodeOverrides.GPU = decodeHardware
+		}
+		if prefillLatencyModel != "" {
+			prefillOverrides.LatencyBackend = prefillLatencyModel
+		}
+		if decodeLatencyModel != "" {
+			decodeOverrides.LatencyBackend = decodeLatencyModel
+		}
+		if cmd.Flags().Changed("prefill-max-model-len") {
+			prefillOverrides.MaxModelLen = &prefillMaxModelLen
+		}
+		if cmd.Flags().Changed("decode-max-model-len") {
+			decodeOverrides.MaxModelLen = &decodeMaxModelLen
+		}
+
+		// R3: Validate per-pool override values at CLI boundary.
+		if prefillOverrides.TP != nil && *prefillOverrides.TP <= 0 {
+			logrus.Fatalf("--prefill-tp must be > 0 when set, got %d", *prefillOverrides.TP)
+		}
+		if decodeOverrides.TP != nil && *decodeOverrides.TP <= 0 {
+			logrus.Fatalf("--decode-tp must be > 0 when set, got %d", *decodeOverrides.TP)
+		}
+		if prefillOverrides.MaxModelLen != nil && *prefillOverrides.MaxModelLen <= 0 {
+			logrus.Fatalf("--prefill-max-model-len must be > 0 when set, got %d", *prefillOverrides.MaxModelLen)
+		}
+		if decodeOverrides.MaxModelLen != nil && *decodeOverrides.MaxModelLen <= 0 {
+			logrus.Fatalf("--decode-max-model-len must be > 0 when set, got %d", *decodeOverrides.MaxModelLen)
+		}
+		if prefillOverrides.LatencyBackend != "" && !sim.IsValidLatencyBackend(prefillOverrides.LatencyBackend) {
+			logrus.Fatalf("unknown --prefill-latency-model %q; valid options: %s",
+				prefillOverrides.LatencyBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+		}
+		if decodeOverrides.LatencyBackend != "" && !sim.IsValidLatencyBackend(decodeOverrides.LatencyBackend) {
+			logrus.Fatalf("unknown --decode-latency-model %q; valid options: %s",
+				decodeOverrides.LatencyBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+		}
+
+		// Warn if per-pool flags are set but PD mode is not active.
+		if prefillInstances == 0 && decodeInstances == 0 {
+			if !prefillOverrides.IsEmpty() || !decodeOverrides.IsEmpty() {
+				logrus.Warnf("Per-pool hardware flags set but PD disaggregation is not active " +
+					"(--prefill-instances and --decode-instances are both 0). Per-pool flags will be ignored.")
+			}
+		}
+
 		// Zero-coefficients safety guard: prevents silently running with zero step times
 		// when blackbox mode has no trained coefficients (would produce meaningless results).
 		if backend != "roofline" && backend != "crossmodel" && backend != "trained-roofline" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
@@ -643,6 +712,77 @@ var runCmd = &cobra.Command{
 					logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
 						maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
 					maxModelLen = kvFeasibleMax
+				}
+			}
+
+			// Per-pool KV auto-calculation: when analytical backend is active and
+			// per-pool TP/GPU differs from global, recalculate KV blocks for each pool.
+			if prefillInstances > 0 || decodeInstances > 0 {
+				for _, poolInfo := range []struct {
+					name      string
+					overrides *cluster.PoolOverrides
+				}{
+					{"prefill", &prefillOverrides},
+					{"decode", &decodeOverrides},
+				} {
+					// Determine effective backend for this pool
+					effectiveBackend := backend
+					if poolInfo.overrides.LatencyBackend != "" {
+						effectiveBackend = poolInfo.overrides.LatencyBackend
+					}
+
+					// Only auto-calc for analytical backends
+					isAnalytical := effectiveBackend == "roofline" || effectiveBackend == "crossmodel" || effectiveBackend == "trained-roofline"
+					if !isAnalytical {
+						continue
+					}
+
+					// Determine effective TP and GPU for this pool
+					effectiveTP := tensorParallelism
+					if poolInfo.overrides.TP != nil {
+						effectiveTP = *poolInfo.overrides.TP
+					}
+					effectiveGPU := gpu
+					if poolInfo.overrides.GPU != "" {
+						effectiveGPU = poolInfo.overrides.GPU
+					}
+
+					// Skip if TP and GPU are same as global (global KV calc already done)
+					if effectiveTP == tensorParallelism && effectiveGPU == gpu && effectiveBackend == backend {
+						continue
+					}
+
+					// Resolve hardware config for pool's GPU
+					poolHWConfig := hwConfig
+					if effectiveGPU != gpu {
+						var hwErr error
+						poolHWConfig, hwErr = latency.GetHWConfig(hwConfigPath, effectiveGPU)
+						if hwErr != nil {
+							logrus.Fatalf("--%s pool: could not load hardware config for %s: %v",
+								poolInfo.name, effectiveGPU, hwErr)
+						}
+					}
+
+					if poolHWConfig.MemoryGiB <= 0 {
+						logrus.Warnf("--%s pool: GPU memory capacity not available for %s; using global total-kv-blocks",
+							poolInfo.name, effectiveGPU)
+						continue
+					}
+
+					kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
+					if kvParamsErr != nil {
+						logrus.Fatalf("--%s pool: could not extract KV capacity params: %v", poolInfo.name, kvParamsErr)
+					}
+
+					poolBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, poolHWConfig, effectiveTP, blockSizeTokens, kvParams)
+					if calcErr != nil {
+						logrus.Fatalf("--%s pool: KV capacity auto-calculation failed: %v\n"+
+							"Set --total-kv-blocks explicitly to override", poolInfo.name, calcErr)
+					}
+
+					poolInfo.overrides.TotalKVBlocks = &poolBlocks
+					logrus.Infof("--%s pool: auto-calculated total-kv-blocks=%d (GPU=%s, %.0f GiB, TP=%d)",
+						poolInfo.name, poolBlocks, effectiveGPU, poolHWConfig.MemoryGiB, effectiveTP)
 				}
 			}
 		}
@@ -1018,6 +1158,8 @@ var runCmd = &cobra.Command{
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,
+			PrefillOverrides:        prefillOverrides,
+			DecodeOverrides:         decodeOverrides,
 		}
 		cs := cluster.NewClusterSimulator(config, preGeneratedRequests)
 		if err := cs.Run(); err != nil {
@@ -1298,6 +1440,16 @@ func init() {
 	runCmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	runCmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	runCmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
+
+	// Per-pool hardware overrides (Phase 2, PR1)
+	runCmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism for prefill pool (0 = use global --tp)")
+	runCmd.Flags().IntVar(&decodeTP, "decode-tp", 0, "Tensor parallelism for decode pool (0 = use global --tp)")
+	runCmd.Flags().StringVar(&prefillHardware, "prefill-hardware", "", "GPU type for prefill pool (empty = use global --hardware)")
+	runCmd.Flags().StringVar(&decodeHardware, "decode-hardware", "", "GPU type for decode pool (empty = use global --hardware)")
+	runCmd.Flags().StringVar(&prefillLatencyModel, "prefill-latency-model", "", "Latency model backend for prefill pool (empty = use global --latency-model)")
+	runCmd.Flags().StringVar(&decodeLatencyModel, "decode-latency-model", "", "Latency model backend for decode pool (empty = use global --latency-model)")
+	runCmd.Flags().Int64Var(&prefillMaxModelLen, "prefill-max-model-len", 0, "Max model length for prefill pool (0 = use global --max-model-len)")
+	runCmd.Flags().Int64Var(&decodeMaxModelLen, "decode-max-model-len", 0, "Max model length for decode pool (0 = use global --max-model-len)")
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")

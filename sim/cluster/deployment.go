@@ -2,8 +2,8 @@ package cluster
 
 import "github.com/inference-sim/inference-sim/sim"
 
-// DeploymentConfig describes a cluster where all instances share identical
-// hardware and model configuration. NumInstances must be >= 1.
+// DeploymentConfig describes a cluster deployment with optional per-pool
+// hardware overrides for PD disaggregation. NumInstances must be >= 1.
 type DeploymentConfig struct {
 	sim.SimConfig // Embeds all instance-level config (horizon, seed, KV, batch, latency, policy)
 
@@ -46,6 +46,11 @@ type DeploymentConfig struct {
 	// When nil, both pools use the main RoutingScorerConfigs.
 	PrefillScorerConfigs []sim.ScorerConfig // Scorer configs for prefill pool routing
 	DecodeScorerConfigs  []sim.ScorerConfig // Scorer configs for decode pool routing
+
+	// Per-pool hardware overrides (Phase 2, PR1)
+	// Zero-valued PoolOverrides = use global config (BC-P2-1).
+	PrefillOverrides PoolOverrides // Per-pool overrides for prefill instances
+	DecodeOverrides  PoolOverrides // Per-pool overrides for decode instances
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
@@ -53,4 +58,18 @@ type DeploymentConfig struct {
 // and injects requests via InjectRequestOnline.
 func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
 	return d.SimConfig
+}
+
+// resolveConfigForRole returns a SimConfig resolved for the given pool role.
+// Instances with no pool role (PoolRole zero value) receive the global config.
+func (d DeploymentConfig) resolveConfigForRole(role PoolRole) sim.SimConfig {
+	global := d.ToSimConfig()
+	switch role {
+	case PoolRolePrefill:
+		return ResolvePoolConfig(global, d.PrefillOverrides)
+	case PoolRoleDecode:
+		return ResolvePoolConfig(global, d.DecodeOverrides)
+	default:
+		return global
+	}
 }

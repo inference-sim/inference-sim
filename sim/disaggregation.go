@@ -56,6 +56,9 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 // so the decider tracks the global set of recently-seen prefixes.
 const globalVirtualInstance = "__global__"
 
+// Compile-time interface compliance check.
+var _ DisaggregationObserver = (*PrefixThresholdDecider)(nil)
+
 // DisaggregationObserver is an optional interface for stateful DisaggregationDeciders that need
 // to learn from routing decisions. ClusterSimulator calls ObserveRouting after each routing
 // decision (both standard routing and prefill routing in the disaggregated path).

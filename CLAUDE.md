@@ -103,6 +103,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-PD-3 Transfer conservation**: `initiated_transfers == completed_transfers` at simulation end.
 - **INV-PD-4 Phase causality**: `arrival ≤ prefill_enqueue ≤ prefill_complete ≤ transfer_start ≤ transfer_complete ≤ decode_enqueue ≤ completion`.
 - **INV-PD-5 Pool stability**: Pool membership unchanged after initialization.
+- **INV-P2-1 Pool-config consistency**: Each instance receives config consistent with its pool role. Instances with no pool role receive global config.
 
 ### Engineering Principles
 
@@ -207,7 +208,7 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --prefill-instances, --decode-instances, --pd-decider, --pd-prefix-threshold, --pd-transfer-bandwidth, --pd-transfer-base-latency, --pd-kv-bytes-per-token, --prefill-routing-scorers, --decode-routing-scorers)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --prefill-instances, --decode-instances, --pd-decider, --pd-prefix-threshold, --pd-transfer-bandwidth, --pd-transfer-base-latency, --pd-kv-bytes-per-token, --prefill-routing-scorers, --decode-routing-scorers, --prefill-tp, --decode-tp, --prefill-hardware, --decode-hardware, --prefill-latency-model, --decode-latency-model, --prefill-max-model-len, --decode-max-model-len)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
@@ -263,9 +264,10 @@ inference-sim/
 │   ├── counterfactual.go      # computeCounterfactual() for top-k candidate ranking and regret computation
 │   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
 │   ├── metrics.go             # RawMetrics (includes PD *PDMetrics, nil when disaggregation inactive), Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
-│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields (PrefillInstances, DecodeInstances, PDDecider, PDPrefixThreshold for PD disaggregation); ToSimConfig() returns the embedded config
+│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields (PrefillInstances, DecodeInstances, PDDecider, PDPrefixThreshold, PrefillOverrides, DecodeOverrides for per-pool hardware config); ToSimConfig(), resolveConfigForRole()
+│   ├── resolve.go             # PoolOverrides type, ResolvePoolConfig pure function for per-pool hardware config resolution
 │   ├── pd_metrics.go          # PDMetrics struct (DisaggregatedCount, ParentTTFT, TransferDuration, PrefillThroughput, DecodeThroughput, LoadImbalanceRatio), CollectPDMetrics (pure function, post-simulation), collectPoolThroughput (R2, R11)
-│   ├── pool.go                # PoolRole type, ValidatePoolTopology(), BuildPoolMembership() for PD disaggregation pool topology
+│   ├── pool.go                # PoolRole type, ValidatePoolTopology(), BuildPoolMembership(), BuildPoolMembershipFromIndices() for PD disaggregation pool topology
 │   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
 ├── sim/workload/              # ServeGen-informed workload generation (PR10)
 │   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, v1→v2 auto-upgrade (UpgradeV1ToV2), IsValidSLOClass accessor
@@ -398,6 +400,7 @@ Request Arrival → Admission → Disaggregation Decision
   → [local] → Standard Routing → Any Instance → Completion
 ```
 CLI flags: `--pd-decider` (never/always/prefix-threshold), `--pd-prefix-threshold` (512, non-cached token threshold for prefix-threshold decider), `--pd-transfer-bandwidth` (25 GB/s), `--pd-transfer-base-latency` (0.05 ms), `--pd-kv-bytes-per-token` (512), `--prefill-routing-scorers`, `--decode-routing-scorers`
+Per-pool hardware flags: `--prefill-tp`, `--decode-tp`, `--prefill-hardware`, `--decode-hardware`, `--prefill-latency-model`, `--decode-latency-model`, `--prefill-max-model-len`, `--decode-max-model-len` (all default to global config when unset)
 
 ## Project Governance Documents
 
