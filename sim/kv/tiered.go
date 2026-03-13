@@ -176,6 +176,9 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 	if cpuBlocks <= 0 {
 		panic(fmt.Sprintf("NewTieredKVCache: cpuBlocks must be > 0, got %d", cpuBlocks))
 	}
+	if baseLat < 0 {
+		panic(fmt.Sprintf("NewTieredKVCache: baseLat must be >= 0, got %d", baseLat))
+	}
 	// BC-7: Log deprecation warning if threshold is set to non-default
 	if threshold != 0 {
 		logrus.Warn("KVOffloadThreshold is deprecated in vLLM v1 mirror model and will be ignored. " +
