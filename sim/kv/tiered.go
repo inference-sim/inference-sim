@@ -304,7 +304,10 @@ func (t *TieredKVCache) UsedBlocks() int64   { return t.gpu.UsedBlocks() }
 func (t *TieredKVCache) TotalCapacity() int64 { return t.gpu.TotalCapacity() }
 
 func (t *TieredKVCache) CacheHitRate() float64 {
-	totalHits := t.gpu.CacheHits + t.cpuHitCount
+	// gpu.CacheHits already includes CPU-reloaded blocks (they appear as GPU
+	// cache hits on the retry allocation after reload). cpuHitCount is a
+	// diagnostic counter for reload events, not additive to the hit rate.
+	totalHits := t.gpu.CacheHits
 	totalMisses := t.gpu.CacheMisses + t.cpuMissCount
 	total := totalHits + totalMisses
 	if total == 0 {
