@@ -2357,7 +2357,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/inference-sim.git
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>inference-sim
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b
 </code></pre></div>
 <hr />
 <h2 id="key-features">Key Features<a class="headerlink" href="#key-features" title="Permanent link">&para;</a></h2>
@@ -2366,7 +2366,7 @@
 <li><strong>Deterministic execution</strong> — same seed produces byte-identical output across runs</li>
 <li><strong>KV-cache modeling</strong> with prefix caching and tiered GPU+CPU offload</li>
 <li><strong>Chunked prefill and preemption-aware batch formation</strong></li>
-<li><strong>Pluggable latency models</strong> — blackbox (data-driven coefficients), roofline (analytical FLOPs/bandwidth), and cross-model (physics-informed, MoE-aware), with an extensible interface for custom backends</li>
+<li><strong>Pluggable latency models</strong> — roofline (default, analytical FLOPs/bandwidth), blackbox (data-driven coefficients), cross-model (physics-informed, MoE-aware), and trained-roofline (roofline × learned corrections), with an extensible interface for custom backends</li>
 <li><strong>Multi-instance cluster simulation</strong> with shared-clock event loop</li>
 <li><strong>Pluggable routing policies</strong> — round-robin, least-loaded, and composable weighted-scoring with prefix-affinity, queue-depth, and KV-utilization scorers</li>
 <li><strong>Admission control</strong>, <strong>priority policies</strong>, and <strong>instance schedulers</strong> — each a pluggable policy axis</li>

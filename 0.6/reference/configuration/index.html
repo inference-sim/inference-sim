@@ -2929,7 +2929,7 @@
 </tr>
 </tbody>
 </table>
-<p>* The effective value of <code>--total-kv-blocks</code> depends on the latency backend — see <a href="#resolution-process">Resolution Process</a> for the full priority chain. In blackbox mode, <code>defaults.yaml</code> overrides the 1,000,000 CLI default per model (e.g., <code>llama-3.1-8b/H100/TP=2</code> uses 132,139 blocks). In roofline or crossmodel mode, the value is auto-calculated from model architecture and GPU memory via <code>CalculateKVBlocks</code>, which supersedes the <code>defaults.yaml</code> value. Explicit <code>--total-kv-blocks</code> always takes precedence.</p>
+<p>* The effective value of <code>--total-kv-blocks</code> depends on the latency backend — see <a href="#resolution-process">Resolution Process</a> for the full priority chain. In blackbox mode, <code>defaults.yaml</code> overrides the 1,000,000 CLI default per model (e.g., <code>qwen3-14b/H100/TP=1</code> uses 17,600 blocks). In roofline or crossmodel mode, the value is auto-calculated from model architecture and GPU memory via <code>CalculateKVBlocks</code>, which supersedes the <code>defaults.yaml</code> value. Explicit <code>--total-kv-blocks</code> always takes precedence.</p>
 <h2 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h2>
 <p>Controls how requests are selected for the running batch. Maps to <code>BatchConfig</code>.</p>
 <table>
@@ -3006,13 +3006,13 @@
 <td><code>--model</code></td>
 <td>string</td>
 <td>(required)</td>
-<td>LLM model name (e.g., <code>meta-llama/llama-3.1-8b-instruct</code>).</td>
+<td>LLM model name (e.g., <code>qwen/qwen3-14b</code>).</td>
 </tr>
 <tr>
 <td><code>--hardware</code></td>
 <td>string</td>
 <td>""</td>
-<td>GPU type (e.g., <code>H100</code>, <code>A100</code>). If empty, loaded from <code>defaults.yaml</code>.</td>
+<td>GPU type. Bundled options: <code>H100</code>, <code>A100-SXM</code>, <code>A100-80</code>. If empty, loaded from <code>defaults.yaml</code>. Add new GPUs to <code>hardware_config.json</code>.</td>
 </tr>
 <tr>
 <td><code>--tp</code></td>
@@ -3049,8 +3049,8 @@
 <tr>
 <td><code>--latency-model</code></td>
 <td>string</td>
-<td>""</td>
-<td>Latency model backend: <code>blackbox</code> (default), <code>roofline</code>, <code>crossmodel</code>, <code>trained-roofline</code>. When set to <code>roofline</code>, <code>crossmodel</code>, or <code>trained-roofline</code>, auto-fetches HuggingFace config.json and resolves hardware config. Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models. <code>trained-roofline</code> is recommended for new models (7% MAPE GPU step time).</td>
+<td>"roofline"</td>
+<td>Latency model backend: <code>roofline</code> (default), <code>blackbox</code>, <code>crossmodel</code>, <code>trained-roofline</code>. When set to <code>roofline</code>, <code>crossmodel</code>, or <code>trained-roofline</code>, auto-fetches HuggingFace config.json and resolves hardware config. Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models. <code>trained-roofline</code> is recommended for new models (7% MAPE GPU step time).</td>
 </tr>
 <tr>
 <td><code>--model-config-folder</code></td>
@@ -3070,11 +3070,11 @@
 <h3 id="latency-mode-selection">Latency Mode Selection<a class="headerlink" href="#latency-mode-selection" title="Permanent link">&para;</a></h3>
 <p>The latency model mode is selected based on available configuration:</p>
 <ol>
-<li><strong>Blackbox mode</strong> (default): If coefficients are provided via CLI flags or loaded from <code>defaults.yaml</code></li>
-<li><strong>Explicit roofline mode</strong>: If <code>--latency-model roofline</code> is set with <code>--hardware</code> and <code>--tp</code>. Model config is auto-resolved: <code>model_configs/</code> (local) → HuggingFace fetch → error. Alpha coefficients and <code>total_kv_blocks</code> are loaded from <code>defaults.yaml</code> when available. Beta coefficients are replaced by analytical roofline computation. Note: <code>--latency-model blackbox</code> explicitly prevents implicit roofline detection (respecting user intent).</li>
-<li><strong>Explicit cross-model mode</strong>: If <code>--latency-model crossmodel</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. Architecture features derived from HuggingFace config.json. MoE-aware.</li>
-<li><strong>Implicit roofline mode</strong>: If all coefficients are zero and all four of <code>--model-config-folder</code>, <code>--hardware-config</code>, <code>--hardware</code>, and <code>--tp</code> are provided</li>
-<li><strong>Error</strong>: If no coefficients can be resolved and roofline inputs are incomplete</li>
+<li><strong>Roofline mode</strong> (default): Auto-resolves model config from HuggingFace and hardware config from bundled <code>hardware_config.json</code>. Requires <code>--hardware</code> and <code>--tp</code> (loaded from <code>defaults.yaml</code> when available).</li>
+<li><strong>Blackbox mode</strong>: If <code>--latency-model blackbox</code> is set. Uses trained alpha/beta coefficients from <code>defaults.yaml</code>. Requires a matching entry for the model/GPU/TP combination.</li>
+<li><strong>Cross-model mode</strong>: If <code>--latency-model crossmodel</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. Architecture features derived from HuggingFace config.json. MoE-aware.</li>
+<li><strong>Trained-roofline mode</strong>: If <code>--latency-model trained-roofline</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 10 globally-fitted coefficients (7 beta for roofline corrections + 3 alpha for CPU overhead) from <code>trained_roofline_defaults</code> in <code>defaults.yaml</code>. Achieves 7% MAPE on GPU combined step time.</li>
+<li><strong>Error</strong>: If blackbox mode is selected and no coefficients can be resolved for the model/GPU/TP combination</li>
 </ol>
 <h2 id="cluster-configuration">Cluster Configuration<a class="headerlink" href="#cluster-configuration" title="Permanent link">&para;</a></h2>
 <p>With <code>--num-instances 1</code> (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no admission or routing layer. With <code>--num-instances N</code> (N &gt; 1), the cluster simulation activates: requests pass through the admission and routing pipeline before reaching per-instance wait queues. See <a href="../../concepts/architecture/">Cluster Architecture</a> for the multi-instance pipeline and <a href="../../concepts/core-engine/">Core Engine</a> for single-instance internals.</p>
@@ -3479,11 +3479,11 @@
 <p>The <code>defaults.yaml</code> file serves as a model registry and workload preset store:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Section 1: Hardware/TP mappings (keyed by model ID)</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">defaults</span><span class="p">:</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">meta-llama/llama-3.1-8b-instruct</span><span class="p">:</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">qwen/qwen3-14b</span><span class="p">:</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">GPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">H100</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">tensor_parallelism</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nt">vllm_version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vllm/vllm-openai:v0.8.4</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="nt">hf_repo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">meta-llama/Llama-3.1-8B-Instruct</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">tensor_parallelism</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nt">vllm_version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vllm/vllm-openai:v0.11.0</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="nt">hf_repo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Qwen/Qwen3-14B</span>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1"># Section 2: Workload presets</span>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="nt">workloads</span><span class="p">:</span>
@@ -3496,37 +3496,39 @@
 <a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>
 <a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="c1"># Section 3: Trained coefficients (keyed by model+GPU+TP)</span>
 <a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="nt">models</span><span class="p">:</span>
-<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">meta-llama/llama-3.1-8b-instruct</span>
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">qwen/qwen3-14b</span>
 <a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">    </span><span class="nt">GPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">H100</span>
-<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">    </span><span class="nt">tensor_parallelism</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">    </span><span class="nt">vllm_version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vllm/vllm-openai:v0.8.4</span>
-<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="w">    </span><span class="nt">alpha_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">1601.35</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">3.51</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1805.54</span><span class="p p-Indicator">]</span>
-<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="w">    </span><span class="nt">beta_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">6910.42</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">17.67</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2.84</span><span class="p p-Indicator">]</span>
-<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="w">    </span><span class="nt">total_kv_blocks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">132139</span>
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">    </span><span class="nt">tensor_parallelism</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">    </span><span class="nt">vllm_version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vllm/vllm-openai:v0.11.0</span>
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="w">    </span><span class="nt">alpha_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">8888.09</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.18</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="w">    </span><span class="nt">beta_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">13578.19</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">39.44</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">27.32</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="w">    </span><span class="nt">total_kv_blocks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">17600</span>
 </code></pre></div>
 <h3 id="resolution-process">Resolution Process<a class="headerlink" href="#resolution-process" title="Permanent link">&para;</a></h3>
-<p>When BLIS starts, it resolves latency coefficients and KV block counts through a layered process. Explicit CLI flags always take precedence (R18).</p>
-<p><strong>Latency coefficient resolution:</strong></p>
+<p>When BLIS starts, it resolves latency configuration through a layered process. Explicit CLI flags always take precedence (R18).</p>
+<p><strong>Hardware and TP defaults resolution (all backends):</strong></p>
+<p>Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from <code>defaults.yaml</code> for the specified <code>--model</code> when those flags are not explicitly provided. This ensures analytical backends (roofline, crossmodel, trained-roofline) can auto-resolve without requiring explicit <code>--hardware</code> and <code>--tp</code> for models listed in <code>defaults.yaml</code>.</p>
+<p><strong>Backend-specific resolution:</strong></p>
 <ol>
-<li>If <code>--latency-model roofline</code> or <code>--latency-model crossmodel</code> is set:</li>
+<li>If <code>--latency-model roofline</code> (default), <code>crossmodel</code>, or <code>trained-roofline</code>:</li>
 <li>Auto-resolve model config: check <code>model_configs/</code> for existing <code>config.json</code>, fetch from HuggingFace on miss (set <code>HF_TOKEN</code> for gated models)</li>
 <li>Auto-resolve hardware config from bundled <code>hardware_config.json</code></li>
-<li>For roofline: load alpha coefficients and per-model KV blocks from <code>defaults.yaml</code> (beta coefficients are replaced by analytical computation). Warns if no per-model KV blocks found</li>
-<li>For crossmodel: load global alpha + beta coefficients from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>, and per-model KV blocks if available</li>
+<li>For roofline: beta coefficients are computed analytically from model architecture and hardware specs</li>
+<li>For crossmodel: load global alpha + beta coefficients from <code>crossmodel_defaults</code> in <code>defaults.yaml</code></li>
+<li>For trained-roofline: load global correction coefficients from <code>trained_roofline_defaults</code> in <code>defaults.yaml</code></li>
 <li><code>--model-config-folder</code> and <code>--hardware-config</code> override auto-resolution when explicitly set</li>
-<li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are not explicitly provided on the CLI and no analytical backend is selected:</li>
+<li>If <code>--latency-model blackbox</code>:</li>
 <li>Look up the model in <code>defaults.yaml</code> using <code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code></li>
 <li>Load alpha/beta coefficients from the matching entry</li>
-<li>If coefficients are still all-zero (no defaults found) but <code>--model-config-folder</code> and <code>--hardware-config</code> are provided:</li>
-<li>Enable roofline mode (implicit activation)</li>
-<li>If coefficients were explicitly provided via CLI (including explicit zeros):</li>
+<li>If no matching entry is found, exit with error suggesting roofline, crossmodel, or trained-roofline</li>
+<li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are explicitly provided via CLI:</li>
 <li>Use them directly, no <code>defaults.yaml</code> lookup</li>
 </ol>
 <p><strong><code>--total-kv-blocks</code> resolution</strong> (highest priority wins):</p>
 <ol>
 <li><strong>Explicit CLI flag</strong> — if <code>--total-kv-blocks</code> is set, that value is used regardless of backend</li>
 <li><strong>Auto-calculation</strong> (roofline/crossmodel only) — when <code>MemoryGiB &gt; 0</code> in the hardware config, <code>CalculateKVBlocks</code> derives the block count from model architecture and GPU memory, superseding the <code>defaults.yaml</code> value. Three failure modes: (a) if <code>MemoryGiB</code> is missing from <code>hardware_config.json</code>, BLIS warns and falls back to the <code>defaults.yaml</code> value (layer 3) or hardcoded default (layer 4); (b) if model architecture params cannot be extracted from <code>config.json</code>, BLIS exits with an error; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS exits with an error. Only the <code>MemoryGiB</code>-missing case is a graceful fallback — other failures are fatal. Auto-calculation currently requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>); models with other activations (e.g., Falcon's <code>gelu</code>) should set <code>--total-kv-blocks</code> explicitly</li>
-<li><strong><code>defaults.yaml</code></strong> — per-model block count loaded for the model/GPU/TP combination (e.g., 132,139 for llama-3.1-8b/H100/TP=2). For roofline/crossmodel with <code>MemoryGiB &gt; 0</code>, this value is superseded by auto-calculation (layer 2). It remains the effective value only for blackbox mode or when <code>MemoryGiB</code> is unavailable in the hardware config</li>
+<li><strong><code>defaults.yaml</code></strong> — per-model block count loaded for the model/GPU/TP combination (e.g., 17,600 for qwen3-14b/H100/TP=1). For roofline/crossmodel with <code>MemoryGiB &gt; 0</code>, this value is superseded by auto-calculation (layer 2). It remains the effective value only for blackbox mode or when <code>MemoryGiB</code> is unavailable in the hardware config</li>
 <li><strong>Hardcoded default</strong> — 1,000,000 (CLI flag default, used only when no other source provides a value)</li>
 </ol>
 <h2 id="coefficient-calibration">Coefficient Calibration<a class="headerlink" href="#coefficient-calibration" title="Permanent link">&para;</a></h2>

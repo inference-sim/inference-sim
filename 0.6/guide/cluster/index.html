@@ -2433,7 +2433,7 @@
 <h1 id="cluster-simulation">Cluster Simulation<a class="headerlink" href="#cluster-simulation" title="Permanent link">&para;</a></h1>
 <p>This guide covers running multi-instance BLIS simulations — the full pipeline from request arrival through admission, routing, scheduling, and metrics aggregation.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Quick example: 4-instance cluster with tracing</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--trace-level<span class="w"> </span>decisions<span class="w"> </span>--summarize-trace
 </code></pre></div>
@@ -2496,11 +2496,11 @@
 <h2 id="tensor-parallelism">Tensor Parallelism<a class="headerlink" href="#tensor-parallelism" title="Permanent link">&para;</a></h2>
 <p>The <code>--tp</code> flag sets the tensor parallelism degree for all instances. TP affects both latency (FLOPs split across GPUs) and memory (KV blocks split across GPUs):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># TP=2: 2 GPUs per instance</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># TP=4: 4 GPUs per instance (lower latency, fewer KV blocks per GPU)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">2</span><span class="w"> </span>--tp<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <div class="admonition note">
@@ -2508,12 +2508,13 @@
 <p>All instances share the same SimConfig (model, GPU, TP, KV blocks). BLIS does not currently model heterogeneous fleets (mixed GPU types or TP configurations).</p>
 </div>
 <h2 id="scaling-and-saturation">Scaling and Saturation<a class="headerlink" href="#scaling-and-saturation" title="Permanent link">&para;</a></h2>
-<p>Instance scaling produces <strong>super-linear</strong> TTFT improvement near saturation. Doubling from 4→8 instances at near-capacity (rate=500) improves TTFT p99 by 7.4x, not 2x.</p>
+<p>Instance scaling produces <strong>super-linear</strong> TTFT improvement near saturation. With the default model (Qwen3-14B / H100 / TP=1, ~17 req/s per instance at saturation), scaling from 4→12 instances at rate=200 improves TTFT p99 from ~1,500ms to ~54ms.</p>
 <p>This happens because the per-instance queue growth rate <code>excess = λ/k - μ</code> drops faster than linearly:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>4 instances: excess = 500/4 - 57.4 = 67.6 req/s per instance → rapid queue growth
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>8 instances: excess = 500/8 - 57.4 = 5.1 req/s per instance  → minimal queueing
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>4 instances:  excess = 200/4 - 17  = 33 req/s per instance   → rapid queue growth
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>8 instances:  excess = 200/8 - 17  = 8 req/s per instance    → near saturation
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>12 instances: excess = 200/12 - 17 = -0.3 req/s per instance → balanced (sub-saturation)
 </code></pre></div>
-<p>At sub-saturation (rate=100): scaling effect vanishes (1.06x).</p>
+<p>At sub-saturation (excess ≤ 0): TTFT converges to the baseline (~54ms) and further scaling provides diminishing returns.</p>
 <h2 id="admission-control">Admission Control<a class="headerlink" href="#admission-control" title="Permanent link">&para;</a></h2>
 <p>For rate-limiting and traffic shaping policies, see the <a href="../admission/">Admission Control</a> page.</p>
 <h2 id="admission-and-routing-latency">Admission and Routing Latency<a class="headerlink" href="#admission-and-routing-latency" title="Permanent link">&para;</a></h2>
@@ -2524,7 +2525,7 @@
 <p>These add simulated delays to the admission and routing pipeline, modeling gRPC overhead, service mesh hops, and queue serialization in production deployments.</p>
 <h2 id="decision-tracing">Decision Tracing<a class="headerlink" href="#decision-tracing" title="Permanent link">&para;</a></h2>
 <p>Log every routing decision for offline analysis:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--trace-level<span class="w"> </span>decisions<span class="w"> </span>--summarize-trace<span class="w"> </span>--counterfactual-k<span class="w"> </span><span class="m">3</span>
 </code></pre></div>

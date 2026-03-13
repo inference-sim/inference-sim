@@ -2457,7 +2457,7 @@
 <h1 id="routing-policies">Routing Policies<a class="headerlink" href="#routing-policies" title="Permanent link">&para;</a></h1>
 <p>This guide covers how BLIS distributes incoming requests across instances in cluster mode. For single-instance simulation, routing is not applicable. For instance-level request ordering, see <a href="../scheduling/">Scheduling &amp; Priority</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Quick example: compare round-robin vs weighted routing</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span>--trace-level<span class="w"> </span>decisions<span class="w"> </span>--summarize-trace
 </code></pre></div>
@@ -2582,7 +2582,7 @@
 <p>"Immediate" means "re-read from the instance object at query time" — NOT "perfectly synchronized with the simulation clock." At the same clock tick, cluster events are processed before instance events (determinism rule). So a routing decision at time T sees QueueDepth that hasn't yet processed instance events at time T. This is a determinism mechanism (INV-6), not a freshness guarantee.</p>
 </div>
 <h3 id="staleness-impact">Staleness Impact<a class="headerlink" href="#staleness-impact" title="Permanent link">&para;</a></h3>
-<p>At 5,000 req/s with 4 instances, ~45 routing decisions occur between KV utilization updates (~9ms step time). If using <code>kv-utilization:1</code> alone, all 45 decisions see the same stale utilization — severe load imbalance (3x worse TTFT p99).</p>
+<p>At high request rates, many routing decisions occur between KV utilization updates (step time varies by model — ~6ms for Qwen3-14B / H100 / TP=1 at low load, longer under batch saturation). If using <code>kv-utilization:1</code> alone, all decisions within one step see the same stale utilization — this can cause severe load imbalance.</p>
 <div class="admonition tip">
 <p class="admonition-title">Safe zone for <code>--snapshot-refresh-interval</code></p>
 <p>Below <strong>5ms</strong> (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354%. The default composite profile (<code>prefix-affinity:3, queue-depth:2, kv-utilization:2</code>) is inherently resilient — queue-depth's Immediate signal corrects stale KV signals, mitigating ~99% of the effect.</p>

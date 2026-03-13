@@ -2474,7 +2474,7 @@
 <ol>
 <li><strong>Implement the <code>BatchFormation</code> interface</strong> in <code>sim/batch_formation.go</code> (or a new file for complex strategies) — 1 method:</li>
 <li><code>FormBatch(ctx BatchContext) BatchResult</code> — compose the running batch for the next step</li>
-<li>The implementation receives <code>BatchContext</code> with: RunningBatch, WaitQ, KVCache, token budget, batch size limit, chunked prefill threshold, simulation time, step count, and ComputedTokens map</li>
+<li>The implementation receives <code>BatchContext</code> with: RunningBatch, WaitQ, KVCache, token budget, batch size limit, chunked prefill threshold, MaxModelLen (0 = unlimited; implementations should clamp token scheduling to <code>maxModelLen-1-ProgressIndex</code> when &gt; 0), simulation time, step count, and ComputedTokens map</li>
 <li>The implementation MUST update <code>ctx.ComputedTokens[req.ID]</code> for each request that receives new tokens (Phase 2 of <code>Step()</code> reads this map to advance <code>ProgressIndex</code>)</li>
 <li>The implementation may mutate <code>WaitQ</code> (dequeue/prepend) and <code>KVCache</code> (allocate/release) during batch formation</li>
 <li>The implementation MUST NOT schedule events or record metrics — return decisions in <code>BatchResult</code>, the Simulator applies them</li>

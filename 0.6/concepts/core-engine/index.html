@@ -1060,10 +1060,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#blackbox-model-default" class="md-nav__link">
+  <a href="#blackbox-model" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Blackbox Model (Default)
+        Blackbox Model
       
     </span>
   </a>
@@ -1071,10 +1071,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#roofline-model-analytical" class="md-nav__link">
+  <a href="#roofline-model-default" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Roofline Model (Analytical)
+        Roofline Model (Default)
       
     </span>
   </a>
@@ -2808,10 +2808,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#blackbox-model-default" class="md-nav__link">
+  <a href="#blackbox-model" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Blackbox Model (Default)
+        Blackbox Model
       
     </span>
   </a>
@@ -2819,10 +2819,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#roofline-model-analytical" class="md-nav__link">
+  <a href="#roofline-model-default" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Roofline Model (Analytical)
+        Roofline Model (Default)
       
     </span>
   </a>
@@ -3170,7 +3170,7 @@
 <li><strong>MaxModelLen guard</strong> — when <code>--max-model-len</code> is set, requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (<code>MaxOutputLen &gt; 0</code>), the check is <code>input + budget &gt; maxModelLen</code>. Otherwise, input length alone is checked (vLLM defaults <code>max_tokens</code> to <code>max_model_len - seq_len</code>; the runtime stop in <code>processCompletions</code> handles output growth).</li>
 <li><strong>KV capacity guard</strong> — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.</li>
 </ol>
-<p>Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, when <code>--max-model-len</code> is set, a runtime length cap force-completes any request whose <code>ProgressIndex</code> reaches <code>MaxModelLen</code> during decode (defense-in-depth).</p>
+<p>Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, when <code>--max-model-len</code> is set, a proactive cap in <code>FormBatch</code> clamps token scheduling to <code>maxModelLen - 1 - ProgressIndex</code> (matching vLLM <code>scheduler.py:773-774</code>), a decode guard in <code>executeBatchStep</code> prevents phantom token generation when 0 tokens are allocated, and <code>processCompletions</code> force-completes any request whose <code>ProgressIndex</code> reaches <code>MaxModelLen - 1</code>. Output tokens per length-capped request: <code>MaxModelLen - 1 - len(InputTokens)</code>.</p>
 <h2 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h2>
 <p>BLIS models vLLM's continuous batching algorithm through the <code>VLLMBatchFormation</code> implementation.</p>
 <h3 id="two-phase-algorithm">Two-Phase Algorithm<a class="headerlink" href="#two-phase-algorithm" title="Permanent link">&para;</a></h3>
@@ -3242,7 +3242,7 @@ Dequeue requests from the wait queue:
 </ul>
 <h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
 <p>BLIS predicts GPU step time through one of four latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
-<h3 id="blackbox-model-default">Blackbox Model (Default)<a class="headerlink" href="#blackbox-model-default" title="Permanent link">&para;</a></h3>
+<h3 id="blackbox-model">Blackbox Model<a class="headerlink" href="#blackbox-model" title="Permanent link">&para;</a></h3>
 <p>Uses trained regression coefficients to predict step time:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>QueueingTime = alpha0 + alpha1 * input_length
@@ -3255,7 +3255,7 @@ Dequeue requests from the wait queue:
 <li>Pre-trained coefficients for common model/GPU combinations are shipped in <code>defaults.yaml</code></li>
 </ul>
 <p>See <a href="../../reference/configuration/#coefficient-calibration">Configuration Reference: Coefficient Calibration</a> for the training process.</p>
-<h3 id="roofline-model-analytical">Roofline Model (Analytical)<a class="headerlink" href="#roofline-model-analytical" title="Permanent link">&para;</a></h3>
+<h3 id="roofline-model-default">Roofline Model (Default)<a class="headerlink" href="#roofline-model-default" title="Permanent link">&para;</a></h3>
 <p>Uses analytical FLOPs/bandwidth estimation when no trained coefficients are available:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Step Time  = Prefill Phase Time + Decode Phase Time

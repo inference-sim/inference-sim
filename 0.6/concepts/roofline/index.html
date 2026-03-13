@@ -2477,10 +2477,14 @@
 
 
 <h1 id="roofline-step-time-estimation-logic">Roofline Step Time Estimation Logic<a class="headerlink" href="#roofline-step-time-estimation-logic" title="Permanent link">&para;</a></h1>
-<p>This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. This requires no training, and works off-the-shelf for any Huggingface LLM whose <code>config.json</code> is saved under <code>model_configs/</code>.</p>
+<p>This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose <code>config.json</code> is saved under <code>model_configs/</code> (auto-fetched from HuggingFace on first use).</p>
 <div class="admonition tip">
 <p class="admonition-title">Trained-Roofline: higher accuracy</p>
 <p>For higher accuracy (7% MAPE GPU combined), use <code>--latency-model trained-roofline</code> which applies learned correction factors to these roofline basis functions. See <a href="../../guide/latency-models/#trained-roofline-mode-recommended-for-new-models">Trained-Roofline Mode</a>. For legacy MoE workflows, <code>--latency-model crossmodel</code> is also available — see <a href="../../guide/latency-models/#cross-model-mode-physics-informed">Cross-Model Mode</a>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Scope: TP-only, FP16/BF16</p>
+<p>The roofline model currently accounts for tensor parallelism (TP) but does not model data parallelism (DP), expert parallelism (EP), or quantization effects (FP8, W4A16, W8A8). Incorporating DP/EP scheduling overhead and quantized compute/memory throughput is under active development.</p>
 </div>
 <h2 id="1-why-roofline">1. Why Roofline?<a class="headerlink" href="#1-why-roofline" title="Permanent link">&para;</a></h2>
 <p>The Blackbox optimization approach outlined in <a href="../../reference/configuration/#coefficient-calibration">Configuration: Coefficient Calibration</a> requires training over ground-truth workload metrics obtained by running live vLLM instances over GPUs. In practice, collecting this ground-truth data and training the GPU latency model for each LLM can take several hours. For a faster approximation of GPU latencies without actually ever running vLLM, we recommend the roofline approach. This technique only requires the Huggingface LLM config (<code>config.json</code>) and hardware specifications (e.g. GPU Peak TFLOPS/Peak BW from NVIDIA datasheets) in <code>hardware_config.json</code>. It allows BLIS to generalize across diverse LLMs, TP values and workloads, while preserving TTFT/ITL/E2E accuracy.</p>
@@ -2520,7 +2524,7 @@
 <h2 id="5-onboarding-a-new-llmgpu">5. Onboarding a new LLM/GPU<a class="headerlink" href="#5-onboarding-a-new-llmgpu" title="Permanent link">&para;</a></h2>
 <h3 id="automatic-recommended-latency-model-roofline">Automatic (recommended): <code>--latency-model roofline</code><a class="headerlink" href="#automatic-recommended-latency-model-roofline" title="Permanent link">&para;</a></h3>
 <p>The simplest way to run roofline mode is with <code>--latency-model roofline</code>, which auto-resolves the model config:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
 </code></pre></div>
 <p>The flag automatically:
 1. Checks <code>model_configs/</code> for an existing <code>config.json</code> (previously fetched)
@@ -2529,7 +2533,7 @@
 <h3 id="manual-explicit-config-paths">Manual: explicit config paths<a class="headerlink" href="#manual-explicit-config-paths" title="Permanent link">&para;</a></h3>
 <p>Alternatively, download the <code>config.json</code> manually:</p>
 <ul>
-<li>Download the <code>config.json</code> for the LLM of your choice into <code>model_configs/</code>. <a href="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct/blob/main/config.json">This</a> is an example config.json for <code>meta-llama/Llama-3.3-70B-Instruct</code>. The recommended file structure is <code>model_configs/llama-3.1-8b-instruct/config.json</code>.</li>
+<li>Download the <code>config.json</code> for the LLM of your choice into <code>model_configs/</code>. <a href="https://huggingface.co/Qwen/Qwen3-14B/blob/main/config.json">This</a> is an example config.json for <code>Qwen/Qwen3-14B</code>. The recommended file structure is <code>model_configs/qwen3-14b/config.json</code>.</li>
 </ul>
 <h3 id="adding-a-new-gpu">Adding a new GPU<a class="headerlink" href="#adding-a-new-gpu" title="Permanent link">&para;</a></h3>
 <ul>
