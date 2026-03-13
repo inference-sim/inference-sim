@@ -53,6 +53,13 @@ func TestNewTieredKVCache_ValidConfig_Succeeds(t *testing.T) {
 	assert.Equal(t, int64(100), store.TotalCapacity())
 }
 
+func TestNewTieredKVCache_NegativeBaseLat_Panics(t *testing.T) {
+	// R3: baseLat must be >= 0
+	assert.Panics(t, func() {
+		NewTieredKVCache(NewKVCacheState(10, 2), 10, 0.0, 1.0, -1)
+	})
+}
+
 func TestKVCacheState_SetClock_IsNoOp(t *testing.T) {
 	// BC-5: Single-tier SetClock is a no-op (no observable effect)
 	kv := NewKVCacheState(100, 16)
