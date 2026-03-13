@@ -104,7 +104,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-PD-4 Phase causality**: `arrival ≤ prefill_enqueue ≤ prefill_complete ≤ transfer_start ≤ transfer_complete ≤ decode_enqueue ≤ completion`.
 - **INV-PD-5 Pool stability**: Pool membership unchanged after initialization.
 - **INV-P2-1 Pool-config consistency**: Each instance receives config consistent with its pool role. Instances with no pool role receive global config.
-- **INV-P2-2 Transfer fair-share**: `effective_bandwidth = total_bandwidth / max(1, active_transfers)`. INV-PD-3 (transfer conservation) still holds.
+- **INV-P2-2 Transfer fair-share**: When `active_transfers > 1`, `effective_bandwidth = total_bandwidth / active_transfers`; when `active_transfers == 1`, full bandwidth is used. INV-PD-3 (transfer conservation) still holds.
 
 ### Engineering Principles
 

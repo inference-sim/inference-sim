@@ -188,7 +188,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ## INV-P2-2: Transfer Fair-Share
 
-**Statement:** `effective_bandwidth = total_bandwidth / max(1, active_transfers)`. When multiple KV transfers are in-flight simultaneously and `--pd-transfer-contention` is enabled, each transfer receives a fair share of the configured bandwidth. INV-PD-3 (transfer conservation: `initiated_transfers == completed_transfers`) still holds.
+**Statement:** When `--pd-transfer-contention` is enabled and `active_transfers > 1`, `effective_bandwidth = total_bandwidth / active_transfers`; when `active_transfers == 1`, full bandwidth is used. Each transfer counts itself in its own divisor (incremented before the calculation). INV-PD-3 (transfer conservation: `initiated_transfers == completed_transfers`) still holds.
 
 **Verification:** `sim/cluster/transfer_contention_test.go` — `TestTransferContention_INVP22_FairShareBandwidth` (integration), `TestTransferContention_INVP22_EffectiveBandwidthFormula` (unit-level formula verification with table-driven N=1,2,4), `TestTransferContention_BCP25_SingleTransferIdentical` (single-transfer equivalence with Phase 1), `TestTransferContention_BCP27_INVPD3_Holds` (conservation still holds), `TestTransferContention_ActiveTransfersZeroAtEnd` (counter returns to zero).
 

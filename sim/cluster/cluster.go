@@ -47,11 +47,11 @@ type ClusterSimulator struct {
 	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 
-	// Transfer contention state (Phase 2, PR2: --pd-transfer-contention)
-	activeTransfers          int // currently in-flight transfers (INV-P2-2)
-	peakConcurrentTransfers  int // max observed concurrent transfers
-	transferDepthSum         int // running sum of activeTransfers at each transfer start
-	transferStartCount       int // number of transfer start events (for mean calculation)
+	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
+	activeTransfers         int   // currently in-flight transfers
+	peakConcurrentTransfers int   // max observed concurrent transfers
+	transferDepthSum        int64 // running sum of activeTransfers (post-increment) at each transfer start
+	transferStartCount      int64 // number of transfer start events (for mean calculation)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -307,6 +307,13 @@ func (c *ClusterSimulator) Run() error {
 		if c.transfersInitiated != c.transfersCompleted {
 			return fmt.Errorf("INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
 				c.transfersInitiated, c.transfersCompleted)
+		}
+		// Stranded contention counter: if horizon truncated in-flight transfers, activeTransfers
+		// may be non-zero even when INV-PD-3 holds (e.g., paired start+complete both past horizon).
+		// This does not violate INV-PD-3 but means contention metrics may be incomplete.
+		if c.config.PDTransferContention && c.activeTransfers != 0 {
+			logrus.Warnf("[cluster] activeTransfers = %d at simulation end — horizon may have truncated in-flight transfers; contention metrics may be incomplete",
+				c.activeTransfers)
 		}
 		// Orphaned pending completions at horizon — in-flight disaggregated requests
 		// that never completed their pipeline phase. This is expected when horizon

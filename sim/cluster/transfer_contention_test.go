@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"math"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -126,7 +125,8 @@ func TestTransferContention_BCP26_FairShareDivision(t *testing.T) {
 	// With contention enabled and concurrent transfers, the peak should be > 1.
 	// At least some transfers should experience bandwidth sharing.
 	if cs.PeakConcurrentTransfers() <= 1 {
-		t.Skipf("only 1 concurrent transfer observed — test needs concurrent overlap to verify BC-P2-6")
+		t.Fatalf("PeakConcurrentTransfers = %d — expected concurrent overlap with 8 simultaneous requests; if this fails, increase workload or verify prefill scheduling",
+			cs.PeakConcurrentTransfers())
 	}
 
 	// Now compare with non-contention mode.
@@ -267,54 +267,52 @@ func TestTransferContention_ActiveTransfersZeroAtEnd(t *testing.T) {
 	}
 }
 
-// TestTransferContention_INVP22_EffectiveBandwidthFormula tests the invariant
-// at the unit level: given known parameters, verify transfer duration matches
-// the fair-share formula.
+// TestTransferContention_INVP22_EffectiveBandwidthFormula verifies the fair-share formula
+// by running the actual ClusterSimulator with controlled parameters and measuring the
+// observed transfer duration produced by KVTransferStartedEvent.Execute().
+//
+// Uses 160 input tokens → 10 KV blocks (blockSize=16), bandwidth=10 GB/s, zero base latency.
+// Expected N=1 duration: 10 blocks × 16 tok/block × 512 B/tok = 81920 B; 10 GB/s = 10000 B/μs
+// → ceil(81920 / 10000) = ceil(8.192) = 9 μs.
+// This verifies production code, not a reimplementation of the formula.
+// N>1 behavioral coverage is provided by TestTransferContention_BCP26_FairShareDivision.
 func TestTransferContention_INVP22_EffectiveBandwidthFormula(t *testing.T) {
-	// Given: 100 KV blocks, blockSize=16 tokens, 512 bytes/token
-	// Transfer bytes = 100 * 16 * 512 = 819200 bytes
-	// Bandwidth = 25 GB/s = 25000 bytes/μs
-	// Base latency = 0 μs
-	// With N=1: duration = ceil(819200/25000) = ceil(32.768) = 33 μs
-	// With N=2: duration = ceil(819200/12500) = ceil(65.536) = 66 μs
-	// With N=4: duration = ceil(819200/6250)  = ceil(131.072) = 132 μs
-
-	tests := []struct {
-		name             string
-		activeTransfers  int
-		wantDurationUs   int64
-	}{
-		{"N=1 (no sharing)", 1, 33},
-		{"N=2 (half bandwidth)", 2, 66},
-		{"N=4 (quarter bandwidth)", 4, 132},
+	// 160 tokens → ceil(160/16) = 10 KV blocks
+	inputTokens := make([]int, 160)
+	for i := range inputTokens {
+		inputTokens[i] = i + 1
+	}
+	outputTokens := make([]int, 10)
+	for i := range outputTokens {
+		outputTokens[i] = i + 1
+	}
+	req := &sim.Request{
+		ID:          "request_0",
+		ArrivalTime: 0,
+		InputTokens: inputTokens,
+		OutputTokens: outputTokens,
+		State:       sim.StateQueued,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Compute duration using the same formula as KVTransferStartedEvent.Execute()
-			numBlocks := int64(100)
-			blockSizeTokens := int64(16)
-			bytesPerToken := int64(512)
-			totalBandwidthGBps := 25.0
-			baseLatMs := 0.0
+	config := newContentionConfig(4, 2, 2, 10.0) // 10 GB/s, zero base latency
+	cs := NewClusterSimulator(config, []*sim.Request{req})
+	mustRun(t, cs)
 
-			transferBytes := numBlocks * blockSizeTokens * bytesPerToken
-			effectiveBW := totalBandwidthGBps
-			if tt.activeTransfers > 1 {
-				effectiveBW = totalBandwidthGBps / float64(tt.activeTransfers)
-			}
-			bandwidthBytesPerUs := effectiveBW * 1000.0
-			baseLatUs := baseLatMs * 1000.0
+	parents := cs.ParentRequests()
+	if len(parents) != 1 {
+		t.Fatalf("expected 1 parent request, got %d", len(parents))
+	}
+	if parents[0].TransferStartTime == 0 {
+		t.Fatal("transfer never started — disaggregation did not fire")
+	}
 
-			duration := int64(math.Ceil(baseLatUs + float64(transferBytes)/bandwidthBytesPerUs))
-			if duration < 1 {
-				duration = 1
-			}
-
-			if duration != tt.wantDurationUs {
-				t.Errorf("duration = %d μs, want %d μs", duration, tt.wantDurationUs)
-			}
-		})
+	dur := parents[0].TransferCompleteTime - parents[0].TransferStartTime
+	// 10 blocks × 16 tok/block × 512 B/tok = 81920 B; 10 GB/s = 10000 B/μs; base=0
+	// duration = ceil(81920 / 10000) = ceil(8.192) = 9 μs
+	const wantDur = int64(9)
+	if dur != wantDur {
+		t.Errorf("N=1 transfer duration = %d μs, want %d μs (10 blocks × 16 tok × 512 B / 10 GB/s)",
+			dur, wantDur)
 	}
 }
 

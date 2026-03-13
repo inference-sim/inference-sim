@@ -62,6 +62,15 @@ type PDMetrics struct {
 // CollectPDMetrics computes disaggregation-aware metrics from post-simulation state.
 // Returns nil when parents is empty (BC-7). Pure function — no mutation of inputs.
 //
+// NOTE: PeakConcurrentTransfers and MeanTransferQueueDepth are NOT populated by this
+// function. Callers must attach them separately after Run() completes:
+//
+//	pd := CollectPDMetrics(...)
+//	if pd != nil {
+//	    pd.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
+//	    pd.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
+//	}
+//
 // Parameters:
 //   - parents: slice of ParentRequest records (disaggregated request lifecycles)
 //   - aggregated: cluster-aggregated sim.Metrics (provides RequestTTFTs map)

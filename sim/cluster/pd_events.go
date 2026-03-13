@@ -88,7 +88,9 @@ func (e *KVTransferStartedEvent) Priority() int     { return 5 }
 
 // Execute computes transfer duration and schedules KVTransferCompletedEvent.
 // When contention is enabled (--pd-transfer-contention), applies INV-P2-2:
-// effective_bandwidth = total_bandwidth / max(1, active_transfers).
+// effective_bandwidth = total_bandwidth / active_transfers when active_transfers > 1;
+// total_bandwidth (unchanged) when active_transfers == 1. Division by zero is impossible
+// because activeTransfers is incremented to at least 1 before the bandwidth calculation.
 func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersInitiated++
 	e.parentReq.TransferStartTime = e.time
@@ -100,7 +102,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		if cs.activeTransfers > cs.peakConcurrentTransfers {
 			cs.peakConcurrentTransfers = cs.activeTransfers
 		}
-		cs.transferDepthSum += cs.activeTransfers
+		cs.transferDepthSum += int64(cs.activeTransfers)
 		cs.transferStartCount++
 	}
 
@@ -109,8 +111,8 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	blockSizeBytes := cs.config.BlockSizeTokens * cs.config.PDKVBytesPerToken
 	transferBytes := numBlocks * blockSizeBytes
 
-	// INV-P2-2: effective_bandwidth = total_bandwidth / max(1, active_transfers)
-	// BC-P2-5: with 1 concurrent transfer, divisor is 1 → identical to Phase 1.
+	// INV-P2-2: apply fair-share divisor only when active_transfers > 1.
+	// activeTransfers == 1 (this transfer alone) → full bandwidth, no division needed.
 	effectiveBandwidthGBps := cs.config.PDTransferBandwidthGBps
 	if cs.config.PDTransferContention && cs.activeTransfers > 1 {
 		effectiveBandwidthGBps = cs.config.PDTransferBandwidthGBps / float64(cs.activeTransfers)
@@ -160,6 +162,11 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	// Contention tracking: decrement after transfer completes (INV-P2-2).
 	if cs.config.PDTransferContention {
 		cs.activeTransfers--
+		if cs.activeTransfers < 0 {
+			logrus.Errorf("[cluster] activeTransfers went negative (%d) — KVTransferCompletedEvent fired without matching KVTransferStartedEvent (bookkeeping bug, R1)",
+				cs.activeTransfers)
+			cs.activeTransfers = 0
+		}
 	}
 
 	orig := e.parentReq.OriginalRequest

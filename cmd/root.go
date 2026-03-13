@@ -108,7 +108,7 @@ var (
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
 	pdKVBytesPerToken     int     // KV cache bytes per token for transfer duration
-	pdTransferContention  bool    // Enable fair-share bandwidth contention model (Phase 2, PR2)
+	pdTransferContention  bool    // Enable fair-share bandwidth contention model (INV-P2-2)
 	prefillRoutingScorers string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
@@ -1199,8 +1199,8 @@ var runCmd = &cobra.Command{
 			cs.PoolMembership(),
 			cs.PerInstanceMetricsByID(),
 		)
-		// Attach contention metrics from simulator state (Phase 2, PR2).
-		if rawMetrics.PD != nil {
+		// Attach contention metrics from simulator state (not populated by CollectPDMetrics).
+		if rawMetrics.PD != nil && config.PDTransferContention {
 			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
 			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
 		}
