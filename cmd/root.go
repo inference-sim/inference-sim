@@ -243,16 +243,16 @@ var runCmd = &cobra.Command{
 				"Both coefficient sets are needed for blackbox mode")
 		}
 
-		// Validate coefficient values for NaN/Inf (R3: CLI flags AND library constructors).
+		// Validate coefficient values for NaN/Inf/negative (R3: CLI flags AND library constructors).
 		// Library-level validateCoeffs() also checks, but CLI-level gives user-friendly flag names.
 		for i, c := range alphaCoeffs {
-			if math.IsNaN(c) || math.IsInf(c, 0) {
-				logrus.Fatalf("--alpha-coeffs[%d] must be a finite number, got %v", i, c)
+			if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
+				logrus.Fatalf("--alpha-coeffs[%d] must be a finite non-negative number, got %v", i, c)
 			}
 		}
 		for i, c := range betaCoeffs {
-			if math.IsNaN(c) || math.IsInf(c, 0) {
-				logrus.Fatalf("--beta-coeffs[%d] must be a finite number, got %v", i, c)
+			if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
+				logrus.Fatalf("--beta-coeffs[%d] must be a finite non-negative number, got %v", i, c)
 			}
 		}
 
