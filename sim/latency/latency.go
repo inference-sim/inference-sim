@@ -52,18 +52,18 @@ func (m *BlackboxLatencyModel) StepTime(batch []*sim.Request) int64 {
 	totalStepTime += m.betaCoeffs[0]
 	totalStepTime += m.betaCoeffs[1] * float64(totalCacheMissTokens)
 	totalStepTime += m.betaCoeffs[2] * float64(totalDecodeTokens)
-	return max(1, int64(totalStepTime))
+	return max(1, clampToInt64(totalStepTime))
 }
 
 func (m *BlackboxLatencyModel) QueueingTime(req *sim.Request) int64 {
 	var totalProcessingTime float64
 	totalProcessingTime += m.alphaCoeffs[0]
 	totalProcessingTime += m.alphaCoeffs[1] * float64(len(req.InputTokens))
-	return int64(totalProcessingTime)
+	return clampToInt64(totalProcessingTime)
 }
 
 func (m *BlackboxLatencyModel) OutputTokenProcessingTime() int64 {
-	return int64(m.alphaCoeffs[2])
+	return clampToInt64(m.alphaCoeffs[2])
 }
 
 func (m *BlackboxLatencyModel) PostDecodeFixedOverhead() int64 { return 0 }
@@ -102,11 +102,11 @@ func (m *RooflineLatencyModel) QueueingTime(req *sim.Request) int64 {
 	var totalProcessingTime float64
 	totalProcessingTime += m.alphaCoeffs[0]
 	totalProcessingTime += m.alphaCoeffs[1] * float64(len(req.InputTokens))
-	return int64(totalProcessingTime)
+	return clampToInt64(totalProcessingTime)
 }
 
 func (m *RooflineLatencyModel) OutputTokenProcessingTime() int64 {
-	return int64(m.alphaCoeffs[2])
+	return clampToInt64(m.alphaCoeffs[2])
 }
 
 func (m *RooflineLatencyModel) PostDecodeFixedOverhead() int64 { return 0 }
