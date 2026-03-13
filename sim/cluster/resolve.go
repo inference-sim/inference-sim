@@ -23,9 +23,18 @@ func (o PoolOverrides) IsEmpty() bool {
 // ResolvePoolConfig applies per-pool overrides to a global SimConfig.
 // Returns a new SimConfig with overridden fields; the global config is not mutated.
 //
-// Safe to struct-copy SimConfig: ModelConfig/HardwareCalib are value types.
-// LatencyCoeffs contains slices (BetaCoeffs/AlphaCoeffs) but the resolver never
-// mutates them — shared backing arrays are safe (written once at CLI time).
+// Struct-copy safety: ModelConfig and HardwareCalib are pure value types (safe to copy).
+// LatencyCoeffs contains slices (BetaCoeffs/AlphaCoeffs) that share backing arrays
+// with the global config after copy. This is safe because: (1) the resolver never
+// mutates slice elements, and (2) slices are written once at CLI time and never
+// modified during simulation. If future code needs to mutate per-pool coefficients,
+// deep-copy the slices here.
+//
+// Latency backend constraint: when using per-pool LatencyBackend overrides, all
+// analytical backends (roofline, crossmodel, trained-roofline) share the same model
+// architecture (HFConfig) and LatencyCoeffs. Mixing analytical and blackbox backends
+// across pools is supported but note that LatencyCoeffs are global — they are only
+// meaningful for the blackbox backend and are ignored by analytical backends.
 func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimConfig {
 	resolved := global // struct copy
 

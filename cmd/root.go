@@ -117,7 +117,7 @@ var (
 	prefillHardware     string // GPU for prefill pool ("" = use global)
 	decodeHardware      string // GPU for decode pool ("" = use global)
 	prefillLatencyModel string // Latency backend for prefill pool ("" = use global)
-	decodeLatencyModel  string // Latency backend for prefill pool ("" = use global)
+	decodeLatencyModel  string // Latency backend for decode pool ("" = use global)
 	prefillMaxModelLen  int64  // Max model len for prefill pool (0 = use global)
 	decodeMaxModelLen   int64  // Max model len for decode pool (0 = use global)
 
@@ -549,6 +549,36 @@ var runCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("decode-max-model-len") {
 			decodeOverrides.MaxModelLen = &decodeMaxModelLen
+		}
+
+		// R3: Validate per-pool override values at CLI boundary.
+		if prefillOverrides.TP != nil && *prefillOverrides.TP <= 0 {
+			logrus.Fatalf("--prefill-tp must be > 0 when set, got %d", *prefillOverrides.TP)
+		}
+		if decodeOverrides.TP != nil && *decodeOverrides.TP <= 0 {
+			logrus.Fatalf("--decode-tp must be > 0 when set, got %d", *decodeOverrides.TP)
+		}
+		if prefillOverrides.MaxModelLen != nil && *prefillOverrides.MaxModelLen <= 0 {
+			logrus.Fatalf("--prefill-max-model-len must be > 0 when set, got %d", *prefillOverrides.MaxModelLen)
+		}
+		if decodeOverrides.MaxModelLen != nil && *decodeOverrides.MaxModelLen <= 0 {
+			logrus.Fatalf("--decode-max-model-len must be > 0 when set, got %d", *decodeOverrides.MaxModelLen)
+		}
+		if prefillOverrides.LatencyBackend != "" && !sim.IsValidLatencyBackend(prefillOverrides.LatencyBackend) {
+			logrus.Fatalf("unknown --prefill-latency-model %q; valid options: %s",
+				prefillOverrides.LatencyBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+		}
+		if decodeOverrides.LatencyBackend != "" && !sim.IsValidLatencyBackend(decodeOverrides.LatencyBackend) {
+			logrus.Fatalf("unknown --decode-latency-model %q; valid options: %s",
+				decodeOverrides.LatencyBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+		}
+
+		// Warn if per-pool flags are set but PD mode is not active.
+		if prefillInstances == 0 && decodeInstances == 0 {
+			if !prefillOverrides.IsEmpty() || !decodeOverrides.IsEmpty() {
+				logrus.Warnf("Per-pool hardware flags set but PD disaggregation is not active " +
+					"(--prefill-instances and --decode-instances are both 0). Per-pool flags will be ignored.")
+			}
 		}
 
 		// Zero-coefficients safety guard: prevents silently running with zero step times

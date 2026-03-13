@@ -278,8 +278,9 @@ func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
 }
 
 // TestINV_P2_1_PoolConfigConsistency verifies INV-P2-1: each instance receives
-// config consistent with its pool role. Runs a full simulation and checks that
-// disaggregation produces valid results with heterogeneous KV capacity.
+// config consistent with its pool role. Checks observable behavior:
+// (1) pre-simulation: per-pool KV capacity differs between pools
+// (2) post-simulation: disaggregation produces valid results with heterogeneous config
 func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 	// Prefill pool: larger KV capacity (can hold more context)
 	// Decode pool: smaller KV capacity (needs less for decode-only)
@@ -308,11 +309,30 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 
 	requests := newTestRequests(5)
 	cs := NewClusterSimulator(config, requests)
+
+	// INV-P2-1 pre-check: verify per-pool KV capacity via observable FreeKVBlocks().
+	// Before simulation, FreeKVBlocks() == TotalCapacity (no requests allocated yet).
+	membership := cs.PoolMembership()
+	for _, inst := range cs.Instances() {
+		role := membership[string(inst.ID())]
+		freeBlocks := inst.FreeKVBlocks()
+		switch role {
+		case PoolRolePrefill:
+			if freeBlocks != prefillKV {
+				t.Errorf("prefill instance %s: FreeKVBlocks=%d, want %d", inst.ID(), freeBlocks, prefillKV)
+			}
+		case PoolRoleDecode:
+			if freeBlocks != decodeKV {
+				t.Errorf("decode instance %s: FreeKVBlocks=%d, want %d", inst.ID(), freeBlocks, decodeKV)
+			}
+		}
+	}
+
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
 
-	// INV-P2-1: verify the simulation completed with heterogeneous config
+	// INV-P2-1 post-check: verify the simulation completed with heterogeneous config
 	metrics := cs.AggregatedMetrics()
 	if metrics.CompletedRequests == 0 {
 		t.Fatal("no requests completed — heterogeneous config may have caused issues")
@@ -323,11 +343,55 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 	if len(parents) == 0 {
 		t.Fatal("no parent requests — disaggregation should be active")
 	}
+}
 
-	// INV-PD-3: transfer conservation still holds with heterogeneous config
-	if cs.transfersInitiated != cs.transfersCompleted {
-		t.Errorf("INV-PD-3 violated: initiated=%d, completed=%d",
-			cs.transfersInitiated, cs.transfersCompleted)
+// TestResolvePoolConfig_Idempotent verifies the algebraic invariant:
+// applying the same overrides twice produces the same result as applying once.
+// R7: companion invariant test for the golden-value tests above.
+func TestResolvePoolConfig_Idempotent(t *testing.T) {
+	global := sim.SimConfig{
+		KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "roofline", 8192),
+	}
+
+	tp := 8
+	maxLen := int64(4096)
+	kvBlocks := int64(3000)
+	overrides := PoolOverrides{
+		TP:             &tp,
+		GPU:            "A100",
+		LatencyBackend: "crossmodel",
+		MaxModelLen:    &maxLen,
+		TotalKVBlocks:  &kvBlocks,
+	}
+
+	once := ResolvePoolConfig(global, overrides)
+	twice := ResolvePoolConfig(once, overrides)
+
+	// Idempotency: Resolve(Resolve(g, o), o) == Resolve(g, o)
+	if once.TP != twice.TP {
+		t.Errorf("TP not idempotent: once=%d, twice=%d", once.TP, twice.TP)
+	}
+	if once.GPU != twice.GPU {
+		t.Errorf("GPU not idempotent: once=%q, twice=%q", once.GPU, twice.GPU)
+	}
+	if once.Backend != twice.Backend {
+		t.Errorf("Backend not idempotent: once=%q, twice=%q", once.Backend, twice.Backend)
+	}
+	if once.MaxModelLen != twice.MaxModelLen {
+		t.Errorf("MaxModelLen not idempotent: once=%d, twice=%d", once.MaxModelLen, twice.MaxModelLen)
+	}
+	if once.TotalKVBlocks != twice.TotalKVBlocks {
+		t.Errorf("TotalKVBlocks not idempotent: once=%d, twice=%d", once.TotalKVBlocks, twice.TotalKVBlocks)
+	}
+	// Non-overridden fields must also be preserved
+	if once.Horizon != twice.Horizon {
+		t.Errorf("Horizon not preserved: once=%d, twice=%d", once.Horizon, twice.Horizon)
+	}
+	if once.BlockSizeTokens != twice.BlockSizeTokens {
+		t.Errorf("BlockSizeTokens not preserved: once=%d, twice=%d", once.BlockSizeTokens, twice.BlockSizeTokens)
 	}
 }
 

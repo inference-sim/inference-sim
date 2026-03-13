@@ -55,6 +55,14 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
+	// Validate pool topology BEFORE building membership or constructing instances,
+	// so invalid configs fail fast before any allocation (R3).
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+	}
+
 	// Build pool membership from indices BEFORE instance construction
 	// so we can resolve per-pool configs for each instance (INV-P2-1).
 	var prePoolMembership map[string]PoolRole
@@ -109,11 +117,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}
 
-	// PD disaggregation: validate topology and build pool membership
+	// PD disaggregation: validate transfer parameters and build runtime state.
+	// Pool topology already validated above (before instance construction).
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
-		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
-			panic(fmt.Sprintf("ClusterSimulator: %v", err))
-		}
 		// R3: validate PD transfer parameters at construction time.
 		if config.PDKVBytesPerToken <= 0 {
 			panic(fmt.Sprintf("ClusterSimulator: PDKVBytesPerToken must be > 0 when PD is enabled, got %d", config.PDKVBytesPerToken))
