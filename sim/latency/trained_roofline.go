@@ -10,7 +10,7 @@ import (
 // TrainedRooflineLatencyModel estimates latency using analytical roofline basis functions
 // with learned correction coefficients fitted from real vLLM traces.
 //
-// Step-time formula (from training/DESIGN.md):
+// Step-time formula:
 //
 //	β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv)
 //	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
@@ -19,7 +19,7 @@ import (
 // β₅ is µs/layer, β₆ is µs/request, β₇ is µs/step. Basis functions compute µs from model
 // architecture + hardware specs + batch composition.
 //
-// Coefficients are from training/output/fit/coefficients.json, fitted via 3-phase NNLS
+// Coefficients are from defaults.yaml trained_roofline_defaults, fitted via 3-phase NNLS
 // from 13 experiments across 4 architectures (137K requests, 7% MAPE GPU combined).
 //
 // Key differences from the pure RooflineLatencyModel:

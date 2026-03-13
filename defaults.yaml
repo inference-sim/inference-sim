@@ -1743,14 +1743,14 @@ models:
   total_kv_blocks: 1808703
   vllm_version: vllm/vllm-openai:v0.8.4
 crossmodel_defaults:
-  # Globally-fitted physics coefficients from training/ledger.md Iter 3.
+  # Globally-fitted physics coefficients via OLS from 13 vLLM experiments across 4 architectures.
   # These are model-independent: architecture features from config.json scale the coefficients.
   # β₀=per-layer overhead, β₁=KV bandwidth, β₂=MoE dispatch, β₃=TP sync barrier.
   beta_coeffs: [116.110, 1226.868, 19.943, 9445.157]
   # α₀=pre-scheduling fixed overhead, α₁=per-token preprocessing (≈0), α₂=per-output-token processing.
   alpha_coeffs: [13732.0, 0.0, 860.6]
 trained_roofline_defaults:
-  # Globally-fitted roofline correction coefficients from training/output/fit/coefficients.json.
+  # Globally-fitted roofline correction coefficients.
   # Fitted via 3-phase NNLS from 13 experiments (4 models × 3-4 profiles, 137K requests).
   # β₁-β₄ are dimensionless roofline corrections, β₅ is µs/layer, β₆ is µs/req, β₇ is µs/step.
   beta_coeffs: [0.7726491335309499, 1.127489556719325, 1.0559901872766853, 0.0, 43.500541908701074, 48.80613214319187, 0.0]

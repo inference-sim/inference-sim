@@ -77,7 +77,7 @@ BLIS models tiered KV cache with GPU→CPU offloading:
 
 ## Chunked Prefill
 
-Long prefill sequences can cause **head-of-line (HOL) blocking** — a 2,048-token prefill takes ~43ms, blocking shorter requests from starting.
+Long prefill sequences can cause **head-of-line (HOL) blocking** — a 2,048-token prefill takes ~97ms on Qwen3-14B / H100 / TP=1 (roofline mode), blocking shorter requests from starting.
 
 Chunked prefill splits long prefills into smaller chunks:
 

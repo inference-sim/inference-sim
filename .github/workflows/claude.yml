@@ -15,16 +15,78 @@ on:
     types: [opened, assigned]
 
 jobs:
-  claude:
+  check-permissions:
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'issues' && contains(github.event.issue.body, '@claude'))
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - name: Check invoker permissions
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: context.actor
+              });
+              const allowed = ['admin', 'write', 'maintain'].includes(data.permission);
+              core.setOutput('allowed', allowed ? 'true' : 'false');
+              if (!allowed) {
+                core.info(`User ${context.actor} has '${data.permission}' permission — skipping.`);
+              }
+            } catch (e) {
+              core.setOutput('allowed', 'false');
+              core.info(`User ${context.actor} is not a collaborator — skipping.`);
+            }
+
+  claude:
+    needs: check-permissions
+    if: needs.check-permissions.outputs.allowed == 'true'
     runs-on: [self-hosted]
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
 
     steps:
+      - name: Resolve PR head for fork PRs
+        id: pr-info
+        if: github.event_name == 'issue_comment' && github.event.issue.pull_request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            if (!pr.head.repo) {
+              core.setFailed('Source fork repository has been deleted; cannot check out PR head.');
+              return;
+            }
+            core.setOutput('pr_head_sha', pr.head.sha);
+            core.setOutput('pr_head_repo', pr.head.repo.full_name);
+            core.info(`PR #${context.issue.number}: head_repo=${pr.head.repo.full_name}, head_sha=${pr.head.sha}`);
+
+      - name: Validate PR info
+        if: github.event_name == 'issue_comment' && github.event.issue.pull_request
+        run: |
+          if [ -z "${{ steps.pr-info.outputs.pr_head_sha }}" ]; then
+            echo "::error::pr-info step failed to resolve PR head SHA"
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
+          repository: ${{ steps.pr-info.outputs.pr_head_repo || github.repository }}
+          ref: ${{ steps.pr-info.outputs.pr_head_sha || github.sha }}
           fetch-depth: 0
 
       - uses: anthropics/claude-code-action@v1
@@ -41,3 +103,60 @@ jobs:
             code-simplifier@claude-plugins-official
             frontend-design@claude-plugins-official
             superpowers@superpowers-marketplace
+
+  report-status:
+    needs: claude
+    if: always() && github.event_name == 'issue_comment' && github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+      pull-requests: read
+
+    steps:
+      - name: Resolve PR head SHA
+        id: pr-info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number
+              });
+              core.setOutput('pr_head_sha', pr.head.sha);
+            } catch (err) {
+              core.setFailed(`Failed to resolve PR head SHA: ${err.message}`);
+            }
+
+      - name: Report commit status
+        if: steps.pr-info.outcome == 'success'
+        uses: actions/github-script@v7
+        env:
+          CLAUDE_RESULT: ${{ needs.claude.result }}
+          PR_HEAD_SHA: ${{ steps.pr-info.outputs.pr_head_sha }}
+        with:
+          script: |
+            const result = process.env.CLAUDE_RESULT;
+            const sha = process.env.PR_HEAD_SHA;
+            const stateMap = {
+              success: 'success',
+              failure: 'failure',
+              cancelled: 'error',
+              skipped: 'pending'
+            };
+            const state = stateMap[result];
+            if (!state) {
+              core.warning(`Unknown job result '${result}', mapping to 'error'`);
+            }
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: sha,
+              state: state || 'error',
+              target_url: runUrl,
+              description: `Claude Code: ${result}`,
+              context: 'Claude Code Action (comment trigger)'
+            });

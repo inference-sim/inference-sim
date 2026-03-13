@@ -2,13 +2,22 @@
 
 Run your first BLIS simulation in 30 seconds.
 
+**Optional:** Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid HuggingFace rate limits:
+
+```bash
+export HF_TOKEN=your_token_here
+```
+
 ## Single-Instance Simulation
 
 ```bash
 ./blis run --model qwen/qwen3-14b
 ```
 
-This runs 100 requests through a single inference instance using roofline mode (analytical estimation) for Qwen3 14B on an H100 GPU with TP=1. The model config is auto-fetched from HuggingFace on first use.
+This runs 100 requests through a single inference instance using roofline mode (analytical estimation) for Qwen3 14B on an H100 GPU with TP=1.
+
+!!! note "First-run HuggingFace fetch"
+    On first use, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models). Subsequent runs use the cached config in `model_configs/`. If you are offline, use `--latency-model blackbox` instead (no network needed).
 
 ### Reading the Output
 
@@ -54,6 +63,9 @@ Scale to 4 instances with routing:
 
 This simulates a 4-instance cluster receiving 100 requests/second. The `weighted` routing policy uses the default scorer profile (`prefix-affinity:3, queue-depth:2, kv-utilization:2`) to distribute requests across instances.
 
+!!! note "Multi-instance output format"
+    In cluster mode, BLIS prints one JSON block per instance plus a cluster-level summary (5 blocks total for 4 instances). The cluster summary has `"instance_id": "cluster"`. If piping to `jq`, use `--slurp` to handle multiple JSON objects: `./blis run ... 2>/dev/null | jq --slurp '.[] | select(.instance_id == "cluster")'` to extract the cluster summary.
+
 ## Try Different Configurations
 
 ```bash
@@ -76,14 +88,6 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
   --latency-model roofline --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
-
-> **Tip:** Roofline, trained-roofline, and cross-model modes auto-fetch model configs from HuggingFace. Set `HF_TOKEN` to access gated models (e.g., LLaMA) and avoid rate limits:
->
-> ```bash
-> export HF_TOKEN=your_token_here
-> ```
->
-> See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
 
 ## What's Next
 

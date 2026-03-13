@@ -7,7 +7,7 @@ type KVCacheConfig struct {
 	TotalKVBlocks         int64   // GPU tier capacity in blocks (must be > 0)
 	BlockSizeTokens       int64   // tokens per block (must be > 0)
 	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
-	KVOffloadThreshold    float64 // GPU utilization threshold for offload (CLI default: 0.9, zero-value: 0)
+	KVOffloadThreshold    float64 // DEPRECATED: Ignored in vLLM v1 mirror model. Was: GPU utilization threshold for offload. (CLI default: 0.9, zero-value: 0)
 	KVTransferBandwidth   float64 // blocks/tick transfer rate (CLI default: 100.0, zero-value: 0)
 	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
 }

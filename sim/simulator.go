@@ -384,11 +384,15 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
 }
 
-// Step simulates a single vllm step(): batch scheduling, model execution, and completion.
-// Phases: (1) schedule batch, (2) execute prefill/decode, (3) process completions, (4) schedule next step.
+// Step simulates a single vllm step(): batch scheduling, model execution, mirroring, and completion.
+// Phases: (1) schedule batch, (2) execute prefill/decode, (2.5) mirror to CPU, (3) process completions, (4) schedule next step.
 func (sim *Simulator) Step(now int64) {
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
+	// Mirror in-use blocks to CPU tier (no-op for single-tier KVCacheState).
+	// Runs after execution (new full blocks exist) and before completions
+	// (completing requests' blocks are still in-use and can be mirrored).
+	sim.KVCache.MirrorToCPU(sim.RunningBatch.Requests)
 	remaining := sim.processCompletions(now, currStepAdvance)
 	sim.scheduleNextStep(now, currStepAdvance, remaining)
 }

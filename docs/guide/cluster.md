@@ -52,16 +52,17 @@ The `--tp` flag sets the tensor parallelism degree for all instances. TP affects
 
 ## Scaling and Saturation
 
-Instance scaling produces **super-linear** TTFT improvement near saturation. Doubling from 4→8 instances at near-capacity (rate=500) improves TTFT p99 by 7.4x, not 2x.
+Instance scaling produces **super-linear** TTFT improvement near saturation. With the default model (Qwen3-14B / H100 / TP=1, ~17 req/s per instance at saturation), scaling from 4→12 instances at rate=200 improves TTFT p99 from ~1,500ms to ~54ms.
 
 This happens because the per-instance queue growth rate `excess = λ/k - μ` drops faster than linearly:
 
 ```
-4 instances: excess = 500/4 - 57.4 = 67.6 req/s per instance → rapid queue growth
-8 instances: excess = 500/8 - 57.4 = 5.1 req/s per instance  → minimal queueing
+4 instances:  excess = 200/4 - 17  = 33 req/s per instance   → rapid queue growth
+8 instances:  excess = 200/8 - 17  = 8 req/s per instance    → near saturation
+12 instances: excess = 200/12 - 17 = -0.3 req/s per instance → balanced (sub-saturation)
 ```
 
-At sub-saturation (rate=100): scaling effect vanishes (1.06x).
+At sub-saturation (excess ≤ 0): TTFT converges to the baseline (~54ms) and further scaling provides diminishing returns.
 
 ## Admission Control
 

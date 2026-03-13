@@ -13,7 +13,7 @@ import (
 //
 //	β₀·numLayers + β₁·decodeTokens·kvDimScaled + β₂·(prefillTokens+decodeTokens)·isMoE + β₃·isTP
 //
-// Beta coefficients (from training/ledger.md Iter 3):
+// Beta coefficients (globally-fitted via OLS from 13 vLLM experiments; see defaults.yaml crossmodel_defaults):
 //
 //	β₀ = per-layer CUDA kernel dispatch overhead (µs/layer)
 //	β₁ = KV cache bandwidth cost (µs per scaled KV unit)
@@ -48,7 +48,6 @@ func (m *CrossModelLatencyModel) StepTime(batch []*sim.Request) int64 {
 	// β₁ term uses only decode tokens (not prefill) because decode is memory-bandwidth-bound
 	// on H100: each decode token reads its accumulated KV cache from HBM. Prefill KV write
 	// cost is absorbed into β₀ (per-layer term) where it overlaps with compute via GPU pipelining.
-	// See training/ledger.md Iter 3 and training/problem.md Section 2a for the physics rationale.
 	stepTime := m.betaCoeffs[0]*float64(m.numLayers) +
 		m.betaCoeffs[1]*float64(totalDecodeTokens)*m.kvDimScaled +
 		m.betaCoeffs[2]*float64(totalPrefillTokens+totalDecodeTokens)*m.isMoE +

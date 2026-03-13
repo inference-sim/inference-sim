@@ -1,6 +1,7 @@
 package kv
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -52,6 +53,13 @@ func TestNewTieredKVCache_ValidConfig_Succeeds(t *testing.T) {
 	assert.Equal(t, int64(100), store.TotalCapacity())
 }
 
+func TestNewTieredKVCache_NegativeBaseLat_Panics(t *testing.T) {
+	// R3: baseLat must be >= 0
+	assert.Panics(t, func() {
+		NewTieredKVCache(NewKVCacheState(10, 2), 10, 0.0, 1.0, -1)
+	})
+}
+
 func TestKVCacheState_SetClock_IsNoOp(t *testing.T) {
 	// BC-5: Single-tier SetClock is a no-op (no observable effect)
 	kv := NewKVCacheState(100, 16)
@@ -69,67 +77,56 @@ func TestKVStore_SetClock_InterfaceSatisfied(t *testing.T) {
 	store.SetClock(500)
 }
 
-// setupTieredWithLatency creates a TieredKVCache and triggers natural offload+reload
-// to accumulate pendingLatency without direct field access.
+func TestKVStore_MirrorToCPU_InterfaceSatisfied(t *testing.T) {
+	// BC-8: Both implementations satisfy KVStore interface including MirrorToCPU
+	var store sim.KVStore
+	store = NewKVCacheState(100, 16)
+	store.MirrorToCPU(nil) // no-op, no panic
+
+	store = NewTieredKVCache(NewKVCacheState(100, 16), 50, 0.8, 1.0, 10)
+	store.MirrorToCPU(nil) // tiered stub, nil batch is safe
+}
+
+// setupTieredWithLatency creates a TieredKVCache and triggers natural
+// mirror+reload to accumulate pendingLatency without direct field access.
 // Returns the tiered cache with non-zero pendingLatency.
+//
+// Flow: allocate prefix → mirror to CPU → release → fill GPU (evicts prefix)
+// → release some fillers → request same prefix (triggers targeted reload).
 func setupTieredWithLatency(t *testing.T) *TieredKVCache {
 	t.Helper()
-	// 5 GPU blocks, 2 tokens/block. Threshold 0.3 => offload when util > 30% (>1.5 blocks used).
-	// bandwidth=1.0, baseLatency=10 => each reload adds 10 + ceil(2/1.0) = 12 ticks.
-	gpu := NewKVCacheState(5, 2)
-	tiered := NewTieredKVCache(gpu, 10, 0.3, 1.0, 10)
+	// 6 GPU blocks, 2 tokens/block. bandwidth=1.0, baseLatency=10
+	// => each reload adds 10 + ceil(2/1.0) = 12 ticks.
+	gpu := NewKVCacheState(6, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10)
 
-	// Step 1: Allocate r1 (2 blocks) and r2 (2 blocks) => 4 used, 1 free. util=0.8.
+	// Step 1: Allocate r1 (2 blocks) and mirror to CPU
 	r1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
 	assert.True(t, tiered.AllocateKVBlocks(r1, 0, 4, []int64{}), "r1 alloc")
-	r2 := &sim.Request{ID: "r2", InputTokens: []int{10, 20, 30, 40}}
-	assert.True(t, tiered.AllocateKVBlocks(r2, 0, 4, []int64{}), "r2 alloc")
+	tiered.MirrorToCPU([]*sim.Request{r1})
 
-	// Step 2: Release r1. util drops to 2/5=0.4 > 0.3 => maybeOffload triggers.
-	// r1's 2 free blocks (with hashes) get offloaded to CPU.
+	// Step 2: Release r1 (blocks stay on GPU with hashes — BC-3)
 	tiered.ReleaseKVBlocks(r1)
-	// GPU: 2 used (r2), 3 free (all empty). CPU: 2 blocks with r1's hashes.
 
-	// Step 3: Fill GPU free blocks to force next allocation to fail => triggers reload.
-	r3 := &sim.Request{ID: "r3", InputTokens: []int{50, 60}}
-	assert.True(t, tiered.AllocateKVBlocks(r3, 0, 2, []int64{}), "r3 alloc")
-	// GPU: 3 used, 2 free.
-	r4 := &sim.Request{ID: "r4", InputTokens: []int{70, 80}}
-	assert.True(t, tiered.AllocateKVBlocks(r4, 0, 2, []int64{}), "r4 alloc")
-	// GPU: 4 used, 1 free.
-	r5 := &sim.Request{ID: "r5", InputTokens: []int{90, 91}}
-	assert.True(t, tiered.AllocateKVBlocks(r5, 0, 2, []int64{}), "r5 alloc")
-	// GPU: 5 used, 0 free.
+	// Step 3: Fill GPU completely to evict r1's hashes via popFreeBlock
+	for i := 0; i < 6; i++ {
+		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 20, i*2 + 21}}
+		assert.True(t, tiered.AllocateKVBlocks(f, 0, 2, []int64{}), fmt.Sprintf("f%d alloc", i))
+	}
+	// GPU: 6 used, 0 free. r1's hashes cleared by popFreeBlock.
 
-	// Step 4: Release r3 to free exactly 1 block. GPU: 4 used, 1 free.
-	tiered.ReleaseKVBlocks(r3)
-	// util=4/5=0.8 > 0.3 => maybeOffload triggers. But r3's freed block
-	// has a hash, so it gets offloaded to CPU. GPU: 4 used, 1 free (empty).
+	// Step 4: Release 1 filler → 5 used, 1 free.
+	tiered.ReleaseKVBlocks(&sim.Request{ID: "f0"})
 
-	// Step 5: Try allocating with prefix matching r1 ([1,2,3,4]).
-	// GPU has 0 cached blocks for r1's prefix (hashes are on CPU).
-	// Needs 2 new blocks but only 1 free => GPU alloc fails.
-	// tryReloadFromCPU runs: pops the 1 free GPU block, fills with CPU content.
-	// pendingLatency += 12. Then tries second CPU block but no more free GPU blocks.
-	// Retry: 1 cached block now, startIndex=2, needs 1 new block. But 0 free blocks remain.
-	// Hmm, the reloaded block was re-appended to free list. Let me trace more carefully...
-	// Actually after reload: the free block was popped, filled with r1's content, re-appended.
-	// So free list still has 1 block (the reloaded one). But it's now hashed/cached.
-	// GetCachedBlocks finds 1 match. newStart=2. Need tokens[2:6] = [3,4,5,6] = 2 blocks.
-	// Wait, original r1 had [1,2,3,4]. req6 has [1,2,3,4,5,6]. The first CPU block has
-	// hash for [1,2]. The second CPU block has hash for [1,2,3,4].
-	// After reload of first CPU block: GPU has hash for [1,2]. GetCachedBlocks([1,2,3,4,5,6])
-	// finds 1 cached block. newStart = 1*2 = 2. Need to alloc from 2 to 6 = 4 tokens = 2 blocks.
-	// Only the reloaded block is free (but it's the cached one with hash [1,2] and InUse=false,
-	// RefCount=0, in free list). popFreeBlock would pop it... but that would destroy the
-	// cache entry. Hmm, this is getting complicated. Let's just check if latency accumulated.
-
-	req6 := &sim.Request{ID: "r6", InputTokens: []int{1, 2, 3, 4, 5, 6}}
-	tiered.AllocateKVBlocks(req6, 0, 6, []int64{}) // may or may not succeed
+	// Step 5: Request same prefix [1,2,3,4] → need 2 blocks, 1 free → fails → reload.
+	// Reload: 1 block from CPU (limited by maxReloads=1).
+	// pendingLatency = 1 × (10 + ceil(2/1.0)) = 12.
+	r2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4}}
+	tiered.AllocateKVBlocks(r2, 0, 4, []int64{}) // may not fully succeed
 
 	latency := tiered.PendingTransferLatency()
 	if latency == 0 {
-		t.Fatal("setupTieredWithLatency: offload/reload path did not accumulate transfer latency")
+		t.Fatal("setupTieredWithLatency: mirror+reload path did not accumulate transfer latency")
 	}
 	return tiered
 }

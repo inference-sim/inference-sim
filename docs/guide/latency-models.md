@@ -76,7 +76,7 @@ This auto-resolves both required inputs:
 - [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1) (MoE)
 - [CodeLlama-34B](https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf)
 
-For gated models (e.g., LLaMA), set `HF_TOKEN`:
+Set `HF_TOKEN` to access gated models (e.g., [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf)) and avoid rate limits:
 
 ```bash
 export HF_TOKEN=your_token_here
