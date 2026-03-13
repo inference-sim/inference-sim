@@ -67,7 +67,7 @@ func TestNewKVStore_TieredMode_InvalidBandwidth_Panics(t *testing.T) {
 }
 
 func TestNewKVStore_TieredMode_ValidEdgeCases(t *testing.T) {
-	// Threshold=0 (always offload) and threshold=1 (never offload) are both valid
+	// Threshold=0 and threshold=1 are both valid (threshold is deprecated but still validated)
 	tests := []struct {
 		name      string
 		threshold float64
