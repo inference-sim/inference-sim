@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -190,4 +191,75 @@ func TestNewInstanceSimulatorCore_WrapsLatencyModel(t *testing.T) {
 	if inst1 == nil {
 		t.Fatal("newInstanceSimulatorCore returned nil with positive factors")
 	}
+}
+
+func TestInterferenceModel_ClusterIntegration(t *testing.T) {
+	// Create a 2-instance cluster with interference and verify step times increase.
+	baseCfg := newTestSimConfig()
+
+	// Generate 10 requests arriving at t=0 to create mixed prefill/decode batches.
+	rng := rand.New(rand.NewSource(42))
+	requests := make([]*sim.Request, 10)
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("req_%d", i),
+			InputTokens:  sim.GenerateRandomTokenIDs(rng, 20),
+			OutputTokens: sim.GenerateRandomTokenIDs(rng, 10),
+			ArrivalTime:  0,
+		}
+	}
+
+	// Run without interference
+	configBase := DeploymentConfig{
+		SimConfig:    baseCfg,
+		NumInstances: 2,
+	}
+	csBase := NewClusterSimulator(configBase, cloneRequests(requests))
+	if err := csBase.Run(); err != nil {
+		t.Fatalf("baseline run failed: %v", err)
+	}
+	baseMetrics := csBase.AggregatedMetrics()
+
+	// Run with interference
+	configInterference := DeploymentConfig{
+		SimConfig:             baseCfg,
+		NumInstances:          2,
+		PDInterferencePrefill: 0.5,
+		PDInterferenceDecode:  0.5,
+	}
+	csInterference := NewClusterSimulator(configInterference, cloneRequests(requests))
+	if err := csInterference.Run(); err != nil {
+		t.Fatalf("interference run failed: %v", err)
+	}
+	interferenceMetrics := csInterference.AggregatedMetrics()
+
+	// With interference, simulation should take longer (higher SimEndedTime)
+	if interferenceMetrics.SimEndedTime <= baseMetrics.SimEndedTime {
+		t.Errorf("expected interference to increase simulation time: base=%d, interference=%d",
+			baseMetrics.SimEndedTime, interferenceMetrics.SimEndedTime)
+	}
+
+	// Per-request E2E latencies should be larger with interference.
+	// Compare completed requests that exist in both runs.
+	for reqID, baseE2E := range baseMetrics.RequestE2Es {
+		if intE2E, ok := interferenceMetrics.RequestE2Es[reqID]; ok {
+			if intE2E < baseE2E {
+				t.Errorf("request %s: interference E2E (%f) < base E2E (%f)", reqID, intE2E, baseE2E)
+			}
+		}
+	}
+}
+
+// cloneRequests creates deep copies of requests for independent simulation runs.
+func cloneRequests(reqs []*sim.Request) []*sim.Request {
+	result := make([]*sim.Request, len(reqs))
+	for i, r := range reqs {
+		clone := *r
+		clone.InputTokens = make([]int, len(r.InputTokens))
+		copy(clone.InputTokens, r.InputTokens)
+		clone.OutputTokens = make([]int, len(r.OutputTokens))
+		copy(clone.OutputTokens, r.OutputTokens)
+		result[i] = &clone
+	}
+	return result
 }
