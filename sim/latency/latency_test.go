@@ -490,6 +490,73 @@ func TestBlackboxRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T
 	}
 }
 
+// TestClampToInt64_OverflowSaturation verifies:
+// GIVEN a float64 value exceeding math.MaxInt64
+// WHEN clampToInt64 is called
+// THEN the result MUST be math.MaxInt64 (BC-1).
+func TestClampToInt64_OverflowSaturation(t *testing.T) {
+	tests := []struct {
+		name  string
+		input float64
+		want  int64
+	}{
+		{"exactly max float", float64(math.MaxInt64), math.MaxInt64},
+		{"above max", float64(math.MaxInt64) * 2, math.MaxInt64},
+		{"huge value", 1e30, math.MaxInt64},
+		{"positive infinity", math.Inf(1), math.MaxInt64},
+		{"NaN", math.NaN(), math.MaxInt64},
+		{"negative infinity", math.Inf(-1), math.MinInt64},
+		{"normal positive", 42000.0, 42000},
+		{"small positive", 1.5, 1},
+		{"zero", 0.0, 0},
+		{"negative", -5.0, -5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := clampToInt64(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestBlackbox_StepTime_ExtremeCoeffs_SaturatesAtMaxInt64 verifies:
+// GIVEN coefficients producing stepTime > math.MaxInt64
+// WHEN StepTime is called
+// THEN the result MUST be math.MaxInt64, not 1 (BC-1).
+func TestBlackbox_StepTime_ExtremeCoeffs_SaturatesAtMaxInt64(t *testing.T) {
+	model := &BlackboxLatencyModel{
+		betaCoeffs:  []float64{1e30, 0, 0},
+		alphaCoeffs: []float64{0, 0, 0},
+	}
+	batch := []*sim.Request{}
+	result := model.StepTime(batch)
+	assert.Equal(t, int64(math.MaxInt64), result, "extreme beta0 should saturate at MaxInt64")
+}
+
+// TestBlackbox_QueueingTime_ExtremeAlpha_SaturatesAtMaxInt64 verifies:
+// GIVEN alpha coefficients producing queueingTime > math.MaxInt64
+// WHEN QueueingTime is called
+// THEN the result MUST be math.MaxInt64 (BC-1).
+func TestBlackbox_QueueingTime_ExtremeAlpha_SaturatesAtMaxInt64(t *testing.T) {
+	model := &BlackboxLatencyModel{
+		betaCoeffs:  []float64{0, 0, 0},
+		alphaCoeffs: []float64{1e30, 0, 0},
+	}
+	req := &sim.Request{InputTokens: make([]int, 10)}
+	result := model.QueueingTime(req)
+	assert.Equal(t, int64(math.MaxInt64), result)
+}
+
+// TestBlackbox_OutputTokenProcessingTime_ExtremeAlpha_SaturatesAtMaxInt64 verifies BC-1 for alpha2 overflow.
+func TestBlackbox_OutputTokenProcessingTime_ExtremeAlpha_SaturatesAtMaxInt64(t *testing.T) {
+	model := &BlackboxLatencyModel{
+		betaCoeffs:  []float64{0, 0, 0},
+		alphaCoeffs: []float64{0, 0, 1e30},
+	}
+	result := model.OutputTokenProcessingTime()
+	assert.Equal(t, int64(math.MaxInt64), result)
+}
+
 // TestAllBackends_StepTime_EmptyBatch_FloorAtOne verifies the LatencyModel
 // interface contract: all backends must return >= 1 for empty batch, even with zero coefficients.
 func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
