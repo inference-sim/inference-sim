@@ -373,11 +373,14 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 	delete(kvc.RequestMap, reqID)
 }
 
-// commitCachedBlocks registers cached blocks for a request's first allocation.
+// commitCachedBlocks registers a slice of cached blocks into a request's RequestMap.
 // Increments RefCount, sets InUse, removes from free list, records cache hits,
-// and adds block IDs to RequestMap.
+// and appends block IDs to RequestMap.
 //
-// Caller must ensure reqID is not already in RequestMap (to avoid double-commit).
+// For new requests (reqID not yet in RequestMap), pass the full cached block slice.
+// For running requests (reqID already in RequestMap), pass only the uncovered range
+// (e.g., newCached[startBlock:endBlock]) to avoid double-counting RefCount for
+// blocks the request already owns.
 //
 // NOTE: This method does NOT track mutations for rollback. It is used only by
 // TieredKVCache when the entire requested range is cached after reload

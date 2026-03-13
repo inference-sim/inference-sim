@@ -206,12 +206,26 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 		if newStart > startIndex {
 			if newStart >= endIndex {
 				// Entire requested range is cached after reload.
-				if _, exists := t.gpu.RequestMap[req.ID]; !exists {
-					blocksNeeded := (endIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
-					if blocksNeeded > int64(len(newCached)) {
-						blocksNeeded = int64(len(newCached))
+				// Commit the appropriate block range to RequestMap.
+				endBlock := min((endIndex+t.gpu.BlockSize()-1)/t.gpu.BlockSize(), int64(len(newCached)))
+				if _, exists := t.gpu.RequestMap[req.ID]; exists {
+					// Running request: commit only the uncovered range using ceiling
+					// division to skip the partially-filled last block.
+					// ceil(startIndex/blockSize) ensures we don't re-commit the block
+					// that is already (fully or partially) tracked in RequestMap —
+					// e.g., startIndex=6, blockSize=4: ceil=2 (correct), floor=1 (re-commits
+					// partial block 1, double-counting its RefCount).
+					// newCached[startBlock:endBlock] is guaranteed non-overlapping with
+					// existing RequestMap entries because commitCachedBlocks operates on
+					// reload-sourced blocks (different physical blocks than the running
+					// request's own partially-filled block).
+					startBlock := (startIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
+					if startBlock < endBlock {
+						t.gpu.commitCachedBlocks(req.ID, newCached[startBlock:endBlock])
 					}
-					t.gpu.commitCachedBlocks(req.ID, newCached[:blocksNeeded])
+				} else {
+					// New request: commit all cached blocks from block 0.
+					t.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
 				}
 				return true
 			}
