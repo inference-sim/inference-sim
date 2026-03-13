@@ -109,6 +109,11 @@ var (
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
 	pdKVBytesPerToken     int     // KV cache bytes per token for transfer duration
 	pdTransferContention  bool    // Enable fair-share bandwidth contention model (INV-P2-2)
+
+	// PD interference config (PR3)
+	pdInterferencePrefill float64 // interference factor for prefill-dominant batches
+	pdInterferenceDecode  float64 // interference factor for decode-dominant batches
+
 	prefillRoutingScorers string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
@@ -1077,6 +1082,13 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("--pd-kv-bytes-per-token must be > 0, got %d", pdKVBytesPerToken)
 			}
 		}
+		// PD interference parameter validation (R3)
+		if pdInterferencePrefill < 0 || math.IsNaN(pdInterferencePrefill) || math.IsInf(pdInterferencePrefill, 0) {
+			logrus.Fatalf("--pd-interference-prefill must be a finite non-negative number, got %f", pdInterferencePrefill)
+		}
+		if pdInterferenceDecode < 0 || math.IsNaN(pdInterferenceDecode) || math.IsInf(pdInterferenceDecode, 0) {
+			logrus.Fatalf("--pd-interference-decode must be a finite non-negative number, got %f", pdInterferenceDecode)
+		}
 		if admissionLatency < 0 {
 			logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
 		}
@@ -1172,6 +1184,8 @@ var runCmd = &cobra.Command{
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
 			PDTransferContention:    pdTransferContention,
+			PDInterferencePrefill:   pdInterferencePrefill,
+			PDInterferenceDecode:    pdInterferenceDecode,
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,
 			PrefillOverrides:        prefillOverrides,
@@ -1468,6 +1482,8 @@ func init() {
 	runCmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	runCmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	runCmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
+	runCmd.Flags().Float64Var(&pdInterferencePrefill, "pd-interference-prefill", 0, "Interference slowdown factor for prefill-dominant batches when decode co-locates (0 = disabled)")
+	runCmd.Flags().Float64Var(&pdInterferenceDecode, "pd-interference-decode", 0, "Interference slowdown factor for decode-dominant batches when prefill co-locates (0 = disabled)")
 	runCmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	runCmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
