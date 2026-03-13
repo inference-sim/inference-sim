@@ -1181,3 +1181,148 @@ func TestGenerateRequests_SetsMaxOutputLen(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateWorkload_ClosedLoop_OnlyRound0 verifies that closed-loop
+// reasoning clients produce only round-0 requests with session blueprints.
+func TestGenerateWorkload_ClosedLoop_OnlyRound0(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, Category: "language", AggregateRate: 10.0,
+		Clients: []ClientSpec{
+			{
+				ID: "reasoning", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				Reasoning: &ReasoningSpec{
+					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+					MultiTurn:       &MultiTurnSpec{MaxRounds: 3, ThinkTimeUs: 1000, ContextGrowth: ""},
+				},
+				// ClosedLoop defaults to true for reasoning clients
+			},
+		},
+	}
+
+	wl, err := GenerateWorkload(spec, 10_000_000, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// All requests should be round 0
+	for _, req := range wl.Requests {
+		if req.RoundIndex != 0 {
+			t.Errorf("closed-loop request %s has RoundIndex=%d, want 0", req.ID, req.RoundIndex)
+		}
+	}
+
+	// Should have session blueprints
+	if len(wl.Sessions) == 0 {
+		t.Fatal("expected session blueprints for closed-loop reasoning client")
+	}
+
+	// Each blueprint should have MaxRounds=3
+	for _, bp := range wl.Sessions {
+		if bp.MaxRounds != 3 {
+			t.Errorf("blueprint %s MaxRounds=%d, want 3", bp.SessionID, bp.MaxRounds)
+		}
+	}
+}
+
+// TestGenerateWorkload_OpenLoop_AllRounds verifies that clients with
+// closed_loop: false preserve the current all-rounds generation behavior.
+func TestGenerateWorkload_OpenLoop_AllRounds(t *testing.T) {
+	closedLoopFalse := false
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, Category: "language", AggregateRate: 10.0,
+		Clients: []ClientSpec{
+			{
+				ID: "reasoning-openloop", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				Reasoning: &ReasoningSpec{
+					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+					MultiTurn:       &MultiTurnSpec{MaxRounds: 3, ThinkTimeUs: 1000, ContextGrowth: ""},
+				},
+				ClosedLoop: &closedLoopFalse, // explicit opt-out
+			},
+		},
+	}
+
+	wl, err := GenerateWorkload(spec, 10_000_000, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have NO session blueprints (open-loop)
+	if len(wl.Sessions) != 0 {
+		t.Errorf("open-loop: expected 0 session blueprints, got %d", len(wl.Sessions))
+	}
+
+	// Should have rounds > 0 (all rounds pre-generated)
+	hasLaterRound := false
+	for _, req := range wl.Requests {
+		if req.RoundIndex > 0 {
+			hasLaterRound = true
+			break
+		}
+	}
+	if !hasLaterRound {
+		t.Error("open-loop: expected requests with RoundIndex > 0 (all rounds pre-generated)")
+	}
+}
+
+// TestGenerateWorkload_NonSessionWorkload_NoBlueprints verifies that
+// non-reasoning workloads produce no session blueprints.
+func TestGenerateWorkload_NonSessionWorkload_NoBlueprints(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, Category: "language", AggregateRate: 10.0,
+		Clients: []ClientSpec{
+			{
+				ID: "standard", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+			},
+		},
+	}
+
+	wl, err := GenerateWorkload(spec, 10_000_000, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(wl.Sessions) != 0 {
+		t.Errorf("non-session: expected 0 blueprints, got %d", len(wl.Sessions))
+	}
+	if len(wl.Requests) == 0 {
+		t.Error("expected requests for non-session workload")
+	}
+}
+
+// TestGenerateWorkload_Deadline_SetOnAllRequests verifies that all requests
+// from GenerateWorkload have Deadline set (default 300s).
+func TestGenerateWorkload_Deadline_SetOnAllRequests(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, Category: "language", AggregateRate: 10.0,
+		Clients: []ClientSpec{
+			{
+				ID: "std", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+			},
+		},
+	}
+
+	wl, err := GenerateWorkload(spec, 10_000_000, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, req := range wl.Requests {
+		expected := req.ArrivalTime + DefaultTimeoutUs
+		if req.Deadline != expected {
+			t.Errorf("request %s: Deadline=%d, want %d (arrival + 300s)", req.ID, req.Deadline, expected)
+		}
+	}
+}

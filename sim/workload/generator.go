@@ -307,6 +307,145 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	return allRequests, nil
 }
 
+// GeneratedWorkload holds the output of GenerateWorkload: requests plus session blueprints.
+type GeneratedWorkload struct {
+	Requests []*sim.Request
+	Sessions []SessionBlueprint // nil for non-session workloads
+}
+
+// GenerateWorkload creates requests and session blueprints from a WorkloadSpec.
+// For closed-loop reasoning/multi-turn clients, only round-0 requests are generated
+// and SessionBlueprints are created for the SessionManager to generate follow-up rounds.
+// For all other clients (including open-loop reasoning), identical to GenerateRequests.
+func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*GeneratedWorkload, error) {
+	// Generate all requests using existing logic.
+	// For closed-loop clients, this currently generates ALL rounds (open-loop style).
+	// We'll filter to round-0 only below and create blueprints for the rest.
+	reqs, err := GenerateRequests(spec, horizon, maxRequests)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if any client is closed-loop — if not, return early (no sessions)
+	hasClosedLoop := false
+	allClients := append([]ClientSpec{}, spec.Clients...)
+	if len(spec.Cohorts) > 0 {
+		allClients = append(allClients, ExpandCohorts(spec.Cohorts, spec.Seed)...)
+	}
+	for i := range allClients {
+		if isClosedLoop(&allClients[i]) {
+			hasClosedLoop = true
+			break
+		}
+	}
+	if !hasClosedLoop {
+		return &GeneratedWorkload{Requests: reqs}, nil
+	}
+
+	// For closed-loop clients: filter requests to round-0 only, create blueprints.
+	// Blueprint RNG uses a fixed offset from spec seed to avoid colliding with
+	// GenerateRequests' internal RNG draws. The offset (spec.Seed + 7919) is a
+	// prime shift that produces an independent stream.
+	blueprintRNG := rand.New(rand.NewSource(spec.Seed + 7919))
+
+	var sessions []SessionBlueprint
+	round0Only := make([]*sim.Request, 0, len(reqs))
+	closedLoopSessionIDs := make(map[string]bool)
+
+	// Build session blueprints for closed-loop clients
+	for i := range allClients {
+		client := &allClients[i]
+		if !isClosedLoop(client) {
+			continue
+		}
+		if client.Reasoning == nil || client.Reasoning.MultiTurn == nil {
+			continue
+		}
+		mt := client.Reasoning.MultiTurn
+
+		// Create samplers for the blueprint
+		inputSampler, err := NewLengthSampler(client.InputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q input distribution for blueprint: %w", client.ID, err)
+		}
+		outputSampler, err := NewLengthSampler(client.OutputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q output distribution for blueprint: %w", client.ID, err)
+		}
+
+		// Get prefix tokens by extracting from the first round-0 request for this client.
+		// GenerateRequests already prepended the correct prefix — we extract it here
+		// to pass to the SessionBlueprint for follow-up round generation.
+		var prefixTokens []int
+		if client.PrefixGroup != "" && client.PrefixLength > 0 {
+			for _, req := range reqs {
+				if req.SessionID != "" && req.RoundIndex == 0 &&
+					req.TenantID == client.TenantID && req.SLOClass == client.SLOClass {
+					// The first PrefixLength tokens of InputTokens are the prefix
+					if len(req.InputTokens) >= client.PrefixLength {
+						prefixTokens = make([]int, client.PrefixLength)
+						copy(prefixTokens, req.InputTokens[:client.PrefixLength])
+					}
+					break
+				}
+			}
+		}
+
+		// Find all session IDs for this client in the generated requests
+		sessionIDsForClient := make(map[string]bool)
+		for _, req := range reqs {
+			if req.SessionID != "" && req.RoundIndex == 0 {
+				// Check if this request belongs to this client by matching metadata
+				if req.TenantID == client.TenantID && req.SLOClass == client.SLOClass && req.Model == client.Model {
+					sessionIDsForClient[req.SessionID] = true
+					closedLoopSessionIDs[req.SessionID] = true
+				}
+			}
+		}
+
+		// Create a blueprint per session
+		for sessID := range sessionIDsForClient {
+			sessSeed := blueprintRNG.Int63()
+			sessions = append(sessions, SessionBlueprint{
+				SessionID:     sessID,
+				ClientID:      client.ID,
+				MaxRounds:     mt.MaxRounds,
+				ContextGrowth: mt.ContextGrowth,
+				ThinkTimeUs:   mt.ThinkTimeUs,
+				Timeout:       client.Timeout,
+				Horizon:       horizon,
+				InputSampler:  inputSampler,
+				OutputSampler: outputSampler,
+				RNG:           rand.New(rand.NewSource(sessSeed)),
+				Prefix:        prefixTokens,
+				TenantID:      client.TenantID,
+				SLOClass:      client.SLOClass,
+				Model:         client.Model,
+			})
+		}
+	}
+
+	// Filter: keep round-0 only for closed-loop sessions, keep all for non-session requests
+	for _, req := range reqs {
+		if req.SessionID != "" && closedLoopSessionIDs[req.SessionID] {
+			// Closed-loop session: keep only round 0
+			if req.RoundIndex == 0 {
+				round0Only = append(round0Only, req)
+			}
+		} else {
+			// Non-session request or open-loop session: keep all
+			round0Only = append(round0Only, req)
+		}
+	}
+
+	// Re-assign sequential IDs (round-0 filter changed the count)
+	for i, req := range round0Only {
+		req.ID = fmt.Sprintf("request_%d", i)
+	}
+
+	return &GeneratedWorkload{Requests: round0Only, Sessions: sessions}, nil
+}
+
 // isInActiveWindow checks if a timestamp falls within any active window.
 func isInActiveWindow(timeUs int64, lifecycle *LifecycleSpec) bool {
 	for _, w := range lifecycle.Windows {
