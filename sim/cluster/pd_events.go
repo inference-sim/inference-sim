@@ -127,6 +127,8 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	if bandwidthBytesPerUs > 0 {
 		duration = int64(math.Ceil(baseLatUs + transferBytesF/bandwidthBytesPerUs))
 	} else {
+		logrus.Errorf("[cluster] KV transfer for %s: bandwidthBytesPerUs=%f <= 0 (effectiveBandwidthGBps=%f, activeTransfers=%d) — transfer payload duration dropped, using base latency only",
+			e.parentReq.ID, bandwidthBytesPerUs, effectiveBandwidthGBps, cs.activeTransfers)
 		duration = int64(math.Ceil(baseLatUs))
 	}
 	if duration < 1 {
@@ -162,6 +164,10 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	e.parentReq.TransferCompleteTime = e.time
 
 	// Contention tracking: decrement after transfer completes (INV-P2-2).
+	// Only runs when PDTransferContention is enabled — activeTransfers is only
+	// incremented in KVTransferStartedEvent.Execute() under the same guard.
+	// When contention is disabled, transfersInitiated/transfersCompleted (unconditional)
+	// still catch mismatched events via INV-PD-3.
 	if cs.config.PDTransferContention {
 		cs.activeTransfers--
 		if cs.activeTransfers < 0 {

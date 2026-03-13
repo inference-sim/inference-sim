@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -401,6 +402,74 @@ func TestTransferContention_INVP22_N2FormulaExact(t *testing.T) {
 	// Confirm activeTransfers is now 2 (both the pre-existing and this one)
 	if cs.activeTransfers != 2 {
 		t.Errorf("activeTransfers = %d after N=2 start, want 2", cs.activeTransfers)
+	}
+}
+
+// TestTransferContention_CorruptionFlagCausesRunError verifies end-to-end that when
+// contentionBookkeepingCorrupted is true after the event loop, Run() returns a non-nil
+// error rather than delivering silently invalid contention metrics.
+//
+// NOTE: This test sets the corruption flag directly via in-package access after
+// constructing a valid ClusterSimulator. This is intentional — the negative guard
+// that sets the flag in production is tested separately in
+// TestTransferContention_NegativeGuard_SetsCorruptionFlag.
+func TestTransferContention_CorruptionFlagCausesRunError(t *testing.T) {
+	config := newContentionConfig(4, 2, 2, 25.0)
+	// Use 1 request so the simulation completes quickly and INV-PD-3 holds.
+	requests := newTestRequests(1)
+
+	cs := NewClusterSimulator(config, requests)
+	// Inject corruption flag before Run(). The event loop will execute normally,
+	// but the post-loop check should detect the corruption and return an error.
+	cs.contentionBookkeepingCorrupted = true
+
+	err := cs.Run()
+	if err == nil {
+		t.Fatal("Run() returned nil error when contentionBookkeepingCorrupted=true, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "contention bookkeeping corrupted") {
+		t.Errorf("Run() error = %q, want substring %q", err.Error(), "contention bookkeeping corrupted")
+	}
+}
+
+// TestTransferContention_DurationFloor_ZeroBlocks verifies that when NumKVBlocks is 0,
+// the minimum duration floor (1 µs) is applied rather than scheduling a 0-duration event.
+//
+// Parameters: 0 KV blocks, bandwidth=10 GB/s, zero base latency.
+// transferBytes = 0 × 16 × 512 = 0; duration = ceil(0/10000) = 0 → clamped to 1 µs.
+func TestTransferContention_DurationFloor_ZeroBlocks(t *testing.T) {
+	cs := &ClusterSimulator{
+		config: DeploymentConfig{
+			PDTransferContention:    true,
+			PDTransferBandwidthGBps: 10.0,
+			PDTransferBaseLatencyMs: 0,
+			PDKVBytesPerToken:       512,
+			SimConfig: sim.SimConfig{
+				KVCacheConfig: sim.KVCacheConfig{
+					BlockSizeTokens: 16,
+				},
+			},
+		},
+		activeTransfers: 0,
+		clusterEvents:   make(ClusterEventQueue, 0),
+	}
+	parentReq := &ParentRequest{
+		ID:          "test-parent",
+		NumKVBlocks: 0, // zero blocks → zero transfer bytes
+	}
+	event := &KVTransferStartedEvent{time: 100, parentReq: parentReq}
+	event.Execute(cs)
+
+	if len(cs.clusterEvents) != 1 {
+		t.Fatalf("expected 1 scheduled completion event, got %d", len(cs.clusterEvents))
+	}
+	completedAt := cs.clusterEvents[0].event.Timestamp()
+	duration := completedAt - event.time
+
+	// 0 blocks → 0 bytes → ceil(0) = 0 → clamped to 1 µs minimum
+	const wantDur = int64(1)
+	if duration != wantDur {
+		t.Errorf("zero-block transfer duration = %d µs, want %d µs (minimum floor)", duration, wantDur)
 	}
 }
 

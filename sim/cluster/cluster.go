@@ -131,11 +131,11 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		if config.PDKVBytesPerToken <= 0 {
 			panic(fmt.Sprintf("ClusterSimulator: PDKVBytesPerToken must be > 0 when PD is enabled, got %d", config.PDKVBytesPerToken))
 		}
-		if config.PDTransferBandwidthGBps <= 0 {
-			panic(fmt.Sprintf("ClusterSimulator: PDTransferBandwidthGBps must be > 0 when PD is enabled, got %f", config.PDTransferBandwidthGBps))
+		if config.PDTransferBandwidthGBps <= 0 || math.IsNaN(config.PDTransferBandwidthGBps) || math.IsInf(config.PDTransferBandwidthGBps, 0) {
+			panic(fmt.Sprintf("ClusterSimulator: PDTransferBandwidthGBps must be a finite positive number when PD is enabled, got %f", config.PDTransferBandwidthGBps))
 		}
-		if config.PDTransferBaseLatencyMs < 0 {
-			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be >= 0 when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
+		if config.PDTransferBaseLatencyMs < 0 || math.IsNaN(config.PDTransferBaseLatencyMs) || math.IsInf(config.PDTransferBaseLatencyMs, 0) {
+			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be a finite non-negative number when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
 		}
 		// R3: guard against int64 overflow in KVTransferStartedEvent.Execute().
 		// blockSizeBytes = BlockSizeTokens * PDKVBytesPerToken; if this overflows int64,
@@ -315,8 +315,12 @@ func (c *ClusterSimulator) Run() error {
 		// Note: horizon truncation (completion events past the horizon) also violates INV-PD-3
 		// and is caught here first, before any contention checks below.
 		if c.transfersInitiated != c.transfersCompleted {
-			return fmt.Errorf("INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
+			msg := fmt.Sprintf("INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
 				c.transfersInitiated, c.transfersCompleted)
+			if c.contentionBookkeepingCorrupted {
+				msg += "; additionally, contention bookkeeping was corrupted (activeTransfers went negative)"
+			}
+			return fmt.Errorf("%s", msg)
 		}
 		// Contention bookkeeping corruption: if activeTransfers went negative during the run
 		// (see negative guard in KVTransferCompletedEvent), contention metrics are invalid.
