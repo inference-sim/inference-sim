@@ -531,3 +531,155 @@ func TestCpuTier_Validation_NegativeCapacity_Panics(t *testing.T) {
 func TestCpuTier_Validation_ZeroBlockSize_Panics(t *testing.T) {
 	assert.Panics(t, func() { newCpuTier(10, 0) })
 }
+
+// --- Reload guard tests (BC-2, BC-3) ---
+
+func TestTieredKVCache_ReloadGuard_CommitsBlocksForRunningRequest(t *testing.T) {
+	// BC-2: Running request hitting full-range reload guard gets uncovered blocks committed
+	// BC-3: Only the uncovered range is committed (no double-counting)
+	blockSize := int64(4)
+	gpuBlocks := int64(12)
+	cpuBlocks := int64(5)
+
+	gpu := NewKVCacheState(gpuBlocks, blockSize)
+	tiered := NewTieredKVCache(gpu, cpuBlocks, 0, 1.0, 0)
+
+	// Create tokens for 4 blocks (16 tokens total)
+	tokens := make([]int, 4*blockSize)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+
+	// Seed request: allocate all 4 blocks, mirror to CPU, then release.
+	// This puts all 4 blocks on CPU and leaves hashes on GPU free list.
+	seedReq := &sim.Request{ID: "req-seed", InputTokens: tokens}
+	ok := tiered.AllocateKVBlocks(seedReq, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok, "seed allocation must succeed")
+	tiered.MirrorToCPU([]*sim.Request{seedReq})
+	tiered.ReleaseKVBlocks(seedReq)
+
+	// Running request: allocate first 2 blocks (simulates ProgressIndex at block 2)
+	runReq := &sim.Request{ID: "req-running", InputTokens: tokens}
+	ok = tiered.AllocateKVBlocks(runReq, 0, 2*blockSize, []int64{})
+	assert.True(t, ok, "partial allocation must succeed")
+	existingBlocks, exists := gpu.RequestMap[runReq.ID]
+	assert.True(t, exists, "running request must be in RequestMap")
+	numBlocksBefore := len(existingBlocks)
+	assert.Equal(t, 2, numBlocksBefore, "running request should have 2 blocks")
+
+	// Exhaust remaining GPU free blocks with fillers
+	fillerCount := 0
+	for gpu.countFreeBlocks() > 0 {
+		filler := &sim.Request{
+			ID:          fmt.Sprintf("filler-%d", fillerCount),
+			InputTokens: []int{800 + fillerCount*4, 801 + fillerCount*4, 802 + fillerCount*4, 803 + fillerCount*4},
+		}
+		if tiered.AllocateKVBlocks(filler, 0, blockSize, []int64{}) {
+			fillerCount++
+		} else {
+			break
+		}
+	}
+
+	// Release 2 fillers to make room for CPU→GPU reload (reload needs free blocks)
+	for i := 0; i < 2 && i < fillerCount; i++ {
+		tiered.ReleaseKVBlocks(&sim.Request{ID: fmt.Sprintf("filler-%d", i)})
+	}
+
+	// WHEN we allocate blocks 2-3 for the running request (the uncovered range)
+	// startIndex = 2*blockSize = 8, endIndex = 4*blockSize = 16
+	startIndex := int64(2) * blockSize
+	endIndex := int64(4) * blockSize
+	ok = tiered.AllocateKVBlocks(runReq, startIndex, endIndex, []int64{})
+	assert.True(t, ok, "allocation via CPU reload must succeed")
+
+	// THEN the uncovered blocks (blocks 2 and 3) must be committed to RequestMap
+	blocksAfter, existsAfter := gpu.RequestMap[runReq.ID]
+	assert.True(t, existsAfter, "running request must still be in RequestMap")
+	assert.Greater(t, len(blocksAfter), numBlocksBefore,
+		"running request must have more blocks after allocation (BC-2)")
+
+	// BC-3: No double-counting — original blocks should not be duplicated
+	// We started with 2 blocks and added blocks for range [2,4), so expect 4 total
+	assert.Equal(t, 4, len(blocksAfter),
+		"running request must have exactly 4 blocks (2 original + 2 newly committed)")
+
+	// INV-4: block conservation
+	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
+		"INV-4: used + free must equal total capacity")
+}
+
+func TestTieredKVCache_ReloadGuard_NonBlockAlignedStartIndex_NoDuplicates(t *testing.T) {
+	// BC-3 edge case: startIndex=6, blockSize=4 (non-aligned)
+	// Ceiling division: startBlock = (6+3)/4 = 2 (skips partially-filled block 1)
+	// Floor division: startBlock = 6/4 = 1 (would re-commit partially-filled block 1)
+	blockSize := int64(4)
+	gpuBlocks := int64(12)
+	cpuBlocks := int64(5)
+
+	gpu := NewKVCacheState(gpuBlocks, blockSize)
+	tiered := NewTieredKVCache(gpu, cpuBlocks, 0, 1.0, 0)
+
+	// Tokens for 4 blocks
+	tokens := make([]int, 4*blockSize)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+
+	// Seed: allocate, mirror to CPU, release
+	seedReq := &sim.Request{ID: "req-seed-na", InputTokens: tokens}
+	ok := tiered.AllocateKVBlocks(seedReq, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok)
+	tiered.MirrorToCPU([]*sim.Request{seedReq})
+	tiered.ReleaseKVBlocks(seedReq)
+
+	// Running request: allocate first 6 tokens (non-block-aligned: covers block 0 fully,
+	// block 1 partially with tokens 4,5). startIndex=6 for the next allocation.
+	runReq := &sim.Request{ID: "req-running-nonaligned", InputTokens: tokens}
+	ok = tiered.AllocateKVBlocks(runReq, 0, 6, []int64{})
+	assert.True(t, ok, "partial allocation must succeed")
+	blocksBefore := len(gpu.RequestMap[runReq.ID])
+	// block 0 (full) + block 1 (partial) = 2 blocks
+	assert.Equal(t, 2, blocksBefore, "should have 2 blocks (block 0 full, block 1 partial)")
+
+	// Exhaust GPU free blocks
+	fillerCount := 0
+	for gpu.countFreeBlocks() > 0 {
+		filler := &sim.Request{
+			ID:          fmt.Sprintf("filler2-%d", fillerCount),
+			InputTokens: []int{700 + fillerCount*4, 701 + fillerCount*4, 702 + fillerCount*4, 703 + fillerCount*4},
+		}
+		if tiered.AllocateKVBlocks(filler, 0, blockSize, []int64{}) {
+			fillerCount++
+		} else {
+			break
+		}
+	}
+	for i := 0; i < 2 && i < fillerCount; i++ {
+		tiered.ReleaseKVBlocks(&sim.Request{ID: fmt.Sprintf("filler2-%d", i)})
+	}
+
+	// WHEN we allocate startIndex=6, endIndex=16 (needs tokens 6-15)
+	ok = tiered.AllocateKVBlocks(runReq, 6, 16, []int64{})
+	assert.True(t, ok, "CPU reload must cover the range")
+
+	// THEN: exactly blocks 2 and 3 committed (ceiling: skip block 1 which is partial)
+	// With floor division, block 1_copy from reload would also be appended → duplicates
+	blocksAfter := gpu.RequestMap[runReq.ID]
+	// original 2 + newly committed blocks 2,3 = 4 total
+	assert.Equal(t, 4, len(blocksAfter),
+		"should have exactly 4 blocks: original 2 (block0,block1_partial) + blocks 2,3 from reload")
+
+	// BC-3: each block ID must appear exactly once (no double-commit)
+	seen := make(map[int64]int)
+	for _, bid := range blocksAfter {
+		seen[bid]++
+	}
+	for bid, count := range seen {
+		assert.Equal(t, 1, count, fmt.Sprintf("block %d must appear exactly once in RequestMap", bid))
+	}
+
+	// INV-4
+	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
+		"INV-4: block conservation")
+}
