@@ -47,8 +47,8 @@ The `--tp` flag sets the tensor parallelism degree for all instances. TP affects
   --num-instances 2 --tp 4 --rate 100 --num-requests 500
 ```
 
-!!! note "Homogeneous instances"
-    All instances share the same SimConfig (model, GPU, TP, KV blocks). BLIS does not currently model heterogeneous fleets (mixed GPU types or TP configurations).
+!!! note "Per-pool hardware configuration"
+    By default, all instances share the same SimConfig (model, GPU, TP, KV blocks). When using PD disaggregation, per-pool hardware overrides (`--prefill-tp`, `--decode-tp`, `--prefill-hardware`, `--decode-hardware`, etc.) allow prefill and decode pools to use different configurations. See [Per-Pool Hardware Overrides](../reference/configuration.md#per-pool-hardware-overrides) for details.
 
 ## Scaling and Saturation
 

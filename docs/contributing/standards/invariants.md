@@ -171,3 +171,15 @@ Invariants are properties that must hold at all times during and after simulatio
 **Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PoolStability`. `poolMembership` is set once in `NewClusterSimulator` and never mutated during `Run()`.
 
 **Hypothesis family:** Structural model.
+
+---
+
+## INV-P2-1: Pool-Config Consistency
+
+**Statement:** Each instance receives config consistent with its pool role. Instances with no pool role receive the global config unchanged.
+
+**Verification:** `sim/cluster/resolve_test.go` — `TestINV_P2_1_PoolConfigConsistency` verifies heterogeneous KV capacity across pools: prefill instances report `FreeKVBlocks == prefillKV` and decode instances report `FreeKVBlocks == decodeKV` before simulation, and the simulation completes with valid disaggregated results. `TestResolvePoolConfig_Idempotent` verifies the algebraic invariant `Resolve(Resolve(g, o), o) == Resolve(g, o)`.
+
+**Mechanism:** `NewClusterSimulator` calls `BuildPoolMembershipFromIndices` before instance construction, then `resolveConfigForRole(role)` dispatches to `ResolvePoolConfig(global, overrides)` per pool role. Zero-valued `PoolOverrides` returns the global config unchanged (identity property).
+
+**Hypothesis family:** Structural model (same as INV-PD-5).

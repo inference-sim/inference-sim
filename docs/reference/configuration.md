@@ -215,6 +215,35 @@ This reflects the real cost driver: disaggregating prefill is only beneficial wh
 | `--prefill-routing-scorers` | string | "" | Scorer config for weighted routing within the prefill pool. |
 | `--decode-routing-scorers` | string | "" | Scorer config for weighted routing within the decode pool. |
 
+### Per-Pool Hardware Overrides
+
+When prefill and decode pools use different hardware (e.g., high-TP prefill for compute-bound prompt processing, low-TP decode for memory-bandwidth-bound token generation), per-pool hardware overrides allow each pool to have its own configuration. All per-pool flags default to the global config when unset.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--prefill-tp` | int | 0 | Tensor parallelism for prefill pool (0 = use global `--tp`). |
+| `--decode-tp` | int | 0 | Tensor parallelism for decode pool (0 = use global `--tp`). |
+| `--prefill-hardware` | string | "" | GPU type for prefill pool (empty = use global `--hardware`). |
+| `--decode-hardware` | string | "" | GPU type for decode pool (empty = use global `--hardware`). |
+| `--prefill-latency-model` | string | "" | Latency backend for prefill pool (empty = use global `--latency-model`). |
+| `--decode-latency-model` | string | "" | Latency backend for decode pool (empty = use global `--latency-model`). |
+| `--prefill-max-model-len` | int64 | 0 | Max model length for prefill pool (0 = use global `--max-model-len`). |
+| `--decode-max-model-len` | int64 | 0 | Max model length for decode pool (0 = use global `--max-model-len`). |
+
+**KV auto-calculation:** When an analytical latency backend (`roofline`, `crossmodel`, `trained-roofline`) is active and a pool's TP or GPU differs from the global config, KV blocks are auto-calculated per-pool using the pool's effective hardware. This ensures each pool's KV capacity matches its actual GPU memory.
+
+**Known limitation — admission vs. per-pool capacity:** Admission decisions are made at cluster level against the global config before disaggregation routing. If a pool has a lower `MaxModelLen` or `TotalKVBlocks` than the global config, a request that passes admission may be dropped at the instance level (prefill enqueue guard or decode KV allocation). This mirrors real disaggregated inference systems where the gateway admission check uses global thresholds. To avoid unexpected drops, ensure per-pool `MaxModelLen` values are not smaller than the typical request input length, and monitor `droppedAtDecodeKV` in simulation results.
+
+**Example — heterogeneous TP (8-way prefill, 2-way decode):**
+```bash
+./blis run --model meta-llama/llama-3.1-70b-instruct \
+  --num-instances 4 \
+  --prefill-instances 2 --decode-instances 2 \
+  --pd-decider always \
+  --latency-model roofline --hardware H100 --tp 4 \
+  --prefill-tp 8 --decode-tp 2
+```
+
 ## Scheduling and Priority
 
 Per-instance policies that control request ordering within the wait queue. Maps to `PolicyConfig`.
@@ -452,5 +481,5 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--workload-traces-filepath`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` |
-| **PD Disaggregation** | `--prefill-instances`, `--decode-instances`, `--pd-decider` (`never`\|`always`\|`prefix-threshold`), `--pd-prefix-threshold`, `--pd-transfer-bandwidth`, `--pd-transfer-base-latency`, `--pd-kv-bytes-per-token`, `--prefill-routing-scorers`, `--decode-routing-scorers` |
+| **PD Disaggregation** | `--prefill-instances`, `--decode-instances`, `--pd-decider` (`never`\|`always`\|`prefix-threshold`), `--pd-prefix-threshold`, `--pd-transfer-bandwidth`, `--pd-transfer-base-latency`, `--pd-kv-bytes-per-token`, `--prefill-routing-scorers`, `--decode-routing-scorers`, `--prefill-tp`, `--decode-tp`, `--prefill-hardware`, `--decode-hardware`, `--prefill-latency-model`, `--decode-latency-model`, `--prefill-max-model-len`, `--decode-max-model-len` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--results-path`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
