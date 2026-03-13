@@ -123,6 +123,9 @@ Interpreting the output:
 - **Disaggregated** — how many were routed to the prefill pool (remainder used standard routing)
 - **KV Transfers** — should equal `Disaggregated` for successful runs; a smaller number indicates decode-phase KV OOM drops (also shown in the Anomaly Counters section)
 - **Mean Transfer Duration** — average KV cache transfer latency in microseconds; tune `--pd-transfer-bandwidth` and `--pd-transfer-base-latency` to match your interconnect
+- **Peak Concurrent Transfers / Mean Transfer Queue Depth** — only printed when `--pd-transfer-contention` is enabled; see below
+
+**When to enable `--pd-transfer-contention`:** By default, each KV transfer gets the full configured bandwidth, modeling an uncongested link. Enable this flag when you want to model inter-pool link saturation: under high concurrency (many simultaneous disaggregated requests), all in-flight transfers share the bandwidth equally (`bandwidth/N` per transfer). If `Peak Concurrent Transfers` is frequently > 1 in a non-contention run and transfer latency is a bottleneck, enabling this flag will give a more conservative (and realistic) estimate of transfer durations.
 
 Use `--counterfactual-k N` to record the top-N alternative routing candidates and regret for both prefill and decode routing decisions.
 

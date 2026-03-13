@@ -37,18 +37,18 @@ type DeploymentConfig struct {
 	PDDecider         string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold"
 	PDPrefixThreshold int    // Non-cached token threshold for prefix-threshold decider (>= 0, default 512 from CLI)
 
-	// PD KV transfer configuration (PR2)
+	// PD KV transfer configuration
 	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
 	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
 	PDKVBytesPerToken       int64   // KV cache bytes per token for transfer duration (default 512)
-	PDTransferContention    bool    // Enable fair-share bandwidth contention model (Phase 2, PR2)
+	PDTransferContention    bool    // Enable fair-share bandwidth contention model (INV-P2-2)
 
-	// Per-pool routing scorer configuration (PR2)
+	// Per-pool routing scorer configuration.
 	// When nil, both pools use the main RoutingScorerConfigs.
 	PrefillScorerConfigs []sim.ScorerConfig // Scorer configs for prefill pool routing
 	DecodeScorerConfigs  []sim.ScorerConfig // Scorer configs for decode pool routing
 
-	// Per-pool hardware overrides (Phase 2, PR1)
+	// Per-pool hardware overrides (INV-P2-1: pool-config consistency).
 	// Zero-valued PoolOverrides = use global config (BC-P2-1).
 	PrefillOverrides PoolOverrides // Per-pool overrides for prefill instances
 	DecodeOverrides  PoolOverrides // Per-pool overrides for decode instances

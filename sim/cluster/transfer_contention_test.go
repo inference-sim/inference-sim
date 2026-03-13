@@ -318,6 +318,12 @@ func TestTransferContention_INVP22_EffectiveBandwidthFormula(t *testing.T) {
 
 // TestTransferContention_MeanQueueDepthCalculation verifies the mean calculation
 // is correct for known inputs.
+//
+// NOTE: This test constructs a ClusterSimulator directly with only the two
+// accumulator fields set (all others zero). This is an in-package arithmetic
+// test for MeanTransferQueueDepth() and is intentional — standard Go practice
+// allows same-package test access to unexported fields. The other fields are
+// not relevant to the method under test.
 func TestTransferContention_MeanQueueDepthCalculation(t *testing.T) {
 	cs := &ClusterSimulator{
 		transferDepthSum:   10, // e.g., depths were 1+2+3+4
@@ -330,9 +336,13 @@ func TestTransferContention_MeanQueueDepthCalculation(t *testing.T) {
 	}
 }
 
-// TestTransferContention_MeanQueueDepthZeroTransfers verifies zero-division safety.
+// TestTransferContention_MeanQueueDepthZeroTransfers verifies zero-division safety
+// when no transfers have occurred. Uses a production simulation path with 0 requests
+// so no transfers are ever started.
 func TestTransferContention_MeanQueueDepthZeroTransfers(t *testing.T) {
-	cs := &ClusterSimulator{}
+	config := newContentionConfig(4, 2, 2, 25.0)
+	cs := NewClusterSimulator(config, []*sim.Request{})
+	mustRun(t, cs)
 	got := cs.MeanTransferQueueDepth()
 	if got != 0 {
 		t.Errorf("MeanTransferQueueDepth = %f, want 0 for zero transfers", got)

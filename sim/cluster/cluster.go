@@ -308,11 +308,16 @@ func (c *ClusterSimulator) Run() error {
 			return fmt.Errorf("INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
 				c.transfersInitiated, c.transfersCompleted)
 		}
-		// Stranded contention counter: if horizon truncated in-flight transfers, activeTransfers
-		// may be non-zero even when INV-PD-3 holds (e.g., paired start+complete both past horizon).
-		// This does not violate INV-PD-3 but means contention metrics may be incomplete.
+		// Stranded contention counter: activeTransfers is an in-flight counter maintained by
+		// KVTransferStartedEvent (increment) and KVTransferCompletedEvent (decrement). If both
+		// events processed within the horizon, activeTransfers returns to 0 normally. This
+		// counter can be non-zero at simulation end only if the negative guard in
+		// KVTransferCompletedEvent was triggered (indicating a bookkeeping bug), resetting
+		// activeTransfers to 0 and leaving the subsequent increment without a matching decrement.
+		// INV-PD-3 is unaffected (it uses separate counters). If observed, examine earlier
+		// logrus.Errorf("activeTransfers went negative") output for the root cause.
 		if c.config.PDTransferContention && c.activeTransfers != 0 {
-			logrus.Warnf("[cluster] activeTransfers = %d at simulation end — horizon may have truncated in-flight transfers; contention metrics may be incomplete",
+			logrus.Warnf("[cluster] activeTransfers = %d at simulation end — indicates a prior negative-guard correction (R1); contention metrics may be inaccurate",
 				c.activeTransfers)
 		}
 		// Orphaned pending completions at horizon — in-flight disaggregated requests
