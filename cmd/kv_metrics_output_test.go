@@ -115,6 +115,24 @@ func TestPrintPDMetrics_PrintsSection(t *testing.T) {
 	assert.Contains(t, output, "KV Transfer Duration")
 }
 
+// TestPrintPDMetrics_Invariant_SectionPresentIffNonNil verifies the duality law:
+// printPDMetrics writes content iff pd is non-nil (companion invariant for R7).
+func TestPrintPDMetrics_Invariant_SectionPresentIffNonNil(t *testing.T) {
+	// Non-nil: output must contain PD section
+	var buf bytes.Buffer
+	printPDMetrics(&buf, &cluster.PDMetrics{DisaggregatedCount: 1, LoadImbalanceRatio: 1.0})
+	if buf.Len() == 0 {
+		t.Error("law violated: non-nil PDMetrics produced empty output")
+	}
+
+	// Nil: output must be empty
+	buf.Reset()
+	printPDMetrics(&buf, nil)
+	if buf.Len() != 0 {
+		t.Errorf("law violated: nil PDMetrics produced non-empty output: %q", buf.String())
+	}
+}
+
 func TestPrintPDMetrics_LoadImbalanceRatio_OnePoolIdle(t *testing.T) {
 	// GIVEN PDMetrics with LoadImbalanceRatio = math.MaxFloat64 (BC-10: one pool idle sentinel)
 	var buf bytes.Buffer

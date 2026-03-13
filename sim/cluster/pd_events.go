@@ -107,9 +107,11 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * bytesPerToken) / bandwidthBytesPerUs
-	numBlocks := e.parentReq.NumKVBlocks
-	blockSizeBytes := cs.config.BlockSizeTokens * cs.config.PDKVBytesPerToken
-	transferBytes := numBlocks * blockSizeBytes
+	// Use float64 arithmetic throughout to avoid int64 multiplication overflow (R11):
+	// numBlocks can be large for long-context requests; integer product could wrap silently.
+	numBlocksF := float64(e.parentReq.NumKVBlocks)
+	blockSizeBytesF := float64(cs.config.BlockSizeTokens) * float64(cs.config.PDKVBytesPerToken)
+	transferBytesF := numBlocksF * blockSizeBytesF
 
 	// INV-P2-2: apply fair-share divisor only when active_transfers > 1.
 	// activeTransfers == 1 (this transfer alone) → full bandwidth, no division needed.
@@ -123,7 +125,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 
 	var duration int64
 	if bandwidthBytesPerUs > 0 {
-		duration = int64(math.Ceil(baseLatUs + float64(transferBytes)/bandwidthBytesPerUs))
+		duration = int64(math.Ceil(baseLatUs + transferBytesF/bandwidthBytesPerUs))
 	} else {
 		duration = int64(math.Ceil(baseLatUs))
 	}
@@ -132,7 +134,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (active=%d)",
-		e.parentReq.ID, numBlocks, duration, cs.activeTransfers)
+		e.parentReq.ID, e.parentReq.NumKVBlocks, duration, cs.activeTransfers)
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &KVTransferCompletedEvent{

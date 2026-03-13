@@ -71,7 +71,7 @@ For gated models (e.g., LLaMA), set `HF_TOKEN`:
 
 ```bash
 export HF_TOKEN=your_token_here
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --latency-model roofline --hardware H100 --tp 1
 ```
 
@@ -146,8 +146,8 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 Trained-roofline mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from 137K real vLLM requests across 4 architectures (Llama-2-7b, Llama-2-70b, Mixtral-8x7B, CodeLlama-34b) via non-negative least squares regression.
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --latency-model trained-roofline --hardware H100 --tp 2
+./blis run --model qwen/qwen3-14b \
+  --latency-model trained-roofline --hardware H100 --tp 1
 ```
 
 Same auto-fetch chain as roofline and crossmodel (HuggingFace config + hardware config resolution).

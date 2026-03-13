@@ -128,7 +128,7 @@ Prefill-Decode (PD) disaggregation splits each request into a prefill sub-reques
 
 **Example — 2 prefill + 2 decode instances over RDMA:**
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 \
   --prefill-instances 2 --decode-instances 2 \
   --pd-decider always \
