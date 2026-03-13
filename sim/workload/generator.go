@@ -151,6 +151,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 						req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
 					}
 				}
+				// Set Deadline on all reasoning requests (not set in reasoning.go)
+				for _, req := range reasoningReqs {
+					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout)
+				}
 				for _, req := range reasoningReqs {
 					if req.ArrivalTime >= horizon {
 						break // rounds are in chronological order
@@ -194,6 +198,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					for _, req := range reasoningReqs {
 						req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
 					}
+				}
+				// Set Deadline on all reasoning requests (not set in reasoning.go)
+				for _, req := range reasoningReqs {
+					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout)
 				}
 				// Count all generated rounds for perClientCap safety (R19)
 				clientReqCount += int64(len(reasoningReqs))
@@ -274,6 +282,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				ImageTokenCount:  imageCount,
 				AudioTokenCount:  audioCount,
 				VideoTokenCount:  videoCount,
+				Deadline:         computeDeadline(currentTime, client.Timeout),
 			}
 			allRequests = append(allRequests, req)
 			clientReqCount++
@@ -311,4 +320,31 @@ func isInActiveWindow(timeUs int64, lifecycle *LifecycleSpec) bool {
 // newRandFromSeed creates a new *rand.Rand from a seed (avoids importing math/rand in callers).
 func newRandFromSeed(seed int64) *rand.Rand {
 	return rand.New(rand.NewSource(seed))
+}
+
+// DefaultTimeoutUs is the default per-request timeout (300s = 5 minutes).
+// Matches cmd/observe.go HTTP client timeout for consistency between
+// simulated and real-backend modes.
+const DefaultTimeoutUs = 300_000_000
+
+// computeDeadline derives the absolute deadline tick for a request.
+// nil timeout → default (300s). 0 timeout → no deadline (0). Positive → arrival + timeout.
+func computeDeadline(arrivalTime int64, clientTimeout *int64) int64 {
+	if clientTimeout == nil {
+		return arrivalTime + DefaultTimeoutUs
+	}
+	if *clientTimeout == 0 {
+		return 0 // no timeout
+	}
+	return arrivalTime + *clientTimeout
+}
+
+// isClosedLoop returns whether a client should use closed-loop session generation.
+// Default: true for reasoning/multi-turn clients. Overridden by explicit ClosedLoop field.
+func isClosedLoop(client *ClientSpec) bool {
+	if client.ClosedLoop != nil {
+		return *client.ClosedLoop
+	}
+	// Default: true for reasoning/multi-turn clients
+	return client.Reasoning != nil && client.Reasoning.MultiTurn != nil
 }
