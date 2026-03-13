@@ -23,7 +23,7 @@ func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 	}
 	requests := testGenerateRequests(42, 1000000, 1.0/1e6, 3,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -51,7 +51,7 @@ func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 	}
 	requests := testGenerateRequests(42, 10000000, 1.0/1e6, 5,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -95,7 +95,7 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 	}
 	requests := testGenerateRequests(42, 10000000, 1.0/1e6, 3,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -134,7 +134,7 @@ func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
 	}
 	requests := testGenerateRequests(42, 5000000, 5.0/1e6, 10,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 
 	// WHEN run
 	mustRun(t, cs)

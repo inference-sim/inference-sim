@@ -37,8 +37,12 @@ type ClusterSimulator struct {
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
 // All workload generation now happens externally — requests are passed in directly.
+// onRequestDone is an optional callback invoked when a request reaches a terminal state
+// (completed, length-capped, timed out, or dropped). The callback returns follow-up
+// requests which are routed through the cluster pipeline (not injected locally).
+// Pass nil for non-session workloads.
 // Panics if config.NumInstances < 1.
-func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *ClusterSimulator {
+func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onRequestDone func(*sim.Request, int64) []*sim.Request) *ClusterSimulator {
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
@@ -90,6 +94,25 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 	if cs.config.Horizon > 0 && cs.config.Horizon < pipelineLatency {
 		logrus.Warnf("[cluster] horizon (%d) < pipeline latency (%d); no requests can complete — increase --horizon or reduce admission/routing latency",
 			cs.config.Horizon, pipelineLatency)
+	}
+
+	// Wire OnRequestDone callback on each instance (BC-9: follow-ups route through cluster pipeline).
+	// The callback pushes follow-up requests as ClusterArrivalEvents, ensuring they go through
+	// admission → routing → instance injection. The callback returns nil so the per-instance
+	// simulator does not inject locally.
+	if onRequestDone != nil {
+		for _, inst := range cs.instances {
+			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+				nextReqs := onRequestDone(req, tick)
+				for _, next := range nextReqs {
+					heap.Push(&cs.clusterEvents, clusterEventEntry{
+						event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
+						seqID: cs.nextSeqID(),
+					})
+				}
+				return nil // don't inject locally — route through cluster pipeline
+			}
+		}
 	}
 
 	return cs
@@ -166,22 +189,23 @@ func (c *ClusterSimulator) Run() error {
 			// Snapshot counters BEFORE processing the event
 			completedBefore := inst.Metrics().CompletedRequests
 			droppedBefore := inst.Metrics().DroppedUnservable
+			timedOutBefore := inst.Metrics().TimedOutRequests
 
 			ev := inst.ProcessNextEvent()
 			_ = ev // Event type no longer used for decrement
 
 			// Completion-based decrement (#463, BC-3, BC-7): InFlightRequests tracks the full
-			// dispatch-to-completion window. Decrement by the number of newly completed OR
-			// dropped-unservable requests. DroppedUnservable requests never reach CompletedRequests
-			// but still exit the in-flight window (they were rejected during EnqueueRequest).
+			// dispatch-to-completion window. Decrement by the number of newly completed,
+			// dropped-unservable, or timed-out requests.
 			completedAfter := inst.Metrics().CompletedRequests
 			droppedAfter := inst.Metrics().DroppedUnservable
-			delta := (completedAfter - completedBefore) + (droppedAfter - droppedBefore)
+			timedOutAfter := inst.Metrics().TimedOutRequests
+			delta := (completedAfter - completedBefore) + (droppedAfter - droppedBefore) + (timedOutAfter - timedOutBefore)
 			if delta > 0 {
 				c.inFlightRequests[instID] -= delta
 				if c.inFlightRequests[instID] < 0 {
-					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d) — bookkeeping bug",
-						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore)
+					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d, timedOut=%d) — bookkeeping bug",
+						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore, timedOutAfter-timedOutBefore)
 					c.inFlightRequests[instID] = 0
 				}
 			}
@@ -334,6 +358,7 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.KVAllocationFailures += m.KVAllocationFailures
 		merged.DroppedUnservable += m.DroppedUnservable
 		merged.LengthCappedRequests += m.LengthCappedRequests
+		merged.TimedOutRequests += m.TimedOutRequests
 		merged.CacheHitRate += m.CacheHitRate
 		merged.KVThrashingRate += m.KVThrashingRate
 		merged.StillQueued += m.StillQueued

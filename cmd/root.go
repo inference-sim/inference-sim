@@ -1000,7 +1000,7 @@ var runCmd = &cobra.Command{
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
 		}
-		cs := cluster.NewClusterSimulator(config, preGeneratedRequests)
+		cs := cluster.NewClusterSimulator(config, preGeneratedRequests, nil) // nil callback; Task 8 wires SessionManager
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Simulation failed: %v", err)
 		}
