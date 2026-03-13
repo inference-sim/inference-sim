@@ -265,6 +265,10 @@ func validateClient(c *ClientSpec, idx int) error {
 	if c.Timeout != nil && *c.Timeout < 0 {
 		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
 	}
+	// Validate MaxRounds for reasoning/multi-turn (prevents panic in NewSessionManager)
+	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
+		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
+	}
 	return nil
 }
 

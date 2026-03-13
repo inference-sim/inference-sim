@@ -574,18 +574,20 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 	injectRequests(sim, requests)
 	sim.Run()
 
-	// Three-term equation: injected == completed + queued + running
-	injected := len(sim.Metrics.Requests)
+	// Five-term equation: injected == completed + queued + running + dropped + timedOut (INV-1)
+	injected := 50 // independent count: we injected exactly 50 requests above
 	completed := sim.Metrics.CompletedRequests
 	queued := sim.WaitQ.Len()
 	running := 0
 	if sim.RunningBatch != nil {
 		running = len(sim.RunningBatch.Requests)
 	}
+	dropped := sim.Metrics.DroppedUnservable
+	timedOut := sim.Metrics.TimedOutRequests
 
-	if completed+queued+running != injected {
-		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
-			completed, queued, running, completed+queued+running, injected)
+	if completed+queued+running+dropped+timedOut != injected {
+		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
+			completed, queued, running, dropped, timedOut, completed+queued+running+dropped+timedOut, injected)
 	}
 
 	// With infinite horizon, all should complete
@@ -651,22 +653,25 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 
 	sim.Run()
 
-	injected := len(sim.Metrics.Requests)
+	injected := 15 // independent count: 10 early + 5 late
 	completed := sim.Metrics.CompletedRequests
 	queued := sim.WaitQ.Len()
 	running := 0
 	if sim.RunningBatch != nil {
 		running = len(sim.RunningBatch.Requests)
 	}
+	dropped := sim.Metrics.DroppedUnservable
+	timedOut := sim.Metrics.TimedOutRequests
 
-	if completed+queued+running != injected {
-		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
-			completed, queued, running, completed+queued+running, injected)
+	sum := completed + queued + running + dropped + timedOut
+	if sum != injected {
+		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
+			completed, queued, running, dropped, timedOut, sum, injected)
 	}
 
 	// Verify we actually tested the non-trivial case: some but not all completed
 	if completed == injected {
-		t.Fatalf("all %d requests completed — horizon too long, three-term case untested", injected)
+		t.Fatalf("all %d requests completed — horizon too long, conservation case untested", injected)
 	}
 	if completed == 0 {
 		t.Fatalf("no requests completed — horizon too short, test setup invalid")
