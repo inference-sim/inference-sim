@@ -113,6 +113,15 @@ func TestRunCmd_MaxScheduledTokens_FlagRegistered(t *testing.T) {
 	assert.Greater(t, defVal, int64(0), "default must be > 0 (passes validation)")
 }
 
+// TestRunCmd_MaxModelLen_FlagRegistered verifies BC-9: --max-model-len flag exists with default 0 (unlimited).
+func TestRunCmd_MaxModelLen_FlagRegistered(t *testing.T) {
+	flag := runCmd.Flags().Lookup("max-model-len")
+	assert.NotNil(t, flag, "max-model-len flag must be registered")
+	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
+	assert.NoError(t, err, "default must be a valid int64")
+	assert.Equal(t, int64(0), defVal, "default must be 0 (unlimited; negative rejection validated by code inspection)")
+}
+
 // TestApplyRopeScaling validates the pure function extraction of rope_scaling logic.
 // Covers BC-1 (mrope), BC-2 (blacklist), BC-3 (gemma3), BC-4 (yarn), BC-8 (invalid input), BC-9 (never panics).
 func TestApplyRopeScaling(t *testing.T) {

@@ -471,6 +471,17 @@ var runCmd = &cobra.Command{
 					"Add trained_roofline_defaults to defaults.yaml or provide --beta-coeffs explicitly",
 					defaultsFilePath)
 			}
+			// R20: reject NaN/Inf in coefficient arrays (allZeros passes NaN since NaN != 0)
+			for i, c := range betaCoeffs {
+				if math.IsNaN(c) || math.IsInf(c, 0) {
+					logrus.Fatalf("--latency-model trained-roofline: beta_coeffs[%d] is NaN or Inf (check defaults.yaml trained_roofline_defaults)", i)
+				}
+			}
+			for i, c := range alphaCoeffs {
+				if math.IsNaN(c) || math.IsInf(c, 0) {
+					logrus.Fatalf("--latency-model trained-roofline: alpha_coeffs[%d] is NaN or Inf (check defaults.yaml trained_roofline_defaults)", i)
+				}
+			}
 			// Warn if alpha coefficients are zero (user provided --beta-coeffs but not --alpha-coeffs)
 			if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
 				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; "+
@@ -693,6 +704,9 @@ var runCmd = &cobra.Command{
 					}
 
 					logrus.Infof("--latency-model: auto-derived max-model-len=%d from max_position_embeddings", maxModelLen)
+				} else {
+					logrus.Warnf("--latency-model: max_position_embeddings not found or zero in HF config; " +
+						"--max-model-len will be unlimited (0). Pass --max-model-len explicitly to enforce a context window limit.")
 				}
 			}
 
