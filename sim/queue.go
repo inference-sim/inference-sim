@@ -85,6 +85,19 @@ func (wq *WaitQueue) Reorder(fn func([]*Request)) {
 	}
 }
 
+// Remove removes a specific request from the queue by pointer identity.
+// O(n) linear scan — acceptable because timeouts are infrequent relative to step processing.
+// Returns true if the request was found and removed, false otherwise.
+func (wq *WaitQueue) Remove(req *Request) bool {
+	for i, r := range wq.queue {
+		if r == req {
+			wq.queue = append(wq.queue[:i], wq.queue[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 // DequeueBatch removes a request from the front of the queue.
 // This is used by the scheduler to construct a batch for processing.
 func (wq *WaitQueue) DequeueBatch() *Request {

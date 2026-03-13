@@ -23,6 +23,7 @@ const (
 	StateQueued    RequestState = "queued"
 	StateRunning   RequestState = "running"
 	StateCompleted RequestState = "completed"
+	StateTimedOut  RequestState = "timed_out"
 )
 
 type Request struct {
@@ -66,6 +67,10 @@ type Request struct {
 	// Model tag for multi-model routing (empty = default model).
 	// Phase 0: carried through the pipeline but not read by any routing policy.
 	Model string
+
+	// Client timeout: absolute tick by which request must complete (0 = no timeout).
+	// Computed during workload generation as ArrivalTime + timeout.
+	Deadline int64
 }
 
 // This method returns a human-readable string representation of a Request.

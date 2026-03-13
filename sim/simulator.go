@@ -12,23 +12,42 @@ import (
 )
 
 const MaxTokenID = 128000 // Max token ID in request input/output
-// EventQueue implements heap.Interface and orders events by timestamp.
-// See canonical Golang example here: https://pkg.go.dev/container/heap#example-package-IntHeap
-type EventQueue []Event
 
-func (eq EventQueue) Len() int           { return len(eq) }
-func (eq EventQueue) Less(i, j int) bool { return eq[i].Timestamp() < eq[j].Timestamp() }
-func (eq EventQueue) Swap(i, j int)      { eq[i], eq[j] = eq[j], eq[i] }
+// eventEntry wraps an Event with a sequence ID for deterministic ordering.
+// The EventQueue orders by (Timestamp, Priority, seqID), matching the
+// cluster event queue's scheme. seqID breaks ties within same-type same-timestamp events.
+type eventEntry struct {
+	event Event
+	seqID int64
+}
+
+// EventQueue implements heap.Interface and orders events by (timestamp, priority, seqID).
+// This ensures deterministic same-tick event ordering (INV-6 improvement).
+type EventQueue []eventEntry
+
+func (eq EventQueue) Len() int { return len(eq) }
+
+func (eq EventQueue) Less(i, j int) bool {
+	if eq[i].event.Timestamp() != eq[j].event.Timestamp() {
+		return eq[i].event.Timestamp() < eq[j].event.Timestamp()
+	}
+	if eq[i].event.Priority() != eq[j].event.Priority() {
+		return eq[i].event.Priority() < eq[j].event.Priority()
+	}
+	return eq[i].seqID < eq[j].seqID
+}
+
+func (eq EventQueue) Swap(i, j int) { eq[i], eq[j] = eq[j], eq[i] }
 
 func (eq *EventQueue) Push(x any) {
-	*eq = append(*eq, x.(Event))
+	*eq = append(*eq, x.(eventEntry))
 }
 
 func (eq *EventQueue) Pop() any {
 	old := *eq
 	n := len(old)
 	item := old[n-1]
-	*eq = old[0 : n-1]
+	*eq = old[:n-1]
 	return item
 }
 
@@ -81,6 +100,11 @@ type Simulator struct {
 	priorityPolicy         PriorityPolicy
 	scheduler              InstanceScheduler
 	latencyModel           LatencyModel
+	seqCounter             int64 // monotonic counter for event queue seqID (deterministic ordering)
+	// OnRequestDone is an optional callback invoked when a request reaches a terminal
+	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
+	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
+	OnRequestDone func(req *Request, tick int64) []*Request
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
@@ -153,10 +177,11 @@ func (sim *Simulator) WorkloadRNG() *rand.Rand {
 	return sim.rng.ForSubsystem(SubsystemWorkload)
 }
 
-// Pushes an event (ArrivalEvent/StepEvent) into the simulator's EventQueue.
+// Schedule pushes an event into the simulator's EventQueue with a monotonic seqID.
 // Note, this has nothing to do with vLLM's scheduler.schedule().
 func (sim *Simulator) Schedule(ev Event) {
-	heap.Push(&sim.eventQueue, ev)
+	sim.seqCounter++
+	heap.Push(&sim.eventQueue, eventEntry{event: ev, seqID: sim.seqCounter})
 }
 
 // HasPendingEvents returns true if the EventQueue is non-empty.
@@ -167,7 +192,7 @@ func (sim *Simulator) HasPendingEvents() bool {
 // PeekNextEventTime returns the timestamp of the earliest pending event.
 // Caller MUST check HasPendingEvents() first. Panics on empty queue.
 func (sim *Simulator) PeekNextEventTime() int64 {
-	return sim.eventQueue[0].Timestamp()
+	return sim.eventQueue[0].event.Timestamp()
 }
 
 // ProcessNextEvent pops the earliest event, advances Clock, executes it, and returns it.
@@ -176,7 +201,8 @@ func (sim *Simulator) PeekNextEventTime() int64 {
 // Caller MUST check HasPendingEvents() first. Panics on empty queue.
 // Does NOT check horizon — caller is responsible.
 func (sim *Simulator) ProcessNextEvent() Event {
-	ev := heap.Pop(&sim.eventQueue).(Event)
+	entry := heap.Pop(&sim.eventQueue).(eventEntry)
+	ev := entry.event
 	sim.Clock = ev.Timestamp()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
