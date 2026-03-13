@@ -4,8 +4,9 @@ import "github.com/inference-sim/inference-sim/sim"
 
 // PoolOverrides holds optional per-pool hardware overrides for PD disaggregation.
 // Nil pointer / empty string means "use global config" for that field.
-// Pointer types for TP, MaxModelLen, TotalKVBlocks because zero is a valid
-// user value (R9: distinguish "not set" from "set to zero").
+// Pointer types for TP, MaxModelLen, TotalKVBlocks to distinguish "not set" (nil = use
+// global) from an explicit value. CLI validates TP > 0 and MaxModelLen > 0 when set;
+// TotalKVBlocks may be set by auto-calculation.
 type PoolOverrides struct {
 	TP             *int   // tensor parallelism (nil = use global)
 	GPU            string // GPU type ("" = use global)

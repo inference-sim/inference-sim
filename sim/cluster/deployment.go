@@ -2,8 +2,8 @@ package cluster
 
 import "github.com/inference-sim/inference-sim/sim"
 
-// DeploymentConfig describes a cluster where all instances share identical
-// hardware and model configuration. NumInstances must be >= 1.
+// DeploymentConfig describes a cluster deployment with optional per-pool
+// hardware overrides for PD disaggregation. NumInstances must be >= 1.
 type DeploymentConfig struct {
 	sim.SimConfig // Embeds all instance-level config (horizon, seed, KV, batch, latency, policy)
 

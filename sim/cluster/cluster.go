@@ -247,7 +247,7 @@ func (c *ClusterSimulator) Run() error {
 			if delta > 0 {
 				c.inFlightRequests[instID] -= delta
 				if c.inFlightRequests[instID] < 0 {
-					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d) — bookkeeping bug",
+					logrus.Errorf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d) — bookkeeping bug",
 						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore)
 					c.inFlightRequests[instID] = 0
 				}
@@ -295,12 +295,16 @@ func (c *ClusterSimulator) Run() error {
 	// Post-simulation PD diagnostics
 	if c.poolsConfigured() {
 		// INV-PD-3: transfer conservation — initiated_transfers == completed_transfers.
+		// This is a hard invariant: a mismatch means the transfer pipeline lost or
+		// duplicated a transfer, producing corrupt PD metrics. Return an error so
+		// the caller can fail visibly rather than report misleading numbers.
 		if c.transfersInitiated != c.transfersCompleted {
-			logrus.Warnf("[cluster] INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
+			return fmt.Errorf("INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
 				c.transfersInitiated, c.transfersCompleted)
 		}
 		// Orphaned pending completions at horizon — in-flight disaggregated requests
-		// that never completed their pipeline phase.
+		// that never completed their pipeline phase. This is expected when horizon
+		// truncates requests mid-pipeline, so warn (not error).
 		if n := len(c.pendingPrefillCompletions); n > 0 {
 			logrus.Warnf("[cluster] %d prefill sub-requests still pending at horizon (never completed)", n)
 		}

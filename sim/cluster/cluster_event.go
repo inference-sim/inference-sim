@@ -148,7 +148,7 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 }
 
 // RoutingDecisionEvent represents the routing decision point for a request.
-// Priority 2 (lowest): processed after arrivals and admissions at the same timestamp.
+// Priority 2: processed after arrivals (0) and admissions (1) at the same timestamp.
 type RoutingDecisionEvent struct {
 	time    int64
 	request *sim.Request
@@ -208,10 +208,10 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 }
 
 // DisaggregationDecisionEvent represents the PD disaggregation decision point for a request.
-// Priority 3: processed after routing events at the same timestamp.
-// Bifurcates: disaggregate=true → PrefillRoutingEvent, disaggregate=false → RoutingDecisionEvent.
-// For a single request, this event always precedes the event it schedules, since that event is
-// pushed at T+routingLatency from within Execute() and will fire at a later timestamp.
+// Priority 3: processed after admission (1) when pool topology is active.
+// Bifurcates: disaggregate=true → PrefillRoutingEvent (priority 4),
+// disaggregate=false → RoutingDecisionEvent (priority 2 at T+routingLatency).
+// When routingLatency is 0, ordering relies on priority, not timestamp.
 type DisaggregationDecisionEvent struct {
 	time    int64
 	request *sim.Request
