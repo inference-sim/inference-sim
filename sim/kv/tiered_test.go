@@ -533,6 +533,13 @@ func TestCpuTier_Validation_ZeroBlockSize_Panics(t *testing.T) {
 }
 
 // --- Reload guard tests (BC-2, BC-3) ---
+//
+// Note on test coverage: The full-range reload guard (newStart >= endIndex for running
+// requests) cannot be triggered in isolation because the GPU pre-check fails when K < N
+// new blocks are needed, but the reload requires exactly K free blocks — the same K that
+// would allow direct GPU success. As a result, these tests verify the correct behavioral
+// end state (block count and INV-4) via the direct GPU path. The fix code path is
+// exercised only during multi-request batch formation under concurrent KV pressure.
 
 func TestTieredKVCache_ReloadGuard_CommitsBlocksForRunningRequest(t *testing.T) {
 	// BC-2: Running request hitting full-range reload guard gets uncovered blocks committed
