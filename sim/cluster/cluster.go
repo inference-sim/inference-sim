@@ -46,6 +46,12 @@ type ClusterSimulator struct {
 	droppedAtDecodeKV         int               // decode sub-requests dropped due to KV allocation failure (R1, INV-1)
 	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
+
+	// Transfer contention state (Phase 2, PR2: --pd-transfer-contention)
+	activeTransfers          int // currently in-flight transfers (INV-P2-2)
+	peakConcurrentTransfers  int // max observed concurrent transfers
+	transferDepthSum         int // running sum of activeTransfers at each transfer start
+	transferStartCount       int // number of transfer start events (for mean calculation)
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -447,6 +453,21 @@ func (c *ClusterSimulator) DroppedKVAllocations() int {
 // poolsConfigured returns true if PD disaggregation pool topology is active.
 func (c *ClusterSimulator) poolsConfigured() bool {
 	return c.poolMembership != nil
+}
+
+// PeakConcurrentTransfers returns the maximum number of concurrent KV transfers
+// observed during the simulation. Returns 0 when contention is disabled.
+func (c *ClusterSimulator) PeakConcurrentTransfers() int {
+	return c.peakConcurrentTransfers
+}
+
+// MeanTransferQueueDepth returns the average number of concurrent transfers
+// at each transfer initiation. Returns 0 when contention is disabled or no transfers occurred.
+func (c *ClusterSimulator) MeanTransferQueueDepth() float64 {
+	if c.transferStartCount == 0 {
+		return 0
+	}
+	return float64(c.transferDepthSum) / float64(c.transferStartCount)
 }
 
 // notifyDisaggregationObserver calls ObserveRouting on the disaggregationDecider if it

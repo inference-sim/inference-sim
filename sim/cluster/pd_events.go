@@ -87,17 +87,37 @@ func (e *KVTransferStartedEvent) Timestamp() int64 { return e.time }
 func (e *KVTransferStartedEvent) Priority() int     { return 5 }
 
 // Execute computes transfer duration and schedules KVTransferCompletedEvent.
+// When contention is enabled (--pd-transfer-contention), applies INV-P2-2:
+// effective_bandwidth = total_bandwidth / max(1, active_transfers).
 func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersInitiated++
 	e.parentReq.TransferStartTime = e.time
+
+	// Contention tracking: increment BEFORE duration calculation so this
+	// transfer is counted in its own fair-share divisor (INV-P2-2).
+	if cs.config.PDTransferContention {
+		cs.activeTransfers++
+		if cs.activeTransfers > cs.peakConcurrentTransfers {
+			cs.peakConcurrentTransfers = cs.activeTransfers
+		}
+		cs.transferDepthSum += cs.activeTransfers
+		cs.transferStartCount++
+	}
 
 	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * bytesPerToken) / bandwidthBytesPerUs
 	numBlocks := e.parentReq.NumKVBlocks
 	blockSizeBytes := cs.config.BlockSizeTokens * cs.config.PDKVBytesPerToken
 	transferBytes := numBlocks * blockSizeBytes
 
-	bandwidthBytesPerUs := cs.config.PDTransferBandwidthGBps * 1000.0 // GB/s → bytes/μs
-	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0            // ms → μs
+	// INV-P2-2: effective_bandwidth = total_bandwidth / max(1, active_transfers)
+	// BC-P2-5: with 1 concurrent transfer, divisor is 1 → identical to Phase 1.
+	effectiveBandwidthGBps := cs.config.PDTransferBandwidthGBps
+	if cs.config.PDTransferContention && cs.activeTransfers > 1 {
+		effectiveBandwidthGBps = cs.config.PDTransferBandwidthGBps / float64(cs.activeTransfers)
+	}
+
+	bandwidthBytesPerUs := effectiveBandwidthGBps * 1000.0 // GB/s → bytes/μs
+	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0 // ms → μs
 
 	var duration int64
 	if bandwidthBytesPerUs > 0 {
@@ -109,8 +129,8 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		duration = 1 // Minimum 1 μs transfer
 	}
 
-	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs",
-		e.parentReq.ID, numBlocks, duration)
+	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (active=%d)",
+		e.parentReq.ID, numBlocks, duration, cs.activeTransfers)
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &KVTransferCompletedEvent{
@@ -136,6 +156,11 @@ func (e *KVTransferCompletedEvent) Priority() int     { return 6 }
 func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersCompleted++
 	e.parentReq.TransferCompleteTime = e.time
+
+	// Contention tracking: decrement after transfer completes (INV-P2-2).
+	if cs.config.PDTransferContention {
+		cs.activeTransfers--
+	}
 
 	orig := e.parentReq.OriginalRequest
 	decodeSubReq := &sim.Request{

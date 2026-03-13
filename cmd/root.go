@@ -108,6 +108,7 @@ var (
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
 	pdKVBytesPerToken     int     // KV cache bytes per token for transfer duration
+	pdTransferContention  bool    // Enable fair-share bandwidth contention model (Phase 2, PR2)
 	prefillRoutingScorers string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
@@ -1156,6 +1157,7 @@ var runCmd = &cobra.Command{
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
+			PDTransferContention:    pdTransferContention,
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,
 			PrefillOverrides:        prefillOverrides,
@@ -1197,6 +1199,11 @@ var runCmd = &cobra.Command{
 			cs.PoolMembership(),
 			cs.PerInstanceMetricsByID(),
 		)
+		// Attach contention metrics from simulator state (Phase 2, PR2).
+		if rawMetrics.PD != nil {
+			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
+			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
+		}
 
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
@@ -1314,6 +1321,10 @@ func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
 	if pd.TransferDuration.Count > 0 {
 		_, _ = fmt.Fprintf(w, "KV Transfer Duration (μs): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
 			pd.TransferDuration.Mean, pd.TransferDuration.P50, pd.TransferDuration.P95, pd.TransferDuration.P99)
+	}
+	if pd.PeakConcurrentTransfers > 0 {
+		_, _ = fmt.Fprintf(w, "Peak Concurrent Transfers: %d\n", pd.PeakConcurrentTransfers)
+		_, _ = fmt.Fprintf(w, "Mean Transfer Queue Depth: %.2f\n", pd.MeanTransferQueueDepth)
 	}
 }
 
@@ -1438,6 +1449,7 @@ func init() {
 	runCmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	runCmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	runCmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
+	runCmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
 	runCmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	runCmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
