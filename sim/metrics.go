@@ -72,7 +72,7 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		CompletedRequests:    m.CompletedRequests,
 		StillQueued:          m.StillQueued,
 		StillRunning:         m.StillRunning,
-		InjectedRequests:     m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable,
+		InjectedRequests:     m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests,
 		TotalInputTokens:     int(m.TotalInputTokens),
 		TotalOutputTokens:    int(m.TotalOutputTokens),
 		VllmDurationSec:      vllmRuntime,
@@ -80,6 +80,7 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		PreemptionCount:      m.PreemptionCount,
 		DroppedUnservable:    m.DroppedUnservable,
 		LengthCappedRequests: m.LengthCappedRequests,
+		TimedOutRequests:     m.TimedOutRequests,
 	}
 
 	if m.CompletedRequests > 0 {

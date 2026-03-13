@@ -291,10 +291,15 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // before entering the engine. The control plane never peeks at len(OutputTokens) —
 // respecting the oracle knowledge boundary (INV-9, #567).
 func (sim *Simulator) EnqueueRequest(r *Request) {
+	// Guard -1: Already timed out (race: TimeoutEvent fired before QueuedEvent).
+	// Request was timed out during the queueing delay (alpha overhead) before the server
+	// processed the input. TotalInputTokens is NOT counted for this path.
+	// INV-1 holds: request is counted in timed_out bucket.
+	if r.State == StateTimedOut {
+		return
+	}
+
 	// Auto-fill: if client didn't set a budget, cap at remaining context window.
-	// Mirrors vLLM input_processor.py:554: max_tokens = max_model_len - seq_len.
-	// Only fires when maxModelLen > 0 (unlimited mode has nothing to cap against)
-	// and input fits (Guard 1 handles the input >= maxModelLen rejection).
 	if r.MaxOutputLen == 0 && sim.maxModelLen > 0 && int64(len(r.InputTokens)) < sim.maxModelLen {
 		r.MaxOutputLen = int(sim.maxModelLen) - len(r.InputTokens)
 	}
@@ -305,28 +310,41 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 			r.ID, r.MaxOutputLen)
 		sim.Metrics.DroppedUnservable++
 		delete(sim.Metrics.Requests, r.ID)
+		// Callback for dropped requests (R1: don't silently discard, BC-17)
+		if sim.OnRequestDone != nil {
+			for _, next := range sim.OnRequestDone(r, sim.Clock) {
+				sim.InjectArrival(next)
+			}
+		}
 		return
 	}
 
-	// Guard 1: MaxModelLen check (BC-2, BC-3)
+	// Guard 1: MaxModelLen check
 	if sim.maxModelLen > 0 {
-		// vLLM uses >= for the input check (serving.py:1542): input that fills
-		// the entire context window leaves no room for even one output token.
 		if int64(len(r.InputTokens)) >= sim.maxModelLen {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, len(r.InputTokens), sim.maxModelLen)
 			sim.Metrics.DroppedUnservable++
 			delete(sim.Metrics.Requests, r.ID)
+			if sim.OnRequestDone != nil {
+				for _, next := range sim.OnRequestDone(r, sim.Clock) {
+					sim.InjectArrival(next)
+				}
+			}
 			return
 		}
 		if r.MaxOutputLen > 0 {
-			// Client declared a budget: check input + budget fits context window
 			totalSeqLen := int64(len(r.InputTokens)) + int64(r.MaxOutputLen)
 			if totalSeqLen > sim.maxModelLen {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, len(r.InputTokens), r.MaxOutputLen, sim.maxModelLen)
 				sim.Metrics.DroppedUnservable++
 				delete(sim.Metrics.Requests, r.ID)
+				if sim.OnRequestDone != nil {
+					for _, next := range sim.OnRequestDone(r, sim.Clock) {
+						sim.InjectArrival(next)
+					}
+				}
 				return
 			}
 		}
@@ -339,10 +357,37 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
 		sim.Metrics.DroppedUnservable++
 		delete(sim.Metrics.Requests, r.ID)
+		if sim.OnRequestDone != nil {
+			for _, next := range sim.OnRequestDone(r, sim.Clock) {
+				sim.InjectArrival(next)
+			}
+		}
 		return
 	}
-	sim.WaitQ.Enqueue(r)
+
+	// Input tokens counted BEFORE past-due check (request was received)
 	sim.Metrics.TotalInputTokens += len(r.InputTokens)
+
+	// Past-due guard (EC-2): check BEFORE enqueue to avoid enqueue-then-remove.
+	// Request is counted as timed_out, not dropped_unservable.
+	if r.Deadline > 0 && r.Deadline <= sim.Clock {
+		r.State = StateTimedOut
+		sim.Metrics.TimedOutRequests++
+		if sim.OnRequestDone != nil {
+			for _, next := range sim.OnRequestDone(r, sim.Clock) {
+				sim.InjectArrival(next)
+			}
+		}
+		return
+	}
+
+	sim.WaitQ.Enqueue(r)
+
+	// Schedule timeout event (after all guards + enqueue — BC-5)
+	// Skip scheduling when deadline > horizon (perf: avoids orphaned events)
+	if r.Deadline > 0 && r.Deadline <= sim.Horizon {
+		sim.Schedule(&TimeoutEvent{time: r.Deadline, Request: r})
+	}
 }
 
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
@@ -565,6 +610,13 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 
 			// Record completion metrics
 			sim.recordRequestCompletion(req)
+
+			// Invoke completion callback for session management
+			if sim.OnRequestDone != nil {
+				for _, next := range sim.OnRequestDone(req, now+currStepAdvance) {
+					sim.InjectArrival(next)
+				}
+			}
 		} else if sim.maxModelLen > 0 && req.ProgressIndex >= sim.maxModelLen-1 {
 			// BC-5: Proactive MaxModelLen cap — force-complete at boundary.
 			// After the proactive cap in FormBatch prevents scheduling tokens beyond
@@ -599,6 +651,13 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 				Request: req,
 			})
 			sim.recordRequestCompletion(req)
+
+			// Invoke completion callback for session management (length-capped)
+			if sim.OnRequestDone != nil {
+				for _, next := range sim.OnRequestDone(req, now+currStepAdvance) {
+					sim.InjectArrival(next)
+				}
+			}
 		} else {
 			remaining = append(remaining, req)
 		}
