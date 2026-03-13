@@ -683,3 +683,99 @@ func TestTieredKVCache_ReloadGuard_NonBlockAlignedStartIndex_NoDuplicates(t *tes
 	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
 		"INV-4: block conservation")
 }
+
+// --- Reload guard BC-1 and preemption BC-5 tests ---
+
+func TestTieredKVCache_ReloadGuard_CommitsBlocksForNewRequest(t *testing.T) {
+	// BC-1: New request that hits full-range reload guard gets all blocks committed
+	blockSize := int64(4)
+	gpuBlocks := int64(10)
+	cpuBlocks := int64(5)
+
+	gpu := NewKVCacheState(gpuBlocks, blockSize)
+	tiered := NewTieredKVCache(gpu, cpuBlocks, 0, 1.0, 0)
+
+	// Create tokens for 2 blocks
+	tokens := make([]int, 2*blockSize)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+
+	// Seed: allocate, mirror to CPU, release (leaves blocks on CPU + GPU free list hashes)
+	seedReq := &sim.Request{ID: "req-seed-bc1", InputTokens: tokens}
+	ok := tiered.AllocateKVBlocks(seedReq, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok)
+	tiered.MirrorToCPU([]*sim.Request{seedReq})
+	tiered.ReleaseKVBlocks(seedReq)
+
+	// Exhaust all GPU free blocks with unique-prefix fillers
+	fillerCount := 0
+	for gpu.countFreeBlocks() > 0 {
+		filler := &sim.Request{
+			ID:          fmt.Sprintf("filler-bc1-%d", fillerCount),
+			InputTokens: []int{900 + fillerCount*4, 901 + fillerCount*4, 902 + fillerCount*4, 903 + fillerCount*4},
+		}
+		if tiered.AllocateKVBlocks(filler, 0, blockSize, []int64{}) {
+			fillerCount++
+		} else {
+			break
+		}
+	}
+
+	// Release 2 fillers to make room for CPU→GPU reload
+	for i := 0; i < 2 && i < fillerCount; i++ {
+		tiered.ReleaseKVBlocks(&sim.Request{ID: fmt.Sprintf("filler-bc1-%d", i)})
+	}
+
+	// WHEN a new request (not in RequestMap) allocates with the same prefix
+	newReq := &sim.Request{ID: "req-new-bc1", InputTokens: tokens}
+	_, existsBefore := gpu.RequestMap[newReq.ID]
+	assert.False(t, existsBefore, "new request must not be in RequestMap before allocation")
+
+	ok = tiered.AllocateKVBlocks(newReq, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok, "allocation must succeed")
+
+	// THEN all blocks must be committed to RequestMap (BC-1)
+	blocks, existsAfter := gpu.RequestMap[newReq.ID]
+	assert.True(t, existsAfter, "new request must be in RequestMap after allocation")
+	assert.Equal(t, 2, len(blocks), "new request must have 2 blocks committed")
+
+	// INV-4: block conservation (BC-4)
+	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
+		"INV-4: used + free must equal total capacity")
+}
+
+func TestPreemption_ClearsRequestMap_EnablesNewRequestPath(t *testing.T) {
+	// BC-5: After preemption, request is not in RequestMap and follows new-request path
+	blockSize := int64(4)
+	gpuBlocks := int64(10)
+	gpu := NewKVCacheState(gpuBlocks, blockSize)
+
+	tokens := make([]int, 2*blockSize)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+	req := &sim.Request{
+		ID:            "req-preempt-bc5",
+		InputTokens:   tokens,
+		ProgressIndex: 0,
+		State:         sim.StateRunning,
+	}
+
+	// Allocate blocks (simulates request becoming running)
+	ok := gpu.AllocateKVBlocks(req, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok)
+	_, exists := gpu.RequestMap[req.ID]
+	assert.True(t, exists, "request must be in RequestMap after allocation")
+
+	// WHEN blocks are released (as preemptForTokens does)
+	gpu.ReleaseKVBlocks(req)
+
+	// THEN request must NOT be in RequestMap (BC-5 precondition)
+	_, existsAfter := gpu.RequestMap[req.ID]
+	assert.False(t, existsAfter, "request must not be in RequestMap after ReleaseKVBlocks")
+
+	// INV-4: all blocks returned
+	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
+		"INV-4: block conservation after preemption")
+}
