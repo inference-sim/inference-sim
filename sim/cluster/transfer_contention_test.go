@@ -167,10 +167,11 @@ func TestTransferContention_BCP26_FairShareDivision(t *testing.T) {
 	meanContention := sumContention / float64(countContention)
 	meanNoContention := sumNoContention / float64(countNoContention)
 
-	// With bandwidth sharing, contention transfers should take >= non-contention transfers.
-	// Allow small rounding tolerance (1 μs).
-	if meanContention < meanNoContention-1 {
-		t.Errorf("BC-P2-6 violated: contention mean=%.1f < non-contention mean=%.1f — bandwidth sharing should increase duration",
+	// With PeakConcurrentTransfers > 1 confirmed, at least one transfer received reduced
+	// bandwidth, so the mean duration under contention must strictly exceed the
+	// mean without contention. Equality would mean the contention branch was dead code.
+	if meanContention <= meanNoContention {
+		t.Errorf("BC-P2-6 violated: contention mean=%.1f <= non-contention mean=%.1f — bandwidth sharing should strictly increase mean duration when peak concurrent > 1",
 			meanContention, meanNoContention)
 	}
 }
@@ -346,5 +347,96 @@ func TestTransferContention_MeanQueueDepthZeroTransfers(t *testing.T) {
 	got := cs.MeanTransferQueueDepth()
 	if got != 0 {
 		t.Errorf("MeanTransferQueueDepth = %f, want 0 for zero transfers", got)
+	}
+}
+
+// TestTransferContention_INVP22_N2FormulaExact verifies the fair-share formula
+// for the N=2 case by calling KVTransferStartedEvent.Execute() directly with
+// activeTransfers pre-set to 1 (so the increment makes it 2).
+//
+// Parameters: 10 KV blocks, bandwidth=10 GB/s, zero base latency.
+// N=2: effectiveBW = 10/2 = 5 GB/s = 5000 B/µs
+// Expected duration: ceil(10 × 16 × 512 / 5000) = ceil(81920/5000) = ceil(16.384) = 17 µs.
+//
+// Companion to TestTransferContention_INVP22_EffectiveBandwidthFormula (N=1 case, 9 µs).
+// Together they confirm the divisor is active_transfers at the moment of Execute(), not
+// some fixed or post-decrement value — covering the ordering invariant from the comment
+// at the top of KVTransferStartedEvent.Execute().
+func TestTransferContention_INVP22_N2FormulaExact(t *testing.T) {
+	cs := &ClusterSimulator{
+		config: DeploymentConfig{
+			PDTransferContention:    true,
+			PDTransferBandwidthGBps: 10.0,
+			PDTransferBaseLatencyMs: 0,
+			PDKVBytesPerToken:       512,
+			SimConfig: sim.SimConfig{
+				KVCacheConfig: sim.KVCacheConfig{
+					BlockSizeTokens: 16,
+				},
+			},
+		},
+		activeTransfers: 1, // pre-existing transfer; Execute() increments to 2
+		clusterEvents:   make(ClusterEventQueue, 0),
+	}
+	parentReq := &ParentRequest{
+		ID:          "test-parent",
+		NumKVBlocks: 10,
+	}
+	event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
+	event.Execute(cs)
+
+	if len(cs.clusterEvents) != 1 {
+		t.Fatalf("expected 1 scheduled completion event, got %d", len(cs.clusterEvents))
+	}
+	completedAt := cs.clusterEvents[0].event.Timestamp()
+	duration := completedAt - event.time
+
+	// N=2: 10 blocks × 16 tok/block × 512 B/tok = 81920 B; BW = 10/2 = 5 GB/s = 5000 B/µs
+	// duration = ceil(81920 / 5000) = ceil(16.384) = 17 µs
+	const wantDur = int64(17)
+	if duration != wantDur {
+		t.Errorf("N=2 transfer duration = %d µs, want %d µs (10 blocks × 16 tok × 512 B / 5 GB/s with N=2 divisor)",
+			duration, wantDur)
+	}
+	// Confirm activeTransfers is now 2 (both the pre-existing and this one)
+	if cs.activeTransfers != 2 {
+		t.Errorf("activeTransfers = %d after N=2 start, want 2", cs.activeTransfers)
+	}
+}
+
+// TestTransferContention_NegativeGuard_SetsCorruptionFlag verifies that when
+// KVTransferCompletedEvent.Execute() would decrement activeTransfers below zero,
+// the negative guard fires, resets to 0, and marks contentionBookkeepingCorrupted=true
+// so Run() can return an error rather than delivering invalid metrics.
+//
+// NOTE: This test manipulates ClusterSimulator state directly using in-package access
+// to construct the failure scenario (activeTransfers=0 at the point of decrement).
+// Standard Go practice allows same-package test access to unexported fields.
+func TestTransferContention_NegativeGuard_SetsCorruptionFlag(t *testing.T) {
+	cs := &ClusterSimulator{
+		config: DeploymentConfig{
+			PDTransferContention: true,
+		},
+		activeTransfers: 0, // decrement in Execute() will go to -1 → triggers guard
+		clusterEvents:   make(ClusterEventQueue, 0),
+	}
+	parentReq := &ParentRequest{
+		ID: "test-parent",
+		OriginalRequest: &sim.Request{
+			ID:           "test-req",
+			InputTokens:  []int{1, 2, 3},
+			OutputTokens: []int{1},
+		},
+	}
+	event := &KVTransferCompletedEvent{time: 100, parentReq: parentReq}
+	event.Execute(cs)
+
+	// THEN: corruption flag is set
+	if !cs.contentionBookkeepingCorrupted {
+		t.Error("contentionBookkeepingCorrupted = false after negative-guard correction, want true")
+	}
+	// THEN: activeTransfers is reset to 0 (not left at -1)
+	if cs.activeTransfers != 0 {
+		t.Errorf("activeTransfers = %d after guard reset, want 0", cs.activeTransfers)
 	}
 }

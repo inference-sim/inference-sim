@@ -48,10 +48,11 @@ type ClusterSimulator struct {
 	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 
 	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
-	activeTransfers         int   // currently in-flight transfers
-	peakConcurrentTransfers int   // max observed concurrent transfers
-	transferDepthSum        int64 // running sum of activeTransfers (post-increment) at each transfer start
-	transferStartCount      int64 // number of transfer start events (for mean calculation)
+	activeTransfers                int   // currently in-flight transfers
+	peakConcurrentTransfers        int   // max observed concurrent transfers
+	transferDepthSum               int64 // running sum of activeTransfers (post-increment) at each transfer start
+	transferStartCount             int64 // number of transfer start events (for mean calculation)
+	contentionBookkeepingCorrupted bool  // set when activeTransfers goes negative (R1); triggers error in Run()
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -135,6 +136,13 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		}
 		if config.PDTransferBaseLatencyMs < 0 {
 			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be >= 0 when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
+		}
+		// R3: guard against int64 overflow in KVTransferStartedEvent.Execute().
+		// blockSizeBytes = BlockSizeTokens * PDKVBytesPerToken; if this overflows int64,
+		// transferBytes becomes negative and the duration clamps to 1 µs (silent wrong result).
+		if config.BlockSizeTokens > 0 && config.PDKVBytesPerToken > math.MaxInt64/config.BlockSizeTokens {
+			panic(fmt.Sprintf("ClusterSimulator: BlockSizeTokens (%d) * PDKVBytesPerToken (%d) overflows int64 (R3)",
+				config.BlockSizeTokens, config.PDKVBytesPerToken))
 		}
 		cs.poolMembership = prePoolMembership
 		if config.PDDecider == "prefix-threshold" {
@@ -304,20 +312,23 @@ func (c *ClusterSimulator) Run() error {
 		// This is a hard invariant: a mismatch means the transfer pipeline lost or
 		// duplicated a transfer, producing corrupt PD metrics. Return an error so
 		// the caller can fail visibly rather than report misleading numbers.
+		// Note: horizon truncation (completion events past the horizon) also violates INV-PD-3
+		// and is caught here first, before any contention checks below.
 		if c.transfersInitiated != c.transfersCompleted {
 			return fmt.Errorf("INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
 				c.transfersInitiated, c.transfersCompleted)
 		}
-		// Stranded contention counter: activeTransfers is an in-flight counter maintained by
-		// KVTransferStartedEvent (increment) and KVTransferCompletedEvent (decrement). If both
-		// events processed within the horizon, activeTransfers returns to 0 normally. This
-		// counter can be non-zero at simulation end only if the negative guard in
-		// KVTransferCompletedEvent was triggered (indicating a bookkeeping bug), resetting
-		// activeTransfers to 0 and leaving the subsequent increment without a matching decrement.
-		// INV-PD-3 is unaffected (it uses separate counters). If observed, examine earlier
-		// logrus.Errorf("activeTransfers went negative") output for the root cause.
+		// Contention bookkeeping corruption: if activeTransfers went negative during the run
+		// (see negative guard in KVTransferCompletedEvent), contention metrics are invalid.
+		// This can only be reached after INV-PD-3 passes (all transfers accounted for), so
+		// horizon truncation is not the cause — a programming error in the event pipeline is.
+		if c.contentionBookkeepingCorrupted {
+			return fmt.Errorf("[cluster] transfer contention bookkeeping corrupted: activeTransfers went negative during simulation (R1); contention metrics are invalid — examine earlier logrus.Errorf output for root cause")
+		}
+		// Defense-in-depth: activeTransfers should be 0 when INV-PD-3 holds and no corruption
+		// occurred. A non-zero residual here indicates an undetected bookkeeping imbalance.
 		if c.config.PDTransferContention && c.activeTransfers != 0 {
-			logrus.Warnf("[cluster] activeTransfers = %d at simulation end — indicates a prior negative-guard correction (R1); contention metrics may be inaccurate",
+			logrus.Warnf("[cluster] activeTransfers = %d at simulation end (unexpected: INV-PD-3 holds and no negative-guard correction was recorded — undetected bookkeeping imbalance)",
 				c.activeTransfers)
 		}
 		// Orphaned pending completions at horizon — in-flight disaggregated requests

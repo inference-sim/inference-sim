@@ -166,6 +166,9 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 			logrus.Errorf("[cluster] activeTransfers went negative (%d) — KVTransferCompletedEvent fired without matching KVTransferStartedEvent (bookkeeping bug, R1)",
 				cs.activeTransfers)
 			cs.activeTransfers = 0
+			// Mark corruption so Run() returns an error rather than delivering
+			// silently incorrect contention metrics to the caller (Important #1).
+			cs.contentionBookkeepingCorrupted = true
 		}
 	}
 
