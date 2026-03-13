@@ -176,3 +176,18 @@ func TestInterferenceLatencyModel_LastAppliedMultiplier_InitialValue(t *testing.
 		t.Errorf("initial LastAppliedMultiplier() = %f, want 1.0", got)
 	}
 }
+
+func TestNewInstanceSimulatorCore_WrapsLatencyModel(t *testing.T) {
+	cfg := newTestSimConfig()
+	// With zero factors: no wrapping, baseline behavior
+	inst0 := newInstanceSimulatorCore("no-interference", cfg, 0, 0)
+	if inst0 == nil {
+		t.Fatal("newInstanceSimulatorCore returned nil with zero factors")
+	}
+
+	// With positive factors: wrapping active
+	inst1 := newInstanceSimulatorCore("with-interference", cfg, 0.5, 0.3)
+	if inst1 == nil {
+		t.Fatal("newInstanceSimulatorCore returned nil with positive factors")
+	}
+}

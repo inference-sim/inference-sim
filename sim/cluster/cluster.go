@@ -87,7 +87,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 			role = prePoolMembership[string(id)]
 		}
 		simCfg := config.resolveConfigForRole(role)
-		instances[idx] = NewInstanceSimulator(id, simCfg)
+		instances[idx] = newInstanceSimulatorCore(id, simCfg, config.PDInterferencePrefill, config.PDInterferenceDecode)
 	}
 	// Build instance map for snapshot provider
 	instanceMap := make(map[InstanceID]*InstanceSimulator, len(instances))
