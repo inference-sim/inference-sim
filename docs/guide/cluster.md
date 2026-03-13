@@ -127,6 +127,9 @@ Interpreting the output:
 
 **When to enable `--pd-transfer-contention`:** By default, each KV transfer gets the full configured bandwidth, modeling an uncongested link. Enable this flag when you want to model inter-pool link saturation: under high concurrency (many simultaneous disaggregated requests), all in-flight transfers share the bandwidth equally (`bandwidth/N` per transfer). If `Peak Concurrent Transfers` is frequently > 1 in a non-contention run and transfer latency is a bottleneck, enabling this flag will give a more conservative (and realistic) estimate of transfer durations.
 
+!!! note "Single shared bandwidth pool"
+    The contention model uses a **single cluster-wide bandwidth pool**: all concurrent KV transfers — regardless of which prefill or decode instance pair is involved — share the same `--pd-transfer-bandwidth` budget. This matches deployments where all inter-pool traffic flows through a single congestion point (e.g., a shared RDMA fabric or one NIC per node). In deployments where each prefill instance has an independent NIC, the model will over-estimate contention: set `--pd-transfer-bandwidth` to the aggregate shared capacity, not per-NIC bandwidth, for accurate results.
+
 Use `--counterfactual-k N` to record the top-N alternative routing candidates and regret for both prefill and decode routing decisions.
 
 !!! info "Counterfactual regret for weighted policies"
