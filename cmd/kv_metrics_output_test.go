@@ -83,7 +83,7 @@ func TestPrintPDMetrics_NilDoesNotPrint(t *testing.T) {
 	var buf bytes.Buffer
 
 	// WHEN we print nil pd
-	printPDMetrics(&buf, nil)
+	printPDMetrics(&buf, nil, false)
 
 	// THEN no output (BC-7: nil pd means no disaggregation)
 	assert.Empty(t, buf.String())
@@ -102,7 +102,7 @@ func TestPrintPDMetrics_PrintsSection(t *testing.T) {
 	}
 
 	// WHEN we print the PD metrics
-	printPDMetrics(&buf, pd)
+	printPDMetrics(&buf, pd, false)
 
 	// THEN the output must contain the PD section with key fields
 	output := buf.String()
@@ -120,14 +120,14 @@ func TestPrintPDMetrics_PrintsSection(t *testing.T) {
 func TestPrintPDMetrics_Invariant_SectionPresentIffNonNil(t *testing.T) {
 	// Non-nil: output must contain PD section
 	var buf bytes.Buffer
-	printPDMetrics(&buf, &cluster.PDMetrics{DisaggregatedCount: 1, LoadImbalanceRatio: 1.0})
+	printPDMetrics(&buf, &cluster.PDMetrics{DisaggregatedCount: 1, LoadImbalanceRatio: 1.0}, false)
 	if buf.Len() == 0 {
 		t.Error("law violated: non-nil PDMetrics produced empty output")
 	}
 
 	// Nil: output must be empty
 	buf.Reset()
-	printPDMetrics(&buf, nil)
+	printPDMetrics(&buf, nil, false)
 	if buf.Len() != 0 {
 		t.Errorf("law violated: nil PDMetrics produced non-empty output: %q", buf.String())
 	}
@@ -144,10 +144,54 @@ func TestPrintPDMetrics_LoadImbalanceRatio_OnePoolIdle(t *testing.T) {
 	}
 
 	// WHEN we print the PD metrics
-	printPDMetrics(&buf, pd)
+	printPDMetrics(&buf, pd, false)
 
 	// THEN the output must say "inf (one pool idle)", not the raw sentinel value
 	output := buf.String()
 	assert.Contains(t, output, "inf (one pool idle)", "MaxFloat64 sentinel should display as 'inf (one pool idle)'")
 	assert.NotContains(t, output, "1.797", "raw sentinel value must not appear in output")
+}
+
+// TestPrintPDMetrics_ContentionEnabled_AlwaysPrintsMetrics verifies that when
+// contentionEnabled=true, contention metrics are printed even if both are zero.
+// This ensures users can confirm the feature is active (F2 fix).
+func TestPrintPDMetrics_ContentionEnabled_AlwaysPrintsMetrics(t *testing.T) {
+	// GIVEN PDMetrics with zero contention metrics but contention enabled
+	var buf bytes.Buffer
+	pd := &cluster.PDMetrics{
+		DisaggregatedCount:      3,
+		PrefillThroughput:       5.0,
+		DecodeThroughput:        4.0,
+		LoadImbalanceRatio:      1.25,
+		PeakConcurrentTransfers: 0,
+		MeanTransferQueueDepth:  0,
+	}
+
+	// WHEN we print with contentionEnabled=true
+	printPDMetrics(&buf, pd, true)
+
+	// THEN contention metrics must appear (even though zero)
+	output := buf.String()
+	assert.Contains(t, output, "Peak Concurrent Transfers: 0")
+	assert.Contains(t, output, "Mean Transfer Queue Depth: 0.00")
+}
+
+// TestPrintPDMetrics_ContentionDisabled_HidesZeroMetrics verifies that when
+// contentionEnabled=false, zero contention metrics are not printed.
+func TestPrintPDMetrics_ContentionDisabled_HidesZeroMetrics(t *testing.T) {
+	var buf bytes.Buffer
+	pd := &cluster.PDMetrics{
+		DisaggregatedCount: 3,
+		PrefillThroughput:  5.0,
+		DecodeThroughput:   4.0,
+		LoadImbalanceRatio: 1.25,
+	}
+
+	// WHEN we print with contentionEnabled=false
+	printPDMetrics(&buf, pd, false)
+
+	// THEN contention metrics must NOT appear
+	output := buf.String()
+	assert.NotContains(t, output, "Peak Concurrent Transfers")
+	assert.NotContains(t, output, "Mean Transfer Queue Depth")
 }

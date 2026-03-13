@@ -473,6 +473,30 @@ func TestTransferContention_DurationFloor_ZeroBlocks(t *testing.T) {
 	}
 }
 
+// TestTransferContention_F1_RequiresPDEnabled verifies that PDTransferContention
+// panics at construction time when PD disaggregation is not active (R3 validation).
+func TestTransferContention_F1_RequiresPDEnabled(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic when PDTransferContention=true without PD, got nil")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T: %v", r, r)
+		}
+		if !strings.Contains(msg, "PDTransferContention requires PD disaggregation") {
+			t.Errorf("panic message = %q, want substring about PD disaggregation required", msg)
+		}
+	}()
+
+	// Use standard test config with NO prefill/decode instances.
+	config := newTestDeploymentConfig(2)
+	config.PDTransferContention = true
+	// This must panic because PD is not active.
+	NewClusterSimulator(config, []*sim.Request{})
+}
+
 // TestTransferContention_NegativeGuard_SetsCorruptionFlag verifies that when
 // KVTransferCompletedEvent.Execute() would decrement activeTransfers below zero,
 // the negative guard fires, resets to 0, and marks contentionBookkeepingCorrupted=true
@@ -507,5 +531,135 @@ func TestTransferContention_NegativeGuard_SetsCorruptionFlag(t *testing.T) {
 	// THEN: activeTransfers is reset to 0 (not left at -1)
 	if cs.activeTransfers != 0 {
 		t.Errorf("activeTransfers = %d after guard reset, want 0", cs.activeTransfers)
+	}
+}
+
+// TestTransferContention_INVP22_DivisorLaw verifies the invariant companion for the
+// golden formula tests: duration(N) / duration(1) ≈ N for identical payloads.
+// This is the R7 companion for TestTransferContention_INVP22_EffectiveBandwidthFormula
+// and TestTransferContention_INVP22_N2FormulaExact — it tests the divisor *property*
+// (monotonic scaling with active transfers) rather than exact microsecond values.
+//
+// The law: for a fixed payload and bandwidth, fair-share contention causes
+// transfer duration to scale linearly with the number of concurrent transfers.
+// Specifically: duration(N) = ceil(bytes / (bw/N)) ≈ N × duration(1), with
+// ceiling arithmetic introducing at most ±1 μs deviation per step.
+func TestTransferContention_INVP22_DivisorLaw(t *testing.T) {
+	makeCS := func(preExisting int) *ClusterSimulator {
+		return &ClusterSimulator{
+			config: DeploymentConfig{
+				PDTransferContention:    true,
+				PDTransferBandwidthGBps: 10.0,
+				PDTransferBaseLatencyMs: 0,
+				PDKVBytesPerToken:       512,
+				SimConfig: sim.SimConfig{
+					KVCacheConfig: sim.KVCacheConfig{
+						BlockSizeTokens: 16,
+					},
+				},
+			},
+			activeTransfers: preExisting,
+			clusterEvents:   make(ClusterEventQueue, 0),
+		}
+	}
+
+	getDuration := func(preExisting int) int64 {
+		cs := makeCS(preExisting)
+		parentReq := &ParentRequest{ID: "test", NumKVBlocks: 10}
+		event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
+		event.Execute(cs)
+		if len(cs.clusterEvents) != 1 {
+			t.Fatalf("N=%d: expected 1 completion event, got %d", preExisting+1, len(cs.clusterEvents))
+		}
+		return cs.clusterEvents[0].event.Timestamp()
+	}
+
+	// Table of N values (active transfers including the one being started).
+	// Pre-existing = N-1 because Execute() increments before calculating.
+	cases := []struct {
+		n int // total active transfers
+	}{
+		{1}, {2}, {3}, {4}, {5}, {8}, {10},
+	}
+
+	dur1 := getDuration(0) // N=1 baseline
+
+	for _, tc := range cases {
+		durN := getDuration(tc.n - 1)
+
+		// Law: duration(N) / duration(1) should be approximately N.
+		// Ceiling arithmetic can introduce deviation, so allow ±1 μs per N step.
+		ratio := float64(durN) / float64(dur1)
+		expectedRatio := float64(tc.n)
+		tolerance := float64(tc.n) // ±1 μs per active transfer from ceiling
+
+		if ratio < expectedRatio-tolerance/float64(dur1) || ratio > expectedRatio+tolerance/float64(dur1) {
+			t.Errorf("N=%d: duration=%d, dur1=%d, ratio=%.3f, want ≈%.1f (divisor law violated)",
+				tc.n, durN, dur1, ratio, expectedRatio)
+		}
+
+		// Monotonicity: duration must increase with N.
+		if tc.n > 1 {
+			durPrev := getDuration(tc.n - 2)
+			if durN < durPrev {
+				t.Errorf("N=%d: duration=%d < N=%d duration=%d (monotonicity violated)",
+					tc.n, durN, tc.n-1, durPrev)
+			}
+		}
+	}
+}
+
+// TestTransferContention_DurationFloor_ZeroBlocks_Invariant is the R7 companion
+// for TestTransferContention_DurationFloor_ZeroBlocks. Instead of testing the exact
+// 1 μs value, it verifies the floor *property*: duration is always >= 1 μs
+// regardless of payload size, including zero.
+func TestTransferContention_DurationFloor_ZeroBlocks_Invariant(t *testing.T) {
+	blockCounts := []int64{0, 1, 5, 100}
+
+	for _, blocks := range blockCounts {
+		cs := &ClusterSimulator{
+			config: DeploymentConfig{
+				PDTransferContention:    true,
+				PDTransferBandwidthGBps: 10.0,
+				PDTransferBaseLatencyMs: 0,
+				PDKVBytesPerToken:       512,
+				SimConfig: sim.SimConfig{
+					KVCacheConfig: sim.KVCacheConfig{
+						BlockSizeTokens: 16,
+					},
+				},
+			},
+			activeTransfers: 0,
+			clusterEvents:   make(ClusterEventQueue, 0),
+		}
+		parentReq := &ParentRequest{ID: "test", NumKVBlocks: blocks}
+		event := &KVTransferStartedEvent{time: 100, parentReq: parentReq}
+		event.Execute(cs)
+
+		if len(cs.clusterEvents) != 1 {
+			t.Fatalf("blocks=%d: expected 1 completion event, got %d", blocks, len(cs.clusterEvents))
+		}
+		duration := cs.clusterEvents[0].event.Timestamp() - event.time
+
+		// Floor invariant: duration >= 1 μs always.
+		if duration < 1 {
+			t.Errorf("blocks=%d: duration=%d μs, want >= 1 μs (floor invariant violated)", blocks, duration)
+		}
+
+		// Monotonicity: more blocks → longer (or equal) duration.
+		if blocks > 0 {
+			csPrev := &ClusterSimulator{
+				config:        cs.config,
+				clusterEvents: make(ClusterEventQueue, 0),
+			}
+			prevReq := &ParentRequest{ID: "test-prev", NumKVBlocks: blocks - 1}
+			prevEvent := &KVTransferStartedEvent{time: 100, parentReq: prevReq}
+			prevEvent.Execute(csPrev)
+			prevDur := csPrev.clusterEvents[0].event.Timestamp() - prevEvent.time
+			if duration < prevDur {
+				t.Errorf("blocks=%d: duration=%d < blocks=%d duration=%d (monotonicity violated)",
+					blocks, duration, blocks-1, prevDur)
+			}
+		}
 	}
 }

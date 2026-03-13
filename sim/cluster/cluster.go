@@ -124,6 +124,11 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}
 
+	// R3: reject PDTransferContention when PD disaggregation is not active.
+	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 {
+		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances and --decode-instances must be set)")
+	}
+
 	// PD disaggregation: validate transfer parameters and build runtime state.
 	// Pool topology already validated above (before instance construction).
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {

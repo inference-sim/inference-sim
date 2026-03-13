@@ -1244,7 +1244,7 @@ var runCmd = &cobra.Command{
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
 
 		// Print PD disaggregation metrics if active (PR3)
-		printPDMetrics(os.Stdout, rawMetrics.PD)
+		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
 
 		// Print per-SLO metrics if multiple SLO classes present (BC-3, BC-4, BC-10)
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
@@ -1298,7 +1298,9 @@ func printKVCacheMetrics(w io.Writer, preemptionRate, cacheHitRate, kvThrashingR
 
 // printPDMetrics prints disaggregation-aware metrics when PD disaggregation was active.
 // No-op when pd is nil (disaggregation not active, BC-7).
-func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
+// When contentionEnabled is true, contention metrics are always printed (even if zero)
+// so users can confirm the feature is active.
+func printPDMetrics(w io.Writer, pd *cluster.PDMetrics, contentionEnabled bool) {
 	if pd == nil {
 		return
 	}
@@ -1322,7 +1324,9 @@ func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
 		_, _ = fmt.Fprintf(w, "KV Transfer Duration (μs): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
 			pd.TransferDuration.Mean, pd.TransferDuration.P50, pd.TransferDuration.P95, pd.TransferDuration.P99)
 	}
-	if pd.PeakConcurrentTransfers > 0 {
+	// Print contention metrics when the feature is enabled — even if zero —
+	// so users can confirm the feature is active (F2 fix).
+	if contentionEnabled {
 		_, _ = fmt.Fprintf(w, "Peak Concurrent Transfers: %d\n", pd.PeakConcurrentTransfers)
 		_, _ = fmt.Fprintf(w, "Mean Transfer Queue Depth: %.2f\n", pd.MeanTransferQueueDepth)
 	}
