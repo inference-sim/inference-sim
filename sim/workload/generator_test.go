@@ -1299,9 +1299,9 @@ func TestGenerateWorkload_NonSessionWorkload_NoBlueprints(t *testing.T) {
 	}
 }
 
-// TestGenerateWorkload_Deadline_SetOnAllRequests verifies that all requests
-// from GenerateWorkload have Deadline set (default 300s).
-func TestGenerateWorkload_Deadline_SetOnAllRequests(t *testing.T) {
+// TestGenerateWorkload_Deadline_NonSessionNoTimeout verifies that non-session
+// clients get Deadline=0 (no timeout) by default — backward compatible.
+func TestGenerateWorkload_Deadline_NonSessionNoTimeout(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version: "2", Seed: 42, Category: "language", AggregateRate: 10.0,
 		Clients: []ClientSpec{
@@ -1320,9 +1320,40 @@ func TestGenerateWorkload_Deadline_SetOnAllRequests(t *testing.T) {
 	}
 
 	for _, req := range wl.Requests {
+		if req.Deadline != 0 {
+			t.Errorf("non-session request %s: Deadline=%d, want 0 (no timeout for non-session)", req.ID, req.Deadline)
+		}
+	}
+}
+
+// TestGenerateWorkload_Deadline_SessionDefaultTimeout verifies that session
+// (reasoning/multi-turn) clients get default 300s timeout when Timeout is nil.
+func TestGenerateWorkload_Deadline_SessionDefaultTimeout(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, Category: "language", AggregateRate: 5.0,
+		Clients: []ClientSpec{
+			{
+				ID: "reasoning", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				Reasoning: &ReasoningSpec{
+					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+					MultiTurn:       &MultiTurnSpec{MaxRounds: 2, ThinkTimeUs: 1000, ContextGrowth: ""},
+				},
+			},
+		},
+	}
+
+	wl, err := GenerateWorkload(spec, 10_000_000, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, req := range wl.Requests {
 		expected := req.ArrivalTime + DefaultTimeoutUs
 		if req.Deadline != expected {
-			t.Errorf("request %s: Deadline=%d, want %d (arrival + 300s)", req.ID, req.Deadline, expected)
+			t.Errorf("session request %s: Deadline=%d, want %d (arrival + 300s default)", req.ID, req.Deadline, expected)
 		}
 	}
 }

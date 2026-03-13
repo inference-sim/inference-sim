@@ -153,7 +153,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				}
 				// Set Deadline on all reasoning requests (not set in reasoning.go)
 				for _, req := range reasoningReqs {
-					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout)
+					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
 				}
 				for _, req := range reasoningReqs {
 					if req.ArrivalTime >= horizon {
@@ -201,7 +201,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				}
 				// Set Deadline on all reasoning requests (not set in reasoning.go)
 				for _, req := range reasoningReqs {
-					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout)
+					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
 				}
 				// Count all generated rounds for perClientCap safety (R19)
 				clientReqCount += int64(len(reasoningReqs))
@@ -282,7 +282,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				ImageTokenCount:  imageCount,
 				AudioTokenCount:  audioCount,
 				VideoTokenCount:  videoCount,
-				Deadline:         computeDeadline(currentTime, client.Timeout),
+				Deadline:         computeDeadline(currentTime, client.Timeout, isClosedLoop(client)),
 			}
 			allRequests = append(allRequests, req)
 			clientReqCount++
@@ -481,13 +481,19 @@ func newRandFromSeed(seed int64) *rand.Rand {
 const DefaultTimeoutUs = 300_000_000
 
 // computeDeadline derives the absolute deadline tick for a request.
-// nil timeout → default (300s). 0 timeout → no deadline (0). Positive → arrival + timeout.
-func computeDeadline(arrivalTime int64, clientTimeout *int64) int64 {
+// nil timeout + session client → default (300s). nil timeout + non-session → no deadline (0).
+// Explicit 0 → no deadline (0). Positive → arrival + timeout.
+// The isSessionClient flag determines whether the 300s default applies.
+// Non-session clients do NOT get a default timeout to preserve backward compatibility.
+func computeDeadline(arrivalTime int64, clientTimeout *int64, isSessionClient bool) int64 {
 	if clientTimeout == nil {
-		return arrivalTime + DefaultTimeoutUs
+		if isSessionClient {
+			return arrivalTime + DefaultTimeoutUs
+		}
+		return 0 // no timeout for non-session clients (backward compatible)
 	}
 	if *clientTimeout == 0 {
-		return 0 // no timeout
+		return 0 // explicit no timeout
 	}
 	return arrivalTime + *clientTimeout
 }

@@ -172,7 +172,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 		OutputTokens: outputTokens,
 		MaxOutputLen: len(outputTokens),
 		State:        sim.StateQueued,
-		Deadline:     computeDeadline(arrivalTime, bp.Timeout),
+		Deadline:     computeDeadline(arrivalTime, bp.Timeout, true), // session follow-up always gets default timeout
 		TenantID:     bp.TenantID,
 		SLOClass:     bp.SLOClass,
 		Model:        bp.Model,
