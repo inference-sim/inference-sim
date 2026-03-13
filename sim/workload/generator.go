@@ -403,8 +403,13 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 			}
 		}
 
-		// Create a blueprint per session
+		// Create a blueprint per session (R2: sort map keys for deterministic RNG draws)
+		sortedSessionIDs := make([]string, 0, len(sessionIDsForClient))
 		for sessID := range sessionIDsForClient {
+			sortedSessionIDs = append(sortedSessionIDs, sessID)
+		}
+		sort.Strings(sortedSessionIDs)
+		for _, sessID := range sortedSessionIDs {
 			sessSeed := blueprintRNG.Int63()
 			sessions = append(sessions, SessionBlueprint{
 				SessionID:     sessID,

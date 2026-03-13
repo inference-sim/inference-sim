@@ -190,3 +190,94 @@ func TestWaitQueue_Remove(t *testing.T) {
 		t.Error("Remove(non-existent): got true, want false")
 	}
 }
+
+// TestTimeout_RunningRequest_StateAndBatchCleanup verifies BC-2:
+// a running request that times out is removed from RunningBatch,
+// its state is StateTimedOut, and RunningBatch is nil'd when empty.
+func TestTimeout_RunningRequest_StateAndBatchCleanup(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Single request: will start running, then timeout before completing
+	r1 := &Request{
+		ID: "r1", ArrivalTime: 0,
+		InputTokens: make([]int, 50), OutputTokens: make([]int, 100),
+		MaxOutputLen: 100, State: StateQueued,
+		Deadline: 15000, // times out at 15ms — only ~2 decode steps complete
+	}
+	sim.InjectArrival(r1)
+	sim.Run()
+
+	// BC-2: state must be StateTimedOut
+	if r1.State != StateTimedOut {
+		t.Errorf("BC-2: state = %s, want %s", r1.State, StateTimedOut)
+	}
+	// RunningBatch must be nil (the only running request timed out)
+	if sim.RunningBatch != nil {
+		t.Errorf("BC-2: RunningBatch should be nil after last running request timed out, got %d requests",
+			len(sim.RunningBatch.Requests))
+	}
+	// Counter incremented
+	if sim.Metrics.TimedOutRequests != 1 {
+		t.Errorf("BC-2: TimedOutRequests = %d, want 1", sim.Metrics.TimedOutRequests)
+	}
+}
+
+// TestTimeout_PreemptThenTimeout_SafeNoOp verifies BC-15:
+// a request preempted (KV released, back in WaitQ) then timed out
+// while queued should be safe — no double-free, no panic.
+func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(5, 16, 0, 0, 0, 0), // tiny KV: 5 blocks = 80 tokens
+		BatchConfig:         NewBatchConfig(2, 2048, 0),            // batch size 2
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// r1: large request that will cause KV pressure and preempt r2
+	r1 := &Request{
+		ID: "r1", ArrivalTime: 0,
+		InputTokens: make([]int, 60), OutputTokens: make([]int, 10),
+		MaxOutputLen: 10, State: StateQueued,
+	}
+	// r2: small request with short deadline — will be preempted by r1's KV demand,
+	// then timeout while back in queue
+	r2 := &Request{
+		ID: "r2", ArrivalTime: 0,
+		InputTokens: make([]int, 30), OutputTokens: make([]int, 5),
+		MaxOutputLen: 5, State: StateQueued,
+		Deadline: 10000, // short deadline
+	}
+
+	sim.InjectArrival(r1)
+	sim.InjectArrival(r2)
+	sim.Run()
+
+	// The test succeeds if no panic occurs (BC-15: no double-free).
+	// Additionally verify conservation holds.
+	completed := sim.Metrics.CompletedRequests
+	queued := sim.WaitQ.Len()
+	running := 0
+	if sim.RunningBatch != nil {
+		running = len(sim.RunningBatch.Requests)
+	}
+	dropped := sim.Metrics.DroppedUnservable
+	timedOut := sim.Metrics.TimedOutRequests
+	injected := 2 // we injected exactly 2 requests
+
+	sum := completed + queued + running + dropped + timedOut
+	if sum != injected {
+		t.Errorf("BC-15 conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, want %d",
+			completed, queued, running, dropped, timedOut, sum, injected)
+	}
+}

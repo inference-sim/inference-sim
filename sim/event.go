@@ -160,6 +160,13 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 			}
 		}
 		sim.RunningBatch.Requests = remaining
+		// If batch is now empty, clear state so the stale stepEvent doesn't
+		// fire Step() on an empty batch (which could crash in StepTime).
+		// This also enables the INV-8 guard below to reschedule if needed.
+		if len(remaining) == 0 {
+			sim.RunningBatch = nil
+			sim.stepEvent = nil
+		}
 	} else {
 		sim.WaitQ.Remove(e.Request)
 	}
