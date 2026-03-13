@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -84,7 +86,9 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	}
 	sess, ok := sm.sessions[req.SessionID]
 	if !ok {
-		return nil // unknown session (non-session request with empty SessionID already caught above)
+		logrus.Warnf("SessionManager.OnComplete: request %s has SessionID %q not found in sessions — possible blueprint mismatch",
+			req.ID, req.SessionID)
+		return nil
 	}
 	if sess.state != sessionActive {
 		return nil // session already terminal (duplicate completion guard)
@@ -97,9 +101,15 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	}
 
 	// Dropped-unservable follow-up cancels session (BC-17).
-	// Dropped requests still have State == StateQueued (never transitioned).
-	// They are identified by the fact that the callback fires from EnqueueRequest's
-	// guard paths, where the request has been removed from Metrics.Requests.
+	// Dropped requests still have State == StateQueued (never transitioned by the
+	// enqueue guards). This detection is safe because OnRequestDone is only invoked at:
+	//   1. processCompletions (req.State == StateCompleted) — handled above
+	//   2. TimeoutEvent.Execute (req.State == StateTimedOut) — handled above
+	//   3. EnqueueRequest guard drops (req.State == StateQueued) — handled here
+	// A legitimately queued request never triggers this callback.
+	// If a future code path invokes OnRequestDone for a queued request that is
+	// NOT dropped, this detection would incorrectly cancel the session. Review
+	// all OnRequestDone call sites when adding new invocation points.
 	if req.State == sim.StateQueued {
 		sess.state = sessionCancelled
 		return nil

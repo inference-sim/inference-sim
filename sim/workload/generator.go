@@ -352,6 +352,10 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	round0Only := make([]*sim.Request, 0, len(reqs))
 	closedLoopSessionIDs := make(map[string]bool)
 
+	// Track which sessions are claimed by which client (prevents conflation
+	// when two clients share the same TenantID/SLOClass/Model tuple).
+	claimedSessions := make(map[string]string) // sessionID → clientID
+
 	// Build session blueprints for closed-loop clients
 	for i := range allClients {
 		client := &allClients[i]
@@ -391,14 +395,19 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 			}
 		}
 
-		// Find all session IDs for this client in the generated requests
+		// Find all session IDs for this client in the generated requests.
+		// Match by (TenantID, SLOClass, Model) AND ensure each session is claimed
+		// by at most one client (prevents conflation when two clients share metadata).
 		sessionIDsForClient := make(map[string]bool)
 		for _, req := range reqs {
 			if req.SessionID != "" && req.RoundIndex == 0 {
-				// Check if this request belongs to this client by matching metadata
 				if req.TenantID == client.TenantID && req.SLOClass == client.SLOClass && req.Model == client.Model {
-					sessionIDsForClient[req.SessionID] = true
-					closedLoopSessionIDs[req.SessionID] = true
+					// Only claim if not already claimed by a different client
+					if owner, claimed := claimedSessions[req.SessionID]; !claimed || owner == client.ID {
+						sessionIDsForClient[req.SessionID] = true
+						closedLoopSessionIDs[req.SessionID] = true
+						claimedSessions[req.SessionID] = client.ID
+					}
 				}
 			}
 		}

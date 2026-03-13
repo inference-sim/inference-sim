@@ -152,7 +152,10 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	delete(sim.reqNumComputedTokens, e.Request.ID)
 
 	if wasRunning {
-		// New-slice construction (R21): build excluding timed-out request
+		// New-slice construction (R21): build excluding timed-out request.
+		// Allocates O(batch_size) per running-request timeout. Acceptable because:
+		// (a) running-request timeouts are infrequent, (b) batch size is typically O(100s),
+		// (c) R21 compliance requires avoiding in-place mutation of iterated slices.
 		remaining := make([]*Request, 0, len(sim.RunningBatch.Requests)-1)
 		for _, r := range sim.RunningBatch.Requests {
 			if r != e.Request {

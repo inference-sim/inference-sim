@@ -1326,3 +1326,71 @@ func TestGenerateWorkload_Deadline_SetOnAllRequests(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateWorkload_SessionManager_Integration verifies that GenerateWorkload
+// blueprints work correctly with SessionManager end-to-end: round-0 requests
+// are generated, blueprints produce valid follow-up rounds via OnComplete.
+func TestGenerateWorkload_SessionManager_Integration(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, Category: "language", AggregateRate: 5.0,
+		Clients: []ClientSpec{
+			{
+				ID: "session-client", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				Reasoning: &ReasoningSpec{
+					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+					MultiTurn:       &MultiTurnSpec{MaxRounds: 3, ThinkTimeUs: 5000, ContextGrowth: ""},
+				},
+			},
+		},
+	}
+
+	wl, err := GenerateWorkload(spec, 10_000_000, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wl.Sessions) == 0 {
+		t.Fatal("expected session blueprints")
+	}
+
+	// Create SessionManager from generated blueprints
+	sm := NewSessionManager(wl.Sessions)
+
+	// Simulate round-0 completion → should produce round-1 follow-up
+	for _, req := range wl.Requests {
+		if req.SessionID == "" {
+			continue
+		}
+		// Simulate completion
+		req.State = sim.StateCompleted
+		req.ProgressIndex = int64(len(req.InputTokens) + len(req.OutputTokens) - 1)
+
+		follow := sm.OnComplete(req, req.ArrivalTime+5000) // completion at arrival+5ms
+		if follow == nil {
+			t.Errorf("request %s (session %s, round %d): expected follow-up, got nil",
+				req.ID, req.SessionID, req.RoundIndex)
+			continue
+		}
+		if len(follow) != 1 {
+			t.Errorf("expected 1 follow-up, got %d", len(follow))
+			continue
+		}
+		r1 := follow[0]
+		if r1.SessionID != req.SessionID {
+			t.Errorf("follow-up SessionID = %q, want %q", r1.SessionID, req.SessionID)
+		}
+		if r1.RoundIndex != 1 {
+			t.Errorf("follow-up RoundIndex = %d, want 1", r1.RoundIndex)
+		}
+		if r1.ArrivalTime != req.ArrivalTime+5000+5000 {
+			t.Errorf("follow-up ArrivalTime = %d, want %d (completion + ThinkTime)",
+				r1.ArrivalTime, req.ArrivalTime+5000+5000)
+		}
+		if r1.Deadline <= 0 {
+			t.Errorf("follow-up Deadline = %d, want > 0", r1.Deadline)
+		}
+		break // test just one session
+	}
+}
