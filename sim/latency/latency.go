@@ -15,6 +15,20 @@ import (
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
+// clampToInt64 converts a float64 to int64, clamping values that would cause
+// undefined behavior in Go's float64→int64 conversion. Specifically:
+//   - NaN → math.MaxInt64 (NaN comparisons are always false in IEEE 754)
+//   - Values >= float64(math.MaxInt64) → math.MaxInt64 (float64 rounds MaxInt64 up by 1)
+func clampToInt64(v float64) int64 {
+	// NaN must be checked explicitly: NaN > X and NaN >= X are both false.
+	// float64(math.MaxInt64) rounds to 9223372036854775808.0 (MaxInt64+1),
+	// so >= catches the exact boundary that would overflow int64().
+	if math.IsNaN(v) || v >= float64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(v)
+}
+
 // BlackboxLatencyModel estimates latency using trained alpha/beta regression coefficients.
 // Beta coefficients estimate step time: beta0 + beta1*cacheMissTokens + beta2*decodeTokens.
 // Alpha coefficients estimate overheads: alpha0 + alpha1*inputLen (queueing), alpha2 (output processing).
