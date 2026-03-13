@@ -6,7 +6,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ## INV-1: Request Conservation
 
-**Statement:** `injected_requests == completed_requests + still_queued + still_running + dropped_unservable` at simulation end (all levels).
+**Statement:** `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out` at simulation end (all levels).
 
 **Full pipeline:** `num_requests == injected_requests + rejected_requests` (from anomaly counters).
 
@@ -121,3 +121,27 @@ Invariants are properties that must hold at all times during and after simulatio
 **Evidence:** Issue #567 — the original implementation's BC-4 fallback (`effectiveMaxOutput = len(r.OutputTokens)`) violated this boundary. Fixed in the same PR after convergence review caught it.
 
 **Hypothesis family:** Structural model (same as INV-4, INV-7, INV-8).
+
+---
+
+## INV-10: Session Causality
+
+**Statement:** For all rounds N in a closed-loop session: `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. Boundary: ThinkTimeUs = 0 produces equality.
+
+**Verification:** `sim/workload/session_test.go` — `TestSession_RoundGeneration_CorrectArrivalTime` verifies the arrival time formula. The ThinkTimeUs=0 boundary is inherent in the formula.
+
+**Evidence:** Design doc `docs/plans/2026-03-13-client-behavior-model-design.md` — INV-10 definition. Guaranteed by construction in `SessionManager.OnComplete`.
+
+**Hypothesis family:** Scheduler invariants (safety/liveness) — causality chain for session rounds.
+
+---
+
+## INV-11: Session Completeness
+
+**Statement:** Every session reaches exactly one terminal state: completed (all rounds done), cancelled (a round timed out or was dropped), or horizon-interrupted (simulation ended mid-session). No session is silently abandoned.
+
+**Verification:** `sim/workload/session_test.go` — tests cover all terminal paths: `TestSession_TimeoutCancels_NoMoreRounds` (cancelled), `TestSession_FinalRound_Completes` (completed), `TestSession_BeyondHorizon_NotGenerated` (horizon-interrupted), `TestSession_DroppedFollowUp_CancelsSession` (cancelled via drop).
+
+**Evidence:** Design doc INV-11 definition. The `SessionManager.OnComplete` method transitions sessions to exactly one terminal state before returning nil.
+
+**Hypothesis family:** Structural model — session lifecycle completeness.
