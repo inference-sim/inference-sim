@@ -89,6 +89,7 @@ To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-L
    - `QueueingTime(req *Request) int64` — estimate arrival-to-queue delay
    - `OutputTokenProcessingTime() int64` — per-token post-processing overhead
    - `PostDecodeFixedOverhead() int64` — fixed per-request completion overhead (return 0 if not applicable)
+   - **All `float64 → int64` conversions MUST use `clampToInt64(v)` (defined in `sim/latency/latency.go`).** Direct `int64(v)` casts on float64 values are undefined behavior in Go when the value is out of range. `clampToInt64` handles NaN and positive overflow correctly.
 2. **Register the backend name** in `sim/bundle.go`: add `"your-backend": true` to `validLatencyBackends` map.
 3. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"trained-roofline"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
 4. **Add CLI wiring** (if needed) in `cmd/root.go`: add a loading block for your backend's coefficients from `defaults.yaml`. If your backend needs a custom defaults section, add a struct to `cmd/default_config.go`.
