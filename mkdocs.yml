@@ -61,6 +61,18 @@ markdown_extensions:
   - toc:
       permalink: true
 
+plugins:
+  - search
+  - blog:
+      blog_dir: blog
+      post_date_format: long
+      categories_allowed:
+        - What is BLIS?
+        - Capacity Planning
+        - Architecture
+        - Tutorials
+        - Deep Dives
+
 extra:
   version:
     provider: mike
@@ -118,3 +130,5 @@ nav:
           - Macro Plan: contributing/templates/macro-plan.md
           - Micro Plan: contributing/templates/micro-plan.md
           - Hypothesis: contributing/templates/hypothesis.md
+  - Blog:
+      - blog/index.md
