@@ -108,6 +108,7 @@ var (
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
 	pdKVBytesPerToken     int     // KV cache bytes per token for transfer duration
+	pdTransferContention  bool    // Enable fair-share bandwidth contention model (INV-P2-2)
 	prefillRoutingScorers string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
@@ -470,6 +471,17 @@ var runCmd = &cobra.Command{
 					"Add trained_roofline_defaults to defaults.yaml or provide --beta-coeffs explicitly",
 					defaultsFilePath)
 			}
+			// R20: reject NaN/Inf in coefficient arrays (allZeros passes NaN since NaN != 0)
+			for i, c := range betaCoeffs {
+				if math.IsNaN(c) || math.IsInf(c, 0) {
+					logrus.Fatalf("--latency-model trained-roofline: beta_coeffs[%d] is NaN or Inf (check defaults.yaml trained_roofline_defaults)", i)
+				}
+			}
+			for i, c := range alphaCoeffs {
+				if math.IsNaN(c) || math.IsInf(c, 0) {
+					logrus.Fatalf("--latency-model trained-roofline: alpha_coeffs[%d] is NaN or Inf (check defaults.yaml trained_roofline_defaults)", i)
+				}
+			}
 			// Warn if alpha coefficients are zero (user provided --beta-coeffs but not --alpha-coeffs)
 			if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
 				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; "+
@@ -692,6 +704,9 @@ var runCmd = &cobra.Command{
 					}
 
 					logrus.Infof("--latency-model: auto-derived max-model-len=%d from max_position_embeddings", maxModelLen)
+				} else {
+					logrus.Warnf("--latency-model: max_position_embeddings not found or zero in HF config; " +
+						"--max-model-len will be unlimited (0). Pass --max-model-len explicitly to enforce a context window limit.")
 				}
 			}
 
@@ -1156,6 +1171,7 @@ var runCmd = &cobra.Command{
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
+			PDTransferContention:    pdTransferContention,
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,
 			PrefillOverrides:        prefillOverrides,
@@ -1197,6 +1213,11 @@ var runCmd = &cobra.Command{
 			cs.PoolMembership(),
 			cs.PerInstanceMetricsByID(),
 		)
+		// Attach contention metrics from simulator state (not populated by CollectPDMetrics).
+		if rawMetrics.PD != nil && config.PDTransferContention {
+			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
+			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
+		}
 
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
@@ -1237,7 +1258,7 @@ var runCmd = &cobra.Command{
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
 
 		// Print PD disaggregation metrics if active (PR3)
-		printPDMetrics(os.Stdout, rawMetrics.PD)
+		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
 
 		// Print per-SLO metrics if multiple SLO classes present (BC-3, BC-4, BC-10)
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
@@ -1291,7 +1312,9 @@ func printKVCacheMetrics(w io.Writer, preemptionRate, cacheHitRate, kvThrashingR
 
 // printPDMetrics prints disaggregation-aware metrics when PD disaggregation was active.
 // No-op when pd is nil (disaggregation not active, BC-7).
-func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
+// When contentionEnabled is true, contention metrics are always printed (even if zero)
+// so users can confirm the feature is active.
+func printPDMetrics(w io.Writer, pd *cluster.PDMetrics, contentionEnabled bool) {
 	if pd == nil {
 		return
 	}
@@ -1314,6 +1337,12 @@ func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
 	if pd.TransferDuration.Count > 0 {
 		_, _ = fmt.Fprintf(w, "KV Transfer Duration (μs): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
 			pd.TransferDuration.Mean, pd.TransferDuration.P50, pd.TransferDuration.P95, pd.TransferDuration.P99)
+	}
+	// Print contention metrics when the feature is enabled — even if zero —
+	// so users can confirm the feature is active (F2 fix).
+	if contentionEnabled {
+		_, _ = fmt.Fprintf(w, "Peak Concurrent Transfers: %d\n", pd.PeakConcurrentTransfers)
+		_, _ = fmt.Fprintf(w, "Mean Transfer Queue Depth: %.2f\n", pd.MeanTransferQueueDepth)
 	}
 }
 
@@ -1438,6 +1467,7 @@ func init() {
 	runCmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	runCmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	runCmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
+	runCmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
 	runCmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	runCmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 

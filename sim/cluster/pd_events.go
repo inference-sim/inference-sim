@@ -87,30 +87,56 @@ func (e *KVTransferStartedEvent) Timestamp() int64 { return e.time }
 func (e *KVTransferStartedEvent) Priority() int     { return 5 }
 
 // Execute computes transfer duration and schedules KVTransferCompletedEvent.
+// When contention is enabled (--pd-transfer-contention), applies INV-P2-2:
+// effective_bandwidth = total_bandwidth / active_transfers when active_transfers > 1;
+// total_bandwidth (unchanged) when active_transfers == 1. Division by zero is impossible
+// because activeTransfers is incremented to at least 1 before the bandwidth calculation.
 func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersInitiated++
 	e.parentReq.TransferStartTime = e.time
 
-	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * bytesPerToken) / bandwidthBytesPerUs
-	numBlocks := e.parentReq.NumKVBlocks
-	blockSizeBytes := cs.config.BlockSizeTokens * cs.config.PDKVBytesPerToken
-	transferBytes := numBlocks * blockSizeBytes
+	// Contention tracking: increment BEFORE duration calculation so this
+	// transfer is counted in its own fair-share divisor (INV-P2-2).
+	if cs.config.PDTransferContention {
+		cs.activeTransfers++
+		if cs.activeTransfers > cs.peakConcurrentTransfers {
+			cs.peakConcurrentTransfers = cs.activeTransfers
+		}
+		cs.transferDepthSum += int64(cs.activeTransfers)
+		cs.transferStartCount++
+	}
 
-	bandwidthBytesPerUs := cs.config.PDTransferBandwidthGBps * 1000.0 // GB/s → bytes/μs
-	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0            // ms → μs
+	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * bytesPerToken) / bandwidthBytesPerUs
+	// Use float64 arithmetic throughout to avoid int64 multiplication overflow (R11):
+	// numBlocks can be large for long-context requests; integer product could wrap silently.
+	numBlocksF := float64(e.parentReq.NumKVBlocks)
+	blockSizeBytesF := float64(cs.config.BlockSizeTokens) * float64(cs.config.PDKVBytesPerToken)
+	transferBytesF := numBlocksF * blockSizeBytesF
+
+	// INV-P2-2: apply fair-share divisor only when active_transfers > 1.
+	// activeTransfers == 1 (this transfer alone) → full bandwidth, no division needed.
+	effectiveBandwidthGBps := cs.config.PDTransferBandwidthGBps
+	if cs.config.PDTransferContention && cs.activeTransfers > 1 {
+		effectiveBandwidthGBps = cs.config.PDTransferBandwidthGBps / float64(cs.activeTransfers)
+	}
+
+	bandwidthBytesPerUs := effectiveBandwidthGBps * 1000.0 // GB/s → bytes/μs
+	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0 // ms → μs
 
 	var duration int64
 	if bandwidthBytesPerUs > 0 {
-		duration = int64(math.Ceil(baseLatUs + float64(transferBytes)/bandwidthBytesPerUs))
+		duration = int64(math.Ceil(baseLatUs + transferBytesF/bandwidthBytesPerUs))
 	} else {
+		logrus.Errorf("[cluster] KV transfer for %s: bandwidthBytesPerUs=%f <= 0 (effectiveBandwidthGBps=%f, activeTransfers=%d) — transfer payload duration dropped, using base latency only",
+			e.parentReq.ID, bandwidthBytesPerUs, effectiveBandwidthGBps, cs.activeTransfers)
 		duration = int64(math.Ceil(baseLatUs))
 	}
 	if duration < 1 {
 		duration = 1 // Minimum 1 μs transfer
 	}
 
-	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs",
-		e.parentReq.ID, numBlocks, duration)
+	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (active=%d)",
+		e.parentReq.ID, e.parentReq.NumKVBlocks, duration, cs.activeTransfers)
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &KVTransferCompletedEvent{
@@ -136,6 +162,23 @@ func (e *KVTransferCompletedEvent) Priority() int     { return 6 }
 func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersCompleted++
 	e.parentReq.TransferCompleteTime = e.time
+
+	// Contention tracking: decrement after transfer completes (INV-P2-2).
+	// Only runs when PDTransferContention is enabled — activeTransfers is only
+	// incremented in KVTransferStartedEvent.Execute() under the same guard.
+	// When contention is disabled, transfersInitiated/transfersCompleted (unconditional)
+	// still catch mismatched events via INV-PD-3.
+	if cs.config.PDTransferContention {
+		cs.activeTransfers--
+		if cs.activeTransfers < 0 {
+			logrus.Errorf("[cluster] activeTransfers went negative (%d) — KVTransferCompletedEvent fired without matching KVTransferStartedEvent (bookkeeping bug, R1)",
+				cs.activeTransfers)
+			cs.activeTransfers = 0
+			// Mark corruption so Run() returns an error rather than delivering
+			// silently incorrect contention metrics to the caller (Important #1).
+			cs.contentionBookkeepingCorrupted = true
+		}
+	}
 
 	orig := e.parentReq.OriginalRequest
 	decodeSubReq := &sim.Request{

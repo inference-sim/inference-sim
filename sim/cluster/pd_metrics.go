@@ -49,10 +49,27 @@ type PDMetrics struct {
 	// were dropped because the decode instance had insufficient KV capacity.
 	// These parent requests have CompletionTime set but DecodeInstanceID empty.
 	DroppedAtDecodeKV int
+
+	// PeakConcurrentTransfers is the maximum number of KV transfers in flight
+	// simultaneously. 0 when contention is disabled (--pd-transfer-contention=false).
+	PeakConcurrentTransfers int
+
+	// MeanTransferQueueDepth is the average number of concurrent transfers at
+	// each transfer initiation. 0 when contention is disabled or no transfers occurred.
+	MeanTransferQueueDepth float64
 }
 
 // CollectPDMetrics computes disaggregation-aware metrics from post-simulation state.
 // Returns nil when parents is empty (BC-7). Pure function — no mutation of inputs.
+//
+// NOTE: PeakConcurrentTransfers and MeanTransferQueueDepth are NOT populated by this
+// function. Callers must attach them separately after Run() completes:
+//
+//	pd := CollectPDMetrics(...)
+//	if pd != nil {
+//	    pd.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
+//	    pd.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
+//	}
 //
 // Parameters:
 //   - parents: slice of ParentRequest records (disaggregated request lifecycles)

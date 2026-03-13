@@ -128,7 +128,7 @@ Prefill-Decode (PD) disaggregation splits each request into a prefill sub-reques
 
 **Example — 2 prefill + 2 decode instances over RDMA:**
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --num-instances 4 \
   --prefill-instances 2 --decode-instances 2 \
   --pd-decider always \
@@ -209,9 +209,10 @@ This reflects the real cost driver: disaggregating prefill is only beneficial wh
 | `--decode-instances` | int | 0 | Number of decode-pool instances (0 = PD disabled). |
 | `--pd-decider` | string | "never" | Disaggregation decider: `never`, `always`, `prefix-threshold`. |
 | `--pd-prefix-threshold` | int | 512 | Non-cached token threshold for `prefix-threshold` decider (>= 0). Ignored for other deciders. |
-| `--pd-transfer-bandwidth` | float64 | 25.0 | KV cache transfer bandwidth between pools in GB/s. |
+| `--pd-transfer-bandwidth` | float64 | 25.0 | KV cache transfer bandwidth between pools in GB/s. Models a shared global fabric — all concurrent transfers compete for this single bandwidth budget. Set to the NIXL/RDMA link speed. Default 25.0 matches a 200 Gbit/s RDMA fabric (≈ 25 GB/s). |
 | `--pd-transfer-base-latency` | float64 | 0.05 | Base transfer latency per transfer in milliseconds. |
 | `--pd-kv-bytes-per-token` | int | 512 | KV cache bytes per token for transfer size calculation. |
+| `--pd-transfer-contention` | bool | false | Enable fair-share bandwidth contention model (INV-P2-2): when N transfers are in-flight, each gets `bandwidth/N`. Models a shared global fabric where all concurrent transfers contend for the same bandwidth pool. Disabled by default. |
 | `--prefill-routing-scorers` | string | "" | Scorer config for weighted routing within the prefill pool. |
 | `--decode-routing-scorers` | string | "" | Scorer config for weighted routing within the decode pool. |
 

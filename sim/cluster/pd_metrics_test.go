@@ -266,6 +266,43 @@ func TestCollectPDMetrics_LoadImbalanceRatio_ZeroMinGuard(t *testing.T) {
 	}
 }
 
+// TestCollectPDMetrics_Invariant_LoadImbalanceGeq1 verifies the law:
+// LoadImbalanceRatio is always >= 1.0 (max/min ≥ 1 by definition) for non-sentinel values.
+// This is a companion invariant test for R7 — the preceding value tests verify concrete
+// outputs, this test verifies the mathematical property holds across the result range.
+func TestCollectPDMetrics_Invariant_LoadImbalanceGeq1(t *testing.T) {
+	// For any balanced or imbalanced throughput, ratio must be >= 1.0.
+	cases := []struct{ prefillCompletions, decodeCompletions int }{
+		{10, 10}, // balanced
+		{10, 5},  // prefill faster
+		{5, 10},  // decode faster
+		{1, 100}, // extreme imbalance
+	}
+	for _, tc := range cases {
+		parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
+		simEndedUs := int64(1_000_000)
+		agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
+		poolMembership := map[string]PoolRole{
+			"instance_0": PoolRolePrefill,
+			"instance_1": PoolRoleDecode,
+		}
+		m0 := sim.NewMetrics()
+		m0.CompletedRequests = tc.prefillCompletions
+		m1 := sim.NewMetrics()
+		m1.CompletedRequests = tc.decodeCompletions
+		metricsByID := map[string]*sim.Metrics{"instance_0": m0, "instance_1": m1}
+
+		pd := CollectPDMetrics(parents, agg, poolMembership, metricsByID)
+		if pd == nil {
+			continue
+		}
+		if pd.LoadImbalanceRatio != math.MaxFloat64 && pd.LoadImbalanceRatio < 1.0 {
+			t.Errorf("law violated: LoadImbalanceRatio=%.4f < 1.0 for prefill=%d decode=%d",
+				pd.LoadImbalanceRatio, tc.prefillCompletions, tc.decodeCompletions)
+		}
+	}
+}
+
 // BC-10 case 4: both pools idle → LoadImbalanceRatio = 1.0 (no-data sentinel).
 func TestCollectPDMetrics_LoadImbalanceRatio_BothZeroGuard(t *testing.T) {
 	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}

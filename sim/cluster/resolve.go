@@ -7,6 +7,11 @@ import "github.com/inference-sim/inference-sim/sim"
 // Pointer types for TP, MaxModelLen, TotalKVBlocks to distinguish "not set" (nil = use
 // global) from an explicit value. CLI validates TP > 0 and MaxModelLen > 0 when set;
 // TotalKVBlocks may be set by auto-calculation.
+//
+// Contract for library callers constructing PoolOverrides directly (bypassing CLI):
+// - *TP must be > 0 when non-nil (the latency model factory enforces TP > 0; TP=0 will
+//   panic at instance construction time for analytical backends)
+// - *MaxModelLen must be > 0 when non-nil
 type PoolOverrides struct {
 	TP             *int   // tensor parallelism (nil = use global)
 	GPU            string // GPU type ("" = use global)

@@ -102,7 +102,7 @@ In PD (Prefill-Decode) disaggregated mode (`--prefill-instances`, `--decode-inst
 Example PD trace run with counterfactual analysis:
 
 ```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
+./blis run --model qwen/qwen3-14b \
   --prefill-instances 2 --decode-instances 2 \
   --rate 50 --num-requests 200 \
   --trace-level decisions --summarize-trace --counterfactual-k 2
@@ -123,11 +123,30 @@ Interpreting the output:
 - **Disaggregated** — how many were routed to the prefill pool (remainder used standard routing)
 - **KV Transfers** — should equal `Disaggregated` for successful runs; a smaller number indicates decode-phase KV OOM drops (also shown in the Anomaly Counters section)
 - **Mean Transfer Duration** — average KV cache transfer latency in microseconds; tune `--pd-transfer-bandwidth` and `--pd-transfer-base-latency` to match your interconnect
+- **Peak Concurrent Transfers / Mean Transfer Queue Depth** — only printed when `--pd-transfer-contention` is enabled; see below
+
+**When to enable `--pd-transfer-contention`:** By default, each KV transfer gets the full configured bandwidth, modeling an uncongested link. Enable this flag when you want to model inter-pool link saturation: under high concurrency (many simultaneous disaggregated requests), all in-flight transfers share the bandwidth equally (`bandwidth/N` per transfer). If `Peak Concurrent Transfers` is frequently > 1 in a non-contention run and transfer latency is a bottleneck, enabling this flag will give a more conservative (and realistic) estimate of transfer durations.
+
+!!! note "Single shared bandwidth pool"
+    The contention model uses a **single cluster-wide bandwidth pool**: all concurrent KV transfers — regardless of which prefill or decode instance pair is involved — share the same `--pd-transfer-bandwidth` budget. This matches deployments where all inter-pool traffic flows through a single congestion point (e.g., a shared RDMA fabric or one NIC per node). In deployments where each prefill instance has an independent NIC, the model will over-estimate contention: set `--pd-transfer-bandwidth` to the aggregate shared capacity, not per-NIC bandwidth, for accurate results.
 
 Use `--counterfactual-k N` to record the top-N alternative routing candidates and regret for both prefill and decode routing decisions.
 
 !!! info "Counterfactual regret for weighted policies"
     For score-based policies (weighted, least-loaded), counterfactual regret is **structurally zero** — the chosen instance is always the highest-scoring one. Regret is only meaningful for non-score-based policies like round-robin.
+
+## Context Window Enforcement
+
+BLIS supports a `--max-model-len` flag that enforces a maximum total sequence length (input + output tokens) per request, mirroring vLLM's `--max-model-len`.
+
+When set (> 0):
+- Requests whose input alone fills the window (`input >= max_model_len`) are dropped at enqueue time (`DroppedUnservable` counter)
+- Requests with an explicit output budget (`MaxOutputLen > 0` in the workload spec) are dropped when `input + budget > max_model_len`
+- A runtime cap force-completes any request whose `ProgressIndex` reaches `max_model_len` during decode (defense-in-depth)
+
+**Auto-derivation in roofline/crossmodel/trained-roofline modes:** When `--max-model-len` is not explicitly set and an analytical latency backend is active, BLIS auto-derives the value from `max_position_embeddings` in the HuggingFace `config.json`. For models with `rope_scaling`, the scaling factor is applied (with type-specific exclusions matching vLLM). The derived value is then capped to the KV-feasible maximum (`total_kv_blocks × block_size_tokens`) to prevent over-admission when GPU memory is the constraint. Set `--max-model-len 0` (default for non-analytical modes) to disable the limit.
+
+**Per-pool limits:** `--prefill-max-model-len` and `--decode-max-model-len` allow different limits per pool. If a pool's limit is smaller than the global admission check, requests may pass admission but be dropped at the instance level. See the warning in [Configuration Reference: Per-Pool Hardware Overrides](../reference/configuration.md#per-pool-hardware-overrides).
 
 ## Event Ordering
 

@@ -183,3 +183,15 @@ Invariants are properties that must hold at all times during and after simulatio
 **Mechanism:** `NewClusterSimulator` calls `BuildPoolMembershipFromIndices` before instance construction, then `resolveConfigForRole(role)` dispatches to `ResolvePoolConfig(global, overrides)` per pool role. Zero-valued `PoolOverrides` returns the global config unchanged (identity property).
 
 **Hypothesis family:** Structural model (same as INV-PD-5).
+
+---
+
+## INV-P2-2: Transfer Fair-Share
+
+**Statement:** When `--pd-transfer-contention` is enabled and `active_transfers > 1`, `effective_bandwidth = total_bandwidth / active_transfers`; when `active_transfers == 1`, full bandwidth is used. Each transfer counts itself in its own divisor (incremented before the calculation). INV-PD-3 (transfer conservation: `initiated_transfers == completed_transfers`) still holds.
+
+**Verification:** `sim/cluster/transfer_contention_test.go` — `TestTransferContention_INVP22_FairShareBandwidth` (integration), `TestTransferContention_INVP22_EffectiveBandwidthFormula` (N=1 formula verification: 10 blocks × 16 tok × 512 B / 10 GB/s = 9 μs; N>1 behavioral coverage via `TestTransferContention_BCP26_FairShareDivision`), `TestTransferContention_BCP25_SingleTransferIdentical` (single-transfer equivalence with Phase 1), `TestTransferContention_BCP27_INVPD3_Holds` (conservation still holds), `TestTransferContention_ActiveTransfersZeroAtEnd` (counter returns to zero).
+
+**Mechanism:** `KVTransferStartedEvent.Execute()` increments `activeTransfers` before computing duration, so each transfer's fair-share divisor includes itself. `KVTransferCompletedEvent.Execute()` decrements `activeTransfers` after completion. Both operations are guarded by `config.PDTransferContention`. When the flag is false (default), contention state is never modified and metrics report zero.
+
+**Hypothesis family:** Structural model (same as INV-P2-1).

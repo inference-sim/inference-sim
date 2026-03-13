@@ -46,6 +46,13 @@ type ClusterSimulator struct {
 	droppedAtDecodeKV         int               // decode sub-requests dropped due to KV allocation failure (R1, INV-1)
 	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
+
+	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
+	activeTransfers                int   // currently in-flight transfers
+	peakConcurrentTransfers        int   // max observed concurrent transfers
+	transferDepthSum               int64 // running sum of activeTransfers (post-increment) at each transfer start
+	transferStartCount             int64 // number of transfer start events (for mean calculation)
+	contentionBookkeepingCorrupted bool  // set when activeTransfers goes negative (R1); triggers error in Run()
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -117,6 +124,11 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}
 
+	// R3: reject PDTransferContention when PD disaggregation is not active.
+	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 {
+		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances and --decode-instances must be set)")
+	}
+
 	// PD disaggregation: validate transfer parameters and build runtime state.
 	// Pool topology already validated above (before instance construction).
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
@@ -124,11 +136,18 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		if config.PDKVBytesPerToken <= 0 {
 			panic(fmt.Sprintf("ClusterSimulator: PDKVBytesPerToken must be > 0 when PD is enabled, got %d", config.PDKVBytesPerToken))
 		}
-		if config.PDTransferBandwidthGBps <= 0 {
-			panic(fmt.Sprintf("ClusterSimulator: PDTransferBandwidthGBps must be > 0 when PD is enabled, got %f", config.PDTransferBandwidthGBps))
+		if config.PDTransferBandwidthGBps <= 0 || math.IsNaN(config.PDTransferBandwidthGBps) || math.IsInf(config.PDTransferBandwidthGBps, 0) {
+			panic(fmt.Sprintf("ClusterSimulator: PDTransferBandwidthGBps must be a finite positive number when PD is enabled, got %f", config.PDTransferBandwidthGBps))
 		}
-		if config.PDTransferBaseLatencyMs < 0 {
-			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be >= 0 when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
+		if config.PDTransferBaseLatencyMs < 0 || math.IsNaN(config.PDTransferBaseLatencyMs) || math.IsInf(config.PDTransferBaseLatencyMs, 0) {
+			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be a finite non-negative number when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
+		}
+		// R3: guard against int64 overflow in KVTransferStartedEvent.Execute().
+		// blockSizeBytes = BlockSizeTokens * PDKVBytesPerToken; if this overflows int64,
+		// transferBytes becomes negative and the duration clamps to 1 µs (silent wrong result).
+		if config.BlockSizeTokens > 0 && config.PDKVBytesPerToken > math.MaxInt64/config.BlockSizeTokens {
+			panic(fmt.Sprintf("ClusterSimulator: BlockSizeTokens (%d) * PDKVBytesPerToken (%d) overflows int64 (R3)",
+				config.BlockSizeTokens, config.PDKVBytesPerToken))
 		}
 		cs.poolMembership = prePoolMembership
 		if config.PDDecider == "prefix-threshold" {
@@ -298,9 +317,28 @@ func (c *ClusterSimulator) Run() error {
 		// This is a hard invariant: a mismatch means the transfer pipeline lost or
 		// duplicated a transfer, producing corrupt PD metrics. Return an error so
 		// the caller can fail visibly rather than report misleading numbers.
+		// Note: horizon truncation (completion events past the horizon) also violates INV-PD-3
+		// and is caught here first, before any contention checks below.
 		if c.transfersInitiated != c.transfersCompleted {
-			return fmt.Errorf("INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
+			msg := fmt.Sprintf("INV-PD-3 violated: transfersInitiated=%d != transfersCompleted=%d",
 				c.transfersInitiated, c.transfersCompleted)
+			if c.contentionBookkeepingCorrupted {
+				msg += "; additionally, contention bookkeeping was corrupted (activeTransfers went negative)"
+			}
+			return fmt.Errorf("%s", msg)
+		}
+		// Contention bookkeeping corruption: if activeTransfers went negative during the run
+		// (see negative guard in KVTransferCompletedEvent), contention metrics are invalid.
+		// This can only be reached after INV-PD-3 passes (all transfers accounted for), so
+		// horizon truncation is not the cause — a programming error in the event pipeline is.
+		if c.contentionBookkeepingCorrupted {
+			return fmt.Errorf("[cluster] transfer contention bookkeeping corrupted: activeTransfers went negative during simulation (R1); contention metrics are invalid — examine earlier logrus.Errorf output for root cause")
+		}
+		// Defense-in-depth: activeTransfers should be 0 when INV-PD-3 holds and no corruption
+		// occurred. A non-zero residual here indicates an undetected bookkeeping imbalance.
+		if c.config.PDTransferContention && c.activeTransfers != 0 {
+			logrus.Warnf("[cluster] activeTransfers = %d at simulation end (unexpected: INV-PD-3 holds and no negative-guard correction was recorded — undetected bookkeeping imbalance)",
+				c.activeTransfers)
 		}
 		// Orphaned pending completions at horizon — in-flight disaggregated requests
 		// that never completed their pipeline phase. This is expected when horizon
@@ -447,6 +485,21 @@ func (c *ClusterSimulator) DroppedKVAllocations() int {
 // poolsConfigured returns true if PD disaggregation pool topology is active.
 func (c *ClusterSimulator) poolsConfigured() bool {
 	return c.poolMembership != nil
+}
+
+// PeakConcurrentTransfers returns the maximum number of concurrent KV transfers
+// observed during the simulation. Returns 0 when contention is disabled.
+func (c *ClusterSimulator) PeakConcurrentTransfers() int {
+	return c.peakConcurrentTransfers
+}
+
+// MeanTransferQueueDepth returns the average number of concurrent transfers
+// at each transfer initiation. Returns 0 when contention is disabled or no transfers occurred.
+func (c *ClusterSimulator) MeanTransferQueueDepth() float64 {
+	if c.transferStartCount == 0 {
+		return 0
+	}
+	return float64(c.transferDepthSum) / float64(c.transferStartCount)
 }
 
 // notifyDisaggregationObserver calls ObserveRouting on the disaggregationDecider if it
