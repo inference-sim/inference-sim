@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -881,5 +882,78 @@ func TestDirectToDecodeDecider_PoolFilterRoutesToDecodePool(t *testing.T) {
 			t.Errorf("request %s routed to %s (role=%v), expected decode pool",
 				req.ID, req.AssignedInstance, role)
 		}
+	}
+}
+
+func newTestRequestsWithLength(n int, inputLen, outputLen int) []*sim.Request {
+	rng := rand.New(rand.NewSource(42))
+	requests := make([]*sim.Request, n)
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("req_%d", i),
+			InputTokens:  sim.GenerateRandomTokenIDs(rng, inputLen),
+			OutputTokens: sim.GenerateRandomTokenIDs(rng, outputLen),
+			ArrivalTime:  int64(i) * 100_000, // 100ms apart
+			State:        sim.StateQueued,
+		}
+	}
+	return requests
+}
+
+// TestDirectToDecodeDecider_MixedWorkload verifies that short prompts go direct to decode
+// and long prompts go through the full PD pipeline (BC-P2-14, BC-P2-15, BC-P2-16).
+func TestDirectToDecodeDecider_MixedWorkload(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "direct-to-decode"
+	cfg.PDDirectDecodeThreshold = 200
+
+	// 3 short (100 tokens) + 3 long (300 tokens)
+	shortReqs := newTestRequestsWithLength(3, 100, 20)
+	longReqs := newTestRequestsWithLength(3, 300, 20)
+	// Rename long reqs to avoid ID collision
+	for i, r := range longReqs {
+		r.ID = fmt.Sprintf("long_%d", i)
+		r.ArrivalTime = int64(i+3) * 100_000
+	}
+	allReqs := append(shortReqs, longReqs...)
+
+	cs := NewClusterSimulator(cfg, allReqs)
+	mustRun(t, cs)
+
+	// BC-P2-15: only long requests create parent records
+	parents := cs.ParentRequests()
+	if len(parents) != 3 {
+		t.Errorf("expected 3 ParentRequests (long prompts), got %d", len(parents))
+	}
+
+	// BC-P2-14: short requests routed to decode pool
+	membership := cs.PoolMembership()
+	for _, req := range shortReqs {
+		if req.AssignedInstance == "" {
+			continue
+		}
+		if role := membership[req.AssignedInstance]; role != PoolRoleDecode {
+			t.Errorf("short req %s routed to %s (role %v), expected decode pool", req.ID, req.AssignedInstance, role)
+		}
+	}
+
+	// BC-P2-16 (INV-PD-2): disaggregated prefill sub-reqs on prefill pool, decode on decode pool
+	for _, p := range parents {
+		if role := membership[p.PrefillInstanceID]; role != PoolRolePrefill {
+			t.Errorf("parent %s: prefill on %s (role %v), expected prefill pool", p.ID, p.PrefillInstanceID, role)
+		}
+		if role := membership[p.DecodeInstanceID]; role != PoolRoleDecode {
+			t.Errorf("parent %s: decode on %s (role %v), expected decode pool", p.ID, p.DecodeInstanceID, role)
+		}
+	}
+
+	// INV-1: all requests complete
+	m := cs.AggregatedMetrics()
+	// Short reqs complete as standard (1 each) + long reqs produce 2 sub-reqs each (prefill + decode)
+	expectedSubReqs := 3 + 3*2
+	actual := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
+	if actual != expectedSubReqs {
+		t.Errorf("INV-1: expected %d sub-requests accounted for, got %d (completed=%d queued=%d running=%d dropped=%d)",
+			expectedSubReqs, actual, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable)
 	}
 }
