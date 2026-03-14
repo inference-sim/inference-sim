@@ -866,3 +866,67 @@ func TestTieredKVCache_PartialReload_RunningRequest_BlocksCommitted(t *testing.T
 	futureCached := gpu.GetCachedBlocks(tokens)
 	require.GreaterOrEqual(t, len(futureCached), 3, "BC-2: prefix cache must find all 3 cached blocks")
 }
+
+// TestTieredKVCache_PartialReload_NewRequest_Revised tests BC-5: new request partial reload.
+//
+// Without the fix: the reloaded block h0 is committed inline inside AllocateKVBlocks but
+// rolled back when the tail allocation fails — RequestMap["newreq"] is deleted (len==0).
+// With the fix: commitCachedBlocks commits h0 outside rollback tracking; when the tail
+// allocation fails at pre-check (no rollback triggered), the committed block persists
+// in RequestMap["newreq"] (len==1) — BC-5.
+func TestTieredKVCache_PartialReload_NewRequest_Revised(t *testing.T) {
+	// 7-block GPU, blockSize=4, 10-block CPU
+	// Fill 5 blocks → 2 free [5,6]
+	// New request needs 3 blocks (tokens 0..11)
+	// First attempt: need 3, have 2 → fails. Reload h0 → newStart=4, partial improvement.
+	// With fix: commit block5 (h0) → 1 free; need 2 for tail → pre-check fails → ok=false.
+	// RequestMap["newreq"]=[5] survives (committed outside rollback tracking).
+	blockSize := int64(4)
+	totalBlocks := int64(7)
+	gpu := NewKVCacheState(totalBlocks, blockSize)
+
+	tokens := make([]int, 12)
+	for i := range tokens {
+		tokens[i] = i + 100
+	}
+
+	// Fill 5 blocks using two filler requests
+	f1 := &sim.Request{ID: "f1", InputTokens: make([]int, 12)}
+	require.True(t, gpu.AllocateKVBlocks(f1, 0, 12, nil)) // blocks [0,1,2]
+	f2 := &sim.Request{ID: "f2", InputTokens: make([]int, 8)}
+	require.True(t, gpu.AllocateKVBlocks(f2, 0, 8, nil)) // blocks [3,4]
+	// 2 free: [5,6]
+
+	tiered := NewTieredKVCache(gpu, 10, 0, 1.0, 0)
+
+	// CPU has block for tokens[0:4]
+	h0 := hash.HashBlock("", tokens[0:4])
+	tiered.cpu.store(h0, tokens[0:4])
+
+	req := &sim.Request{ID: "newreq", InputTokens: tokens}
+
+	// WHEN allocating tokens 0..12 (3 blocks needed, 2 free → fails → reload h0 → commit(1) → 1 free for tail needing 2 → fails)
+	// Note: the fix changes NEW-REQUEST behavior: without fix, block h0 is committed inline
+	// inside AllocateKVBlocks but rolled back when tail allocation fails; with fix,
+	// commitCachedBlocks commits h0 outside rollback tracking — it stays committed (BC-5).
+	ok := tiered.AllocateKVBlocks(req, 0, 12, nil)
+
+	// THEN overall allocation fails (tail needs 2 blocks, only 1 free after commit)
+	require.False(t, ok)
+
+	// THEN INV-4 conservation holds (BC-3)
+	require.Equal(t, totalBlocks, gpu.UsedBlocks()+gpu.countFreeBlocks())
+
+	// THEN BC-5: h0 is preserved in HashToBlock (not cleared)
+	_, found := gpu.HashToBlock[h0]
+	require.True(t, found, "BC-5: h0 block must be preserved in HashToBlock")
+
+	// THEN BC-5: with fix, the reloaded block is committed in RequestMap (not rolled back)
+	// Without fix: rollbackAllocation deletes RequestMap["newreq"] entirely (0 blocks).
+	// With fix: commitCachedBlocks commits block outside rollback — RequestMap["newreq"] has 1 block.
+	require.Equal(t, 1, len(gpu.RequestMap["newreq"]), "BC-5: with fix, committed block stays in RequestMap even on tail failure")
+	committedID := gpu.RequestMap["newreq"][0]
+	committedBlk := gpu.Blocks[committedID]
+	require.Equal(t, h0, committedBlk.Hash, "BC-5: committed block must have h0 hash")
+	require.True(t, committedBlk.InUse, "BC-5: committed block must be InUse")
+}
