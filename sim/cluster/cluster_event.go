@@ -150,17 +150,40 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 // RoutingDecisionEvent represents the routing decision point for a request.
 // Priority 2: processed after arrivals (0) and admissions (1) at the same timestamp.
 type RoutingDecisionEvent struct {
-	time    int64
-	request *sim.Request
+	time       int64
+	request    *sim.Request
+	poolFilter *PoolRole // nil = route to all instances; non-nil = filter to this pool role (INV-P2-4a)
 }
 
 func (e *RoutingDecisionEvent) Timestamp() int64 { return e.time }
 func (e *RoutingDecisionEvent) Priority() int     { return 2 }
 
 // Execute routes the request using the configured routing policy and injects it.
+// When poolFilter is non-nil, builds pool-filtered snapshots and uses the pool-specific
+// routing policy (INV-P2-4a: non-disaggregated requests with pools → decode pool only).
 func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
-	state := buildRouterState(cs)
-	decision := cs.routingPolicy.Route(e.request, state)
+	var state *sim.RouterState
+	var policy sim.RoutingPolicy
+
+	if e.poolFilter != nil {
+		filteredSnapshots := cs.buildPoolFilteredSnapshots(*e.poolFilter)
+		if len(filteredSnapshots) == 0 {
+			panic(fmt.Sprintf("RoutingDecisionEvent: no instances in pool %d for request %s", *e.poolFilter, e.request.ID))
+		}
+		state = &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
+		if *e.poolFilter == PoolRoleDecode && cs.decodeRoutingPolicy != nil {
+			policy = cs.decodeRoutingPolicy
+		} else if *e.poolFilter == PoolRolePrefill && cs.prefillRoutingPolicy != nil {
+			policy = cs.prefillRoutingPolicy
+		}
+	} else {
+		state = buildRouterState(cs)
+	}
+	if policy == nil {
+		policy = cs.routingPolicy
+	}
+
+	decision := policy.Route(e.request, state)
 	logrus.Debugf("[cluster] req %s → instance %s (reason=%s)", e.request.ID, decision.TargetInstance, decision.Reason)
 
 	// BC-9: Apply cluster-level priority hint if set by routing policy
@@ -237,11 +260,19 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	if !decision.Disaggregate {
-		// Local path: standard routing (unchanged)
+		// Non-disaggregated path. When pools are configured, route to the decode pool
+		// only (INV-P2-4a): decode instances handle both phases with interference cost (PR3).
+		// No ParentRequest is created (BC-P2-15).
+		var pf *PoolRole
+		if cs.poolsConfigured() {
+			decodeRole := PoolRoleDecode
+			pf = &decodeRole
+		}
 		heap.Push(&cs.clusterEvents, clusterEventEntry{
 			event: &RoutingDecisionEvent{
-				time:    e.time + cs.routingLatency,
-				request: e.request,
+				time:       e.time + cs.routingLatency,
+				request:    e.request,
+				poolFilter: pf,
 			},
 			seqID: cs.nextSeqID(),
 		})

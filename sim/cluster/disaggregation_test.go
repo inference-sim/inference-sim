@@ -852,3 +852,34 @@ func TestDirectToDecodeDecider_ClusterConstruction(t *testing.T) {
 		t.Fatal("NewClusterSimulator returned nil")
 	}
 }
+
+// TestDirectToDecodeDecider_PoolFilterRoutesToDecodePool verifies that a RoutingDecisionEvent
+// with poolFilter=PoolRoleDecode routes only to decode pool instances (INV-P2-4a).
+func TestDirectToDecodeDecider_PoolFilterRoutesToDecodePool(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "direct-to-decode"
+	cfg.PDDirectDecodeThreshold = 1_000_000 // very high → all requests skip disaggregation
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	// All requests should have been routed to decode pool (instances 2,3)
+	membership := cs.PoolMembership()
+
+	// BC-P2-15: no parent requests
+	if len(cs.ParentRequests()) != 0 {
+		t.Errorf("expected 0 ParentRequests, got %d", len(cs.ParentRequests()))
+	}
+
+	// INV-P2-4a: verify all assigned instances are in decode pool
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not completed
+		}
+		role, ok := membership[req.AssignedInstance]
+		if !ok || role != PoolRoleDecode {
+			t.Errorf("request %s routed to %s (role=%v), expected decode pool",
+				req.ID, req.AssignedInstance, role)
+		}
+	}
+}
