@@ -106,6 +106,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-P2-1 Pool-config consistency**: Each instance receives config consistent with its pool role. Instances with no pool role receive global config.
 - **INV-P2-2 Transfer fair-share**: When `active_transfers > 1`, `effective_bandwidth = total_bandwidth / active_transfers`; when `active_transfers == 1`, full bandwidth is used. INV-PD-3 (transfer conservation) still holds.
 - **INV-P2-3 Interference monotonicity**: Multiplier >= 1.0 (interference never speeds up execution). Multiplier = 1.0 when batch is phase-pure.
+- **INV-P2-4 Decode-targeted routing**: Non-disaggregated requests with pools configured route to decode pool only. Decode instances running mixed-phase batches have interference multiplier > 1.0.
 
 ### Engineering Principles
 
@@ -210,7 +211,7 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --prefill-instances, --decode-instances, --pd-decider, --pd-prefix-threshold, --pd-transfer-bandwidth, --pd-transfer-base-latency, --pd-kv-bytes-per-token, --pd-transfer-contention, --pd-interference-prefill, --pd-interference-decode, --prefill-routing-scorers, --decode-routing-scorers, --prefill-tp, --decode-tp, --prefill-hardware, --decode-hardware, --prefill-latency-model, --decode-latency-model, --prefill-max-model-len, --decode-max-model-len)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --prefill-instances, --decode-instances, --pd-decider, --pd-prefix-threshold, --pd-direct-decode-threshold, --pd-transfer-bandwidth, --pd-transfer-base-latency, --pd-kv-bytes-per-token, --pd-transfer-contention, --pd-interference-prefill, --pd-interference-decode, --prefill-routing-scorers, --decode-routing-scorers, --prefill-tp, --decode-tp, --prefill-hardware, --decode-hardware, --prefill-latency-model, --decode-latency-model, --prefill-max-model-len, --decode-max-model-len)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
@@ -221,7 +222,7 @@ inference-sim/
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
 │   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor (validates MaxModelLen vs KV capacity), event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording, EnqueueRequest (MaxModelLen + KV capacity guards), processCompletions (runtime length cap), observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon()). All workload generation external via InjectArrival().
 │   ├── admission.go           # AdmissionPolicy interface (accepts *RouterState), AlwaysAdmit, TokenBucket, RejectAll, NewAdmissionPolicy factory
-│   ├── disaggregation.go     # DisaggregationDecider interface, DisaggregationDecision type, NeverDisaggregate, AlwaysDisaggregate, NewDisaggregationDecider factory; DisaggregationObserver interface; PrefixThresholdDecider (prefix-aware, router-side cache, globalVirtualInstance), NewPrefixThresholdDecider(threshold, blockSize)
+│   ├── disaggregation.go     # DisaggregationDecider interface, DisaggregationDecision type, NeverDisaggregate, AlwaysDisaggregate, DirectToDecodeDecider (short-prompt bypass), NewDisaggregationDecider factory, NewDirectToDecodeDecider(threshold); DisaggregationObserver interface; PrefixThresholdDecider (prefix-aware, router-side cache, globalVirtualInstance), NewPrefixThresholdDecider(threshold, blockSize)
 │   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() for canonical load calculation), RoutingDecision (with Priority hint), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), AlwaysBusiest templates, NewRoutingPolicy factory
 │   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs, IsValidScorer, DefaultScorerConfigs, newScorerWithObserver factory
 │   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer (proportional prefix matching)
@@ -266,7 +267,7 @@ inference-sim/
 │   ├── counterfactual.go      # computeCounterfactual() for top-k candidate ranking and regret computation
 │   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
 │   ├── metrics.go             # RawMetrics (includes PD *PDMetrics, nil when disaggregation inactive), Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
-│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields (PrefillInstances, DecodeInstances, PDDecider, PDPrefixThreshold, PDTransferContention, PDInterferencePrefill, PDInterferenceDecode, PrefillOverrides, DecodeOverrides for per-pool hardware config); ToSimConfig(), resolveConfigForRole()
+│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields (PrefillInstances, DecodeInstances, PDDecider, PDPrefixThreshold, PDDirectDecodeThreshold, PDTransferContention, PDInterferencePrefill, PDInterferenceDecode, PrefillOverrides, DecodeOverrides for per-pool hardware config); ToSimConfig(), resolveConfigForRole()
 │   ├── interference.go        # InterferenceLatencyModel: tier-composition wrapper applying co-location slowdown to StepTime (INV-P2-3)
 │   ├── resolve.go             # PoolOverrides type, ResolvePoolConfig pure function for per-pool hardware config resolution
 │   ├── pd_metrics.go          # PDMetrics struct (DisaggregatedCount, ParentTTFT, TransferDuration, PrefillThroughput, DecodeThroughput, LoadImbalanceRatio, PeakConcurrentTransfers, MeanTransferQueueDepth), CollectPDMetrics (pure function, post-simulation), collectPoolThroughput (R2, R11)
@@ -400,9 +401,9 @@ Request Arrival → Admission → Disaggregation Decision
   → [disaggregate] → Prefill Routing (pool-filtered) → Prefill Instance → Prefill Complete
     → KV Transfer Started → KV Transfer Completed
     → Decode Routing (pool-filtered) → KV Pre-Allocation → Decode Instance → Completion
-  → [local] → Standard Routing → Any Instance → Completion
+  → [local] → Decode Pool Routing (pool-filtered, INV-P2-4) → Decode Instance → Completion
 ```
-CLI flags: `--pd-decider` (never/always/prefix-threshold), `--pd-prefix-threshold` (512, non-cached token threshold for prefix-threshold decider), `--pd-transfer-bandwidth` (25 GB/s), `--pd-transfer-base-latency` (0.05 ms), `--pd-kv-bytes-per-token` (512), `--pd-transfer-contention` (bool, default false — fair-share bandwidth contention model, INV-P2-2), `--prefill-routing-scorers`, `--decode-routing-scorers`, `--pd-interference-prefill` (float64, default 0 — prefill-dominant batch slowdown), `--pd-interference-decode` (float64, default 0 — decode-dominant batch slowdown)
+CLI flags: `--pd-decider` (never/always/prefix-threshold/direct-to-decode), `--pd-prefix-threshold` (512, non-cached token threshold for prefix-threshold decider), `--pd-direct-decode-threshold` (256, input token threshold for direct-to-decode decider), `--pd-transfer-bandwidth` (25 GB/s), `--pd-transfer-base-latency` (0.05 ms), `--pd-kv-bytes-per-token` (512), `--pd-transfer-contention` (bool, default false — fair-share bandwidth contention model, INV-P2-2), `--prefill-routing-scorers`, `--decode-routing-scorers`, `--pd-interference-prefill` (float64, default 0 — prefill-dominant batch slowdown), `--pd-interference-decode` (float64, default 0 — decode-dominant batch slowdown)
 Per-pool hardware flags: `--prefill-tp`, `--decode-tp`, `--prefill-hardware`, `--decode-hardware`, `--prefill-latency-model`, `--decode-latency-model`, `--prefill-max-model-len`, `--decode-max-model-len` (all default to global config when unset)
 
 ## Project Governance Documents
