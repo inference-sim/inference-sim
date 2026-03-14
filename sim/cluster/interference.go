@@ -36,15 +36,15 @@ type InterferenceLatencyModel struct {
 	lastMultiplier      float64
 }
 
-// MaxInterferenceFactor is the upper bound for interference factors (R20: degenerate input guard).
-// Factor=100 at a 50/50 split produces at most 51× slowdown. Values above this would cause
-// float64 overflow in StepTime for any realistic inner model step time (> 10^18 µs).
+// MaxInterferenceFactor is the upper bound for interference factors (R3: numeric parameter upper bound).
+// Factor=100 at a 50/50 split produces exactly 51× slowdown (1.0 + 100×0.5 = 51.0). Values above this
+// would cause float64 overflow in StepTime for any realistic inner model step time (> 10^18 µs).
 const MaxInterferenceFactor = 100.0
 
 // NewInterferenceLatencyModel creates an interference wrapper around the given LatencyModel.
 // prefillFactor is the interference factor when prefill is the majority phase.
 // decodeFactor is the interference factor when decode is the majority phase.
-// Both factors must be in [0, MaxInterferenceFactor] and finite (R3, R20).
+// Both factors must be in [0, MaxInterferenceFactor] and finite (R3).
 func NewInterferenceLatencyModel(inner sim.LatencyModel, prefillFactor, decodeFactor float64) (*InterferenceLatencyModel, error) {
 	if inner == nil {
 		return nil, fmt.Errorf("NewInterferenceLatencyModel: inner must not be nil")

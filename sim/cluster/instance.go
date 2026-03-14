@@ -43,7 +43,7 @@ func newInstanceSimulatorCore(id InstanceID, cfg sim.SimConfig, prefillInterfere
 	if err != nil {
 		panic(fmt.Sprintf("newInstanceSimulatorCore(%s): NewLatencyModel: %v", id, err))
 	}
-	// Wrap with interference model when factors are configured (BC-P2-9: no-op at zero)
+	// Wrap with interference model when either factor is non-zero (BC-P2-9: no-op only when both are zero).
 	if prefillInterference > 0 || decodeInterference > 0 {
 		wrapped, wrapErr := NewInterferenceLatencyModel(latencyModel, prefillInterference, decodeInterference)
 		if wrapErr != nil {

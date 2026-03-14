@@ -97,6 +97,13 @@ func TestInterferenceLatencyModel_StepTime(t *testing.T) {
 		{name: "single prefill", prefillFactor: 1.0, decodeFactor: 1.0, prefillCount: 1, decodeCount: 0, wantMultiplier: 1.0},
 		{name: "single decode", prefillFactor: 1.0, decodeFactor: 1.0, prefillCount: 0, decodeCount: 1, wantMultiplier: 1.0},
 		{name: "even split factor 1.0", prefillFactor: 1.0, decodeFactor: 1.0, prefillCount: 5, decodeCount: 5, wantMultiplier: 1.5},
+		// Asymmetric factors: one is zero, the other is non-zero. The wrapper is active (|| semantics in
+		// newInstanceSimulatorCore), but the zero factor produces multiplier=1.0 for its dominant phase
+		// while the non-zero factor still applies for the other dominant phase.
+		{name: "asymmetric: prefill factor set decode dominant", prefillFactor: 0.5, decodeFactor: 0, prefillCount: 1, decodeCount: 3, wantMultiplier: 1.0},
+		{name: "asymmetric: decode factor set prefill dominant", prefillFactor: 0, decodeFactor: 0.5, prefillCount: 3, decodeCount: 1, wantMultiplier: 1.0},
+		{name: "asymmetric: prefill factor set prefill dominant", prefillFactor: 0.5, decodeFactor: 0, prefillCount: 3, decodeCount: 1, wantMultiplier: 1.125},
+		{name: "asymmetric: decode factor set decode dominant", prefillFactor: 0, decodeFactor: 0.5, prefillCount: 1, decodeCount: 3, wantMultiplier: 1.125},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -286,6 +293,76 @@ func TestInterferenceModel_ClusterIntegration(t *testing.T) {
 				t.Errorf("request %s: interference E2E (%f) < base E2E (%f)", reqID, intE2E, baseE2E)
 			}
 		}
+	}
+}
+
+// TestInterferenceModel_ClusterIntegration_INV_P2_3 is the R7 invariant companion to
+// TestInterferenceModel_ClusterIntegration. It verifies the monotonicity law (INV-P2-3)
+// at the cluster level: interference can only increase latency, never decrease it.
+// This is a law test — it must hold for any valid factor > 0, not just a specific value.
+func TestInterferenceModel_ClusterIntegration_INV_P2_3(t *testing.T) {
+	baseCfg := newTestSimConfig()
+	rng := rand.New(rand.NewSource(42))
+	requests := make([]*sim.Request, 10)
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("req_%d", i),
+			InputTokens:  sim.GenerateRandomTokenIDs(rng, 20),
+			OutputTokens: sim.GenerateRandomTokenIDs(rng, 10),
+			ArrivalTime:  0,
+		}
+	}
+
+	configBase := DeploymentConfig{SimConfig: baseCfg, NumInstances: 2}
+	csBase := NewClusterSimulator(configBase, cloneRequests(requests))
+	if err := csBase.Run(); err != nil {
+		t.Fatalf("baseline run: %v", err)
+	}
+	baseMetrics := csBase.AggregatedMetrics()
+
+	configInt := DeploymentConfig{
+		SimConfig:             baseCfg,
+		NumInstances:          2,
+		PDInterferencePrefill: 0.5,
+		PDInterferenceDecode:  0.5,
+	}
+	csInt := NewClusterSimulator(configInt, cloneRequests(requests))
+	if err := csInt.Run(); err != nil {
+		t.Fatalf("interference run: %v", err)
+	}
+	intMetrics := csInt.AggregatedMetrics()
+
+	// INV-P2-3 law: SimEndedTime is non-decreasing under interference (monotonicity).
+	if intMetrics.SimEndedTime < baseMetrics.SimEndedTime {
+		t.Errorf("INV-P2-3 violated: SimEndedTime decreased under interference: base=%d, int=%d",
+			baseMetrics.SimEndedTime, intMetrics.SimEndedTime)
+	}
+
+	// Non-vacuity: at least one request must complete in both runs.
+	commonCount := 0
+	for reqID := range baseMetrics.RequestE2Es {
+		if _, ok := intMetrics.RequestE2Es[reqID]; ok {
+			commonCount++
+		}
+	}
+	if commonCount == 0 {
+		t.Fatalf("INV-P2-3 test is vacuous: no requests completed in both runs (base=%d, int=%d completed)",
+			len(baseMetrics.RequestE2Es), len(intMetrics.RequestE2Es))
+	}
+
+	// INV-P2-3 law: for every request in both runs, E2E(interference) >= E2E(baseline).
+	violations := 0
+	for reqID, baseE2E := range baseMetrics.RequestE2Es {
+		if intE2E, ok := intMetrics.RequestE2Es[reqID]; ok {
+			if intE2E < baseE2E {
+				t.Errorf("INV-P2-3 violated for %s: interference E2E %.3fms < base E2E %.3fms",
+					reqID, intE2E*1000, baseE2E*1000)
+				violations++
+			}
+		}
+	}
+	if violations > 0 {
+		t.Errorf("INV-P2-3 violated for %d/%d requests in common", violations, commonCount)
 	}
 }
 
