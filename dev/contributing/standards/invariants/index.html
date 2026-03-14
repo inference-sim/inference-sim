@@ -2024,6 +2024,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#inv-10-session-causality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-10: Session Causality
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inv-11-session-completeness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-11: Session Completeness
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2720,6 +2742,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#inv-10-session-causality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-10: Session Causality
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inv-11-session-completeness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-11: Session Completeness
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2744,7 +2788,7 @@
 <p>Invariants are properties that must hold at all times during and after simulation. They are verified by invariant tests (see R7) and checked during self-audit (Step 4.75).</p>
 <p><strong>Hypothesis family mapping:</strong> INV-1 through INV-3, INV-5, and INV-6 belong to the <strong>Scheduler invariants (safety/liveness)</strong> family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), and INV-9 (oracle knowledge boundary) belong to the <strong>Structural model</strong> family. See <code>docs/contributing/standards/experiments.md</code> for hypothesis family definitions.</p>
 <h2 id="inv-1-request-conservation">INV-1: Request Conservation<a class="headerlink" href="#inv-1-request-conservation" title="Permanent link">&para;</a></h2>
-<p><strong>Statement:</strong> <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable</code> at simulation end (all levels).</p>
+<p><strong>Statement:</strong> <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out</code> at simulation end (all levels).</p>
 <p><strong>Full pipeline:</strong> <code>num_requests == injected_requests + rejected_requests</code> (from anomaly counters).</p>
 <p><strong>Verification:</strong> <code>sim/cluster/cluster_test.go</code> — conservation tests. Conservation fields (<code>still_queued</code>, <code>still_running</code>, <code>injected_requests</code>) are included in CLI JSON output.</p>
 <p><strong>Evidence:</strong> Issue #183 — a silently-dropped request violated conservation for months.</p>
@@ -2848,6 +2892,18 @@
 <p><strong>Verification:</strong> <code>sim/simulator_test.go</code> — <code>TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary</code>: a request with <code>OutputTokens=1000</code> but <code>MaxOutputLen=0</code> and <code>MaxModelLen=512</code> is NOT rejected (input=200 &lt; 512 passes input-only check), proving the enqueue guard does not peek at <code>OutputTokens</code>. Grep-based verification: <code>admission.go</code>, <code>routing.go</code>, <code>routing_scorers.go</code>, <code>routing_prefix_scorer.go</code>, <code>scheduler.go</code>, <code>priority.go</code> contain zero references to <code>OutputTokens</code>.</p>
 <p><strong>Evidence:</strong> Issue #567 — the original implementation's BC-4 fallback (<code>effectiveMaxOutput = len(r.OutputTokens)</code>) violated this boundary. Fixed in the same PR after convergence review caught it.</p>
 <p><strong>Hypothesis family:</strong> Structural model (same as INV-4, INV-7, INV-8).</p>
+<hr />
+<h2 id="inv-10-session-causality">INV-10: Session Causality<a class="headerlink" href="#inv-10-session-causality" title="Permanent link">&para;</a></h2>
+<p><strong>Statement:</strong> For all rounds N in a closed-loop session: <code>round[N+1].ArrivalTime &gt;= round[N].CompletionTime + ThinkTimeUs</code>. Boundary: ThinkTimeUs = 0 produces equality.</p>
+<p><strong>Verification:</strong> <code>sim/workload/session_test.go</code> — <code>TestSession_RoundGeneration_CorrectArrivalTime</code> verifies the arrival time formula. The ThinkTimeUs=0 boundary is inherent in the formula.</p>
+<p><strong>Evidence:</strong> Design doc <code>docs/plans/2026-03-13-client-behavior-model-design.md</code> — INV-10 definition. Guaranteed by construction in <code>SessionManager.OnComplete</code>.</p>
+<p><strong>Hypothesis family:</strong> Scheduler invariants (safety/liveness) — causality chain for session rounds.</p>
+<hr />
+<h2 id="inv-11-session-completeness">INV-11: Session Completeness<a class="headerlink" href="#inv-11-session-completeness" title="Permanent link">&para;</a></h2>
+<p><strong>Statement:</strong> Every session reaches exactly one terminal state: completed (all rounds done), cancelled (a round timed out or was dropped), or horizon-interrupted (simulation ended mid-session). No session is silently abandoned.</p>
+<p><strong>Verification:</strong> <code>sim/workload/session_test.go</code> — tests cover all terminal paths: <code>TestSession_TimeoutCancels_NoMoreRounds</code> (cancelled), <code>TestSession_FinalRound_Completes</code> (completed), <code>TestSession_BeyondHorizon_NotGenerated</code> (horizon-interrupted), <code>TestSession_DroppedFollowUp_CancelsSession</code> (cancelled via drop).</p>
+<p><strong>Evidence:</strong> Design doc INV-11 definition. The <code>SessionManager.OnComplete</code> method transitions sessions to exactly one terminal state before returning nil.</p>
+<p><strong>Hypothesis family:</strong> Structural model — session lifecycle completeness.</p>
 
 
 
