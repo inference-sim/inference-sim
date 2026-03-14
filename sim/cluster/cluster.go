@@ -240,6 +240,10 @@ func (c *ClusterSimulator) Run() error {
 		if c.rejectedRequests > 0 {
 			logrus.Warnf("[cluster] all %d requests rejected by admission policy %q — no requests completed",
 				c.rejectedRequests, c.config.AdmissionPolicy)
+		} else if c.aggregatedMetrics.TimedOutRequests > 0 {
+			logrus.Warnf("[cluster] no requests completed — %d of %d requests timed out (client timeout exceeded, likely KV pressure)",
+				c.aggregatedMetrics.TimedOutRequests,
+				c.aggregatedMetrics.TimedOutRequests+c.aggregatedMetrics.DroppedUnservable)
 		} else {
 			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
 		}
