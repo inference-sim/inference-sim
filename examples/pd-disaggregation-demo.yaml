@@ -1,0 +1,116 @@
+# BLIS PD Disaggregation Demo — Prefill/Decode Pool Separation
+#
+# This example demonstrates prefill-decode (PD) disaggregation: separating
+# prefill (prompt processing) and decode (token generation) onto dedicated
+# instance pools, connected by a simulated KV cache transfer network.
+#
+# When to use PD disaggregation:
+#   - Long-context workloads where prefill computation dominates
+#   - Heterogeneous hardware (faster GPUs for prefill, more memory for decode)
+#   - When co-location interference between prefill and decode is significant
+#
+# ============================================================================
+# TRY IT: Compare co-located vs disaggregated configurations
+# ============================================================================
+#
+#   # Baseline: 4 co-located instances (no disaggregation)
+#   ./blis run \
+#     --model qwen/qwen3-14b \
+#     --num-instances 4 --rate 100 --num-requests 1000
+#
+#   # PD disaggregation: 2 prefill + 2 decode, always disaggregate
+#   ./blis run \
+#     --model qwen/qwen3-14b \
+#     --num-instances 4 \
+#     --prefill-instances 2 --decode-instances 2 \
+#     --pd-decider always \
+#     --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+#     --rate 100 --num-requests 1000
+#
+#   # DirectToDecode: short prompts skip prefill pool (bypass if < 256 tokens)
+#   ./blis run \
+#     --model qwen/qwen3-14b \
+#     --num-instances 4 \
+#     --prefill-instances 2 --decode-instances 2 \
+#     --pd-decider direct-to-decode --pd-direct-decode-threshold 256 \
+#     --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+#     --rate 100 --num-requests 1000
+#
+#   # PrefixThreshold: disaggregate only when > 512 non-cached tokens
+#   ./blis run \
+#     --model qwen/qwen3-14b \
+#     --num-instances 4 \
+#     --prefill-instances 2 --decode-instances 2 \
+#     --pd-decider prefix-threshold --pd-prefix-threshold 512 \
+#     --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+#     --rate 100 --num-requests 1000
+#
+#   # Break-even analysis: add co-location interference to find cross-over point
+#   ./blis run \
+#     --model qwen/qwen3-14b \
+#     --num-instances 4 \
+#     --prefill-instances 2 --decode-instances 2 \
+#     --pd-decider direct-to-decode --pd-direct-decode-threshold 256 \
+#     --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+#     --pd-interference-prefill 0.3 --pd-interference-decode 0.2 \
+#     --rate 100 --num-requests 1000
+#
+#   # With per-pool hardware overrides (prefill on H100, decode on A100)
+#   ./blis run \
+#     --model qwen/qwen3-14b \
+#     --num-instances 4 \
+#     --prefill-instances 2 --decode-instances 2 \
+#     --latency-model roofline --hardware A100 --tp 1 \
+#     --prefill-hardware H100 --prefill-tp 1 \
+#     --pd-decider always \
+#     --pd-transfer-bandwidth 25 \
+#     --rate 100 --num-requests 1000
+#
+# ============================================================================
+# PD Transfer Parameters
+# ============================================================================
+#
+#   --pd-transfer-bandwidth N   Inter-pool KV transfer bandwidth in GB/s (default: 25)
+#   --pd-transfer-base-latency N  Fixed setup latency per transfer in ms (default: 0.05)
+#   --pd-kv-bytes-per-token N   KV cache bytes per token for transfer sizing (default: 512)
+#   --pd-transfer-contention    Enable fair-share bandwidth when transfers overlap (INV-P2-2)
+#
+# ============================================================================
+# Decider Strategies
+# ============================================================================
+#
+#   never             All requests stay co-located (no disaggregation)
+#   always            All requests go through prefill pool then KV transfer
+#   direct-to-decode  Short prompts (< threshold) skip prefill pool entirely
+#   prefix-threshold  Disaggregate only when non-cached tokens > threshold
+#
+# ============================================================================
+# Reading PD Metrics Output
+# ============================================================================
+#
+# When PD is active, BLIS prints "=== PD Metrics ===" including:
+#   - Disaggregated Requests: requests that completed KV transfer
+#   - Prefill/Decode Throughput: sub-req/s per pool
+#   - Load Imbalance Ratio: max/min pool RPS (1.0 = balanced)
+#   - Parent TTFT: prefill sub-request TTFT (prompt-processing latency only)
+#   - KV Transfer Duration: distribution of transfer times
+#
+# Note: Parent TTFT < client-visible TTFT in production (excludes transfer
+# time and first decode step). Compare Parent TTFT across decider strategies
+# to quantify the prefill isolation benefit.
+
+admission:
+  policy: always-admit
+
+routing:
+  policy: weighted
+  scorers:
+    - name: queue-depth
+      weight: 2.0
+    - name: kv-utilization
+      weight: 2.0
+
+priority:
+  policy: constant
+
+scheduler: fcfs

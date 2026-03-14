@@ -78,6 +78,37 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
 >
 > See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
 
+## PD Disaggregation Mode
+
+Separate prefill and decode into dedicated pools for break-even analysis between KV transfer cost and co-location interference:
+
+```bash
+# 2 prefill + 2 decode instances, always disaggregate, 25 GB/s inter-pool link
+./blis run --model qwen/qwen3-14b \
+  --num-instances 4 \
+  --prefill-instances 2 --decode-instances 2 \
+  --pd-decider always \
+  --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+  --rate 100 --num-requests 500
+
+# DirectToDecode: short prompts skip prefill pool (< 256 tokens go directly to decode)
+./blis run --model qwen/qwen3-14b \
+  --num-instances 4 \
+  --prefill-instances 2 --decode-instances 2 \
+  --pd-decider direct-to-decode --pd-direct-decode-threshold 256 \
+  --rate 100 --num-requests 500
+
+# With co-location interference model (break-even analysis)
+./blis run --model qwen/qwen3-14b \
+  --num-instances 4 \
+  --prefill-instances 2 --decode-instances 2 \
+  --pd-decider prefix-threshold --pd-prefix-threshold 512 \
+  --pd-interference-prefill 0.3 --pd-interference-decode 0.2 \
+  --rate 100 --num-requests 500
+```
+
+The output includes `=== PD Metrics ===` with disaggregated request count, pool throughput balance, and KV transfer duration distribution. See [Cluster Simulation](../guide/cluster.md) for full PD configuration reference.
+
 ## What's Next
 
 - **[Tutorial: Capacity Planning](tutorial.md)** — Full walkthrough: find the right instance count for your workload

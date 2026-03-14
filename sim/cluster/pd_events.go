@@ -59,8 +59,13 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 		cs.trace.RecordPrefillRouting(record)
 	}
 
-	// Register as pending prefill completion for detection in event loop
+	// Register as pending prefill completion for detection in event loop.
+	// Both global map (for len() queries) and per-instance map (for O(K) detection).
 	cs.pendingPrefillCompletions[e.request.ID] = e.parentReq.ID
+	if cs.pendingPrefillByInstance[decision.TargetInstance] == nil {
+		cs.pendingPrefillByInstance[decision.TargetInstance] = make(map[string]string)
+	}
+	cs.pendingPrefillByInstance[decision.TargetInstance][e.request.ID] = e.parentReq.ID
 
 	// Find target instance and inject
 	for _, inst := range cs.instances {
@@ -304,7 +309,12 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 
 			cs.inFlightRequests[decision.TargetInstance]++
 			// INV-PD-4: register decode sub-request for CompletionTime detection.
+			// Both global map (for len() queries) and per-instance map (for O(K) detection).
 			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
+			if cs.pendingDecodeByInstance[decision.TargetInstance] == nil {
+				cs.pendingDecodeByInstance[decision.TargetInstance] = make(map[string]string)
+			}
+			cs.pendingDecodeByInstance[decision.TargetInstance][e.decodeSubReq.ID] = e.parentReq.ID
 			inst.InjectDecodeOnline(e.decodeSubReq, e.time)
 			// Observer not called: prefix was already recorded during PrefillRoutingEvent.
 			// Decode sub-request has the same InputTokens, so re-notification is a no-op.

@@ -1095,3 +1095,61 @@ func TestDirectToDecodeDecider_BackwardCompat_AlwaysUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// TestDisaggregation_MaxModelLen_DropsOversizedRequests verifies that the MaxModelLen
+// enqueue guard applies correctly in the disaggregated code path.
+// When a request's input tokens >= MaxModelLen, it must be dropped at the prefill instance
+// even in PD mode (INV-9: control plane uses MaxOutputLen/input-only checks; instance
+// enforces MaxModelLen at enqueue time).
+func TestDisaggregation_MaxModelLen_DropsOversizedRequests(t *testing.T) {
+	const maxLen = 50 // small enough that some test requests will exceed it
+
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.ModelHardwareConfig = sim.NewModelHardwareConfig(
+		sim.ModelConfig{}, sim.HardwareCalib{},
+		"test-model", "H100", 1, "", maxLen,
+	)
+	// KV cache must have enough blocks for maxLen
+	config.KVCacheConfig = sim.NewKVCacheConfig(1000, 16, 0, 0, 0, 0)
+
+	// Build requests: mix of short (fits) and long (exceeds MaxModelLen)
+	var requests []*sim.Request
+	shortInput := make([]int, 10)  // 10 tokens < 50 = fits
+	longInput := make([]int, 100)  // 100 tokens >= 50 = dropped
+	output := make([]int, 5)
+	for i := 0; i < 5; i++ {
+		requests = append(requests, &sim.Request{
+			ID: fmt.Sprintf("short-%d", i), InputTokens: shortInput, OutputTokens: output,
+			ArrivalTime: int64(i * 10000),
+		})
+	}
+	for i := 0; i < 3; i++ {
+		requests = append(requests, &sim.Request{
+			ID: fmt.Sprintf("long-%d", i), InputTokens: longInput, OutputTokens: output,
+			ArrivalTime: int64((5 + i) * 10000),
+		})
+	}
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+
+	// Exactly 3 long requests dropped at prefill instance due to MaxModelLen guard.
+	if metrics.DroppedUnservable != 3 {
+		t.Errorf("expected exactly 3 DroppedUnservable (one per long input request), got %d", metrics.DroppedUnservable)
+	}
+
+	// 5 short parent requests × 2 sub-requests each = 10 sub-request completions.
+	if metrics.CompletedRequests < 10 {
+		t.Errorf("expected at least 10 completed sub-requests (5 short parents × 2 each), got %d", metrics.CompletedRequests)
+	}
+
+	// INV-1 conservation: injected == completed + queued + running + dropped.
+	// 8 parents inject 5×2 + 3×1 = 13 sub-requests total (long prefill sub-reqs dropped, no decode created).
+	injected := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
+	if injected != 13 {
+		t.Errorf("INV-1 violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 13",
+			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, injected)
+	}
+}
