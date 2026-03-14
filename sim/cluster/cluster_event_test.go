@@ -333,7 +333,8 @@ func TestDisaggregationDecisionEvent_SchedulesRouting(t *testing.T) {
 	config.PDKVBytesPerToken = 512
 
 	numRequests := 5
-	cs := NewClusterSimulator(config, newTestRequests(numRequests))
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, requests)
 
 	// Run with NeverDisaggregate — should still complete (routes to RoutingDecisionEvent)
 	mustRun(t, cs)
@@ -348,5 +349,19 @@ func TestDisaggregationDecisionEvent_SchedulesRouting(t *testing.T) {
 	if total != numRequests {
 		t.Errorf("INV-1 request conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want %d",
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, total, numRequests)
+	}
+
+	// INV-P2-4: NeverDisaggregate with pools configured must route to decode pool only.
+	// Regression guard: verifies DisaggregationDecisionEvent.Execute sets poolFilter=PoolRoleDecode
+	// for the non-disaggregated path when poolsConfigured() is true.
+	membership := cs.PoolMembership()
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not completed
+		}
+		if role := membership[req.AssignedInstance]; role != PoolRoleDecode {
+			t.Errorf("INV-P2-4: req %s routed to %s (role=%v), expected decode pool",
+				req.ID, req.AssignedInstance, role)
+		}
 	}
 }

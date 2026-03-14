@@ -435,6 +435,19 @@ func TestPrefixThreshold_HighThresholdNoDisaggregation(t *testing.T) {
 	if m.CompletedRequests == 0 {
 		t.Error("no requests completed with high threshold prefix-threshold decider")
 	}
+	// INV-P2-4: non-disaggregated requests with pools configured must route to decode pool only.
+	// Regression guard: a future refactor applying the pool filter by decider type (rather than
+	// by decision outcome) would route prefix-threshold non-disaggregated requests to all instances.
+	membership := cs.PoolMembership()
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not yet completed
+		}
+		if role := membership[req.AssignedInstance]; role != PoolRoleDecode {
+			t.Errorf("INV-P2-4: req %s routed to %s (role=%v), expected decode pool",
+				req.ID, req.AssignedInstance, role)
+		}
+	}
 }
 
 // TestPrefixThreshold_ZeroThresholdAlwaysDisaggregates verifies that threshold=0

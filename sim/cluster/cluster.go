@@ -101,6 +101,15 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
 	}
 
+	// R3: validate per-pool overrides BEFORE instance construction so invalid configs
+	// fail with a clear message rather than a cryptic panic inside the latency factory.
+	if err := config.PrefillOverrides.Validate("prefill pool"); err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	}
+	if err := config.DecodeOverrides.Validate("decode pool"); err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	}
+
 	// Build pool membership from indices BEFORE instance construction
 	// so we can resolve per-pool configs for each instance (INV-P2-1).
 	var prePoolMembership map[string]PoolRole
@@ -171,6 +180,22 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		}
 		if config.PDTransferBaseLatencyMs < 0 || math.IsNaN(config.PDTransferBaseLatencyMs) || math.IsInf(config.PDTransferBaseLatencyMs, 0) {
 			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be a finite non-negative number when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
+		}
+		// C1/R3: guard against int64 overflow in KVTransferStartedEvent.Execute().
+		// baseLatUs = PDTransferBaseLatencyMs * 1000; int64(math.Ceil(1e19)) wraps to MinInt64
+		// on amd64, then the duration<1 floor silently clamps to 1 µs (wrong result, no error).
+		// 3.6e9 ms = 1000 hours is an extreme but finite upper bound.
+		const maxTransferBaseLatencyMs = 3_600_000_000.0 // 1000 hours
+		if config.PDTransferBaseLatencyMs > maxTransferBaseLatencyMs {
+			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be <= %.0f ms (1000 hours) to prevent int64 overflow in transfer duration, got %f", maxTransferBaseLatencyMs, config.PDTransferBaseLatencyMs))
+		}
+		// C6/R3: BlockSizeTokens must be > 0 when PD is enabled; NewParentRequest panics
+		// if blockSizeTokens <= 0, and that panic fires inside an event handler during Run()
+		// (R6 violation). Validate here so the error appears at construction time.
+		// Note: NewSimulator also validates BlockSizeTokens > 0 per instance, so this check
+		// is reached first only when called before instance construction.
+		if config.BlockSizeTokens <= 0 {
+			panic(fmt.Sprintf("ClusterSimulator: KVCacheConfig.BlockSizeTokens must be > 0 when PD is enabled, got %d", config.BlockSizeTokens))
 		}
 		// R3: guard against int64 overflow in KVTransferStartedEvent.Execute().
 		// blockSizeBytes = BlockSizeTokens * PDKVBytesPerToken; if this overflows int64,

@@ -33,8 +33,9 @@ func (a *AlwaysDisaggregate) Decide(_ *Request) DisaggregationDecision {
 // NewDisaggregationDecider creates a disaggregation decider by name.
 // Valid names are defined in validDisaggregationDeciders (bundle.go).
 // An empty string defaults to NeverDisaggregate.
-// Panics on unrecognized names or on "prefix-threshold" (which requires parameters;
-// use NewPrefixThresholdDecider directly).
+// Panics on unrecognized names, on "prefix-threshold" (use NewPrefixThresholdDecider
+// directly), or on "direct-to-decode" (use NewDirectToDecodeDecider directly).
+// Both parameterized deciders require a caller-supplied threshold.
 func NewDisaggregationDecider(name string) DisaggregationDecider {
 	if !IsValidDisaggregationDecider(name) {
 		panic(fmt.Sprintf("unknown disaggregation decider %q", name))
