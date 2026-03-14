@@ -72,6 +72,7 @@ func NewDirectToDecodeDecider(threshold int) *DirectToDecodeDecider {
 
 // Decide returns Disaggregate=true when input length >= threshold (long prompt → full PD pipeline),
 // Disaggregate=false when input length < threshold (short prompt → direct to decode pool).
+// Empty inputs (len == 0) always return Disaggregate=false.
 func (d *DirectToDecodeDecider) Decide(req *Request) DisaggregationDecision {
 	if len(req.InputTokens) == 0 {
 		return DisaggregationDecision{Disaggregate: false}

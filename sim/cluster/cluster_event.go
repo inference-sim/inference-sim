@@ -262,6 +262,8 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	if !decision.Disaggregate {
 		// Non-disaggregated path. When pools are configured, route to the decode pool
 		// only (INV-P2-4a): decode instances handle both phases with interference cost (PR3).
+		// When pools are NOT configured (poolsConfigured()==false), pf stays nil and the
+		// global routing policy is used — same as the standard (non-PD) routing path.
 		// No ParentRequest is created (BC-P2-15).
 		var pf *PoolRole
 		if cs.poolsConfigured() {

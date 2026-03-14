@@ -404,16 +404,20 @@ func (c *ClusterSimulator) nextSeqID() int64 {
 	return id
 }
 
-// buildPoolFilteredSnapshots constructs routing snapshots filtered to a specific pool role.
-// Preserves instance order from c.instances for determinism (R2).
+// buildPoolFilteredSnapshots constructs routing snapshots for instances in the given pool role.
+// Iterates c.instances in order for determinism (R2); builds snapshots only for target pool
+// members to avoid constructing and discarding snapshots for the other pool.
 func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
-	allSnapshots := make([]sim.RoutingSnapshot, len(c.instances))
-	for i, inst := range c.instances {
+	snapshots := make([]sim.RoutingSnapshot, 0, len(c.instances)/2+1)
+	for _, inst := range c.instances {
+		if c.poolMembership[string(inst.ID())] != role {
+			continue
+		}
 		snap := c.snapshotProvider.Snapshot(inst.ID(), c.clock)
 		snap.InFlightRequests = c.inFlightRequests[string(inst.ID())]
-		allSnapshots[i] = snap
+		snapshots = append(snapshots, snap)
 	}
-	return FilterSnapshotsByPool(allSnapshots, c.poolMembership, role)
+	return snapshots
 }
 
 // detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance

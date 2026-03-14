@@ -844,13 +844,26 @@ func TestDisaggregation_INV_PD_1_DecodeEnqueueAfterTransfer(t *testing.T) {
 
 // --- DirectToDecodeDecider integration tests ---
 
+// TestDirectToDecodeDecider_ClusterConstruction verifies that a cluster with the
+// direct-to-decode decider runs successfully and routes requests to the decode pool.
 func TestDirectToDecodeDecider_ClusterConstruction(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
 	cfg.PDDecider = "direct-to-decode"
 	cfg.PDDirectDecodeThreshold = 256
-	cs := NewClusterSimulator(cfg, newTestRequests(3))
-	if cs == nil {
-		t.Fatal("NewClusterSimulator returned nil")
+	requests := newTestRequests(3)
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	// Verify requests were routed to decode pool (observable behavior, not nil check)
+	membership := cs.PoolMembership()
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue
+		}
+		if role := membership[req.AssignedInstance]; role != PoolRoleDecode {
+			t.Errorf("req %s routed to %s (role=%v), expected decode pool (INV-P2-4a)",
+				req.ID, req.AssignedInstance, role)
+		}
 	}
 }
 
@@ -947,13 +960,14 @@ func TestDirectToDecodeDecider_MixedWorkload(t *testing.T) {
 		}
 	}
 
-	// INV-1: all requests complete
+	// INV-1 conservation: all injected sub-requests must be accounted for.
+	// AggregatedMetrics counts sub-requests (not parent requests): 3 short inject 1 each,
+	// 3 long inject 2 each (prefill sub-req + decode sub-req) = 9 total injected.
 	m := cs.AggregatedMetrics()
-	// Short reqs complete as standard (1 each) + long reqs produce 2 sub-reqs each (prefill + decode)
-	expectedSubReqs := 3 + 3*2
+	expectedSubReqs := len(shortReqs) + len(longReqs)*2
 	actual := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
 	if actual != expectedSubReqs {
-		t.Errorf("INV-1: expected %d sub-requests accounted for, got %d (completed=%d queued=%d running=%d dropped=%d)",
+		t.Errorf("INV-1: expected %d injected sub-requests accounted for, got %d (completed=%d queued=%d running=%d dropped=%d)",
 			expectedSubReqs, actual, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable)
 	}
 }
