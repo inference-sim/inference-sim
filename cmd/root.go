@@ -704,6 +704,7 @@ var runCmd = &cobra.Command{
 		// and generate requests via workload.GenerateRequests (BC-10).
 		var spec *workload.WorkloadSpec
 		var preGeneratedRequests []*sim.Request
+		var sessionMgr *workload.SessionManager
 
 		if workloadSpecPath != "" {
 			// --workload-spec takes precedence over --workload
@@ -809,12 +810,17 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Workload requires either num_requests or --horizon to bound generation")
 		}
 
-		reqs, err := workload.GenerateRequests(spec, simulationHorizon, maxRequests)
+		wl, err := workload.GenerateWorkload(spec, simulationHorizon, maxRequests)
 		if err != nil {
 			logrus.Fatalf("Failed to generate workload: %v", err)
 		}
-		preGeneratedRequests = reqs
-		logrus.Infof("Generated %d requests via unified workload pipeline", len(reqs))
+		preGeneratedRequests = wl.Requests
+		if len(wl.Sessions) > 0 {
+			sessionMgr = workload.NewSessionManager(wl.Sessions)
+			logrus.Infof("Generated %d requests + %d session blueprints (closed-loop)", len(wl.Requests), len(wl.Sessions))
+		} else {
+			logrus.Infof("Generated %d requests via unified workload pipeline", len(wl.Requests))
+		}
 
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
@@ -1000,7 +1006,11 @@ var runCmd = &cobra.Command{
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
 		}
-		cs := cluster.NewClusterSimulator(config, preGeneratedRequests)
+		var onRequestDone func(*sim.Request, int64) []*sim.Request
+		if sessionMgr != nil {
+			onRequestDone = sessionMgr.OnComplete
+		}
+		cs := cluster.NewClusterSimulator(config, preGeneratedRequests, onRequestDone)
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Simulation failed: %v", err)
 		}

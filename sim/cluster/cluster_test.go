@@ -46,7 +46,7 @@ func TestPerInstanceMetrics_BeforeRun_Panics(t *testing.T) {
 		}
 	}()
 	config := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(config, newTestRequests(5))
+	cs := NewClusterSimulator(config, newTestRequests(5), nil)
 	cs.PerInstanceMetrics() // should panic
 }
 
@@ -148,7 +148,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 				tc.PromptTokens, tc.PromptTokensStdev, tc.PromptTokensMin, tc.PromptTokensMax,
 				tc.OutputTokens, tc.OutputTokensStdev, tc.OutputTokensMin, tc.OutputTokensMax)
 
-			cs := NewClusterSimulator(config, requests)
+			cs := NewClusterSimulator(config, requests, nil)
 			mustRun(t, cs)
 
 			m := cs.AggregatedMetrics()
@@ -198,7 +198,7 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 				tc.PromptTokens, tc.PromptTokensStdev, tc.PromptTokensMin, tc.PromptTokensMax,
 				tc.OutputTokens, tc.OutputTokensStdev, tc.OutputTokensMin, tc.OutputTokensMax)
 
-			cs := NewClusterSimulator(config, requests)
+			cs := NewClusterSimulator(config, requests, nil)
 			mustRun(t, cs)
 			m := cs.AggregatedMetrics()
 
@@ -232,10 +232,10 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 func TestClusterSimulator_MultiInstance_Determinism(t *testing.T) {
 	config := newTestDeploymentConfig(4)
 
-	cs1 := NewClusterSimulator(config, newTestRequests(100))
+	cs1 := NewClusterSimulator(config, newTestRequests(100), nil)
 	mustRun(t, cs1)
 
-	cs2 := NewClusterSimulator(config, newTestRequests(100))
+	cs2 := NewClusterSimulator(config, newTestRequests(100), nil)
 	mustRun(t, cs2)
 
 	// Check aggregated
@@ -288,7 +288,7 @@ func TestClusterSimulator_MultiInstance_AllComplete(t *testing.T) {
 	config := newTestDeploymentConfig(4)
 	requests := newTestRequests(100)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -311,7 +311,7 @@ func TestClusterSimulator_RoundRobin_EvenDistribution(t *testing.T) {
 	config := newTestDeploymentConfig(3)
 	requests := newTestRequests(9)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	for i, inst := range cs.Instances() {
@@ -330,7 +330,7 @@ func TestClusterSimulator_RoundRobin_UnevenDistribution(t *testing.T) {
 	config := newTestDeploymentConfig(3)
 	requests := newTestRequests(10)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	expected := []int{4, 3, 3}
@@ -350,7 +350,7 @@ func TestClusterSimulator_ZeroRequestInstances(t *testing.T) {
 	config := newTestDeploymentConfig(4)
 	requests := newTestRequests(2)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	expected := []int{1, 1, 0, 0}
@@ -375,7 +375,7 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	requests := newTestRequests(50)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	var sumCompleted, sumInput, sumOutput int
@@ -456,7 +456,7 @@ func TestClusterSimulator_SharedClock_MonotonicGlobal(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	requests := newTestRequests(50)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	for i, inst := range cs.Instances() {
@@ -475,7 +475,7 @@ func TestClusterSimulator_RunOnce_Panics(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	requests := newTestRequests(10)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	defer func() {
@@ -508,7 +508,7 @@ func TestNewClusterSimulator_ZeroInstances_Panics(t *testing.T) {
 	}()
 
 	config := newTestDeploymentConfig(0)
-	NewClusterSimulator(config, newTestRequests(10))
+	NewClusterSimulator(config, newTestRequests(10), nil)
 }
 
 // TestInstanceSimulator_InjectAfterRun_Panics verifies C.3:
@@ -544,7 +544,7 @@ func TestClusterSimulator_GloballyUniqueRequestIDs(t *testing.T) {
 	config := newTestDeploymentConfig(4)
 	requests := newTestRequests(20)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -574,7 +574,7 @@ func TestClusterSimulator_HorizonEnforcement(t *testing.T) {
 	config.Horizon = 500000 // finite horizon
 	requests := newTestRequests(100)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -597,7 +597,7 @@ func TestClusterSimulator_NilRequests_NoPanic(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 
 	// nil requests: should not panic
-	cs := NewClusterSimulator(config, nil)
+	cs := NewClusterSimulator(config, nil, nil)
 	mustRun(t, cs)
 
 	if cs.AggregatedMetrics().CompletedRequests != 0 {
@@ -606,7 +606,7 @@ func TestClusterSimulator_NilRequests_NoPanic(t *testing.T) {
 	}
 
 	// empty requests: should not panic
-	cs2 := NewClusterSimulator(config, []*sim.Request{})
+	cs2 := NewClusterSimulator(config, []*sim.Request{}, nil)
 	mustRun(t, cs2)
 
 	if cs2.AggregatedMetrics().CompletedRequests != 0 {
@@ -629,7 +629,7 @@ func TestClusterSimulator_AggregatedMetrics_BeforeRun_Panics(t *testing.T) {
 	}()
 
 	config := newTestDeploymentConfig(2)
-	cs := NewClusterSimulator(config, newTestRequests(10))
+	cs := NewClusterSimulator(config, newTestRequests(10), nil)
 	cs.AggregatedMetrics()
 }
 
@@ -644,7 +644,7 @@ func TestClusterSimulator_HandledBy_PopulatedInMetrics(t *testing.T) {
 	config.RoutingPolicy = "round-robin"
 	requests := newTestRequests(15)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -690,7 +690,7 @@ func TestClusterSimulator_HandledBy_PopulatedInMetrics(t *testing.T) {
 func TestClusterSimulator_HandledBy_SingleInstance(t *testing.T) {
 	config := newTestDeploymentConfig(1)
 	requests := newTestRequests(5)
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -712,7 +712,7 @@ func TestClusterSimulator_RoutingPolicy_RoundRobinDefault(t *testing.T) {
 	config.RoutingPolicy = "round-robin"
 	requests := newTestRequests(10)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	// Requests distributed evenly: 4, 3, 3 (or variant)
@@ -739,7 +739,7 @@ func TestClusterSimulator_RoutingPolicy_LeastLoaded(t *testing.T) {
 	config.RoutingPolicy = "least-loaded"
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	if cs.AggregatedMetrics().CompletedRequests == 0 {
@@ -758,7 +758,7 @@ func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
 			config.RoutingScorerConfigs = sim.DefaultScorerConfigs()
 			requests := newTestRequests(5)
 
-			cs := NewClusterSimulator(config, requests)
+			cs := NewClusterSimulator(config, requests, nil)
 			mustRun(t, cs)
 
 			if cs.AggregatedMetrics().CompletedRequests == 0 {
@@ -774,7 +774,7 @@ func BenchmarkClusterSimulator_1K_1Instance(b *testing.B) {
 	config := newTestDeploymentConfig(1)
 	for i := 0; i < b.N; i++ {
 		requests := newTestRequests(1000)
-		cs := NewClusterSimulator(config, requests)
+		cs := NewClusterSimulator(config, requests, nil)
 		if err := cs.Run(); err != nil {
 			b.Fatalf("cs.Run: %v", err)
 		}
@@ -785,7 +785,7 @@ func BenchmarkClusterSimulator_10K_4Instances(b *testing.B) {
 	config := newTestDeploymentConfig(4)
 	for i := 0; i < b.N; i++ {
 		requests := newTestRequests(10000)
-		cs := NewClusterSimulator(config, requests)
+		cs := NewClusterSimulator(config, requests, nil)
 		if err := cs.Run(); err != nil {
 			b.Fatalf("cs.Run: %v", err)
 		}
@@ -796,7 +796,7 @@ func BenchmarkClusterSimulator_1K_10Instances(b *testing.B) {
 	config := newTestDeploymentConfig(10)
 	for i := 0; i < b.N; i++ {
 		requests := newTestRequests(1000)
-		cs := NewClusterSimulator(config, requests)
+		cs := NewClusterSimulator(config, requests, nil)
 		if err := cs.Run(); err != nil {
 			b.Fatalf("cs.Run: %v", err)
 		}
@@ -806,7 +806,7 @@ func BenchmarkClusterSimulator_1K_10Instances(b *testing.B) {
 func TestAggregateMetrics_IncludesKVCacheFields(t *testing.T) {
 	// GIVEN a cluster simulation with 2 instances
 	cfg := newTestDeploymentConfig(2)
-	cs := NewClusterSimulator(cfg, newTestRequests(10))
+	cs := NewClusterSimulator(cfg, newTestRequests(10), nil)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -854,7 +854,7 @@ func TestAggregateMetrics_IncludesKVCacheFields(t *testing.T) {
 func TestAggregateMetrics_SingleInstance_AverageEqualsSelf(t *testing.T) {
 	// GIVEN a cluster with exactly 1 instance (edge case: average = self)
 	cfg := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(cfg, newTestRequests(5))
+	cs := NewClusterSimulator(cfg, newTestRequests(5), nil)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -884,7 +884,7 @@ func TestClusterSimulator_RequestConservation_SumAcrossInstances(t *testing.T) {
 	config := newTestDeploymentConfig(4)
 	requests := newTestRequests(100)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	sumCompleted := 0
@@ -915,7 +915,7 @@ func TestClusterSimulator_Causality_PerInstance(t *testing.T) {
 	config := newTestDeploymentConfig(3)
 	requests := newTestRequests(50)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	totalChecked := 0
@@ -958,7 +958,7 @@ func TestClusterSimulator_ClockMonotonicity_ClusterDominatesInstances(t *testing
 	config := newTestDeploymentConfig(4)
 	requests := newTestRequests(100)
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	for i, inst := range cs.Instances() {
@@ -977,7 +977,7 @@ func TestClusterSimulator_Determinism_ByteIdenticalAggregation(t *testing.T) {
 	run := func() *sim.Metrics {
 		config := newTestDeploymentConfig(3)
 		requests := newTestRequests(50)
-		cs := NewClusterSimulator(config, requests)
+		cs := NewClusterSimulator(config, requests, nil)
 		mustRun(t, cs)
 		return cs.AggregatedMetrics()
 	}
@@ -1084,7 +1084,7 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 			}
 
 			requests := newTestRequests(numRequests)
-			cs := NewClusterSimulator(config, requests)
+			cs := NewClusterSimulator(config, requests, nil)
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
@@ -1145,7 +1145,7 @@ func TestClusterSimulator_Determinism_WeightedPrefixScorer_ByteIdentical(t *test
 				// Use prefix tokens to exercise the prefix cache index
 				requests := testGenerateRequests(42, math.MaxInt64, 10.0/1e6, 30,
 					32, 100, 20, 10, 200, 50, 10, 10, 100)
-				cs := NewClusterSimulator(config, requests)
+				cs := NewClusterSimulator(config, requests, nil)
 				mustRun(t, cs)
 				return cs
 			}
@@ -1233,7 +1233,7 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 			requests := testGenerateRequests(42, math.MaxInt64, rateReqPerS/1e6, numRequests,
 				0, 100, 20, 10, 200, 50, 10, 10, 100)
 
-			cs := NewClusterSimulator(config, requests)
+			cs := NewClusterSimulator(config, requests, nil)
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
@@ -1315,7 +1315,7 @@ func TestClusterSimulator_SchedulerLiveness(t *testing.T) {
 			requests := testGenerateRequests(42, math.MaxInt64, rateReqPerS/1e6, numRequests,
 				0, 200, 100, 32, 512, 128, 64, 16, 256)
 
-			cs := NewClusterSimulator(config, requests)
+			cs := NewClusterSimulator(config, requests, nil)
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
@@ -1364,7 +1364,7 @@ func TestClusterSimulator_AdmissionLatency_ExactOffset(t *testing.T) {
 		config := newTestDeploymentConfig(numInstances)
 		config.RoutingPolicy = "least-loaded"
 		config.AdmissionLatency = latencyUS
-		cs := NewClusterSimulator(config, mkRequests())
+		cs := NewClusterSimulator(config, mkRequests(), nil)
 		mustRun(t, cs)
 		return cs.AggregatedMetrics()
 	}
@@ -1461,7 +1461,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 	t.Run("always-admit/ample-kv", func(t *testing.T) {
 		// BC-3: Happy path — all modules active, ample resources
 		config := mkFullStackConfig()
-		cs := NewClusterSimulator(config, mkRequests())
+		cs := NewClusterSimulator(config, mkRequests(), nil)
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()
@@ -1498,7 +1498,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		config.Horizon = 500000 // 0.5 seconds — many requests still in-flight at end
 		constRequests := testGenerateRequests(42, math.MaxInt64, 2000.0/1e6, numRequests,
 			32, 128, 0, 128, 128, 64, 0, 64, 64)
-		cs := NewClusterSimulator(config, constRequests)
+		cs := NewClusterSimulator(config, constRequests, nil)
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()
@@ -1528,7 +1528,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		config.AdmissionPolicy = "token-bucket"
 		config.TokenBucketCapacity = 500
 		config.TokenBucketRefillRate = 300
-		cs := NewClusterSimulator(config, mkRequests())
+		cs := NewClusterSimulator(config, mkRequests(), nil)
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()
@@ -1623,7 +1623,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 	totalInjected := numFit + numGuard1a + numGuard1b
 	expectedDropped := numGuard1a + numGuard1b
 
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()

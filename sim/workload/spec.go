@@ -107,6 +107,8 @@ type ClientSpec struct {
 	Lifecycle    *LifecycleSpec `yaml:"lifecycle,omitempty"`
 	Multimodal   *MultimodalSpec `yaml:"multimodal,omitempty"`
 	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
+	Timeout      *int64          `yaml:"timeout,omitempty"`      // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
+	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`  // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
 }
 
 // ArrivalSpec configures the inter-arrival time process.
@@ -258,6 +260,14 @@ func validateClient(c *ClientSpec, idx int) error {
 	}
 	if err := validateDistSpec(prefix+".output_distribution", &c.OutputDist); err != nil {
 		return err
+	}
+	// R3: Validate timeout if specified (negative values are invalid)
+	if c.Timeout != nil && *c.Timeout < 0 {
+		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
+	}
+	// Validate MaxRounds for reasoning/multi-turn (prevents panic in NewSessionManager)
+	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
+		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
 	}
 	return nil
 }

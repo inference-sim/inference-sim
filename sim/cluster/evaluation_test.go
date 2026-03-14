@@ -25,7 +25,7 @@ func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T)
 	}
 	requests := testGenerateRequests(42, 5000000, 1.0/1e6, 3,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("cs.Run: %v", err)
 	}

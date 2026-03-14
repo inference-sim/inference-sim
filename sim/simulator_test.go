@@ -574,18 +574,20 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 	injectRequests(sim, requests)
 	sim.Run()
 
-	// Three-term equation: injected == completed + queued + running
-	injected := len(sim.Metrics.Requests)
+	// Five-term equation: injected == completed + queued + running + dropped + timedOut (INV-1)
+	injected := 50 // independent count: we injected exactly 50 requests above
 	completed := sim.Metrics.CompletedRequests
 	queued := sim.WaitQ.Len()
 	running := 0
 	if sim.RunningBatch != nil {
 		running = len(sim.RunningBatch.Requests)
 	}
+	dropped := sim.Metrics.DroppedUnservable
+	timedOut := sim.Metrics.TimedOutRequests
 
-	if completed+queued+running != injected {
-		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
-			completed, queued, running, completed+queued+running, injected)
+	if completed+queued+running+dropped+timedOut != injected {
+		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
+			completed, queued, running, dropped, timedOut, completed+queued+running+dropped+timedOut, injected)
 	}
 
 	// With infinite horizon, all should complete
@@ -651,22 +653,25 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 
 	sim.Run()
 
-	injected := len(sim.Metrics.Requests)
+	injected := 15 // independent count: 10 early + 5 late
 	completed := sim.Metrics.CompletedRequests
 	queued := sim.WaitQ.Len()
 	running := 0
 	if sim.RunningBatch != nil {
 		running = len(sim.RunningBatch.Requests)
 	}
+	dropped := sim.Metrics.DroppedUnservable
+	timedOut := sim.Metrics.TimedOutRequests
 
-	if completed+queued+running != injected {
-		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) = %d, injected = %d",
-			completed, queued, running, completed+queued+running, injected)
+	sum := completed + queued + running + dropped + timedOut
+	if sum != injected {
+		t.Errorf("request conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
+			completed, queued, running, dropped, timedOut, sum, injected)
 	}
 
 	// Verify we actually tested the non-trivial case: some but not all completed
 	if completed == injected {
-		t.Fatalf("all %d requests completed — horizon too long, three-term case untested", injected)
+		t.Fatalf("all %d requests completed — horizon too long, conservation case untested", injected)
 	}
 	if completed == 0 {
 		t.Fatalf("no requests completed — horizon too short, test setup invalid")
@@ -2210,5 +2215,123 @@ func TestRecordRequestCompletion_NormalRequest_ITL(t *testing.T) {
 	gotITL := sim.Metrics.RequestITLs[req.ID]
 	if gotITL != 5000.0 {
 		t.Errorf("RequestITLs = %f, want 5000", gotITL)
+	}
+}
+
+// TestSimulator_Conservation_FiveTermWithTimeout verifies BC-4:
+// GIVEN requests with short deadlines mixed with normal requests AND dropped requests
+// WHEN simulation completes
+// THEN completed + still_queued + still_running + dropped_unservable + timed_out == injected
+func TestSimulator_Conservation_FiveTermWithTimeout(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(5, 16, 0, 0, 0, 0), // tiny KV: 5 blocks = 80 tokens capacity
+		BatchConfig:         NewBatchConfig(1, 2048, 0),            // batch size 1 forces queuing
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Track injection count independently (Metrics.Requests deletes dropped entries)
+	injectedCount := 0
+
+	// 3 normal requests (small, will complete)
+	for i := 0; i < 3; i++ {
+		sim.InjectArrival(&Request{
+			ID: fmt.Sprintf("normal_%d", i), ArrivalTime: int64(i * 5000),
+			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			MaxOutputLen: 5, State: StateQueued,
+		})
+		injectedCount++
+	}
+
+	// 3 timeout requests (will timeout while queued due to batch size 1)
+	for i := 0; i < 3; i++ {
+		sim.InjectArrival(&Request{
+			ID: fmt.Sprintf("timeout_%d", i), ArrivalTime: int64(i * 5000),
+			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			MaxOutputLen: 5, State: StateQueued,
+			Deadline: int64(i*5000 + 3000), // short deadline
+		})
+		injectedCount++
+	}
+
+	// 2 dropped requests (input too large for KV: 100 tokens > 80 token capacity)
+	for i := 0; i < 2; i++ {
+		sim.InjectArrival(&Request{
+			ID: fmt.Sprintf("dropped_%d", i), ArrivalTime: int64(i * 5000),
+			InputTokens: make([]int, 100), OutputTokens: make([]int, 5), // 100 tokens > 5 blocks * 16 = 80
+			MaxOutputLen: 5, State: StateQueued,
+		})
+		injectedCount++
+	}
+
+	sim.Run()
+
+	completed := sim.Metrics.CompletedRequests
+	queued := sim.WaitQ.Len()
+	running := 0
+	if sim.RunningBatch != nil {
+		running = len(sim.RunningBatch.Requests)
+	}
+	dropped := sim.Metrics.DroppedUnservable
+	timedOut := sim.Metrics.TimedOutRequests
+
+	fiveTermSum := completed + queued + running + dropped + timedOut
+	if fiveTermSum != injectedCount {
+		t.Errorf("BC-4 INV-1 5-term conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, injected = %d",
+			completed, queued, running, dropped, timedOut, fiveTermSum, injectedCount)
+	}
+
+	// All three terms must be exercised
+	if timedOut == 0 {
+		t.Error("expected at least 1 timed-out request")
+	}
+	if completed == 0 {
+		t.Error("expected at least 1 completed request")
+	}
+	if dropped == 0 {
+		t.Error("expected at least 1 dropped request (input > KV capacity)")
+	}
+}
+
+// TestSimulator_Timeout_KVConservation verifies BC-13:
+// GIVEN a running request with allocated KV blocks
+// WHEN it times out
+// THEN allocated + free = total (INV-4)
+func TestSimulator_Timeout_KVConservation(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0), // small KV for observability
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{0, 0, 0}), // slower steps so timeout hits mid-execution
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Request with short deadline — will start running but timeout before completing
+	sim.InjectArrival(&Request{
+		ID: "timeout_kv", ArrivalTime: 0,
+		InputTokens: make([]int, 50), OutputTokens: make([]int, 100),
+		MaxOutputLen: 100, State: StateQueued,
+		Deadline: 20000, // timeout at 20ms — step time is 5ms per step, not enough for 100 output tokens
+	})
+
+	sim.Run()
+
+	// After simulation: all KV blocks must be freed (INV-4)
+	usedBlocks := sim.KVCache.UsedBlocks()
+	totalBlocks := sim.KVCache.TotalCapacity()
+	freeBlocks := totalBlocks - usedBlocks
+	if usedBlocks != 0 {
+		t.Errorf("BC-13 INV-4: after timeout, used blocks = %d, want 0 (all freed)", usedBlocks)
+	}
+	if freeBlocks != totalBlocks {
+		t.Errorf("BC-13 INV-4: free(%d) + used(%d) != total(%d)", freeBlocks, usedBlocks, totalBlocks)
+	}
+	if sim.Metrics.TimedOutRequests != 1 {
+		t.Errorf("expected 1 timed-out request, got %d", sim.Metrics.TimedOutRequests)
 	}
 }
