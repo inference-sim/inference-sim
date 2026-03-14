@@ -241,6 +241,7 @@ flowchart TD
 | **KV Cache Manager** | Allocate/release/cache KV blocks | `KVStore` (11 methods) | Implemented |
 | **AutoScaler** | Add/remove instances based on load signals | `AutoScalePolicy` (planned) | Target — PR11 |
 | **Latency Model** | Estimate step execution time | `LatencyModel` (3 methods) | Implemented — `NewLatencyModel` factory |
+| **Interference Model** | Apply co-location slowdown when prefill/decode share an instance | `InterferenceLatencyModel` (wraps `LatencyModel`) | Implemented — PR3 |
 | **Batch Formation** | Select requests from queue for next step | `BatchFormation` (1 method: `FormBatch`) | Implemented — `NewBatchFormation` factory |
 | **Workload Generator** | Produce request streams from specs/traces | `GenerateRequests()` function | Implemented |
 | **Trace Recorder** | Record decisions for analysis | `SimulationTrace` | Implemented |

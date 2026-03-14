@@ -38,6 +38,11 @@ type ClusterSimulator struct {
 	disaggregationDecider   sim.DisaggregationDecider   // PD disaggregation decider (nil when disabled)
 
 	// PD disaggregation state (PR2)
+	// parentRequests is intentionally never pruned during simulation; entries are retained for
+	// post-simulation access via ParentRequests() and CollectPDMetrics(). The map grows by one
+	// entry per disaggregated parent request. For typical simulation objects (< 100K requests),
+	// memory growth is bounded and acceptable. Long-lived or high-volume callers should use
+	// short-lived ClusterSimulator instances rather than accumulating requests across runs.
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID (for CompletionTime)
@@ -70,6 +75,29 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		}
 	}
 
+	// R3: validate interference factors BEFORE instance construction so the
+	// authored error messages are reachable and no partial allocation occurs.
+	// Upper bound (MaxInterferenceFactor) prevents silent int64 overflow when
+	// factor * stepTime exceeds MaxInt64 after math.Round (see interference.go).
+	if config.PDInterferencePrefill < 0 || math.IsNaN(config.PDInterferencePrefill) || math.IsInf(config.PDInterferencePrefill, 0) || config.PDInterferencePrefill > MaxInterferenceFactor {
+		panic(fmt.Sprintf("ClusterSimulator: PDInterferencePrefill must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferencePrefill))
+	}
+	if config.PDInterferenceDecode < 0 || math.IsNaN(config.PDInterferenceDecode) || math.IsInf(config.PDInterferenceDecode, 0) || config.PDInterferenceDecode > MaxInterferenceFactor {
+		panic(fmt.Sprintf("ClusterSimulator: PDInterferenceDecode must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferenceDecode))
+	}
+	// R20: warn when interference factors are non-zero but the deployment is fully
+	// disaggregated (all instances pool-assigned). In that case, pool instances only
+	// receive phase-pure batches (INV-PD-2), so the interference multiplier is always
+	// 1.0 and these parameters have no effect.
+	if (config.PDInterferencePrefill > 0 || config.PDInterferenceDecode > 0) &&
+		config.PrefillInstances > 0 && config.DecodeInstances > 0 {
+		logrus.Warnf("[cluster] pd-interference-prefill/decode are non-zero but all instances are pool-assigned "+
+			"(prefill-instances=%d, decode-instances=%d). Pool instances serve only phase-pure batches "+
+			"(INV-PD-2), so the interference multiplier is always 1.0. These parameters have no effect "+
+			"in fully disaggregated deployments.",
+			config.PrefillInstances, config.DecodeInstances)
+	}
+
 	// Build pool membership from indices BEFORE instance construction
 	// so we can resolve per-pool configs for each instance (INV-P2-1).
 	var prePoolMembership map[string]PoolRole
@@ -87,7 +115,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 			role = prePoolMembership[string(id)]
 		}
 		simCfg := config.resolveConfigForRole(role)
-		instances[idx] = NewInstanceSimulator(id, simCfg)
+		instances[idx] = newInstanceSimulatorCore(id, simCfg, config.PDInterferencePrefill, config.PDInterferenceDecode)
 	}
 	// Build instance map for snapshot provider
 	instanceMap := make(map[InstanceID]*InstanceSimulator, len(instances))
@@ -128,7 +156,6 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 {
 		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances and --decode-instances must be set)")
 	}
-
 	// PD disaggregation: validate transfer parameters and build runtime state.
 	// Pool topology already validated above (before instance construction).
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {

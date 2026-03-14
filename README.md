@@ -18,6 +18,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`) or custom distributions
 - **Trace replay**: replay recorded request traces for deterministic testing
 - **Multi-instance cluster simulation** with shared-clock event loop
+- **Prefill-decode (PD) disaggregation**: separate prefill and decode pools with KV transfer modeling, fair-share bandwidth contention, per-pool hardware overrides, and co-location interference model for break-even analysis
 - **Pluggable routing policies**: round-robin, least-loaded, weighted-scoring
 - **Priority policies**: constant, slo-based (request prioritization)
 - **Instance schedulers**: fcfs, priority-fcfs, sjf (batch formation policies)

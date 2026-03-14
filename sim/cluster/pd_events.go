@@ -254,6 +254,14 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			e.parentReq.DecodeInstanceID = decision.TargetInstance
 			e.parentReq.DecodeEnqueueTime = e.time
 
+			// INV-PD-1 defensive check: decode_enqueue_time >= transfer_complete_time.
+			// By construction this always holds: both use the same event timestamp (e.time).
+			// The check makes any future priority-ordering regression detectable at run time.
+			if e.parentReq.DecodeEnqueueTime < e.parentReq.TransferCompleteTime {
+				logrus.Warnf("[cluster] INV-PD-1 violated: DecodeEnqueueTime (%d) < TransferCompleteTime (%d) for req %s",
+					e.parentReq.DecodeEnqueueTime, e.parentReq.TransferCompleteTime, e.parentReq.ID)
+			}
+
 			// Record KV transfer and decode routing after successful KV allocation (BC-PD-17, BC-PD-19)
 			// Placement after AllocateTransferredKV ensures records only exist for requests that
 			// complete the decode phase (R1: no orphan records for dropped requests).
