@@ -386,8 +386,10 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 // TieredKVCache in two paths: (1) the full-reload path, which returns true
 // immediately after calling this (so no rollback is needed); (2) the
 // partial-improvement path, which calls gpu.AllocateKVBlocks afterwards.
-// In path (2), if AllocateKVBlocks fails at its pre-check (the common case),
-// no rollback fires and the committed state is stable. Mid-loop failure is
+// In path (2), AllocateKVBlocks always fails at its pre-check (guaranteed:
+// the original failure N>F implies the tail condition (N-R)>(F-R), so the
+// tail pre-check always fails). No rollback fires and the committed state
+// is stable. Mid-loop failure is
 // impossible in BLIS's single-threaded DES: once the pre-check passes,
 // countFreeBlocks() cannot decrease before the allocation loop runs.
 // The inline equivalent in AllocateKVBlocks feeds cachedMutations for
