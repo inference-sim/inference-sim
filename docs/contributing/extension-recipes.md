@@ -235,3 +235,45 @@ To add a new field to per-request JSON output (appears in `--results-path` outpu
 Examples:
 - See `HandledBy` (#181) — set by `RoutingDecisionEvent`, zero-value when used outside cluster pipeline (suppressed from JSON via `omitempty`)
 - See `SLOClass`/`TenantID` (PR10) — set during workload generation, propagated at injection
+## Adding Per-Pool Hardware Configuration
+
+Use this recipe when a new feature should behave differently on prefill vs decode instances (e.g., a model parameter that differs between pools with heterogeneous hardware).
+
+1. **Add field to `PoolOverrides`** in `sim/cluster/resolve.go`:
+   ```go
+   type PoolOverrides struct {
+       TP             *int    // use pointer for optional/nullable fields (R9)
+       GPU            string
+       // ... existing fields ...
+       MyNewOption    *float64 // pointer if zero is a valid value
+   }
+   ```
+2. **Add to `PoolOverrides.Validate()`** (R3: validate at boundary):
+   ```go
+   if p.MyNewOption != nil && (*p.MyNewOption < 0 || math.IsNaN(*p.MyNewOption)) {
+       return fmt.Errorf("%s: MyNewOption must be >= 0, got %f", context, *p.MyNewOption)
+   }
+   ```
+3. **Add to `ResolvePoolConfig()`** in `sim/cluster/resolve.go`:
+   ```go
+   if overrides.MyNewOption != nil { result.SomeSubConfig.MyNewOption = *overrides.MyNewOption }
+   ```
+4. **Add CLI flags** in `cmd/root.go` (R18: use `cmd.Flags().Changed()` to detect explicit user values):
+   ```go
+   runCmd.Flags().Float64Var(&prefillMyOption, "prefill-my-option", 0, "...")
+   runCmd.Flags().Float64Var(&decodeMyOption, "decode-my-option", 0, "...")
+   ```
+5. **Propagate to `DeploymentConfig`** via `PrefillOverrides`/`DecodeOverrides`:
+   ```go
+   if cmd.Flags().Changed("prefill-my-option") {
+       prefillOverrides.MyNewOption = &prefillMyOption
+   }
+   ```
+6. **Add validation** in `NewClusterSimulator` before instance construction (R3: fail fast before any allocation).
+7. **Update `CLAUDE.md`** with new flag names.
+
+Extension friction: **5 touch points** (PoolOverrides + Validate + ResolvePoolConfig + CLI flags + DeploymentConfig wiring)
+
+Examples:
+- See `TP`, `GPU`, `MaxModelLen`, `TotalKVBlocks` in `sim/cluster/resolve.go`
+- See `--prefill-tp`, `--decode-tp`, `--prefill-hardware`, `--decode-hardware` in `cmd/root.go`

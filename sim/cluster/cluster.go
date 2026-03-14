@@ -51,8 +51,10 @@ type ClusterSimulator struct {
 	transfersInitiated        int
 	transfersCompleted        int
 	droppedAtDecodeKV         int               // decode sub-requests dropped due to KV allocation failure (R1, INV-1)
-	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
-	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
+	prefillRoutingPolicy      sim.RoutingPolicy    // nil = use main routingPolicy
+	decodeRoutingPolicy       sim.RoutingPolicy    // nil = use main routingPolicy
+	prefillInstanceSlice      []*InstanceSimulator // pre-computed for O(K) pool snapshot; nil when disabled
+	decodeInstanceSlice       []*InstanceSimulator // pre-computed for O(K) pool snapshot; nil when disabled
 
 	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
 	activeTransfers                int   // currently in-flight transfers
@@ -240,6 +242,20 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		}
 		if len(config.DecodeScorerConfigs) > 0 {
 			cs.decodeRoutingPolicy = sim.NewRoutingPolicy("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"))
+		}
+
+		// Pre-compute per-pool instance slices for O(K) snapshot filtering in
+		// buildPoolFilteredSnapshots (avoids O(N) linear scan per routing event).
+		// Instances are appended in order (R2: deterministic).
+		cs.prefillInstanceSlice = make([]*InstanceSimulator, 0, config.PrefillInstances)
+		cs.decodeInstanceSlice = make([]*InstanceSimulator, 0, config.DecodeInstances)
+		for _, inst := range instances {
+			switch cs.poolMembership[string(inst.ID())] {
+			case PoolRolePrefill:
+				cs.prefillInstanceSlice = append(cs.prefillInstanceSlice, inst)
+			case PoolRoleDecode:
+				cs.decodeInstanceSlice = append(cs.decodeInstanceSlice, inst)
+			}
 		}
 
 		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
@@ -456,14 +472,26 @@ func (c *ClusterSimulator) nextSeqID() int64 {
 }
 
 // buildPoolFilteredSnapshots constructs routing snapshots for instances in the given pool role.
-// Iterates c.instances in order for determinism (R2); builds snapshots only for target pool
-// members to avoid constructing and discarding snapshots for the other pool.
+// Uses pre-computed per-pool instance slices for O(K) lookup (K = pool size) instead of
+// scanning all instances (O(N)). Slices are populated at construction in sorted order (R2).
 func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
-	snapshots := make([]sim.RoutingSnapshot, 0, len(c.instances)/2+1)
-	for _, inst := range c.instances {
-		if c.poolMembership[string(inst.ID())] != role {
-			continue
+	var poolInstances []*InstanceSimulator
+	switch role {
+	case PoolRolePrefill:
+		poolInstances = c.prefillInstanceSlice
+	case PoolRoleDecode:
+		poolInstances = c.decodeInstanceSlice
+	default:
+		// Fallback: linear scan for unrecognized roles (defensive, should not occur in practice).
+		poolInstances = make([]*InstanceSimulator, 0, len(c.instances)/2+1)
+		for _, inst := range c.instances {
+			if c.poolMembership[string(inst.ID())] == role {
+				poolInstances = append(poolInstances, inst)
+			}
 		}
+	}
+	snapshots := make([]sim.RoutingSnapshot, 0, len(poolInstances))
+	for _, inst := range poolInstances {
 		snap := c.snapshotProvider.Snapshot(inst.ID(), c.clock)
 		snap.InFlightRequests = c.inFlightRequests[string(inst.ID())]
 		snapshots = append(snapshots, snap)

@@ -526,3 +526,46 @@ func newHeterogeneousDeploymentConfig(numInstances, prefill, decode int, prefill
 		DecodeOverrides:         decodeOverrides,
 	}
 }
+
+// TestResolvePoolConfig_MaxModelLen_CappedToPoolKVCapacity verifies INV-P2-1:
+// when a pool has smaller TotalKVBlocks than global, ResolvePoolConfig propagates
+// the pool-capped MaxModelLen (set by CLI per-pool auto-capping fix) correctly.
+func TestResolvePoolConfig_MaxModelLen_CappedToPoolKVCapacity(t *testing.T) {
+	// GIVEN global config with large MaxModelLen and large global KV blocks
+	global := sim.SimConfig{
+		Horizon: 1000000,
+		Seed:    42,
+		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0), // 10000 blocks × 16 = 160000 tokens
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "", 131072),
+	}
+
+	// AND per-pool override with smaller TotalKVBlocks (smaller GPU) and auto-capped MaxModelLen
+	poolKVFeasibleMax := int64(2048 * 16) // 32768 tokens
+	poolMaxModelLen := poolKVFeasibleMax   // auto-capped CLI fix would set this
+	poolBlocks := int64(2048)
+	overrides := PoolOverrides{
+		TotalKVBlocks: &poolBlocks,
+		MaxModelLen:   &poolMaxModelLen,
+	}
+
+	// WHEN resolving pool config
+	result := ResolvePoolConfig(global, overrides)
+
+	// THEN pool config has smaller TotalKVBlocks and capped MaxModelLen
+	if result.TotalKVBlocks != 2048 {
+		t.Errorf("TotalKVBlocks = %d, want 2048", result.TotalKVBlocks)
+	}
+	if result.MaxModelLen != poolKVFeasibleMax {
+		t.Errorf("MaxModelLen = %d, want %d (pool KV feasible max)", result.MaxModelLen, poolKVFeasibleMax)
+	}
+
+	// AND MaxModelLen does not exceed pool KV capacity (INV-P2-1)
+	blocksNeeded := result.MaxModelLen / result.BlockSizeTokens
+	if result.MaxModelLen%result.BlockSizeTokens != 0 {
+		blocksNeeded++
+	}
+	if blocksNeeded > result.TotalKVBlocks {
+		t.Errorf("INV-P2-1: MaxModelLen=%d requires %d blocks, exceeds pool TotalKVBlocks=%d",
+			result.MaxModelLen, blocksNeeded, result.TotalKVBlocks)
+	}
+}

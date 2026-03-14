@@ -16,10 +16,25 @@ on:
 
 jobs:
   claude:
+    # Restrict to repo collaborators (OWNER, MEMBER, or COLLABORATOR association)
+    # to prevent untrusted users from triggering write-access Claude Code actions
+    # via public @claude mentions. Uses event-type-specific author_association fields
+    # (github.event.sender.association is not a valid GitHub Actions context field;
+    # the correct path is comment.author_association for comment events).
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'issues' && contains(github.event.issue.body, '@claude'))
+      (
+        github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+      ) || (
+        github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+      ) || (
+        github.event_name == 'issues' &&
+        contains(github.event.issue.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+      )
     runs-on: [self-hosted]
 
     steps:

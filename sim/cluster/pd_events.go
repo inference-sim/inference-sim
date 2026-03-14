@@ -77,7 +77,10 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 			return
 		}
 	}
-	panic(fmt.Sprintf("PrefillRoutingEvent: invalid TargetInstance %q", decision.TargetInstance))
+	// Unreachable under correct routing policy (policy contract guarantees valid target).
+	// If reached, indicates a programming error in the routing policy implementation.
+	// R6: this is a library panic on programming error, not a user-input error.
+	panic(fmt.Sprintf("PrefillRoutingEvent: invalid TargetInstance %q returned by routing policy (programming error — policy must return an instance ID present in the cluster)", decision.TargetInstance))
 }
 
 // KVTransferStartedEvent fires when a prefill sub-request completes.
@@ -102,6 +105,21 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 
 	// Contention tracking: increment BEFORE duration calculation so this
 	// transfer is counted in its own fair-share divisor (INV-P2-2).
+	//
+	// DES sequentialization note: when multiple KVTransferStartedEvents share the
+	// same timestamp (e.g., bursty prefill completions), they are processed one at a
+	// time in seqID order. Each sees a different activeTransfers count (1, 2, 3, …),
+	// meaning earlier-seqID transfers experience lower contention and shorter duration.
+	// This is the correct DES behavior: INV-P2-2 applies at the moment each transfer
+	// starts within the simulator's sequential event model.
+	//
+	// Accuracy note: for N transfers that start at the exact same tick, the DES
+	// mean transfer duration is S*(N+1)/(2*B) instead of the true concurrent mean
+	// S*N/B — a systematic underestimate of (N+1)/(2N) (75% for N=2, 67% for N=3).
+	// In practice, exact same-tick bursts occur only when multiple prefill sub-requests
+	// complete simultaneously (same latency + arrival), which is rare in varied workloads.
+	// For capacity planning with heavy contention, treat transfer duration metrics as
+	// optimistic lower bounds when --pd-transfer-contention is enabled.
 	if cs.config.PDTransferContention {
 		cs.activeTransfers++
 		if cs.activeTransfers > cs.peakConcurrentTransfers {

@@ -145,6 +145,9 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 
 Trained-roofline mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from 137K real vLLM requests across 4 architectures (Llama-2-7b, Llama-2-70b, Mixtral-8x7B, CodeLlama-34b) via non-negative least squares regression.
 
+!!! warning "Accuracy scope"
+    The **7% MAPE** figure applies to **GPU combined step time** (the β terms). The alpha (α) model has substantially higher error: `α₀` (pre-queueing overhead) achieves ~93% MAPE because a single constant poorly captures highly variable real-world API latency. **TTFT predictions have higher uncertainty than GPU step time predictions.** For TTFT-sensitive capacity planning (e.g., SLO compliance modeling), calibrate `α₀` per deployment or use blackbox mode with per-deployment coefficients.
+
 ```bash
 ./blis run --model qwen/qwen3-14b \
   --latency-model trained-roofline --hardware H100 --tp 1

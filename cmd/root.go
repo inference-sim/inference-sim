@@ -729,7 +729,15 @@ var runCmd = &cobra.Command{
 					blocksNeeded++
 				}
 				if blocksNeeded > totalKVBlocks {
-					kvFeasibleMax := totalKVBlocks * blockSizeTokens // product bounded by maxModelLen (blocksNeeded > totalKVBlocks)
+					// Overflow guard: since blocksNeeded > totalKVBlocks and
+					// blocksNeeded = ceil(maxModelLen/blockSizeTokens), the product
+					// totalKVBlocks*blockSizeTokens < maxModelLen (already fits in int64).
+					// Guard explicitly for extreme configs (R3).
+					if totalKVBlocks > math.MaxInt64/blockSizeTokens {
+						logrus.Fatalf("--latency-model: totalKVBlocks (%d) * blockSizeTokens (%d) overflows int64; set --total-kv-blocks explicitly",
+							totalKVBlocks, blockSizeTokens)
+					}
+					kvFeasibleMax := totalKVBlocks * blockSizeTokens
 					logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
 						maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
 					maxModelLen = kvFeasibleMax
@@ -804,6 +812,27 @@ var runCmd = &cobra.Command{
 					poolInfo.overrides.TotalKVBlocks = &poolBlocks
 					logrus.Infof("--%s pool: auto-calculated total-kv-blocks=%d (GPU=%s, %.0f GiB, TP=%d)",
 						poolInfo.name, poolBlocks, effectiveGPU, poolHWConfig.MemoryGiB, effectiveTP)
+
+					// Per-pool maxModelLen capping: when pool KV capacity is smaller than the
+					// global config, auto-cap maxModelLen for this pool to prevent a confusing
+					// NewSimulator construction failure (INV-P2-1). Only overrides when the user
+					// has not explicitly set a per-pool max-model-len flag (R18).
+					if poolInfo.overrides.MaxModelLen == nil && maxModelLen > 0 && blockSizeTokens > 0 {
+						// Overflow guard: consistent with global guard at line ~740 (R3).
+						if poolBlocks > math.MaxInt64/blockSizeTokens {
+							logrus.Warnf("--%s pool: poolBlocks (%d) * blockSizeTokens (%d) overflows int64; skipping per-pool max-model-len cap",
+								poolInfo.name, poolBlocks, blockSizeTokens)
+						} else {
+							poolKVFeasibleMax := poolBlocks * blockSizeTokens
+							if maxModelLen > poolKVFeasibleMax {
+								poolMaxModelLen := poolKVFeasibleMax
+								poolInfo.overrides.MaxModelLen = &poolMaxModelLen
+								logrus.Warnf("--%s pool: auto-capping max-model-len to %d (pool KV capacity %d < global %d); "+
+									"use --%s-max-model-len to override",
+									poolInfo.name, poolMaxModelLen, poolKVFeasibleMax, maxModelLen, poolInfo.name)
+							}
+						}
+					}
 				}
 			}
 		}
