@@ -44,13 +44,17 @@ type ClusterSimulator struct {
 	// memory growth is bounded and acceptable. Long-lived or high-volume callers should use
 	// short-lived ClusterSimulator instances rather than accumulating requests across runs.
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
-	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
-	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID (for CompletionTime)
+	pendingPrefillCompletions   map[string]string            // prefill sub-req ID → parent ID (global index)
+	pendingDecodeCompletions    map[string]string            // decode sub-req ID → parent ID (global index)
+	pendingPrefillByInstance    map[string]map[string]string // instance ID → (sub-req ID → parent ID); O(K) detection
+	pendingDecodeByInstance     map[string]map[string]string // instance ID → (sub-req ID → parent ID); O(K) detection
 	transfersInitiated        int
 	transfersCompleted        int
 	droppedAtDecodeKV         int               // decode sub-requests dropped due to KV allocation failure (R1, INV-1)
-	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
-	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
+	prefillRoutingPolicy      sim.RoutingPolicy    // nil = use main routingPolicy
+	decodeRoutingPolicy       sim.RoutingPolicy    // nil = use main routingPolicy
+	prefillInstanceSlice      []*InstanceSimulator // pre-computed for O(K) pool snapshot; nil when disabled
+	decodeInstanceSlice       []*InstanceSimulator // pre-computed for O(K) pool snapshot; nil when disabled
 
 	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
 	activeTransfers                int   // currently in-flight transfers
@@ -73,6 +77,19 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
+		// Warn when instances are unassigned (prefill + decode < total).
+		// Unassigned instances receive NO requests when PD is active: all admitted requests
+		// route through pool-filtered snapshots (disaggregated → prefill pool,
+		// non-disaggregated → decode pool). Unassigned instances sit idle.
+		// This is allowed for warm-standby or future-use capacity, but is unusual and
+		// likely a misconfiguration. Users intending fully-disaggregated clusters should
+		// set prefill + decode == num-instances.
+		if unassigned := config.NumInstances - config.PrefillInstances - config.DecodeInstances; unassigned > 0 {
+			logrus.Warnf("[cluster] %d instance(s) are unassigned to any pool (prefill=%d, decode=%d, total=%d). "+
+				"Unassigned instances will be idle when PD disaggregation is active. "+
+				"Set --prefill-instances + --decode-instances == --num-instances to use all capacity.",
+				unassigned, config.PrefillInstances, config.DecodeInstances, config.NumInstances)
+		}
 	}
 
 	// R3: validate interference factors BEFORE instance construction so the
@@ -86,16 +103,28 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		panic(fmt.Sprintf("ClusterSimulator: PDInterferenceDecode must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferenceDecode))
 	}
 	// R20: warn when interference factors are non-zero but the deployment is fully
-	// disaggregated (all instances pool-assigned). In that case, pool instances only
-	// receive phase-pure batches (INV-PD-2), so the interference multiplier is always
-	// 1.0 and these parameters have no effect.
+	// disaggregated (all instances pool-assigned AND decider is "always"). In that case,
+	// pool instances only receive phase-pure batches (INV-PD-2), so the interference
+	// multiplier is always 1.0 and these parameters have no effect.
+	// When direct-to-decode or prefix-threshold is active, non-disaggregated requests
+	// may reach decode instances, creating mixed batches where interference applies.
 	if (config.PDInterferencePrefill > 0 || config.PDInterferenceDecode > 0) &&
-		config.PrefillInstances > 0 && config.DecodeInstances > 0 {
+		config.PrefillInstances > 0 && config.DecodeInstances > 0 &&
+		config.PDDecider == "always" {
 		logrus.Warnf("[cluster] pd-interference-prefill/decode are non-zero but all instances are pool-assigned "+
-			"(prefill-instances=%d, decode-instances=%d). Pool instances serve only phase-pure batches "+
+			"(prefill-instances=%d, decode-instances=%d) with decider=%q. Pool instances serve only phase-pure batches "+
 			"(INV-PD-2), so the interference multiplier is always 1.0. These parameters have no effect "+
 			"in fully disaggregated deployments.",
-			config.PrefillInstances, config.DecodeInstances)
+			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
+	}
+
+	// R3: validate per-pool overrides BEFORE instance construction so invalid configs
+	// fail with a clear message rather than a cryptic panic inside the latency factory.
+	if err := config.PrefillOverrides.Validate("prefill pool"); err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	}
+	if err := config.DecodeOverrides.Validate("decode pool"); err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
 	}
 
 	// Build pool membership from indices BEFORE instance construction
@@ -169,6 +198,22 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		if config.PDTransferBaseLatencyMs < 0 || math.IsNaN(config.PDTransferBaseLatencyMs) || math.IsInf(config.PDTransferBaseLatencyMs, 0) {
 			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be a finite non-negative number when PD is enabled, got %f", config.PDTransferBaseLatencyMs))
 		}
+		// C1/R3: guard against int64 overflow in KVTransferStartedEvent.Execute().
+		// baseLatUs = PDTransferBaseLatencyMs * 1000; int64(math.Ceil(1e19)) wraps to MinInt64
+		// on amd64, then the duration<1 floor silently clamps to 1 µs (wrong result, no error).
+		// 3.6e9 ms = 1000 hours is an extreme but finite upper bound.
+		const maxTransferBaseLatencyMs = 3_600_000_000.0 // 1000 hours
+		if config.PDTransferBaseLatencyMs > maxTransferBaseLatencyMs {
+			panic(fmt.Sprintf("ClusterSimulator: PDTransferBaseLatencyMs must be <= %.0f ms (1000 hours) to prevent int64 overflow in transfer duration, got %f", maxTransferBaseLatencyMs, config.PDTransferBaseLatencyMs))
+		}
+		// C6/R3: BlockSizeTokens must be > 0 when PD is enabled; NewParentRequest panics
+		// if blockSizeTokens <= 0, and that panic fires inside an event handler during Run()
+		// (R6 violation). Validate here so the error appears at construction time.
+		// Note: NewSimulator also validates BlockSizeTokens > 0 per instance, so this check
+		// is reached first only when called before instance construction.
+		if config.BlockSizeTokens <= 0 {
+			panic(fmt.Sprintf("ClusterSimulator: KVCacheConfig.BlockSizeTokens must be > 0 when PD is enabled, got %d", config.BlockSizeTokens))
+		}
 		// R3: guard against int64 overflow in KVTransferStartedEvent.Execute().
 		// blockSizeBytes = BlockSizeTokens * PDKVBytesPerToken; if this overflows int64,
 		// transferBytes becomes negative and the duration clamps to 1 µs (silent wrong result).
@@ -177,14 +222,19 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 				config.BlockSizeTokens, config.PDKVBytesPerToken))
 		}
 		cs.poolMembership = prePoolMembership
-		if config.PDDecider == "prefix-threshold" {
+		switch config.PDDecider {
+		case "prefix-threshold":
 			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
-		} else {
+		case "direct-to-decode":
+			cs.disaggregationDecider = sim.NewDirectToDecodeDecider(config.PDDirectDecodeThreshold)
+		default:
 			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		}
 		cs.parentRequests = make(map[string]*ParentRequest)
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
+		cs.pendingPrefillByInstance = make(map[string]map[string]string, config.PrefillInstances)
+		cs.pendingDecodeByInstance = make(map[string]map[string]string, config.DecodeInstances)
 
 		// Per-pool routing policies (use separate RNG partitions to avoid fragile coupling)
 		if len(config.PrefillScorerConfigs) > 0 {
@@ -192,6 +242,20 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		}
 		if len(config.DecodeScorerConfigs) > 0 {
 			cs.decodeRoutingPolicy = sim.NewRoutingPolicy("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"))
+		}
+
+		// Pre-compute per-pool instance slices for O(K) snapshot filtering in
+		// buildPoolFilteredSnapshots (avoids O(N) linear scan per routing event).
+		// Instances are appended in order (R2: deterministic).
+		cs.prefillInstanceSlice = make([]*InstanceSimulator, 0, config.PrefillInstances)
+		cs.decodeInstanceSlice = make([]*InstanceSimulator, 0, config.DecodeInstances)
+		for _, inst := range instances {
+			switch cs.poolMembership[string(inst.ID())] {
+			case PoolRolePrefill:
+				cs.prefillInstanceSlice = append(cs.prefillInstanceSlice, inst)
+			case PoolRoleDecode:
+				cs.decodeInstanceSlice = append(cs.decodeInstanceSlice, inst)
+			}
 		}
 
 		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
@@ -368,13 +432,22 @@ func (c *ClusterSimulator) Run() error {
 				c.activeTransfers)
 		}
 		// Orphaned pending completions at horizon — in-flight disaggregated requests
-		// that never completed their pipeline phase. This is expected when horizon
-		// truncates requests mid-pipeline, so warn (not error).
+		// that never completed their pipeline phase. This includes requests dropped at the
+		// instance level (MaxModelLen violations) and requests horizon-truncated mid-pipeline.
+		// Both cases are expected: dropped requests are counted in DroppedUnservable; horizon-
+		// truncated requests remain in StillQueued/StillRunning. Warn so operators can diagnose.
+		// Clear both maps after logging: the detection maps are only useful during simulation,
+		// and orphaned entries for dropped/truncated requests would accumulate across long
+		// simulations. Clearing here releases the memory and prevents stale state (R1).
 		if n := len(c.pendingPrefillCompletions); n > 0 {
-			logrus.Warnf("[cluster] %d prefill sub-requests still pending at horizon (never completed)", n)
+			logrus.Warnf("[cluster] %d prefill sub-requests still pending at horizon (dropped at instance or horizon-truncated)", n)
+			c.pendingPrefillCompletions = nil
+			c.pendingPrefillByInstance = nil
 		}
 		if n := len(c.pendingDecodeCompletions); n > 0 {
-			logrus.Warnf("[cluster] %d decode sub-requests still pending at horizon (never completed)", n)
+			logrus.Warnf("[cluster] %d decode sub-requests still pending at horizon (horizon-truncated)", n)
+			c.pendingDecodeCompletions = nil
+			c.pendingDecodeByInstance = nil
 		}
 	}
 
@@ -398,28 +471,52 @@ func (c *ClusterSimulator) nextSeqID() int64 {
 	return id
 }
 
-// buildPoolFilteredSnapshots constructs routing snapshots filtered to a specific pool role.
-// Preserves instance order from c.instances for determinism (R2).
+// buildPoolFilteredSnapshots constructs routing snapshots for instances in the given pool role.
+// Uses pre-computed per-pool instance slices for O(K) lookup (K = pool size) instead of
+// scanning all instances (O(N)). Slices are populated at construction in sorted order (R2).
 func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
-	allSnapshots := make([]sim.RoutingSnapshot, len(c.instances))
-	for i, inst := range c.instances {
+	var poolInstances []*InstanceSimulator
+	switch role {
+	case PoolRolePrefill:
+		poolInstances = c.prefillInstanceSlice
+	case PoolRoleDecode:
+		poolInstances = c.decodeInstanceSlice
+	default:
+		// Fallback: linear scan for unrecognized roles (defensive, should not occur in practice).
+		poolInstances = make([]*InstanceSimulator, 0, len(c.instances)/2+1)
+		for _, inst := range c.instances {
+			if c.poolMembership[string(inst.ID())] == role {
+				poolInstances = append(poolInstances, inst)
+			}
+		}
+	}
+	snapshots := make([]sim.RoutingSnapshot, 0, len(poolInstances))
+	for _, inst := range poolInstances {
 		snap := c.snapshotProvider.Snapshot(inst.ID(), c.clock)
 		snap.InFlightRequests = c.inFlightRequests[string(inst.ID())]
-		allSnapshots[i] = snap
+		snapshots = append(snapshots, snap)
 	}
-	return FilterSnapshotsByPool(allSnapshots, c.poolMembership, role)
+	return snapshots
 }
 
 // detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance
 // and schedules KV transfer events for each.
+// Uses pendingPrefillByInstance[inst.ID()] for O(K) detection (K = sub-requests routed to this
+// instance) instead of scanning all pending completions cluster-wide (old O(N) approach).
 // Keys are processed in sorted order (R2) to ensure deterministic seqID assignment (INV-6).
 func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
+	instID := string(inst.ID())
+	instancePending, ok := c.pendingPrefillByInstance[instID]
+	if !ok || len(instancePending) == 0 {
+		return // no pending prefills for this instance
+	}
 	completionTimes := inst.Metrics().RequestCompletionTimes
 
 	// R2/INV-6: collect and sort keys before processing so seqIDs are deterministic
 	// across runs regardless of Go's map iteration order.
-	subReqIDs := make([]string, 0, len(c.pendingPrefillCompletions))
-	for subReqID := range c.pendingPrefillCompletions {
+	// Only iterate sub-requests assigned to this instance (O(K) not O(all pending)).
+	subReqIDs := make([]string, 0, len(instancePending))
+	for subReqID := range instancePending {
 		if _, completed := completionTimes[subReqID]; completed {
 			subReqIDs = append(subReqIDs, subReqID)
 		}
@@ -437,6 +534,7 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		}
 		parent.PrefillCompleteTime = c.clock
 		delete(c.pendingPrefillCompletions, subReqID)
+		delete(instancePending, subReqID)
 
 		// Schedule KV transfer
 		heap.Push(&c.clusterEvents, clusterEventEntry{
@@ -451,13 +549,21 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 
 // detectDecodeCompletions checks for newly completed decode sub-requests on the given instance
 // and records CompletionTime on the parent request, completing INV-PD-4.
+// Uses pendingDecodeByInstance[inst.ID()] for O(K) detection (K = sub-requests routed to this
+// instance) instead of scanning all pending completions cluster-wide.
 // Keys are processed in sorted order (R2) to ensure deterministic processing (INV-6).
 func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
+	instID := string(inst.ID())
+	instancePending, ok := c.pendingDecodeByInstance[instID]
+	if !ok || len(instancePending) == 0 {
+		return // no pending decodes for this instance
+	}
 	completionTimes := inst.Metrics().RequestCompletionTimes
 
 	// R2/INV-6: collect and sort keys before processing.
-	subReqIDs := make([]string, 0, len(c.pendingDecodeCompletions))
-	for subReqID := range c.pendingDecodeCompletions {
+	// Only iterate sub-requests assigned to this instance (O(K) not O(all pending)).
+	subReqIDs := make([]string, 0, len(instancePending))
+	for subReqID := range instancePending {
 		if _, completed := completionTimes[subReqID]; completed {
 			subReqIDs = append(subReqIDs, subReqID)
 		}
@@ -475,6 +581,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		}
 		parent.CompletionTime = c.clock
 		delete(c.pendingDecodeCompletions, subReqID)
+		delete(instancePending, subReqID)
 	}
 }
 

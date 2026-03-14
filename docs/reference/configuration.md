@@ -188,6 +188,17 @@ The `--pd-decider` flag selects the policy that decides whether each request is 
 | `never` | Never disaggregate. All requests use the standard routing path (default). |
 | `always` | Always disaggregate. All requests go through the PD prefill → transfer → decode pipeline. |
 | `prefix-threshold` | Disaggregate when the number of **non-cached input tokens** exceeds `--pd-prefix-threshold`. |
+| `direct-to-decode` | Disaggregate when `len(InputTokens) >= --pd-direct-decode-threshold`. Short prompts skip disaggregation and route directly to the decode pool. |
+
+### direct-to-decode Semantics
+
+The `direct-to-decode` decider compares total input token count against the threshold:
+
+- Disaggregate when `len(InputTokens) >= threshold`; route directly to decode pool when `len(InputTokens) < threshold`
+- Empty inputs always route directly to decode (no disaggregation)
+- Non-disaggregated requests route to the decode pool only (INV-P2-4), where both prefill and decode phases run on the same instance with potential interference cost
+
+**Default threshold: 256 tokens.** Short prompts (< 256 tokens) skip the transfer overhead by running both phases locally on a decode instance. Long prompts benefit from dedicated prefill compute. Tune based on your break-even point between transfer cost and co-location interference.
 
 ### prefix-threshold Semantics
 
@@ -207,8 +218,9 @@ This reflects the real cost driver: disaggregating prefill is only beneficial wh
 |------|------|---------|-------------|
 | `--prefill-instances` | int | 0 | Number of prefill-pool instances (0 = PD disabled). |
 | `--decode-instances` | int | 0 | Number of decode-pool instances (0 = PD disabled). |
-| `--pd-decider` | string | "never" | Disaggregation decider: `never`, `always`, `prefix-threshold`. |
+| `--pd-decider` | string | "never" | Disaggregation decider: `never`, `always`, `prefix-threshold`, `direct-to-decode`. |
 | `--pd-prefix-threshold` | int | 512 | Non-cached token threshold for `prefix-threshold` decider (>= 0). Ignored for other deciders. |
+| `--pd-direct-decode-threshold` | int | 256 | Input token threshold for `direct-to-decode` decider (>= 0). Prompts shorter than this skip disaggregation. Ignored for other deciders. |
 | `--pd-transfer-bandwidth` | float64 | 25.0 | KV cache transfer bandwidth between pools in GB/s. Models a shared global fabric — all concurrent transfers compete for this single bandwidth budget. Set to the NIXL/RDMA link speed. Default 25.0 matches a 200 Gbit/s RDMA fabric (≈ 25 GB/s). |
 | `--pd-transfer-base-latency` | float64 | 0.05 | Base transfer latency per transfer in milliseconds. |
 | `--pd-kv-bytes-per-token` | int | 512 | KV cache bytes per token for transfer size calculation. |

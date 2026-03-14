@@ -1,6 +1,10 @@
 package cluster
 
-import "github.com/inference-sim/inference-sim/sim"
+import (
+	"fmt"
+
+	"github.com/inference-sim/inference-sim/sim"
+)
 
 // PoolOverrides holds optional per-pool hardware overrides for PD disaggregation.
 // Nil pointer / empty string means "use global config" for that field.
@@ -18,6 +22,23 @@ type PoolOverrides struct {
 	LatencyBackend string // latency model backend ("" = use global)
 	MaxModelLen    *int64 // max sequence length (nil = use global)
 	TotalKVBlocks  *int64 // KV blocks (nil = use global; set by CLI after auto-calc)
+}
+
+// Validate checks that non-nil pointer fields satisfy their constraints (R3).
+// name is used in error messages (e.g., "prefill pool" or "decode pool").
+// Library callers that construct PoolOverrides directly (bypassing CLI validation)
+// should call Validate before passing overrides to DeploymentConfig.
+func (o PoolOverrides) Validate(name string) error {
+	if o.TP != nil && *o.TP <= 0 {
+		return fmt.Errorf("%s: PoolOverrides.TP must be > 0 when set, got %d", name, *o.TP)
+	}
+	if o.MaxModelLen != nil && *o.MaxModelLen <= 0 {
+		return fmt.Errorf("%s: PoolOverrides.MaxModelLen must be > 0 when set, got %d", name, *o.MaxModelLen)
+	}
+	if o.TotalKVBlocks != nil && *o.TotalKVBlocks <= 0 {
+		return fmt.Errorf("%s: PoolOverrides.TotalKVBlocks must be > 0 when set, got %d", name, *o.TotalKVBlocks)
+	}
+	return nil
 }
 
 // IsEmpty returns true when no overrides are set.

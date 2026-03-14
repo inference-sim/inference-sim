@@ -127,6 +127,18 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		if next.ProgressIndex > 0 && next.ProgressIndex >= inputLen && len(next.OutputTokens) > 0 {
 			decodeTokens := int64(1)
 			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {
+				// KV allocation failed for the first decode step. The decode sub-request
+				// already holds pre-allocated KV for its input tokens (set by AllocateTransferredKV);
+				// those blocks are NOT released here and cannot be preempted while waiting.
+				// Breaking stops the entire dequeue loop, causing head-of-line blocking for
+				// any prefill requests behind this decode request in the queue.
+				// Recovery: running requests will complete and free KV, allowing this request
+				// to proceed in a subsequent batch step (not a permanent deadlock).
+				// Edge case (INV-8): if inputLen is exactly on a block boundary AND no requests
+				// are currently running on this instance (all KV held by waiting decode requests),
+				// recovery requires a running request elsewhere to free blocks. In practice this
+				// is bounded: the circuit breaker in Phase 1 handles preemption, and decode
+				// sub-requests hold at most ceil(inputLen/blockSizeTokens) blocks.
 				break
 			}
 			ctx.WaitQ.DequeueBatch()

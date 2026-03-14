@@ -59,8 +59,13 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 		cs.trace.RecordPrefillRouting(record)
 	}
 
-	// Register as pending prefill completion for detection in event loop
+	// Register as pending prefill completion for detection in event loop.
+	// Both global map (for len() queries) and per-instance map (for O(K) detection).
 	cs.pendingPrefillCompletions[e.request.ID] = e.parentReq.ID
+	if cs.pendingPrefillByInstance[decision.TargetInstance] == nil {
+		cs.pendingPrefillByInstance[decision.TargetInstance] = make(map[string]string)
+	}
+	cs.pendingPrefillByInstance[decision.TargetInstance][e.request.ID] = e.parentReq.ID
 
 	// Find target instance and inject
 	for _, inst := range cs.instances {
@@ -72,7 +77,10 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 			return
 		}
 	}
-	panic(fmt.Sprintf("PrefillRoutingEvent: invalid TargetInstance %q", decision.TargetInstance))
+	// Unreachable under correct routing policy (policy contract guarantees valid target).
+	// If reached, indicates a programming error in the routing policy implementation.
+	// R6: this is a library panic on programming error, not a user-input error.
+	panic(fmt.Sprintf("PrefillRoutingEvent: invalid TargetInstance %q returned by routing policy (programming error — policy must return an instance ID present in the cluster)", decision.TargetInstance))
 }
 
 // KVTransferStartedEvent fires when a prefill sub-request completes.
@@ -97,6 +105,21 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 
 	// Contention tracking: increment BEFORE duration calculation so this
 	// transfer is counted in its own fair-share divisor (INV-P2-2).
+	//
+	// DES sequentialization note: when multiple KVTransferStartedEvents share the
+	// same timestamp (e.g., bursty prefill completions), they are processed one at a
+	// time in seqID order. Each sees a different activeTransfers count (1, 2, 3, …),
+	// meaning earlier-seqID transfers experience lower contention and shorter duration.
+	// This is the correct DES behavior: INV-P2-2 applies at the moment each transfer
+	// starts within the simulator's sequential event model.
+	//
+	// Accuracy note: for N transfers that start at the exact same tick, the DES
+	// mean transfer duration is S*(N+1)/(2*B) instead of the true concurrent mean
+	// S*N/B — a systematic underestimate of (N+1)/(2N) (75% for N=2, 67% for N=3).
+	// In practice, exact same-tick bursts occur only when multiple prefill sub-requests
+	// complete simultaneously (same latency + arrival), which is rare in varied workloads.
+	// For capacity planning with heavy contention, treat transfer duration metrics as
+	// optimistic lower bounds when --pd-transfer-contention is enabled.
 	if cs.config.PDTransferContention {
 		cs.activeTransfers++
 		if cs.activeTransfers > cs.peakConcurrentTransfers {
@@ -304,7 +327,12 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 
 			cs.inFlightRequests[decision.TargetInstance]++
 			// INV-PD-4: register decode sub-request for CompletionTime detection.
+			// Both global map (for len() queries) and per-instance map (for O(K) detection).
 			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
+			if cs.pendingDecodeByInstance[decision.TargetInstance] == nil {
+				cs.pendingDecodeByInstance[decision.TargetInstance] = make(map[string]string)
+			}
+			cs.pendingDecodeByInstance[decision.TargetInstance][e.decodeSubReq.ID] = e.parentReq.ID
 			inst.InjectDecodeOnline(e.decodeSubReq, e.time)
 			// Observer not called: prefix was already recorded during PrefillRoutingEvent.
 			// Decode sub-request has the same InputTokens, so re-notification is a no-op.

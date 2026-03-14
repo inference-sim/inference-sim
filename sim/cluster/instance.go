@@ -41,12 +41,18 @@ func newInstanceSimulatorCore(id InstanceID, cfg sim.SimConfig, prefillInterfere
 	kvStore := kv.NewKVStore(cfg.KVCacheConfig)
 	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
+		// Unreachable: NewClusterSimulator validates LatencyCoeffs and ModelHardwareConfig
+		// before calling newInstanceSimulatorCore. If this function is ever called outside
+		// NewClusterSimulator, refactor to return (*InstanceSimulator, error) instead of panicking.
 		panic(fmt.Sprintf("newInstanceSimulatorCore(%s): NewLatencyModel: %v", id, err))
 	}
 	// Wrap with interference model when either factor is non-zero (BC-P2-9: no-op only when both are zero).
 	if prefillInterference > 0 || decodeInterference > 0 {
 		wrapped, wrapErr := NewInterferenceLatencyModel(latencyModel, prefillInterference, decodeInterference)
 		if wrapErr != nil {
+			// Unreachable: NewClusterSimulator validates PDInterferencePrefill and PDInterferenceDecode
+			// (range [0, MaxInterferenceFactor], finite) before calling newInstanceSimulatorCore.
+			// If this function is ever called outside NewClusterSimulator, refactor to return an error.
 			panic(fmt.Sprintf("newInstanceSimulatorCore(%s): NewInterferenceLatencyModel: %v", id, wrapErr))
 		}
 		latencyModel = wrapped

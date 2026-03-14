@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -434,6 +435,19 @@ func TestPrefixThreshold_HighThresholdNoDisaggregation(t *testing.T) {
 	if m.CompletedRequests == 0 {
 		t.Error("no requests completed with high threshold prefix-threshold decider")
 	}
+	// INV-P2-4: non-disaggregated requests with pools configured must route to decode pool only.
+	// Regression guard: a future refactor applying the pool filter by decider type (rather than
+	// by decision outcome) would route prefix-threshold non-disaggregated requests to all instances.
+	membership := cs.PoolMembership()
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not yet completed
+		}
+		if role := membership[req.AssignedInstance]; role != PoolRoleDecode {
+			t.Errorf("INV-P2-4: req %s routed to %s (role=%v), expected decode pool",
+				req.ID, req.AssignedInstance, role)
+		}
+	}
 }
 
 // TestPrefixThreshold_ZeroThresholdAlwaysDisaggregates verifies that threshold=0
@@ -838,5 +852,338 @@ func TestDisaggregation_INV_PD_1_DecodeEnqueueAfterTransfer(t *testing.T) {
 			t.Errorf("INV-PD-1 violated for %s: DecodeEnqueueTime(%d) < TransferCompleteTime(%d)",
 				p.ID, p.DecodeEnqueueTime, p.TransferCompleteTime)
 		}
+	}
+}
+
+// --- DirectToDecodeDecider integration tests ---
+
+// TestDirectToDecodeDecider_ClusterConstruction verifies that a cluster with the
+// direct-to-decode decider runs successfully and routes requests to the decode pool.
+func TestDirectToDecodeDecider_ClusterConstruction(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "direct-to-decode"
+	cfg.PDDirectDecodeThreshold = 256
+	requests := newTestRequests(3)
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	// Verify requests were routed to decode pool (observable behavior, not nil check)
+	membership := cs.PoolMembership()
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue
+		}
+		if role := membership[req.AssignedInstance]; role != PoolRoleDecode {
+			t.Errorf("req %s routed to %s (role=%v), expected decode pool (INV-P2-4a)",
+				req.ID, req.AssignedInstance, role)
+		}
+	}
+}
+
+// TestDirectToDecodeDecider_PoolFilterRoutesToDecodePool verifies that a RoutingDecisionEvent
+// with poolFilter=PoolRoleDecode routes only to decode pool instances (INV-P2-4a).
+func TestDirectToDecodeDecider_PoolFilterRoutesToDecodePool(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "direct-to-decode"
+	cfg.PDDirectDecodeThreshold = 1_000_000 // very high → all requests skip disaggregation
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	// All requests should have been routed to decode pool (instances 2,3)
+	membership := cs.PoolMembership()
+
+	// BC-P2-15: no parent requests
+	if len(cs.ParentRequests()) != 0 {
+		t.Errorf("expected 0 ParentRequests, got %d", len(cs.ParentRequests()))
+	}
+
+	// INV-P2-4a: verify all assigned instances are in decode pool
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not completed
+		}
+		role, ok := membership[req.AssignedInstance]
+		if !ok || role != PoolRoleDecode {
+			t.Errorf("request %s routed to %s (role=%v), expected decode pool",
+				req.ID, req.AssignedInstance, role)
+		}
+	}
+}
+
+func newTestRequestsWithLength(n int, inputLen, outputLen int) []*sim.Request {
+	rng := rand.New(rand.NewSource(42))
+	requests := make([]*sim.Request, n)
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("req_%d", i),
+			InputTokens:  sim.GenerateRandomTokenIDs(rng, inputLen),
+			OutputTokens: sim.GenerateRandomTokenIDs(rng, outputLen),
+			ArrivalTime:  int64(i) * 100_000, // 100ms apart
+			State:        sim.StateQueued,
+		}
+	}
+	return requests
+}
+
+// TestDirectToDecodeDecider_MixedWorkload verifies that short prompts go direct to decode
+// and long prompts go through the full PD pipeline (BC-P2-14, BC-P2-15, BC-P2-16).
+func TestDirectToDecodeDecider_MixedWorkload(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "direct-to-decode"
+	cfg.PDDirectDecodeThreshold = 200
+
+	// 3 short (100 tokens) + 3 long (300 tokens)
+	shortReqs := newTestRequestsWithLength(3, 100, 20)
+	longReqs := newTestRequestsWithLength(3, 300, 20)
+	// Rename long reqs to avoid ID collision
+	for i, r := range longReqs {
+		r.ID = fmt.Sprintf("long_%d", i)
+		r.ArrivalTime = int64(i+3) * 100_000
+	}
+	allReqs := append(shortReqs, longReqs...)
+
+	cs := NewClusterSimulator(cfg, allReqs)
+	mustRun(t, cs)
+
+	// BC-P2-15: only long requests create parent records
+	parents := cs.ParentRequests()
+	if len(parents) != 3 {
+		t.Errorf("expected 3 ParentRequests (long prompts), got %d", len(parents))
+	}
+
+	// BC-P2-14: short requests routed to decode pool
+	membership := cs.PoolMembership()
+	for _, req := range shortReqs {
+		if req.AssignedInstance == "" {
+			continue
+		}
+		if role := membership[req.AssignedInstance]; role != PoolRoleDecode {
+			t.Errorf("short req %s routed to %s (role %v), expected decode pool", req.ID, req.AssignedInstance, role)
+		}
+	}
+
+	// BC-P2-16 (INV-PD-2): disaggregated prefill sub-reqs on prefill pool, decode on decode pool
+	for _, p := range parents {
+		if role := membership[p.PrefillInstanceID]; role != PoolRolePrefill {
+			t.Errorf("parent %s: prefill on %s (role %v), expected prefill pool", p.ID, p.PrefillInstanceID, role)
+		}
+		if role := membership[p.DecodeInstanceID]; role != PoolRoleDecode {
+			t.Errorf("parent %s: decode on %s (role %v), expected decode pool", p.ID, p.DecodeInstanceID, role)
+		}
+	}
+
+	// INV-1 conservation: all injected sub-requests must be accounted for.
+	// AggregatedMetrics counts sub-requests (not parent requests): 3 short inject 1 each,
+	// 3 long inject 2 each (prefill sub-req + decode sub-req) = 9 total injected.
+	m := cs.AggregatedMetrics()
+	expectedSubReqs := len(shortReqs) + len(longReqs)*2
+	actual := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable
+	if actual != expectedSubReqs {
+		t.Errorf("INV-1: expected %d injected sub-requests accounted for, got %d (completed=%d queued=%d running=%d dropped=%d)",
+			expectedSubReqs, actual, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable)
+	}
+}
+
+// TestDirectToDecodeDecider_INVP24a_DecodeTargetedRouting is the invariant test for INV-P2-4a:
+// non-disaggregated requests with pools configured MUST route to decode pool.
+// Tests with NeverDisaggregate (not just direct-to-decode) to verify the invariant
+// applies to the event handler, not just one decider.
+func TestDirectToDecodeDecider_INVP24a_DecodeTargetedRouting(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "never" // all requests non-disaggregated, but pools ARE configured
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	membership := cs.PoolMembership()
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue
+		}
+		role, ok := membership[req.AssignedInstance]
+		if !ok || role != PoolRoleDecode {
+			t.Errorf("INV-P2-4a violated: req %s routed to %s (role=%v), expected decode pool",
+				req.ID, req.AssignedInstance, role)
+		}
+	}
+}
+
+// TestDirectToDecodeDecider_INVP24b_InterferenceApplied verifies BC-P2-17:
+// decode instances with mixed-phase batches (from direct-to-decode requests) produce
+// longer simulation times than without interference.
+// Uses many requests with close arrival times to force batch overlap where some requests
+// are in prefill phase while others are in decode phase.
+func TestDirectToDecodeDecider_INVP24b_InterferenceApplied(t *testing.T) {
+	baseCfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	baseCfg.PDDecider = "direct-to-decode"
+	baseCfg.PDDirectDecodeThreshold = 1_000_000 // all go direct to decode
+
+	// Create requests that arrive close together to force mixed-phase batching:
+	// many requests arriving within a short window ensures that some will be in
+	// prefill while others are in decode on the same instance.
+	requests := newTestRequestsWithLength(20, 150, 50)
+	for i := range requests {
+		requests[i].ArrivalTime = int64(i) * 1000 // 1ms apart (very close)
+	}
+
+	// Run without interference
+	cs0 := NewClusterSimulator(baseCfg, cloneRequests(requests))
+	mustRun(t, cs0)
+	baseEnd := cs0.AggregatedMetrics().SimEndedTime
+
+	// Run with interference
+	intCfg := baseCfg
+	intCfg.PDInterferencePrefill = 0.5
+	intCfg.PDInterferenceDecode = 0.5
+	cs1 := NewClusterSimulator(intCfg, cloneRequests(requests))
+	mustRun(t, cs1)
+	intEnd := cs1.AggregatedMetrics().SimEndedTime
+
+	// With interference, simulation should take strictly longer (INV-P2-3 monotonicity).
+	if intEnd <= baseEnd {
+		t.Errorf("INV-P2-4b: interference should increase sim time: base=%d, interference=%d", baseEnd, intEnd)
+	}
+}
+
+func TestDirectToDecodeDecider_Determinism(t *testing.T) {
+	run := func() int64 {
+		cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+		cfg.PDDecider = "direct-to-decode"
+		cfg.PDDirectDecodeThreshold = 200
+		short := newTestRequestsWithLength(3, 100, 20)
+		long := newTestRequestsWithLength(3, 300, 20)
+		for i, r := range long {
+			r.ID = fmt.Sprintf("long_%d", i)
+			r.ArrivalTime = int64(i+3) * 100_000
+		}
+		cs := NewClusterSimulator(cfg, append(short, long...))
+		mustRun(t, cs)
+		return cs.AggregatedMetrics().SimEndedTime
+	}
+	t1 := run()
+	t2 := run()
+	if t1 != t2 {
+		t.Errorf("INV-6 violated: two runs with same seed differ: %d vs %d", t1, t2)
+	}
+}
+
+// TestDirectToDecodeDecider_ZeroThreshold_ClusterLevel verifies that threshold=0
+// causes every request with non-empty input to be disaggregated, matching
+// AlwaysDisaggregate semantics. INV-1 conservation is also checked: N parent
+// requests each produce 2 sub-requests, so the aggregate account must equal 2N.
+func TestDirectToDecodeDecider_ZeroThreshold_ClusterLevel(t *testing.T) {
+	const numRequests = 4
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "direct-to-decode"
+	cfg.PDDirectDecodeThreshold = 0 // threshold=0: len(input) >= 0 always true for non-empty
+
+	// Use requests with a fixed non-empty input length so the assertion is deterministic.
+	requests := newTestRequestsWithLength(numRequests, 50, 10)
+
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	// All non-empty requests must be disaggregated: each produces a ParentRequest.
+	parents := cs.ParentRequests()
+	if len(parents) != numRequests {
+		t.Errorf("ZeroThreshold: expected %d ParentRequests (all disaggregated), got %d",
+			numRequests, len(parents))
+	}
+
+	// INV-1 conservation: N parents × 2 sub-requests each = 2N injected sub-requests.
+	agg := cs.AggregatedMetrics()
+	wantSubReqs := numRequests * 2
+	actual := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
+	if actual != wantSubReqs {
+		t.Errorf("INV-1 violated with threshold=0: completed(%d)+queued(%d)+running(%d)+dropped(%d)=%d, want %d",
+			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable,
+			actual, wantSubReqs)
+	}
+}
+
+// TestDirectToDecodeDecider_BackwardCompat_AlwaysUnchanged verifies BC-P2-13:
+// existing always-disaggregate behavior is not affected by the pool filter change.
+func TestDirectToDecodeDecider_BackwardCompat_AlwaysUnchanged(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	// PDDecider defaults to "always" in newTestDisaggDeploymentConfig
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	// All requests should be disaggregated
+	parents := cs.ParentRequests()
+	if len(parents) != len(requests) {
+		t.Errorf("BC-P2-13: expected %d ParentRequests with always-disaggregate, got %d",
+			len(requests), len(parents))
+	}
+
+	// INV-PD-2: prefill on prefill pool, decode on decode pool
+	membership := cs.PoolMembership()
+	for _, p := range parents {
+		if role := membership[p.PrefillInstanceID]; role != PoolRolePrefill {
+			t.Errorf("prefill %s on non-prefill instance %s", p.ID, p.PrefillInstanceID)
+		}
+		if role := membership[p.DecodeInstanceID]; role != PoolRoleDecode {
+			t.Errorf("decode %s on non-decode instance %s", p.ID, p.DecodeInstanceID)
+		}
+	}
+}
+
+// TestDisaggregation_MaxModelLen_DropsOversizedRequests verifies that the MaxModelLen
+// enqueue guard applies correctly in the disaggregated code path.
+// When a request's input tokens >= MaxModelLen, it must be dropped at the prefill instance
+// even in PD mode (INV-9: control plane uses MaxOutputLen/input-only checks; instance
+// enforces MaxModelLen at enqueue time).
+func TestDisaggregation_MaxModelLen_DropsOversizedRequests(t *testing.T) {
+	const maxLen = 50 // small enough that some test requests will exceed it
+
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.ModelHardwareConfig = sim.NewModelHardwareConfig(
+		sim.ModelConfig{}, sim.HardwareCalib{},
+		"test-model", "H100", 1, "", maxLen,
+	)
+	// KV cache must have enough blocks for maxLen
+	config.KVCacheConfig = sim.NewKVCacheConfig(1000, 16, 0, 0, 0, 0)
+
+	// Build requests: mix of short (fits) and long (exceeds MaxModelLen)
+	var requests []*sim.Request
+	shortInput := make([]int, 10)  // 10 tokens < 50 = fits
+	longInput := make([]int, 100)  // 100 tokens >= 50 = dropped
+	output := make([]int, 5)
+	for i := 0; i < 5; i++ {
+		requests = append(requests, &sim.Request{
+			ID: fmt.Sprintf("short-%d", i), InputTokens: shortInput, OutputTokens: output,
+			ArrivalTime: int64(i * 10000),
+		})
+	}
+	for i := 0; i < 3; i++ {
+		requests = append(requests, &sim.Request{
+			ID: fmt.Sprintf("long-%d", i), InputTokens: longInput, OutputTokens: output,
+			ArrivalTime: int64((5 + i) * 10000),
+		})
+	}
+
+	cs := NewClusterSimulator(config, requests)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+
+	// Exactly 3 long requests dropped at prefill instance due to MaxModelLen guard.
+	if metrics.DroppedUnservable != 3 {
+		t.Errorf("expected exactly 3 DroppedUnservable (one per long input request), got %d", metrics.DroppedUnservable)
+	}
+
+	// 5 short parent requests × 2 sub-requests each = 10 sub-request completions.
+	if metrics.CompletedRequests < 10 {
+		t.Errorf("expected at least 10 completed sub-requests (5 short parents × 2 each), got %d", metrics.CompletedRequests)
+	}
+
+	// INV-1 conservation: injected == completed + queued + running + dropped.
+	// 8 parents inject 5×2 + 3×1 = 13 sub-requests total (long prefill sub-reqs dropped, no decode created).
+	injected := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
+	if injected != 13 {
+		t.Errorf("INV-1 violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 13",
+			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, injected)
 	}
 }

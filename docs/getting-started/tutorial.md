@@ -138,9 +138,59 @@ From the simulations above, find the minimum instance count where `ttft_p99_ms <
 4. **Routing matters at scale** — routing policy choice can change TTFT p99 by 3x at high request rates
 5. **Deterministic replay** — use `--seed` to get identical results for A/B comparisons
 
+## Step 8: PD Disaggregation Break-Even Analysis
+
+When prefill workloads are long (large input token counts), co-locating prefill and decode phases on the same instances causes interference — the long prefill computation delays decode steps. PD disaggregation separates these phases onto dedicated pools, at the cost of KV transfer overhead.
+
+Use simulation to find the break-even point: is the interference cost of co-location higher or lower than the transfer cost?
+
+**Baseline: co-located with interference simulation**
+
+```bash
+# Simulate co-location interference (30% slowdown when mixed)
+./blis run --model qwen/qwen3-14b \
+  --num-instances 8 --rate 20 --num-requests 200 \
+  --pd-interference-prefill 0.3 --pd-interference-decode 0.2 \
+  --routing-policy weighted
+```
+
+**Disaggregated: 4 prefill + 4 decode, always route through PD pipeline**
+
+```bash
+./blis run --model qwen/qwen3-14b \
+  --num-instances 8 \
+  --prefill-instances 4 --decode-instances 4 \
+  --pd-decider always \
+  --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+  --rate 20 --num-requests 200
+```
+
+**Hybrid: DirectToDecode for short prompts (skip transfer for < 256 tokens)**
+
+```bash
+./blis run --model qwen/qwen3-14b \
+  --num-instances 8 \
+  --prefill-instances 4 --decode-instances 4 \
+  --pd-decider direct-to-decode --pd-direct-decode-threshold 256 \
+  --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+  --rate 20 --num-requests 200
+```
+
+Compare `ttft_p99_ms` and `e2e_p99_ms` across all three. Disaggregation wins when the transfer overhead is shorter than the decode-step delay caused by co-location interference. Check the `=== PD Metrics ===` block (Prefill Throughput vs Decode Throughput) to diagnose pool imbalance.
+
+## Key Takeaways
+
+1. **Compute capacity first** — estimate `1/step_time` per instance from beta coefficients
+2. **Saturation is non-linear** — TTFT degrades super-linearly as you approach capacity. Scaling from 4→8 instances produces a 7x improvement, not 2x (queue growth rate drops faster than linear)
+3. **Check the bottleneck type** — preemption count, scheduling delay, and raw TTFT tell you whether to add instances, add memory, or tune batch size
+4. **Routing matters at scale** — routing policy choice can change TTFT p99 by 3x at high request rates
+5. **Deterministic replay** — use `--seed` to get identical results for A/B comparisons
+6. **PD break-even** — simulate both co-located and disaggregated to find the transfer overhead threshold at which disaggregation becomes beneficial for your workload
+
 ## What's Next
 
 - **[Routing Policies](../guide/routing.md)** — deep dive into scorer composition and signal freshness
 - **[KV Cache & Memory](../guide/kv-cache.md)** — tune KV blocks, prefix caching, and chunked prefill
 - **[Metrics & Results](../guide/results.md)** — understand all output fields and common patterns
+- **[Cluster Simulation](../guide/cluster.md)** — full PD disaggregation configuration reference
 - **[Hypothesis Experimentation](../guide/experimentation.md)** — run rigorous experiments with the `/hypothesis-experiment` skill

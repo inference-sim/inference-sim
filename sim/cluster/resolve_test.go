@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -395,6 +396,112 @@ func TestResolvePoolConfig_Idempotent(t *testing.T) {
 	}
 }
 
+// TestPoolOverrides_Validate_ErrorPaths verifies that Validate returns errors for
+// invalid non-nil pointer fields (R3: validate numeric parameters).
+func TestPoolOverrides_Validate_ErrorPaths(t *testing.T) {
+	zero := 0
+	zeroI64 := int64(0)
+	neg := -1
+	negI64 := int64(-1)
+
+	tests := []struct {
+		name        string
+		overrides   PoolOverrides
+		wantErrFrag string
+	}{
+		{
+			name:        "TP=0",
+			overrides:   PoolOverrides{TP: &zero},
+			wantErrFrag: "TP must be > 0",
+		},
+		{
+			name:        "TP negative",
+			overrides:   PoolOverrides{TP: &neg},
+			wantErrFrag: "TP must be > 0",
+		},
+		{
+			name:        "MaxModelLen=0",
+			overrides:   PoolOverrides{MaxModelLen: &zeroI64},
+			wantErrFrag: "MaxModelLen must be > 0",
+		},
+		{
+			name:        "MaxModelLen negative",
+			overrides:   PoolOverrides{MaxModelLen: &negI64},
+			wantErrFrag: "MaxModelLen must be > 0",
+		},
+		{
+			name:        "TotalKVBlocks=0",
+			overrides:   PoolOverrides{TotalKVBlocks: &zeroI64},
+			wantErrFrag: "TotalKVBlocks must be > 0",
+		},
+		{
+			name:        "TotalKVBlocks negative",
+			overrides:   PoolOverrides{TotalKVBlocks: &negI64},
+			wantErrFrag: "TotalKVBlocks must be > 0",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.overrides.Validate("test pool")
+			if err == nil {
+				t.Fatalf("Validate() returned nil, want error containing %q", tc.wantErrFrag)
+			}
+			if !strings.Contains(err.Error(), tc.wantErrFrag) {
+				t.Errorf("Validate() error = %q, want it to contain %q", err.Error(), tc.wantErrFrag)
+			}
+		})
+	}
+}
+
+// TestPoolOverrides_Validate_ValidValues verifies that Validate returns nil for
+// valid non-nil pointer fields and for the zero-value (all nil) override.
+func TestPoolOverrides_Validate_ValidValues(t *testing.T) {
+	tp := 4
+	maxLen := int64(8192)
+	kvBlocks := int64(5000)
+
+	tests := []struct {
+		name      string
+		overrides PoolOverrides
+	}{
+		{
+			name:      "all nil (empty)",
+			overrides: PoolOverrides{},
+		},
+		{
+			name:      "valid TP",
+			overrides: PoolOverrides{TP: &tp},
+		},
+		{
+			name:      "valid MaxModelLen",
+			overrides: PoolOverrides{MaxModelLen: &maxLen},
+		},
+		{
+			name:      "valid TotalKVBlocks",
+			overrides: PoolOverrides{TotalKVBlocks: &kvBlocks},
+		},
+		{
+			name: "all fields valid",
+			overrides: PoolOverrides{
+				TP:             &tp,
+				GPU:            "H100",
+				LatencyBackend: "roofline",
+				MaxModelLen:    &maxLen,
+				TotalKVBlocks:  &kvBlocks,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.overrides.Validate("test pool"); err != nil {
+				t.Errorf("Validate() returned unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 // newHeterogeneousDeploymentConfig creates a DeploymentConfig with per-pool overrides.
 // This is the test helper consumed by future PRs (PR3, PR4).
 func newHeterogeneousDeploymentConfig(numInstances, prefill, decode int, prefillOverrides, decodeOverrides PoolOverrides) DeploymentConfig {
@@ -417,5 +524,48 @@ func newHeterogeneousDeploymentConfig(numInstances, prefill, decode int, prefill
 		RoutingPolicy:           "round-robin",
 		PrefillOverrides:        prefillOverrides,
 		DecodeOverrides:         decodeOverrides,
+	}
+}
+
+// TestResolvePoolConfig_MaxModelLen_CappedToPoolKVCapacity verifies INV-P2-1:
+// when a pool has smaller TotalKVBlocks than global, ResolvePoolConfig propagates
+// the pool-capped MaxModelLen (set by CLI per-pool auto-capping fix) correctly.
+func TestResolvePoolConfig_MaxModelLen_CappedToPoolKVCapacity(t *testing.T) {
+	// GIVEN global config with large MaxModelLen and large global KV blocks
+	global := sim.SimConfig{
+		Horizon: 1000000,
+		Seed:    42,
+		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0), // 10000 blocks × 16 = 160000 tokens
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "", 131072),
+	}
+
+	// AND per-pool override with smaller TotalKVBlocks (smaller GPU) and auto-capped MaxModelLen
+	poolKVFeasibleMax := int64(2048 * 16) // 32768 tokens
+	poolMaxModelLen := poolKVFeasibleMax   // auto-capped CLI fix would set this
+	poolBlocks := int64(2048)
+	overrides := PoolOverrides{
+		TotalKVBlocks: &poolBlocks,
+		MaxModelLen:   &poolMaxModelLen,
+	}
+
+	// WHEN resolving pool config
+	result := ResolvePoolConfig(global, overrides)
+
+	// THEN pool config has smaller TotalKVBlocks and capped MaxModelLen
+	if result.TotalKVBlocks != 2048 {
+		t.Errorf("TotalKVBlocks = %d, want 2048", result.TotalKVBlocks)
+	}
+	if result.MaxModelLen != poolKVFeasibleMax {
+		t.Errorf("MaxModelLen = %d, want %d (pool KV feasible max)", result.MaxModelLen, poolKVFeasibleMax)
+	}
+
+	// AND MaxModelLen does not exceed pool KV capacity (INV-P2-1)
+	blocksNeeded := result.MaxModelLen / result.BlockSizeTokens
+	if result.MaxModelLen%result.BlockSizeTokens != 0 {
+		blocksNeeded++
+	}
+	if blocksNeeded > result.TotalKVBlocks {
+		t.Errorf("INV-P2-1: MaxModelLen=%d requires %d blocks, exceeds pool TotalKVBlocks=%d",
+			result.MaxModelLen, blocksNeeded, result.TotalKVBlocks)
 	}
 }

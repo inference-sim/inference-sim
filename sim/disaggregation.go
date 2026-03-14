@@ -10,6 +10,11 @@ type DisaggregationDecision struct {
 // DisaggregationDecider decides whether a request should be disaggregated
 // (sent to a dedicated prefill pool) or handled by the default routing pipeline.
 // Used by ClusterSimulator's event pipeline when pool topology is configured.
+//
+// Implementations must not read Request.OutputTokens (INV-9 oracle boundary);
+// use len(req.InputTokens) and req.MaxOutputLen only.
+//
+// req is guaranteed non-nil; implementations may assume a non-nil pointer.
 type DisaggregationDecider interface {
 	Decide(req *Request) DisaggregationDecision
 }
@@ -33,8 +38,9 @@ func (a *AlwaysDisaggregate) Decide(_ *Request) DisaggregationDecision {
 // NewDisaggregationDecider creates a disaggregation decider by name.
 // Valid names are defined in validDisaggregationDeciders (bundle.go).
 // An empty string defaults to NeverDisaggregate.
-// Panics on unrecognized names or on "prefix-threshold" (which requires parameters;
-// use NewPrefixThresholdDecider directly).
+// Panics on unrecognized names, on "prefix-threshold" (use NewPrefixThresholdDecider
+// directly), or on "direct-to-decode" (use NewDirectToDecodeDecider directly).
+// Both parameterized deciders require a caller-supplied threshold.
 func NewDisaggregationDecider(name string) DisaggregationDecider {
 	if !IsValidDisaggregationDecider(name) {
 		panic(fmt.Sprintf("unknown disaggregation decider %q", name))
@@ -46,9 +52,42 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 		return &AlwaysDisaggregate{}
 	case "prefix-threshold":
 		panic("use NewPrefixThresholdDecider(threshold, blockSize) to construct prefix-threshold decider")
+	case "direct-to-decode":
+		panic("use NewDirectToDecodeDecider(threshold) to construct direct-to-decode decider")
 	default:
 		panic(fmt.Sprintf("unhandled disaggregation decider %q", name))
 	}
+}
+
+// DirectToDecodeDecider routes short prompts directly to the decode pool (Disaggregate=false)
+// and long prompts through the full PD pipeline (Disaggregate=true).
+// Decision: len(InputTokens) >= threshold → disaggregate; < threshold → direct to decode.
+// Empty inputs always return Disaggregate=false (consistent with PrefixThresholdDecider).
+type DirectToDecodeDecider struct {
+	threshold int
+}
+
+// NewDirectToDecodeDecider creates a DirectToDecodeDecider with the given input-length threshold.
+// threshold must be >= 0. Panics otherwise (R3).
+func NewDirectToDecodeDecider(threshold int) *DirectToDecodeDecider {
+	if threshold < 0 {
+		panic(fmt.Sprintf("NewDirectToDecodeDecider: threshold must be >= 0, got %d", threshold))
+	}
+	return &DirectToDecodeDecider{threshold: threshold}
+}
+
+// Decide returns Disaggregate=true when input length >= threshold (long prompt → full PD pipeline),
+// Disaggregate=false when input length < threshold (short prompt → direct to decode pool).
+// Empty inputs (len == 0) always return Disaggregate=false regardless of threshold.
+// req must be non-nil (interface contract); panics on nil req (programming error).
+func (d *DirectToDecodeDecider) Decide(req *Request) DisaggregationDecision {
+	if req == nil {
+		panic("DirectToDecodeDecider.Decide: req is nil (programming error)")
+	}
+	if len(req.InputTokens) == 0 {
+		return DisaggregationDecision{Disaggregate: false}
+	}
+	return DisaggregationDecision{Disaggregate: len(req.InputTokens) >= d.threshold}
 }
 
 // globalVirtualInstance is the single key used in PrefixThresholdDecider's PrefixCacheIndex
@@ -56,15 +95,19 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 // so the decider tracks the global set of recently-seen prefixes.
 const globalVirtualInstance = "__global__"
 
-// Compile-time interface compliance check.
+// Compile-time interface compliance checks.
 var _ DisaggregationObserver = (*PrefixThresholdDecider)(nil)
+var _ DisaggregationDecider = (*DirectToDecodeDecider)(nil)
 
 // DisaggregationObserver is an optional interface for stateful DisaggregationDeciders that need
 // to learn from routing decisions. ClusterSimulator calls ObserveRouting after each routing
-// decision (both standard routing and prefill routing in the disaggregated path).
+// decision: after standard (non-disaggregated) routing in cluster_event.go, and after prefill
+// routing in the disaggregated path in pd_events.go. It is not called for decode routing.
 //
 // Signal freshness (R17): ObserveRouting is called synchronously within the event loop,
 // so the cache state is always current at decision time.
+//
+// req is guaranteed non-nil. Implementations must treat req as read-only.
 type DisaggregationObserver interface {
 	ObserveRouting(req *Request, instanceID string)
 }

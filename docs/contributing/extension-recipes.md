@@ -189,6 +189,39 @@ Examples:
 - See `VLLMBatchFormation` in `sim/batch_formation.go` for the vLLM FCFS + chunked-prefill + preemption strategy
 - See `preemptForTokens` for the KV allocation + eviction loop pattern
 
+## Adding a Tier-Composition Latency Wrapper
+
+A tier-composition wrapper applies an additional transformation to an existing `LatencyModel` without modifying it. The wrapper implements the same interface and delegates the primary computation to the inner model. Use this pattern when you need to layer behavior (slowdowns, jitter, profiling) on top of any existing backend.
+
+Reference implementation: `InterferenceLatencyModel` in `sim/cluster/interference.go` — wraps any `LatencyModel` with a co-location interference multiplier for PD break-even analysis.
+
+To add a new latency composition wrapper:
+
+1. **Create wrapper struct** in `sim/cluster/` (not `sim/latency/` — composition wrappers that depend on cluster state belong in `sim/cluster/`). Add compile-time interface check:
+   ```go
+   var _ sim.LatencyModel = (*MyWrapper)(nil)
+   ```
+2. **Implement all 4 methods** of `sim.LatencyModel` — `StepTime`, `QueueingTime`, `OutputTokenProcessingTime`, `PostDecodeFixedOverhead`. Methods that your wrapper doesn't modify should delegate to the inner model:
+   ```go
+   func (m *MyWrapper) QueueingTime(req *sim.Request) int64 { return m.inner.QueueingTime(req) }
+   ```
+3. **Override `StepTime`** to apply your transformation:
+   ```go
+   func (m *MyWrapper) StepTime(batch []*sim.Request) int64 {
+       base := m.inner.StepTime(batch)
+       // ... apply your transformation ...
+       return result
+   }
+   ```
+4. **Add validation** in your constructor (R3: validate all numeric parameters; R1: return error rather than panic for runtime-accessible params).
+5. **Wire in `InstanceSimulator`** constructor (`sim/cluster/instance.go` `newInstanceSimulatorCore`): wrap the latency model after construction if the relevant config is set. Increment `MaxInterferenceFactor` constant or add your own bounds check.
+6. **Add behavioral tests** verifying: identity case (factor=0 → no change), monotonicity (factor>0 → strictly slower), and INV-P2-3-equivalent (multiplier ≥ 1.0).
+7. Extension friction: **3 touch points** (wrapper struct + instance wiring + tests)
+
+Examples:
+- See `InterferenceLatencyModel` in `sim/cluster/interference.go`
+- See `newInstanceSimulatorCore` in `sim/cluster/instance.go` for how interference wrapping is applied
+
 ## Adding New Per-Request Metric Fields
 
 To add a new field to per-request JSON output (appears in `--results-path` output):
@@ -202,3 +235,45 @@ To add a new field to per-request JSON output (appears in `--results-path` outpu
 Examples:
 - See `HandledBy` (#181) — set by `RoutingDecisionEvent`, zero-value when used outside cluster pipeline (suppressed from JSON via `omitempty`)
 - See `SLOClass`/`TenantID` (PR10) — set during workload generation, propagated at injection
+## Adding Per-Pool Hardware Configuration
+
+Use this recipe when a new feature should behave differently on prefill vs decode instances (e.g., a model parameter that differs between pools with heterogeneous hardware).
+
+1. **Add field to `PoolOverrides`** in `sim/cluster/resolve.go`:
+   ```go
+   type PoolOverrides struct {
+       TP             *int    // use pointer for optional/nullable fields (R9)
+       GPU            string
+       // ... existing fields ...
+       MyNewOption    *float64 // pointer if zero is a valid value
+   }
+   ```
+2. **Add to `PoolOverrides.Validate()`** (R3: validate at boundary):
+   ```go
+   if p.MyNewOption != nil && (*p.MyNewOption < 0 || math.IsNaN(*p.MyNewOption)) {
+       return fmt.Errorf("%s: MyNewOption must be >= 0, got %f", context, *p.MyNewOption)
+   }
+   ```
+3. **Add to `ResolvePoolConfig()`** in `sim/cluster/resolve.go`:
+   ```go
+   if overrides.MyNewOption != nil { result.SomeSubConfig.MyNewOption = *overrides.MyNewOption }
+   ```
+4. **Add CLI flags** in `cmd/root.go` (R18: use `cmd.Flags().Changed()` to detect explicit user values):
+   ```go
+   runCmd.Flags().Float64Var(&prefillMyOption, "prefill-my-option", 0, "...")
+   runCmd.Flags().Float64Var(&decodeMyOption, "decode-my-option", 0, "...")
+   ```
+5. **Propagate to `DeploymentConfig`** via `PrefillOverrides`/`DecodeOverrides`:
+   ```go
+   if cmd.Flags().Changed("prefill-my-option") {
+       prefillOverrides.MyNewOption = &prefillMyOption
+   }
+   ```
+6. **Add validation** in `NewClusterSimulator` before instance construction (R3: fail fast before any allocation).
+7. **Update `CLAUDE.md`** with new flag names.
+
+Extension friction: **5 touch points** (PoolOverrides + Validate + ResolvePoolConfig + CLI flags + DeploymentConfig wiring)
+
+Examples:
+- See `TP`, `GPU`, `MaxModelLen`, `TotalKVBlocks` in `sim/cluster/resolve.go`
+- See `--prefill-tp`, `--decode-tp`, `--prefill-hardware`, `--decode-hardware` in `cmd/root.go`

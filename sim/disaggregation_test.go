@@ -81,6 +81,7 @@ func TestIsValidDisaggregationDecider(t *testing.T) {
 		{"never", true},
 		{"always", true},
 		{"unknown", false},
+		{"direct-to-decode", true},
 		{"NEVER", false}, // case-sensitive
 	}
 	for _, tc := range tests {
@@ -95,8 +96,8 @@ func TestIsValidDisaggregationDecider(t *testing.T) {
 // TestValidDisaggregationDeciderNames verifies the names list.
 func TestValidDisaggregationDeciderNames(t *testing.T) {
 	names := ValidDisaggregationDeciderNames()
-	if len(names) < 3 {
-		t.Errorf("expected at least 3 decider names, got %d", len(names))
+	if len(names) < 4 {
+		t.Errorf("expected at least 4 decider names, got %d", len(names))
 	}
 	// Verify sorted order and no empty string
 	for i, n := range names {
@@ -114,6 +115,17 @@ func TestIsValidDisaggregationDecider_PrefixThreshold(t *testing.T) {
 	if !IsValidDisaggregationDecider("prefix-threshold") {
 		t.Error("prefix-threshold should be a valid disaggregation decider")
 	}
+}
+
+// TestNewDisaggregationDecider_DirectToDecodePanics verifies factory panics for direct-to-decode.
+// direct-to-decode requires parameters, so it must be constructed via NewDirectToDecodeDecider.
+func TestNewDisaggregationDecider_DirectToDecodePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic when calling factory with direct-to-decode")
+		}
+	}()
+	NewDisaggregationDecider("direct-to-decode")
 }
 
 // TestNewDisaggregationDecider_PrefixThresholdPanics verifies factory panics for prefix-threshold.
@@ -263,6 +275,76 @@ func TestPrefixThresholdDecider_CacheAware(t *testing.T) {
 	if decision.Disaggregate {
 		t.Errorf("BC-PD-24: with 640 tokens cached (40 blocks), 200 non-cached tokens should not disaggregate (threshold=%d)", threshold)
 	}
+}
+
+// --- DirectToDecodeDecider tests ---
+
+func TestDirectToDecodeDecider_ShortPromptDoesNotDisaggregate(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: make([]int, 100)} // 100 < 256
+	decision := d.Decide(req)
+	if decision.Disaggregate {
+		t.Error("short prompt (100 tokens < threshold 256) should not disaggregate")
+	}
+}
+
+func TestDirectToDecodeDecider_LongPromptDisaggregates(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: make([]int, 500)} // 500 >= 256
+	decision := d.Decide(req)
+	if !decision.Disaggregate {
+		t.Error("long prompt (500 tokens >= threshold 256) should disaggregate")
+	}
+}
+
+func TestDirectToDecodeDecider_ExactThresholdDisaggregates(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: make([]int, 256)} // 256 >= 256
+	decision := d.Decide(req)
+	if !decision.Disaggregate {
+		t.Error("exact threshold (256 tokens >= threshold 256) should disaggregate")
+	}
+}
+
+func TestDirectToDecodeDecider_BelowThresholdDoesNotDisaggregate(t *testing.T) {
+	// Verifies the >= boundary: threshold-1 tokens must NOT disaggregate.
+	// This is the exact transition point — one token fewer than the threshold
+	// is the last value that returns Disaggregate=false.
+	const threshold = 256
+	d := NewDirectToDecodeDecider(threshold)
+	req := &Request{InputTokens: make([]int, threshold-1)} // 255 < 256
+	decision := d.Decide(req)
+	if decision.Disaggregate {
+		t.Errorf("threshold-1 tokens (%d) must not disaggregate (threshold=%d, boundary is >=)",
+			threshold-1, threshold)
+	}
+}
+
+func TestDirectToDecodeDecider_EmptyInputDoesNotDisaggregate(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: nil}
+	decision := d.Decide(req)
+	if decision.Disaggregate {
+		t.Error("empty input should not disaggregate")
+	}
+}
+
+func TestDirectToDecodeDecider_ZeroThresholdAlwaysDisaggregates(t *testing.T) {
+	d := NewDirectToDecodeDecider(0)
+	req := &Request{InputTokens: make([]int, 1)}
+	decision := d.Decide(req)
+	if !decision.Disaggregate {
+		t.Error("threshold 0 with non-empty input should always disaggregate")
+	}
+}
+
+func TestNewDirectToDecodeDecider_PanicsOnNegativeThreshold(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic on negative threshold")
+		}
+	}()
+	NewDirectToDecodeDecider(-1)
 }
 
 // TestPrefixThresholdDecider_ZeroThreshold verifies threshold=0 means always disaggregate

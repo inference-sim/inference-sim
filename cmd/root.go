@@ -111,8 +111,9 @@ var (
 	pdTransferContention  bool    // Enable fair-share bandwidth contention model (INV-P2-2)
 
 	// PD interference config (PR3)
-	pdInterferencePrefill float64 // interference factor for prefill-dominant batches
-	pdInterferenceDecode  float64 // interference factor for decode-dominant batches
+	pdInterferencePrefill      float64 // interference factor for prefill-dominant batches
+	pdInterferenceDecode       float64 // interference factor for decode-dominant batches
+	pdDirectDecodeThreshold    int     // Input token threshold for direct-to-decode decider
 
 	prefillRoutingScorers string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
@@ -728,7 +729,15 @@ var runCmd = &cobra.Command{
 					blocksNeeded++
 				}
 				if blocksNeeded > totalKVBlocks {
-					kvFeasibleMax := totalKVBlocks * blockSizeTokens // product bounded by maxModelLen (blocksNeeded > totalKVBlocks)
+					// Overflow guard: since blocksNeeded > totalKVBlocks and
+					// blocksNeeded = ceil(maxModelLen/blockSizeTokens), the product
+					// totalKVBlocks*blockSizeTokens < maxModelLen (already fits in int64).
+					// Guard explicitly for extreme configs (R3).
+					if totalKVBlocks > math.MaxInt64/blockSizeTokens {
+						logrus.Fatalf("--latency-model: totalKVBlocks (%d) * blockSizeTokens (%d) overflows int64; set --total-kv-blocks explicitly",
+							totalKVBlocks, blockSizeTokens)
+					}
+					kvFeasibleMax := totalKVBlocks * blockSizeTokens
 					logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
 						maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
 					maxModelLen = kvFeasibleMax
@@ -803,6 +812,27 @@ var runCmd = &cobra.Command{
 					poolInfo.overrides.TotalKVBlocks = &poolBlocks
 					logrus.Infof("--%s pool: auto-calculated total-kv-blocks=%d (GPU=%s, %.0f GiB, TP=%d)",
 						poolInfo.name, poolBlocks, effectiveGPU, poolHWConfig.MemoryGiB, effectiveTP)
+
+					// Per-pool maxModelLen capping: when pool KV capacity is smaller than the
+					// global config, auto-cap maxModelLen for this pool to prevent a confusing
+					// NewSimulator construction failure (INV-P2-1). Only overrides when the user
+					// has not explicitly set a per-pool max-model-len flag (R18).
+					if poolInfo.overrides.MaxModelLen == nil && maxModelLen > 0 && blockSizeTokens > 0 {
+						// Overflow guard: consistent with global guard at line ~740 (R3).
+						if poolBlocks > math.MaxInt64/blockSizeTokens {
+							logrus.Warnf("--%s pool: poolBlocks (%d) * blockSizeTokens (%d) overflows int64; skipping per-pool max-model-len cap",
+								poolInfo.name, poolBlocks, blockSizeTokens)
+						} else {
+							poolKVFeasibleMax := poolBlocks * blockSizeTokens
+							if maxModelLen > poolKVFeasibleMax {
+								poolMaxModelLen := poolKVFeasibleMax
+								poolInfo.overrides.MaxModelLen = &poolMaxModelLen
+								logrus.Warnf("--%s pool: auto-capping max-model-len to %d (pool KV capacity %d < global %d); "+
+									"use --%s-max-model-len to override",
+									poolInfo.name, poolMaxModelLen, poolKVFeasibleMax, maxModelLen, poolInfo.name)
+							}
+						}
+					}
 				}
 			}
 		}
@@ -1064,8 +1094,18 @@ var runCmd = &cobra.Command{
 		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
 			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
 		}
-		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 && decodeInstances == 0 {
-			logrus.Fatalf("--pd-decider=%q requires --prefill-instances and --decode-instances to be set (both are 0)", pdDecider)
+		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold < 0 {
+			logrus.Fatalf("--pd-direct-decode-threshold must be >= 0, got %d", pdDirectDecodeThreshold)
+		}
+		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold == 0 {
+			logrus.Warnf("--pd-direct-decode-threshold=0 means all non-empty requests will be disaggregated (equivalent to --pd-decider=always for non-empty inputs; empty-input requests always go direct to decode regardless of threshold). Did you intend a non-zero threshold?")
+		}
+		if pdDecider != "direct-to-decode" && cmd.Flags().Changed("pd-direct-decode-threshold") {
+			logrus.Warnf("--pd-direct-decode-threshold=%d is ignored when --pd-decider=%q (only applies to the direct-to-decode decider)", pdDirectDecodeThreshold, pdDecider)
+		}
+		if pdDecider != "" && pdDecider != "never" && (prefillInstances == 0 || decodeInstances == 0) {
+			logrus.Fatalf("--pd-decider=%q requires both --prefill-instances and --decode-instances to be set; got prefill=%d, decode=%d",
+				pdDecider, prefillInstances, decodeInstances)
 		}
 		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
@@ -1182,6 +1222,7 @@ var runCmd = &cobra.Command{
 			DecodeInstances:         decodeInstances,
 			PDDecider:               pdDecider,
 			PDPrefixThreshold:       pdPrefixThreshold,
+			PDDirectDecodeThreshold: pdDirectDecodeThreshold,
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
@@ -1476,7 +1517,7 @@ func init() {
 	// PD disaggregation config (PR1)
 	runCmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
 	runCmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
-	runCmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold")
+	runCmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold, direct-to-decode")
 	runCmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
 
 	// PD KV transfer config (PR2)
@@ -1484,6 +1525,7 @@ func init() {
 	runCmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	runCmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	runCmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
+	runCmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode (>= 0): requests with fewer than threshold tokens go direct to decode; requests with >= threshold tokens are disaggregated (default 256)")
 	runCmd.Flags().Float64Var(&pdInterferencePrefill, "pd-interference-prefill", 0, "Co-location interference factor applied when prefill is the majority phase (0 = disabled). Multiplier = 1+factor*(minority/total): factor=0.5 at even split → 1.25x slowdown")
 	runCmd.Flags().Float64Var(&pdInterferenceDecode, "pd-interference-decode", 0, "Co-location interference factor applied when decode is the majority phase (0 = disabled). Multiplier = 1+factor*(minority/total): factor=0.5 at even split → 1.25x slowdown")
 	runCmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")

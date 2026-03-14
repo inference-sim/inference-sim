@@ -195,3 +195,27 @@ Invariants are properties that must hold at all times during and after simulatio
 **Mechanism:** `KVTransferStartedEvent.Execute()` increments `activeTransfers` before computing duration, so each transfer's fair-share divisor includes itself. `KVTransferCompletedEvent.Execute()` decrements `activeTransfers` after completion. Both operations are guarded by `config.PDTransferContention`. When the flag is false (default), contention state is never modified and metrics report zero.
 
 **Hypothesis family:** Structural model (same as INV-P2-1).
+
+---
+
+## INV-P2-3: Interference Monotonicity
+
+**Statement:** Interference multiplier >= 1.0 (interference never speeds up execution). Multiplier = 1.0 when batch is phase-pure. When prefill and decode requests co-locate in the same batch, the multiplier is strictly > 1.0 given non-zero interference factors.
+
+**Verification:** `sim/cluster/interference_test.go` — `TestInterferenceLatencyModel_Monotonicity`, `TestInterferenceLatencyModel_PhasePureNoEffect`.
+
+**Mechanism:** `InterferenceLatencyModel.computeMultiplier()` returns `1.0 + factor * (minority_count / total_count)`. When `minority_count == 0` (phase-pure), the formula reduces to 1.0. When `minority_count > 0` and factor > 0, the result is always > 1.0.
+
+**Hypothesis family:** Structural model (same as INV-P2-1).
+
+---
+
+## INV-P2-4: Decode-Targeted Routing
+
+**Statement:** Non-disaggregated requests with pools configured route to the decode pool only. Decode instances running mixed-phase batches (prefill + decode) have interference multiplier > 1.0 when interference factors are non-zero.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDirectToDecodeDecider_INVP24a_DecodeTargetedRouting` (INV-P2-4a: decode-targeted routing with NeverDisaggregate), `TestDirectToDecodeDecider_PoolFilterRoutesToDecodePool` (pool filter routing), `TestDirectToDecodeDecider_INVP24b_InterferenceApplied` (interference on mixed batches).
+
+**Mechanism:** `DisaggregationDecisionEvent.Execute()` sets `poolFilter = &PoolRoleDecode` on the `RoutingDecisionEvent` when `Disaggregate=false` and pools are configured. `RoutingDecisionEvent.Execute()` builds pool-filtered snapshots and uses the decode routing policy when `poolFilter` is non-nil.
+
+**Hypothesis family:** Structural model (same as INV-P2-1).

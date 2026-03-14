@@ -24,7 +24,7 @@ func (r PoolRole) String() string {
 	case PoolRoleDecode:
 		return "decode"
 	default:
-		return fmt.Sprintf("unknown(%d)", int(r))
+		return fmt.Sprintf("PoolRole(%d)", int(r))
 	}
 }
 

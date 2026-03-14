@@ -138,6 +138,57 @@ func TestCollectPDMetrics_DisaggregatedCount(t *testing.T) {
 	}
 }
 
+// TestCollectPDMetrics_DroppedAtDecodeKV verifies that DroppedAtDecodeKV counts parent
+// requests where the KV transfer completed (TransferCompleteTime > 0) but the decode
+// sub-request was never assigned to an instance (DecodeInstanceID == "").
+// Regression guard for the condition `TransferCompleteTime > 0 && DecodeInstanceID == ""`
+// in CollectPDMetrics — an accidentally inverted boolean would only be caught by the
+// slower cluster-level integration test without this unit test.
+func TestCollectPDMetrics_DroppedAtDecodeKV(t *testing.T) {
+	tests := []struct {
+		name     string
+		parents  []*ParentRequest
+		wantDrop int
+	}{
+		{
+			name: "none dropped",
+			parents: []*ParentRequest{
+				{ID: "req-1", TransferCompleteTime: 200, DecodeInstanceID: "instance_2"},
+			},
+			wantDrop: 0,
+		},
+		{
+			name: "all dropped",
+			parents: []*ParentRequest{
+				{ID: "req-1", TransferCompleteTime: 200, DecodeInstanceID: ""},
+				{ID: "req-2", TransferCompleteTime: 300, DecodeInstanceID: ""},
+			},
+			wantDrop: 2,
+		},
+		{
+			name: "mixed: transfer-then-drop, transfer-then-assigned, no-transfer",
+			parents: []*ParentRequest{
+				{ID: "req-1", TransferCompleteTime: 200, DecodeInstanceID: "instance_2"}, // assigned
+				{ID: "req-2", TransferCompleteTime: 300, DecodeInstanceID: ""},           // dropped
+				{ID: "req-3", TransferCompleteTime: 0, DecodeInstanceID: ""},             // no transfer → not dropped
+			},
+			wantDrop: 1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			agg := buildAggregatedWithTTFTs(nil, 1_000_000)
+			pd := CollectPDMetrics(tc.parents, agg, nil, nil)
+			if pd == nil {
+				t.Fatal("expected non-nil PDMetrics")
+			}
+			if pd.DroppedAtDecodeKV != tc.wantDrop {
+				t.Errorf("DroppedAtDecodeKV = %d, want %d", pd.DroppedAtDecodeKV, tc.wantDrop)
+			}
+		})
+	}
+}
+
 // ---- Task 2: Integration tests (BC-4, BC-5, BC-10) ----
 
 // BC-4: PrefillThroughput = prefill_completions / simEndedTime (in seconds).
