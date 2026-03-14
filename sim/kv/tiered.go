@@ -238,7 +238,8 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 			newStartBlock := newStart / t.gpu.BlockSize()
 			if _, exists := t.gpu.RequestMap[req.ID]; exists {
 				// Running request: skip blocks already in RequestMap (ceiling division
-				// avoids double-committing the partially-filled last block, same as line 222).
+				// avoids double-committing the partially-filled last block;
+				// same ceiling division as the full-range reload path above.
 				startBlock := (startIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
 				if startBlock < newStartBlock {
 					t.gpu.commitCachedBlocks(req.ID, newCached[startBlock:newStartBlock])
