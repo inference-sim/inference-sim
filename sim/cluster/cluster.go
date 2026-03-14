@@ -128,6 +128,15 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 {
 		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances and --decode-instances must be set)")
 	}
+	// R3, R20: validate interference factors at construction time (both CLI and library callers).
+	// Upper bound (MaxInterferenceFactor) prevents silent int64 overflow when factor * stepTime > MaxFloat64.
+	// These apply to all instances but are zero-effect on phase-pure batches (INV-PD-2).
+	if config.PDInterferencePrefill < 0 || math.IsNaN(config.PDInterferencePrefill) || math.IsInf(config.PDInterferencePrefill, 0) || config.PDInterferencePrefill > MaxInterferenceFactor {
+		panic(fmt.Sprintf("ClusterSimulator: PDInterferencePrefill must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferencePrefill))
+	}
+	if config.PDInterferenceDecode < 0 || math.IsNaN(config.PDInterferenceDecode) || math.IsInf(config.PDInterferenceDecode, 0) || config.PDInterferenceDecode > MaxInterferenceFactor {
+		panic(fmt.Sprintf("ClusterSimulator: PDInterferenceDecode must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferenceDecode))
+	}
 
 	// PD disaggregation: validate transfer parameters and build runtime state.
 	// Pool topology already validated above (before instance construction).

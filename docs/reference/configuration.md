@@ -213,6 +213,8 @@ This reflects the real cost driver: disaggregating prefill is only beneficial wh
 | `--pd-transfer-base-latency` | float64 | 0.05 | Base transfer latency per transfer in milliseconds. |
 | `--pd-kv-bytes-per-token` | int | 512 | KV cache bytes per token for transfer size calculation. |
 | `--pd-transfer-contention` | bool | false | Enable fair-share bandwidth contention model (INV-P2-2): when N transfers are in-flight, each gets `bandwidth/N`. Models a shared global fabric where all concurrent transfers contend for the same bandwidth pool. Disabled by default. |
+| `--pd-interference-prefill` | float64 | 0 | Co-location interference factor for prefill-dominant batches (majority is prefill, minority is decode). Multiplier = `1 + factor × (minority/total)`. Factor 0.5 at 50/50 split → 1.25× step time. 0 = disabled (no co-location penalty). |
+| `--pd-interference-decode` | float64 | 0 | Co-location interference factor for decode-dominant batches (majority is decode, minority is prefill). Multiplier = `1 + factor × (minority/total)`. Factor 0.5 at 50/50 split → 1.25× step time. 0 = disabled (no co-location penalty). |
 | `--prefill-routing-scorers` | string | "" | Scorer config for weighted routing within the prefill pool. |
 | `--decode-routing-scorers` | string | "" | Scorer config for weighted routing within the decode pool. |
 

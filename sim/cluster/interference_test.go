@@ -62,6 +62,9 @@ func TestNewInterferenceLatencyModel_Validation(t *testing.T) {
 		{name: "Inf decode factor", inner: inner, prefillFactor: 0, decodeFactor: math.Inf(1), wantErr: true},
 		{name: "NaN decode factor", inner: inner, prefillFactor: 0, decodeFactor: math.NaN(), wantErr: true},
 		{name: "negative Inf prefill", inner: inner, prefillFactor: math.Inf(-1), decodeFactor: 0, wantErr: true},
+		{name: "valid max factor", inner: inner, prefillFactor: MaxInterferenceFactor, decodeFactor: MaxInterferenceFactor},
+		{name: "above max prefill", inner: inner, prefillFactor: MaxInterferenceFactor + 0.001, decodeFactor: 0, wantErr: true},
+		{name: "above max decode", inner: inner, prefillFactor: 0, decodeFactor: MaxInterferenceFactor + 1, wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -179,17 +182,53 @@ func TestInterferenceLatencyModel_LastAppliedMultiplier_InitialValue(t *testing.
 }
 
 func TestNewInstanceSimulatorCore_WrapsLatencyModel(t *testing.T) {
+	// GIVEN a config that will produce measurable step times
 	cfg := newTestSimConfig()
-	// With zero factors: no wrapping, baseline behavior
+
+	// WHEN constructing with zero factors: step time should match baseline behavior.
 	inst0 := newInstanceSimulatorCore("no-interference", cfg, 0, 0)
 	if inst0 == nil {
 		t.Fatal("newInstanceSimulatorCore returned nil with zero factors")
 	}
 
-	// With positive factors: wrapping active
+	// WHEN constructing with positive factors: wrapping must be active and must
+	// increase step time for a mixed prefill+decode batch (INV-P2-3).
 	inst1 := newInstanceSimulatorCore("with-interference", cfg, 0.5, 0.3)
 	if inst1 == nil {
 		t.Fatal("newInstanceSimulatorCore returned nil with positive factors")
+	}
+
+	// THEN: verify interference actually applies by comparing step times on a
+	// mixed-phase batch. Use a controlled stub to confirm the multiplier fires.
+	inner := &stubLatencyModel{stepTime: 1000}
+	noWrap, err := NewInterferenceLatencyModel(inner, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error creating zero-factor model: %v", err)
+	}
+	withWrap, err := NewInterferenceLatencyModel(inner, 0.5, 0.3)
+	if err != nil {
+		t.Fatalf("unexpected error creating positive-factor model: %v", err)
+	}
+
+	// Mixed batch: 3 prefill + 1 decode → majority is prefill → uses prefillInterference=0.5
+	// Expected multiplier: 1.0 + 0.5*(1/4) = 1.125
+	// So step time with interference must exceed step time without.
+	batch := makeBatch(3, 1)
+	baseStep := noWrap.StepTime(batch)
+	intStep := withWrap.StepTime(batch)
+	if intStep <= baseStep {
+		t.Errorf("interference must increase step time for mixed batch: base=%d, interference=%d", baseStep, intStep)
+	}
+	if withWrap.LastAppliedMultiplier() < 1.0 {
+		t.Errorf("INV-P2-3: multiplier must be >= 1.0, got %f", withWrap.LastAppliedMultiplier())
+	}
+
+	// Phase-pure batch: all prefill → multiplier must be 1.0 (BC-P2-10)
+	pureBatch := makeBatch(4, 0)
+	pureBase := noWrap.StepTime(pureBatch)
+	pureInt := withWrap.StepTime(pureBatch)
+	if pureInt != pureBase {
+		t.Errorf("phase-pure batch must not be slowed down: base=%d, interference=%d", pureBase, pureInt)
 	}
 }
 

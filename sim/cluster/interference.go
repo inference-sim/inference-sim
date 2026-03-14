@@ -16,7 +16,13 @@ import (
 //
 // Multiplier formula: 1.0 + factor * (minority_count / total_count)
 // where minority_count is the count of requests in the less-common phase.
-// Effective range: factor of 1.0 produces at most 50% slowdown at even split.
+// A factor of 1.0 at a 50/50 split produces at most a 1.5× step time multiplier (50% slowdown).
+// A factor of 0.5 at a 50/50 split produces a 1.25× multiplier (25% slowdown).
+//
+// In PD disaggregated mode, prefill-only and decode-only pools always have phase-pure
+// batches (INV-PD-2: Pool Exclusivity), so their multiplier is always 1.0 (BC-P2-10:
+// no-op). The interference factors only take effect in non-disaggregated deployments
+// where prefill and decode requests share the same instance.
 //
 // Behavioral guarantees:
 //   - BC-P2-9:  factors=0 → step time identical to inner model
@@ -30,19 +36,24 @@ type InterferenceLatencyModel struct {
 	lastMultiplier      float64
 }
 
+// MaxInterferenceFactor is the upper bound for interference factors (R20: degenerate input guard).
+// Factor=100 at a 50/50 split produces at most 51× slowdown. Values above this would cause
+// float64 overflow in StepTime for any realistic inner model step time (> 10^18 µs).
+const MaxInterferenceFactor = 100.0
+
 // NewInterferenceLatencyModel creates an interference wrapper around the given LatencyModel.
 // prefillFactor is the interference factor when prefill is the majority phase.
 // decodeFactor is the interference factor when decode is the majority phase.
-// Both factors must be >= 0 and finite (R3).
+// Both factors must be in [0, MaxInterferenceFactor] and finite (R3, R20).
 func NewInterferenceLatencyModel(inner sim.LatencyModel, prefillFactor, decodeFactor float64) (*InterferenceLatencyModel, error) {
 	if inner == nil {
 		return nil, fmt.Errorf("NewInterferenceLatencyModel: inner must not be nil")
 	}
-	if prefillFactor < 0 || math.IsNaN(prefillFactor) || math.IsInf(prefillFactor, 0) {
-		return nil, fmt.Errorf("NewInterferenceLatencyModel: prefillFactor must be a finite non-negative number, got %f", prefillFactor)
+	if prefillFactor < 0 || math.IsNaN(prefillFactor) || math.IsInf(prefillFactor, 0) || prefillFactor > MaxInterferenceFactor {
+		return nil, fmt.Errorf("NewInterferenceLatencyModel: prefillFactor must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, prefillFactor)
 	}
-	if decodeFactor < 0 || math.IsNaN(decodeFactor) || math.IsInf(decodeFactor, 0) {
-		return nil, fmt.Errorf("NewInterferenceLatencyModel: decodeFactor must be a finite non-negative number, got %f", decodeFactor)
+	if decodeFactor < 0 || math.IsNaN(decodeFactor) || math.IsInf(decodeFactor, 0) || decodeFactor > MaxInterferenceFactor {
+		return nil, fmt.Errorf("NewInterferenceLatencyModel: decodeFactor must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, decodeFactor)
 	}
 	return &InterferenceLatencyModel{
 		inner:               inner,
@@ -95,6 +106,8 @@ func (m *InterferenceLatencyModel) computeMultiplier(batch []*sim.Request) float
 	case decodeCount > prefillCount:
 		factor = m.decodeInterference
 	default:
+		// Equal split: use the larger factor (conservative — worst-case interference
+		// applies when neither phase dominates and both experience the other at 50%).
 		factor = max(m.prefillInterference, m.decodeInterference)
 	}
 

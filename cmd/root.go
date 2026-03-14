@@ -1082,12 +1082,14 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("--pd-kv-bytes-per-token must be > 0, got %d", pdKVBytesPerToken)
 			}
 		}
-		// PD interference parameter validation (R3)
-		if pdInterferencePrefill < 0 || math.IsNaN(pdInterferencePrefill) || math.IsInf(pdInterferencePrefill, 0) {
-			logrus.Fatalf("--pd-interference-prefill must be a finite non-negative number, got %f", pdInterferencePrefill)
+		// PD interference parameter validation (R3, R20)
+		// Upper bound (cluster.MaxInterferenceFactor) prevents silent int64 overflow in StepTime
+		// for any realistic step time. Factor=100 at even split produces at most 51× slowdown.
+		if pdInterferencePrefill < 0 || math.IsNaN(pdInterferencePrefill) || math.IsInf(pdInterferencePrefill, 0) || pdInterferencePrefill > cluster.MaxInterferenceFactor {
+			logrus.Fatalf("--pd-interference-prefill must be a finite number in [0, %.0f], got %f", cluster.MaxInterferenceFactor, pdInterferencePrefill)
 		}
-		if pdInterferenceDecode < 0 || math.IsNaN(pdInterferenceDecode) || math.IsInf(pdInterferenceDecode, 0) {
-			logrus.Fatalf("--pd-interference-decode must be a finite non-negative number, got %f", pdInterferenceDecode)
+		if pdInterferenceDecode < 0 || math.IsNaN(pdInterferenceDecode) || math.IsInf(pdInterferenceDecode, 0) || pdInterferenceDecode > cluster.MaxInterferenceFactor {
+			logrus.Fatalf("--pd-interference-decode must be a finite number in [0, %.0f], got %f", cluster.MaxInterferenceFactor, pdInterferenceDecode)
 		}
 		if admissionLatency < 0 {
 			logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
@@ -1482,8 +1484,8 @@ func init() {
 	runCmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	runCmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	runCmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
-	runCmd.Flags().Float64Var(&pdInterferencePrefill, "pd-interference-prefill", 0, "Interference slowdown factor for prefill-dominant batches when decode co-locates (0 = disabled)")
-	runCmd.Flags().Float64Var(&pdInterferenceDecode, "pd-interference-decode", 0, "Interference slowdown factor for decode-dominant batches when prefill co-locates (0 = disabled)")
+	runCmd.Flags().Float64Var(&pdInterferencePrefill, "pd-interference-prefill", 0, "Co-location interference factor applied when prefill is the majority phase (0 = disabled). Multiplier = 1+factor*(minority/total): factor=0.5 at even split → 1.25x slowdown")
+	runCmd.Flags().Float64Var(&pdInterferenceDecode, "pd-interference-decode", 0, "Co-location interference factor applied when decode is the majority phase (0 = disabled). Multiplier = 1+factor*(minority/total): factor=0.5 at even split → 1.25x slowdown")
 	runCmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	runCmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
