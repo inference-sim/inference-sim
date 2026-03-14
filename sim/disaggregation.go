@@ -51,6 +51,32 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 	}
 }
 
+// DirectToDecodeDecider routes short prompts directly to the decode pool (Disaggregate=false)
+// and long prompts through the full PD pipeline (Disaggregate=true).
+// Decision: len(InputTokens) >= threshold → disaggregate; < threshold → direct to decode.
+// Empty inputs always return Disaggregate=false (consistent with PrefixThresholdDecider).
+type DirectToDecodeDecider struct {
+	threshold int
+}
+
+// NewDirectToDecodeDecider creates a DirectToDecodeDecider with the given input-length threshold.
+// threshold must be >= 0. Panics otherwise (R3).
+func NewDirectToDecodeDecider(threshold int) *DirectToDecodeDecider {
+	if threshold < 0 {
+		panic(fmt.Sprintf("NewDirectToDecodeDecider: threshold must be >= 0, got %d", threshold))
+	}
+	return &DirectToDecodeDecider{threshold: threshold}
+}
+
+// Decide returns Disaggregate=true when input length >= threshold (long prompt → full PD pipeline),
+// Disaggregate=false when input length < threshold (short prompt → direct to decode pool).
+func (d *DirectToDecodeDecider) Decide(req *Request) DisaggregationDecision {
+	if len(req.InputTokens) == 0 {
+		return DisaggregationDecision{Disaggregate: false}
+	}
+	return DisaggregationDecision{Disaggregate: len(req.InputTokens) >= d.threshold}
+}
+
 // globalVirtualInstance is the single key used in PrefixThresholdDecider's PrefixCacheIndex
 // to represent cluster-wide prefix knowledge. All requests update the same virtual instance
 // so the decider tracks the global set of recently-seen prefixes.

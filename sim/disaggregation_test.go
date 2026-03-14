@@ -265,6 +265,62 @@ func TestPrefixThresholdDecider_CacheAware(t *testing.T) {
 	}
 }
 
+// --- DirectToDecodeDecider tests ---
+
+func TestDirectToDecodeDecider_ShortPromptDoesNotDisaggregate(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: make([]int, 100)} // 100 < 256
+	decision := d.Decide(req)
+	if decision.Disaggregate {
+		t.Error("short prompt (100 tokens < threshold 256) should not disaggregate")
+	}
+}
+
+func TestDirectToDecodeDecider_LongPromptDisaggregates(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: make([]int, 500)} // 500 >= 256
+	decision := d.Decide(req)
+	if !decision.Disaggregate {
+		t.Error("long prompt (500 tokens >= threshold 256) should disaggregate")
+	}
+}
+
+func TestDirectToDecodeDecider_ExactThresholdDisaggregates(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: make([]int, 256)} // 256 >= 256
+	decision := d.Decide(req)
+	if !decision.Disaggregate {
+		t.Error("exact threshold (256 tokens >= threshold 256) should disaggregate")
+	}
+}
+
+func TestDirectToDecodeDecider_EmptyInputDoesNotDisaggregate(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: nil}
+	decision := d.Decide(req)
+	if decision.Disaggregate {
+		t.Error("empty input should not disaggregate")
+	}
+}
+
+func TestDirectToDecodeDecider_ZeroThresholdAlwaysDisaggregates(t *testing.T) {
+	d := NewDirectToDecodeDecider(0)
+	req := &Request{InputTokens: make([]int, 1)}
+	decision := d.Decide(req)
+	if !decision.Disaggregate {
+		t.Error("threshold 0 with non-empty input should always disaggregate")
+	}
+}
+
+func TestNewDirectToDecodeDecider_PanicsOnNegativeThreshold(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic on negative threshold")
+		}
+	}()
+	NewDirectToDecodeDecider(-1)
+}
+
 // TestPrefixThresholdDecider_ZeroThreshold verifies threshold=0 means always disaggregate
 // when tokens are non-empty (any non-cached token > 0).
 func TestPrefixThresholdDecider_ZeroThreshold(t *testing.T) {
