@@ -78,8 +78,12 @@ func NewDirectToDecodeDecider(threshold int) *DirectToDecodeDecider {
 
 // Decide returns Disaggregate=true when input length >= threshold (long prompt → full PD pipeline),
 // Disaggregate=false when input length < threshold (short prompt → direct to decode pool).
-// Empty inputs (len == 0) always return Disaggregate=false.
+// Empty inputs (len == 0) always return Disaggregate=false regardless of threshold.
+// req must be non-nil (interface contract); panics on nil req (programming error).
 func (d *DirectToDecodeDecider) Decide(req *Request) DisaggregationDecision {
+	if req == nil {
+		panic("DirectToDecodeDecider.Decide: req is nil (programming error)")
+	}
 	if len(req.InputTokens) == 0 {
 		return DisaggregationDecision{Disaggregate: false}
 	}

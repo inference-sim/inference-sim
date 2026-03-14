@@ -1098,12 +1098,12 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("--pd-direct-decode-threshold must be >= 0, got %d", pdDirectDecodeThreshold)
 		}
 		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold == 0 {
-			logrus.Warnf("--pd-direct-decode-threshold=0 means all non-empty requests will be disaggregated (equivalent to --pd-decider=always). Did you intend a non-zero threshold?")
+			logrus.Warnf("--pd-direct-decode-threshold=0 means all non-empty requests will be disaggregated (equivalent to --pd-decider=always for non-empty inputs; empty-input requests always go direct to decode regardless of threshold). Did you intend a non-zero threshold?")
 		}
 		if pdDecider != "direct-to-decode" && cmd.Flags().Changed("pd-direct-decode-threshold") {
 			logrus.Warnf("--pd-direct-decode-threshold=%d is ignored when --pd-decider=%q (only applies to the direct-to-decode decider)", pdDirectDecodeThreshold, pdDecider)
 		}
-		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 && decodeInstances == 0 {
+		if pdDecider != "" && pdDecider != "never" && (prefillInstances == 0 || decodeInstances == 0) {
 			logrus.Fatalf("--pd-decider=%q requires both --prefill-instances and --decode-instances to be set; got prefill=%d, decode=%d",
 				pdDecider, prefillInstances, decodeInstances)
 		}

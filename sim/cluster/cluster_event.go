@@ -175,8 +175,10 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 			policy = cs.decodeRoutingPolicy
 		} else if *e.poolFilter == PoolRolePrefill && cs.prefillRoutingPolicy != nil {
 			policy = cs.prefillRoutingPolicy
-		} else {
-			logrus.Warnf("RoutingDecisionEvent: unhandled pool role %v for request %s, falling back to global policy",
+		} else if *e.poolFilter != PoolRoleDecode && *e.poolFilter != PoolRolePrefill {
+			// Only warn on genuinely unrecognized roles — known roles without a custom policy
+			// fall through silently to the global routing policy below (normal configuration).
+			logrus.Warnf("RoutingDecisionEvent: unrecognized pool role %v for request %s, falling back to global policy",
 				*e.poolFilter, e.request.ID)
 		}
 	} else {
@@ -266,10 +268,10 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	if !decision.Disaggregate {
-		// Non-disaggregated path. When pools are configured, route to the decode pool
-		// only (INV-P2-4a): decode instances handle both phases with interference cost (PR3).
-		// When pools are NOT configured (poolsConfigured()==false), pf stays nil and the
-		// global routing policy is used — same as the standard (non-PD) routing path.
+		// Non-disaggregated path: route to the decode pool only (INV-P2-4a).
+		// Decode instances handle both phases with interference cost (PR3).
+		// Defensive: poolsConfigured() is always true here — this event is only
+		// scheduled from AdmissionDecisionEvent.Execute when poolsConfigured() is true.
 		// No ParentRequest is created (BC-P2-15).
 		var pf *PoolRole
 		if cs.poolsConfigured() {
