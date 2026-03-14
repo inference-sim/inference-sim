@@ -840,3 +840,15 @@ func TestDisaggregation_INV_PD_1_DecodeEnqueueAfterTransfer(t *testing.T) {
 		}
 	}
 }
+
+// --- DirectToDecodeDecider integration tests ---
+
+func TestDirectToDecodeDecider_ClusterConstruction(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "direct-to-decode"
+	cfg.PDDirectDecodeThreshold = 256
+	cs := NewClusterSimulator(cfg, newTestRequests(3))
+	if cs == nil {
+		t.Fatal("NewClusterSimulator returned nil")
+	}
+}

@@ -86,16 +86,19 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 		panic(fmt.Sprintf("ClusterSimulator: PDInterferenceDecode must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferenceDecode))
 	}
 	// R20: warn when interference factors are non-zero but the deployment is fully
-	// disaggregated (all instances pool-assigned). In that case, pool instances only
-	// receive phase-pure batches (INV-PD-2), so the interference multiplier is always
-	// 1.0 and these parameters have no effect.
+	// disaggregated (all instances pool-assigned AND decider is "always"). In that case,
+	// pool instances only receive phase-pure batches (INV-PD-2), so the interference
+	// multiplier is always 1.0 and these parameters have no effect.
+	// When direct-to-decode or prefix-threshold is active, non-disaggregated requests
+	// may reach decode instances, creating mixed batches where interference applies.
 	if (config.PDInterferencePrefill > 0 || config.PDInterferenceDecode > 0) &&
-		config.PrefillInstances > 0 && config.DecodeInstances > 0 {
+		config.PrefillInstances > 0 && config.DecodeInstances > 0 &&
+		config.PDDecider == "always" {
 		logrus.Warnf("[cluster] pd-interference-prefill/decode are non-zero but all instances are pool-assigned "+
-			"(prefill-instances=%d, decode-instances=%d). Pool instances serve only phase-pure batches "+
+			"(prefill-instances=%d, decode-instances=%d) with decider=%q. Pool instances serve only phase-pure batches "+
 			"(INV-PD-2), so the interference multiplier is always 1.0. These parameters have no effect "+
 			"in fully disaggregated deployments.",
-			config.PrefillInstances, config.DecodeInstances)
+			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
 	}
 
 	// Build pool membership from indices BEFORE instance construction
@@ -177,9 +180,12 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 				config.BlockSizeTokens, config.PDKVBytesPerToken))
 		}
 		cs.poolMembership = prePoolMembership
-		if config.PDDecider == "prefix-threshold" {
+		switch config.PDDecider {
+		case "prefix-threshold":
 			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
-		} else {
+		case "direct-to-decode":
+			cs.disaggregationDecider = sim.NewDirectToDecodeDecider(config.PDDirectDecodeThreshold)
+		default:
 			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		}
 		cs.parentRequests = make(map[string]*ParentRequest)

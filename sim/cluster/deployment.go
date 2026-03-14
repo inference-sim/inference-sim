@@ -35,7 +35,8 @@ type DeploymentConfig struct {
 	PrefillInstances int    // Number of instances dedicated to prefill (0 = disabled)
 	DecodeInstances  int    // Number of instances dedicated to decode (0 = disabled)
 	PDDecider         string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold"
-	PDPrefixThreshold int    // Non-cached token threshold for prefix-threshold decider (>= 0, default 512 from CLI)
+	PDPrefixThreshold       int // Non-cached token threshold for prefix-threshold decider (>= 0, default 512 from CLI)
+	PDDirectDecodeThreshold int // Input token threshold for direct-to-decode decider (>= 0, default 256 from CLI)
 
 	// PD KV transfer configuration
 	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
