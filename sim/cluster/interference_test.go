@@ -24,7 +24,7 @@ func (s *stubLatencyModel) PostDecodeFixedOverhead() int64          { return s.p
 
 // makeBatch creates a batch of requests with the given prefill/decode composition.
 // Prefill requests have ProgressIndex=0 with len(InputTokens)=10.
-// Decode requests have ProgressIndex=10 with len(InputTokens)=10 (past prefill).
+// Decode requests have ProgressIndex=15 with len(InputTokens)=10 (5 decode steps past prefill).
 func makeBatch(prefillCount, decodeCount int) []*sim.Request {
 	batch := make([]*sim.Request, 0, prefillCount+decodeCount)
 	for i := 0; i < prefillCount; i++ {
@@ -38,7 +38,7 @@ func makeBatch(prefillCount, decodeCount int) []*sim.Request {
 		batch = append(batch, &sim.Request{
 			ID:            fmt.Sprintf("decode_%d", i),
 			InputTokens:   make([]int, 10),
-			ProgressIndex: 10,
+			ProgressIndex: 15, // > len(InputTokens), confirming >= check works beyond boundary
 		})
 	}
 	return batch
@@ -94,6 +94,7 @@ func TestInterferenceLatencyModel_StepTime(t *testing.T) {
 		{name: "prefill majority", prefillFactor: 0.5, decodeFactor: 0.3, prefillCount: 3, decodeCount: 1, wantMultiplier: 1.125},
 		{name: "decode majority", prefillFactor: 0.5, decodeFactor: 0.3, prefillCount: 1, decodeCount: 3, wantMultiplier: 1.075},
 		{name: "tied batch uses max factor", prefillFactor: 0.5, decodeFactor: 0.3, prefillCount: 2, decodeCount: 2, wantMultiplier: 1.25},
+		{name: "tied batch uses max factor reversed", prefillFactor: 0.3, decodeFactor: 0.5, prefillCount: 2, decodeCount: 2, wantMultiplier: 1.25},
 		{name: "single prefill", prefillFactor: 1.0, decodeFactor: 1.0, prefillCount: 1, decodeCount: 0, wantMultiplier: 1.0},
 		{name: "single decode", prefillFactor: 1.0, decodeFactor: 1.0, prefillCount: 0, decodeCount: 1, wantMultiplier: 1.0},
 		{name: "even split factor 1.0", prefillFactor: 1.0, decodeFactor: 1.0, prefillCount: 5, decodeCount: 5, wantMultiplier: 1.5},
@@ -371,6 +372,86 @@ func TestInterferenceModel_ClusterIntegration_INV_P2_3(t *testing.T) {
 	}
 	if violations > 0 {
 		t.Errorf("INV-P2-3 violated for %d/%d requests in common", violations, commonCount)
+	}
+}
+
+// TestInterferenceLatencyModel_LastAppliedMultiplier_UpdatesPerCall verifies BC-P2-12:
+// LastAppliedMultiplier reflects the most recent StepTime call, not an earlier one.
+func TestInterferenceLatencyModel_LastAppliedMultiplier_UpdatesPerCall(t *testing.T) {
+	inner := &stubLatencyModel{stepTime: 1000}
+	model, err := NewInterferenceLatencyModel(inner, 0.5, 0.3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// First call: mixed batch → multiplier > 1.0
+	mixedBatch := makeBatch(3, 1) // prefill majority: 1.0 + 0.5*(1/4) = 1.125
+	model.StepTime(mixedBatch)
+	firstMultiplier := model.LastAppliedMultiplier()
+	if math.Abs(firstMultiplier-1.125) > 1e-9 {
+		t.Errorf("first call multiplier = %f, want 1.125", firstMultiplier)
+	}
+
+	// Second call: phase-pure batch → multiplier must reset to 1.0
+	pureBatch := makeBatch(4, 0)
+	model.StepTime(pureBatch)
+	secondMultiplier := model.LastAppliedMultiplier()
+	if math.Abs(secondMultiplier-1.0) > 1e-9 {
+		t.Errorf("second call multiplier = %f after phase-pure batch, want 1.0 (BC-P2-12: must reflect latest call)", secondMultiplier)
+	}
+
+	// Third call: different mixed batch → multiplier updates again
+	mixedBatch2 := makeBatch(1, 3) // decode majority: 1.0 + 0.3*(1/4) = 1.075
+	model.StepTime(mixedBatch2)
+	thirdMultiplier := model.LastAppliedMultiplier()
+	if math.Abs(thirdMultiplier-1.075) > 1e-9 {
+		t.Errorf("third call multiplier = %f, want 1.075 (BC-P2-12: must reflect latest call, not first)", thirdMultiplier)
+	}
+}
+
+// TestInterferenceModel_PDMode_PhasePurePools verifies BC-P2-10 at the cluster level:
+// in a fully disaggregated deployment with AlwaysDisaggregate, pool instances only
+// receive phase-pure sub-requests (INV-PD-2), so interference factors have no effect
+// and results are identical to a zero-factor baseline run.
+func TestInterferenceModel_PDMode_PhasePurePools(t *testing.T) {
+	// Use the shared PD deployment config (4 instances: 2 prefill + 2 decode, AlwaysDisaggregate).
+	baseCfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	// Run without interference.
+	csBase := NewClusterSimulator(baseCfg, cloneRequests(requests))
+	if err := csBase.Run(); err != nil {
+		t.Fatalf("baseline run failed: %v", err)
+	}
+	baseMetrics := csBase.AggregatedMetrics()
+	if len(baseMetrics.RequestE2Es) == 0 {
+		t.Fatal("baseline run completed 0 requests — test is vacuous")
+	}
+
+	// Run with non-zero interference in fully disaggregated mode.
+	// BC-P2-10: phase-pure batches → multiplier=1.0, so results must be identical.
+	cfgInterf := baseCfg
+	cfgInterf.PDInterferencePrefill = 0.5
+	cfgInterf.PDInterferenceDecode = 0.5
+	csInterf := NewClusterSimulator(cfgInterf, cloneRequests(requests))
+	if err := csInterf.Run(); err != nil {
+		t.Fatalf("interference run failed: %v", err)
+	}
+	interfMetrics := csInterf.AggregatedMetrics()
+
+	// BC-P2-10 at cluster level: interference must have zero effect in fully
+	// disaggregated deployment because pool batches are always phase-pure.
+	if interfMetrics.SimEndedTime != baseMetrics.SimEndedTime {
+		t.Errorf("BC-P2-10 violated: SimEndedTime differs with interference in PD mode: base=%d, interf=%d",
+			baseMetrics.SimEndedTime, interfMetrics.SimEndedTime)
+	}
+	for reqID, baseE2E := range baseMetrics.RequestE2Es {
+		if interfE2E, ok := interfMetrics.RequestE2Es[reqID]; ok {
+			if interfE2E != baseE2E {
+				t.Errorf("BC-P2-10 violated: request %s E2E differs in PD mode: base=%v, interf=%v",
+					reqID, baseE2E, interfE2E)
+			}
+		}
 	}
 }
 

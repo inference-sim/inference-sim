@@ -6,7 +6,11 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
+	"github.com/sirupsen/logrus"
 )
+
+// Compile-time assertion: *InterferenceLatencyModel must implement sim.LatencyModel.
+var _ sim.LatencyModel = (*InterferenceLatencyModel)(nil)
 
 // InterferenceLatencyModel wraps a LatencyModel to apply a multiplicative slowdown
 // when prefill and decode phases co-locate in the same batch. This enables break-even
@@ -19,10 +23,12 @@ import (
 // A factor of 1.0 at a 50/50 split produces at most a 1.5× step time multiplier (50% slowdown).
 // A factor of 0.5 at a 50/50 split produces a 1.25× multiplier (25% slowdown).
 //
-// In PD disaggregated mode, prefill-only and decode-only pools always have phase-pure
-// batches (INV-PD-2: Pool Exclusivity), so their multiplier is always 1.0 (BC-P2-10:
-// no-op). The interference factors only take effect in non-disaggregated deployments
-// where prefill and decode requests share the same instance.
+// In a fully disaggregated deployment (AlwaysDisaggregate), pool instances only receive
+// phase-pure sub-requests (INV-PD-2: Pool Exclusivity), so their multiplier is always
+// 1.0 (BC-P2-10: no-op). With PrefixThresholdDecider, non-disaggregated requests may
+// still reach pool instances via the standard routing path, producing mixed batches
+// where interference applies. The interference factors have no effect in deployments
+// where every request takes the fully disaggregated path.
 //
 // Behavioral guarantees:
 //   - BC-P2-9:  factors=0 → step time identical to inner model
@@ -38,7 +44,9 @@ type InterferenceLatencyModel struct {
 
 // MaxInterferenceFactor is the upper bound for interference factors (R3: numeric parameter upper bound).
 // Factor=100 at a 50/50 split produces exactly 51× slowdown (1.0 + 100×0.5 = 51.0). Values above this
-// would cause float64 overflow in StepTime for any realistic inner model step time (> 10^18 µs).
+// could cause int64 overflow in StepTime: int64(math.Round(float64(baseTime) * multiplier)) wraps
+// when float64(baseTime)*multiplier exceeds math.MaxInt64 (~9.2×10^18). At factor=100, multiplier≤51,
+// so baseTime would need to exceed ~1.8×10^17 µs (≈5,700 years) to overflow — physically unreachable.
 const MaxInterferenceFactor = 100.0
 
 // NewInterferenceLatencyModel creates an interference wrapper around the given LatencyModel.
@@ -64,7 +72,7 @@ func NewInterferenceLatencyModel(inner sim.LatencyModel, prefillFactor, decodeFa
 }
 
 // StepTime applies the interference multiplier to the inner model's step time.
-// Classifies each request as prefill (ProgressIndex < len(InputTokens)) or decode,
+// Classifies each request as prefill (ProgressIndex < int64(len(InputTokens))) or decode,
 // then applies: multiplier = 1.0 + factor * (minority_count / total_count).
 func (m *InterferenceLatencyModel) StepTime(batch []*sim.Request) int64 {
 	baseTime := m.inner.StepTime(batch)
@@ -72,7 +80,15 @@ func (m *InterferenceLatencyModel) StepTime(batch []*sim.Request) int64 {
 	multiplier := m.computeMultiplier(batch)
 	m.lastMultiplier = multiplier
 
-	result := int64(math.Round(float64(baseTime) * multiplier))
+	scaled := float64(baseTime) * multiplier
+	// Guard against int64 overflow before conversion (R1: no silent data loss).
+	// This path is unreachable given MaxInterferenceFactor constraints, but we detect
+	// it explicitly rather than silently wrapping to a negative value and clamping to 1.
+	if scaled > float64(math.MaxInt64) {
+		logrus.Errorf("InterferenceLatencyModel: StepTime overflow: baseTime=%d multiplier=%f; returning unscaled time (R1)", baseTime, multiplier)
+		return baseTime
+	}
+	result := int64(math.Round(scaled))
 	if result < 1 {
 		result = 1
 	}
@@ -82,12 +98,13 @@ func (m *InterferenceLatencyModel) StepTime(batch []*sim.Request) int64 {
 // computeMultiplier determines the interference multiplier from batch composition.
 //
 // Approximation note: phase classification counts requests, not tokens. A batch with
-// one 2000-token prefill request and one 1-token decode request is treated as a 50/50
-// split. In real vLLM, interference scales with aggregate token volume per phase, so
-// this model over-penalizes decode-dominant batches containing a single large-context
-// prefill request. For break-even analysis (the primary use case), this is a conservative
-// first-order estimate. For workloads with high input length variance, calibrate factors
-// from empirical vLLM traces to compensate for the request-count bias.
+// nine decode requests and one 2000-token prefill request is treated as a 9:1 decode-
+// dominant split. In real vLLM, interference scales with aggregate token volume per phase,
+// so this model under-penalizes batches that contain a single large-context prefill request
+// alongside many short decode requests. For break-even analysis (the primary use case),
+// this is a conservative first-order estimate. For workloads with high input length
+// variance, calibrate factors from empirical vLLM traces to compensate for the
+// request-count bias.
 func (m *InterferenceLatencyModel) computeMultiplier(batch []*sim.Request) float64 {
 	total := len(batch)
 	if total == 0 {

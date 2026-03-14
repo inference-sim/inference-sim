@@ -78,12 +78,24 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request) *Clus
 	// R3: validate interference factors BEFORE instance construction so the
 	// authored error messages are reachable and no partial allocation occurs.
 	// Upper bound (MaxInterferenceFactor) prevents silent int64 overflow when
-	// factor * stepTime exceeds MaxFloat64.
+	// factor * stepTime exceeds MaxInt64 after math.Round (see interference.go).
 	if config.PDInterferencePrefill < 0 || math.IsNaN(config.PDInterferencePrefill) || math.IsInf(config.PDInterferencePrefill, 0) || config.PDInterferencePrefill > MaxInterferenceFactor {
 		panic(fmt.Sprintf("ClusterSimulator: PDInterferencePrefill must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferencePrefill))
 	}
 	if config.PDInterferenceDecode < 0 || math.IsNaN(config.PDInterferenceDecode) || math.IsInf(config.PDInterferenceDecode, 0) || config.PDInterferenceDecode > MaxInterferenceFactor {
 		panic(fmt.Sprintf("ClusterSimulator: PDInterferenceDecode must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferenceDecode))
+	}
+	// R20: warn when interference factors are non-zero but the deployment is fully
+	// disaggregated (all instances pool-assigned). In that case, pool instances only
+	// receive phase-pure batches (INV-PD-2), so the interference multiplier is always
+	// 1.0 and these parameters have no effect.
+	if (config.PDInterferencePrefill > 0 || config.PDInterferenceDecode > 0) &&
+		config.PrefillInstances > 0 && config.DecodeInstances > 0 {
+		logrus.Warnf("[cluster] pd-interference-prefill/decode are non-zero but all instances are pool-assigned "+
+			"(prefill-instances=%d, decode-instances=%d). Pool instances serve only phase-pure batches "+
+			"(INV-PD-2), so the interference multiplier is always 1.0. These parameters have no effect "+
+			"in fully disaggregated deployments.",
+			config.PrefillInstances, config.DecodeInstances)
 	}
 
 	// Build pool membership from indices BEFORE instance construction
