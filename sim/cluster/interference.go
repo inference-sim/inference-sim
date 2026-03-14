@@ -80,6 +80,14 @@ func (m *InterferenceLatencyModel) StepTime(batch []*sim.Request) int64 {
 }
 
 // computeMultiplier determines the interference multiplier from batch composition.
+//
+// Approximation note: phase classification counts requests, not tokens. A batch with
+// one 2000-token prefill request and one 1-token decode request is treated as a 50/50
+// split. In real vLLM, interference scales with aggregate token volume per phase, so
+// this model over-penalizes decode-dominant batches containing a single large-context
+// prefill request. For break-even analysis (the primary use case), this is a conservative
+// first-order estimate. For workloads with high input length variance, calibrate factors
+// from empirical vLLM traces to compensate for the request-count bias.
 func (m *InterferenceLatencyModel) computeMultiplier(batch []*sim.Request) float64 {
 	total := len(batch)
 	if total == 0 {

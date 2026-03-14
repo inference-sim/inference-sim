@@ -279,6 +279,14 @@ func TestInterferenceModel_ClusterIntegration(t *testing.T) {
 	}
 	interferenceMetrics := csInterference.AggregatedMetrics()
 
+	// Non-vacuity: at least one request must complete in both runs before comparing outcomes.
+	if len(baseMetrics.RequestE2Es) == 0 {
+		t.Fatal("baseline run completed 0 requests — test is vacuous")
+	}
+	if len(interferenceMetrics.RequestE2Es) == 0 {
+		t.Fatal("interference run completed 0 requests — test is vacuous")
+	}
+
 	// With interference, simulation should take longer (higher SimEndedTime)
 	if interferenceMetrics.SimEndedTime <= baseMetrics.SimEndedTime {
 		t.Errorf("expected interference to increase simulation time: base=%d, interference=%d",

@@ -38,6 +38,11 @@ type ClusterSimulator struct {
 	disaggregationDecider   sim.DisaggregationDecider   // PD disaggregation decider (nil when disabled)
 
 	// PD disaggregation state (PR2)
+	// parentRequests is intentionally never pruned during simulation; entries are retained for
+	// post-simulation access via ParentRequests() and CollectPDMetrics(). The map grows by one
+	// entry per disaggregated parent request. For typical simulation objects (< 100K requests),
+	// memory growth is bounded and acceptable. Long-lived or high-volume callers should use
+	// short-lived ClusterSimulator instances rather than accumulating requests across runs.
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID (for CompletionTime)
