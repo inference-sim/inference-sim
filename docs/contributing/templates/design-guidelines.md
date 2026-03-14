@@ -236,6 +236,7 @@ flowchart TD
 |---|---|---|---|
 | **Admission** | Accept/reject requests at cluster entry | `AdmissionPolicy` (single method) | Implemented, frozen |
 | **Router** | Select target instance for admitted requests | `RoutingPolicy` (single method) | Implemented, frozen |
+| **Disaggregation Decider** | Decide whether to disaggregate (PD pipeline) or route directly | `DisaggregationDecider` (single method) | Implemented, frozen — `NeverDisaggregate`, `AlwaysDisaggregate`, `PrefixThresholdDecider`, `DirectToDecodeDecider` |
 | **Scheduler** | Order queued requests within an instance | `InstanceScheduler` (single method) | Implemented, frozen |
 | **Priority** | Compute request priority for scheduler | `PriorityPolicy` (single method) | Implemented, frozen |
 | **KV Cache Manager** | Allocate/release/cache KV blocks | `KVStore` (11 methods) | Implemented |
