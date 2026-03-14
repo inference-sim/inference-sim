@@ -957,3 +957,114 @@ func TestDirectToDecodeDecider_MixedWorkload(t *testing.T) {
 			expectedSubReqs, actual, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable)
 	}
 }
+
+// TestDirectToDecodeDecider_INVP24a_DecodeTargetedRouting is the invariant test for INV-P2-4a:
+// non-disaggregated requests with pools configured MUST route to decode pool.
+// Tests with NeverDisaggregate (not just direct-to-decode) to verify the invariant
+// applies to the event handler, not just one decider.
+func TestDirectToDecodeDecider_INVP24a_DecodeTargetedRouting(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "never" // all requests non-disaggregated, but pools ARE configured
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	membership := cs.PoolMembership()
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue
+		}
+		role, ok := membership[req.AssignedInstance]
+		if !ok || role != PoolRoleDecode {
+			t.Errorf("INV-P2-4a violated: req %s routed to %s (role=%v), expected decode pool",
+				req.ID, req.AssignedInstance, role)
+		}
+	}
+}
+
+// TestDirectToDecodeDecider_INVP24b_InterferenceApplied verifies BC-P2-17:
+// decode instances with mixed-phase batches (from direct-to-decode requests) produce
+// longer simulation times than without interference.
+// Uses many requests with close arrival times to force batch overlap where some requests
+// are in prefill phase while others are in decode phase.
+func TestDirectToDecodeDecider_INVP24b_InterferenceApplied(t *testing.T) {
+	baseCfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	baseCfg.PDDecider = "direct-to-decode"
+	baseCfg.PDDirectDecodeThreshold = 1_000_000 // all go direct to decode
+
+	// Create requests that arrive close together to force mixed-phase batching:
+	// many requests arriving within a short window ensures that some will be in
+	// prefill while others are in decode on the same instance.
+	requests := newTestRequestsWithLength(20, 150, 50)
+	for i := range requests {
+		requests[i].ArrivalTime = int64(i) * 1000 // 1ms apart (very close)
+	}
+
+	// Run without interference
+	cs0 := NewClusterSimulator(baseCfg, cloneRequests(requests))
+	mustRun(t, cs0)
+	baseEnd := cs0.AggregatedMetrics().SimEndedTime
+
+	// Run with interference
+	intCfg := baseCfg
+	intCfg.PDInterferencePrefill = 0.5
+	intCfg.PDInterferenceDecode = 0.5
+	cs1 := NewClusterSimulator(intCfg, cloneRequests(requests))
+	mustRun(t, cs1)
+	intEnd := cs1.AggregatedMetrics().SimEndedTime
+
+	// With interference, simulation should take strictly longer (INV-P2-3 monotonicity).
+	if intEnd <= baseEnd {
+		t.Errorf("INV-P2-4b: interference should increase sim time: base=%d, interference=%d", baseEnd, intEnd)
+	}
+}
+
+func TestDirectToDecodeDecider_Determinism(t *testing.T) {
+	run := func() int64 {
+		cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+		cfg.PDDecider = "direct-to-decode"
+		cfg.PDDirectDecodeThreshold = 200
+		short := newTestRequestsWithLength(3, 100, 20)
+		long := newTestRequestsWithLength(3, 300, 20)
+		for i, r := range long {
+			r.ID = fmt.Sprintf("long_%d", i)
+			r.ArrivalTime = int64(i+3) * 100_000
+		}
+		cs := NewClusterSimulator(cfg, append(short, long...))
+		mustRun(t, cs)
+		return cs.AggregatedMetrics().SimEndedTime
+	}
+	t1 := run()
+	t2 := run()
+	if t1 != t2 {
+		t.Errorf("INV-6 violated: two runs with same seed differ: %d vs %d", t1, t2)
+	}
+}
+
+// TestDirectToDecodeDecider_BackwardCompat_AlwaysUnchanged verifies BC-P2-13:
+// existing always-disaggregate behavior is not affected by the pool filter change.
+func TestDirectToDecodeDecider_BackwardCompat_AlwaysUnchanged(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	// PDDecider defaults to "always" in newTestDisaggDeploymentConfig
+	requests := newTestRequests(5)
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	// All requests should be disaggregated
+	parents := cs.ParentRequests()
+	if len(parents) != len(requests) {
+		t.Errorf("BC-P2-13: expected %d ParentRequests with always-disaggregate, got %d",
+			len(requests), len(parents))
+	}
+
+	// INV-PD-2: prefill on prefill pool, decode on decode pool
+	membership := cs.PoolMembership()
+	for _, p := range parents {
+		if role := membership[p.PrefillInstanceID]; role != PoolRolePrefill {
+			t.Errorf("prefill %s on non-prefill instance %s", p.ID, p.PrefillInstanceID)
+		}
+		if role := membership[p.DecodeInstanceID]; role != PoolRoleDecode {
+			t.Errorf("decode %s on non-decode instance %s", p.ID, p.DecodeInstanceID)
+		}
+	}
+}
