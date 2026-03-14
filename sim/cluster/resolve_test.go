@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -392,6 +393,112 @@ func TestResolvePoolConfig_Idempotent(t *testing.T) {
 	}
 	if once.BlockSizeTokens != twice.BlockSizeTokens {
 		t.Errorf("BlockSizeTokens not preserved: once=%d, twice=%d", once.BlockSizeTokens, twice.BlockSizeTokens)
+	}
+}
+
+// TestPoolOverrides_Validate_ErrorPaths verifies that Validate returns errors for
+// invalid non-nil pointer fields (R3: validate numeric parameters).
+func TestPoolOverrides_Validate_ErrorPaths(t *testing.T) {
+	zero := 0
+	zeroI64 := int64(0)
+	neg := -1
+	negI64 := int64(-1)
+
+	tests := []struct {
+		name        string
+		overrides   PoolOverrides
+		wantErrFrag string
+	}{
+		{
+			name:        "TP=0",
+			overrides:   PoolOverrides{TP: &zero},
+			wantErrFrag: "TP must be > 0",
+		},
+		{
+			name:        "TP negative",
+			overrides:   PoolOverrides{TP: &neg},
+			wantErrFrag: "TP must be > 0",
+		},
+		{
+			name:        "MaxModelLen=0",
+			overrides:   PoolOverrides{MaxModelLen: &zeroI64},
+			wantErrFrag: "MaxModelLen must be > 0",
+		},
+		{
+			name:        "MaxModelLen negative",
+			overrides:   PoolOverrides{MaxModelLen: &negI64},
+			wantErrFrag: "MaxModelLen must be > 0",
+		},
+		{
+			name:        "TotalKVBlocks=0",
+			overrides:   PoolOverrides{TotalKVBlocks: &zeroI64},
+			wantErrFrag: "TotalKVBlocks must be > 0",
+		},
+		{
+			name:        "TotalKVBlocks negative",
+			overrides:   PoolOverrides{TotalKVBlocks: &negI64},
+			wantErrFrag: "TotalKVBlocks must be > 0",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.overrides.Validate("test pool")
+			if err == nil {
+				t.Fatalf("Validate() returned nil, want error containing %q", tc.wantErrFrag)
+			}
+			if !strings.Contains(err.Error(), tc.wantErrFrag) {
+				t.Errorf("Validate() error = %q, want it to contain %q", err.Error(), tc.wantErrFrag)
+			}
+		})
+	}
+}
+
+// TestPoolOverrides_Validate_ValidValues verifies that Validate returns nil for
+// valid non-nil pointer fields and for the zero-value (all nil) override.
+func TestPoolOverrides_Validate_ValidValues(t *testing.T) {
+	tp := 4
+	maxLen := int64(8192)
+	kvBlocks := int64(5000)
+
+	tests := []struct {
+		name      string
+		overrides PoolOverrides
+	}{
+		{
+			name:      "all nil (empty)",
+			overrides: PoolOverrides{},
+		},
+		{
+			name:      "valid TP",
+			overrides: PoolOverrides{TP: &tp},
+		},
+		{
+			name:      "valid MaxModelLen",
+			overrides: PoolOverrides{MaxModelLen: &maxLen},
+		},
+		{
+			name:      "valid TotalKVBlocks",
+			overrides: PoolOverrides{TotalKVBlocks: &kvBlocks},
+		},
+		{
+			name: "all fields valid",
+			overrides: PoolOverrides{
+				TP:             &tp,
+				GPU:            "H100",
+				LatencyBackend: "roofline",
+				MaxModelLen:    &maxLen,
+				TotalKVBlocks:  &kvBlocks,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.overrides.Validate("test pool"); err != nil {
+				t.Errorf("Validate() returned unexpected error: %v", err)
+			}
+		})
 	}
 }
 

@@ -10,6 +10,11 @@ type DisaggregationDecision struct {
 // DisaggregationDecider decides whether a request should be disaggregated
 // (sent to a dedicated prefill pool) or handled by the default routing pipeline.
 // Used by ClusterSimulator's event pipeline when pool topology is configured.
+//
+// Implementations must not read Request.OutputTokens (INV-9 oracle boundary);
+// use len(req.InputTokens) and req.MaxOutputLen only.
+//
+// req is guaranteed non-nil; implementations may assume a non-nil pointer.
 type DisaggregationDecider interface {
 	Decide(req *Request) DisaggregationDecision
 }
@@ -86,15 +91,19 @@ func (d *DirectToDecodeDecider) Decide(req *Request) DisaggregationDecision {
 // so the decider tracks the global set of recently-seen prefixes.
 const globalVirtualInstance = "__global__"
 
-// Compile-time interface compliance check.
+// Compile-time interface compliance checks.
 var _ DisaggregationObserver = (*PrefixThresholdDecider)(nil)
+var _ DisaggregationDecider = (*DirectToDecodeDecider)(nil)
 
 // DisaggregationObserver is an optional interface for stateful DisaggregationDeciders that need
 // to learn from routing decisions. ClusterSimulator calls ObserveRouting after each routing
-// decision (both standard routing and prefill routing in the disaggregated path).
+// decision: after standard (non-disaggregated) routing in cluster_event.go, and after prefill
+// routing in the disaggregated path in pd_events.go. It is not called for decode routing.
 //
 // Signal freshness (R17): ObserveRouting is called synchronously within the event loop,
 // so the cache state is always current at decision time.
+//
+// req is guaranteed non-nil. Implementations must treat req as read-only.
 type DisaggregationObserver interface {
 	ObserveRouting(req *Request, instanceID string)
 }

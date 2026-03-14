@@ -306,6 +306,20 @@ func TestDirectToDecodeDecider_ExactThresholdDisaggregates(t *testing.T) {
 	}
 }
 
+func TestDirectToDecodeDecider_BelowThresholdDoesNotDisaggregate(t *testing.T) {
+	// Verifies the >= boundary: threshold-1 tokens must NOT disaggregate.
+	// This is the exact transition point — one token fewer than the threshold
+	// is the last value that returns Disaggregate=false.
+	const threshold = 256
+	d := NewDirectToDecodeDecider(threshold)
+	req := &Request{InputTokens: make([]int, threshold-1)} // 255 < 256
+	decision := d.Decide(req)
+	if decision.Disaggregate {
+		t.Errorf("threshold-1 tokens (%d) must not disaggregate (threshold=%d, boundary is >=)",
+			threshold-1, threshold)
+	}
+}
+
 func TestDirectToDecodeDecider_EmptyInputDoesNotDisaggregate(t *testing.T) {
 	d := NewDirectToDecodeDecider(256)
 	req := &Request{InputTokens: nil}

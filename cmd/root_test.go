@@ -189,6 +189,30 @@ func TestApplyRopeScaling(t *testing.T) {
 	}
 }
 
+// TestRunCmd_PDDirectDecodeThreshold_FlagRegistered verifies INV-P2-4:
+// --pd-direct-decode-threshold flag is registered with default 256 and accepts valid non-negative values.
+func TestRunCmd_PDDirectDecodeThreshold_FlagRegistered(t *testing.T) {
+	// GIVEN the run command with its registered flags
+	flag := runCmd.Flags().Lookup("pd-direct-decode-threshold")
+
+	// WHEN we inspect the flag registration
+	// THEN the flag must exist with default 256
+	assert.NotNil(t, flag, "pd-direct-decode-threshold flag must be registered")
+
+	defVal, err := strconv.Atoi(flag.DefValue)
+	assert.NoError(t, err, "default must be a valid int")
+	assert.Equal(t, 256, defVal,
+		"default pd-direct-decode-threshold must be 256 (short-prompt bypass threshold)")
+
+	// THEN the flag must accept a valid value (e.g., 128)
+	err = flag.Value.Set("128")
+	assert.NoError(t, err, "flag must accept valid non-negative value 128")
+	assert.Equal(t, "128", flag.Value.String(), "flag value must reflect the set value")
+
+	// restore default for other tests
+	_ = flag.Value.Set("256")
+}
+
 // Regression: yarn with original uses original as base, not maxPosEmb
 func TestApplyRopeScaling_YarnOriginal_UsesOriginalAsBase(t *testing.T) {
 	scaled, applied := applyRopeScaling(8192, "", map[string]any{

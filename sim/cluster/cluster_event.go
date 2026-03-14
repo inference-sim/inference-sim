@@ -175,6 +175,9 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 			policy = cs.decodeRoutingPolicy
 		} else if *e.poolFilter == PoolRolePrefill && cs.prefillRoutingPolicy != nil {
 			policy = cs.prefillRoutingPolicy
+		} else {
+			logrus.Warnf("RoutingDecisionEvent: unhandled pool role %v for request %s, falling back to global policy",
+				*e.poolFilter, e.request.ID)
 		}
 	} else {
 		state = buildRouterState(cs)
@@ -247,6 +250,9 @@ func (e *DisaggregationDecisionEvent) Priority() int     { return 3 }
 // disaggregate=true: splits request into prefill sub-request, schedules PrefillRoutingEvent.
 // disaggregate=false: schedules standard RoutingDecisionEvent (unchanged path).
 func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
+	if cs.disaggregationDecider == nil {
+		panic("DisaggregationDecisionEvent: disaggregationDecider is nil but pools are configured (programming error)")
+	}
 	decision := cs.disaggregationDecider.Decide(e.request)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, decision.Disaggregate)
 

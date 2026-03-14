@@ -1068,11 +1068,15 @@ var runCmd = &cobra.Command{
 		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold < 0 {
 			logrus.Fatalf("--pd-direct-decode-threshold must be >= 0, got %d", pdDirectDecodeThreshold)
 		}
+		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold == 0 {
+			logrus.Warnf("--pd-direct-decode-threshold=0 means all non-empty requests will be disaggregated (equivalent to --pd-decider=always). Did you intend a non-zero threshold?")
+		}
 		if pdDecider != "direct-to-decode" && cmd.Flags().Changed("pd-direct-decode-threshold") {
 			logrus.Warnf("--pd-direct-decode-threshold=%d is ignored when --pd-decider=%q (only applies to the direct-to-decode decider)", pdDirectDecodeThreshold, pdDecider)
 		}
 		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 && decodeInstances == 0 {
-			logrus.Fatalf("--pd-decider=%q requires --prefill-instances and --decode-instances to be set (both are 0)", pdDecider)
+			logrus.Fatalf("--pd-decider=%q requires both --prefill-instances and --decode-instances to be set; got prefill=%d, decode=%d",
+				pdDecider, prefillInstances, decodeInstances)
 		}
 		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
@@ -1492,7 +1496,7 @@ func init() {
 	runCmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	runCmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	runCmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
-	runCmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode decider (>= 0); prompts shorter than this skip disaggregation")
+	runCmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode (>= 0): requests with fewer than threshold tokens go direct to decode; requests with >= threshold tokens are disaggregated (default 256)")
 	runCmd.Flags().Float64Var(&pdInterferencePrefill, "pd-interference-prefill", 0, "Co-location interference factor applied when prefill is the majority phase (0 = disabled). Multiplier = 1+factor*(minority/total): factor=0.5 at even split → 1.25x slowdown")
 	runCmd.Flags().Float64Var(&pdInterferenceDecode, "pd-interference-decode", 0, "Co-location interference factor applied when decode is the majority phase (0 = disabled). Multiplier = 1+factor*(minority/total): factor=0.5 at even split → 1.25x slowdown")
 	runCmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")

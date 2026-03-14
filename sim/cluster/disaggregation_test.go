@@ -1068,6 +1068,40 @@ func TestDirectToDecodeDecider_Determinism(t *testing.T) {
 	}
 }
 
+// TestDirectToDecodeDecider_ZeroThreshold_ClusterLevel verifies that threshold=0
+// causes every request with non-empty input to be disaggregated, matching
+// AlwaysDisaggregate semantics. INV-1 conservation is also checked: N parent
+// requests each produce 2 sub-requests, so the aggregate account must equal 2N.
+func TestDirectToDecodeDecider_ZeroThreshold_ClusterLevel(t *testing.T) {
+	const numRequests = 4
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "direct-to-decode"
+	cfg.PDDirectDecodeThreshold = 0 // threshold=0: len(input) >= 0 always true for non-empty
+
+	// Use requests with a fixed non-empty input length so the assertion is deterministic.
+	requests := newTestRequestsWithLength(numRequests, 50, 10)
+
+	cs := NewClusterSimulator(cfg, requests)
+	mustRun(t, cs)
+
+	// All non-empty requests must be disaggregated: each produces a ParentRequest.
+	parents := cs.ParentRequests()
+	if len(parents) != numRequests {
+		t.Errorf("ZeroThreshold: expected %d ParentRequests (all disaggregated), got %d",
+			numRequests, len(parents))
+	}
+
+	// INV-1 conservation: N parents × 2 sub-requests each = 2N injected sub-requests.
+	agg := cs.AggregatedMetrics()
+	wantSubReqs := numRequests * 2
+	actual := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable
+	if actual != wantSubReqs {
+		t.Errorf("INV-1 violated with threshold=0: completed(%d)+queued(%d)+running(%d)+dropped(%d)=%d, want %d",
+			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable,
+			actual, wantSubReqs)
+	}
+}
+
 // TestDirectToDecodeDecider_BackwardCompat_AlwaysUnchanged verifies BC-P2-13:
 // existing always-disaggregate behavior is not affected by the pool filter change.
 func TestDirectToDecodeDecider_BackwardCompat_AlwaysUnchanged(t *testing.T) {
