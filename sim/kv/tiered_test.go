@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // --- cpuTier unit tests (BC-4, BC-1 touch) ---
@@ -785,4 +787,82 @@ func TestPreemption_ClearsRequestMap_EnablesNewRequestPath(t *testing.T) {
 	// INV-4: all blocks returned
 	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
 		"INV-4: block conservation after preemption")
+}
+
+// TestTieredKVCache_PartialReload_RunningRequest_BlocksCommitted verifies BC-1, BC-2, BC-3, BC-4:
+// partial CPU reload for a running request must commit reloaded blocks before fresh allocation.
+//
+// Without the fix: gpu.AllocateKVBlocks is called directly; popFreeBlock steals the
+// reloaded block (clears h8), overall allocation returns true but the prefix cache is
+// silently corrupted — future requests cannot find the h8 cache entry.
+//
+// With the fix: commitCachedBlocks protects the reloaded block; tail allocation fails cleanly
+// (returns false) because there aren't enough blocks, but h8 is preserved in HashToBlock.
+func TestTieredKVCache_PartialReload_RunningRequest_BlocksCommitted(t *testing.T) {
+	// Setup: 8-block GPU, blockSize=4, 10-block CPU
+	// req1 holds blocks [0,1] (tokens 0..7)
+	// req2 holds blocks [2,3], req3 holds blocks [4,5]
+	// Free: [6,7] (2 free blocks)
+	// CPU has hash h8 = HashBlock(block1.Hash, tokens[8:12])
+	//
+	// Call AllocateKVBlocks(req1, 8, 20, cached):
+	//   First attempt: need ceil(12/4)=3 blocks, have 2 → fails
+	//   After reload: h8 on free list (tail), newStart=12, partial improvement
+	//   Without fix: popFreeBlock steals block 6 (h8 cleared), ok=true but cache corrupted
+	//   With fix: commitCachedBlocks protects block 6 → 1 free; need 2 for tail → ok=false
+	blockSize := int64(4)
+	totalBlocks := int64(8)
+	gpu := NewKVCacheState(totalBlocks, blockSize)
+
+	tokens := make([]int, 20)
+	for i := range tokens {
+		tokens[i] = i + 10 // distinct values
+	}
+
+	req1 := &sim.Request{ID: "req1", InputTokens: tokens}
+	require.True(t, gpu.AllocateKVBlocks(req1, 0, 8, nil)) // blocks [0,1]
+
+	req2 := &sim.Request{ID: "req2", InputTokens: make([]int, 8)}
+	require.True(t, gpu.AllocateKVBlocks(req2, 0, 8, nil)) // blocks [2,3]
+
+	req3 := &sim.Request{ID: "req3", InputTokens: make([]int, 8)}
+	require.True(t, gpu.AllocateKVBlocks(req3, 0, 8, nil)) // blocks [4,5]
+	// Free: [6,7]
+
+	tiered := NewTieredKVCache(gpu, 10, 0, 1.0, 0)
+
+	// Hash for tokens[8:12] chaining from block[1].Hash
+	prevHash1 := gpu.Blocks[gpu.RequestMap["req1"][1]].Hash
+	h8 := hash.HashBlock(prevHash1, tokens[8:12])
+	tiered.cpu.store(h8, tokens[8:12])
+
+	// BC-3 conservation before
+	require.Equal(t, totalBlocks, gpu.UsedBlocks()+gpu.countFreeBlocks())
+
+	// WHEN allocating tokens 8..20 for req1 (running request)
+	cached := gpu.GetCachedBlocks(tokens)
+	ok := tiered.AllocateKVBlocks(req1, 8, 20, cached)
+
+	// THEN overall allocation fails cleanly (pre-check: need 2 tail blocks, 1 free after commit)
+	// Without fix: ok=true (this assertion would FAIL), h8 cleared
+	require.False(t, ok, "allocation must fail cleanly — not silently corrupt the prefix cache")
+
+	// THEN BC-3: KV conservation holds
+	require.Equal(t, totalBlocks, gpu.UsedBlocks()+gpu.countFreeBlocks())
+
+	// THEN BC-1: reloaded block hash is preserved (not stolen by popFreeBlock)
+	// Without fix: h8 would be cleared from HashToBlock by popFreeBlock
+	_, found := gpu.HashToBlock[h8]
+	require.True(t, found, "BC-1: reloaded block hash must be preserved in HashToBlock")
+
+	// THEN BC-1: reloaded block is committed (eviction-protected in RequestMap)
+	require.Equal(t, 3, len(gpu.RequestMap["req1"]), "req1 must have original 2 blocks + 1 committed reloaded block")
+	reloadedID := gpu.RequestMap["req1"][2]
+	reloadedBlk := gpu.Blocks[reloadedID]
+	require.True(t, reloadedBlk.InUse, "BC-1: reloaded block must be InUse")
+	require.Positive(t, reloadedBlk.RefCount, "BC-1: reloaded block RefCount must be > 0")
+
+	// THEN BC-2: future GetCachedBlocks finds 3 blocks (prefix cache intact for future requests)
+	futureCached := gpu.GetCachedBlocks(tokens)
+	require.GreaterOrEqual(t, len(futureCached), 3, "BC-2: prefix cache must find all 3 cached blocks")
 }
