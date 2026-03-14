@@ -46,6 +46,8 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 		return &AlwaysDisaggregate{}
 	case "prefix-threshold":
 		panic("use NewPrefixThresholdDecider(threshold, blockSize) to construct prefix-threshold decider")
+	case "direct-to-decode":
+		panic("use NewDirectToDecodeDecider(threshold) to construct direct-to-decode decider")
 	default:
 		panic(fmt.Sprintf("unhandled disaggregation decider %q", name))
 	}

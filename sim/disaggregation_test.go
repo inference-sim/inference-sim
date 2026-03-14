@@ -81,6 +81,7 @@ func TestIsValidDisaggregationDecider(t *testing.T) {
 		{"never", true},
 		{"always", true},
 		{"unknown", false},
+		{"direct-to-decode", true},
 		{"NEVER", false}, // case-sensitive
 	}
 	for _, tc := range tests {
@@ -95,8 +96,8 @@ func TestIsValidDisaggregationDecider(t *testing.T) {
 // TestValidDisaggregationDeciderNames verifies the names list.
 func TestValidDisaggregationDeciderNames(t *testing.T) {
 	names := ValidDisaggregationDeciderNames()
-	if len(names) < 3 {
-		t.Errorf("expected at least 3 decider names, got %d", len(names))
+	if len(names) < 4 {
+		t.Errorf("expected at least 4 decider names, got %d", len(names))
 	}
 	// Verify sorted order and no empty string
 	for i, n := range names {
@@ -114,6 +115,17 @@ func TestIsValidDisaggregationDecider_PrefixThreshold(t *testing.T) {
 	if !IsValidDisaggregationDecider("prefix-threshold") {
 		t.Error("prefix-threshold should be a valid disaggregation decider")
 	}
+}
+
+// TestNewDisaggregationDecider_DirectToDecodePanics verifies factory panics for direct-to-decode.
+// direct-to-decode requires parameters, so it must be constructed via NewDirectToDecodeDecider.
+func TestNewDisaggregationDecider_DirectToDecodePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic when calling factory with direct-to-decode")
+		}
+	}()
+	NewDisaggregationDecider("direct-to-decode")
 }
 
 // TestNewDisaggregationDecider_PrefixThresholdPanics verifies factory panics for prefix-threshold.
