@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -263,6 +264,9 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	reasonRatio, err := strconv.ParseFloat(row[14], 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[14], err)
+	}
+	if math.IsNaN(reasonRatio) || math.IsInf(reasonRatio, 0) || reasonRatio < 0 || reasonRatio > 1.0 {
+		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[14], reasonRatio)
 	}
 	deadlineUs, err := strconv.ParseInt(row[16], 10, 64)
 	if err != nil {

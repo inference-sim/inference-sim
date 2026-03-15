@@ -408,3 +408,34 @@ func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
 		t.Errorf("error should mention 'deadline_us', got: %s", err.Error())
 	}
 }
+
+// TestParseTraceRecord_InvalidReasonRatio_ReturnsError verifies R3 for
+// reason_ratio: NaN, Inf, negative, and > 1.0 are all rejected.
+func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
+	cases := []struct {
+		value string
+	}{
+		{"NaN"},
+		{"+Inf"},
+		{"-Inf"},
+		{"-0.1"},
+		{"1.5"},
+	}
+	for _, tc := range cases {
+		row := make([]string, 25)
+		for i := range row {
+			row[i] = "0"
+		}
+		row[14] = tc.value // reason_ratio column
+
+		_, err := parseTraceRecord(row)
+
+		if err == nil {
+			t.Errorf("reason_ratio=%q: expected error, got nil", tc.value)
+			continue
+		}
+		if !strings.Contains(err.Error(), "reason_ratio") {
+			t.Errorf("reason_ratio=%q: error should mention 'reason_ratio', got: %s", tc.value, err.Error())
+		}
+	}
+}
