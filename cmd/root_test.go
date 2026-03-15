@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -200,4 +201,27 @@ func TestApplyRopeScaling_YarnOriginal_UsesOriginalAsBase(t *testing.T) {
 	// 2048 * 4 = 8192, NOT 8192 * 4 = 32768
 	assert.Equal(t, 8192, scaled)
 	assert.True(t, applied)
+}
+
+func TestRunCmd_NoWorkloadTracesFlag(t *testing.T) {
+	// GIVEN the run cobra command
+	// WHEN looking up the --workload-traces-filepath flag
+	f := runCmd.Flags().Lookup("workload-traces-filepath")
+	// THEN the flag does not exist
+	if f != nil {
+		t.Error("--workload-traces-filepath flag should not exist after removal")
+	}
+}
+
+func TestRunCmd_WorkloadFlagDescriptionExcludesTraces(t *testing.T) {
+	// GIVEN the run cobra command
+	// WHEN inspecting the --workload flag description
+	f := runCmd.Flags().Lookup("workload")
+	if f == nil {
+		t.Fatal("--workload flag must exist")
+	}
+	// THEN "traces" is not in the usage string
+	if strings.Contains(f.Usage, "traces") {
+		t.Errorf("--workload flag description must not contain 'traces', got: %q", f.Usage)
+	}
 }

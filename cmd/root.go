@@ -36,8 +36,7 @@ var (
 	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
 	modelConfigFolder         string    // Path to folder containing config.json and model.json
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
-	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
-	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
+	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
 	numRequests               int       // Number of requests
@@ -723,19 +722,6 @@ var runCmd = &cobra.Command{
 			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
 				simulationHorizon = spec.Horizon
 			}
-		} else if workloadType == "traces" {
-			// CSV trace path → synthesize v2 spec (lossy conversion)
-			if tracesWorkloadFilePath == "" {
-				logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")
-			}
-			logrus.Warn("--workload traces uses lossy CSV conversion (averaged token lengths, constant arrival). " +
-				"For faithful trace replay, use --workload-spec with a trace v2 YAML file instead.")
-			var err error
-			spec, err = workload.SynthesizeFromCSVTrace(tracesWorkloadFilePath, simulationHorizon)
-			if err != nil {
-				logrus.Fatalf("Failed to convert CSV trace: %v", err)
-			}
-			spec.Seed = seed
 		} else if workloadType == "distribution" {
 			// Distribution mode → synthesize v2 spec from CLI flags
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
@@ -1155,8 +1141,7 @@ func init() {
 	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
 	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
 	runCmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
-	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)")
-	runCmd.Flags().StringVar(&tracesWorkloadFilePath, "workload-traces-filepath", "", "Workload filepath for traces workload type.")
+	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution)")
 
 	// vLLM server configs
 	runCmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 1000000, "Total number of KV cache blocks")
