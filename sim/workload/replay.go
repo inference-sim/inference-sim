@@ -59,7 +59,9 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			AudioTokenCount:  rec.AudioTokens,
 			VideoTokenCount:  rec.VideoTokens,
 			ReasonRatio:      rec.ReasonRatio,
-			// Model: omitted — TraceRecord predates Model field; zero-value = default model (BC-5)
+			Model:            rec.Model,      // BC-3, BC-6: model identity from trace; empty = default model
+			Deadline:         rec.DeadlineUs, // BC-4, BC-5: client timeout; 0 = no timeout
+			// ServerInputTokens: not propagated to sim.Request (calibration-only field, BC-7)
 		}
 		requests = append(requests, req)
 	}
