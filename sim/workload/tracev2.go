@@ -43,28 +43,31 @@ type TraceNetworkConfig struct {
 
 // TraceRecord represents one row in a trace v2 CSV.
 type TraceRecord struct {
-	RequestID       int
-	ClientID        string
-	TenantID        string
-	SLOClass        string
-	SessionID       string
-	RoundIndex      int
-	PrefixGroup     string
-	Streaming       bool
-	InputTokens     int
-	OutputTokens    int
-	TextTokens      int
-	ImageTokens     int
-	AudioTokens     int
-	VideoTokens     int
-	ReasonRatio     float64
-	ArrivalTimeUs   int64
-	SendTimeUs      int64
-	FirstChunkTimeUs int64
-	LastChunkTimeUs  int64
-	NumChunks       int
-	Status          string // "ok", "error", "timeout"
-	ErrorMessage    string
+	RequestID         int
+	ClientID          string
+	TenantID          string
+	SLOClass          string
+	SessionID         string
+	RoundIndex        int
+	PrefixGroup       string
+	Streaming         bool
+	InputTokens       int
+	OutputTokens      int
+	TextTokens        int
+	ImageTokens       int
+	AudioTokens       int
+	VideoTokens       int
+	ReasonRatio       float64
+	Model             string // model name (e.g., "meta-llama/Llama-3.1-8B-Instruct"); empty = default model
+	DeadlineUs        int64  // absolute timeout in microseconds (same time origin as ArrivalTimeUs); 0 = no timeout
+	ServerInputTokens int    // server-reported prompt_tokens; 0 = not recorded (e.g., generated traces)
+	ArrivalTimeUs     int64
+	SendTimeUs        int64
+	FirstChunkTimeUs  int64
+	LastChunkTimeUs   int64
+	NumChunks         int
+	Status            string // "ok", "error", "timeout"
+	ErrorMessage      string
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -78,6 +81,7 @@ var traceV2Columns = []string{
 	"request_id", "client_id", "tenant_id", "slo_class", "session_id", "round_index",
 	"prefix_group", "streaming", "input_tokens", "output_tokens",
 	"text_tokens", "image_tokens", "audio_tokens", "video_tokens", "reason_ratio",
+	"model", "deadline_us", "server_input_tokens",
 	"arrival_time_us", "send_time_us", "first_chunk_time_us", "last_chunk_time_us",
 	"num_chunks", "status", "error_message",
 }
@@ -127,6 +131,9 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			strconv.Itoa(r.AudioTokens),
 			strconv.Itoa(r.VideoTokens),
 			strconv.FormatFloat(r.ReasonRatio, 'f', -1, 64),
+			r.Model,
+			strconv.FormatInt(r.DeadlineUs, 10),
+			strconv.Itoa(r.ServerInputTokens),
 			strconv.FormatInt(r.ArrivalTimeUs, 10),   // integer format
 			strconv.FormatInt(r.SendTimeUs, 10),       // integer format
 			strconv.FormatInt(r.FirstChunkTimeUs, 10), // integer format
@@ -210,9 +217,18 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[8], err)
 	}
+	// NOTE: This negative-value check is NEW — the pre-existing code had no validation here.
+	// Negative input_tokens would cause make([]int, negative) panic in LoadTraceV2Requests.
+	if inputTokens < 0 {
+		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
+	}
 	outputTokens, err := strconv.Atoi(row[9])
 	if err != nil {
 		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[9], err)
+	}
+	// NOTE: Same as inputTokens — new negative-value check closing a pre-existing panic vector.
+	if outputTokens < 0 {
+		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
 	}
 	textTokens, err := strconv.Atoi(row[10])
 	if err != nil {
@@ -234,58 +250,74 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[14], err)
 	}
-	arrivalTimeUs, err := strconv.ParseInt(row[15], 10, 64)
+	// row[15] = model (string, no parsing needed)
+	deadlineUs, err := strconv.ParseInt(row[16], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[15], err)
+		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[16], err)
 	}
-	sendTimeUs, err := strconv.ParseInt(row[16], 10, 64)
+	if deadlineUs < 0 {
+		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
+	}
+	serverInputTokens, err := strconv.Atoi(row[17])
 	if err != nil {
-		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[16], err)
+		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[17], err)
 	}
-	firstChunkTimeUs, err := strconv.ParseInt(row[17], 10, 64)
+	if serverInputTokens < 0 {
+		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
+	}
+	// Timing columns shifted +3 from original positions (were 15-21, now 18-24)
+	arrivalTimeUs, err := strconv.ParseInt(row[18], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[17], err)
+		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[18], err)
 	}
-	lastChunkTimeUs, err := strconv.ParseInt(row[18], 10, 64)
+	sendTimeUs, err := strconv.ParseInt(row[19], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[18], err)
+		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[19], err)
 	}
-	numChunks, err := strconv.Atoi(row[19])
+	firstChunkTimeUs, err := strconv.ParseInt(row[20], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[19], err)
+		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[20], err)
 	}
-
-	status := "ok"
-	errorMessage := ""
-	if len(row) > 20 {
-		status = row[20]
+	lastChunkTimeUs, err := strconv.ParseInt(row[21], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[21], err)
 	}
-	if len(row) > 21 {
-		errorMessage = strings.TrimSpace(row[21])
+	numChunks, err := strconv.Atoi(row[22])
+	if err != nil {
+		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[22], err)
 	}
-
+	// Cross-field invariant: deadline must not precede arrival (would cause immediate
+	// silent timeout in simulator). Zero deadline means "no timeout" — exempt from check.
+	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
+		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
+	}
+	// row[23] = status, row[24] = error_message
+	// (column-count guard in LoadTraceV2 ensures these indices always exist)
 	return &TraceRecord{
-		RequestID:        requestID,
-		ClientID:         row[1],
-		TenantID:         row[2],
-		SLOClass:         row[3],
-		SessionID:        row[4],
-		RoundIndex:       roundIndex,
-		PrefixGroup:      row[6],
-		Streaming:        streaming,
-		InputTokens:      inputTokens,
-		OutputTokens:     outputTokens,
-		TextTokens:       textTokens,
-		ImageTokens:      imageTokens,
-		AudioTokens:      audioTokens,
-		VideoTokens:      videoTokens,
-		ReasonRatio:      reasonRatio,
-		ArrivalTimeUs:    arrivalTimeUs,
-		SendTimeUs:       sendTimeUs,
-		FirstChunkTimeUs: firstChunkTimeUs,
-		LastChunkTimeUs:  lastChunkTimeUs,
-		NumChunks:        numChunks,
-		Status:           status,
-		ErrorMessage:     errorMessage,
+		RequestID:         requestID,
+		ClientID:          row[1],
+		TenantID:          row[2],
+		SLOClass:          row[3],
+		SessionID:         row[4],
+		RoundIndex:        roundIndex,
+		PrefixGroup:       row[6],
+		Streaming:         streaming,
+		InputTokens:       inputTokens,
+		OutputTokens:      outputTokens,
+		TextTokens:        textTokens,
+		ImageTokens:       imageTokens,
+		AudioTokens:       audioTokens,
+		VideoTokens:       videoTokens,
+		ReasonRatio:       reasonRatio,
+		Model:             row[15],
+		DeadlineUs:        deadlineUs,
+		ServerInputTokens: serverInputTokens,
+		ArrivalTimeUs:     arrivalTimeUs,
+		SendTimeUs:        sendTimeUs,
+		FirstChunkTimeUs:  firstChunkTimeUs,
+		LastChunkTimeUs:   lastChunkTimeUs,
+		NumChunks:         numChunks,
+		Status:            row[23],
+		ErrorMessage:      strings.TrimSpace(row[24]),
 	}, nil
 }
