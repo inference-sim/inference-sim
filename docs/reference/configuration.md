@@ -158,14 +158,13 @@ See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) fo
 
 ### Workload Modes
 
-BLIS supports four workload specification modes, in order of precedence:
+BLIS supports three workload specification modes, in order of precedence:
 
 | Mode | Trigger | Description |
 |------|---------|-------------|
 | **Workload-spec YAML** | `--workload-spec <path>` | Multi-client workload with per-client distributions. Highest priority. |
 | **CLI distribution** | `--workload distribution` (default) | Single-client Gaussian distribution controlled by CLI flags. |
 | **Preset** | `--workload <name>` | Named preset from `defaults.yaml`: `chatbot`, `contentgen`, `summarization`, `multidoc`. |
-| **CSV traces** | `--workload traces` | Replay recorded traces from a CSV file. |
 
 ### Distribution Mode Flags
 
@@ -246,7 +245,6 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--workload-spec` | string | "" | Path to workload-spec YAML. |
-| `--workload-traces-filepath` | string | "" | Path to CSV trace file (required when `--workload traces`). |
 | `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml`. |
 
 ## Policy Bundle
@@ -382,6 +380,6 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
 | **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
-| **WorkloadConfig** | `--workload`, `--workload-spec`, `--workload-traces-filepath`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
+| **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--results-path`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |

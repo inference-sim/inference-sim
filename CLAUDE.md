@@ -19,7 +19,6 @@ go build -o blis main.go
 
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
-./blis convert csv-trace --file trace.csv
 ./blis convert servegen --path data/
 ./blis compose --from spec1.yaml --from spec2.yaml
 ```
@@ -204,7 +203,7 @@ inference-sim/
 ├── cmd/
 │   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
-│   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
+│   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
 │   ├── hfconfig.go            # HuggingFace config resolution chain (--latency-model auto-fetch, caching)
 │   └── default_config.go      # defaults.yaml loading (includes GetHFRepo for HF repo name mapping)
@@ -273,7 +272,7 @@ inference-sim/
 │   ├── network.go             # Client-perspective latency (RTT + bandwidth)
 │   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
 │   ├── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
-│   ├── convert.go             # Format converters: ConvertServeGen, ConvertCSVTrace, ConvertPreset, ComposeSpecs
+│   ├── convert.go             # Format converters: ConvertServeGen, ConvertPreset, ComposeSpecs
 │   ├── cohort.go              # CohortSpec expansion: diurnal, spike, drain patterns → lifecycle windows
 │   └── synthesis.go           # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
 ├── sim/trace/                 # Decision trace recording (PR13)
