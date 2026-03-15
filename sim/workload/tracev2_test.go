@@ -129,6 +129,16 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 			ArrivalTimeUs:     5000,
 			Status:            "ok",
 		},
+		{
+			RequestID:         2,
+			Model:             "org/model,with-comma", // CSV-special: encoding/csv quotes automatically
+			DeadlineUs:        9000, // > ArrivalTimeUs (6000) — valid per cross-field invariant
+			ServerInputTokens: 0,
+			InputTokens:       64,
+			OutputTokens:      16,
+			ArrivalTimeUs:     6000,
+			Status:            "ok",
+		},
 	}
 
 	dir := t.TempDir()
@@ -141,8 +151,8 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded.Records) != 2 {
-		t.Fatalf("expected 2 records, got %d", len(loaded.Records))
+	if len(loaded.Records) != 3 {
+		t.Fatalf("expected 3 records, got %d", len(loaded.Records))
 	}
 
 	r0 := loaded.Records[0]
@@ -180,6 +190,15 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 	}
 	if r1.ServerInputTokens != 0 {
 		t.Errorf("record 1 server_input_tokens = %d, want 0", r1.ServerInputTokens)
+	}
+
+	r2 := loaded.Records[2]
+	// CSV-special chars: encoding/csv quotes fields containing commas automatically
+	if r2.Model != "org/model,with-comma" {
+		t.Errorf("record 2 model = %q, want %q (CSV quoting must preserve commas)", r2.Model, "org/model,with-comma")
+	}
+	if r2.DeadlineUs != 9000 {
+		t.Errorf("record 2 deadline_us = %d, want 9000", r2.DeadlineUs)
 	}
 }
 

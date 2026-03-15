@@ -162,4 +162,9 @@ func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 	if requests[1].Deadline != 0 {
 		t.Errorf("request 1 Deadline = %d, want 0", requests[1].Deadline)
 	}
+	// BC-7: ServerInputTokens is NOT on sim.Request (calibration-only field).
+	// The compiler enforces this: sim.Request has no ServerInputTokens field.
+	// No runtime assertion needed — if someone adds the field and wires it up,
+	// the compilation of this package would not catch it, but the architectural
+	// review (BC-7 in the plan) documents the non-propagation intent explicitly.
 }

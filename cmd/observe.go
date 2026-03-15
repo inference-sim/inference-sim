@@ -195,7 +195,7 @@ func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.records = append(r.records, workload.TraceRecord{
-		// TODO(#652): populate Model, DeadlineUs, ServerInputTokens from HTTP response
+		// TODO(#653): populate Model, DeadlineUs, ServerInputTokens from HTTP response
 		// fields once the observe-side wiring lands. Until then these are zero-valued:
 		//   Model=""      → simulator treats as default model
 		//   DeadlineUs=0  → no timeout

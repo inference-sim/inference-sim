@@ -59,7 +59,7 @@ type TraceRecord struct {
 	VideoTokens       int
 	ReasonRatio       float64
 	Model             string // model name (e.g., "meta-llama/Llama-3.1-8B-Instruct"); empty = default model
-	DeadlineUs        int64  // absolute timeout in microseconds (same time origin as ArrivalTimeUs); 0 = no timeout
+	DeadlineUs        int64  // absolute deadline timestamp in microseconds (same time origin as ArrivalTimeUs); 0 = no timeout
 	ServerInputTokens int    // server-reported prompt_tokens; 0 = not recorded (e.g., generated traces)
 	ArrivalTimeUs     int64
 	SendTimeUs        int64
@@ -187,7 +187,11 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
 		if len(row) < len(traceV2Columns) {
-			return nil, fmt.Errorf("CSV row has %d columns, expected %d", len(row), len(traceV2Columns))
+			hint := ""
+			if len(row) == 22 {
+				hint = " (22-column trace predates model/deadline_us/server_input_tokens fields; re-export to upgrade)"
+			}
+			return nil, fmt.Errorf("CSV row has %d columns, expected %d%s", len(row), len(traceV2Columns), hint)
 		}
 
 		r, err := parseTraceRecord(row)
@@ -217,8 +221,7 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[8], err)
 	}
-	// NOTE: This negative-value check is NEW — the pre-existing code had no validation here.
-	// Negative input_tokens would cause make([]int, negative) panic in LoadTraceV2Requests.
+	// Negative token counts cause make([]int, negative) panics in LoadTraceV2Requests.
 	if inputTokens < 0 {
 		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
 	}
@@ -226,7 +229,6 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[9], err)
 	}
-	// NOTE: Same as inputTokens — new negative-value check closing a pre-existing panic vector.
 	if outputTokens < 0 {
 		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
 	}
@@ -234,23 +236,34 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[10], err)
 	}
+	if textTokens < 0 {
+		return nil, fmt.Errorf("parsing text_tokens: negative value %d not allowed", textTokens)
+	}
 	imageTokens, err := strconv.Atoi(row[11])
 	if err != nil {
 		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[11], err)
+	}
+	if imageTokens < 0 {
+		return nil, fmt.Errorf("parsing image_tokens: negative value %d not allowed", imageTokens)
 	}
 	audioTokens, err := strconv.Atoi(row[12])
 	if err != nil {
 		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[12], err)
 	}
+	if audioTokens < 0 {
+		return nil, fmt.Errorf("parsing audio_tokens: negative value %d not allowed", audioTokens)
+	}
 	videoTokens, err := strconv.Atoi(row[13])
 	if err != nil {
 		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[13], err)
+	}
+	if videoTokens < 0 {
+		return nil, fmt.Errorf("parsing video_tokens: negative value %d not allowed", videoTokens)
 	}
 	reasonRatio, err := strconv.ParseFloat(row[14], 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[14], err)
 	}
-	// row[15] = model (string, no parsing needed)
 	deadlineUs, err := strconv.ParseInt(row[16], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[16], err)
@@ -265,7 +278,7 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if serverInputTokens < 0 {
 		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
 	}
-	// Timing columns shifted +3 from original positions (were 15-21, now 18-24)
+	// Arrival, send, chunk timestamps, num_chunks: columns 18-22 (shifted +3 by new columns at 15-17)
 	arrivalTimeUs, err := strconv.ParseInt(row[18], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[18], err)
@@ -286,13 +299,15 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[22], err)
 	}
+	if numChunks < 0 {
+		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
+	}
 	// Cross-field invariant: deadline must not precede arrival (would cause immediate
-	// silent timeout in simulator). Zero deadline means "no timeout" — exempt from check.
+	// timeout at enqueue before any processing). Zero deadline means "no timeout";
+	// zero arrival means "time origin" — both are exempt from this check.
 	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
 		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
 	}
-	// row[23] = status, row[24] = error_message
-	// (column-count guard in LoadTraceV2 ensures these indices always exist)
 	return &TraceRecord{
 		RequestID:         requestID,
 		ClientID:          row[1],
