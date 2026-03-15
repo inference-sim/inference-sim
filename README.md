@@ -111,9 +111,6 @@ See the [supported models catalog](docs/reference/models.md#blackbox-coefficient
 # Generate a v2 workload spec YAML from a built-in preset
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 
-# Convert a CSV request trace from production logs (requires your own trace.csv)
-./blis convert csv-trace --file trace.csv
-
 # Import a ServeGen dataset directory (requires your own ServeGen data/)
 ./blis convert servegen --path data/
 ```
@@ -158,7 +155,7 @@ inference-sim/
 ├── cmd/                    # CLI commands
 │   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, --latency-model, etc.)
 │   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
-│   ├── convert.go          # `./blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
+│   ├── convert.go          # `./blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go          # `./blis compose` for merging v2 specs
 │   ├── hfconfig.go         # HuggingFace config resolution (--latency-model auto-fetch into model_configs/)
 │   └── default_config.go   # defaults.yaml loading (includes GetHFRepo for HF repo mapping)
@@ -223,7 +220,7 @@ inference-sim/
 │   ├── inference_perf.go   # inference-perf format loading and validation
 │   ├── scenarios.go        # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 │   ├── cohort.go           # CohortSpec expansion: diurnal, spike, drain patterns
-│   ├── convert.go          # Format converters: ConvertServeGen, ConvertCSVTrace, ConvertPreset
+│   ├── convert.go          # Format converters: ConvertServeGen, ConvertPreset
 │   └── synthesis.go        # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
 ├── sim/trace/              # Decision trace recording
 │   ├── trace.go            # TraceLevel, TraceConfig, SimulationTrace
