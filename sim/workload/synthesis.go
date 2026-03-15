@@ -1,6 +1,5 @@
 package workload
 
-import "fmt"
 
 // DistributionParams holds the legacy CLI parameters for distribution-based
 // workload generation. Maps directly to the old GuideLLMConfig fields.
@@ -79,18 +78,4 @@ func SynthesizeFromPreset(presetName string, preset PresetConfig, rate float64, 
 		OutputTokensMin:    preset.OutputTokensMin,
 		OutputTokensMax:    preset.OutputTokensMax,
 	})
-}
-
-// SynthesizeFromCSVTrace creates a v2 WorkloadSpec from a CSV trace file path.
-// WARNING: this is a lossy conversion — per-request arrival times and token
-// lengths are replaced by aggregate statistics (mean lengths, constant rate).
-// For faithful trace replay preserving per-request fidelity, use --workload-spec
-// with a trace v2 YAML file (LoadTraceV2 + ReplayTraceV2Requests).
-// R6: no logging — callers should warn about lossy conversion.
-func SynthesizeFromCSVTrace(path string, horizon int64) (*WorkloadSpec, error) {
-	spec, err := ConvertCSVTrace(path, horizon)
-	if err != nil {
-		return nil, fmt.Errorf("synthesizing from CSV trace: %w", err)
-	}
-	return spec, nil
 }
