@@ -101,3 +101,65 @@ func TestLoadTraceV2Requests_PrefixGroup_SharedTokens(t *testing.T) {
 		t.Errorf("input length = %d, want 150 (50 prefix + 100 body)", len(requests[0].InputTokens))
 	}
 }
+
+// TestLoadTraceV2Requests_ModelAndDeadline verifies BC-3, BC-4, BC-5, BC-6, BC-7.
+func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
+	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
+	records := []TraceRecord{
+		{
+			RequestID:         0,
+			Model:             "meta-llama/Llama-3.1-8B-Instruct",
+			DeadlineUs:        7500000,
+			ServerInputTokens: 300, // must NOT appear on sim.Request
+			InputTokens:       100,
+			OutputTokens:      50,
+			ArrivalTimeUs:     0,
+			Status:            "ok",
+		},
+		{
+			RequestID:         1,
+			Model:             "",  // BC-6: empty = default model
+			DeadlineUs:        0,   // BC-5: no timeout
+			ServerInputTokens: 0,
+			InputTokens:       50,
+			OutputTokens:      25,
+			ArrivalTimeUs:     1000,
+			Status:            "ok",
+		},
+	}
+
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+	trace, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(requests))
+	}
+
+	// BC-3: Model propagated
+	if requests[0].Model != "meta-llama/Llama-3.1-8B-Instruct" {
+		t.Errorf("request 0 Model = %q, want %q", requests[0].Model, "meta-llama/Llama-3.1-8B-Instruct")
+	}
+	// BC-4: Deadline propagated
+	if requests[0].Deadline != 7500000 {
+		t.Errorf("request 0 Deadline = %d, want 7500000", requests[0].Deadline)
+	}
+	// BC-6: empty Model propagated as-is
+	if requests[1].Model != "" {
+		t.Errorf("request 1 Model = %q, want empty", requests[1].Model)
+	}
+	// BC-5: zero Deadline propagated as-is (no timeout)
+	if requests[1].Deadline != 0 {
+		t.Errorf("request 1 Deadline = %d, want 0", requests[1].Deadline)
+	}
+}
