@@ -3534,7 +3534,7 @@
 <p>See <a href="../../concepts/core-engine/#scheduling-policies">Core Engine: Scheduling</a> for policy details.</p>
 <h2 id="workload-configuration">Workload Configuration<a class="headerlink" href="#workload-configuration" title="Permanent link">&para;</a></h2>
 <h3 id="workload-modes">Workload Modes<a class="headerlink" href="#workload-modes" title="Permanent link">&para;</a></h3>
-<p>BLIS supports four workload specification modes, in order of precedence:</p>
+<p>BLIS supports three workload specification modes, in order of precedence:</p>
 <table>
 <thead>
 <tr>
@@ -3558,11 +3558,6 @@
 <td><strong>Preset</strong></td>
 <td><code>--workload &lt;name&gt;</code></td>
 <td>Named preset from <code>defaults.yaml</code>: <code>chatbot</code>, <code>contentgen</code>, <code>summarization</code>, <code>multidoc</code>.</td>
-</tr>
-<tr>
-<td><strong>CSV traces</strong></td>
-<td><code>--workload traces</code></td>
-<td>Replay recorded traces from a CSV file.</td>
 </tr>
 </tbody>
 </table>
@@ -3711,12 +3706,6 @@
 <td>string</td>
 <td>""</td>
 <td>Path to workload-spec YAML.</td>
-</tr>
-<tr>
-<td><code>--workload-traces-filepath</code></td>
-<td>string</td>
-<td>""</td>
-<td>Path to CSV trace file (required when <code>--workload traces</code>).</td>
 </tr>
 <tr>
 <td><code>--defaults-filepath</code></td>
@@ -3900,7 +3889,7 @@
 </tr>
 <tr>
 <td><strong>WorkloadConfig</strong></td>
-<td><code>--workload</code>, <code>--workload-spec</code>, <code>--workload-traces-filepath</code>, <code>--defaults-filepath</code>, <code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens*</code>, <code>--output-tokens*</code>, <code>--prefix-tokens</code></td>
+<td><code>--workload</code>, <code>--workload-spec</code>, <code>--defaults-filepath</code>, <code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens*</code>, <code>--output-tokens*</code>, <code>--prefix-tokens</code></td>
 </tr>
 <tr>
 <td><strong>DeploymentConfig</strong></td>
