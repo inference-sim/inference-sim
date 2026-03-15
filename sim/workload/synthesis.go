@@ -1,6 +1,5 @@
 package workload
 
-
 // DistributionParams holds the legacy CLI parameters for distribution-based
 // workload generation. Maps directly to the old GuideLLMConfig fields.
 type DistributionParams struct {
