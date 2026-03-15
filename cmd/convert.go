@@ -14,7 +14,7 @@ import (
 var convertCmd = &cobra.Command{
 	Use:   "convert",
 	Short: "Convert external workload formats to v2 YAML spec",
-	Long:  "Convert external workload formats (ServeGen, inference-perf, CSV traces, presets) to v2 WorkloadSpec YAML. Output is written to stdout for piping.",
+	Long:  "Convert external workload formats (ServeGen, inference-perf, presets) to v2 WorkloadSpec YAML. Output is written to stdout for piping.",
 }
 
 // --- blis convert servegen ---
@@ -28,29 +28,6 @@ var convertServeGenCmd = &cobra.Command{
 		spec, err := workload.ConvertServeGen(serveGenPath)
 		if err != nil {
 			logrus.Fatalf("ServeGen conversion failed: %v", err)
-		}
-		writeSpecToStdout(spec)
-	},
-}
-
-// --- blis convert csv-trace ---
-
-var (
-	csvTracePath    string
-	csvTraceHorizon int64
-)
-
-var convertCSVTraceCmd = &cobra.Command{
-	Use:   "csv-trace",
-	Short: "Convert legacy CSV trace file to v2 spec",
-	Run: func(cmd *cobra.Command, args []string) {
-		// R3: validate numeric CLI flags at the boundary
-		if csvTraceHorizon < 0 {
-			logrus.Fatalf("--horizon must be >= 0 (0 = no truncation), got %d", csvTraceHorizon)
-		}
-		spec, err := workload.ConvertCSVTrace(csvTracePath, csvTraceHorizon)
-		if err != nil {
-			logrus.Fatalf("CSV trace conversion failed: %v", err)
 		}
 		writeSpecToStdout(spec)
 	},
@@ -141,10 +118,6 @@ func init() {
 	convertServeGenCmd.Flags().StringVar(&serveGenPath, "path", "", "Path to ServeGen data directory")
 	_ = convertServeGenCmd.MarkFlagRequired("path")
 
-	convertCSVTraceCmd.Flags().StringVar(&csvTracePath, "file", "", "Path to CSV trace file")
-	convertCSVTraceCmd.Flags().Int64Var(&csvTraceHorizon, "horizon", 0, "Horizon in microseconds (0 = no truncation)")
-	_ = convertCSVTraceCmd.MarkFlagRequired("file")
-
 	convertPresetCmd.Flags().StringVar(&presetName, "name", "", "Preset name (e.g., chatbot, summarization)")
 	convertPresetCmd.Flags().Float64Var(&presetRate, "rate", 1.0, "Request rate in req/s")
 	convertPresetCmd.Flags().IntVar(&presetNumRequests, "num-requests", 100, "Number of requests")
@@ -155,7 +128,6 @@ func init() {
 	_ = convertInfPerfCmd.MarkFlagRequired("spec")
 
 	convertCmd.AddCommand(convertServeGenCmd)
-	convertCmd.AddCommand(convertCSVTraceCmd)
 	convertCmd.AddCommand(convertPresetCmd)
 	convertCmd.AddCommand(convertInfPerfCmd)
 

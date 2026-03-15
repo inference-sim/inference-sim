@@ -180,6 +180,18 @@ func TestApplyRopeScaling(t *testing.T) {
 	}
 }
 
+func TestConvertCmd_NoCSVTraceSubcommand(t *testing.T) {
+	// GIVEN the convert cobra command
+	// WHEN listing its subcommands
+	for _, sub := range convertCmd.Commands() {
+		if sub.Name() == "csv-trace" {
+			// THEN csv-trace must not be present
+			t.Error("csv-trace subcommand should not exist after removal")
+			return
+		}
+	}
+}
+
 // Regression: yarn with original uses original as base, not maxPosEmb
 func TestApplyRopeScaling_YarnOriginal_UsesOriginalAsBase(t *testing.T) {
 	scaled, applied := applyRopeScaling(8192, "", map[string]any{
