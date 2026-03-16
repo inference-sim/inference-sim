@@ -610,6 +610,34 @@ var replayCmd = &cobra.Command{
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
+		// Build and print trace summary if requested (R23: same as runCmd)
+		if cs.Trace() != nil && summarizeTrace {
+			traceSummary := trace.Summarize(cs.Trace())
+			fmt.Println("=== Trace Summary ===")
+			fmt.Printf("Total Decisions: %d\n", traceSummary.TotalDecisions)
+			fmt.Printf("  Admitted: %d\n", traceSummary.AdmittedCount)
+			fmt.Printf("  Rejected: %d\n", traceSummary.RejectedCount)
+			fmt.Printf("Unique Targets: %d\n", traceSummary.UniqueTargets)
+			if len(traceSummary.TargetDistribution) > 0 {
+				fmt.Println("Target Distribution:")
+				targetKeys := make([]string, 0, len(traceSummary.TargetDistribution))
+				for k := range traceSummary.TargetDistribution {
+					targetKeys = append(targetKeys, k)
+				}
+				sort.Strings(targetKeys)
+				for _, k := range targetKeys {
+					fmt.Printf("  %s: %d\n", k, traceSummary.TargetDistribution[k])
+				}
+			}
+			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
+			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
+		}
+
+		// Warn if --fitness-weights is set (not supported in replay mode per R1)
+		if fitnessWeights != "" {
+			logrus.Warnf("--fitness-weights has no effect in replay mode (fitness evaluation not supported for replay)")
+		}
+
 		// Write SimResult JSON for calibrate consumption (BC-2)
 		if resultsPath != "" {
 			simResults := extractSimResults(cs.AggregatedMetrics())
