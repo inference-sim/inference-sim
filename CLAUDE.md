@@ -17,6 +17,9 @@ go build -o blis main.go
 # Run with default model
 ./blis run --model qwen/qwen3-14b
 
+# Replay a captured TraceV2 file through the DES
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
+
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 ./blis convert servegen --path data/
@@ -202,6 +205,7 @@ inference-sim/
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
 │   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --trace-output)
+│   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags shared via registerSimConfigFlags(); --results-path writes []workload.SimResult (integer request_id, ttft_us/e2e_us in µs); SimResult type lives in sim/workload/calibrate.go
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
