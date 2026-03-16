@@ -595,6 +595,13 @@ var runCmd = &cobra.Command{
 				kvBlocksFromDefaults = true
 			}
 		}
+		// Validate --weight-bytes-per-param early, before backend-specific paths (R3).
+		// This prevents Fatalf from firing inside the best-effort blackbox block.
+		if cmd.Flags().Changed("weight-bytes-per-param") {
+			if weightBytesPerParam <= 0 || math.IsNaN(weightBytesPerParam) || math.IsInf(weightBytesPerParam, 0) {
+				logrus.Fatalf("--weight-bytes-per-param must be a finite positive number, got %v", weightBytesPerParam)
+			}
+		}
 		// Blackbox mode: auto-calculate KV blocks when neither CLI flag nor
 		// defaults.yaml provided a value. Uses cached model config (no HF fetch)
 		// and bundled hardware config. Best-effort — falls through silently if
@@ -608,11 +615,9 @@ var runCmd = &cobra.Command{
 					hfCfg, parseErr := latency.ParseHFConfig(hfPath)
 					if parseErr == nil {
 						mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
-						// Apply --weight-bytes-per-param override for blackbox KV auto-calc (R23: code path parity)
+						// Apply --weight-bytes-per-param override for blackbox KV auto-calc (R23: code path parity).
+						// Validation done earlier (line ~527); only assignment here to preserve best-effort semantics.
 						if mcErr == nil && cmd.Flags().Changed("weight-bytes-per-param") {
-							if weightBytesPerParam <= 0 || math.IsNaN(weightBytesPerParam) || math.IsInf(weightBytesPerParam, 0) {
-								logrus.Fatalf("--weight-bytes-per-param must be a finite positive number, got %v", weightBytesPerParam)
-							}
 							mc.WeightBytesPerParam = weightBytesPerParam
 						}
 						// Warn if quantization_config detected but couldn't extract weight precision
@@ -666,13 +671,15 @@ var runCmd = &cobra.Command{
 			}
 			hwConfig = hc
 
-			// Apply --weight-bytes-per-param CLI override (R18: CLI flag precedence)
+			// Apply --weight-bytes-per-param CLI override (R18: CLI flag precedence).
+			// Validation done earlier (line ~527); only assignment + logging here.
 			if cmd.Flags().Changed("weight-bytes-per-param") {
-				if weightBytesPerParam <= 0 || math.IsNaN(weightBytesPerParam) || math.IsInf(weightBytesPerParam, 0) {
-					logrus.Fatalf("--weight-bytes-per-param must be a finite positive number, got %v", weightBytesPerParam)
-				}
 				modelConfig.WeightBytesPerParam = weightBytesPerParam
-				logrus.Infof("--weight-bytes-per-param: overriding weight precision to %.4f bytes/param", weightBytesPerParam)
+				if backend == "roofline" {
+					logrus.Infof("--weight-bytes-per-param: overriding weight precision to %.4f bytes/param", weightBytesPerParam)
+				} else {
+					logrus.Infof("--weight-bytes-per-param: overriding weight precision to %.4f bytes/param (affects KV capacity; %s step time is independent of weight precision)", weightBytesPerParam, backend)
+				}
 			}
 
 			// Log quantization info when weight precision differs from compute precision
