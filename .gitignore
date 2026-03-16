@@ -90,3 +90,6 @@ prompts.md
 
 .venv/
 actions-runner/
+
+# Convergence review state (session-local, not committed)
+.claude/convergence-state/
