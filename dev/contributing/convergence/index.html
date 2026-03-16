@@ -2682,7 +2682,7 @@
 - <strong>Design process</strong> (docs/contributing/design-process.md): Design Doc Review (8 perspectives)
 - <strong>Macro-plan process</strong> (docs/contributing/macro-planning.md): Macro Plan Review (8 perspectives)</p>
 <blockquote>
-<p><strong>Executable implementation:</strong> The <code>convergence-review</code> skill automates this protocol — dispatching perspectives, tallying findings independently, and enforcing the re-run gate. Invoke with <code>/convergence-review &lt;gate-type&gt; [artifact-path] [--model opus|sonnet|haiku]</code> (default: <code>haiku</code>).</p>
+<p><strong>Executable implementation:</strong> The <code>convergence-review</code> skill automates this protocol — dispatching perspectives, tallying findings independently, and enforcing the re-run gate via a persistent state file at <code>.claude/convergence-state/</code>. The skill automatically loops through Phase A (review/tally) and Phase B (fix/verify) until convergence or stall, with no manual re-invocation needed. Invoke with <code>/convergence-review &lt;gate-type&gt; [artifact-path] [--model opus|sonnet|haiku]</code> (default: <code>haiku</code>).</p>
 </blockquote>
 <hr />
 <h2 id="the-protocol">The Protocol<a class="headerlink" href="#the-protocol" title="Permanent link">&para;</a></h2>
