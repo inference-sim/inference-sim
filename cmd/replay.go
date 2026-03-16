@@ -610,6 +610,31 @@ var replayCmd = &cobra.Command{
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
+		// Collect RawMetrics (R23: same as runCmd — needed for anomaly/KV/SLO output)
+		rawMetrics := cluster.CollectRawMetrics(
+			cs.AggregatedMetrics(),
+			cs.PerInstanceMetrics(),
+			cs.RejectedRequests(),
+			priorityPolicy,
+		)
+
+		// Print anomaly counters if any detected (R23: same as runCmd)
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 {
+			fmt.Println("=== Anomaly Counters ===")
+			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
+			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
+			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
+			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
+			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
+		}
+
+		// Print KV cache metrics if any nonzero (R23: same as runCmd)
+		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
+
+		// Print per-SLO metrics if multiple SLO classes present (R23: same as runCmd)
+		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
+		printPerSLOMetrics(os.Stdout, sloDistributions)
+
 		// Build and print trace summary if requested (R23: same as runCmd)
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())
