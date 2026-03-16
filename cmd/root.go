@@ -608,6 +608,20 @@ var runCmd = &cobra.Command{
 					hfCfg, parseErr := latency.ParseHFConfig(hfPath)
 					if parseErr == nil {
 						mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
+						// Apply --weight-bytes-per-param override for blackbox KV auto-calc (R23: code path parity)
+						if mcErr == nil && cmd.Flags().Changed("weight-bytes-per-param") {
+							if weightBytesPerParam <= 0 || math.IsNaN(weightBytesPerParam) || math.IsInf(weightBytesPerParam, 0) {
+								logrus.Fatalf("--weight-bytes-per-param must be a finite positive number, got %v", weightBytesPerParam)
+							}
+							mc.WeightBytesPerParam = weightBytesPerParam
+						}
+						// Warn if quantization_config detected but couldn't extract weight precision
+						if mcErr == nil && mc.WeightBytesPerParam == 0 {
+							if _, hasQC := hfCfg.Raw["quantization_config"]; hasQC {
+								logrus.Warnf("HuggingFace config has quantization_config but weight precision could not be auto-detected. " +
+									"Consider using --weight-bytes-per-param to set weight precision explicitly")
+							}
+						}
 						resolvedHW, hwPathErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
 						if mcErr == nil && hwPathErr == nil {
 							hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
@@ -665,12 +679,18 @@ var runCmd = &cobra.Command{
 			if modelConfig.WeightBytesPerParam > 0 && modelConfig.WeightBytesPerParam != modelConfig.BytesPerParam {
 				logrus.Infof("--latency-model: quantized model detected — weight precision: %.2f bytes/param, compute/KV precision: %.1f bytes/param",
 					modelConfig.WeightBytesPerParam, modelConfig.BytesPerParam)
-			} else if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
-				// Legacy warning for models where torch_dtype itself reports low precision
-				logrus.Warnf("--latency-model: model reports %.0f byte(s)/param (possible quantization). "+
-					"Roofline step time estimates may be inaccurate for quantized models. "+
-					"Consider using --weight-bytes-per-param to set weight precision explicitly",
-					modelConfig.BytesPerParam)
+			} else if modelConfig.WeightBytesPerParam == 0 {
+				// Check if quantization_config was present but unrecognized
+				if _, hasQC := hfConfig.Raw["quantization_config"]; hasQC {
+					logrus.Warnf("--latency-model: HuggingFace config has quantization_config but weight precision could not be auto-detected. "+
+						"Consider using --weight-bytes-per-param to set weight precision explicitly")
+				} else if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
+					// Legacy warning for models where torch_dtype itself reports low precision
+					logrus.Warnf("--latency-model: model reports %.0f byte(s)/param (possible quantization). "+
+						"Roofline step time estimates may be inaccurate for quantized models. "+
+						"Consider using --weight-bytes-per-param to set weight precision explicitly",
+						modelConfig.BytesPerParam)
+				}
 			}
 			// MoE informational note: roofline models per-routed-expert FLOPs (top_k active)
 			// and all-expert weight bandwidth (E experts loaded from HBM per step).

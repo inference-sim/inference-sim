@@ -96,6 +96,13 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 	if hc.MemoryGiB <= 0 || math.IsNaN(hc.MemoryGiB) || math.IsInf(hc.MemoryGiB, 0) {
 		return 0, fmt.Errorf("CalculateKVBlocks: GPU memory (MemoryGiB) must be a valid positive number, got %v", hc.MemoryGiB)
 	}
+	// WeightBytesPerParam is optional (0 = not set, fall back to BytesPerParam).
+	// When set, it must be a valid positive number.
+	if mc.WeightBytesPerParam != 0 {
+		if mc.WeightBytesPerParam < 0 || math.IsNaN(mc.WeightBytesPerParam) || math.IsInf(mc.WeightBytesPerParam, 0) {
+			return 0, fmt.Errorf("CalculateKVBlocks: WeightBytesPerParam must be positive when set, got %v", mc.WeightBytesPerParam)
+		}
+	}
 
 	// Head dimension must be evenly divisible.
 	if mc.HiddenDim%mc.NumHeads != 0 {

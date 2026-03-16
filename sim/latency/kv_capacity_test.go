@@ -158,6 +158,33 @@ func TestCalculateKVBlocks_ZeroDenominators_ReturnError(t *testing.T) {
 			},
 			errWant: "num_kv_heads",
 		},
+		{
+			name: "negative WeightBytesPerParam",
+			setup: func() (sim.ModelConfig, sim.HardwareCalib, int, int64, latency.KVCapacityParams) {
+				m := mc
+				m.WeightBytesPerParam = -0.5
+				return m, hc, tp, blockSize, params
+			},
+			errWant: "WeightBytesPerParam",
+		},
+		{
+			name: "NaN WeightBytesPerParam",
+			setup: func() (sim.ModelConfig, sim.HardwareCalib, int, int64, latency.KVCapacityParams) {
+				m := mc
+				m.WeightBytesPerParam = math.NaN()
+				return m, hc, tp, blockSize, params
+			},
+			errWant: "WeightBytesPerParam",
+		},
+		{
+			name: "Inf WeightBytesPerParam",
+			setup: func() (sim.ModelConfig, sim.HardwareCalib, int, int64, latency.KVCapacityParams) {
+				m := mc
+				m.WeightBytesPerParam = math.Inf(1)
+				return m, hc, tp, blockSize, params
+			},
+			errWant: "WeightBytesPerParam",
+		},
 	}
 
 	for _, tt := range tests {
