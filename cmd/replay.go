@@ -31,6 +31,24 @@ var (
 var replayCmd = &cobra.Command{
 	Use:   "replay",
 	Short: "Replay a TraceV2 file through the discrete-event simulator",
+	Long: `Replay takes a TraceV2 file (header YAML + data CSV) and runs the DES against the
+exact request sequence captured in the trace. Unlike 'blis run', it does not generate
+requests from distributions — the request sequence is fully determined by the trace.
+
+Use --results-path to write per-request SimResult JSON (request_id, ttft_us, e2e_us,
+input_tokens, output_tokens) for downstream consumption by blis calibrate.
+
+Known limitations:
+  - Warm-up requests: trace.Header.warm_up_requests is not filtered; blis calibrate
+    is responsible for excluding the first N warm-up entries from calibration.
+  - Multi-model traces: per-request Model field is propagated to the simulator, but
+    the latency model configuration (--model flag) applies globally to all requests.
+  - Horizon: --horizon defaults to 2x the latest arrival time. For heavy-load traces
+    where requests queue past 2x max_arrival, pass --horizon explicitly and monitor
+    still_queued/still_running in the aggregate metrics output.
+
+Example:
+  blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b`,
 	Run: func(cmd *cobra.Command, args []string) {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {
@@ -684,6 +702,11 @@ func init() {
 	registerSimConfigFlags(replayCmd)
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
+	// Override --results-path description: replay writes []SimResult JSON (not MetricsOutput).
+	// Schema: [{request_id: int, ttft_us: float64, e2e_us: float64, input_tokens: int, output_tokens: int}, ...]
+	// This differs from blis run which writes MetricsOutput JSON to --results-path.
+	_ = replayCmd.Flags().Lookup("results-path").Value.Set("")
+	replayCmd.Flags().Lookup("results-path").Usage = "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption. Note: blis run writes MetricsOutput JSON to this flag; blis replay writes SimResult JSON."
 	rootCmd.AddCommand(replayCmd)
 }
 
