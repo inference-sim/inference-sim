@@ -145,7 +145,7 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
 - **SK-INV-1 Loop integrity:** The skill MUST never exit with status `not-converged`. The only exits are `converged` (0/0 in-scope), `stalled` (round > 10), or unresolvable verification failure (user decision).
 - **SK-INV-2 Round monotonicity:** The round counter MUST never decrease within a single state file lifetime (stale-commit reset creates a new state file).
 - **SK-INV-3 Tally independence:** The skill MUST count findings from agent output independently. It MUST never use agent-reported totals as the convergence input.
-- **SK-INV-4 State-status consistency:** If `in_scope.critical + in_scope.important > 0`, status MUST be `not-converged` or `stalled`. If both are 0, status MUST be `converged`. If the consistency check detects a mismatch, the count-derived status takes precedence and a **visible warning** is emitted (e.g., "SK-INV-4 mismatch: counts show 2 IMPORTANT but status was converged — correcting to not-converged").
+- **SK-INV-4 State-status consistency (applies to Phase A tally results only — Phase B intermediate state is exempt):** If Phase A's tallied `in_scope.critical + in_scope.important > 0`, status MUST be `not-converged` or `stalled`. If both are 0, status MUST be `converged`. Phase B step 6 always writes `not-converged` because fixes have not yet been verified by a new Phase A round — this is not an SK-INV-4 violation. If the Phase A consistency check detects a mismatch, the count-derived status takes precedence and a **visible warning** is emitted (e.g., "SK-INV-4 mismatch: counts show 2 IMPORTANT but status was converged — correcting to not-converged").
 - **SK-INV-5 Stale invalidation:** If the stored commit differs from current HEAD (for file/diff-anchored gates), the state MUST be reset to round 1.
 
 ---
@@ -158,15 +158,18 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
 
 2. **Load or create state:**
    - **No file exists (or corrupted/unsupported version):** Create new state (round 1, status `reviewing`). Proceed to dispatch.
-   - **File exists, commit matches HEAD (or context-anchored gate), status `not-converged`:** Increment round (immediately persist) and proceed to dispatch.
-   - **File exists, commit matches HEAD (or context-anchored gate), status `reviewing`:** Resume Phase A from dispatch WITHOUT incrementing round (interrupted mid-Phase-A replay). Proceed to dispatch.
+   - **File exists, commit matches HEAD (or context-anchored gate), status `not-converged`:** For context-anchored gates, first check `updated_at` — if older than 24 hours, emit staleness warning and ask user: continue or reset. Otherwise, increment round (immediately persist), set status to `reviewing`, and proceed to dispatch. Setting status to `reviewing` before dispatch ensures that a crash between this step and step 8 is correctly classified as an interrupted mid-Phase-A replay on resume.
+   - **File exists, commit matches HEAD (or context-anchored gate), status `reviewing`:** For context-anchored gates, first check `updated_at` — if older than 24 hours, emit staleness warning and ask user: continue or reset. Otherwise, resume Phase A from dispatch WITHOUT incrementing round (interrupted mid-Phase-A replay). The history entry for this round has not yet been written; re-dispatch gets fresh perspective results. Proceed to dispatch.
    - **File exists, commit differs from HEAD (file/diff-anchored gates):** Stale. Log: `"State from commit <old> invalidated by HEAD <new>. Starting Round 1."` Delete old file, create fresh state. Proceed to dispatch.
-   - **File exists, status `converged`:** Emit `"Gate <gate> already converged in Round N. Nothing to do."` Exit.
+   - **File exists, status `converged`:** Emit `"Gate <gate> already converged in Round N. Nothing to do."` Exit. (24-hour staleness does not apply to terminal states — converged means done.)
    - **File exists, status `stalled`:** Emit `"Gate <gate> stalled after N rounds."` Ask user: abort (delete state, exit) or reset (reset round counter, proceed).
-   - **Context-anchored gate, `updated_at` older than 24 hours:** Emit staleness warning, ask user: continue or reset.
 
 3. **Dispatch all N perspectives** simultaneously as background agents. Model from state file.
    - **Exception:** The structural validation perspective in PR plan reviews is performed directly (not delegated to an agent) because it requires full conversation context.
+   - **Context payload per gate type:**
+     - File-anchored gates (`design`, `macro-plan`, `pr-plan`, `h-code`, `h-findings`): Pass the file contents of `$1` to each agent.
+     - Diff-anchored gates (`pr-code`): Pass `git diff HEAD` output to each agent.
+     - Context-anchored gates (`h-design`): Pass the hypothesis sentence, classification, and experiment design from the current conversation context.
    - **Empty-diff precondition (diff-anchored gates only):** If `git diff HEAD` produces no output, emit warning ("No changes detected since last commit — nothing to review") and skip dispatch. Stage new files or commit before invoking.
 
 4. **Collect and tally independently.** Read each agent's output. Extract findings with severity. Count CRITICAL and IMPORTANT yourself. **Never trust agent-reported totals** (per #390).
@@ -180,10 +183,10 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
      N findings reference files outside the current scope:
      1. [IMPORTANT] PC-3: tiered.go — pre-existing race condition
      2. [IMPORTANT] PC-9: config.go — exported mutable map
-     Default: Fix all. Enter numbers to file as issues instead (e.g., "1,2"):
+     Enter numbers to file as issues (e.g., "1,2"), or "all" to file all, or press enter to fix all in-scope:
      ```
    - CRITICAL items get warning: `"(CRITICAL — presumed in-scope; file only if certain this is pre-existing)"`
-   - **If user response cannot be parsed, default to File-all** for flagged items and emit a warning.
+   - **If user response cannot be parsed, default to File-all** for flagged items and emit a warning. (File-all is safer than Fix-all for out-of-scope items — it tracks without applying potentially risky fixes to unrelated code.)
    - Items marked **File:** filed as GitHub issues immediately (following `docs/contributing/pr-workflow.md` conventions), recorded in state history with disposition `filed` and issue number, excluded from convergence check.
 
 7. **Convergence check:** `in_scope.critical == 0 AND in_scope.important == 0`.
@@ -205,11 +208,10 @@ Phase B is entered automatically from Phase A when in-scope CRITICAL or IMPORTAN
 
 1. **List all findings to fix**, grouped by priority.
 
-2. **Fix with confidence-tiered autonomy:**
-   - **All CRITICAL fixes:** Emit the proposed changes as output text, then **stop and wait for the user's next message** before applying. The user may: (a) approve — apply the fix, (b) provide an alternative fix — apply the user's version, (c) file as issue — record with disposition `filed` and exclude from convergence, (d) downgrade to SUGGESTION — remove from blocking count. **After the user responds, continue Phase B with the remaining items.** The state file's `not-converged` status ensures the loop resumes even if the session is interrupted during a CRITICAL fix pause.
-   - **IMPORTANT and SUGGESTION fixes:** Auto-fix without pause. The next Phase A round catches any semantic regressions.
-
-3. **Fix all items** in priority order: CRITICAL first, then IMPORTANT, then SUGGESTION.
+2. **Fix all items in priority order** using confidence-tiered autonomy:
+   - **CRITICAL fixes (process first):** For each CRITICAL finding, emit the proposed changes as output text, then **stop and wait for the user's next message** before applying. The user may: (a) approve — apply the fix, (b) provide an alternative fix — apply the user's version, (c) file as issue — record with disposition `filed` and exclude from convergence, (d) downgrade to SUGGESTION — it will be fixed in the suggestion pass below. **After the user responds, continue to the next CRITICAL item.** The state file's `not-converged` status ensures the loop resumes even if the session is interrupted during a CRITICAL fix pause. Note: a finding downgraded via option (d) is treated as a SUGGESTION and fixed in the SUGGESTION pass without additional approval.
+   - **IMPORTANT fixes (process next):** Auto-fix without pause. The next Phase A round catches any semantic regressions.
+   - **SUGGESTION fixes (process last):** Auto-fix without pause.
 
 4. **Stage any new files** created by fixes so they are visible to the next Phase A round's diff.
 
@@ -232,12 +234,13 @@ Phase B is entered automatically from Phase A when in-scope CRITICAL or IMPORTAN
 
 **No git commit in Phase B.** Fixes accumulate as working tree changes. The PR workflow's Step 5 handles the single commit. The state file's `history` array is the audit trail.
 
-**Multi-session caveat:** If the session ends mid-convergence, the working tree preserves fixes on disk and the state file records history. On session resumption, the skill re-reads the state file and continues from the last recorded status. The next Phase A round catches any incomplete fixes.
+**Multi-session caveat:** If the session ends mid-convergence, the working tree preserves fixes on disk and the state file records history. On session resumption, the skill re-reads the state file and continues from the last recorded status. The next Phase A round catches any incomplete fixes. Note: for `pr-code` (diff-anchored), the diff reviewed in the resumed round will include both the original changes and any Phase B fixes applied in prior sessions — this is the correct and intended behavior (reviewers should see the full current state of the PR).
 
 **Only exits from the loop:**
 - Phase A: `converged` (0/0 in-scope)
 - Phase A: `stalled` (round > 10)
 - Phase B: verification gate failure that can't be resolved (ask user)
+- Suggestion Cleanup: user chooses to fix a verification failure after suggestion cleanup (fix is not re-reviewed — acceptable since the user explicitly approved it)
 
 ---
 
@@ -248,7 +251,9 @@ When Phase A tallies 0 CRITICAL, 0 IMPORTANT, but N > 0 SUGGESTION:
 1. Emit the CONVERGED banner.
 2. List suggestion items.
 3. Fix all suggestions.
-4. Run verification gate (per gate table). If verification fails after a suggestion fix, ask the user: revert the suggestion fix and exit clean, or fix the verification issue and continue.
+4. Run verification gate (per gate table). If verification fails after a suggestion fix, present the user with two options:
+   - **Revert the suggestion fix and exit clean:** The PR is convergence-verified, the suggestion is simply dropped. State file deleted. Exit.
+   - **Fix the verification issue and continue:** Apply the verification fix, then proceed to step 5. **Warning: this verification fix is not re-reviewed by any perspective. It is accepted on user approval only.** Choose this option only if the verification fix is trivial (e.g., undo a rename that broke a reference).
 5. Delete state file.
 6. Exit skill.
 
@@ -257,6 +262,8 @@ No re-run triggered. Suggestions are cosmetic by definition.
 ---
 
 ## Integration with Other Skills
+
+**The skill loops automatically — no manual re-invocation needed between rounds.** Phase B re-enters Phase A without any user action. The loop only exits when 0 CRITICAL + 0 IMPORTANT (converged), round > 10 (stalled), or an unresolvable verification failure.
 
 ### From design process
 ```
