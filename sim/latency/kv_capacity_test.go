@@ -585,15 +585,15 @@ func writeTempConfigJSON(t *testing.T, data map[string]any) string {
 
 func TestExtractKVCapacityParams_DenseModel(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":           "silu",
-		"num_hidden_layers":    32,
-		"hidden_size":          4096,
-		"num_attention_heads":  32,
-		"num_key_value_heads":  8,
-		"intermediate_size":    14336,
-		"vocab_size":           128256,
-		"torch_dtype":          "bfloat16",
-		"tie_word_embeddings":  false,
+		"hidden_act":          "silu",
+		"num_hidden_layers":   32,
+		"hidden_size":         4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"intermediate_size":   14336,
+		"vocab_size":          128256,
+		"torch_dtype":         "bfloat16",
+		"tie_word_embeddings": false,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -614,16 +614,16 @@ func TestExtractKVCapacityParams_DenseModel(t *testing.T) {
 
 func TestExtractKVCapacityParams_MoEModel(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":           "silu",
-		"num_hidden_layers":    32,
-		"hidden_size":          4096,
-		"num_attention_heads":  32,
-		"num_key_value_heads":  8,
-		"intermediate_size":    14336,
-		"vocab_size":           32000,
-		"torch_dtype":          "bfloat16",
-		"num_local_experts":    8,
-		"num_experts_per_tok":  2,
+		"hidden_act":          "silu",
+		"num_hidden_layers":   32,
+		"hidden_size":         4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"intermediate_size":   14336,
+		"vocab_size":          32000,
+		"torch_dtype":         "bfloat16",
+		"num_local_experts":   8,
+		"num_experts_per_tok": 2,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -641,15 +641,15 @@ func TestExtractKVCapacityParams_MoEModel(t *testing.T) {
 
 func TestExtractKVCapacityParams_SingleExpert_ClassifiedAsDense(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":           "silu",
-		"num_hidden_layers":    32,
-		"hidden_size":          4096,
-		"num_attention_heads":  32,
-		"num_key_value_heads":  8,
-		"intermediate_size":    14336,
-		"vocab_size":           32000,
-		"torch_dtype":          "bfloat16",
-		"num_local_experts":    1,
+		"hidden_act":          "silu",
+		"num_hidden_layers":   32,
+		"hidden_size":         4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"intermediate_size":   14336,
+		"vocab_size":          32000,
+		"torch_dtype":         "bfloat16",
+		"num_local_experts":   1,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -715,8 +715,8 @@ func TestCalculateKVBlocks_NumKVHeadsLessThanTP_Succeeds(t *testing.T) {
 func TestExtractKVCapacityParams_MoEFallback_NRoutedExperts(t *testing.T) {
 	// DeepSeek-style: uses n_routed_experts instead of num_local_experts
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":          "silu",
-		"n_routed_experts":    64,
+		"hidden_act":       "silu",
+		"n_routed_experts": 64,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -734,8 +734,8 @@ func TestExtractKVCapacityParams_MoEFallback_NRoutedExperts(t *testing.T) {
 func TestExtractKVCapacityParams_MoEFallback_NumExperts(t *testing.T) {
 	// DBRX-style: uses num_experts
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":   "silu",
-		"num_experts":  16,
+		"hidden_act":  "silu",
+		"num_experts": 16,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -784,15 +784,15 @@ func TestExtractKVCapacityParams_MoEFallback_NumExpertsPerTokOnly_ReturnsError(t
 
 func TestExtractKVCapacityParams_TiedEmbeddings(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":           "silu",
-		"num_hidden_layers":    32,
-		"hidden_size":          4096,
-		"num_attention_heads":  32,
-		"num_key_value_heads":  8,
-		"intermediate_size":    14336,
-		"vocab_size":           128256,
-		"torch_dtype":          "bfloat16",
-		"tie_word_embeddings":  true,
+		"hidden_act":          "silu",
+		"num_hidden_layers":   32,
+		"hidden_size":         4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"intermediate_size":   14336,
+		"vocab_size":          128256,
+		"torch_dtype":         "bfloat16",
+		"tie_word_embeddings": true,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -942,10 +942,10 @@ func TestExtractKVCapacityParams_DeepSeekV3_PerExpertDim(t *testing.T) {
 func TestExtractKVCapacityParams_Qwen2MoE_ExplicitSharedDim(t *testing.T) {
 	// shared_expert_intermediate_size takes precedence over n_shared_experts × per-expert
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":                       "silu",
-		"num_local_experts":                60,
-		"moe_intermediate_size":            2560,
-		"shared_expert_intermediate_size":  5632,
+		"hidden_act":                      "silu",
+		"num_local_experts":               60,
+		"moe_intermediate_size":           2560,
+		"shared_expert_intermediate_size": 5632,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)

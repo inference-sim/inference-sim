@@ -35,12 +35,12 @@ func NewKVCapacityParams(isMoE bool, numLocalExperts int, tieWordEmbeddings bool
 
 // Constants matching the llm-d-benchmark capacity_planner.py reference.
 const (
-	gpuMemUtil                 = 0.9
-	activationMemoryDenseGiB   = 5.5
-	activationMemoryMoEGiB     = 8.0
-	nonTorchMemoryTP1GiB       = 0.15
-	nonTorchMemoryTPMultiGiB   = 0.6
-	gibToBytes                 = 1 << 30
+	gpuMemUtil               = 0.9
+	activationMemoryDenseGiB = 5.5
+	activationMemoryMoEGiB   = 8.0
+	nonTorchMemoryTP1GiB     = 0.15
+	nonTorchMemoryTPMultiGiB = 0.6
+	gibToBytes               = 1 << 30
 )
 
 // swiGLUActivations is the set of activation functions that use the SwiGLU
