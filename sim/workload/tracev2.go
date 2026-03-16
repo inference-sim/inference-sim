@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"gopkg.in/yaml.v3"
 )
 
@@ -339,4 +340,71 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 		Status:            row[23],
 		ErrorMessage:      strings.TrimSpace(row[24]),
 	}, nil
+}
+
+// RequestsToTraceRecords converts simulation requests to trace v2 records.
+// Uses array index as RequestID (request IDs may be non-numeric for session follow-ups).
+// OutputTokens records the pre-determined count (len(req.OutputTokens)) for all requests,
+// preserving workload input for replay fidelity across A/B policy comparisons.
+// LastChunkTimeUs is computed as ArrivalTime + FirstTokenTime + sum(ITL), which
+// represents the client-observable last-token delivery time. This deliberately
+// excludes PostDecodeFixedOverhead (server-side processing after final token)
+// and therefore differs from the E2E value stored in Metrics.RequestE2Es.
+// PrefixGroup is intentionally cleared because InputTokens already includes prefix
+// tokens baked in during generation; setting PrefixGroup would cause
+// LoadTraceV2Requests to double-prepend prefix on replay.
+func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
+	records := make([]TraceRecord, 0, len(requests))
+	for i, req := range requests {
+		status := "incomplete"
+		switch req.State {
+		case sim.StateCompleted:
+			status = "ok"
+		case sim.StateTimedOut:
+			status = "timeout"
+		}
+
+		// Absolute timing (ticks = microseconds)
+		// Both chunk timestamps guarded by TTFTSet to avoid producing
+		// LastChunkTimeUs = ArrivalTime for prefill-timeout requests.
+		// For StateRunning requests with TTFTSet=true, LastChunkTimeUs
+		// represents the last token generated so far (partial execution),
+		// not the final token. Status "incomplete" distinguishes these.
+		var firstChunkUs, lastChunkUs int64
+		if req.TTFTSet {
+			firstChunkUs = req.ArrivalTime + req.FirstTokenTime
+			e2e := req.FirstTokenTime
+			for _, itl := range req.ITL {
+				e2e += itl
+			}
+			lastChunkUs = req.ArrivalTime + e2e
+		}
+
+		records = append(records, TraceRecord{
+			RequestID:        i,
+			ClientID:         req.ClientID,
+			TenantID:         req.TenantID,
+			SLOClass:         req.SLOClass,
+			SessionID:        req.SessionID,
+			RoundIndex:       req.RoundIndex,
+			PrefixGroup:      "", // intentionally empty: InputTokens already includes prefix
+			Streaming:        req.Streaming,
+			InputTokens:      len(req.InputTokens),
+			OutputTokens:     len(req.OutputTokens), // pre-determined count for replay fidelity
+			TextTokens:       req.TextTokenCount,
+			ImageTokens:      req.ImageTokenCount,
+			AudioTokens:      req.AudioTokenCount,
+			VideoTokens:      req.VideoTokenCount,
+			ReasonRatio:      req.ReasonRatio,
+			Model:            req.Model,
+			DeadlineUs:       req.Deadline,
+			ArrivalTimeUs:    req.ArrivalTime,
+			SendTimeUs:       req.ArrivalTime, // no real network send in simulation
+			FirstChunkTimeUs: firstChunkUs,
+			LastChunkTimeUs:  lastChunkUs,
+			NumChunks:        0, // not tracked in simulation
+			Status:           status,
+		})
+	}
+	return records
 }

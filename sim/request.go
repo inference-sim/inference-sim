@@ -59,6 +59,9 @@ type Request struct {
 	AudioTokenCount int     // Audio input tokens
 	VideoTokenCount int     // Video input tokens
 	ReasonRatio     float64 // reason_tokens / total_output_tokens (part of OutputTokens, not additional)
+	ClientID        string  // Client identifier from workload spec (empty for legacy/test workloads)
+	PrefixGroup     string  // Shared prefix group name (empty for no prefix)
+	Streaming       bool    // Whether client expects streaming response
 
 	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
 	// Request is used outside the cluster routing pipeline (e.g., direct sim.Simulator tests).

@@ -99,6 +99,9 @@ var (
 
 	// results file path
 	resultsPath string // File to save BLIS results to
+
+	// trace export
+	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
 )
 
 // applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
@@ -992,9 +995,20 @@ var runCmd = &cobra.Command{
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
 		}
+		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
 		if sessionMgr != nil {
-			onRequestDone = sessionMgr.OnComplete
+			baseCb := sessionMgr.OnComplete
+			if traceOutput != "" {
+				// Wrap callback to accumulate follow-up requests for trace export
+				onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+					followUps := baseCb(req, clock)
+					followUpRequests = append(followUpRequests, followUps...)
+					return followUps
+				}
+			} else {
+				onRequestDone = baseCb
+			}
 		}
 		cs := cluster.NewClusterSimulator(config, preGeneratedRequests, onRequestDone)
 		if err := cs.Run(); err != nil {
@@ -1003,6 +1017,27 @@ var runCmd = &cobra.Command{
 
 		// Wall-clock timing on stderr (BC-6); stdout remains deterministic (BC-7)
 		logrus.Infof("Simulation wall-clock time: %.3fs", time.Since(startTime).Seconds())
+
+		// Export trace if requested (BC-1, BC-7)
+		if traceOutput != "" {
+			allRequests := make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
+			allRequests = append(allRequests, preGeneratedRequests...)
+			allRequests = append(allRequests, followUpRequests...)
+			// Sort by arrival time so RequestIDs (array indices) are arrival-ordered
+			sort.SliceStable(allRequests, func(i, j int) bool {
+				return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
+			})
+			records := workload.RequestsToTraceRecords(allRequests)
+			header := &workload.TraceHeader{
+				Version:  2,
+				TimeUnit: "microseconds",
+				Mode:     "generated",
+			}
+			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
+				logrus.Fatalf("Trace export failed: %v", err)
+			}
+			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", traceOutput, traceOutput, len(records))
+		}
 
 		if numInstances > 1 {
 			// Print per-instance metrics to stdout (multi-instance only)
@@ -1214,6 +1249,9 @@ func init() {
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
+
+	// Trace export
+	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

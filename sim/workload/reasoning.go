@@ -75,6 +75,7 @@ func GenerateReasoningRequests(
 			TenantID:     tenantID,
 			SLOClass:     sloClass,
 			Model:        model,
+			ClientID:     clientID,
 			SessionID:    sessionID,
 			RoundIndex:   round,
 			ReasonRatio:  reasonRatio,
