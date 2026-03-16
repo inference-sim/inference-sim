@@ -23,8 +23,15 @@ Review this implementation plan for substance: Are the behavioral contracts logi
 PLAN CONTENTS:
 <paste plan file>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PP-2: Cross-Document Consistency
@@ -35,8 +42,15 @@ Does this micro plan's scope match the source document? Are file paths consisten
 PLAN CONTENTS:
 <paste plan file>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PP-3: Architecture Boundary Verification
@@ -54,8 +68,15 @@ Does this plan maintain architectural boundaries? Check:
 PLAN CONTENTS:
 <paste plan file>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PP-4: Codebase Readiness
@@ -71,8 +92,15 @@ We're about to implement this PR. Review the codebase for readiness. Check each 
 PLAN CONTENTS:
 <paste plan file>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PP-5: Structural Validation (perform directly, no agent)
@@ -106,8 +134,15 @@ Review this plan as a discrete-event simulation expert. Check for:
 PLAN CONTENTS:
 <paste plan file>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PP-7: vLLM/SGLang Expert
@@ -124,8 +159,15 @@ Review this plan as a vLLM/SGLang inference serving expert. Check for:
 PLAN CONTENTS:
 <paste plan file>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PP-8: Distributed Inference Platform Expert
@@ -142,8 +184,15 @@ Review this plan as a distributed inference platform expert (llm-d, KServe, vLLM
 PLAN CONTENTS:
 <paste plan file>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PP-9: Performance & Scalability
@@ -160,8 +209,15 @@ Review this plan as a performance and scalability analyst. Check for:
 PLAN CONTENTS:
 <paste plan file>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PP-10: Security & Robustness
@@ -178,8 +234,15 @@ Review this plan as a security and robustness reviewer. Check for:
 PLAN CONTENTS:
 <paste plan file>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ---
@@ -194,8 +257,15 @@ Review this diff for substance: Are there logic bugs, design mismatches between 
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PC-2: Code Quality + Antipattern Check
@@ -216,8 +286,15 @@ Review this diff for code quality. Check all of these:
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PC-3: Test Behavioral Quality
@@ -236,8 +313,15 @@ Also check:
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PC-4: Getting-Started Experience
@@ -257,8 +341,15 @@ Check:
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PC-5: Automated Reviewer Simulation
@@ -276,8 +367,15 @@ The upstream community uses GitHub Copilot, Claude, and Codex to review PRs. Do 
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PC-6: DES Expert
@@ -294,8 +392,15 @@ Review this diff as a discrete-event simulation expert. Check for:
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PC-7: vLLM/SGLang Expert
@@ -312,8 +417,15 @@ Review this diff as a vLLM/SGLang inference serving expert. Check for:
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PC-8: Distributed Inference Platform Expert
@@ -330,8 +442,15 @@ Review this diff as a distributed inference platform expert (llm-d, KServe, vLLM
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PC-9: Performance & Scalability
@@ -348,8 +467,15 @@ Review this diff as a performance and scalability analyst. Check for:
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### PC-10: Security & Robustness
@@ -366,6 +492,13 @@ Review this diff as a security and robustness reviewer. Check for:
 DIFF:
 <paste git diff output>
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
