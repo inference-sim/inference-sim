@@ -4,16 +4,16 @@ metadata:
   name: github-runner
   namespace: blis
   labels:
-    app: github-runner
+    app: blis-github-runner
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: github-runner
+      app: blis-github-runner
   template:
     metadata:
       labels:
-        app: github-runner
+        app: blis-github-runner
     spec:
       initContainers:
       - name: copy-runner
@@ -71,13 +71,13 @@ spec:
             REG_TOKEN=$(curl -s -X POST \
               -H "Authorization: token ${ACCESS_TOKEN}" \
               -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/inference-sim/inference-sim/actions/runners/registration-token" \
+              "https://api.github.com/repos/${GITHUB_REPO}/actions/runners/registration-token" \
               | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
             ./config.sh --unattended \
               --url "${REPO_URL}" \
               --token "${REG_TOKEN}" \
-              --name "k8s-blis" \
+              --name "${RUNNER_NAME}" \
               --labels "${LABELS}" \
               --work "${RUNNER_WORKDIR}" \
               --replace
@@ -86,13 +86,17 @@ spec:
           # Run the listener (stays alive, picks up jobs continuously)
           exec ./bin/Runner.Listener run
         env:
+        - name: GITHUB_REPO
+          value: "inference-sim/inference-sim"
         - name: REPO_URL
-          value: "https://github.com/inference-sim/inference-sim"
+          value: "https://github.com/$(GITHUB_REPO)"
         - name: ACCESS_TOKEN
           valueFrom:
             secretKeyRef:
               name: github-runner-secret
               key: github_pat
+        - name: RUNNER_NAME
+          value: "k8s-runner"
         - name: RUNNER_NAME_PREFIX
           value: "k8s"
         - name: RUNNER_SCOPE
