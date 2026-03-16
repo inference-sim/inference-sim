@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -39,6 +40,9 @@ func TestRealClient_NonStreaming_RecordsTokenCounts(t *testing.T) {
 	}
 	if record.NumChunks != 1 {
 		t.Errorf("num_chunks = %d, want 1 (non-streaming)", record.NumChunks)
+	}
+	if record.ServerInputTokens != 100 {
+		t.Errorf("ServerInputTokens = %d, want 100", record.ServerInputTokens)
 	}
 }
 
@@ -83,6 +87,9 @@ func TestRealClient_Streaming_RecordsFirstAndLastChunkTime(t *testing.T) {
 	if record.Status != "ok" {
 		t.Errorf("status = %q, want ok", record.Status)
 	}
+	if record.ServerInputTokens != 100 {
+		t.Errorf("ServerInputTokens = %d, want 100", record.ServerInputTokens)
+	}
 }
 
 func TestRealClient_ServerError_RecordsError(t *testing.T) {
@@ -125,5 +132,137 @@ func TestRecorder_ConcurrentAccess(t *testing.T) {
 	records := rec.Records()
 	if len(records) != 10 {
 		t.Errorf("recorded %d, want 10", len(records))
+	}
+}
+
+func TestRealClient_MaxOutputTokens_FlowsThrough(t *testing.T) {
+	var capturedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{{"text": "ok"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 10.0, "completion_tokens": 5.0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+
+	// Explicit MaxOutputTokens
+	_, _ = client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, MaxOutputTokens: 512,
+	})
+	if got := int(capturedBody["max_tokens"].(float64)); got != 512 {
+		t.Errorf("max_tokens = %d, want 512", got)
+	}
+
+	// Zero MaxOutputTokens → default 2048
+	_, _ = client.Send(context.Background(), &PendingRequest{
+		RequestID: 1, InputTokens: 10, MaxOutputTokens: 0,
+	})
+	if got := int(capturedBody["max_tokens"].(float64)); got != 2048 {
+		t.Errorf("max_tokens = %d, want 2048 (default)", got)
+	}
+}
+
+func TestRealClient_ProportionalPrompt(t *testing.T) {
+	var capturedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{{"text": "ok"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 50.0, "completion_tokens": 5.0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	_, _ = client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 50,
+	})
+	prompt, ok := capturedBody["prompt"].(string)
+	if !ok {
+		t.Fatal("prompt not found in request body")
+	}
+	count := strings.Count(prompt, "hello ")
+	if count != 50 {
+		t.Errorf("prompt contains %d 'hello ' repetitions, want 50", count)
+	}
+
+	// BC-6: Zero InputTokens guard — prompt must not be empty
+	_, _ = client.Send(context.Background(), &PendingRequest{
+		RequestID: 1, InputTokens: 0,
+	})
+	prompt, ok = capturedBody["prompt"].(string)
+	if !ok || !strings.Contains(prompt, "hello") {
+		t.Errorf("zero InputTokens should produce at least one 'hello', got %q", prompt)
+	}
+
+	// BC-6: Negative InputTokens — should also produce at least one "hello"
+	_, _ = client.Send(context.Background(), &PendingRequest{
+		RequestID: 2, InputTokens: -5,
+	})
+	prompt, ok = capturedBody["prompt"].(string)
+	if !ok || !strings.Contains(prompt, "hello") {
+		t.Errorf("negative InputTokens should produce at least one 'hello', got %q", prompt)
+	}
+}
+
+func TestRealClient_NonStreaming_TTFTBeforeE2E(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+		data := []byte(`{"choices":[{"text":"hello world"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}`)
+		_, _ = w.Write(data[:10])
+		flusher.Flush()
+		time.Sleep(50 * time.Millisecond)
+		_, _ = w.Write(data[10:])
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.FirstChunkTimeUs == 0 {
+		t.Error("FirstChunkTimeUs not recorded")
+	}
+	if record.LastChunkTimeUs == 0 {
+		t.Error("LastChunkTimeUs not recorded")
+	}
+	if record.FirstChunkTimeUs > record.LastChunkTimeUs {
+		t.Errorf("FirstChunkTimeUs (%d) > LastChunkTimeUs (%d)", record.FirstChunkTimeUs, record.LastChunkTimeUs)
+	}
+	// With 50ms sleep, there should be measurable separation (10ms threshold = 5x margin)
+	if record.LastChunkTimeUs-record.FirstChunkTimeUs < 10_000 {
+		t.Errorf("expected >= 10ms separation, got %d us", record.LastChunkTimeUs-record.FirstChunkTimeUs)
+	}
+}
+
+func TestRecorder_WiresModelAndServerInputTokens(t *testing.T) {
+	rec := &Recorder{}
+	rec.RecordRequest(
+		&PendingRequest{RequestID: 0, ClientID: "c1", Model: "test-model"},
+		&RequestRecord{RequestID: 0, Status: "ok", ServerInputTokens: 42},
+	)
+	records := rec.Records()
+	if len(records) != 1 {
+		t.Fatalf("got %d records, want 1", len(records))
+	}
+	if records[0].Model != "test-model" {
+		t.Errorf("Model = %q, want %q", records[0].Model, "test-model")
+	}
+	if records[0].ServerInputTokens != 42 {
+		t.Errorf("ServerInputTokens = %d, want 42", records[0].ServerInputTokens)
 	}
 }
