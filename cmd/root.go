@@ -36,8 +36,7 @@ var (
 	defaultsFilePath          string    // Path to default constants - trained coefficients, default specs and workloads
 	modelConfigFolder         string    // Path to folder containing config.json and model.json
 	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
-	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)
-	tracesWorkloadFilePath    string    // Workload filepath for traces workload type.
+	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
 	numRequests               int       // Number of requests
@@ -100,6 +99,9 @@ var (
 
 	// results file path
 	resultsPath string // File to save BLIS results to
+
+	// trace export
+	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
 )
 
 // applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
@@ -241,6 +243,19 @@ var runCmd = &cobra.Command{
 			}
 			logrus.Fatalf("--beta-coeffs requires --alpha-coeffs. " +
 				"Both coefficient sets are needed for blackbox mode")
+		}
+
+		// Validate coefficient values for NaN/Inf/negative (R3: CLI flags AND library constructors).
+		// Library-level validateCoeffs() also checks, but CLI-level gives user-friendly flag names.
+		for i, c := range alphaCoeffs {
+			if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
+				logrus.Fatalf("--alpha-coeffs[%d] must be a finite non-negative number, got %v", i, c)
+			}
+		}
+		for i, c := range betaCoeffs {
+			if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
+				logrus.Fatalf("--beta-coeffs[%d] must be a finite non-negative number, got %v", i, c)
+			}
 		}
 
 		// If both alpha and beta coefficients are explicitly provided but
@@ -691,6 +706,7 @@ var runCmd = &cobra.Command{
 		// and generate requests via workload.GenerateRequests (BC-10).
 		var spec *workload.WorkloadSpec
 		var preGeneratedRequests []*sim.Request
+		var sessionMgr *workload.SessionManager
 
 		if workloadSpecPath != "" {
 			// --workload-spec takes precedence over --workload
@@ -709,19 +725,6 @@ var runCmd = &cobra.Command{
 			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
 				simulationHorizon = spec.Horizon
 			}
-		} else if workloadType == "traces" {
-			// CSV trace path → synthesize v2 spec (lossy conversion)
-			if tracesWorkloadFilePath == "" {
-				logrus.Fatalf("--workload-traces-filepath is required when using --workload traces")
-			}
-			logrus.Warn("--workload traces uses lossy CSV conversion (averaged token lengths, constant arrival). " +
-				"For faithful trace replay, use --workload-spec with a trace v2 YAML file instead.")
-			var err error
-			spec, err = workload.SynthesizeFromCSVTrace(tracesWorkloadFilePath, simulationHorizon)
-			if err != nil {
-				logrus.Fatalf("Failed to convert CSV trace: %v", err)
-			}
-			spec.Seed = seed
 		} else if workloadType == "distribution" {
 			// Distribution mode → synthesize v2 spec from CLI flags
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
@@ -796,12 +799,17 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Workload requires either num_requests or --horizon to bound generation")
 		}
 
-		reqs, err := workload.GenerateRequests(spec, simulationHorizon, maxRequests)
+		wl, err := workload.GenerateWorkload(spec, simulationHorizon, maxRequests)
 		if err != nil {
 			logrus.Fatalf("Failed to generate workload: %v", err)
 		}
-		preGeneratedRequests = reqs
-		logrus.Infof("Generated %d requests via unified workload pipeline", len(reqs))
+		preGeneratedRequests = wl.Requests
+		if len(wl.Sessions) > 0 {
+			sessionMgr = workload.NewSessionManager(wl.Sessions)
+			logrus.Infof("Generated %d requests + %d session blueprints (closed-loop)", len(wl.Requests), len(wl.Sessions))
+		} else {
+			logrus.Infof("Generated %d requests via unified workload pipeline", len(wl.Requests))
+		}
 
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
@@ -987,13 +995,49 @@ var runCmd = &cobra.Command{
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
 		}
-		cs := cluster.NewClusterSimulator(config, preGeneratedRequests)
+		var followUpRequests []*sim.Request
+		var onRequestDone func(*sim.Request, int64) []*sim.Request
+		if sessionMgr != nil {
+			baseCb := sessionMgr.OnComplete
+			if traceOutput != "" {
+				// Wrap callback to accumulate follow-up requests for trace export
+				onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+					followUps := baseCb(req, clock)
+					followUpRequests = append(followUpRequests, followUps...)
+					return followUps
+				}
+			} else {
+				onRequestDone = baseCb
+			}
+		}
+		cs := cluster.NewClusterSimulator(config, preGeneratedRequests, onRequestDone)
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Simulation failed: %v", err)
 		}
 
 		// Wall-clock timing on stderr (BC-6); stdout remains deterministic (BC-7)
 		logrus.Infof("Simulation wall-clock time: %.3fs", time.Since(startTime).Seconds())
+
+		// Export trace if requested (BC-1, BC-7)
+		if traceOutput != "" {
+			allRequests := make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
+			allRequests = append(allRequests, preGeneratedRequests...)
+			allRequests = append(allRequests, followUpRequests...)
+			// Sort by arrival time so RequestIDs (array indices) are arrival-ordered
+			sort.SliceStable(allRequests, func(i, j int) bool {
+				return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
+			})
+			records := workload.RequestsToTraceRecords(allRequests)
+			header := &workload.TraceHeader{
+				Version:  2,
+				TimeUnit: "microseconds",
+				Mode:     "generated",
+			}
+			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
+				logrus.Fatalf("Trace export failed: %v", err)
+			}
+			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", traceOutput, traceOutput, len(records))
+		}
 
 		if numInstances > 1 {
 			// Print per-instance metrics to stdout (multi-instance only)
@@ -1132,8 +1176,7 @@ func init() {
 	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
 	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
 	runCmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
-	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution, traces)")
-	runCmd.Flags().StringVar(&tracesWorkloadFilePath, "workload-traces-filepath", "", "Workload filepath for traces workload type.")
+	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution)")
 
 	// vLLM server configs
 	runCmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 1000000, "Total number of KV cache blocks")
@@ -1206,6 +1249,9 @@ func init() {
 
 	// Results path
 	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
+
+	// Trace export
+	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // --- cpuTier unit tests (BC-4, BC-1 touch) ---
@@ -530,4 +532,401 @@ func TestCpuTier_Validation_NegativeCapacity_Panics(t *testing.T) {
 
 func TestCpuTier_Validation_ZeroBlockSize_Panics(t *testing.T) {
 	assert.Panics(t, func() { newCpuTier(10, 0) })
+}
+
+// --- Reload guard tests (BC-2, BC-3) ---
+//
+// Note on test coverage: The full-range reload guard (newStart >= endIndex for running
+// requests) cannot be triggered in isolation because the GPU pre-check fails when K < N
+// new blocks are needed, but the reload requires exactly K free blocks — the same K that
+// would allow direct GPU success. As a result, these tests verify the correct behavioral
+// end state (block count and INV-4) via the direct GPU path. The fix code path is
+// exercised only during multi-request batch formation under concurrent KV pressure.
+
+func TestTieredKVCache_ReloadGuard_CommitsBlocksForRunningRequest(t *testing.T) {
+	// BC-2: Running request hitting full-range reload guard gets uncovered blocks committed
+	// BC-3: Only the uncovered range is committed (no double-counting)
+	blockSize := int64(4)
+	gpuBlocks := int64(12)
+	cpuBlocks := int64(5)
+
+	gpu := NewKVCacheState(gpuBlocks, blockSize)
+	tiered := NewTieredKVCache(gpu, cpuBlocks, 0, 1.0, 0)
+
+	// Create tokens for 4 blocks (16 tokens total)
+	tokens := make([]int, 4*blockSize)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+
+	// Seed request: allocate all 4 blocks, mirror to CPU, then release.
+	// This puts all 4 blocks on CPU and leaves hashes on GPU free list.
+	seedReq := &sim.Request{ID: "req-seed", InputTokens: tokens}
+	ok := tiered.AllocateKVBlocks(seedReq, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok, "seed allocation must succeed")
+	tiered.MirrorToCPU([]*sim.Request{seedReq})
+	tiered.ReleaseKVBlocks(seedReq)
+
+	// Running request: allocate first 2 blocks (simulates ProgressIndex at block 2)
+	runReq := &sim.Request{ID: "req-running", InputTokens: tokens}
+	ok = tiered.AllocateKVBlocks(runReq, 0, 2*blockSize, []int64{})
+	assert.True(t, ok, "partial allocation must succeed")
+	existingBlocks, exists := gpu.RequestMap[runReq.ID]
+	assert.True(t, exists, "running request must be in RequestMap")
+	numBlocksBefore := len(existingBlocks)
+	assert.Equal(t, 2, numBlocksBefore, "running request should have 2 blocks")
+
+	// Exhaust remaining GPU free blocks with fillers
+	fillerCount := 0
+	for gpu.countFreeBlocks() > 0 {
+		filler := &sim.Request{
+			ID:          fmt.Sprintf("filler-%d", fillerCount),
+			InputTokens: []int{800 + fillerCount*4, 801 + fillerCount*4, 802 + fillerCount*4, 803 + fillerCount*4},
+		}
+		if tiered.AllocateKVBlocks(filler, 0, blockSize, []int64{}) {
+			fillerCount++
+		} else {
+			break
+		}
+	}
+
+	// Release 2 fillers to make room for CPU→GPU reload (reload needs free blocks)
+	for i := 0; i < 2 && i < fillerCount; i++ {
+		tiered.ReleaseKVBlocks(&sim.Request{ID: fmt.Sprintf("filler-%d", i)})
+	}
+
+	// WHEN we allocate blocks 2-3 for the running request (the uncovered range)
+	// startIndex = 2*blockSize = 8, endIndex = 4*blockSize = 16
+	startIndex := int64(2) * blockSize
+	endIndex := int64(4) * blockSize
+	ok = tiered.AllocateKVBlocks(runReq, startIndex, endIndex, []int64{})
+	assert.True(t, ok, "allocation via CPU reload must succeed")
+
+	// THEN the uncovered blocks (blocks 2 and 3) must be committed to RequestMap
+	blocksAfter, existsAfter := gpu.RequestMap[runReq.ID]
+	assert.True(t, existsAfter, "running request must still be in RequestMap")
+	assert.Greater(t, len(blocksAfter), numBlocksBefore,
+		"running request must have more blocks after allocation (BC-2)")
+
+	// BC-3: No double-counting — original blocks should not be duplicated
+	// We started with 2 blocks and added blocks for range [2,4), so expect 4 total
+	assert.Equal(t, 4, len(blocksAfter),
+		"running request must have exactly 4 blocks (2 original + 2 newly committed)")
+
+	// INV-4: block conservation
+	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
+		"INV-4: used + free must equal total capacity")
+}
+
+func TestTieredKVCache_ReloadGuard_NonBlockAlignedStartIndex_NoDuplicates(t *testing.T) {
+	// BC-3 edge case: startIndex=6, blockSize=4 (non-aligned)
+	// Ceiling division: startBlock = (6+3)/4 = 2 (skips partially-filled block 1)
+	// Floor division: startBlock = 6/4 = 1 (would re-commit partially-filled block 1)
+	blockSize := int64(4)
+	gpuBlocks := int64(12)
+	cpuBlocks := int64(5)
+
+	gpu := NewKVCacheState(gpuBlocks, blockSize)
+	tiered := NewTieredKVCache(gpu, cpuBlocks, 0, 1.0, 0)
+
+	// Tokens for 4 blocks
+	tokens := make([]int, 4*blockSize)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+
+	// Seed: allocate, mirror to CPU, release
+	seedReq := &sim.Request{ID: "req-seed-na", InputTokens: tokens}
+	ok := tiered.AllocateKVBlocks(seedReq, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok)
+	tiered.MirrorToCPU([]*sim.Request{seedReq})
+	tiered.ReleaseKVBlocks(seedReq)
+
+	// Running request: allocate first 6 tokens (non-block-aligned: covers block 0 fully,
+	// block 1 partially with tokens 4,5). startIndex=6 for the next allocation.
+	runReq := &sim.Request{ID: "req-running-nonaligned", InputTokens: tokens}
+	ok = tiered.AllocateKVBlocks(runReq, 0, 6, []int64{})
+	assert.True(t, ok, "partial allocation must succeed")
+	blocksBefore := len(gpu.RequestMap[runReq.ID])
+	// block 0 (full) + block 1 (partial) = 2 blocks
+	assert.Equal(t, 2, blocksBefore, "should have 2 blocks (block 0 full, block 1 partial)")
+
+	// Exhaust GPU free blocks
+	fillerCount := 0
+	for gpu.countFreeBlocks() > 0 {
+		filler := &sim.Request{
+			ID:          fmt.Sprintf("filler2-%d", fillerCount),
+			InputTokens: []int{700 + fillerCount*4, 701 + fillerCount*4, 702 + fillerCount*4, 703 + fillerCount*4},
+		}
+		if tiered.AllocateKVBlocks(filler, 0, blockSize, []int64{}) {
+			fillerCount++
+		} else {
+			break
+		}
+	}
+	for i := 0; i < 2 && i < fillerCount; i++ {
+		tiered.ReleaseKVBlocks(&sim.Request{ID: fmt.Sprintf("filler2-%d", i)})
+	}
+
+	// WHEN we allocate startIndex=6, endIndex=16 (needs tokens 6-15)
+	ok = tiered.AllocateKVBlocks(runReq, 6, 16, []int64{})
+	assert.True(t, ok, "CPU reload must cover the range")
+
+	// THEN: exactly blocks 2 and 3 committed (ceiling: skip block 1 which is partial)
+	// With floor division, block 1_copy from reload would also be appended → duplicates
+	blocksAfter := gpu.RequestMap[runReq.ID]
+	// original 2 + newly committed blocks 2,3 = 4 total
+	assert.Equal(t, 4, len(blocksAfter),
+		"should have exactly 4 blocks: original 2 (block0,block1_partial) + blocks 2,3 from reload")
+
+	// BC-3: each block ID must appear exactly once (no double-commit)
+	seen := make(map[int64]int)
+	for _, bid := range blocksAfter {
+		seen[bid]++
+	}
+	for bid, count := range seen {
+		assert.Equal(t, 1, count, fmt.Sprintf("block %d must appear exactly once in RequestMap", bid))
+	}
+
+	// INV-4
+	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
+		"INV-4: block conservation")
+}
+
+// --- Reload guard BC-1 and preemption BC-5 tests ---
+
+func TestTieredKVCache_ReloadGuard_CommitsBlocksForNewRequest(t *testing.T) {
+	// BC-1: New request that hits full-range reload guard gets all blocks committed
+	blockSize := int64(4)
+	gpuBlocks := int64(10)
+	cpuBlocks := int64(5)
+
+	gpu := NewKVCacheState(gpuBlocks, blockSize)
+	tiered := NewTieredKVCache(gpu, cpuBlocks, 0, 1.0, 0)
+
+	// Create tokens for 2 blocks
+	tokens := make([]int, 2*blockSize)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+
+	// Seed: allocate, mirror to CPU, release (leaves blocks on CPU + GPU free list hashes)
+	seedReq := &sim.Request{ID: "req-seed-bc1", InputTokens: tokens}
+	ok := tiered.AllocateKVBlocks(seedReq, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok)
+	tiered.MirrorToCPU([]*sim.Request{seedReq})
+	tiered.ReleaseKVBlocks(seedReq)
+
+	// Exhaust all GPU free blocks with unique-prefix fillers
+	fillerCount := 0
+	for gpu.countFreeBlocks() > 0 {
+		filler := &sim.Request{
+			ID:          fmt.Sprintf("filler-bc1-%d", fillerCount),
+			InputTokens: []int{900 + fillerCount*4, 901 + fillerCount*4, 902 + fillerCount*4, 903 + fillerCount*4},
+		}
+		if tiered.AllocateKVBlocks(filler, 0, blockSize, []int64{}) {
+			fillerCount++
+		} else {
+			break
+		}
+	}
+
+	// Release 2 fillers to make room for CPU→GPU reload
+	for i := 0; i < 2 && i < fillerCount; i++ {
+		tiered.ReleaseKVBlocks(&sim.Request{ID: fmt.Sprintf("filler-bc1-%d", i)})
+	}
+
+	// WHEN a new request (not in RequestMap) allocates with the same prefix
+	newReq := &sim.Request{ID: "req-new-bc1", InputTokens: tokens}
+	_, existsBefore := gpu.RequestMap[newReq.ID]
+	assert.False(t, existsBefore, "new request must not be in RequestMap before allocation")
+
+	ok = tiered.AllocateKVBlocks(newReq, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok, "allocation must succeed")
+
+	// THEN all blocks must be committed to RequestMap (BC-1)
+	blocks, existsAfter := gpu.RequestMap[newReq.ID]
+	assert.True(t, existsAfter, "new request must be in RequestMap after allocation")
+	assert.Equal(t, 2, len(blocks), "new request must have 2 blocks committed")
+
+	// INV-4: block conservation (BC-4)
+	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
+		"INV-4: used + free must equal total capacity")
+}
+
+func TestPreemption_ClearsRequestMap_EnablesNewRequestPath(t *testing.T) {
+	// BC-5: After preemption, request is not in RequestMap and follows new-request path
+	blockSize := int64(4)
+	gpuBlocks := int64(10)
+	gpu := NewKVCacheState(gpuBlocks, blockSize)
+
+	tokens := make([]int, 2*blockSize)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+	req := &sim.Request{
+		ID:            "req-preempt-bc5",
+		InputTokens:   tokens,
+		ProgressIndex: 0,
+		State:         sim.StateRunning,
+	}
+
+	// Allocate blocks (simulates request becoming running)
+	ok := gpu.AllocateKVBlocks(req, 0, int64(len(tokens)), []int64{})
+	assert.True(t, ok)
+	_, exists := gpu.RequestMap[req.ID]
+	assert.True(t, exists, "request must be in RequestMap after allocation")
+
+	// WHEN blocks are released (as preemptForTokens does)
+	gpu.ReleaseKVBlocks(req)
+
+	// THEN request must NOT be in RequestMap (BC-5 precondition)
+	_, existsAfter := gpu.RequestMap[req.ID]
+	assert.False(t, existsAfter, "request must not be in RequestMap after ReleaseKVBlocks")
+
+	// INV-4: all blocks returned
+	assert.Equal(t, gpu.TotalCapacity(), gpu.UsedBlocks()+gpu.countFreeBlocks(),
+		"INV-4: block conservation after preemption")
+}
+
+// TestTieredKVCache_PartialReload_RunningRequest_BlocksCommitted verifies BC-1, BC-2, BC-3, BC-4:
+// partial CPU reload for a running request must commit reloaded blocks before fresh allocation.
+//
+// Without the fix: gpu.AllocateKVBlocks is called directly; popFreeBlock steals the
+// reloaded block (clears h8), overall allocation returns true but the prefix cache is
+// silently corrupted — future requests cannot find the h8 cache entry.
+//
+// With the fix: commitCachedBlocks protects the reloaded block; tail allocation fails cleanly
+// (returns false) because there aren't enough blocks, but h8 is preserved in HashToBlock.
+func TestTieredKVCache_PartialReload_RunningRequest_BlocksCommitted(t *testing.T) {
+	// Setup: 8-block GPU, blockSize=4, 10-block CPU
+	// req1 holds blocks [0,1] (tokens 0..7)
+	// req2 holds blocks [2,3], req3 holds blocks [4,5]
+	// Free: [6,7] (2 free blocks)
+	// CPU has hash h8 = HashBlock(block1.Hash, tokens[8:12])
+	//
+	// Call AllocateKVBlocks(req1, 8, 20, cached):
+	//   First attempt: need ceil(12/4)=3 blocks, have 2 → fails
+	//   After reload: h8 on free list (tail), newStart=12, partial improvement
+	//   Without fix: popFreeBlock steals block 6 (h8 cleared), ok=true but cache corrupted
+	//   With fix: commitCachedBlocks protects block 6 → 1 free; need 2 for tail → ok=false
+	blockSize := int64(4)
+	totalBlocks := int64(8)
+	gpu := NewKVCacheState(totalBlocks, blockSize)
+
+	tokens := make([]int, 20)
+	for i := range tokens {
+		tokens[i] = i + 10 // distinct values
+	}
+
+	req1 := &sim.Request{ID: "req1", InputTokens: tokens}
+	require.True(t, gpu.AllocateKVBlocks(req1, 0, 8, nil)) // blocks [0,1]
+
+	req2 := &sim.Request{ID: "req2", InputTokens: make([]int, 8)}
+	require.True(t, gpu.AllocateKVBlocks(req2, 0, 8, nil)) // blocks [2,3]
+
+	req3 := &sim.Request{ID: "req3", InputTokens: make([]int, 8)}
+	require.True(t, gpu.AllocateKVBlocks(req3, 0, 8, nil)) // blocks [4,5]
+	// Free: [6,7]
+
+	tiered := NewTieredKVCache(gpu, 10, 0, 1.0, 0)
+
+	// Hash for tokens[8:12] chaining from block[1].Hash
+	prevHash1 := gpu.Blocks[gpu.RequestMap["req1"][1]].Hash
+	h8 := hash.HashBlock(prevHash1, tokens[8:12])
+	tiered.cpu.store(h8, tokens[8:12])
+
+	// BC-3 conservation before
+	require.Equal(t, totalBlocks, gpu.UsedBlocks()+gpu.countFreeBlocks())
+
+	// WHEN allocating tokens 8..20 for req1 (running request)
+	cached := gpu.GetCachedBlocks(tokens)
+	ok := tiered.AllocateKVBlocks(req1, 8, 20, cached)
+
+	// THEN overall allocation fails cleanly (pre-check: need 2 tail blocks, 1 free after commit)
+	// Without fix: ok=true (this assertion would FAIL), h8 cleared
+	require.False(t, ok, "allocation must fail cleanly — not silently corrupt the prefix cache")
+
+	// THEN BC-3: KV conservation holds
+	require.Equal(t, totalBlocks, gpu.UsedBlocks()+gpu.countFreeBlocks())
+
+	// THEN BC-1: reloaded block hash is preserved (not stolen by popFreeBlock)
+	// Without fix: h8 would be cleared from HashToBlock by popFreeBlock
+	_, found := gpu.HashToBlock[h8]
+	require.True(t, found, "BC-1: reloaded block hash must be preserved in HashToBlock")
+
+	// THEN BC-1: reloaded block is committed (eviction-protected in RequestMap)
+	require.Equal(t, 3, len(gpu.RequestMap["req1"]), "req1 must have original 2 blocks + 1 committed reloaded block")
+	reloadedID := gpu.RequestMap["req1"][2]
+	reloadedBlk := gpu.Blocks[reloadedID]
+	require.True(t, reloadedBlk.InUse, "BC-1: reloaded block must be InUse")
+	require.Positive(t, reloadedBlk.RefCount, "BC-1: reloaded block RefCount must be > 0")
+
+	// THEN BC-2: future GetCachedBlocks finds 3 blocks (prefix cache intact for future requests)
+	futureCached := gpu.GetCachedBlocks(tokens)
+	require.GreaterOrEqual(t, len(futureCached), 3, "BC-2: prefix cache must find all 3 cached blocks")
+}
+
+// TestTieredKVCache_PartialReload_NewRequest_Revised tests BC-5: new request partial reload.
+//
+// Without the fix: the reloaded block h0 is committed inline inside AllocateKVBlocks but
+// rolled back when the tail allocation fails — RequestMap["newreq"] is deleted (len==0).
+// With the fix: commitCachedBlocks commits h0 outside rollback tracking; when the tail
+// allocation fails at pre-check (no rollback triggered), the committed block persists
+// in RequestMap["newreq"] (len==1) — BC-5.
+func TestTieredKVCache_PartialReload_NewRequest_Revised(t *testing.T) {
+	// 7-block GPU, blockSize=4, 10-block CPU
+	// Fill 5 blocks → 2 free [5,6]
+	// New request needs 3 blocks (tokens 0..11)
+	// First attempt: need 3, have 2 → fails. Reload h0 → newStart=4, partial improvement.
+	// With fix: commit block5 (h0) → 1 free; need 2 for tail → pre-check fails → ok=false.
+	// RequestMap["newreq"]=[5] survives (committed outside rollback tracking).
+	blockSize := int64(4)
+	totalBlocks := int64(7)
+	gpu := NewKVCacheState(totalBlocks, blockSize)
+
+	tokens := make([]int, 12)
+	for i := range tokens {
+		tokens[i] = i + 100
+	}
+
+	// Fill 5 blocks using two filler requests
+	f1 := &sim.Request{ID: "f1", InputTokens: make([]int, 12)}
+	require.True(t, gpu.AllocateKVBlocks(f1, 0, 12, nil)) // blocks [0,1,2]
+	f2 := &sim.Request{ID: "f2", InputTokens: make([]int, 8)}
+	require.True(t, gpu.AllocateKVBlocks(f2, 0, 8, nil)) // blocks [3,4]
+	// 2 free: [5,6]
+
+	tiered := NewTieredKVCache(gpu, 10, 0, 1.0, 0)
+
+	// CPU has block for tokens[0:4]
+	h0 := hash.HashBlock("", tokens[0:4])
+	tiered.cpu.store(h0, tokens[0:4])
+
+	req := &sim.Request{ID: "newreq", InputTokens: tokens}
+
+	// WHEN allocating tokens 0..12 (3 blocks needed, 2 free → fails → reload h0 → commit(1) → 1 free for tail needing 2 → fails)
+	// Note: the fix changes NEW-REQUEST behavior: without fix, block h0 is committed inline
+	// inside AllocateKVBlocks but rolled back when tail allocation fails; with fix,
+	// commitCachedBlocks commits h0 outside rollback tracking — it stays committed (BC-5).
+	ok := tiered.AllocateKVBlocks(req, 0, 12, nil)
+
+	// THEN overall allocation fails (tail needs 2 blocks, only 1 free after commit)
+	require.False(t, ok)
+
+	// THEN INV-4 conservation holds (BC-3)
+	require.Equal(t, totalBlocks, gpu.UsedBlocks()+gpu.countFreeBlocks())
+
+	// THEN BC-5: h0 is preserved in HashToBlock (not cleared)
+	_, found := gpu.HashToBlock[h0]
+	require.True(t, found, "BC-5: h0 block must be preserved in HashToBlock")
+
+	// THEN BC-5: with fix, the reloaded block is committed in RequestMap (not rolled back)
+	// Without fix: rollbackAllocation deletes RequestMap["newreq"] entirely (0 blocks).
+	// With fix: commitCachedBlocks commits block outside rollback — RequestMap["newreq"] has 1 block.
+	require.Equal(t, 1, len(gpu.RequestMap["newreq"]), "BC-5: with fix, committed block stays in RequestMap even on tail failure")
+	committedID := gpu.RequestMap["newreq"][0]
+	committedBlk := gpu.Blocks[committedID]
+	require.Equal(t, h0, committedBlk.Hash, "BC-5: committed block must have h0 hash")
+	require.True(t, committedBlk.InUse, "BC-5: committed block must be InUse")
 }

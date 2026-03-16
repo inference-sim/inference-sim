@@ -12,23 +12,42 @@ import (
 )
 
 const MaxTokenID = 128000 // Max token ID in request input/output
-// EventQueue implements heap.Interface and orders events by timestamp.
-// See canonical Golang example here: https://pkg.go.dev/container/heap#example-package-IntHeap
-type EventQueue []Event
 
-func (eq EventQueue) Len() int           { return len(eq) }
-func (eq EventQueue) Less(i, j int) bool { return eq[i].Timestamp() < eq[j].Timestamp() }
-func (eq EventQueue) Swap(i, j int)      { eq[i], eq[j] = eq[j], eq[i] }
+// eventEntry wraps an Event with a sequence ID for deterministic ordering.
+// The EventQueue orders by (Timestamp, Priority, seqID), matching the
+// cluster event queue's scheme. seqID breaks ties within same-type same-timestamp events.
+type eventEntry struct {
+	event Event
+	seqID int64
+}
+
+// EventQueue implements heap.Interface and orders events by (timestamp, priority, seqID).
+// This ensures deterministic same-tick event ordering (INV-6 improvement).
+type EventQueue []eventEntry
+
+func (eq EventQueue) Len() int { return len(eq) }
+
+func (eq EventQueue) Less(i, j int) bool {
+	if eq[i].event.Timestamp() != eq[j].event.Timestamp() {
+		return eq[i].event.Timestamp() < eq[j].event.Timestamp()
+	}
+	if eq[i].event.Priority() != eq[j].event.Priority() {
+		return eq[i].event.Priority() < eq[j].event.Priority()
+	}
+	return eq[i].seqID < eq[j].seqID
+}
+
+func (eq EventQueue) Swap(i, j int) { eq[i], eq[j] = eq[j], eq[i] }
 
 func (eq *EventQueue) Push(x any) {
-	*eq = append(*eq, x.(Event))
+	*eq = append(*eq, x.(eventEntry))
 }
 
 func (eq *EventQueue) Pop() any {
 	old := *eq
 	n := len(old)
 	item := old[n-1]
-	*eq = old[0 : n-1]
+	*eq = old[:n-1]
 	return item
 }
 
@@ -81,6 +100,11 @@ type Simulator struct {
 	priorityPolicy         PriorityPolicy
 	scheduler              InstanceScheduler
 	latencyModel           LatencyModel
+	seqCounter             int64 // monotonic counter for event queue seqID (deterministic ordering)
+	// OnRequestDone is an optional callback invoked when a request reaches a terminal
+	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
+	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
+	OnRequestDone func(req *Request, tick int64) []*Request
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
@@ -153,10 +177,11 @@ func (sim *Simulator) WorkloadRNG() *rand.Rand {
 	return sim.rng.ForSubsystem(SubsystemWorkload)
 }
 
-// Pushes an event (ArrivalEvent/StepEvent) into the simulator's EventQueue.
+// Schedule pushes an event into the simulator's EventQueue with a monotonic seqID.
 // Note, this has nothing to do with vLLM's scheduler.schedule().
 func (sim *Simulator) Schedule(ev Event) {
-	heap.Push(&sim.eventQueue, ev)
+	sim.seqCounter++
+	heap.Push(&sim.eventQueue, eventEntry{event: ev, seqID: sim.seqCounter})
 }
 
 // HasPendingEvents returns true if the EventQueue is non-empty.
@@ -167,7 +192,7 @@ func (sim *Simulator) HasPendingEvents() bool {
 // PeekNextEventTime returns the timestamp of the earliest pending event.
 // Caller MUST check HasPendingEvents() first. Panics on empty queue.
 func (sim *Simulator) PeekNextEventTime() int64 {
-	return sim.eventQueue[0].Timestamp()
+	return sim.eventQueue[0].event.Timestamp()
 }
 
 // ProcessNextEvent pops the earliest event, advances Clock, executes it, and returns it.
@@ -176,7 +201,8 @@ func (sim *Simulator) PeekNextEventTime() int64 {
 // Caller MUST check HasPendingEvents() first. Panics on empty queue.
 // Does NOT check horizon — caller is responsible.
 func (sim *Simulator) ProcessNextEvent() Event {
-	ev := heap.Pop(&sim.eventQueue).(Event)
+	entry := heap.Pop(&sim.eventQueue).(eventEntry)
+	ev := entry.event
 	sim.Clock = ev.Timestamp()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
@@ -265,10 +291,15 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // before entering the engine. The control plane never peeks at len(OutputTokens) —
 // respecting the oracle knowledge boundary (INV-9, #567).
 func (sim *Simulator) EnqueueRequest(r *Request) {
+	// Guard -1: Already timed out (race: TimeoutEvent fired before QueuedEvent).
+	// Request was timed out during the queueing delay (alpha overhead) before the server
+	// processed the input. TotalInputTokens is NOT counted for this path.
+	// INV-1 holds: request is counted in timed_out bucket.
+	if r.State == StateTimedOut {
+		return
+	}
+
 	// Auto-fill: if client didn't set a budget, cap at remaining context window.
-	// Mirrors vLLM input_processor.py:554: max_tokens = max_model_len - seq_len.
-	// Only fires when maxModelLen > 0 (unlimited mode has nothing to cap against)
-	// and input fits (Guard 1 handles the input >= maxModelLen rejection).
 	if r.MaxOutputLen == 0 && sim.maxModelLen > 0 && int64(len(r.InputTokens)) < sim.maxModelLen {
 		r.MaxOutputLen = int(sim.maxModelLen) - len(r.InputTokens)
 	}
@@ -279,28 +310,41 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 			r.ID, r.MaxOutputLen)
 		sim.Metrics.DroppedUnservable++
 		delete(sim.Metrics.Requests, r.ID)
+		// Callback for dropped requests (R1: don't silently discard, BC-17)
+		if sim.OnRequestDone != nil {
+			for _, next := range sim.OnRequestDone(r, sim.Clock) {
+				sim.InjectArrival(next)
+			}
+		}
 		return
 	}
 
-	// Guard 1: MaxModelLen check (BC-2, BC-3)
+	// Guard 1: MaxModelLen check
 	if sim.maxModelLen > 0 {
-		// vLLM uses >= for the input check (serving.py:1542): input that fills
-		// the entire context window leaves no room for even one output token.
 		if int64(len(r.InputTokens)) >= sim.maxModelLen {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, len(r.InputTokens), sim.maxModelLen)
 			sim.Metrics.DroppedUnservable++
 			delete(sim.Metrics.Requests, r.ID)
+			if sim.OnRequestDone != nil {
+				for _, next := range sim.OnRequestDone(r, sim.Clock) {
+					sim.InjectArrival(next)
+				}
+			}
 			return
 		}
 		if r.MaxOutputLen > 0 {
-			// Client declared a budget: check input + budget fits context window
 			totalSeqLen := int64(len(r.InputTokens)) + int64(r.MaxOutputLen)
 			if totalSeqLen > sim.maxModelLen {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, len(r.InputTokens), r.MaxOutputLen, sim.maxModelLen)
 				sim.Metrics.DroppedUnservable++
 				delete(sim.Metrics.Requests, r.ID)
+				if sim.OnRequestDone != nil {
+					for _, next := range sim.OnRequestDone(r, sim.Clock) {
+						sim.InjectArrival(next)
+					}
+				}
 				return
 			}
 		}
@@ -313,10 +357,37 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
 		sim.Metrics.DroppedUnservable++
 		delete(sim.Metrics.Requests, r.ID)
+		if sim.OnRequestDone != nil {
+			for _, next := range sim.OnRequestDone(r, sim.Clock) {
+				sim.InjectArrival(next)
+			}
+		}
 		return
 	}
-	sim.WaitQ.Enqueue(r)
+
+	// Input tokens counted BEFORE past-due check (request was received)
 	sim.Metrics.TotalInputTokens += len(r.InputTokens)
+
+	// Past-due guard (EC-2): check BEFORE enqueue to avoid enqueue-then-remove.
+	// Request is counted as timed_out, not dropped_unservable.
+	if r.Deadline > 0 && r.Deadline <= sim.Clock {
+		r.State = StateTimedOut
+		sim.Metrics.TimedOutRequests++
+		if sim.OnRequestDone != nil {
+			for _, next := range sim.OnRequestDone(r, sim.Clock) {
+				sim.InjectArrival(next)
+			}
+		}
+		return
+	}
+
+	sim.WaitQ.Enqueue(r)
+
+	// Schedule timeout event (after all guards + enqueue — BC-5)
+	// Skip scheduling when deadline > horizon (perf: avoids orphaned events)
+	if r.Deadline > 0 && r.Deadline <= sim.Horizon {
+		sim.Schedule(&TimeoutEvent{time: r.Deadline, Request: r})
+	}
 }
 
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
@@ -386,7 +457,15 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 
 // Step simulates a single vllm step(): batch scheduling, model execution, mirroring, and completion.
 // Phases: (1) schedule batch, (2) execute prefill/decode, (2.5) mirror to CPU, (3) process completions, (4) schedule next step.
+//
+// Orphaned StepEvent guard: when a TimeoutEvent empties the RunningBatch and nils stepEvent,
+// a previously-scheduled StepEvent may still be in the heap. If the INV-8 guard also scheduled
+// a new StepEvent, two StepEvents fire at the same tick. The second finds RunningBatch nil and
+// WaitQ empty (already processed by the first). This guard prevents the phantom double-step.
 func (sim *Simulator) Step(now int64) {
+	if sim.RunningBatch == nil && sim.WaitQ.Len() == 0 {
+		return // orphaned StepEvent — nothing to process
+	}
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
 	// Mirror in-use blocks to CPU tier (no-op for single-tier KVCacheState).
@@ -539,6 +618,13 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 
 			// Record completion metrics
 			sim.recordRequestCompletion(req)
+
+			// Invoke completion callback for session management
+			if sim.OnRequestDone != nil {
+				for _, next := range sim.OnRequestDone(req, now+currStepAdvance) {
+					sim.InjectArrival(next)
+				}
+			}
 		} else if sim.maxModelLen > 0 && req.ProgressIndex >= sim.maxModelLen-1 {
 			// BC-5: Proactive MaxModelLen cap — force-complete at boundary.
 			// After the proactive cap in FormBatch prevents scheduling tokens beyond
@@ -573,6 +659,13 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 				Request: req,
 			})
 			sim.recordRequestCompletion(req)
+
+			// Invoke completion callback for session management (length-capped)
+			if sim.OnRequestDone != nil {
+				for _, next := range sim.OnRequestDone(req, now+currStepAdvance) {
+					sim.InjectArrival(next)
+				}
+			}
 		} else {
 			remaining = append(remaining, req)
 		}

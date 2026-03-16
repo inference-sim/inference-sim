@@ -373,17 +373,28 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 	delete(kvc.RequestMap, reqID)
 }
 
-// commitCachedBlocks registers cached blocks for a request's first allocation.
+// commitCachedBlocks registers a slice of cached blocks into a request's RequestMap.
 // Increments RefCount, sets InUse, removes from free list, records cache hits,
-// and adds block IDs to RequestMap.
+// and appends block IDs to RequestMap.
 //
-// Caller must ensure reqID is not already in RequestMap (to avoid double-commit).
+// For new requests (reqID not yet in RequestMap), pass the full cached block slice.
+// For running requests (reqID already in RequestMap), pass only the uncovered range
+// (e.g., newCached[startBlock:endBlock]) to avoid double-counting RefCount for
+// blocks the request already owns.
 //
-// NOTE: This method does NOT track mutations for rollback. It is used only by
-// TieredKVCache when the entire requested range is cached after reload
-// (returning true immediately, so no rollback is needed). The inline equivalent
-// in AllocateKVBlocks feeds cachedMutations for rollback support — do not
-// replace that inline code with this method.
+// NOTE: This method does NOT track mutations for rollback. It is used by
+// TieredKVCache in two paths: (1) the full-reload path, which returns true
+// immediately after calling this (so no rollback is needed); (2) the
+// partial-improvement path, which calls gpu.AllocateKVBlocks afterwards.
+// In path (2), if AllocateKVBlocks fails at its pre-check, no rollback
+// fires and the committed state is stable. If the pre-check passes (which
+// can occur when partial-block spare capacity reduces the needed count),
+// the allocation succeeds and the committed blocks are part of the final
+// state. In either case the committed state is stable. Mid-loop failure
+// is impossible in BLIS's single-threaded DES: once the pre-check passes,
+// countFreeBlocks() cannot decrease before the allocation loop runs.
+// The inline equivalent in AllocateKVBlocks feeds cachedMutations for
+// rollback support — do not replace that inline code with this method.
 func (kvc *KVCacheState) commitCachedBlocks(reqID string, cachedBlocks []int64) {
 	for _, blockID := range cachedBlocks {
 		blk := kvc.Blocks[blockID]

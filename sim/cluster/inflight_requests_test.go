@@ -48,7 +48,7 @@ func TestClusterSimulator_InFlightRequests_VisibleInRoutingState(t *testing.T) {
 		}
 	}
 
-	cs := NewClusterSimulator(config, reqs)
+	cs := NewClusterSimulator(config, reqs, nil)
 
 	mustRun(t, cs)
 
@@ -116,7 +116,7 @@ func TestClusterSimulator_InFlightRequests_CounterfactualIncludesInFlight(t *tes
 		}
 	}
 
-	cs := NewClusterSimulator(config, reqs)
+	cs := NewClusterSimulator(config, reqs, nil)
 
 	mustRun(t, cs)
 
@@ -166,7 +166,7 @@ func TestClusterSimulator_InFlightRequests_DrainsToZeroAfterCompletion(t *testin
 	}
 	requests := testGenerateRequests(42, 10000000, 2.0/1e6, 6,
 		0, 16, 0, 16, 16, 8, 0, 8, 8)
-	cs := NewClusterSimulator(config, requests)
+	cs := NewClusterSimulator(config, requests, nil)
 
 	mustRun(t, cs)
 
@@ -209,7 +209,7 @@ func TestClusterSimulator_InFlightRequests_DroppedUnservable_Decrements(t *testi
 			State:        sim.StateQueued,
 		}
 	}
-	cs := NewClusterSimulator(config, reqs)
+	cs := NewClusterSimulator(config, reqs, nil)
 	mustRun(t, cs)
 
 	// All requests should be dropped as unservable
@@ -261,7 +261,7 @@ func TestClusterSimulator_InFlightRequests_CompletionBasedDecrement(t *testing.T
 			State:        sim.StateQueued,
 		}
 	}
-	cs := NewClusterSimulator(config, reqs)
+	cs := NewClusterSimulator(config, reqs, nil)
 	mustRun(t, cs)
 
 	// Key assertion: at least one routing decision sees InFlightRequests > QueueDepth + BatchSize

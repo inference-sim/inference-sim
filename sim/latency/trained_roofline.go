@@ -166,22 +166,22 @@ func (m *TrainedRooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
 		m.betaCoeffs[5]*batchSize +
 		m.betaCoeffs[6]
 
-	return max(1, int64(stepTime))
+	return max(1, clampToInt64(stepTime))
 }
 
 func (m *TrainedRooflineLatencyModel) QueueingTime(req *sim.Request) int64 {
 	// α₀ = API processing overhead (ARRIVED → QUEUED), constant per-request.
 	// Unlike other backends, this does NOT scale with input length.
-	return int64(m.alphaCoeffs[0])
+	return clampToInt64(m.alphaCoeffs[0])
 }
 
 func (m *TrainedRooflineLatencyModel) OutputTokenProcessingTime() int64 {
 	// α₂ = per-output-token detokenization cost (µs/token).
-	return int64(m.alphaCoeffs[2])
+	return clampToInt64(m.alphaCoeffs[2])
 }
 
 func (m *TrainedRooflineLatencyModel) PostDecodeFixedOverhead() int64 {
 	// α₁ = fixed per-request post-decode overhead (µs).
 	// Added to E2E in recordRequestCompletion, NOT to TTFT.
-	return int64(m.alphaCoeffs[1])
+	return clampToInt64(m.alphaCoeffs[1])
 }

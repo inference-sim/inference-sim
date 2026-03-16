@@ -1,13 +1,8 @@
 package workload
 
 import (
-	"encoding/csv"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"os"
-	"strconv"
 )
 
 // ConvertServeGen converts a ServeGen data directory (containing chunk-*-trace.csv
@@ -26,125 +21,6 @@ func ConvertServeGen(path string) (*WorkloadSpec, error) {
 		return nil, fmt.Errorf("loading ServeGen data from %s: %w", path, err)
 	}
 	spec.ServeGenData = nil // clear after loading; clients are now populated
-	return spec, nil
-}
-
-// ConvertCSVTrace converts a legacy CSV trace file into a v2 WorkloadSpec.
-// The CSV format has columns: arrival_time(s), ..., prefill_tokens(JSON), decode_tokens(JSON).
-// Returns a spec with a single constant-arrival client using averaged token lengths.
-//
-// Note: this is a lossy conversion. Per-request token counts and arrival times
-// are replaced by aggregate statistics (mean lengths, constant arrival rate).
-// For faithful trace replay, use the trace v2 format (YAML header + CSV data)
-// via LoadTraceV2 instead.
-//
-// horizon is in microseconds; 0 means no horizon truncation.
-func ConvertCSVTrace(path string, horizon int64) (*WorkloadSpec, error) {
-	if path == "" {
-		return nil, fmt.Errorf("CSV trace path must not be empty")
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("opening CSV trace %s: %w", path, err)
-	}
-	defer file.Close() //nolint:errcheck // read-only file
-
-	reader := csv.NewReader(file)
-
-	// Skip header row
-	if _, err := reader.Read(); err != nil {
-		return nil, fmt.Errorf("reading CSV header from %s: %w", path, err)
-	}
-
-	// Parse all rows to extract request data
-	type csvRequest struct {
-		arrivalTimeUs int64
-		inputLen      int
-		outputLen     int
-	}
-	var requests []csvRequest
-	rowIdx := 0
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("CSV %s row %d: %w", path, rowIdx, err)
-		}
-		if len(record) < 5 {
-			return nil, fmt.Errorf("CSV %s row %d: expected at least 5 columns, got %d", path, rowIdx, len(record))
-		}
-
-		arrivalFloat, err := strconv.ParseFloat(record[0], 64)
-		if err != nil {
-			return nil, fmt.Errorf("CSV %s row %d: invalid arrival_time %q: %w", path, rowIdx, record[0], err)
-		}
-		arrivalTimeUs := int64(arrivalFloat * 1e6)
-
-		if horizon > 0 && arrivalTimeUs > horizon {
-			break
-		}
-
-		var inputTokens []int
-		if err := json.Unmarshal([]byte(record[3]), &inputTokens); err != nil {
-			return nil, fmt.Errorf("CSV %s row %d: invalid prefill_tokens: %w", path, rowIdx, err)
-		}
-		var outputTokens []int
-		if err := json.Unmarshal([]byte(record[4]), &outputTokens); err != nil {
-			return nil, fmt.Errorf("CSV %s row %d: invalid decode_tokens: %w", path, rowIdx, err)
-		}
-
-		requests = append(requests, csvRequest{
-			arrivalTimeUs: arrivalTimeUs,
-			inputLen:      len(inputTokens),
-			outputLen:     len(outputTokens),
-		})
-		rowIdx++
-	}
-
-	if len(requests) == 0 {
-		return nil, fmt.Errorf("empty CSV: no data rows in %s", path)
-	}
-
-	// Compute average input/output lengths for the spec
-	var totalInput, totalOutput int
-	for _, r := range requests {
-		totalInput += r.inputLen
-		totalOutput += r.outputLen
-	}
-	avgInput := float64(totalInput) / float64(len(requests))
-	avgOutput := float64(totalOutput) / float64(len(requests))
-
-	// Compute aggregate rate from trace duration
-	durationUs := requests[len(requests)-1].arrivalTimeUs - requests[0].arrivalTimeUs
-	var ratePerSec float64
-	if durationUs > 0 {
-		ratePerSec = float64(len(requests)) / (float64(durationUs) / 1e6)
-	} else {
-		ratePerSec = float64(len(requests)) // all at time 0: treat as 1-second burst
-	}
-
-	spec := &WorkloadSpec{
-		Version:       "2",
-		NumRequests:   int64(len(requests)),
-		AggregateRate: ratePerSec,
-		Clients: []ClientSpec{
-			{
-				ID:           "csv-trace",
-				RateFraction: 1.0,
-				Arrival:      ArrivalSpec{Process: "constant"},
-				InputDist: DistSpec{
-					Type:   "constant",
-					Params: map[string]float64{"value": avgInput},
-				},
-				OutputDist: DistSpec{
-					Type:   "constant",
-					Params: map[string]float64{"value": avgOutput},
-				},
-			},
-		},
-	}
 	return spec, nil
 }
 

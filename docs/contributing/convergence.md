@@ -8,7 +8,7 @@ This document defines the convergence protocol used by all review gates across B
 - **Design process** (docs/contributing/design-process.md): Design Doc Review (8 perspectives)
 - **Macro-plan process** (docs/contributing/macro-planning.md): Macro Plan Review (8 perspectives)
 
-> **Executable implementation:** The `convergence-review` skill automates this protocol — dispatching perspectives, tallying findings independently, and enforcing the re-run gate. Invoke with `/convergence-review <gate-type> [artifact-path] [--model opus|sonnet|haiku]` (default: `haiku`).
+> **Executable implementation:** The `convergence-review` skill automates this protocol — dispatching perspectives, tallying findings independently, and enforcing the re-run gate via a persistent state file at `.claude/convergence-state/`. The skill automatically loops through Phase A (review/tally) and Phase B (fix/verify) until convergence or stall, with no manual re-invocation needed. Invoke with `/convergence-review <gate-type> [artifact-path] [--model opus|sonnet|haiku]` (default: `haiku`).
 
 ---
 

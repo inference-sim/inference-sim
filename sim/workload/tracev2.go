@@ -5,10 +5,12 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,28 +45,31 @@ type TraceNetworkConfig struct {
 
 // TraceRecord represents one row in a trace v2 CSV.
 type TraceRecord struct {
-	RequestID       int
-	ClientID        string
-	TenantID        string
-	SLOClass        string
-	SessionID       string
-	RoundIndex      int
-	PrefixGroup     string
-	Streaming       bool
-	InputTokens     int
-	OutputTokens    int
-	TextTokens      int
-	ImageTokens     int
-	AudioTokens     int
-	VideoTokens     int
-	ReasonRatio     float64
-	ArrivalTimeUs   int64
-	SendTimeUs      int64
-	FirstChunkTimeUs int64
-	LastChunkTimeUs  int64
-	NumChunks       int
-	Status          string // "ok", "error", "timeout"
-	ErrorMessage    string
+	RequestID         int
+	ClientID          string
+	TenantID          string
+	SLOClass          string
+	SessionID         string
+	RoundIndex        int
+	PrefixGroup       string
+	Streaming         bool
+	InputTokens       int
+	OutputTokens      int
+	TextTokens        int
+	ImageTokens       int
+	AudioTokens       int
+	VideoTokens       int
+	ReasonRatio       float64
+	Model             string // model name (e.g., "meta-llama/Llama-3.1-8B-Instruct"); empty = default model
+	DeadlineUs        int64  // absolute deadline timestamp in microseconds (same time origin as ArrivalTimeUs); 0 = no timeout
+	ServerInputTokens int    // server-reported prompt_tokens; 0 = not recorded (e.g., generated traces)
+	ArrivalTimeUs     int64
+	SendTimeUs        int64
+	FirstChunkTimeUs  int64
+	LastChunkTimeUs   int64
+	NumChunks         int
+	Status            string // "ok", "error", "timeout"
+	ErrorMessage      string
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -78,6 +83,7 @@ var traceV2Columns = []string{
 	"request_id", "client_id", "tenant_id", "slo_class", "session_id", "round_index",
 	"prefix_group", "streaming", "input_tokens", "output_tokens",
 	"text_tokens", "image_tokens", "audio_tokens", "video_tokens", "reason_ratio",
+	"model", "deadline_us", "server_input_tokens",
 	"arrival_time_us", "send_time_us", "first_chunk_time_us", "last_chunk_time_us",
 	"num_chunks", "status", "error_message",
 }
@@ -127,6 +133,9 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			strconv.Itoa(r.AudioTokens),
 			strconv.Itoa(r.VideoTokens),
 			strconv.FormatFloat(r.ReasonRatio, 'f', -1, 64),
+			r.Model,
+			strconv.FormatInt(r.DeadlineUs, 10),
+			strconv.Itoa(r.ServerInputTokens),
 			strconv.FormatInt(r.ArrivalTimeUs, 10),   // integer format
 			strconv.FormatInt(r.SendTimeUs, 10),       // integer format
 			strconv.FormatInt(r.FirstChunkTimeUs, 10), // integer format
@@ -180,7 +189,11 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
 		if len(row) < len(traceV2Columns) {
-			return nil, fmt.Errorf("CSV row has %d columns, expected %d", len(row), len(traceV2Columns))
+			hint := ""
+			if len(row) == 22 {
+				hint = " (22-column trace predates model/deadline_us/server_input_tokens fields; re-export to upgrade)"
+			}
+			return nil, fmt.Errorf("CSV row has %d columns, expected %d%s", len(row), len(traceV2Columns), hint)
 		}
 
 		r, err := parseTraceRecord(row)
@@ -210,82 +223,188 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[8], err)
 	}
+	// Negative token counts cause make([]int, negative) panics in LoadTraceV2Requests.
+	if inputTokens < 0 {
+		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
+	}
 	outputTokens, err := strconv.Atoi(row[9])
 	if err != nil {
 		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[9], err)
+	}
+	if outputTokens < 0 {
+		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
 	}
 	textTokens, err := strconv.Atoi(row[10])
 	if err != nil {
 		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[10], err)
 	}
+	if textTokens < 0 {
+		return nil, fmt.Errorf("parsing text_tokens: negative value %d not allowed", textTokens)
+	}
 	imageTokens, err := strconv.Atoi(row[11])
 	if err != nil {
 		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[11], err)
+	}
+	if imageTokens < 0 {
+		return nil, fmt.Errorf("parsing image_tokens: negative value %d not allowed", imageTokens)
 	}
 	audioTokens, err := strconv.Atoi(row[12])
 	if err != nil {
 		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[12], err)
 	}
+	if audioTokens < 0 {
+		return nil, fmt.Errorf("parsing audio_tokens: negative value %d not allowed", audioTokens)
+	}
 	videoTokens, err := strconv.Atoi(row[13])
 	if err != nil {
 		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[13], err)
+	}
+	if videoTokens < 0 {
+		return nil, fmt.Errorf("parsing video_tokens: negative value %d not allowed", videoTokens)
 	}
 	reasonRatio, err := strconv.ParseFloat(row[14], 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[14], err)
 	}
-	arrivalTimeUs, err := strconv.ParseInt(row[15], 10, 64)
+	if math.IsNaN(reasonRatio) || math.IsInf(reasonRatio, 0) || reasonRatio < 0 || reasonRatio > 1.0 {
+		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[14], reasonRatio)
+	}
+	deadlineUs, err := strconv.ParseInt(row[16], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[15], err)
+		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[16], err)
 	}
-	sendTimeUs, err := strconv.ParseInt(row[16], 10, 64)
+	if deadlineUs < 0 {
+		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
+	}
+	serverInputTokens, err := strconv.Atoi(row[17])
 	if err != nil {
-		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[16], err)
+		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[17], err)
 	}
-	firstChunkTimeUs, err := strconv.ParseInt(row[17], 10, 64)
+	if serverInputTokens < 0 {
+		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
+	}
+	// Arrival, send, chunk timestamps, num_chunks: columns 18-22 (shifted +3 by new columns at 15-17)
+	arrivalTimeUs, err := strconv.ParseInt(row[18], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[17], err)
+		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[18], err)
 	}
-	lastChunkTimeUs, err := strconv.ParseInt(row[18], 10, 64)
+	sendTimeUs, err := strconv.ParseInt(row[19], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[18], err)
+		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[19], err)
 	}
-	numChunks, err := strconv.Atoi(row[19])
+	firstChunkTimeUs, err := strconv.ParseInt(row[20], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[19], err)
+		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[20], err)
 	}
-
-	status := "ok"
-	errorMessage := ""
-	if len(row) > 20 {
-		status = row[20]
+	lastChunkTimeUs, err := strconv.ParseInt(row[21], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[21], err)
 	}
-	if len(row) > 21 {
-		errorMessage = strings.TrimSpace(row[21])
+	numChunks, err := strconv.Atoi(row[22])
+	if err != nil {
+		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[22], err)
 	}
-
+	if numChunks < 0 {
+		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
+	}
+	// Cross-field invariant: deadline must not precede arrival (would cause immediate
+	// timeout at enqueue before any processing). Zero deadline means "no timeout";
+	// zero arrival means "time origin" — both are exempt from this check.
+	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
+		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
+	}
 	return &TraceRecord{
-		RequestID:        requestID,
-		ClientID:         row[1],
-		TenantID:         row[2],
-		SLOClass:         row[3],
-		SessionID:        row[4],
-		RoundIndex:       roundIndex,
-		PrefixGroup:      row[6],
-		Streaming:        streaming,
-		InputTokens:      inputTokens,
-		OutputTokens:     outputTokens,
-		TextTokens:       textTokens,
-		ImageTokens:      imageTokens,
-		AudioTokens:      audioTokens,
-		VideoTokens:      videoTokens,
-		ReasonRatio:      reasonRatio,
-		ArrivalTimeUs:    arrivalTimeUs,
-		SendTimeUs:       sendTimeUs,
-		FirstChunkTimeUs: firstChunkTimeUs,
-		LastChunkTimeUs:  lastChunkTimeUs,
-		NumChunks:        numChunks,
-		Status:           status,
-		ErrorMessage:     errorMessage,
+		RequestID:         requestID,
+		ClientID:          row[1],
+		TenantID:          row[2],
+		SLOClass:          row[3],
+		SessionID:         row[4],
+		RoundIndex:        roundIndex,
+		PrefixGroup:       row[6],
+		Streaming:         streaming,
+		InputTokens:       inputTokens,
+		OutputTokens:      outputTokens,
+		TextTokens:        textTokens,
+		ImageTokens:       imageTokens,
+		AudioTokens:       audioTokens,
+		VideoTokens:       videoTokens,
+		ReasonRatio:       reasonRatio,
+		Model:             row[15],
+		DeadlineUs:        deadlineUs,
+		ServerInputTokens: serverInputTokens,
+		ArrivalTimeUs:     arrivalTimeUs,
+		SendTimeUs:        sendTimeUs,
+		FirstChunkTimeUs:  firstChunkTimeUs,
+		LastChunkTimeUs:   lastChunkTimeUs,
+		NumChunks:         numChunks,
+		Status:            row[23],
+		ErrorMessage:      strings.TrimSpace(row[24]),
 	}, nil
+}
+
+// RequestsToTraceRecords converts simulation requests to trace v2 records.
+// Uses array index as RequestID (request IDs may be non-numeric for session follow-ups).
+// OutputTokens records the pre-determined count (len(req.OutputTokens)) for all requests,
+// preserving workload input for replay fidelity across A/B policy comparisons.
+// LastChunkTimeUs is computed as ArrivalTime + FirstTokenTime + sum(ITL), which
+// represents the client-observable last-token delivery time. This deliberately
+// excludes PostDecodeFixedOverhead (server-side processing after final token)
+// and therefore differs from the E2E value stored in Metrics.RequestE2Es.
+// PrefixGroup is intentionally cleared because InputTokens already includes prefix
+// tokens baked in during generation; setting PrefixGroup would cause
+// LoadTraceV2Requests to double-prepend prefix on replay.
+func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
+	records := make([]TraceRecord, 0, len(requests))
+	for i, req := range requests {
+		status := "incomplete"
+		switch req.State {
+		case sim.StateCompleted:
+			status = "ok"
+		case sim.StateTimedOut:
+			status = "timeout"
+		}
+
+		// Absolute timing (ticks = microseconds)
+		// Both chunk timestamps guarded by TTFTSet to avoid producing
+		// LastChunkTimeUs = ArrivalTime for prefill-timeout requests.
+		// For StateRunning requests with TTFTSet=true, LastChunkTimeUs
+		// represents the last token generated so far (partial execution),
+		// not the final token. Status "incomplete" distinguishes these.
+		var firstChunkUs, lastChunkUs int64
+		if req.TTFTSet {
+			firstChunkUs = req.ArrivalTime + req.FirstTokenTime
+			e2e := req.FirstTokenTime
+			for _, itl := range req.ITL {
+				e2e += itl
+			}
+			lastChunkUs = req.ArrivalTime + e2e
+		}
+
+		records = append(records, TraceRecord{
+			RequestID:        i,
+			ClientID:         req.ClientID,
+			TenantID:         req.TenantID,
+			SLOClass:         req.SLOClass,
+			SessionID:        req.SessionID,
+			RoundIndex:       req.RoundIndex,
+			PrefixGroup:      "", // intentionally empty: InputTokens already includes prefix
+			Streaming:        req.Streaming,
+			InputTokens:      len(req.InputTokens),
+			OutputTokens:     len(req.OutputTokens), // pre-determined count for replay fidelity
+			TextTokens:       req.TextTokenCount,
+			ImageTokens:      req.ImageTokenCount,
+			AudioTokens:      req.AudioTokenCount,
+			VideoTokens:      req.VideoTokenCount,
+			ReasonRatio:      req.ReasonRatio,
+			Model:            req.Model,
+			DeadlineUs:       req.Deadline,
+			ArrivalTimeUs:    req.ArrivalTime,
+			SendTimeUs:       req.ArrivalTime, // no real network send in simulation
+			FirstChunkTimeUs: firstChunkUs,
+			LastChunkTimeUs:  lastChunkUs,
+			NumChunks:        0, // not tracked in simulation
+			Status:           status,
+		})
+	}
+	return records
 }

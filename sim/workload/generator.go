@@ -151,6 +151,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 						req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
 					}
 				}
+				// Set Deadline on all reasoning requests (not set in reasoning.go)
+				for _, req := range reasoningReqs {
+					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+				}
 				for _, req := range reasoningReqs {
 					if req.ArrivalTime >= horizon {
 						break // rounds are in chronological order
@@ -194,6 +198,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					for _, req := range reasoningReqs {
 						req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
 					}
+				}
+				// Set Deadline on all reasoning requests (not set in reasoning.go)
+				for _, req := range reasoningReqs {
+					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
 				}
 				// Count all generated rounds for perClientCap safety (R19)
 				clientReqCount += int64(len(reasoningReqs))
@@ -274,6 +282,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				ImageTokenCount:  imageCount,
 				AudioTokenCount:  audioCount,
 				VideoTokenCount:  videoCount,
+				Deadline:         computeDeadline(currentTime, client.Timeout, isClosedLoop(client)),
+				ClientID:         client.ID,
+				PrefixGroup:      client.PrefixGroup,
+				Streaming:        client.Streaming,
 			}
 			allRequests = append(allRequests, req)
 			clientReqCount++
@@ -298,6 +310,159 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	return allRequests, nil
 }
 
+// GeneratedWorkload holds the output of GenerateWorkload: requests plus session blueprints.
+type GeneratedWorkload struct {
+	Requests []*sim.Request
+	Sessions []SessionBlueprint // nil for non-session workloads
+}
+
+// GenerateWorkload creates requests and session blueprints from a WorkloadSpec.
+// For closed-loop reasoning/multi-turn clients, only round-0 requests are generated
+// and SessionBlueprints are created for the SessionManager to generate follow-up rounds.
+// For all other clients (including open-loop reasoning), identical to GenerateRequests.
+func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*GeneratedWorkload, error) {
+	// Generate all requests using existing logic.
+	// For closed-loop clients, this currently generates ALL rounds (open-loop style).
+	// We'll filter to round-0 only below and create blueprints for the rest.
+	reqs, err := GenerateRequests(spec, horizon, maxRequests)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if any client is closed-loop — if not, return early (no sessions)
+	hasClosedLoop := false
+	allClients := append([]ClientSpec{}, spec.Clients...)
+	if len(spec.Cohorts) > 0 {
+		allClients = append(allClients, ExpandCohorts(spec.Cohorts, spec.Seed)...)
+	}
+	for i := range allClients {
+		if isClosedLoop(&allClients[i]) {
+			hasClosedLoop = true
+			break
+		}
+	}
+	if !hasClosedLoop {
+		return &GeneratedWorkload{Requests: reqs}, nil
+	}
+
+	// For closed-loop clients: filter requests to round-0 only, create blueprints.
+	// Blueprint RNG uses a fixed offset from spec seed to avoid colliding with
+	// GenerateRequests' internal RNG draws. The offset (spec.Seed + 7919) is a
+	// prime shift that produces an independent stream.
+	blueprintRNG := rand.New(rand.NewSource(spec.Seed + 7919))
+
+	var sessions []SessionBlueprint
+	round0Only := make([]*sim.Request, 0, len(reqs))
+	closedLoopSessionIDs := make(map[string]bool)
+
+	// Track which sessions are claimed by which client (prevents conflation
+	// when two clients share the same TenantID/SLOClass/Model tuple).
+	claimedSessions := make(map[string]string) // sessionID → clientID
+
+	// Build session blueprints for closed-loop clients
+	for i := range allClients {
+		client := &allClients[i]
+		if !isClosedLoop(client) {
+			continue
+		}
+		if client.Reasoning == nil || client.Reasoning.MultiTurn == nil {
+			continue
+		}
+		mt := client.Reasoning.MultiTurn
+
+		// Create samplers for the blueprint
+		inputSampler, err := NewLengthSampler(client.InputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q input distribution for blueprint: %w", client.ID, err)
+		}
+		outputSampler, err := NewLengthSampler(client.OutputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q output distribution for blueprint: %w", client.ID, err)
+		}
+
+		// Get prefix tokens by extracting from the first round-0 request for this client.
+		// GenerateRequests already prepended the correct prefix — we extract it here
+		// to pass to the SessionBlueprint for follow-up round generation.
+		var prefixTokens []int
+		if client.PrefixGroup != "" && client.PrefixLength > 0 {
+			for _, req := range reqs {
+				if req.SessionID != "" && req.RoundIndex == 0 &&
+					req.TenantID == client.TenantID && req.SLOClass == client.SLOClass {
+					// The first PrefixLength tokens of InputTokens are the prefix
+					if len(req.InputTokens) >= client.PrefixLength {
+						prefixTokens = make([]int, client.PrefixLength)
+						copy(prefixTokens, req.InputTokens[:client.PrefixLength])
+					}
+					break
+				}
+			}
+		}
+
+		// Find all session IDs for this client in the generated requests.
+		// Match by (TenantID, SLOClass, Model) AND ensure each session is claimed
+		// by at most one client (prevents conflation when two clients share metadata).
+		sessionIDsForClient := make(map[string]bool)
+		for _, req := range reqs {
+			if req.SessionID != "" && req.RoundIndex == 0 {
+				if req.TenantID == client.TenantID && req.SLOClass == client.SLOClass && req.Model == client.Model {
+					// Only claim if not already claimed by a different client
+					if owner, claimed := claimedSessions[req.SessionID]; !claimed || owner == client.ID {
+						sessionIDsForClient[req.SessionID] = true
+						closedLoopSessionIDs[req.SessionID] = true
+						claimedSessions[req.SessionID] = client.ID
+					}
+				}
+			}
+		}
+
+		// Create a blueprint per session (R2: sort map keys for deterministic RNG draws)
+		sortedSessionIDs := make([]string, 0, len(sessionIDsForClient))
+		for sessID := range sessionIDsForClient {
+			sortedSessionIDs = append(sortedSessionIDs, sessID)
+		}
+		sort.Strings(sortedSessionIDs)
+		for _, sessID := range sortedSessionIDs {
+			sessSeed := blueprintRNG.Int63()
+			sessions = append(sessions, SessionBlueprint{
+				SessionID:     sessID,
+				ClientID:      client.ID,
+				MaxRounds:     mt.MaxRounds,
+				ContextGrowth: mt.ContextGrowth,
+				ThinkTimeUs:   mt.ThinkTimeUs,
+				Timeout:       client.Timeout,
+				Horizon:       horizon,
+				InputSampler:  inputSampler,
+				OutputSampler: outputSampler,
+				RNG:           rand.New(rand.NewSource(sessSeed)),
+				Prefix:        prefixTokens,
+				TenantID:      client.TenantID,
+				SLOClass:      client.SLOClass,
+				Model:         client.Model,
+			})
+		}
+	}
+
+	// Filter: keep round-0 only for closed-loop sessions, keep all for non-session requests
+	for _, req := range reqs {
+		if req.SessionID != "" && closedLoopSessionIDs[req.SessionID] {
+			// Closed-loop session: keep only round 0
+			if req.RoundIndex == 0 {
+				round0Only = append(round0Only, req)
+			}
+		} else {
+			// Non-session request or open-loop session: keep all
+			round0Only = append(round0Only, req)
+		}
+	}
+
+	// Re-assign sequential IDs (round-0 filter changed the count)
+	for i, req := range round0Only {
+		req.ID = fmt.Sprintf("request_%d", i)
+	}
+
+	return &GeneratedWorkload{Requests: round0Only, Sessions: sessions}, nil
+}
+
 // isInActiveWindow checks if a timestamp falls within any active window.
 func isInActiveWindow(timeUs int64, lifecycle *LifecycleSpec) bool {
 	for _, w := range lifecycle.Windows {
@@ -311,4 +476,37 @@ func isInActiveWindow(timeUs int64, lifecycle *LifecycleSpec) bool {
 // newRandFromSeed creates a new *rand.Rand from a seed (avoids importing math/rand in callers).
 func newRandFromSeed(seed int64) *rand.Rand {
 	return rand.New(rand.NewSource(seed))
+}
+
+// DefaultTimeoutUs is the default per-request timeout (300s = 5 minutes).
+// Matches cmd/observe.go HTTP client timeout for consistency between
+// simulated and real-backend modes.
+const DefaultTimeoutUs = 300_000_000
+
+// computeDeadline derives the absolute deadline tick for a request.
+// nil timeout + session client → default (300s). nil timeout + non-session → no deadline (0).
+// Explicit 0 → no deadline (0). Positive → arrival + timeout.
+// The isSessionClient flag determines whether the 300s default applies.
+// Non-session clients do NOT get a default timeout to preserve backward compatibility.
+func computeDeadline(arrivalTime int64, clientTimeout *int64, isSessionClient bool) int64 {
+	if clientTimeout == nil {
+		if isSessionClient {
+			return arrivalTime + DefaultTimeoutUs
+		}
+		return 0 // no timeout for non-session clients (backward compatible)
+	}
+	if *clientTimeout == 0 {
+		return 0 // explicit no timeout
+	}
+	return arrivalTime + *clientTimeout
+}
+
+// isClosedLoop returns whether a client should use closed-loop session generation.
+// Default: true for reasoning/multi-turn clients. Overridden by explicit ClosedLoop field.
+func isClosedLoop(client *ClientSpec) bool {
+	if client.ClosedLoop != nil {
+		return *client.ClosedLoop
+	}
+	// Default: true for reasoning/multi-turn clients
+	return client.Reasoning != nil && client.Reasoning.MultiTurn != nil
 }

@@ -15,6 +15,20 @@ import (
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
+// clampToInt64 converts a float64 to int64, clamping values that would cause
+// undefined behavior in Go's float64→int64 conversion. Specifically:
+//   - NaN → math.MaxInt64 (NaN comparisons are always false in IEEE 754)
+//   - Values >= float64(math.MaxInt64) → math.MaxInt64 (float64 rounds MaxInt64 up by 1)
+func clampToInt64(v float64) int64 {
+	// NaN must be checked explicitly: NaN > X and NaN >= X are both false.
+	// float64(math.MaxInt64) rounds to 9223372036854775808.0 (MaxInt64+1),
+	// so >= catches the exact boundary that would overflow int64().
+	if math.IsNaN(v) || v >= float64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(v)
+}
+
 // BlackboxLatencyModel estimates latency using trained alpha/beta regression coefficients.
 // Beta coefficients estimate step time: beta0 + beta1*cacheMissTokens + beta2*decodeTokens.
 // Alpha coefficients estimate overheads: alpha0 + alpha1*inputLen (queueing), alpha2 (output processing).
@@ -38,18 +52,18 @@ func (m *BlackboxLatencyModel) StepTime(batch []*sim.Request) int64 {
 	totalStepTime += m.betaCoeffs[0]
 	totalStepTime += m.betaCoeffs[1] * float64(totalCacheMissTokens)
 	totalStepTime += m.betaCoeffs[2] * float64(totalDecodeTokens)
-	return max(1, int64(totalStepTime))
+	return max(1, clampToInt64(totalStepTime))
 }
 
 func (m *BlackboxLatencyModel) QueueingTime(req *sim.Request) int64 {
 	var totalProcessingTime float64
 	totalProcessingTime += m.alphaCoeffs[0]
 	totalProcessingTime += m.alphaCoeffs[1] * float64(len(req.InputTokens))
-	return int64(totalProcessingTime)
+	return clampToInt64(totalProcessingTime)
 }
 
 func (m *BlackboxLatencyModel) OutputTokenProcessingTime() int64 {
-	return int64(m.alphaCoeffs[2])
+	return clampToInt64(m.alphaCoeffs[2])
 }
 
 func (m *BlackboxLatencyModel) PostDecodeFixedOverhead() int64 { return 0 }
@@ -88,11 +102,11 @@ func (m *RooflineLatencyModel) QueueingTime(req *sim.Request) int64 {
 	var totalProcessingTime float64
 	totalProcessingTime += m.alphaCoeffs[0]
 	totalProcessingTime += m.alphaCoeffs[1] * float64(len(req.InputTokens))
-	return int64(totalProcessingTime)
+	return clampToInt64(totalProcessingTime)
 }
 
 func (m *RooflineLatencyModel) OutputTokenProcessingTime() int64 {
-	return int64(m.alphaCoeffs[2])
+	return clampToInt64(m.alphaCoeffs[2])
 }
 
 func (m *RooflineLatencyModel) PostDecodeFixedOverhead() int64 { return 0 }

@@ -206,16 +206,48 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 		if newStart > startIndex {
 			if newStart >= endIndex {
 				// Entire requested range is cached after reload.
-				if _, exists := t.gpu.RequestMap[req.ID]; !exists {
-					blocksNeeded := (endIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
-					if blocksNeeded > int64(len(newCached)) {
-						blocksNeeded = int64(len(newCached))
+				// Commit the appropriate block range to RequestMap.
+				endBlock := min((endIndex+t.gpu.BlockSize()-1)/t.gpu.BlockSize(), int64(len(newCached)))
+				if _, exists := t.gpu.RequestMap[req.ID]; exists {
+					// Running request: commit only the uncovered range using ceiling
+					// division to skip the partially-filled last block.
+					// ceil(startIndex/blockSize) ensures we don't re-commit the block
+					// that is already (fully or partially) tracked in RequestMap —
+					// e.g., startIndex=6, blockSize=4: ceil=2 (correct), floor=1 (re-commits
+					// partial block 1, double-counting its RefCount).
+					// newCached[startBlock:endBlock] is guaranteed non-overlapping with
+					// existing RequestMap entries because commitCachedBlocks operates on
+					// reload-sourced blocks (different physical blocks than the running
+					// request's own partially-filled block).
+					startBlock := (startIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
+					if startBlock < endBlock {
+						t.gpu.commitCachedBlocks(req.ID, newCached[startBlock:endBlock])
 					}
-					t.gpu.commitCachedBlocks(req.ID, newCached[:blocksNeeded])
+				} else {
+					// New request: commit all cached blocks from block 0.
+					t.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
 				}
 				return true
 			}
-			// More cache hits after reload — retry with reduced allocation range
+			// Partial improvement: commit reloaded prefix blocks before allocating tail.
+			// Without this, reloaded blocks sit on the GPU free list with RefCount=0 and
+			// can be evicted by the subsequent popFreeBlock calls in AllocateKVBlocks,
+			// destroying their hashes (R1 silent data loss). Also fixes hash chain: fresh
+			// blocks' prevHash must chain from the last reloaded block, which only happens
+			// if those blocks are in RequestMap[req.ID] before the fresh allocation loop.
+			newStartBlock := newStart / t.gpu.BlockSize()
+			if _, exists := t.gpu.RequestMap[req.ID]; exists {
+				// Running request: skip blocks already in RequestMap (ceiling division
+				// avoids double-committing the partially-filled last block;
+				// same ceiling division as the full-range reload path above.
+				startBlock := (startIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
+				if startBlock < newStartBlock {
+					t.gpu.commitCachedBlocks(req.ID, newCached[startBlock:newStartBlock])
+				}
+			} else {
+				// New request: commit all reloaded blocks from block 0.
+				t.gpu.commitCachedBlocks(req.ID, newCached[:newStartBlock])
+			}
 			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
 		}
 		// No new cache hits — retry with original params (reload freed up space)

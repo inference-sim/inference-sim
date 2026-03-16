@@ -38,7 +38,7 @@ func TestClusterSimulator_HorizonTooSmall_WarnsAtStartup(t *testing.T) {
 
 	// WHEN the cluster simulator is constructed
 	output := captureLogOutput(func() {
-		NewClusterSimulator(config, workload)
+		NewClusterSimulator(config, workload, nil)
 	})
 
 	// THEN a warning about horizon being too small MUST be logged
@@ -57,7 +57,7 @@ func TestClusterSimulator_HorizonSufficient_NoWarning(t *testing.T) {
 
 	// WHEN the cluster simulator is constructed
 	output := captureLogOutput(func() {
-		NewClusterSimulator(config, workload)
+		NewClusterSimulator(config, workload, nil)
 	})
 
 	// THEN no horizon warning MUST be logged
@@ -73,7 +73,7 @@ func TestClusterSimulator_AllRejected_WarnsAfterRun(t *testing.T) {
 	config.AdmissionPolicy = "reject-all"
 	workload := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, workload)
+	cs := NewClusterSimulator(config, workload, nil)
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {
@@ -94,7 +94,7 @@ func TestClusterSimulator_ZeroCompletions_WarnsAfterRun(t *testing.T) {
 	config.Horizon = 1 // 1 tick — admits but can't finish
 	workload := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, workload)
+	cs := NewClusterSimulator(config, workload, nil)
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {
@@ -115,7 +115,7 @@ func TestClusterSimulator_NormalOperation_NoPostSimWarning(t *testing.T) {
 	config.Horizon = 1000000
 	workload := newTestRequests(2)
 
-	cs := NewClusterSimulator(config, workload)
+	cs := NewClusterSimulator(config, workload, nil)
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {

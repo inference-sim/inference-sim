@@ -241,5 +241,5 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	// 4. ROOFLINE: single crossover
 	totalMicros := math.Max(totalComputeS, totalMemoryS) * 1e6
 
-	return int64(math.Round(totalMicros))
+	return clampToInt64(totalMicros)
 }

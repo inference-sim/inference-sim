@@ -103,6 +103,7 @@ type RawMetrics struct {
 	RejectedRequests     int
 	DroppedUnservable    int
 	LengthCappedRequests int
+	TimedOutRequests     int
 
 	// KV cache metrics (PR12)
 	CacheHitRate    float64
@@ -121,6 +122,7 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 		RejectedRequests:     rejectedRequests,
 		DroppedUnservable:    aggregated.DroppedUnservable,
 		LengthCappedRequests: aggregated.LengthCappedRequests,
+		TimedOutRequests:     aggregated.TimedOutRequests,
 	}
 
 	// Latency distributions

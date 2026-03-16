@@ -10,14 +10,13 @@ This guide covers how to define the traffic patterns BLIS simulates — from sim
 
 ## Workload Modes
 
-BLIS supports four modes, in order of precedence:
+BLIS supports three modes, in order of precedence:
 
 | Mode | Flag | Best For |
 |------|------|----------|
 | **Workload-spec YAML** | `--workload-spec <path>` | Multi-client workloads with custom distributions |
 | **CLI distribution** | `--rate`, `--num-requests`, `--prompt-tokens` | Quick single-client experiments |
 | **Named presets** | `--workload chatbot` | Standard workload profiles |
-| **CSV traces** | `--workload traces` | Replaying recorded production traffic |
 
 ## Modeling Real Workloads
 

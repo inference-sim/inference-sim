@@ -19,7 +19,6 @@ go build -o blis main.go
 
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
-./blis convert csv-trace --file trace.csv
 ./blis convert servegen --path data/
 ./blis compose --from spec1.yaml --from spec2.yaml
 ```
@@ -89,7 +88,7 @@ During PR reviews, check all Antipattern Prevention rules (1-23) below. Pay spec
 
 Full details (verification strategies, evidence): see [`docs/contributing/standards/invariants.md`](docs/contributing/standards/invariants.md).
 
-- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
+- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
 - **INV-2 Request lifecycle**: Requests transition queued → running → completed; not completed before horizon remain in current state
 - **INV-3 Clock monotonicity**: Simulation clock never decreases
 - **INV-4 KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
@@ -165,7 +164,7 @@ Step-by-step guides for adding policies, scorers, latency model backends, KV tie
 ### Code Style
 
 - Use composition over inheritance (e.g., `InstanceSimulator` wraps existing `sim` components)
-- Timestamp-based event ordering via min-heap; cluster event queue uses `(timestamp, priority, seqID)` ordering; per-instance queues use timestamp-only; cluster-level instance ties broken by lowest instance index
+- Timestamp-based event ordering via min-heap; both cluster and per-instance event queues use `(timestamp, priority, seqID)` ordering; cluster-level instance ties broken by lowest instance index
 - Partitioned RNG per subsystem to isolate randomness
 
 ### CI/CD
@@ -202,9 +201,9 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --trace-output)
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
-│   ├── convert.go             # `blis convert` subcommands (servegen, csv-trace, preset, inference-perf)
+│   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
 │   ├── hfconfig.go            # HuggingFace config resolution chain (--latency-model auto-fetch, caching)
 │   └── default_config.go      # defaults.yaml loading (includes GetHFRepo for HF repo name mapping)
@@ -222,8 +221,8 @@ inference-sim/
 │   ├── latency_model.go       # LatencyModel interface (3 methods), NewLatencyModelFunc registration variable, MustNewLatencyModel nil-guarded wrapper
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
-│   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, RequestLeft)
-│   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted), Request lifecycle and state machine, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.), MaxOutputLen (client output budget for enqueue guard)
+│   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, RequestLeft, Timeout) with (timestamp, priority, seqID) ordering
+│   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted, StateTimedOut), Request lifecycle and state machine, Deadline field for client timeout, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.), MaxOutputLen (client output budget for enqueue guard)
 │   ├── kv_store.go            # KVStore interface (12 methods: +SetClock, +ConsumePendingTransferLatency, +MirrorToCPU), NewKVStoreFromConfig registration variable, MustNewKVCacheState/MustNewKVStoreFromConfig nil-guarded wrappers
 │   ├── batch.go               # Batch struct
 │   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (FCFS + chunked-prefill + preemption), NewBatchFormation() factory
@@ -269,10 +268,11 @@ inference-sim/
 │   ├── calibrate.go           # CalibrationReport, PrepareCalibrationPairs, MAPE/Pearson r
 │   ├── multimodal.go          # Multimodal token generation (text+image+audio+video)
 │   ├── reasoning.go           # Reasoning multi-turn with context accumulation
+│   ├── session.go             # SessionManager: closed-loop session tracking, follow-up round generation on completion
 │   ├── network.go             # Client-perspective latency (RTT + bandwidth)
 │   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
 │   ├── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
-│   ├── convert.go             # Format converters: ConvertServeGen, ConvertCSVTrace, ConvertPreset, ComposeSpecs
+│   ├── convert.go             # Format converters: ConvertServeGen, ConvertPreset, ComposeSpecs
 │   ├── cohort.go              # CohortSpec expansion: diurnal, spike, drain patterns → lifecycle windows
 │   └── synthesis.go           # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
 ├── sim/trace/                 # Decision trace recording (PR13)
@@ -382,7 +382,7 @@ Note: Admission and Routing steps apply in cluster mode (multi-instance). Single
 ### Standards (what rules apply)
 
 - `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
-- `docs/contributing/standards/invariants.md`: **9 system invariants** (INV-1 through INV-9) — with verification strategies
+- `docs/contributing/standards/invariants.md`: **11 system invariants** (INV-1 through INV-11) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/contributing/convergence.md`), findings classification
 

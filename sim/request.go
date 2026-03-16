@@ -23,6 +23,7 @@ const (
 	StateQueued    RequestState = "queued"
 	StateRunning   RequestState = "running"
 	StateCompleted RequestState = "completed"
+	StateTimedOut  RequestState = "timed_out"
 )
 
 type Request struct {
@@ -58,6 +59,9 @@ type Request struct {
 	AudioTokenCount int     // Audio input tokens
 	VideoTokenCount int     // Video input tokens
 	ReasonRatio     float64 // reason_tokens / total_output_tokens (part of OutputTokens, not additional)
+	ClientID        string  // Client identifier from workload spec (empty for legacy/test workloads)
+	PrefixGroup     string  // Shared prefix group name (empty for no prefix)
+	Streaming       bool    // Whether client expects streaming response
 
 	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
 	// Request is used outside the cluster routing pipeline (e.g., direct sim.Simulator tests).
@@ -66,6 +70,10 @@ type Request struct {
 	// Model tag for multi-model routing (empty = default model).
 	// Phase 0: carried through the pipeline but not read by any routing policy.
 	Model string
+
+	// Client timeout: absolute tick by which request must complete (0 = no timeout).
+	// Computed during workload generation as ArrivalTime + timeout.
+	Deadline int64
 }
 
 // This method returns a human-readable string representation of a Request.
