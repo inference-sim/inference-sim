@@ -4,16 +4,16 @@ metadata:
   name: github-runner
   namespace: blis
   labels:
-    app: blis-github-runner
+    app: github-runner
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: blis-github-runner
+      app: github-runner
   template:
     metadata:
       labels:
-        app: blis-github-runner
+        app: github-runner
     spec:
       initContainers:
       - name: copy-runner
