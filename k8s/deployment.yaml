@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-runner
+  namespace: blis
+  labels:
+    app: github-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-runner
+  template:
+    metadata:
+      labels:
+        app: github-runner
+    spec:
+      initContainers:
+      - name: copy-runner
+        image: myoung34/github-runner:latest
+        imagePullPolicy: IfNotPresent
+        command: ["sh", "-c"]
+        args:
+        - |
+          # Copy only /actions-runner contents (not the full 2.4GB image).
+          # Use cp --no-preserve to avoid permission/timestamp errors under OpenShift's forced UID.
+          cp -r --no-preserve=mode,ownership /actions-runner/bin /runner/bin
+          cp -r --no-preserve=mode,ownership /actions-runner/externals /runner/externals
+          cp --no-preserve=mode,ownership /actions-runner/env.sh /runner/env.sh
+          cp --no-preserve=mode,ownership /actions-runner/run.sh /runner/run.sh
+          cp --no-preserve=mode,ownership /actions-runner/run-helper.sh.template /runner/run-helper.sh.template
+          cp --no-preserve=mode,ownership /actions-runner/safe_sleep.sh /runner/safe_sleep.sh
+          cp --no-preserve=mode,ownership /actions-runner/config.sh /runner/config.sh
+          # Copy entrypoint to writable location
+          cp --no-preserve=mode,ownership /entrypoint.sh /runner/entrypoint.sh
+          # Restore execute bits on all binaries (cp --no-preserve strips them)
+          find /runner/bin -type f -exec chmod +x {} +
+          find /runner/externals -type f -name "node" -exec chmod +x {} +
+          find /runner/externals -type f -name "*.sh" -exec chmod +x {} +
+          chmod +x /runner/entrypoint.sh /runner/*.sh
+          # Patch entrypoint: replace the RUN_AS_ROOT block that checks UID with a pass-through.
+          # The original checks if UID==0 when RUN_AS_ROOT=true and errors out on OpenShift's forced UID.
+          # Replace: the entire RUN_AS_ROOT=true block just execs the command directly.
+          python3 -c "
+          import re
+          with open('/runner/entrypoint.sh') as f:
+              s = f.read()
+          # Replace the gosu fallback with direct exec
+          s = s.replace('exec gosu runner \"\$@\"', 'exec \"\$@\"')
+          # Remove the UID mismatch error block
+          s = re.sub(r'echo \"ERROR: RUN_AS_ROOT.*?exit 1', ':', flags=re.DOTALL, string=s)
+          with open('/runner/entrypoint.sh','w') as f:
+              f.write(s)
+          "
+          echo "Init done: $(du -sh /runner | cut -f1)"
+        volumeMounts:
+        - name: runner-home
+          mountPath: /runner
+      containers:
+      - name: runner
+        image: myoung34/github-runner:latest
+        imagePullPolicy: IfNotPresent
+        workingDir: /runner
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          cd /runner
+
+          # Only register if not already configured (skip on container restarts)
+          if [ ! -f .runner ]; then
+            REG_TOKEN=$(curl -s -X POST \
+              -H "Authorization: token ${ACCESS_TOKEN}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/inference-sim/inference-sim/actions/runners/registration-token" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+            ./config.sh --unattended \
+              --url "${REPO_URL}" \
+              --token "${REG_TOKEN}" \
+              --name "k8s-blis" \
+              --labels "${LABELS}" \
+              --work "${RUNNER_WORKDIR}" \
+              --replace
+          fi
+
+          # Run the listener (stays alive, picks up jobs continuously)
+          exec ./bin/Runner.Listener run
+        env:
+        - name: REPO_URL
+          value: "https://github.com/inference-sim/inference-sim"
+        - name: ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-runner-secret
+              key: github_pat
+        - name: RUNNER_NAME_PREFIX
+          value: "k8s"
+        - name: RUNNER_SCOPE
+          value: "repo"
+        - name: LABELS
+          value: "self-hosted"
+        - name: EPHEMERAL
+          value: "false"
+        - name: RUNNER_WORKDIR
+          value: "/tmp/runner/_work"
+        - name: RUN_AS_ROOT
+          value: "true"
+        - name: HOME
+          value: "/runner"
+        volumeMounts:
+        - name: runner-home
+          mountPath: /runner
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+      volumes:
+      - name: runner-home
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      restartPolicy: Always

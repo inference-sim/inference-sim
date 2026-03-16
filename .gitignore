@@ -63,7 +63,7 @@ training
 
 # Hypothesis experiment output (generated, reproducible from run.sh)
 hypotheses/*/output/
-*.yaml
+hypotheses/*.yaml
 !examples/*.yaml
 !defaults.yaml
 !hypotheses/**/*.yaml
