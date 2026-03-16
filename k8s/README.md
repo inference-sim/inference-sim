@@ -1,66 +1,30 @@
 # GitHub Actions Self-Hosted Runner on Kubernetes
 
-Deploys a persistent GitHub Actions self-hosted runner as a Kubernetes pod for the Claude Code workflow. No cluster-admin access required.
+Deploys a persistent GitHub Actions self-hosted runner as a Kubernetes pod. Includes OpenShift compatibility (non-root UID, read-only image layers).
 
-## What This Does
+## Configuration
 
-The deployment runs a self-hosted GitHub Actions runner inside Kubernetes that picks up `@claude` mentions on issues and PRs. When a user comments `@claude` on an issue or PR, GitHub Actions triggers the Claude workflow (`.github/workflows/claude.yml`), which is routed to this runner via the `self-hosted` label.
+Edit `deployment.yaml` env vars to point at your repo:
 
-The runner registers once with a fixed name (`k8s-blis`) and **stays alive** to handle jobs continuously. If the pod restarts (crash, node eviction, etc.), it detects the existing registration and re-registers with `--replace` without creating duplicates.
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `GITHUB_REPO` | `inference-sim/inference-sim` | `owner/repo` for registration and repo URL |
+| `RUNNER_NAME` | `k8s-runner` | Name shown in GitHub runner settings |
+| `LABELS` | `self-hosted` | Runner labels for workflow targeting |
+| `namespace` | `blis` | Kubernetes namespace (also update in kubectl commands below) |
+| Deployment `name` | `github-runner` | Pod/deployment name — replace all occurrences of `github-runner` in the YAML |
 
-### Behavior with `@claude` mentions
+The GitHub PAT must have **Administration (Read & Write)** scope on the target repo.
 
-- **Single mention**: The runner picks up the job, executes Claude, then returns to listening for the next job.
-- **Multiple mentions in quick succession**: Jobs run sequentially on a single replica. Additional jobs queue in GitHub Actions until the current job finishes.
-- **Concurrent users**: Each `@claude` mention triggers a separate workflow run. With 1 replica, jobs run one at a time. Scale replicas for concurrency (see [Scaling](#scaling)).
+## Setup
 
-### OpenShift compatibility
+### 1. Create a GitHub PAT
 
-The deployment includes workarounds for OpenShift's security constraints (forced non-root UID, read-only image layers). An init container copies runner binaries into a writable volume and patches the entrypoint to bypass UID checks.
-
-## Prerequisites
-
-- `kubectl` configured with access to your cluster
-- A GitHub fine-grained PAT with Administration (Read & Write) scope
-- Permission to create Deployments and Secrets in your namespace
-- The cluster must have network access to your LiteLLM proxy endpoint
-
-## Creating a GitHub PAT
-
-The runner needs a Personal Access Token to register itself with GitHub. This PAT is **only** used for runner registration -- it does not access PRs, issues, or secrets (those use the built-in `GITHUB_TOKEN` provided by GitHub Actions).
-
-### Option A: Fine-grained PAT (recommended)
-
-1. Go to https://github.com/settings/tokens?type=beta (or Organization Settings > Developer settings > Fine-grained tokens)
-2. Click **Generate new token**
-3. Set:
-   - **Token name**: `k8s-runner-registration`
-   - **Repository access**: Select **Only select repositories** and choose `inference-sim/inference-sim`
-   - **Permissions**:
-     - **Administration**: Read and Write (required for runner registration)
-   - No other permissions are needed
-4. Click **Generate token** and save the value
-
-### Option B: Classic PAT
-
-1. Go to https://github.com/settings/tokens
-2. Click **Generate new token (classic)**
-3. Set:
-   - **Note**: `k8s-runner-registration`
-   - **Scopes**: `repo` (minimum required scope for classic PATs)
-4. Click **Generate token** and save the value
-
-Store the token in an environment variable (e.g., in `.bash_profile`):
+Fine-grained PAT (recommended): Settings > Developer settings > Fine-grained tokens > select your repo > Administration: Read and Write.
 
 ```bash
 export GITHUBACTIONS_RUNNER_TOKEN="ghp_your_token_here"
 ```
-
-## Setup
-
-### 1. Create the namespace
-
-Follow instructions to create a namespace in the internal `etevpc-int-shared-us-east` cluster.
 
 ### 2. Create the secret
 
@@ -70,7 +34,7 @@ kubectl create secret generic github-runner-secret \
   --from-literal=github_pat=$GITHUBACTIONS_RUNNER_TOKEN
 ```
 
-### 3. Deploy the runner
+### 3. Deploy
 
 ```bash
 kubectl apply -f k8s/deployment.yaml
@@ -79,33 +43,18 @@ kubectl apply -f k8s/deployment.yaml
 ### 4. Verify
 
 ```bash
-kubectl -n blis get pods
 kubectl -n blis logs -f deploy/github-runner
 ```
 
-You should see output ending with:
-
-```
-Current runner version: '2.332.0'
-Listening for Jobs
-```
-
-Confirm the runner appears at:
-https://github.com/inference-sim/inference-sim/settings/actions/runners
+You should see `Listening for Jobs`. Confirm at `https://github.com/<owner>/<repo>/settings/actions/runners`.
 
 ## Scaling
-
-With 1 replica (default), `@claude` jobs run one at a time. Increase replicas to handle concurrent jobs:
 
 ```bash
 kubectl -n blis scale deployment github-runner --replicas=3
 ```
 
-Each replica is an independent persistent runner. With 3 replicas, up to 3 `@claude` jobs can run simultaneously.
-
 ## Updating the PAT
-
-If the PAT expires or is rotated:
 
 ```bash
 kubectl -n blis delete secret github-runner-secret
@@ -120,3 +69,7 @@ kubectl -n blis delete pod -l app=github-runner --force
 kubectl delete -f k8s/deployment.yaml
 kubectl delete -f k8s/secret.yaml
 ```
+
+## How It Works
+
+An **init container** copies runner binaries from the `myoung34/github-runner` image into a writable `emptyDir` volume and patches the entrypoint for OpenShift compatibility (non-root UID). The **main container** fetches a registration token via the GitHub API, registers once with `--replace`, then runs `Runner.Listener` to pick up jobs continuously. On pod restart, it detects the existing `.runner` config and skips re-registration.
