@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -270,5 +271,71 @@ func TestExtractSimResults_DeterminismInvariant(t *testing.T) {
 		if r1[i].RequestID <= r1[i-1].RequestID {
 			t.Errorf("results not sorted: index %d (%d) <= index %d (%d)", i, r1[i].RequestID, i-1, r1[i-1].RequestID)
 		}
+	}
+}
+
+func TestReplayCmd_TraceHeaderFlag_Registered(t *testing.T) {
+	// GIVEN the replay command
+	// WHEN checking for --trace-header flag
+	f := replayCmd.Flags().Lookup("trace-header")
+	// THEN it must exist with empty default (BC-6: missing = fail fast)
+	if f == nil {
+		t.Error("replayCmd missing --trace-header flag")
+	}
+	if f != nil && f.DefValue != "" {
+		t.Errorf("--trace-header default must be empty (required), got %q", f.DefValue)
+	}
+}
+
+func TestReplayCmd_TraceDataFlag_Registered(t *testing.T) {
+	f := replayCmd.Flags().Lookup("trace-data")
+	if f == nil {
+		t.Error("replayCmd missing --trace-data flag")
+	}
+	if f != nil && f.DefValue != "" {
+		t.Errorf("--trace-data default must be empty (required), got %q", f.DefValue)
+	}
+}
+
+func TestComputeReplayHorizon_TwiceMaxArrival(t *testing.T) {
+	// BC-3: horizon = max(arrivals) * 2
+	requests := []*sim.Request{
+		{ArrivalTime: 1000},
+		{ArrivalTime: 5000},
+		{ArrivalTime: 3000},
+	}
+	horizon := computeReplayHorizon(requests)
+	if horizon != 10000 {
+		t.Errorf("want horizon 10000 (5000*2), got %d", horizon)
+	}
+}
+
+func TestComputeReplayHorizon_EmptyRequests_ReturnsMaxInt64(t *testing.T) {
+	// Edge case: no requests → MaxInt64 fallback
+	horizon := computeReplayHorizon([]*sim.Request{})
+	if horizon != math.MaxInt64 {
+		t.Errorf("want math.MaxInt64 for empty requests, got %d", horizon)
+	}
+}
+
+func TestComputeReplayHorizon_AllArrivalsAtZero_ReturnsFixedBuffer(t *testing.T) {
+	// Edge case: all requests at t=0 (common for synthetic traces)
+	// Must NOT return math.MaxInt64 (would hang simulation)
+	requests := []*sim.Request{{ArrivalTime: 0}, {ArrivalTime: 0}}
+	horizon := computeReplayHorizon(requests)
+	if horizon <= 0 || horizon == math.MaxInt64 {
+		t.Errorf("want a finite positive buffer for all-zero arrivals, got %d", horizon)
+	}
+}
+
+func TestComputeReplayHorizon_LargeArrival_NoOverflow(t *testing.T) {
+	// Overflow guard: maxArrival > MaxInt64/2 must not wrap to negative
+	requests := []*sim.Request{{ArrivalTime: math.MaxInt64/2 + 1}}
+	horizon := computeReplayHorizon(requests)
+	if horizon <= 0 {
+		t.Errorf("want positive horizon for large arrival (no overflow), got %d", horizon)
+	}
+	if horizon != math.MaxInt64 {
+		t.Errorf("want MaxInt64 as overflow fallback, got %d", horizon)
 	}
 }

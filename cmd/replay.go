@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"math"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,7 +23,52 @@ var replayCmd = &cobra.Command{
 	Use:   "replay",
 	Short: "Replay a TraceV2 file through the discrete-event simulator",
 	Run: func(cmd *cobra.Command, args []string) {
-		// TODO: implement in Task 4-5
+		level, err := logrus.ParseLevel(logLevel)
+		if err != nil {
+			logrus.Fatalf("Invalid log level: %s", logLevel)
+		}
+		logrus.SetLevel(level)
+
+		// Validate required inputs (BC-6, BC-8)
+		if traceHeaderPath == "" {
+			logrus.Fatalf("--trace-header is required")
+		}
+		if traceDataPath == "" {
+			logrus.Fatalf("--trace-data is required")
+		}
+		if _, statErr := os.Stat(traceHeaderPath); os.IsNotExist(statErr) {
+			logrus.Fatalf("--trace-header file not found: %s", traceHeaderPath)
+		}
+		if _, statErr := os.Stat(traceDataPath); os.IsNotExist(statErr) {
+			logrus.Fatalf("--trace-data file not found: %s", traceDataPath)
+		}
+		if model == "" {
+			logrus.Fatalf("LLM name not provided. Exiting simulation.")
+		}
+
+		// Load trace (BC-1)
+		traceData, err := workload.LoadTraceV2(traceHeaderPath, traceDataPath)
+		if err != nil {
+			logrus.Fatalf("Failed to load trace: %v", err)
+		}
+		logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
+
+		// Build requests from trace (BC-1)
+		requests, err := workload.LoadTraceV2Requests(traceData, seed)
+		if err != nil {
+			logrus.Fatalf("Failed to build requests from trace: %v", err)
+		}
+		logrus.Infof("Built %d requests for replay", len(requests))
+
+		// Compute horizon (BC-3)
+		replayHorizon := computeReplayHorizon(requests)
+		if cmd.Flags().Changed("horizon") {
+			replayHorizon = simulationHorizon
+		}
+		logrus.Infof("Simulation horizon: %d ticks", replayHorizon)
+
+		// [Config resolution and cluster run — Task 5]
+		_ = replayHorizon // used in Task 5
 	},
 }
 
@@ -30,6 +77,33 @@ func init() {
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	rootCmd.AddCommand(replayCmd)
+}
+
+// computeReplayHorizon returns the simulation horizon for a trace replay.
+// - Empty slice → math.MaxInt64 (no requests, horizon doesn't matter)
+// - maxArrival > MaxInt64/2 → math.MaxInt64 (overflow guard for 2×)
+// - maxArrival <= 0 (all at t=0) → 600,000,000 µs (10 min buffer; MaxInt64 would hang)
+// - Otherwise → maxArrival * 2 (generous buffer for last request to complete)
+func computeReplayHorizon(requests []*sim.Request) int64 {
+	if len(requests) == 0 {
+		return math.MaxInt64
+	}
+	var maxArrival int64
+	for _, req := range requests {
+		if req.ArrivalTime > maxArrival {
+			maxArrival = req.ArrivalTime
+		}
+	}
+	// Overflow guard: if 2× would overflow int64, use MaxInt64 directly.
+	if maxArrival > math.MaxInt64/2 {
+		return math.MaxInt64
+	}
+	if maxArrival <= 0 {
+		// All requests at t=0: use a fixed generous buffer of 10 minutes (600,000,000 µs)
+		// rather than MaxInt64 (which would cause the simulation to run indefinitely).
+		return 600_000_000
+	}
+	return maxArrival * 2
 }
 
 // extractSimResults converts Metrics to a slice of workload.SimResult for calibrate consumption.
