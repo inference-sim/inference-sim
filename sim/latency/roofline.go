@@ -197,6 +197,12 @@ func calculateMemoryAccessBytes(
 // Compute uses phase-specific MFU: prefill tokens at MfuPrefill, decode at MfuDecode,
 // reflecting that prefill is compute-bound (large GEMMs) while decode is memory-bound.
 //
+// Known approximation: MFU values were calibrated against FP16 (bfloat16) hardware
+// measurements. For quantized models (e.g. W4A16), reduced weight bandwidth shifts the
+// roofline crossover — decode steps that were memory-bound under FP16 may become
+// compute-bound, producing a conservative (pessimistic) estimate. This is safe for
+// capacity planning but may overestimate step time for memory-bound quantized workloads.
+//
 // Precondition: ValidateRooflineConfig(modelConfig, hwConfig) must return nil
 // and tp must be > 0. Callers must validate before first call.
 func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, stepConfig StepConfig, tp int) int64 {
