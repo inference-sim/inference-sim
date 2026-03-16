@@ -69,3 +69,7 @@ kubectl -n blis delete pod -l app=github-runner --force
 kubectl delete -f k8s/deployment.yaml
 kubectl delete -f k8s/secret.yaml
 ```
+
+## How It Works
+
+An **init container** copies runner binaries from the `myoung34/github-runner` image into a writable `emptyDir` volume and patches the entrypoint for OpenShift compatibility (non-root UID). The **main container** fetches a registration token via the GitHub API, registers once with `--replace`, then runs `Runner.Listener` to pick up jobs continuously. On pod restart, it detects the existing `.runner` config and skips re-registration.
