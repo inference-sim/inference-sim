@@ -36,8 +36,15 @@ YOUR FOCUS: Motivation & Scoping (design guidelines Section 2.1)
 - Has each component been evaluated against the six model scoping criteria (Banks et al., design guidelines Section 2.1)?
 - What is the simplest version that answers the same questions?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DD-2: DES Foundations
@@ -56,8 +63,15 @@ YOUR FOCUS: DES Foundations (design guidelines Section 2)
 - Are new randomness sources declared with PartitionedRNG subsystem names? (Section 2.5)
 - Is verification strategy specified (which invariants)? Is validation strategy specified (against what real data)? (Section 2.4)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DD-3: Module Contract Completeness
@@ -76,8 +90,15 @@ YOUR FOCUS: Module Contract Completeness (design guidelines Section 4.3)
 - Are behavioral contracts testable? Could someone write a GIVEN/WHEN/THEN test from the contract alone?
 - Are failure modes specified? What happens under overload, misconfiguration, degenerate inputs?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DD-4: Extension Framework Fit
@@ -95,8 +116,15 @@ YOUR FOCUS: Extension Framework Fit (design guidelines Section 5)
 - Is parallel development path described?
 - Does the design maintain separation of concerns? (sim/ is a library, cluster/ sees global state, instances see only local data)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DD-5: Prohibited Content
@@ -116,8 +144,15 @@ Design docs describe WHAT modules do and WHY, never HOW they're implemented. Che
 
 Apply the staleness test (Section 3.1): Would any content in this doc mislead if the implementation changes?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DD-6: Trade-off Quality
@@ -135,8 +170,15 @@ YOUR FOCUS: Trade-off Quality
 - Are real-system correspondences documented? Does each building block map to real components (llm-d, vLLM, SGLang)?
 - Are there assumptions about LLM inference serving that this design gets wrong?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DD-7: Validation Strategy
@@ -156,8 +198,15 @@ YOUR FOCUS: Validation Strategy
 - What would falsify the design's assumptions? How would you detect it?
 - Does the design enable future validation against real vLLM/SGLang deployments?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DD-8: Staleness Resistance
@@ -174,8 +223,15 @@ YOUR FOCUS: Staleness Resistance (design guidelines Section 3.1)
 - Are multi-instance coordination implications considered? (Routing, load balancing, stale snapshot propagation)
 - Does the design handle horizontal scaling and instance heterogeneity?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ---
@@ -197,8 +253,15 @@ YOUR FOCUS: Objective Clarity (macro-plan template Phase 1)
 - Are analysis questions specific enough to drive component selection?
 - For each "Simplified" entry, is the lost real-system behavior documented?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### MP-2: Concept Model Quality
@@ -216,8 +279,15 @@ YOUR FOCUS: Concept Model Quality (macro-plan template Phase 2)
 - Is the state ownership map complete (exactly one owner per mutable state)?
 - Are behavioral contracts testable with mocks? (Enables parallel development)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### MP-3: PR Decomposition
@@ -237,8 +307,15 @@ YOUR FOCUS: PR Decomposition Quality (macro-plan template Phase 6)
 - Are parallelizable workstreams identified? Is safe parallelism maximized?
 - Are interface freeze points marked? (Which PRs unlock parallel development?)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### MP-4: Abstraction Level
@@ -257,8 +334,15 @@ The macro plan describes WHAT to build and in WHAT ORDER, not HOW. Check:
 - Are module contracts using the template from Phase 2, not Go structs?
 - Check the concept model (<80 lines?). Does it use behavioral descriptions or implementation details?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### MP-5: Risk Register
@@ -281,8 +365,15 @@ MANDATORY VALIDATION RULE: If cost-of-being-wrong >= 3 PRs, validation is MANDAT
 - Are success criteria measurable (not "looks good")?
 - Are abort plans specified (what changes if validation fails)?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### MP-6: Cross-Cutting Infrastructure
@@ -303,8 +394,15 @@ Verify Phase 5 is complete:
 
 Check that NO item is left as "address when needed." Every cross-cutting concern must be assigned to a specific PR.
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### MP-7: Extension Friction
@@ -322,8 +420,15 @@ YOUR FOCUS: Extension Friction (design guidelines Section 4.5)
 - Does each building block map correctly to real inference system components? (llm-d, vLLM, SGLang)
 - Are batching, KV cache, scheduling, and routing semantics accurate?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### MP-8: Design Bug Prevention
@@ -350,6 +455,13 @@ DES-specific:
 - Golden without invariant prevented (companion invariant tests for golden tests)?
 - Exogenous/endogenous mixing prevented (separable workload inputs)?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```

@@ -32,8 +32,15 @@ YOUR FOCUS: Hypothesis Quality
 - Is it correctly classified (family, VV&UQ category, type)?
 - Is the hypothesis conceptual (not code-grounded)? It should NOT reference specific files/lines.
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DR-2: Experiment Design Rigor (ED-1–ED-6)
@@ -53,8 +60,15 @@ Check compliance with each standard:
 - ED-5: Is the experiment reproducible from run.sh alone?
 - ED-6: If reusing calibration from a prior experiment, is the config diff documented?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DR-3: Parameter Calibration
@@ -77,8 +91,15 @@ YOUR FOCUS: Parameter Calibration
 - Is the operating point correct? (near saturation for queueing effects, sub-saturation for baseline)
 - Is --total-kv-blocks appropriate? (CLI default is overridden by defaults.yaml to 132139 for llama/H100/TP=2)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DR-4: Control Completeness
@@ -95,8 +116,15 @@ YOUR FOCUS: Control Completeness
 - Is the baseline configuration clearly defined?
 - Are there confounding variables that could explain results without the proposed mechanism?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### DR-5: DES and Domain Fit
@@ -117,8 +145,15 @@ YOUR FOCUS: DES and Domain Fit
 - Is the experiment duration sufficient? Request count adequate for the intended effect?
 - Is the warmup period adequate (or does the experiment need cold-start behavior)?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ---
@@ -141,8 +176,15 @@ For every regex or field extraction in analyze.py, verify the pattern matches ac
 - SILENT DEFAULTS: verify that when a regex matches nothing, analyze.py warns to stderr rather than silently defaulting to 0
 - Check parse_blis_output() from hypotheses/lib/analyze_helpers.py — does it extract what this experiment needs? (NOTE: it does NOT extract dropped_unservable)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### CR-2: CLI Flag Correctness
@@ -161,8 +203,15 @@ For every flag in run.sh:
 - Verify --stderr comes BEFORE other flags in blis_run calls (harness checks position 3 only)
 - Cross-reference blis_run timeout tiers: TIMEOUT_QUICK (<100 req), TIMEOUT_STANDARD (100-500), TIMEOUT_EXTENDED (>500)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### CR-3: YAML Field Validation
@@ -180,8 +229,15 @@ If the experiment uses workload-spec YAML files:
 - KnownFields(true) will reject typos at runtime — catching them now saves a failed run
 - If YAML is generated inline in run.sh (heredoc), verify the heredoc syntax is correct
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### CR-4: Config Diff (ED-6)
@@ -201,8 +257,15 @@ YOUR FOCUS: Config Diff (ED-6)
 
 If no prior experiment is referenced, report "N/A — no referenced experiment" and move on.
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### CR-5: Seed and Determinism
@@ -221,8 +284,15 @@ YOUR FOCUS: Seed and Determinism
 - Verify run.sh sources hypotheses/lib/harness.sh
 - Verify every blis_run call has a timeout tier (no bare $BINARY run calls)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ---
@@ -242,8 +312,15 @@ YOUR FOCUS: Code Verification
 - Are there off-by-one errors in line citations? (Acceptable: +/-2 lines. Flag: >2 lines off.)
 - Does the mechanism explanation match what the code does, not just what it's named?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### FR-2: Experiment Designer
@@ -261,8 +338,15 @@ YOUR FOCUS: Experiment Design Compliance
 - Cross-reference every CLI flag in run.sh against cmd/root.go flag definitions
 - Cross-reference every YAML field name against sim/workload/spec.go struct tags
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### FR-3: Statistical Rigor
@@ -280,8 +364,15 @@ YOUR FOCUS: Statistical Rigor
 - Effect size thresholds: >20% for dominance (ALL seeds), <5% for equivalence (ALL seeds), <10% in any seed = inconclusive
 - Is the status classification consistent with the data?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### FR-4: Control Experiment Auditor
@@ -299,8 +390,15 @@ YOUR FOCUS: Control Experiment Audit
 - Do control results confirm or refute the proposed mechanism?
 - Do Evidence Quality table entries reflect the current round (not stale from prior rounds)?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### FR-5: Standards Compliance
@@ -318,8 +416,15 @@ YOUR FOCUS: Standards Compliance
 - Does the Standards Audit check against docs/contributing/standards/rules.md and docs/contributing/standards/invariants.md?
 - Are any new rules or invariants warranted?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### FR-6: Substance and Logic
@@ -336,8 +441,15 @@ YOUR FOCUS: Substance and Logic
 - Are alternative explanations adequately considered?
 - Does the analyzer verdict in analyze.py match the FINDINGS.md status? If not, is the discrepancy acknowledged?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### FR-7: DES Mechanism Expert
@@ -356,8 +468,15 @@ YOUR FOCUS: DES Mechanism Analysis
 - Could the result be a simulation artifact rather than modeled system behavior?
 - Are routing snapshot freshness assumptions correct? (INV-7: InFlightRequests = synchronous, QueueDepth/BatchSize/KVUtilization = Periodic when interval>0)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### FR-8: Reproducibility and Robustness
@@ -375,8 +494,15 @@ YOUR FOCUS: Reproducibility and Robustness
 - Does run.sh build the binary (setup_experiment call)?
 - Are there any non-deterministic dependencies (timestamps, system load, file ordering)?
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### FR-9: Cross-Experiment Consistency
@@ -396,8 +522,15 @@ YOUR FOCUS: Cross-Experiment Consistency
   - H20: ParetoLogNormal produces FEWER preemptions than Gaussian (median drives KV pressure)
   - H23: Uniform workloads eliminate policy differentiation even under overload
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
 
 ### FR-10: User Guidance and Actionability
@@ -414,6 +547,13 @@ YOUR FOCUS: User Guidance and Actionability
 - Are findings classified correctly in the Findings Classification table?
 - Is the promotion assessment complete? (Should any confirmed findings become Go tests or formal invariants?)
 
-Rate each finding as CRITICAL, IMPORTANT, or SUGGESTION.
-Report: (1) numbered list of findings with severity, (2) total CRITICAL count, (3) total IMPORTANT count.
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
 ```
