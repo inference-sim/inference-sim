@@ -47,13 +47,13 @@ type CalibrationConfig struct {
 }
 
 // SimResult holds per-request sim output for calibration matching.
-// All latencies are server-side (no network), in microseconds.
+// TTFT and E2E are server-side latencies in microseconds (simulation ticks).
 type SimResult struct {
-	RequestID    int
-	TTFT         float64 // Server-side: FirstTokenTime - ArrivalTime (µs)
-	E2E          float64 // Server-side: CompletionTime - ArrivalTime (µs)
-	InputTokens  int
-	OutputTokens int
+	RequestID    int     `json:"request_id"`
+	TTFT         float64 `json:"ttft_us"` // server-side TTFT in microseconds
+	E2E          float64 `json:"e2e_us"`  // server-side E2E in microseconds
+	InputTokens  int     `json:"input_tokens"`
+	OutputTokens int     `json:"output_tokens"`
 }
 
 // LatencyPair holds matched real-vs-sim latency vectors.
