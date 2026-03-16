@@ -34,7 +34,7 @@ The skill accepts an optional `--model` flag that selects the review model. Vali
 | `h-code` | File | `run.sh` + `analyze.py` at `$1` | Change-recommending | Build/test/lint | 5 | `.claude/skills/hypothesis-experiment/review-prompts.md` Section B |
 | `h-findings` | File | FINDINGS.md at `$1` | Change-recommending | Link check | 10 | `.claude/skills/hypothesis-experiment/review-prompts.md` Section C |
 
-When a new gate type is added, it MUST be added to this table with all 7 columns declared.
+When a new gate type is added, it MUST be added to this table with all 7 columns declared. When new perspective prompts are added for any gate, they MUST use the standard citation-requirement footer (see any existing prompt in `pr-prompts.md`, `design-prompts.md`, or `review-prompts.md` for the exact format).
 
 **Anchor categories:**
 - **File-anchored:** Artifact is a file path. State keyed by `<gate>-<basename-without-extension>`. Commit anchor: `git rev-parse HEAD` (full SHA).
