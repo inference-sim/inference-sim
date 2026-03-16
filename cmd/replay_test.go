@@ -3,8 +3,12 @@ package cmd
 import (
 	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -337,5 +341,219 @@ func TestComputeReplayHorizon_LargeArrival_NoOverflow(t *testing.T) {
 	}
 	if horizon != math.MaxInt64 {
 		t.Errorf("want MaxInt64 as overflow fallback, got %d", horizon)
+	}
+}
+
+func TestReplayCmd_EndToEnd_BlackboxMode(t *testing.T) {
+	// NOTE: This test mutates package-level flag vars shared with runCmd.
+	// Do NOT use t.Parallel() — concurrent execution would create data races.
+
+	// GIVEN a minimal TraceV2 header + data in a temp directory
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	resultsFilePath := filepath.Join(dir, "results.json")
+
+	// Write header YAML
+	header := `trace_version: 2
+time_unit: microseconds
+mode: generated
+warm_up_requests: 0
+`
+	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write data CSV: 3 requests with arrival times spread over 200ms
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message\n" +
+		"0,c1,t1,standard,s1,0,,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,\n" +
+		"1,c1,t1,standard,s1,0,,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,\n" +
+		"2,c1,t1,standard,s1,0,,false,10,5,10,0,0,0,0.0,,0,0,200000,200000,0,0,0,ok,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Save and restore package-level flag vars (this test mutates them)
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxRunningReqs
+	origMaxSched := maxScheduledTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origPriority := priorityPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxRunningReqs = origMaxRunning
+		maxScheduledTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		priorityPolicy = origPriority
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+	}()
+
+	// Library-level BC-1 verification: trace loads correctly and requests are correct
+	trace, err := workload.LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("LoadTraceV2 failed: %v", err)
+	}
+	if len(trace.Records) != 3 {
+		t.Errorf("want 3 records, got %d", len(trace.Records))
+	}
+
+	reqs, err := workload.LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatalf("LoadTraceV2Requests failed: %v", err)
+	}
+	if len(reqs) != 3 {
+		t.Fatalf("want 3 requests, got %d (BC-1)", len(reqs))
+	}
+
+	// Verify token counts preserved (BC-1)
+	for _, req := range reqs {
+		if len(req.InputTokens) != 10 {
+			t.Errorf("want 10 input tokens, got %d", len(req.InputTokens))
+		}
+		if len(req.OutputTokens) != 5 {
+			t.Errorf("want 5 output tokens, got %d", len(req.OutputTokens))
+		}
+	}
+
+	// Verify horizon computation (BC-3): max arrival = 200000, horizon = 400000
+	horizon := computeReplayHorizon(reqs)
+	if horizon != 400000 {
+		t.Errorf("want horizon 400000 (200000*2), got %d (BC-3)", horizon)
+	}
+
+	// Full simulation via replayCmd.Run (BC-2: verifies SimResult JSON output)
+	model = "test-model"
+	latencyModelBackend = "blackbox"
+	betaCoeffs = []float64{10000.0, 1.0, 1.0} // ~10ms prefill base
+	alphaCoeffs = []float64{0.0, 0.0, 0.0}
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxRunningReqs = 64
+	maxScheduledTokens = 2048
+	numInstances = 1
+	seed = 42
+	resultsPath = resultsFilePath
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	priorityPolicy = "constant"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+
+	// Create a cobra command with Changed() tracking for the flags the Run closure checks.
+	// This is required so cmd.Flags().Changed("latency-model") etc. return correct values.
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model",
+		"--latency-model", "blackbox",
+		"--beta-coeffs", "10000.0,1.0,1.0",
+		"--alpha-coeffs", "0.0,0.0,0.0",
+		"--total-kv-blocks", "1000",
+		"--trace-header", headerPath,
+		"--trace-data", dataPath,
+		"--results-path", resultsFilePath,
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	// Run the replay command
+	replayCmd.Run(testCmd, nil)
+
+	// Verify SimResult file was written (BC-2)
+	data, err := os.ReadFile(resultsFilePath)
+	if err != nil {
+		t.Fatalf("results file not written: %v", err)
+	}
+	var simResults []workload.SimResult
+	if err := json.Unmarshal(data, &simResults); err != nil {
+		t.Fatalf("failed to parse SimResult JSON: %v\ncontent: %s", err, data)
+	}
+
+	// All 3 requests should have completed (BC-1: fidelity)
+	if len(simResults) != 3 {
+		t.Errorf("want 3 SimResult entries (one per trace record), got %d", len(simResults))
+	}
+
+	// Verify integer request IDs 0, 1, 2 in sorted order (BC-2)
+	for i, sr := range simResults {
+		if sr.RequestID != i {
+			t.Errorf("simResults[%d].RequestID = %d, want %d", i, sr.RequestID, i)
+		}
+		if sr.TTFT <= 0 {
+			t.Errorf("simResults[%d].TTFT must be > 0, got %f", i, sr.TTFT)
+		}
+		if sr.E2E <= 0 {
+			t.Errorf("simResults[%d].E2E must be > 0, got %f", i, sr.E2E)
+		}
+		if sr.InputTokens != 10 {
+			t.Errorf("simResults[%d].InputTokens = %d, want 10", i, sr.InputTokens)
+		}
+		if sr.OutputTokens != 5 {
+			t.Errorf("simResults[%d].OutputTokens = %d, want 5", i, sr.OutputTokens)
+		}
+	}
+
+	// TTFT must be in microseconds (not ms): 10ms prefill base = ~10,000 µs
+	if len(simResults) > 0 && simResults[0].TTFT < 1000 {
+		t.Errorf("TTFT %f looks like it's in ms (expected ~10000 µs for 10ms prefill base)", simResults[0].TTFT)
 	}
 }
