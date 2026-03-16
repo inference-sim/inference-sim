@@ -283,6 +283,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				AudioTokenCount:  audioCount,
 				VideoTokenCount:  videoCount,
 				Deadline:         computeDeadline(currentTime, client.Timeout, isClosedLoop(client)),
+				ClientID:         client.ID,
+				PrefixGroup:      client.PrefixGroup,
+				Streaming:        client.Streaming,
 			}
 			allRequests = append(allRequests, req)
 			clientReqCount++

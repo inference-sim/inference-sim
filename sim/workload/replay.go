@@ -61,6 +61,9 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			ReasonRatio:      rec.ReasonRatio,
 			Model:            rec.Model,      // BC-3, BC-6: model identity from trace; empty = default model
 			Deadline:         rec.DeadlineUs, // BC-4, BC-5: client timeout; 0 = no timeout
+			ClientID:         rec.ClientID,
+			PrefixGroup:      rec.PrefixGroup,
+			Streaming:        rec.Streaming,
 			// ServerInputTokens: not propagated to sim.Request (calibration-only field, BC-7)
 		}
 		requests = append(requests, req)

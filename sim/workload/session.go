@@ -176,6 +176,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 		TenantID:     bp.TenantID,
 		SLOClass:     bp.SLOClass,
 		Model:        bp.Model,
+		ClientID:     bp.ClientID,
 		SessionID:    bp.SessionID,
 		RoundIndex:   sess.currentRound,
 	}
