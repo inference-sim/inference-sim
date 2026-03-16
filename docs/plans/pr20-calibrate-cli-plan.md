@@ -38,7 +38,7 @@ It matches records by `RequestID`, applies optional network normalization, and w
 
 **Adjacent blocks:** `sim/workload/calibrate.go` (library, already merged), `sim/workload/tracev2.go` (`LoadTraceV2`, `TraceRecord`), `cmd/root.go` (cobra root for `AddCommand`).
 
-**DEVIATION flags:** None. Issue spec matches current codebase exactly. `SimResult.TTFT`/`E2E` use `ttft_us`/`e2e_us` JSON tags (verified in `sim/workload/calibrate.go:52-53`). `LoadTraceV2` exists at `sim/workload/tracev2.go:155`. `PrepareCalibrationPairs`, `BuildCalibrationReport` exist at `sim/workload/calibrate.go:72,161`.
+**DEVIATION flags:** None. Issue spec matches current codebase exactly. `SimResult.TTFT`/`E2E` use `ttft_us`/`e2e_us` JSON tags (verified in `sim/workload/calibrate.go:51-57`). `LoadTraceV2` exists at `sim/workload/tracev2.go:155`. `PrepareCalibrationPairs`, `BuildCalibrationReport` exist at `sim/workload/calibrate.go:78,209`.
 
 ---
 
@@ -1197,7 +1197,7 @@ Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
 **Antipattern rules:**
 - [x] R1: No silent errors — all error paths call `logrus.Fatalf`
 - [x] R2: N/A — no map iteration over floats
-- [x] R3: `--warmup-requests` validated (sentinel `-1` or ≥0); `--network-rtt-us` validated (sentinel `-1` or ≥0; negative explicit values rejected with Fatalf, BC-11); `--network-bandwidth-mbps` validated by library (0 = disabled)
+- [x] R3: `--warmup-requests` validated (sentinel `-1` or ≥0; negative non-sentinel silently treated as 0 by library — physically equivalent); `--network-rtt-us` validated (sentinel `-1` or ≥0; negative explicit values rejected with Fatalf, BC-11); `--network-bandwidth-mbps`: negative values silently disabled by library (≤0 → 0); physically meaningless and result is correct
 - [x] R4: No new struct fields
 - [x] R5: N/A — no resource allocation loops
 - [x] R6: No `logrus.Fatalf` in `sim/` — only in `cmd/`
@@ -1389,14 +1389,15 @@ func init() {
 
 ### File: `cmd/calibrate_test.go`
 
-**Purpose:** 4 behavioral tests exercising the core contracts of the `blis calibrate` command. All tests use `t.TempDir()` + synthetic fixture files and save/restore package-level flag vars.
+**Purpose:** 6 behavioral tests exercising the core contracts of the `blis calibrate` command. All tests use `t.TempDir()` + synthetic fixture files and save/restore package-level flag vars.
 
 **Complete test file:** See Task 1-4 code blocks above. The complete assembled file has these tests:
 1. `TestCalibrateCmd_Flags_Registered` (Task 1)
 2. `TestCalibrateCmd_BasicReport_WritesMatchedPairs` (Task 2)
 3. `TestCalibrateCmd_WarmUpFromHeader_ExcludesFirstN` (Task 3)
 4. `TestCalibrateCmd_WarmUpFlagOverridesHeader` (Task 3)
-5. `TestCalibrateCmd_UnmatchedRequests_ReportSucceeds` (Task 4)
+5. `TestCalibrateCmd_RTTFromHeader_AppliesCorrectly` (Task 3)
+6. `TestCalibrateCmd_UnmatchedRequests_ReportSucceeds` (Task 4)
 
 **Import block:**
 ```go
