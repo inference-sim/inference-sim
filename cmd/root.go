@@ -201,6 +201,74 @@ func allZeros(values []float64) bool {
 	return true
 }
 
+// registerSimConfigFlags registers all simulation-engine configuration flags
+// on the given command. Called by both runCmd and replayCmd to avoid
+// duplicating ~50 flag registrations.
+func registerSimConfigFlags(cmd *cobra.Command) {
+	cmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
+	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
+	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
+	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
+	cmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
+	cmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
+
+	// vLLM server configs
+	cmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 1000000, "Total number of KV cache blocks")
+	cmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 256, "Maximum number of requests running together")
+	cmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 2048, "Maximum total number of new tokens across running requests")
+	cmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated list of beta coefficients")
+	cmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
+	cmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
+	cmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
+
+	// BLIS model configs
+	cmd.Flags().StringVar(&model, "model", "", "LLM name")
+	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
+	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
+	cmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
+	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, crossmodel, trained-roofline")
+	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
+
+	// Cluster config
+	cmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
+
+	// Online routing pipeline config
+	cmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket, reject-all")
+	cmd.Flags().Int64Var(&admissionLatency, "admission-latency", 0, "Admission latency in microseconds")
+	cmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
+	cmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")
+	cmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
+
+	// Routing policy config
+	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
+	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: prefix-affinity:3,queue-depth:2,kv-utilization:2")
+
+	// Priority and scheduler config (PR7)
+	cmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
+	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
+
+	// Policy bundle config (PR8)
+	cmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
+
+	// Fitness evaluation config (PR9)
+	cmd.Flags().StringVar(&fitnessWeights, "fitness-weights", "", "Fitness weights as key:value pairs (e.g., throughput:0.5,p99_ttft:0.3)")
+
+	// Decision trace config (PR13)
+	cmd.Flags().StringVar(&traceLevel, "trace-level", "none", "Trace verbosity: none, decisions")
+	cmd.Flags().IntVar(&counterfactualK, "counterfactual-k", 0, "Number of counterfactual candidates per routing decision")
+	cmd.Flags().BoolVar(&summarizeTrace, "summarize-trace", false, "Print trace summary after simulation")
+
+	// Tiered KV cache (PR12)
+	cmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of --total-kv-blocks")
+	cmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
+	cmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
+	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
+	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
+
+	// Results path
+	cmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
+}
+
 // runCmd executes the simulation using parameters from CLI flags
 var runCmd = &cobra.Command{
 	Use:   "run",
@@ -1169,33 +1237,10 @@ func Execute() {
 
 // init sets up CLI flags and subcommands
 func init() {
+	registerSimConfigFlags(runCmd)
 
-	runCmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
-	runCmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
-	runCmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
-	runCmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants - trained coefficients, default specs and workloads")
-	runCmd.Flags().StringVar(&modelConfigFolder, "model-config-folder", "", "Path to folder containing config.json")
-	runCmd.Flags().StringVar(&hwConfigPath, "hardware-config", "", "Path to file containing hardware config")
+	// Workload generation flags (run-only)
 	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution)")
-
-	// vLLM server configs
-	runCmd.Flags().Int64Var(&totalKVBlocks, "total-kv-blocks", 1000000, "Total number of KV cache blocks")
-	runCmd.Flags().Int64Var(&maxRunningReqs, "max-num-running-reqs", 256, "Maximum number of requests running together")
-	runCmd.Flags().Int64Var(&maxScheduledTokens, "max-num-scheduled-tokens", 2048, "Maximum total number of new tokens across running requests")
-	runCmd.Flags().Float64SliceVar(&betaCoeffs, "beta-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated list of beta coefficients")
-	runCmd.Flags().Float64SliceVar(&alphaCoeffs, "alpha-coeffs", []float64{0.0, 0.0, 0.0}, "Comma-separated alpha coefficients (alpha0,alpha1) for processing delays")
-	runCmd.Flags().Int64Var(&blockSizeTokens, "block-size-in-tokens", 16, "Number of tokens contained in a KV cache block")
-	runCmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
-
-	// BLIS model configs
-	runCmd.Flags().StringVar(&model, "model", "", "LLM name")
-	runCmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
-	runCmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
-	runCmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	runCmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, crossmodel, trained-roofline")
-	runCmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
-
-	// GuideLLM-style distribution-based workload generation config
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
 	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")
@@ -1207,50 +1252,9 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", 256, "Stddev Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", 2, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", 7000, "Max Output Token Count")
-
-	// Cluster config
-	runCmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
-
-	// Online routing pipeline config
-	runCmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket, reject-all")
-	runCmd.Flags().Int64Var(&admissionLatency, "admission-latency", 0, "Admission latency in microseconds")
-	runCmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
-	runCmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")
-	runCmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
-
-	// Routing policy config
-	runCmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
-	runCmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: prefix-affinity:3,queue-depth:2,kv-utilization:2")
-
-	// Priority and scheduler config (PR7)
-	runCmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
-	runCmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
-
-	// Policy bundle config (PR8)
-	runCmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
-
-	// Fitness evaluation config (PR9)
-	runCmd.Flags().StringVar(&fitnessWeights, "fitness-weights", "", "Fitness weights as key:value pairs (e.g., throughput:0.5,p99_ttft:0.3)")
-
-	// Decision trace config (PR13)
-	runCmd.Flags().StringVar(&traceLevel, "trace-level", "none", "Trace verbosity: none, decisions")
-	runCmd.Flags().IntVar(&counterfactualK, "counterfactual-k", 0, "Number of counterfactual candidates per routing decision")
-	runCmd.Flags().BoolVar(&summarizeTrace, "summarize-trace", false, "Print trace summary after simulation")
-
-	// Workload spec config (PR10)
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
 
-	// Tiered KV cache (PR12)
-	runCmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of --total-kv-blocks")
-	runCmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
-	runCmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
-	runCmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
-	runCmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
-
-	// Results path
-	runCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
-
-	// Trace export
+	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 
 	// Attach `run` as a subcommand to `root`
