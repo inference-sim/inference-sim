@@ -215,19 +215,40 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// Roofline step time currently uses 2-matrix for all activations (see mlpMatrixCount).
 	hiddenAct := hf.MustGetString("hidden_act", "")
 
+	// Extract quantized weight precision from quantization_config (if present).
+	// torch_dtype reports the compute/activation dtype (e.g. bfloat16=2 bytes), but
+	// quantized models store weights at lower precision (e.g. W4A16=0.5 bytes/param).
+	// WeightBytesPerParam=0 means "not quantized, use BytesPerParam".
+	var weightBytesPerParam float64
+	if qcRaw, ok := hf.Raw["quantization_config"]; ok {
+		if qc, ok := qcRaw.(map[string]any); ok {
+			quantMethod, _ := qc["quant_method"].(string)
+			bits := 0
+			if bitsRaw, ok := qc["bits"].(float64); ok {
+				bits = int(bitsRaw)
+			}
+			if bits > 0 {
+				weightBytesPerParam = float64(bits) / 8.0
+			} else if quantMethod == "fp8" {
+				weightBytesPerParam = 1.0
+			}
+		}
+	}
+
 	modelConfig := &sim.ModelConfig{
-		NumLayers:          getInt("num_hidden_layers"),
-		HiddenDim:          getInt("hidden_size"),
-		VocabSize:          getInt("vocab_size"),
-		IntermediateDim:    intermediateDim,
-		NumHeads:           numHeads,
-		NumKVHeads:         numKVHeads,
-		BytesPerParam:      float64(bytesPerParam),
-		NumLocalExperts:    numLocalExperts,
-		NumExpertsPerTok:   numExpertsPerTok,
-		MoEExpertFFNDim:    moeExpertFFNDim,
-		SharedExpertFFNDim: sharedExpertFFNDim,
-		HiddenAct:          hiddenAct,
+		NumLayers:           getInt("num_hidden_layers"),
+		HiddenDim:           getInt("hidden_size"),
+		VocabSize:           getInt("vocab_size"),
+		IntermediateDim:     intermediateDim,
+		NumHeads:            numHeads,
+		NumKVHeads:          numKVHeads,
+		BytesPerParam:       float64(bytesPerParam),
+		NumLocalExperts:     numLocalExperts,
+		NumExpertsPerTok:    numExpertsPerTok,
+		MoEExpertFFNDim:     moeExpertFFNDim,
+		SharedExpertFFNDim:  sharedExpertFFNDim,
+		HiddenAct:           hiddenAct,
+		WeightBytesPerParam: weightBytesPerParam,
 	}
 	return modelConfig, nil
 }
@@ -302,6 +323,16 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 	if hc.MemoryGiB != 0 {
 		if math.IsNaN(hc.MemoryGiB) || math.IsInf(hc.MemoryGiB, 0) || hc.MemoryGiB < 0 {
 			problems = append(problems, fmt.Sprintf("HardwareCalib.MemoryGiB must be > 0 and finite when set, got %v", hc.MemoryGiB))
+		}
+	}
+
+	// WeightBytesPerParam is optional (0 = not set, fall back to BytesPerParam).
+	// When set, it must be a valid positive number.
+	if mc.WeightBytesPerParam != 0 {
+		if mc.WeightBytesPerParam < 0 || math.IsNaN(mc.WeightBytesPerParam) || math.IsInf(mc.WeightBytesPerParam, 0) {
+			problems = append(problems, fmt.Sprintf(
+				"ModelConfig.WeightBytesPerParam must be positive when set, got %v",
+				mc.WeightBytesPerParam))
 		}
 	}
 

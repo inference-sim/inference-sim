@@ -255,7 +255,7 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	finalNorm := hiddenDim
 
 	totalParams := embeddings + numLayers*perLayerParams + lmHead + finalNorm
-	return int64(float64(totalParams) * mc.BytesPerParam)
+	return int64(float64(totalParams) * mc.EffectiveWeightBytesPerParam())
 }
 
 // ExtractKVCapacityParamsFromFile reads a HuggingFace config.json file and

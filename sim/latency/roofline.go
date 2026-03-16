@@ -152,7 +152,7 @@ func calculateMemoryAccessBytes(
 	}
 
 	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer
-	mem["model_weights"] = weightsPerLayer * nLayers * config.BytesPerParam
+	mem["model_weights"] = weightsPerLayer * nLayers * config.EffectiveWeightBytesPerParam()
 
 	if includeKVCache {
 		// KV Growth: Writing new tokens to HBM.

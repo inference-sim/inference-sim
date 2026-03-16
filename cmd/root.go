@@ -49,8 +49,9 @@ var (
 	outputTokensStdev         int       // Stdev Output Token Count
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
-	latencyModelBackend string // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
-	maxModelLen         int64  // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
+	latencyModelBackend  string  // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
+	maxModelLen          int64   // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
+	weightBytesPerParam  float64 // CLI --weight-bytes-per-param: override quantized weight precision
 
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
@@ -228,6 +229,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, crossmodel, trained-roofline")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
+	cmd.Flags().Float64Var(&weightBytesPerParam, "weight-bytes-per-param", 0, "Override weight precision (bytes/param) for quantized models (e.g., 0.5 for W4A16, 1.0 for FP8). 0=auto-detect from config.json")
 
 	// Cluster config
 	cmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
@@ -650,10 +652,24 @@ var runCmd = &cobra.Command{
 			}
 			hwConfig = hc
 
-			// Warn about known roofline estimation limitations
-			if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
+			// Apply --weight-bytes-per-param CLI override (R18: CLI flag precedence)
+			if cmd.Flags().Changed("weight-bytes-per-param") {
+				if weightBytesPerParam <= 0 || math.IsNaN(weightBytesPerParam) || math.IsInf(weightBytesPerParam, 0) {
+					logrus.Fatalf("--weight-bytes-per-param must be a finite positive number, got %v", weightBytesPerParam)
+				}
+				modelConfig.WeightBytesPerParam = weightBytesPerParam
+				logrus.Infof("--weight-bytes-per-param: overriding weight precision to %.4f bytes/param", weightBytesPerParam)
+			}
+
+			// Log quantization info when weight precision differs from compute precision
+			if modelConfig.WeightBytesPerParam > 0 && modelConfig.WeightBytesPerParam != modelConfig.BytesPerParam {
+				logrus.Infof("--latency-model: quantized model detected — weight precision: %.2f bytes/param, compute/KV precision: %.1f bytes/param",
+					modelConfig.WeightBytesPerParam, modelConfig.BytesPerParam)
+			} else if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
+				// Legacy warning for models where torch_dtype itself reports low precision
 				logrus.Warnf("--latency-model: model reports %.0f byte(s)/param (possible quantization). "+
-					"Roofline step time estimates may be inaccurate for quantized models",
+					"Roofline step time estimates may be inaccurate for quantized models. "+
+					"Consider using --weight-bytes-per-param to set weight precision explicitly",
 					modelConfig.BytesPerParam)
 			}
 			// MoE informational note: roofline models per-routed-expert FLOPs (top_k active)
@@ -1241,6 +1257,8 @@ func init() {
 
 	// Workload generation flags (run-only)
 	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution)")
+
+
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
 	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")

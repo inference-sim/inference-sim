@@ -215,6 +215,8 @@ For the full annotated file tree, see [`docs/reference/project-structure.md`](do
 
 Four latency model modes (roofline, blackbox, cross-model, trained-roofline), selected via `--latency-model` flag. See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details on each mode, configuration, and auto-fetch behavior.
 
+**Quantized model support**: Auto-detects `quantization_config` in HF `config.json` (GPTQ, AWQ, FP8) and uses quantized weight precision for weight bandwidth and KV capacity calculations while keeping compute dtype for KV cache and activations. Override with `--weight-bytes-per-param` (e.g., `0.5` for W4A16, `1.0` for FP8). `ModelConfig.WeightBytesPerParam` (0=fallback to `BytesPerParam`) with `EffectiveWeightBytesPerParam()` accessor decouples weight storage precision from compute/KV dtype.
+
 ### Key Data Flow
 
 Request processing pipeline: Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion. Admission and Routing apply in cluster mode only; single-instance skips directly to WaitQueue. See [`docs/concepts/architecture.md`](docs/concepts/architecture.md) for the full diagram.

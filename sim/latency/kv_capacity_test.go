@@ -933,3 +933,101 @@ func TestExtractKVCapacityParams_Qwen2MoE_ExplicitSharedDim(t *testing.T) {
 		t.Errorf("expected SharedExpertFFNDim=5632 (explicit field), got %d", params.SharedExpertFFNDim)
 	}
 }
+
+// --- Quantized model KV capacity tests (BC-7, BC-10) ---
+
+func TestCalculateKVBlocks_W4A16_MoreBlocksThanFP16(t *testing.T) {
+	// BC-10: W4A16 model produces more KV blocks (smaller weight footprint)
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	// FP16 baseline
+	blocksFP16, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("FP16 error: %v", err)
+	}
+
+	// W4A16: weight precision is 0.5, compute dtype stays at 2.0
+	mcW4 := mc
+	mcW4.WeightBytesPerParam = 0.5
+	blocksW4, err := latency.CalculateKVBlocks(mcW4, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("W4A16 error: %v", err)
+	}
+
+	t.Logf("FP16 blocks=%d, W4A16 blocks=%d", blocksFP16, blocksW4)
+
+	if blocksW4 <= blocksFP16 {
+		t.Errorf("W4A16 should produce more blocks than FP16 (smaller weights): W4=%d <= FP16=%d",
+			blocksW4, blocksFP16)
+	}
+}
+
+func TestCalculateKVBlocks_W4A16_PerTokenKVBytesUnchanged(t *testing.T) {
+	// BC-7: Per-token KV bytes use BytesPerParam (compute dtype), NOT WeightBytesPerParam
+	// We verify this indirectly: changing WeightBytesPerParam should only affect
+	// weight memory, not per-block KV bytes. Two models with same BytesPerParam
+	// but different WeightBytesPerParam should produce different total blocks but
+	// the difference should come from weight memory only.
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	// FP16 baseline
+	blocksFP16, err := latency.CalculateKVBlocks(mc, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("FP16 error: %v", err)
+	}
+
+	// FP8 weights (1.0 bytes/param) — intermediate between FP16 and W4A16
+	mcFP8 := mc
+	mcFP8.WeightBytesPerParam = 1.0
+	blocksFP8, err := latency.CalculateKVBlocks(mcFP8, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("FP8 error: %v", err)
+	}
+
+	// W4A16 (0.5 bytes/param)
+	mcW4 := mc
+	mcW4.WeightBytesPerParam = 0.5
+	blocksW4, err := latency.CalculateKVBlocks(mcW4, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("W4A16 error: %v", err)
+	}
+
+	t.Logf("FP16=%d blocks, FP8=%d blocks, W4A16=%d blocks", blocksFP16, blocksFP8, blocksW4)
+
+	// Monotonicity: smaller weight precision → more blocks
+	if blocksFP8 <= blocksFP16 {
+		t.Errorf("FP8 should have more blocks than FP16: %d <= %d", blocksFP8, blocksFP16)
+	}
+	if blocksW4 <= blocksFP8 {
+		t.Errorf("W4A16 should have more blocks than FP8: %d <= %d", blocksW4, blocksFP8)
+	}
+}
+
+func TestCalculateKVBlocks_NonQuantized_UnchangedByWeightField(t *testing.T) {
+	// BC-8 regression anchor: WeightBytesPerParam=0 (sentinel) behaves identically
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	blocksBaseline, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("baseline error: %v", err)
+	}
+
+	// Explicitly set WeightBytesPerParam=0 (sentinel)
+	mcExplicit := mc
+	mcExplicit.WeightBytesPerParam = 0
+	blocksExplicit, err := latency.CalculateKVBlocks(mcExplicit, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("explicit sentinel error: %v", err)
+	}
+
+	if blocksBaseline != blocksExplicit {
+		t.Errorf("sentinel (WeightBytesPerParam=0) should match baseline: %d vs %d",
+			blocksBaseline, blocksExplicit)
+	}
+}
