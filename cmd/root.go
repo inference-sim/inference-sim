@@ -49,9 +49,9 @@ var (
 	outputTokensStdev         int       // Stdev Output Token Count
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
-	latencyModelBackend  string  // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
-	maxModelLen          int64   // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
-	weightBytesPerParam  float64 // CLI --weight-bytes-per-param: override quantized weight precision
+	latencyModelBackend       string    // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
+	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
+	weightBytesPerParam       float64   // CLI --weight-bytes-per-param: override quantized weight precision
 
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
@@ -576,7 +576,7 @@ var runCmd = &cobra.Command{
 			}
 			// Warn if alpha coefficients are zero (user provided --beta-coeffs but not --alpha-coeffs)
 			if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
-				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; "+
+				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; " +
 					"QueueingTime, PostDecodeFixedOverhead, and OutputTokenProcessingTime will use zero alpha (may underestimate TTFT/E2E)")
 			}
 		}
@@ -689,7 +689,7 @@ var runCmd = &cobra.Command{
 			} else if modelConfig.WeightBytesPerParam == 0 {
 				// Check if quantization_config was present but unrecognized
 				if _, hasQC := hfConfig.Raw["quantization_config"]; hasQC {
-					logrus.Warnf("--latency-model: HuggingFace config has quantization_config but weight precision could not be auto-detected. "+
+					logrus.Warnf("--latency-model: HuggingFace config has quantization_config but weight precision could not be auto-detected. " +
 						"Consider using --weight-bytes-per-param to set weight precision explicitly")
 				} else if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
 					// Legacy warning for models where torch_dtype itself reports low precision
@@ -890,7 +890,7 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Undefined workload %q. Use one among (chatbot, summarization, contentgen, multidoc) or --workload-spec", workloadType)
 			}
 			spec = workload.SynthesizeFromPreset(workloadType, workload.PresetConfig{
-				PrefixTokens: wl.PrefixTokens,
+				PrefixTokens:     wl.PrefixTokens,
 				PromptTokensMean: wl.PromptTokensMean, PromptTokensStdev: wl.PromptTokensStdev,
 				PromptTokensMin: wl.PromptTokensMin, PromptTokensMax: wl.PromptTokensMax,
 				OutputTokensMean: wl.OutputTokensMean, OutputTokensStdev: wl.OutputTokensStdev,
