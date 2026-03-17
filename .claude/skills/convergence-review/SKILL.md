@@ -63,7 +63,7 @@ The artifact ID is derived from the gate's anchor category (see gate table). Beh
 
 **Artifact ID collision between workflow steps:** The PR workflow invokes `pr-code` at both Step 2.5 and Step 4.5 on the same branch. The commit anchor disambiguates: code is committed between steps, so the stale-commit check resets the state. **Users must commit between successive convergence passes on the same branch.** If Step 4.5 is invoked before committing, stale state from Step 2.5 (possibly `converged`) would cause premature exit.
 
-**Schema (illustrative, not normative — exact field names owned by implementation):**
+**Schema (producer/consumer contract — Phase A MUST write these fields, Phase B MUST read from them):**
 
 ```json
 {
@@ -82,8 +82,8 @@ The artifact ID is derived from the gate's anchor category (see gate table). Beh
       "suggestion": 3,
       "in_scope": {"critical": 2, "important": 3},
       "findings": [
-        {"perspective": "PC-1", "severity": "CRITICAL", "disposition": "fix", "description": "..."},
-        {"perspective": "PC-3", "severity": "IMPORTANT", "disposition": "filed", "issue": "#692", "description": "..."}
+        {"perspective": "PC-1", "severity": "CRITICAL", "location": "sim/kv/cache.go:142", "disposition": "fix", "description": "Missing zero-guard on denominator"},
+        {"perspective": "PC-3", "severity": "IMPORTANT", "location": "sim/config.go:88", "disposition": "filed", "issue": "#692", "description": "Exported mutable map"}
       ]
     }
   ],
@@ -91,6 +91,17 @@ The artifact ID is derived from the gate's anchor category (see gate table). Beh
   "updated_at": "2026-03-15T10:30:00Z"
 }
 ```
+
+**Findings array fields (required per finding):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `perspective` | string | Perspective ID (e.g., "PC-1", "PP-3", "DD-2") |
+| `severity` | string | One of: `CRITICAL`, `IMPORTANT`, `SUGGESTION` |
+| `location` | string | File:line reference, section heading, or "unknown" if not parseable |
+| `description` | string | What is wrong (specific, not vague) |
+| `disposition` | string | One of: `fix` (in-scope, to be fixed), `filed` (GitHub issue created), `downgraded` (demoted to SUGGESTION), `resolved` (confirmed fixed in Phase B). Initial value at Phase A extraction is always `fix`; transitions to other values happen in triage (step 6) or Phase B. |
+| `issue` | string (optional) | GitHub issue number (e.g., `"#692"`). Present only when `disposition == "filed"`. |
 
 **Status values:** `reviewing` (Phase A in progress), `not-converged` (entering Phase B), `converged` (done), `stalled` (round > max_rounds).
 
@@ -145,14 +156,15 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
 - **SK-INV-1 Loop integrity:** The skill MUST never exit with status `not-converged`. The only exits are `converged` (0/0 in-scope), `stalled` (round > 10), or unresolvable verification failure (user decision).
 - **SK-INV-2 Round monotonicity:** The round counter MUST never decrease within a single state file lifetime (stale-commit reset creates a new state file).
 - **SK-INV-3 Tally independence:** The skill MUST count findings from agent output independently. It MUST never use agent-reported totals as the convergence input.
-- **SK-INV-4 State-status consistency (applies to Phase A tally results only — Phase B intermediate state is exempt):** If Phase A's tallied `in_scope.critical + in_scope.important > 0`, status MUST be `not-converged` or `stalled`. If both are 0, status MUST be `converged`. Phase B step 6 always writes `not-converged` because fixes have not yet been verified by a new Phase A round — this is not an SK-INV-4 violation. If the Phase A consistency check detects a mismatch, the count-derived status takes precedence and a **visible warning** is emitted (e.g., "SK-INV-4 mismatch: counts show 2 IMPORTANT but status was converged — correcting to not-converged").
+- **SK-INV-4 State-status consistency (applies to Phase A tally results only — Phase B intermediate state is exempt):** If Phase A's tallied `in_scope.critical + in_scope.important > 0`, status MUST be `not-converged` or `stalled`. If both are 0, status MUST be `converged`. Phase B step 5 always writes `not-converged` because fixes have not yet been verified by a new Phase A round — this is not an SK-INV-4 violation. If the Phase A consistency check detects a mismatch, the count-derived status takes precedence and a **visible warning** is emitted (e.g., "SK-INV-4 mismatch: counts show 2 IMPORTANT but status was converged — correcting to not-converged").
 - **SK-INV-5 Stale invalidation:** If the stored commit differs from current HEAD (for file/diff-anchored gates), the state MUST be reset to round 1.
+- **SK-INV-6 Findings persistence:** Every Phase A tally that writes a history entry (step 8) MUST include a `findings` array with all extracted findings. Phase B MUST read its fix list exclusively from the state file's findings array, never from conversation context. A session crash after Phase A step 8 (state file write) MUST NOT lose any finding data. A crash during steps 4-7 (before step 8) results in an incomplete round — the `reviewing` status triggers re-dispatch on resume. Note: if a crash occurs after step 6 (triage) but before step 8, any GitHub issues filed during triage already exist; on re-dispatch, check for existing issues before filing to avoid duplicates.
 
 ---
 
 ## Phase A — Review and Tally
 
-**Entry conditions (checked in order):**
+**Entry conditions and pre-dispatch checks (checked in order):**
 
 1. **Parse args:** Strip `--model <value>` if present, validate. Remaining tokens → gate type and artifact path.
 
@@ -164,6 +176,16 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
    - **File exists, status `converged`:** Emit `"Gate <gate> already converged in Round N. Nothing to do."` Exit. (24-hour staleness does not apply to terminal states — converged means done.)
    - **File exists, status `stalled`:** Emit `"Gate <gate> stalled after N rounds."` Ask user: abort (delete state, exit) or reset (reset round counter, proceed).
 
+2a. **Fix verification (Round 2+ only).** If this is Round 2 or later and the previous round has a history entry:
+   - Load the previous round's `findings` array. If the array is missing or null (pre-#668 state file), skip fix verification with a warning.
+   - For each finding with `disposition == "fix"`:
+     - Extract the file path from `location` (if parseable as a file path).
+     - If `location` is not a parseable file path (e.g., `"unknown"`, a section heading, or a context reference): skip file-based verification for this finding with a note: `"Skipping file verification for <perspective> finding — no file path in location."`
+     - If `location` is a file path: check if the file appears dirty in `git status`. If the file is NOT dirty and the finding was not explicitly marked `resolved`: emit a warning: `"WARNING: Round N finding not yet addressed: <perspective> <severity>: <description truncated to 80 chars>"`
+   - Findings with `disposition` of `filed`, `downgraded`, or `resolved` are skipped (BC-6).
+   - **This is a soft gate:** warnings are emitted but dispatch proceeds regardless. The next Phase A round is the real verification — this substep catches obvious oversights early.
+   - **Note:** The `location` field records where the problem was found, not necessarily which file was edited to fix it. A finding citing `sim/config.go:88` might be fixed by editing `sim/kv/cache.go`. This heuristic catches the common case; the full re-review catches the rest.
+
 3. **Dispatch all N perspectives** simultaneously as background agents. Model from state file.
    - **Exception:** The structural validation perspective in PR plan reviews is performed directly (not delegated to an agent) because it requires full conversation context.
    - **Context payload per gate type:**
@@ -172,7 +194,13 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
      - Context-anchored gates (`h-design`): Pass the hypothesis sentence, classification, and experiment design from the current conversation context.
    - **Empty-diff precondition (diff-anchored gates only):** If `git diff HEAD` produces no output, emit warning ("No changes detected since last commit — nothing to review") and skip dispatch. Stage new files or commit before invoking.
 
-4. **Collect and tally independently.** Read each agent's output. Extract findings with severity. Count CRITICAL and IMPORTANT yourself. **Never trust agent-reported totals** (per #390).
+4. **Collect, extract, and tally independently.** For each agent's output:
+   a. Extract individual findings. For each finding, record: `perspective` (agent ID), `severity`, `location` (file:line or best available reference), `description`.
+   b. If a finding lacks a parseable location, set `location` to `"unknown"` and emit a warning: `"Finding from <perspective> has no location — recorded as 'unknown'."` (BC-7)
+   c. Set initial `disposition` to `"fix"` for all findings. (Triage in step 6 may update some to `"filed"`.)
+   d. Count CRITICAL and IMPORTANT yourself. **Never trust agent-reported totals** (per #390).
+   e. Build the round's `findings` array in memory from all extracted findings across all perspectives. This array is NOT yet written to disk — it is persisted atomically in step 8 after triage (step 6) may have updated dispositions.
+   f. If a perspective agent produces no parseable findings, record zero findings for that perspective (not an error).
 
 5. **State file consistency check:** Before recording results, verify in-scope counts match the intended status. If inconsistent, count-derived status takes precedence and a **visible warning** is emitted (SK-INV-4).
 
@@ -191,7 +219,7 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
 
 7. **Convergence check:** `in_scope.critical == 0 AND in_scope.important == 0`.
 
-8. **Update state file:** Append round entry to history, set status, write `updated_at`. For file/diff-anchored gates, record full SHA (`git rev-parse HEAD`).
+8. **Update state file:** Append round entry to history — including the complete `findings` array built in step 4 — set status, write `updated_at`. For file/diff-anchored gates, record full SHA (`git rev-parse HEAD`). The findings array MUST be persisted before proceeding to step 9 (BC-1).
 
 9. **Emit status banner** (exact formatting is illustrative — implementation owns the rendering).
 
@@ -206,23 +234,23 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
 
 Phase B is entered automatically from Phase A when in-scope CRITICAL or IMPORTANT findings exist. **No manual re-invocation needed.**
 
-1. **List all findings to fix**, grouped by priority.
+1. **Read findings from the state file.** Load the most recent history entry's `findings` array. If the array is missing or null (pre-#668 state file), treat as empty and emit a warning (BC-8). Filter to findings with `disposition == "fix"`. Group by severity (CRITICAL first, then IMPORTANT, then SUGGESTION). This is the authoritative fix list — do not rely on conversation context for what to fix (BC-2, BC-5).
 
 2. **Fix all items in priority order** using confidence-tiered autonomy:
    - **CRITICAL fixes (process first):** For each CRITICAL finding, emit the proposed changes as output text, then **stop and wait for the user's next message** before applying. The user may: (a) approve — apply the fix, (b) provide an alternative fix — apply the user's version, (c) file as issue — record with disposition `filed` and exclude from convergence, (d) downgrade to SUGGESTION — it will be fixed in the suggestion pass below. **After the user responds, continue to the next CRITICAL item.** The state file's `not-converged` status ensures the loop resumes even if the session is interrupted during a CRITICAL fix pause. Note: a finding downgraded via option (d) is treated as a SUGGESTION and fixed in the SUGGESTION pass without additional approval.
    - **IMPORTANT fixes (process next):** Auto-fix without pause. The next Phase A round catches any semantic regressions.
    - **SUGGESTION fixes (process last):** Auto-fix without pause.
 
-4. **Stage any new files** created by fixes so they are visible to the next Phase A round's diff.
+3. **Stage any new files** created by fixes so they are visible to the next Phase A round's diff.
 
-5. **Run verification gate** per the gate table's "Verification" column:
+4. **Run verification gate** per the gate table's "Verification" column:
    - **Build/test/lint:** Run the project's CI verification. If any fail, fix before proceeding.
    - **Link check:** Verify referenced files exist, check for broken internal links.
    - **None:** No verification gate.
 
-6. **Update state file:** Record fixes in history (with disposition for each finding), set status to `not-converged`.
+5. **Update state file:** **Mutate in-place** the current round's history entry (do NOT append a new entry — Phase B updates the same round's entry that Phase A created). For each finding that was fixed, update its `disposition` from `"fix"` to `"resolved"`. For findings downgraded by the user during CRITICAL review, update `disposition` to `"downgraded"`. Persist the state file with status `not-converged`.
 
-7. **Emit transition banner:**
+6. **Emit transition banner:**
    ```
    ═══════════════════════════════════════════════════
      ROUND N FIXES COMPLETE — M items resolved
@@ -230,7 +258,7 @@ Phase B is entered automatically from Phase A when in-scope CRITICAL or IMPORTAN
    ═══════════════════════════════════════════════════
    ```
 
-8. **Re-enter Phase A immediately.** No pause, no user prompt, no manual re-invocation. This is the structural enforcement that prevents the loop from breaking.
+7. **Re-enter Phase A immediately.** No pause, no user prompt, no manual re-invocation. This is the structural enforcement that prevents the loop from breaking.
 
 **No git commit in Phase B.** Fixes accumulate as working tree changes. The PR workflow's Step 5 handles the single commit. The state file's `history` array is the audit trail.
 
