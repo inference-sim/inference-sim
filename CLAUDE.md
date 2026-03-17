@@ -20,6 +20,9 @@ go build -o blis main.go
 # Replay a captured TraceV2 file through the DES
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
 
+# Compare real observed latencies against simulator predictions
+./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
+
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 ./blis convert servegen --path data/
