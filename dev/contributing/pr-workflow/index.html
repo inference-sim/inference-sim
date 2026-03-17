@@ -3724,7 +3724,7 @@
 <h4 id="perspective-5-plan-structural-validation">Perspective 5: Plan Structural Validation<a class="headerlink" href="#perspective-5-plan-structural-validation" title="Permanent link">&para;</a></h4>
 <p>Perform these 4 checks directly (no agent needed):</p>
 <p><strong>Check 1: Task Dependencies</strong> — For each task, verify it can actually start given what comes before it. Trace the dependency chain: what files does each task create/modify? Does any task require a file or type that hasn't been created yet? Flag tasks that modify the same file and could conflict.</p>
-<p><strong>Check 2: Template Completeness</strong> — Verify all sections from the <a href="../templates/micro-plan/">micro-plan template</a> are present and non-empty: Header, Part 1 (A–E), Part 2 (F–I), Part 3 (J), Appendix.</p>
+<p><strong>Check 2: Template Completeness</strong> — Verify all sections from the <a href="../templates/micro-plan/">micro-plan template</a> are present and non-empty: Header, Part 1 (A–E), Part 2 (F–I), Part 3 (J), Appendix. For compact-format plans (Small tier), verify the compact sections are present: Header (Goal/Source/Closes), Behavioral Contracts, Tasks, Sanity Checklist.</p>
 <p><strong>Check 3: Executive Summary Clarity</strong> — Read the executive summary as if you're a new team member with no context. Is it clear what the PR does and why? Can you understand the scope without reading the rest of the plan?</p>
 <p><strong>Check 4: Under-specified Tasks</strong> — For each task, verify it has complete code in every step (no "add validation" without showing exact code). Verify exact test commands with expected output. Verify exact commit commands. Flag any step that an executing agent would need to figure out on its own.</p>
 <p><strong>Catches:</strong> Broken task ordering, missing template sections, unclear summaries, vague implementation steps that will cause agent confusion.</p>
@@ -3746,11 +3746,14 @@
 <hr />
 <h3 id="step-3-human-review-of-plan">Step 3: Human Review of Plan<a class="headerlink" href="#step-3-human-review-of-plan" title="Permanent link">&para;</a></h3>
 <p>Final human review of the plan (after automated review).</p>
-<p><strong>Focus areas:</strong>
-1. <strong>Part 1 (Design Validation)</strong> — Review behavioral contracts, component interaction, risks
-2. <strong>Part 2 (Executable Tasks)</strong> — Verify task breakdown makes sense, no dead code
-3. <strong>Deviation Log</strong> — Check if deviations from source document are justified
-4. <strong>Appendix</strong> — Spot-check file-level details for accuracy</p>
+<p><strong>Focus areas</strong> (full-format plans):</p>
+<ol>
+<li><strong>Part 1 (Design Validation)</strong> — Review behavioral contracts, component interaction, risks</li>
+<li><strong>Part 2 (Executable Tasks)</strong> — Verify task breakdown makes sense, no dead code</li>
+<li><strong>Deviation Log</strong> — Check if deviations from source document are justified</li>
+<li><strong>Appendix</strong> — Spot-check file-level details for accuracy</li>
+</ol>
+<p>For compact-format plans (Small tier): review only behavioral contracts (from item 1) and task completeness (from item 2). Skip component interaction, deviation log (item 3), and appendix (item 4). Also review the sanity checklist, which compact plans include directly.</p>
 <p><strong>Common issues to catch:</strong>
 - Behavioral contracts too vague or missing edge cases
 - Tasks not properly ordered (dependencies)
@@ -3939,6 +3942,10 @@
 - <strong>Self-audit is always full</strong> — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
 - <strong>When in doubt, tier up</strong> — if you're unsure whether a change is Small or Medium, use Medium.
 - <strong>Human reviewer can override</strong> — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.</p>
+<div class="admonition note">
+<p class="admonition-title">Compact Plan Format</p>
+<p>Small tier PRs may use the <a href="../templates/micro-plan/#compact-format-small-tier-prs">compact plan format</a> instead of the full micro-plan template. The compact format retains behavioral contracts and TDD tasks but drops ceremony sections. See the template for criteria and structure.</p>
+</div>
 <hr />
 <h2 id="example-walkthrough">Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permanent link">&para;</a></h2>
 <p>A typical PR from a macro plan section:</p>
