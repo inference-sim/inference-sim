@@ -123,6 +123,7 @@ func TestRecorder_ConcurrentAccess(t *testing.T) {
 			rec.RecordRequest(
 				&PendingRequest{RequestID: id, ClientID: "c1"},
 				&RequestRecord{RequestID: id, Status: "ok"},
+				0, "", 0,
 			)
 		}(i)
 	}
@@ -254,6 +255,7 @@ func TestRecorder_WiresModelAndServerInputTokens(t *testing.T) {
 	rec.RecordRequest(
 		&PendingRequest{RequestID: 0, ClientID: "c1", Model: "test-model"},
 		&RequestRecord{RequestID: 0, Status: "ok", ServerInputTokens: 42},
+		0, "", 0,
 	)
 	records := rec.Records()
 	if len(records) != 1 {

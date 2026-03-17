@@ -20,6 +20,10 @@ go build -o blis main.go
 # Replay a captured TraceV2 file through the DES
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
 
+# Observe real server latency and record timing into TraceV2
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
+
 # Compare real observed latencies against simulator predictions
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
 
@@ -133,6 +137,8 @@ Full details: see [`docs/contributing/standards/principles.md`](docs/contributin
 Composable Scorer Framework completed: PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache). Default weighted routing profile: `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity).
 
 Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + SLO tiers), W0-2 (binary rename + converters), W0-3 (cohort population dynamics), W0-4 (legacy retirement). All workload generation now flows through `sim/workload/GenerateRequests()`. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant. CLI binary renamed from `simulation_worker` to `blis`.
+
+Observe/replay/calibrate pipeline complete: `blis observe` (#659) dispatches workload to real servers with closed-loop session support, `blis replay` (#689) replays through DES, `blis calibrate` (#701) compares real vs simulated latencies.
 
 Recent work: MkDocs documentation site (#450), roofline auto-fetch flag (#435), metrics substrate fixes (#458), cross-cutting documentation audit (#460).
 

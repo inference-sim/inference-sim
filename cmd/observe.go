@@ -243,7 +243,7 @@ type Recorder struct {
 }
 
 // RecordRequest captures one request-response cycle.
-func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord) {
+func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord, arrivalTimeUs int64, sessionID string, roundIndex int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.records = append(r.records, workload.TraceRecord{
@@ -257,13 +257,15 @@ func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord)
 		Streaming:         pending.Streaming,
 		InputTokens:       pending.InputTokens,
 		OutputTokens:      result.OutputTokens,
-		ArrivalTimeUs:     0, // set by caller from workload spec
+		ArrivalTimeUs:     arrivalTimeUs,
 		SendTimeUs:        result.SendTimeUs,
 		FirstChunkTimeUs:  result.FirstChunkTimeUs,
 		LastChunkTimeUs:   result.LastChunkTimeUs,
 		NumChunks:         result.NumChunks,
 		Status:            result.Status,
 		ErrorMessage:      result.ErrorMessage,
+		SessionID:         sessionID,
+		RoundIndex:        roundIndex,
 	})
 }
 
@@ -281,7 +283,3 @@ func (r *Recorder) Export(header *workload.TraceHeader, headerPath, dataPath str
 	return workload.ExportTraceV2(header, r.Records(), headerPath, dataPath)
 }
 
-// LogRealModeNotImplemented logs that real mode is a placeholder for now.
-func LogRealModeNotImplemented() {
-	logrus.Warn("Real mode (--real-mode) is not yet fully integrated. Use mock testing for validation.")
-}
