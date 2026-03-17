@@ -383,3 +383,138 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--results-path`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
+
+---
+
+## blis observe
+
+Dispatches a workload to a real inference server and records request-level timing into TraceV2 files for later replay and calibration.
+
+### Required
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--server-url` | string | "" | Inference server URL (required). |
+| `--model` | string | "" | Model name for API requests (required). |
+| `--trace-header` | string | "" | Output path for TraceV2 header YAML (required). |
+| `--trace-data` | string | "" | Output path for TraceV2 data CSV (required). |
+
+### Workload Input
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--workload-spec` | string | "" | Path to WorkloadSpec YAML (alternative to `--rate` + distribution flags). |
+| `--rate` | float64 | 0 | Requests per second for distribution synthesis. |
+
+### Optional
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--api-key` | string | "" | Bearer token for server authentication. |
+| `--server-type` | string | "vllm" | Server type (`vllm`, `tgi`, etc.). |
+| `--max-concurrency` | int | 256 | Maximum simultaneous in-flight requests. |
+| `--warmup-requests` | int | 0 | Number of initial requests to exclude from trace. |
+| `--no-streaming` | bool | false | Disable streaming (use non-streaming HTTP). |
+| `--seed` | int64 | 42 | RNG seed for workload generation. |
+| `--horizon` | int64 | 0 | Observation horizon in microseconds (0 = from spec or unlimited). |
+| `--num-requests` | int | 0 | Maximum requests to generate (0 = from spec or unlimited). |
+
+### Distribution Synthesis
+
+Used when `--rate` is set instead of `--workload-spec`. Same flag names as `blis run` but with different defaults tuned for observe workloads.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--prompt-tokens` | int | 512 | Average prompt token count. |
+| `--prompt-tokens-stdev` | int | 50 | Prompt token standard deviation. |
+| `--prompt-tokens-min` | int | 1 | Minimum prompt tokens. |
+| `--prompt-tokens-max` | int | 2048 | Maximum prompt tokens. |
+| `--output-tokens` | int | 512 | Average output token count. |
+| `--output-tokens-stdev` | int | 50 | Output token standard deviation. |
+| `--output-tokens-min` | int | 1 | Minimum output tokens. |
+| `--output-tokens-max` | int | 2048 | Maximum output tokens. |
+| `--prefix-tokens` | int | 0 | Shared prefix token count. |
+| `--api-format` | string | "completions" | API format: `completions` (`/v1/completions`) or `chat` (`/v1/chat/completions`). |
+| `--unconstrained-output` | bool | false | Do not set `max_tokens` (let server decide output length). |
+| `--rtt-ms` | float64 | 0 | Measured network round-trip time in milliseconds (recorded in trace header for calibrate). |
+
+---
+
+## blis replay
+
+Replays a captured TraceV2 file through the discrete-event simulator. Replay reuses the full simulation engine, so it accepts the same sim-config flags as `blis run` — see the sections above for [Simulation Control](#simulation-control), [KV Cache Configuration](#kv-cache-configuration), [Batch Formation](#batch-formation), [Latency Model](#latency-model), [Cluster Configuration](#cluster-configuration), [Admission Policy](#admission-policy), [Routing Policy](#routing-policy), [Scheduling and Priority](#scheduling-and-priority), [Decision Tracing](#decision-tracing), and [Fitness Evaluation](#fitness-evaluation).
+
+### Replay-Specific Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
+| `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
+
+### `--results-path` Semantic Difference
+
+The `--results-path` flag is shared with `blis run` but writes a different schema:
+
+| Command | Schema | Contents |
+|---------|--------|----------|
+| `blis run` | `MetricsOutput` JSON | Full simulation metrics (aggregated statistics, per-request details, fitness scores). |
+| `blis replay` | `[]SimResult` JSON | Per-request array with fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`. Designed for `blis calibrate` consumption. |
+
+---
+
+## blis calibrate
+
+Compares real observed latencies (from `blis observe`) against simulator predictions (from `blis replay`) and produces a calibration report with per-metric MAPE, Pearson R, and quality grades.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--trace-header` | string | "" | Path to TraceV2 header YAML file (from `blis observe`; required). |
+| `--trace-data` | string | "" | Path to TraceV2 data CSV file (from `blis observe`; required). |
+| `--sim-results` | string | "" | Path to SimResult JSON file (from `blis replay --results-path`; required). |
+| `--report` | string | "" | Path to write calibration report JSON (required). |
+| `--warmup-requests` | int | -1 | Number of initial requests to exclude. Default: from trace header `warm_up_requests`; pass 0 to include all. |
+| `--network-rtt-us` | int64 | -1 | Network RTT in microseconds added to sim-side latencies. Default: from trace header `network.measured_rtt_ms`. |
+| `--network-bandwidth-mbps` | float64 | 0 | Network bandwidth in Mbps for upload/download delay calculation (0 = no delay). |
+
+---
+
+## blis convert
+
+Converts external workload formats into BLIS WorkloadSpec v2 YAML. Three subcommands are available.
+
+### `blis convert preset`
+
+Generates a WorkloadSpec from a named preset in `defaults.yaml`.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--name` | string | "" | Preset name (e.g., `chatbot`, `summarization`, `contentgen`, `multidoc`). |
+| `--rate` | float64 | 1.0 | Request rate in requests/second. |
+| `--num-requests` | int | 100 | Number of requests. |
+| `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml`. |
+
+### `blis convert servegen`
+
+Converts a ServeGen data directory into WorkloadSpec format.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--path` | string | "" | Path to ServeGen data directory. |
+
+### `blis convert infperf`
+
+Converts an inference-perf YAML specification into WorkloadSpec format.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--spec` | string | "" | Path to inference-perf YAML spec. |
+
+---
+
+## blis compose
+
+Merges multiple WorkloadSpec v2 YAML files into a single combined specification.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--from` | string (repeatable) | (none) | Path to v2 WorkloadSpec YAML file. Can be repeated to merge multiple specs. |
