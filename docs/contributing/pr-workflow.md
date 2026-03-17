@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v4.0 — updated 2026-02-27)
+**Status:** Active (v4.1 — updated 2026-03-17)
 
 This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.
 
@@ -11,6 +11,7 @@ This document describes the complete workflow for implementing a PR from any sou
 ```mermaid
 flowchart TD
     S1["Step 1: Create Isolated Workspace"]
+    S15["Step 1.5: Source Document Audit"]
     S2["Step 2: Write Implementation Plan"]
     S25["Step 2.5: Review the Plan<br/>(10 perspectives → convergence)"]
     S3["Step 3: Human Review<br/>(Approve plan)"]
@@ -19,7 +20,7 @@ flowchart TD
     S475["Step 4.75: Pre-Commit Self-Audit<br/>(Critical thinking — no agent)"]
     S5["Step 5: Commit, Push, Create PR"]
 
-    S1 --> S2 --> S25 --> S3 --> S4 --> S45 --> S475 --> S5
+    S1 --> S15 --> S2 --> S25 --> S3 --> S4 --> S45 --> S475 --> S5
     S25 -->|convergence<br/>rounds| S25
     S45 -->|convergence<br/>rounds| S45
 
@@ -59,6 +60,22 @@ All remaining steps happen in the worktree.
 
 !!! tip "Automation"
     `/superpowers:using-git-worktrees pr<N>-<feature-name>` creates the worktree and switches your shell into it. Optional pre-cleanup: `/commit-commands:clean_gone` removes stale branches. See [Skills & Plugins](../guide/skills-and-plugins.md).
+
+---
+
+### Step 1.5: Audit the Source Document
+
+Before writing the plan, scan the source document (design doc, macro plan section, GitHub issue, or feature request) for:
+
+1. **Ambiguous requirements** — flag and resolve with the document author before planning
+2. **Contradictions with existing invariants or standards** — check against `standards/invariants.md` and `standards/rules.md`
+3. **Missing information needed for planning** — which extension type? which invariants affected? which construction sites?
+
+**Output:** A list of resolved clarifications, appended to the micro plan's Deviation Log with reason `CLARIFICATION`.
+
+> **CLARIFICATION vs CORRECTION:** Use `CLARIFICATION` when the source was ambiguous or incomplete and you chose an interpretation. Use `CORRECTION` when the source was factually wrong about existing code or behavior.
+
+If the source document is unambiguous and complete, skip this step — but note in the plan that no clarifications were needed.
 
 ---
 
@@ -407,7 +424,7 @@ Not all PRs need the same level of review. Use these objective criteria:
 | **Large** | >10 files, OR new interfaces/modules, OR architecture changes | Full two-stage (pre-pass + convergence) | Full two-stage (pre-pass + convergence) | Full (all 10 dimensions) |
 
 **Rules:**
-- **Steps 1, 2, 3, 4, 5 are always required** — worktree, plan, human review, execution, and commit apply to all tiers.
+- **Steps 1, 1.5, 2, 3, 4, 5 are always required** — worktree, source audit, plan, human review, execution, and commit apply to all tiers.
 - **Self-audit is always full** — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
 - **When in doubt, tier up** — if you're unsure whether a change is Small or Medium, use Medium.
 - **Human reviewer can override** — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.
@@ -422,13 +439,14 @@ Not all PRs need the same level of review. Use these objective criteria:
 A typical PR from a macro plan section:
 
 1. **Create worktree:** `git worktree add .worktrees/pr8-routing -b pr8-routing && cd .worktrees/pr8-routing`
-2. **Write plan:** Follow [micro-plan template](templates/micro-plan.md), save to `docs/plans/pr8-routing-plan.md`
-3. **Review plan:** Run all 10 perspectives (Stage 1 pre-pass, then Stage 2 convergence). Fix issues, re-run until converged.
-4. **Human review:** Read plan — contracts, tasks, appendix. Approve to proceed.
-5. **Implement:** Execute TDD tasks: test → fail → implement → pass → lint → commit.
-6. **Review code:** Same two-stage review as plan. Fix issues, re-run until converged. Run verification gate.
-7. **Self-audit:** Think through all 10 dimensions. Fix issues.
-8. **Commit + PR:** Push branch, create PR with closing keywords.
+2. **Audit source:** Scan source document for ambiguities, contradictions, missing info. Record clarifications.
+3. **Write plan:** Follow [micro-plan template](templates/micro-plan.md), save to `docs/plans/pr8-routing-plan.md`
+4. **Review plan:** Run all 10 perspectives (Stage 1 pre-pass, then Stage 2 convergence). Fix issues, re-run until converged.
+5. **Human review:** Read plan — contracts, tasks, appendix. Approve to proceed.
+6. **Implement:** Execute TDD tasks: test → fail → implement → pass → lint → commit.
+7. **Review code:** Same two-stage review as plan. Fix issues, re-run until converged. Run verification gate.
+8. **Self-audit:** Think through all 10 dimensions. Fix issues.
+9. **Commit + PR:** Push branch, create PR with closing keywords.
 
 The workflow is the same regardless of source (macro plan, design doc, GitHub issues). Only the source document passed to the planning step differs.
 
@@ -522,5 +540,6 @@ When to use: When Step 2.5 or Step 4.5 hits context limits. Not needed for most 
 **v2.9 (2026-02-20):** Convergence re-run protocol for both Step 2.5 and Step 4.5.
 **v3.0 (2026-02-23):** Multi-perspective rounds replace sequential passes. External LLM review removed. Convergence redefined as property of a clean round.
 **v4.0 (2026-02-27):** Human-first rewrite (#464). Steps describe human actions; skills in admonition callouts. Manual path is primary; automation is additive. Templates split into human-readable format descriptions + agent prompt companions.
+**v4.1 (2026-03-17):** Added Step 1.5 (Source Document Audit) between Steps 1 and 2 — structured pre-audit of source documents for ambiguities, contradictions, and missing information before planning begins. Added `CLARIFICATION` as a Deviation Log reason (#664).
 
 </details>
