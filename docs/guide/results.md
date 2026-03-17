@@ -30,8 +30,8 @@ The JSON output on stdout contains:
 
 Scheduling delay isolates the WaitQ wait time from compute time. High scheduling delay + low preemptions = **queue saturation** (add instances). Low scheduling delay + high TTFT = **compute saturation** (reduce batch size or use chunked prefill).
 
-!!! warning "Per-request units gotcha"
-    With `--results-path`, per-request `scheduling_delay_ms` is in **ticks (microseconds)** despite the field name. The aggregate `scheduling_delay_p99_ms` IS in milliseconds (divided by 1000). Always check units when comparing per-request to aggregate metrics.
+!!! warning "Per-request units"
+    All per-request latency fields (`ttft_ms`, `e2e_ms`, `itl_ms`, `scheduling_delay_ms`) are in **milliseconds** — converted from internal ticks by dividing by 1,000. Aggregate metrics (`scheduling_delay_p99_ms`, etc.) are also in milliseconds. See [Known Unit Gotchas](../reference/configuration.md#known-unit-gotchas) for the full unit reference. Note: hypothesis scripts written before BC-14 may divide `scheduling_delay_ms` by 1,000 unnecessarily — that field is now already in ms.
 
 ## Anomaly Counters
 

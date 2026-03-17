@@ -286,6 +286,9 @@ Requests can be tagged with SLO classes for per-class metric tracking:
 !!! warning "CLI mode and YAML mode have different defaults"
     CLI mode uses `--prompt-tokens 512, --output-tokens 512` by default. With the default roofline latency model (Qwen3-14B / H100 / TP=1), a saturated single instance handles ~17 req/s. YAML workloads define their own distributions — a YAML with shorter sequences (e.g., mean=256/128) will have higher per-instance throughput. Don't reuse capacity estimates across modes or models.
 
+!!! tip "Parameter resolution reference"
+    For the complete precedence chain of how CLI flags, workload-spec YAML, and `defaults.yaml` interact, see [Parameter Resolution by Category](../reference/configuration.md#parameter-resolution-by-category) in the Configuration Reference. See also [Common Pitfalls](../reference/configuration.md#common-pitfalls) for documented gotchas like `--rate` vs `aggregate_rate`.
+
 ## Multi-Client Composition
 
 Use `blis compose` to merge multiple workload specs into a single spec:

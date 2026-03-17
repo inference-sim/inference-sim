@@ -16,6 +16,76 @@ Hardcoded defaults (lowest priority)
 
 CLI flags only override YAML values when explicitly set. BLIS checks whether each flag was provided by the user (not just whether it has a non-default value), so default flag values do not accidentally override YAML configuration.
 
+### Parameter Resolution by Category
+
+The general precedence (CLI → YAML → hardcoded) applies everywhere, but each parameter category has its own resolution layers. The chains below show highest-to-lowest priority for each category.
+
+**Latency coefficients** (`--alpha-coeffs`, `--beta-coeffs`):
+
+1. Explicit CLI flags — if passed, used directly (no `defaults.yaml` lookup)
+2. `defaults.yaml` `models[]` entry — matched by model/GPU/TP/vllm-version (blackbox mode)
+3. Analytical computation — roofline, crossmodel, or trained-roofline backends compute from architecture + hardware specs
+4. Error — blackbox mode with no matching entry exits with an error
+
+**Hardware and TP** (`--hardware`, `--tp`, `--vllm-version`):
+
+1. Explicit CLI flags
+2. `defaults.yaml` `defaults[]` entry — matched by `--model`
+3. Error — roofline/crossmodel/trained-roofline require these values; blackbox fails at coefficient lookup
+
+**KV cache blocks** (`--total-kv-blocks`): See the detailed [Resolution Process](#resolution-process) below — four layers including auto-calculation from GPU memory.
+
+**Workload parameters** (`--rate`, `--num-requests`, `--prompt-tokens`, etc.):
+
+1. `--workload-spec` YAML file — when set, all token distribution and arrival parameters come from the YAML; CLI distribution flags are ignored
+2. CLI distribution flags — when `--workload distribution` (default) and no `--workload-spec`
+3. Named preset from `defaults.yaml` — when `--workload <name>` (e.g., `chatbot`)
+4. Hardcoded CLI flag defaults — (e.g., `--prompt-tokens 512`, `--output-tokens 512`)
+
+!!! note
+    `--seed`, `--horizon`, and `--num-requests` are exceptions — they override the workload-spec YAML values even when `--workload-spec` is set. `--rate` does NOT override `aggregate_rate` in the YAML (see [Common Pitfalls](#common-pitfalls)).
+
+**Routing, admission, and scheduling** (`--routing-policy`, `--admission-policy`, `--scheduler`, etc.):
+
+1. Explicit CLI flags
+2. `--policy-config` YAML bundle — loads all policy settings from one file
+3. Hardcoded defaults — `round-robin`, `always-admit`, `fcfs`
+
+**Batch formation** (`--max-num-running-reqs`, `--max-num-scheduled-tokens`, etc.):
+
+1. Explicit CLI flags
+2. Hardcoded defaults — 256 running reqs, 2048 scheduled tokens
+
+Batch formation has no YAML override path — `defaults.yaml` and `--policy-config` do not include batch settings.
+
+### Known Unit Gotchas
+
+All internal timestamps in the DES (arrival time, schedule time, completion time, clock) use **ticks**, where **1 tick = 1 microsecond (μs)**. Output metrics convert to milliseconds for human readability, but several fields and flags use different units:
+
+| Field / Flag | Unit | Notes |
+|-------------|------|-------|
+| `ttft_ms`, `e2e_ms`, `itl_ms` (per-request JSON) | milliseconds | Converted from ticks by dividing by 1,000 |
+| `scheduling_delay_ms` (per-request JSON) | milliseconds | Converted from ticks by dividing by 1,000. Historically was in ticks (μs) despite the `_ms` suffix — fixed by BC-14. Old hypothesis scripts (pre-fix) divide by 1,000 again unnecessarily. |
+| `scheduling_delay_p99_ms` (aggregate) | milliseconds | Always was in milliseconds |
+| `--horizon` | ticks (μs) | Simulation time limit. 1,000,000 = 1 second |
+| `--admission-latency`, `--routing-latency` | ticks (μs) | Decision latency injected into the DES event queue |
+| `think_time_us` (workload YAML) | microseconds | Inter-round delay in multi-turn sessions. 5,000,000 = 5 seconds |
+| `aggregate_rate`, `--rate` | requests/second | Not ticks — real-world time unit |
+| `--kv-transfer-bandwidth` | blocks/tick | Transfer rate between GPU and CPU KV tiers |
+| `--kv-transfer-base-latency` | ticks (μs) | Fixed per-transfer overhead |
+
+### Common Pitfalls
+
+**Capacity estimate mismatch (issue #390).** CLI distribution mode defaults to `--prompt-tokens 512, --output-tokens 512`. If you estimate per-instance capacity using CLI mode, then run a workload-spec YAML with shorter sequences (e.g., mean 256/128), the YAML workload will achieve ~1.5x higher throughput than the CLI estimate predicted. Always derive capacity estimates from the actual workload you plan to run, not from CLI defaults.
+
+**`--rate` does NOT override workload-spec YAML.** The `--rate` flag only applies in CLI distribution mode. When `--workload-spec` is set, request rate comes from `aggregate_rate` in the YAML file — the `--rate` flag is ignored. To change the rate for a YAML workload, edit the `aggregate_rate` field in the spec.
+
+**`aggregate_rate` override for inference-perf specs.** When converting inference-perf specs via `blis convert infperf`, per-stage rates in the spec override a user-specified `aggregate_rate`. If the sum of stage rates differs from `aggregate_rate`, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.
+
+**`--total-kv-blocks` phantom default.** The CLI default is 1,000,000 blocks, but this value almost never takes effect. In roofline/crossmodel mode, auto-calculation from GPU memory supersedes it. In blackbox mode, `defaults.yaml` provides a per-model value (e.g., 17,600 for qwen3-14b/H100/TP=1). The 1M default is a last-resort fallback — if your simulation uses it, check whether your model/hardware combination has a `defaults.yaml` entry or whether auto-calculation is failing.
+
+**`enable_multi_turn_chat` semantic mismatch (issue #517).** inference-perf's `enable_multi_turn_chat` creates one persistent session per virtual user. BLIS's closest equivalent is `multi_turn.single_session: true` in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.
+
 ## Simulation Control
 
 Top-level settings that control the simulation run.
