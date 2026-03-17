@@ -45,7 +45,7 @@ The analytical modes (roofline, cross-model, trained-roofline) have been validat
 **Trained-roofline** achieves 7% MAPE GPU combined step time across these architectures. Any other model with a HuggingFace `config.json` will work — it just hasn't been formally validated.
 
 !!! note "Parallelism and quantization"
-    The analytical latency models (roofline, cross-model, trained-roofline) currently model tensor parallelism (TP) only. Data parallelism (DP), expert parallelism (EP), and quantization effects (FP8, W4A16, W8A8) are under active development. For quantized model deployments, use blackbox mode with calibrated coefficients for best accuracy.
+    The analytical latency models (roofline, cross-model, trained-roofline) model tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) are not yet modeled. Quantized weight precision is auto-detected and used for weight bandwidth and KV capacity calculations in all analytical backends. Supported formats: GPTQ, AWQ, FP8, and compressed-tensors (via `quantization_config`), plus model name conventions (e.g., `w4a16`, `FP8`).
 
 ## Adding Blackbox Coefficients
 

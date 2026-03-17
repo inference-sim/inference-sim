@@ -210,7 +210,7 @@ Where each basis function (T_pf_compute, T_pf_kv, etc.) is a full analytical roo
     **Trained-roofline** is the recommended default for any model with a HuggingFace `config.json` (7% MAPE GPU combined, MoE-aware, no per-model calibration needed). **Blackbox** for models with per-model coefficients in `defaults.yaml` (slightly higher accuracy due to per-model fitting). **Cross-model** for backward compatibility with existing crossmodel workflows. **Roofline** for pure analytical estimates when no learned corrections are desired.
 
 !!! warning "Current limitations"
-    All latency models currently assume single-GPU tensor parallelism (TP). Data parallelism (DP), expert parallelism (EP), and quantization effects (FP8, W4A16, W8A8) are not yet modeled in the analytical backends. These are under active development. For quantized deployments, blackbox mode with calibrated coefficients provides the most accurate results today.
+    All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.
 
 ## Pluggable Architecture
 
