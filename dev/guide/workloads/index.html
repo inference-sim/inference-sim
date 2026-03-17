@@ -3501,6 +3501,10 @@
 <p class="admonition-title">CLI mode and YAML mode have different defaults</p>
 <p>CLI mode uses <code>--prompt-tokens 512, --output-tokens 512</code> by default. With the default roofline latency model (Qwen3-14B / H100 / TP=1), a saturated single instance handles ~17 req/s. YAML workloads define their own distributions — a YAML with shorter sequences (e.g., mean=256/128) will have higher per-instance throughput. Don't reuse capacity estimates across modes or models.</p>
 </div>
+<div class="admonition tip">
+<p class="admonition-title">Parameter resolution reference</p>
+<p>For the complete precedence chain of how CLI flags, workload-spec YAML, and <code>defaults.yaml</code> interact, see <a href="../../reference/configuration/#parameter-resolution-by-category">Parameter Resolution by Category</a> in the Configuration Reference. See also <a href="../../reference/configuration/#common-pitfalls">Common Pitfalls</a> for documented gotchas like <code>--rate</code> vs <code>aggregate_rate</code>.</p>
+</div>
 <h2 id="multi-client-composition">Multi-Client Composition<a class="headerlink" href="#multi-client-composition" title="Permanent link">&para;</a></h2>
 <p>Use <code>blis compose</code> to merge multiple workload specs into a single spec:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Merge a chat workload and a batch workload into one combined spec</span>

@@ -3031,8 +3031,8 @@
 <h3 id="scheduling-delay">Scheduling Delay<a class="headerlink" href="#scheduling-delay" title="Permanent link">&para;</a></h3>
 <p>Scheduling delay isolates the WaitQ wait time from compute time. High scheduling delay + low preemptions = <strong>queue saturation</strong> (add instances). Low scheduling delay + high TTFT = <strong>compute saturation</strong> (reduce batch size or use chunked prefill).</p>
 <div class="admonition warning">
-<p class="admonition-title">Per-request units gotcha</p>
-<p>With <code>--results-path</code>, per-request <code>scheduling_delay_ms</code> is in <strong>ticks (microseconds)</strong> despite the field name. The aggregate <code>scheduling_delay_p99_ms</code> IS in milliseconds (divided by 1000). Always check units when comparing per-request to aggregate metrics.</p>
+<p class="admonition-title">Per-request units</p>
+<p>All per-request latency fields (<code>ttft_ms</code>, <code>e2e_ms</code>, <code>itl_ms</code>, <code>scheduling_delay_ms</code>) are in <strong>milliseconds</strong> — converted from internal ticks by dividing by 1,000. Aggregate metrics (<code>scheduling_delay_p99_ms</code>, etc.) are also in milliseconds. See <a href="../../reference/configuration/#known-unit-gotchas">Known Unit Gotchas</a> for the full unit reference. Note: hypothesis scripts written before BC-14 may divide <code>scheduling_delay_ms</code> by 1,000 unnecessarily — that field is now already in ms.</p>
 </div>
 <h2 id="anomaly-counters">Anomaly Counters<a class="headerlink" href="#anomaly-counters" title="Permanent link">&para;</a></h2>
 <p>When anomalies are detected, BLIS prints <code>=== Anomaly Counters ===</code>:</p>

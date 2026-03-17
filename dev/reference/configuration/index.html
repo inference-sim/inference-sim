@@ -1419,6 +1419,45 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Configuration Precedence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameter-resolution-by-category" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameter Resolution by Category
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#known-unit-gotchas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Unit Gotchas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-pitfalls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Pitfalls
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3067,6 +3106,45 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Configuration Precedence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameter-resolution-by-category" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameter Resolution by Category
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#known-unit-gotchas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Unit Gotchas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-pitfalls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Pitfalls
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3571,6 +3649,109 @@
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>Hardcoded defaults (lowest priority)
 </code></pre></div>
 <p>CLI flags only override YAML values when explicitly set. BLIS checks whether each flag was provided by the user (not just whether it has a non-default value), so default flag values do not accidentally override YAML configuration.</p>
+<h3 id="parameter-resolution-by-category">Parameter Resolution by Category<a class="headerlink" href="#parameter-resolution-by-category" title="Permanent link">&para;</a></h3>
+<p>The general precedence (CLI → YAML → hardcoded) applies everywhere, but each parameter category has its own resolution layers. The chains below show highest-to-lowest priority for each category.</p>
+<p><strong>Latency coefficients</strong> (<code>--alpha-coeffs</code>, <code>--beta-coeffs</code>):</p>
+<ol>
+<li>Explicit CLI flags — if passed, used directly (no <code>defaults.yaml</code> lookup)</li>
+<li><code>defaults.yaml</code> <code>models[]</code> entry — matched by model/GPU/TP/vllm-version (blackbox mode)</li>
+<li>Analytical computation — roofline, crossmodel, or trained-roofline backends compute from architecture + hardware specs</li>
+<li>Error — blackbox mode with no matching entry exits with an error</li>
+</ol>
+<p><strong>Hardware and TP</strong> (<code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code>):</p>
+<ol>
+<li>Explicit CLI flags</li>
+<li><code>defaults.yaml</code> <code>defaults[]</code> entry — matched by <code>--model</code></li>
+<li>Error — roofline/crossmodel/trained-roofline require these values; blackbox fails at coefficient lookup</li>
+</ol>
+<p><strong>KV cache blocks</strong> (<code>--total-kv-blocks</code>): See the detailed <a href="#resolution-process">Resolution Process</a> below — four layers including auto-calculation from GPU memory.</p>
+<p><strong>Workload parameters</strong> (<code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens</code>, etc.):</p>
+<ol>
+<li><code>--workload-spec</code> YAML file — when set, all token distribution and arrival parameters come from the YAML; CLI distribution flags are ignored</li>
+<li>CLI distribution flags — when <code>--workload distribution</code> (default) and no <code>--workload-spec</code></li>
+<li>Named preset from <code>defaults.yaml</code> — when <code>--workload &lt;name&gt;</code> (e.g., <code>chatbot</code>)</li>
+<li>Hardcoded CLI flag defaults — (e.g., <code>--prompt-tokens 512</code>, <code>--output-tokens 512</code>)</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code>--seed</code>, <code>--horizon</code>, and <code>--num-requests</code> are exceptions — they override the workload-spec YAML values even when <code>--workload-spec</code> is set. <code>--rate</code> does NOT override <code>aggregate_rate</code> in the YAML (see <a href="#common-pitfalls">Common Pitfalls</a>).</p>
+</div>
+<p><strong>Routing, admission, and scheduling</strong> (<code>--routing-policy</code>, <code>--admission-policy</code>, <code>--scheduler</code>, etc.):</p>
+<ol>
+<li>Explicit CLI flags</li>
+<li><code>--policy-config</code> YAML bundle — loads all policy settings from one file</li>
+<li>Hardcoded defaults — <code>round-robin</code>, <code>always-admit</code>, <code>fcfs</code></li>
+</ol>
+<p><strong>Batch formation</strong> (<code>--max-num-running-reqs</code>, <code>--max-num-scheduled-tokens</code>, etc.):</p>
+<ol>
+<li>Explicit CLI flags</li>
+<li>Hardcoded defaults — 256 running reqs, 2048 scheduled tokens</li>
+</ol>
+<p>Batch formation has no YAML override path — <code>defaults.yaml</code> and <code>--policy-config</code> do not include batch settings.</p>
+<h3 id="known-unit-gotchas">Known Unit Gotchas<a class="headerlink" href="#known-unit-gotchas" title="Permanent link">&para;</a></h3>
+<p>All internal timestamps in the DES (arrival time, schedule time, completion time, clock) use <strong>ticks</strong>, where <strong>1 tick = 1 microsecond (μs)</strong>. Output metrics convert to milliseconds for human readability, but several fields and flags use different units:</p>
+<table>
+<thead>
+<tr>
+<th>Field / Flag</th>
+<th>Unit</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ttft_ms</code>, <code>e2e_ms</code>, <code>itl_ms</code> (per-request JSON)</td>
+<td>milliseconds</td>
+<td>Converted from ticks by dividing by 1,000</td>
+</tr>
+<tr>
+<td><code>scheduling_delay_ms</code> (per-request JSON)</td>
+<td>milliseconds</td>
+<td>Converted from ticks by dividing by 1,000. Historically was in ticks (μs) despite the <code>_ms</code> suffix — fixed by BC-14. Old hypothesis scripts (pre-fix) divide by 1,000 again unnecessarily.</td>
+</tr>
+<tr>
+<td><code>scheduling_delay_p99_ms</code> (aggregate)</td>
+<td>milliseconds</td>
+<td>Always was in milliseconds</td>
+</tr>
+<tr>
+<td><code>--horizon</code></td>
+<td>ticks (μs)</td>
+<td>Simulation time limit. 1,000,000 = 1 second</td>
+</tr>
+<tr>
+<td><code>--admission-latency</code>, <code>--routing-latency</code></td>
+<td>ticks (μs)</td>
+<td>Decision latency injected into the DES event queue</td>
+</tr>
+<tr>
+<td><code>think_time_us</code> (workload YAML)</td>
+<td>microseconds</td>
+<td>Inter-round delay in multi-turn sessions. 5,000,000 = 5 seconds</td>
+</tr>
+<tr>
+<td><code>aggregate_rate</code>, <code>--rate</code></td>
+<td>requests/second</td>
+<td>Not ticks — real-world time unit</td>
+</tr>
+<tr>
+<td><code>--kv-transfer-bandwidth</code></td>
+<td>blocks/tick</td>
+<td>Transfer rate between GPU and CPU KV tiers</td>
+</tr>
+<tr>
+<td><code>--kv-transfer-base-latency</code></td>
+<td>ticks (μs)</td>
+<td>Fixed per-transfer overhead</td>
+</tr>
+</tbody>
+</table>
+<h3 id="common-pitfalls">Common Pitfalls<a class="headerlink" href="#common-pitfalls" title="Permanent link">&para;</a></h3>
+<p><strong>Capacity estimate mismatch (issue #390).</strong> CLI distribution mode defaults to <code>--prompt-tokens 512, --output-tokens 512</code>. If you estimate per-instance capacity using CLI mode, then run a workload-spec YAML with shorter sequences (e.g., mean 256/128), the YAML workload will achieve ~1.5x higher throughput than the CLI estimate predicted. Always derive capacity estimates from the actual workload you plan to run, not from CLI defaults.</p>
+<p><strong><code>--rate</code> does NOT override workload-spec YAML.</strong> The <code>--rate</code> flag only applies in CLI distribution mode. When <code>--workload-spec</code> is set, request rate comes from <code>aggregate_rate</code> in the YAML file — the <code>--rate</code> flag is ignored. To change the rate for a YAML workload, edit the <code>aggregate_rate</code> field in the spec.</p>
+<p><strong><code>aggregate_rate</code> override for inference-perf specs.</strong> When converting inference-perf specs via <code>blis convert infperf</code>, per-stage rates in the spec override a user-specified <code>aggregate_rate</code>. If the sum of stage rates differs from <code>aggregate_rate</code>, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.</p>
+<p><strong><code>--total-kv-blocks</code> phantom default.</strong> The CLI default is 1,000,000 blocks, but this value almost never takes effect. In roofline/crossmodel mode, auto-calculation from GPU memory supersedes it. In blackbox mode, <code>defaults.yaml</code> provides a per-model value (e.g., 17,600 for qwen3-14b/H100/TP=1). The 1M default is a last-resort fallback — if your simulation uses it, check whether your model/hardware combination has a <code>defaults.yaml</code> entry or whether auto-calculation is failing.</p>
+<p><strong><code>enable_multi_turn_chat</code> semantic mismatch (issue #517).</strong> inference-perf's <code>enable_multi_turn_chat</code> creates one persistent session per virtual user. BLIS's closest equivalent is <code>multi_turn.single_session: true</code> in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.</p>
 <h2 id="simulation-control">Simulation Control<a class="headerlink" href="#simulation-control" title="Permanent link">&para;</a></h2>
 <p>Top-level settings that control the simulation run.</p>
 <table>
