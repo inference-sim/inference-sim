@@ -105,6 +105,51 @@ You should see JSON output on stdout with key fields:
 
 See the [supported models catalog](docs/reference/models.md#blackbox-coefficient-catalog) for models with pre-trained coefficients.
 
+### Observe real server latency
+
+Record timing from a real inference server into a TraceV2 file:
+
+```bash
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload-spec workload.yaml \
+  --trace-header trace.yaml --trace-data trace.csv
+```
+
+For servers exposing `/v1/chat/completions` (most production vLLM/SGLang deployments), use `--api-format chat` and optionally account for network round-trip time:
+
+```bash
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --api-format chat --rtt-ms 2.5 \
+  --workload-spec workload.yaml \
+  --trace-header trace.yaml --trace-data trace.csv
+```
+
+See [Workload Specifications](docs/guide/workloads.md) for the workload spec YAML schema.
+
+### Replay traces through simulator
+
+Replay a captured TraceV2 file through the discrete-event simulator:
+
+```bash
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
+```
+
+To produce per-request results for calibration, add `--results-path`:
+
+```bash
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --results-path results.json
+```
+
+### Calibrate simulator accuracy
+
+Compare real observed latencies against simulator predictions (using the per-request results from `blis replay --results-path`):
+
+```bash
+./blis calibrate --trace-header t.yaml --trace-data d.csv \
+  --sim-results results.json --report calibration.json
+```
+
 ### Convert workload formats
 
 ```bash
@@ -113,6 +158,9 @@ See the [supported models catalog](docs/reference/models.md#blackbox-coefficient
 
 # Import a ServeGen dataset directory (requires your own ServeGen data/)
 ./blis convert servegen --path data/
+
+# Import an inference-perf workload spec
+./blis convert inference-perf --spec spec.yaml
 ```
 
 ### Compose multiple workload specs
@@ -153,10 +201,13 @@ BLIS has a comprehensive documentation site built with MkDocs Material:
 inference-sim/
 ├── main.go                 # CLI entry point
 ├── cmd/                    # CLI commands
-│   ├── root.go             # CLI flags (--policy-config, --routing-policy, --workload-spec, --latency-model, etc.)
-│   ├── observe.go          # Real-mode HTTP client for observe-predict-calibrate
-│   ├── convert.go          # `./blis convert` subcommands (servegen, preset, inference-perf)
-│   ├── compose.go          # `./blis compose` for merging v2 specs
+│   ├── root.go             # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --latency-model, etc.)
+│   ├── replay.go           # `blis replay` command: replays TraceV2 file through DES
+│   ├── calibrate.go        # `blis calibrate` command: compares real vs simulated latencies
+│   ├── observe.go          # Real-mode HTTP client (RealClient with functional options); Recorder for TraceV2 output
+│   ├── observe_cmd.go      # `blis observe` command: flags, prefix string generation, dispatch orchestrator
+│   ├── convert.go          # `blis convert` subcommands (servegen, preset, inference-perf)
+│   ├── compose.go          # `blis compose` for merging v2 specs
 │   ├── hfconfig.go         # HuggingFace config resolution (--latency-model auto-fetch into model_configs/)
 │   └── default_config.go   # defaults.yaml loading (includes GetHFRepo for HF repo mapping)
 ├── sim/                    # Core simulation engine
@@ -189,8 +240,9 @@ inference-sim/
 │   ├── tiered.go           # TieredKVCache (GPU+CPU)
 │   └── register.go         # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/            # Latency model implementations
-│   ├── latency.go          # BlackboxLatencyModel, RooflineLatencyModel, CrossModelLatencyModel, NewLatencyModel factory
-│   ├── crossmodel.go       # CrossModelLatencyModel: physics-informed step time from architecture features
+│   ├── latency.go          # RooflineLatencyModel, BlackboxLatencyModel, CrossModelLatencyModel, NewLatencyModel factory
+│   ├── trained_roofline.go # TrainedRooflineLatencyModel: roofline basis functions × learned corrections
+│   ├── crossmodel.go       # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go         # Analytical FLOPs/bandwidth latency estimation
 │   ├── config.go           # HFConfig, GetHWConfig, GetModelConfig, ValidateRooflineConfig
 │   ├── kv_capacity.go      # KV cache block auto-calculation from model architecture + GPU memory
@@ -216,11 +268,12 @@ inference-sim/
 │   ├── calibrate.go        # CalibrationReport, MAPE, Pearson r
 │   ├── multimodal.go       # Multimodal token generation (text+image+audio+video)
 │   ├── reasoning.go        # Reasoning multi-turn with context accumulation
+│   ├── session.go          # SessionManager: closed-loop session tracking, follow-up round generation
 │   ├── network.go          # Client-perspective latency (RTT + bandwidth)
 │   ├── inference_perf.go   # inference-perf format loading and validation
 │   ├── scenarios.go        # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 │   ├── cohort.go           # CohortSpec expansion: diurnal, spike, drain patterns
-│   ├── convert.go          # Format converters: ConvertServeGen, ConvertPreset
+│   ├── convert.go          # Format converters: ConvertServeGen, ConvertPreset, ComposeSpecs
 │   └── synthesis.go        # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
 ├── sim/trace/              # Decision trace recording
 │   ├── trace.go            # TraceLevel, TraceConfig, SimulationTrace
