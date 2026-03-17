@@ -20,6 +20,9 @@ go build -o blis main.go
 # Replay a captured TraceV2 file through the DES
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
 
+# Compare real observed latencies against simulator predictions
+./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
+
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 ./blis convert servegen --path data/
@@ -206,6 +209,7 @@ inference-sim/
 ├── cmd/
 │   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --trace-output)
 │   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags shared via registerSimConfigFlags(); --results-path writes []workload.SimResult (integer request_id, ttft_us/e2e_us in µs); SimResult type lives in sim/workload/calibrate.go
+│   ├── calibrate.go           # `blis calibrate` command: compares real observed latencies (TraceV2 from blis observe) against sim predictions ([]SimResult JSON from blis replay --results-path); flags: --trace-header, --trace-data, --sim-results, --report (required), --warmup-requests (default: from header, sentinel -1), --network-rtt-us (default: from header, sentinel -1), --network-bandwidth-mbps; writes CalibrationReport JSON with MAPE/PearsonR/percentiles per metric
 │   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
