@@ -58,6 +58,18 @@ When KV cache activity is nonzero, BLIS prints `=== KV Cache Metrics ===`:
 
 When multiple SLO classes are present in the workload, BLIS prints per-class TTFT and E2E distributions. This lets you verify that `critical` requests meet SLOs even when `batch` traffic is heavy.
 
+## Per-Model Metrics
+
+When instances serve different models (multi-model deployment), BLIS prints per-model TTFT mean/p99, E2E mean/p99, and throughput (req/s). This appears automatically when requests carry model tags. Output format:
+
+```
+=== Per-Model Metrics ===
+  qwen/qwen3-14b:
+    TTFT: mean=1234.56 p99=5678.90 (n=250)
+    E2E:  mean=9876.54 p99=12345.67 (n=250)
+    Throughput: 50.00 req/s
+```
+
 ## Fitness Evaluation
 
 For automated multi-configuration comparison:

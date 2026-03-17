@@ -56,14 +56,27 @@ func (q *ClusterEventQueue) Pop() any {
 }
 
 // buildRouterState constructs a RouterState from current cluster state.
-// Collects snapshots from all instances via SnapshotProvider and bundles with clock.
+// Filters to instances that are routable (IsRoutable()) and, when req is non-nil and
+// has a non-empty Model, further filters to instances serving that model (T044, T048).
 // Used by both AdmissionDecisionEvent and RoutingDecisionEvent (BC-8).
-func buildRouterState(cs *ClusterSimulator) *sim.RouterState {
-	snapshots := make([]sim.RoutingSnapshot, len(cs.instances))
-	for i, inst := range cs.instances {
+// Complexity: O(N) per call where N = number of instances. At current BLIS scale (≤32 instances)
+// this is negligible. A model→instances index could pre-partition if instance counts exceed 100.
+func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
+	snapshots := make([]sim.RoutingSnapshot, 0, len(cs.instances))
+	for _, inst := range cs.instances {
+		// Filter by lifecycle state (T044): exclude non-routable instances
+		if !inst.IsRoutable() {
+			continue
+		}
+		// Filter by model (T048): when request has a model, only include matching instances.
+		// When req.Model is empty, include all (single-model backward-compat).
+		if req != nil && req.Model != "" && inst.Model != req.Model {
+			continue
+		}
 		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
 		snap.InFlightRequests = cs.inFlightRequests[string(inst.ID())]
-		snapshots[i] = snap
+		snap.Model = inst.Model
+		snapshots = append(snapshots, snap)
 	}
 	return &sim.RouterState{
 		Snapshots: snapshots,
@@ -107,7 +120,7 @@ func (e *AdmissionDecisionEvent) Priority() int     { return 1 }
 // If admitted, schedules a RoutingDecisionEvent.
 // If rejected, increments cs.rejectedRequests counter (EC-2).
 func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
-	state := buildRouterState(cs)
+	state := buildRouterState(cs, e.request)
 	admitted, reason := cs.admissionPolicy.Admit(e.request, state)
 	logrus.Debugf("[cluster] req %s: admitted=%v reason=%q", e.request.ID, admitted, reason)
 
@@ -146,7 +159,18 @@ func (e *RoutingDecisionEvent) Priority() int     { return 2 }
 
 // Execute routes the request using the configured routing policy and injects it.
 func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
-	state := buildRouterState(cs)
+	state := buildRouterState(cs, e.request)
+
+	// Guard: if no routable instances are available (e.g., all model-M instances are Loading
+	// or Draining), routing policies panic on empty snapshot sets. Treat as rejection instead.
+	// Uses Warn so users understand why requests are dropping (visible at default log level).
+	// I13: Use routingRejections counter to distinguish from admission rejections.
+	if len(state.Snapshots) == 0 {
+		logrus.Warnf("[cluster] req %s: no routable instances for model %q — request rejected at routing (all instances may be Loading or Draining)", e.request.ID, e.request.Model)
+		cs.routingRejections++
+		return
+	}
+
 	decision := cs.routingPolicy.Route(e.request, state)
 	logrus.Debugf("[cluster] req %s → instance %s (reason=%s)", e.request.ID, decision.TargetInstance, decision.Reason)
 
@@ -183,6 +207,13 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 			// Increment in-flight AFTER target validation — gives next routing decision
 			// visibility into this routing decision (#170)
 			cs.inFlightRequests[decision.TargetInstance]++
+			// T042: record warm-up requests for TTFT factor application (Phase 1A).
+			// I9: Cap recording to WarmUpRequestCount to avoid overcounting when
+			// multiple requests are routed before completions decrement warmUpRemaining.
+			warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
+			if inst.IsWarmingUp() && len(inst.WarmUpRequestIDs()) < warmUpCount {
+				inst.RecordWarmUpRequest(e.request.ID)
+			}
 			inst.InjectRequestOnline(e.request, e.time)
 			return
 		}

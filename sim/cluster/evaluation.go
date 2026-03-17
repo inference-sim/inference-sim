@@ -17,6 +17,10 @@ type EvaluationResult struct {
 
 	SimDuration int64         // simulation clock at end (ticks)
 	WallTime    time.Duration // wall-clock duration of Run()
+
+	// Phase 1A: per-model metrics (FR-011). Nil when no requests carry a Model tag.
+	// Populated by ComputePerModelMetrics(). JSON key "per_model".
+	PerModelMetrics map[string]*ModelMetrics `json:"per_model,omitempty"`
 }
 
 // NewEvaluationResult constructs an EvaluationResult.
@@ -30,4 +34,13 @@ func NewEvaluationResult(metrics *RawMetrics, fitness *FitnessResult, tr *trace.
 		SimDuration: simDuration,
 		WallTime:    wallTime,
 	}
+}
+
+// WithPerModelMetrics sets the per-model metrics on the result and returns the receiver.
+// Enables fluent construction:
+//
+//	NewEvaluationResult(...).WithPerModelMetrics(ComputePerModelMetrics(aggregated))
+func (e *EvaluationResult) WithPerModelMetrics(m map[string]*ModelMetrics) *EvaluationResult {
+	e.PerModelMetrics = m
+	return e
 }

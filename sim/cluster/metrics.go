@@ -98,9 +98,10 @@ type RawMetrics struct {
 	TokensPerSec   float64
 
 	// Anomaly counters
-	PriorityInversions int
-	HOLBlockingEvents  int
-	RejectedRequests     int
+	PriorityInversions   int
+	HOLBlockingEvents    int
+	RejectedRequests     int // admission rejections
+	RoutingRejections    int // I13: routing rejections (no routable instances)
 	DroppedUnservable    int
 	LengthCappedRequests int
 	TimedOutRequests     int
@@ -117,12 +118,16 @@ type RawMetrics struct {
 // when "constant" or "" (both map to ConstantPriority), inversions are
 // suppressed (always 0) since all requests share the same priority and
 // E2E differences reflect workload variance, not unfairness.
-func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, priorityPolicy string) *RawMetrics {
+func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, priorityPolicy string, routingRejections ...int) *RawMetrics {
 	raw := &RawMetrics{
 		RejectedRequests:     rejectedRequests,
 		DroppedUnservable:    aggregated.DroppedUnservable,
 		LengthCappedRequests: aggregated.LengthCappedRequests,
 		TimedOutRequests:     aggregated.TimedOutRequests,
+	}
+	// I13: Optional routing rejections parameter for backward compatibility.
+	if len(routingRejections) > 0 {
+		raw.RoutingRejections = routingRejections[0]
 	}
 
 	// Latency distributions
@@ -480,6 +485,87 @@ func extractMetric(m *RawMetrics, key string) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// ─── Per-model metrics (Phase 1A, FR-011) ───────────────────────────────────
+
+// ModelMetrics holds per-model latency and throughput metrics for JSON output.
+type ModelMetrics struct {
+	Model              string       `json:"model"`
+	TTFT               Distribution `json:"ttft"`
+	E2E                Distribution `json:"e2e"`
+	ThroughputRPS      float64      `json:"throughput_rps"`
+	ThroughputTokenSec float64      `json:"tokens_per_sec"`
+	TotalRequests      int          `json:"total_requests"`
+}
+
+// ComputePerModelMetrics partitions requests by Model field and computes
+// per-model latency distributions and throughput.
+// Returns empty map when no requests have a non-empty Model field (backward-compat).
+// Iterates model names in sorted order for determinism (R2).
+func ComputePerModelMetrics(aggregated *sim.Metrics) map[string]*ModelMetrics {
+	ttftByModel := make(map[string][]float64)
+	e2eByModel := make(map[string][]float64)
+	countByModel := make(map[string]int)
+	outputTokensByModel := make(map[string]int) // I11: accumulate output tokens per model
+
+	// Partition TTFT by model
+	for reqID, ttft := range aggregated.RequestTTFTs {
+		req, ok := aggregated.Requests[reqID]
+		if !ok || req.Model == "" {
+			continue
+		}
+		ttftByModel[req.Model] = append(ttftByModel[req.Model], ttft)
+	}
+	// Partition E2E by model
+	for reqID, e2e := range aggregated.RequestE2Es {
+		req, ok := aggregated.Requests[reqID]
+		if !ok || req.Model == "" {
+			continue
+		}
+		e2eByModel[req.Model] = append(e2eByModel[req.Model], e2e)
+		countByModel[req.Model]++
+		outputTokensByModel[req.Model] += req.NumDecodeTokens
+	}
+
+	if len(ttftByModel) == 0 && len(e2eByModel) == 0 {
+		return nil
+	}
+
+	// Collect all model names (R2: sorted for determinism)
+	allModels := make(map[string]struct{})
+	for k := range ttftByModel {
+		allModels[k] = struct{}{}
+	}
+	for k := range e2eByModel {
+		allModels[k] = struct{}{}
+	}
+	modelNames := make([]string, 0, len(allModels))
+	for name := range allModels {
+		modelNames = append(modelNames, name)
+	}
+	sort.Strings(modelNames)
+
+	result := make(map[string]*ModelMetrics, len(modelNames))
+	for _, name := range modelNames {
+		mm := &ModelMetrics{
+			Model:         name,
+			TTFT:          NewDistribution(ttftByModel[name]),
+			E2E:           NewDistribution(e2eByModel[name]),
+			TotalRequests: countByModel[name],
+		}
+		// Throughput: per-model requests and tokens / total simulation duration
+		if aggregated.SimEndedTime > 0 && countByModel[name] > 0 {
+			durationSec := float64(aggregated.SimEndedTime) / 1e6
+			mm.ThroughputRPS = float64(countByModel[name]) / durationSec
+			// I11: Compute per-model token throughput from accumulated output tokens.
+			if outputTokensByModel[name] > 0 {
+				mm.ThroughputTokenSec = float64(outputTokensByModel[name]) / durationSec
+			}
+		}
+		result[name] = mm
+	}
+	return result
 }
 
 // ParseFitnessWeights parses a "key:value,key:value" string into a weight map.

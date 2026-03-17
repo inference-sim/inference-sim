@@ -159,7 +159,7 @@ func TestBuildRouterState_PopulatesSnapshots(t *testing.T) {
 	config := newTestDeploymentConfig(3)
 	cs := NewClusterSimulator(config, newTestRequests(1), nil)
 
-	state := buildRouterState(cs)
+	state := buildRouterState(cs, nil)
 
 	if len(state.Snapshots) != 3 {
 		t.Errorf("expected 3 snapshots, got %d", len(state.Snapshots))

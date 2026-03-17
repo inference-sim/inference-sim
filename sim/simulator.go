@@ -256,6 +256,15 @@ func (sim *Simulator) Run() {
 // QueueDepth returns the number of requests in the wait queue.
 func (sim *Simulator) QueueDepth() int { return sim.WaitQ.Len() }
 
+// DrainWaitQueue removes and returns all requests currently in the wait queue.
+// Used by DrainRedirect policy to re-inject queued requests into the cluster router.
+// After this call, WaitQ.Len() == 0.
+func (sim *Simulator) DrainWaitQueue() []*Request {
+	items := sim.WaitQ.Items()
+	sim.WaitQ = &WaitQueue{}
+	return items
+}
+
 // BatchSize returns the number of requests in the running batch, or 0 if nil.
 func (sim *Simulator) BatchSize() int {
 	if sim.RunningBatch == nil {

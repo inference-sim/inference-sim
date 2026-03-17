@@ -316,6 +316,7 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 |------|------|---------|-------------|
 | `--workload-spec` | string | "" | Path to workload-spec YAML. |
 | `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml`. |
+| `--trace-output` | string | "" | Export workload as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`). |
 
 ## Policy Bundle
 
@@ -452,7 +453,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` |
-| **Top-level** | `--seed`, `--horizon`, `--log`, `--results-path`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
+| **Top-level** | `--seed`, `--horizon`, `--log`, `--results-path`, `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---
 

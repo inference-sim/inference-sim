@@ -634,6 +634,7 @@ Example:
 			cs.PerInstanceMetrics(),
 			cs.RejectedRequests(),
 			priorityPolicy,
+			cs.RoutingRejections(),
 		)
 
 		// Print anomaly counters if any detected (R23: same as runCmd)

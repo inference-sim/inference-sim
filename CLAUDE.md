@@ -249,3 +249,10 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - **Active plans:** `docs/plans/` (implementation plans for in-progress work)
 - **Archived design docs:** `docs/plans/archive/` (completed design docs for architectural reference)
 - **PR history:** Use `git log --oneline main` for the definitive commit history
+
+## Active Technologies
+- Go 1.22+ + `gopkg.in/yaml.v3` (strict parsing), `gonum` (stats), `cobra`, `logrus`
+- In-memory node/GPU inventory maps; no external storage
+
+## Recent Changes
+- Phase 1A: Added node/GPU placement, instance lifecycle, multi-model routing, per-model metrics
