@@ -632,6 +632,69 @@ After creating the plan, the workflow continues with:
 - Invoke commit-commands:commit-push-pr when complete
 
 ======================================================================
+COMPACT MODE (SMALL TIER PRs)
+======================================================================
+
+If the source of work meets ALL of these criteria, produce a COMPACT
+plan instead of the full format above:
+
+- Docs-only with no process/workflow semantic changes (typo fixes,
+  formatting, comment updates, link fixes), OR
+- ≤3 files changed AND only mechanical changes (renames, formatting)
+  AND no behavioral logic changes AND no new interfaces/types AND no
+  new CLI flags
+
+Note: "process/workflow semantic changes" includes adding new template
+sections, modifying review criteria, or changing how the PR workflow
+operates — these require the full format even if the PR is docs-only.
+
+COMPACT OUTPUT FORMAT:
+
+```markdown
+# [Title] Implementation Plan
+
+**Goal:** [One sentence]
+**Source:** [Link]
+**Closes:** [Issue numbers]
+
+## Behavioral Contracts
+
+BC-1: <Name>
+- GIVEN <precondition>
+- WHEN <action>
+- THEN <observable outcome>
+
+[Quality gate: every THEN clause must describe observable behavior,
+not internal structure.]
+
+## Tasks
+
+### Task N: <Name> (BC-X)
+
+**Files:** create/modify X, test Y
+
+**Test:**
+[Complete test code]
+
+**Impl:**
+[Complete implementation code]
+
+**Verify:** `go test ./path/... -run TestName`
+**Lint:** `golangci-lint run ./path/...`
+**Commit:** `type(scope): description (BC-X)`
+
+## Sanity Checklist
+
+[Include full checklist from Phase 8]
+```
+
+DO NOT produce compact format if:
+- The PR adds new interfaces, types, or CLI flags
+- The PR changes behavioral logic (not just mechanical/formatting)
+- The PR touches >3 files
+- You are unsure — when in doubt, use the full format
+
+======================================================================
 QUALITY BAR
 ======================================================================
 
