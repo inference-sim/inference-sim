@@ -283,7 +283,3 @@ func (r *Recorder) Export(header *workload.TraceHeader, headerPath, dataPath str
 	return workload.ExportTraceV2(header, r.Records(), headerPath, dataPath)
 }
 
-// LogRealModeNotImplemented logs that real mode is a placeholder for now.
-func LogRealModeNotImplemented() {
-	logrus.Warn("Real mode (--real-mode) is not yet fully integrated. Use mock testing for validation.")
-}
