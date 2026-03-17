@@ -228,16 +228,26 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 			bits := 0
 			if bitsRaw, ok := qc["bits"].(float64); ok {
 				bits = int(bitsRaw)
+			} else if bitsStr, ok := qc["bits"].(string); ok {
+				if parsed, err := strconv.Atoi(bitsStr); err == nil {
+					bits = parsed
+				}
 			}
 			if bits > 0 {
 				weightBytesPerParam = float64(bits) / 8.0
 			} else if strings.EqualFold(quantMethod, "fp8") {
 				weightBytesPerParam = 1.0
 			} else if strings.EqualFold(quantMethod, "compressed-tensors") {
-				// compressed-tensors stores bits in config_groups.*.weights.num_bits
+				// compressed-tensors stores bits in config_groups.*.weights.num_bits.
+				// Keys are sorted for deterministic iteration (INV-6).
 				if cg, ok := qc["config_groups"].(map[string]any); ok {
-					for _, g := range cg {
-						if gm, ok := g.(map[string]any); ok {
+					keys := make([]string, 0, len(cg))
+					for k := range cg {
+						keys = append(keys, k)
+					}
+					sort.Strings(keys)
+					for _, k := range keys {
+						if gm, ok := cg[k].(map[string]any); ok {
 							if w, ok := gm["weights"].(map[string]any); ok {
 								if nb, ok := w["num_bits"].(float64); ok && nb > 0 {
 									weightBytesPerParam = nb / 8.0

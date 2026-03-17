@@ -682,6 +682,19 @@ func TestValidateRooflineConfig_NaNWeightBytesPerParam_ReturnsError(t *testing.T
 	}
 }
 
+func TestValidateRooflineConfig_InfWeightBytesPerParam_ReturnsError(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2, WeightBytesPerParam: math.Inf(1)}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err == nil {
+		t.Fatal("expected error for Inf WeightBytesPerParam, got nil")
+	}
+	if !strings.Contains(err.Error(), "WeightBytesPerParam") {
+		t.Errorf("error should mention WeightBytesPerParam: %v", err)
+	}
+}
+
 func TestValidateRooflineConfig_ValidWeightBytesPerParam_ReturnsNil(t *testing.T) {
 	// Valid WeightBytesPerParam should not cause an error
 	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2, WeightBytesPerParam: 0.5}
@@ -938,6 +951,34 @@ func TestGetModelConfig_QuantBitsZero_ZeroWeightBytes(t *testing.T) {
 	}
 	if cfg.WeightBytesPerParam != 0 {
 		t.Errorf("expected WeightBytesPerParam=0 for bits=0 degenerate, got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+func TestGetModelConfig_BitsAsString_CoercesToInt(t *testing.T) {
+	// I2: Some HF configs encode bits as a JSON string (e.g. "4" instead of 4).
+	// The parser should coerce string to int.
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "gptq",
+			"bits": "4"
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 0.5 {
+		t.Errorf("expected WeightBytesPerParam=0.5 for bits=\"4\" (string coercion), got %v", cfg.WeightBytesPerParam)
 	}
 }
 

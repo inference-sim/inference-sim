@@ -681,3 +681,30 @@ func TestCalculateMemoryAccessBytes_W4A16_Conservation(t *testing.T) {
 		t.Errorf("conservation violation: total=%g, sum=%g", mem["total"], sum)
 	}
 }
+
+func TestRooflineStepTime_W4A16_LowerThanFP16_MemoryBoundDecode(t *testing.T) {
+	// BC-6 end-to-end: W4A16 model should produce lower (or equal) decode step time
+	// than FP16 because decode is memory-bound and W4A16 has 4x less weight bandwidth.
+	fp16 := testModelConfig()
+	w4a16 := testW4A16Config()
+	hc := testHardwareCalib()
+
+	// Pure decode step: single token with long sequence history (memory-bound regime)
+	decodeStep := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 2048, NumNewDecodeTokens: 1},
+		},
+	}
+
+	fp16Time := rooflineStepTime(fp16, hc, decodeStep, 1)
+	w4a16Time := rooflineStepTime(w4a16, hc, decodeStep, 1)
+
+	if fp16Time <= 0 || w4a16Time <= 0 {
+		t.Fatalf("expected positive step times: fp16=%d, w4a16=%d", fp16Time, w4a16Time)
+	}
+	if w4a16Time > fp16Time {
+		t.Errorf("W4A16 decode step time (%d µs) should be <= FP16 (%d µs) in memory-bound regime",
+			w4a16Time, fp16Time)
+	}
+	t.Logf("Decode step: FP16=%d µs, W4A16=%d µs (ratio=%.2f)", fp16Time, w4a16Time, float64(w4a16Time)/float64(fp16Time))
+}

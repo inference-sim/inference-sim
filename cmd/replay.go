@@ -353,9 +353,8 @@ Example:
 			}
 			hwConfig = hc
 
-			if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
-				logrus.Warnf("--latency-model: model reports %.0f byte(s)/param (possible quantization). Roofline step time estimates may be inaccurate for quantized models", modelConfig.BytesPerParam)
-			}
+			applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
+
 			if backend == "roofline" && modelConfig.NumLocalExperts > 1 {
 				logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). Roofline models per-expert FLOPs and active weights; dispatch overhead is not modeled",
 					modelConfig.NumLocalExperts, modelConfig.NumExpertsPerTok)

@@ -605,16 +605,8 @@ var runCmd = &cobra.Command{
 					hfCfg, parseErr := latency.ParseHFConfig(hfPath)
 					if parseErr == nil {
 						mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
-						// Model name fallback: if quantization_config parsing didn't yield weight
-						// precision, try to infer from naming conventions (e.g. w4a16, FP8).
-						if mcErr == nil && mc.WeightBytesPerParam == 0 {
-							mc.WeightBytesPerParam = latency.InferWeightBytesFromModelName(model)
-						}
-						// Warn if quantization_config detected but neither parser nor name yielded precision
-						if mcErr == nil && mc.WeightBytesPerParam == 0 {
-							if _, hasQC := hfCfg.Raw["quantization_config"]; hasQC {
-								logrus.Warnf("HuggingFace config has quantization_config but weight precision could not be determined")
-							}
+						if mcErr == nil {
+							applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
 						}
 						resolvedHW, hwPathErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
 						if mcErr == nil && hwPathErr == nil {
@@ -660,26 +652,8 @@ var runCmd = &cobra.Command{
 			}
 			hwConfig = hc
 
-			// Model name fallback: if quantization_config parsing didn't yield weight
-			// precision, try to infer from naming conventions (e.g. w4a16, FP8).
-			if modelConfig.WeightBytesPerParam == 0 {
-				modelConfig.WeightBytesPerParam = latency.InferWeightBytesFromModelName(model)
-			}
+			applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
 
-			// Log quantization info when weight precision differs from compute precision
-			if modelConfig.WeightBytesPerParam > 0 && modelConfig.WeightBytesPerParam != modelConfig.BytesPerParam {
-				logrus.Infof("quantized model detected — weight precision: %.2f bytes/param, compute/KV precision: %.1f bytes/param",
-					modelConfig.WeightBytesPerParam, modelConfig.BytesPerParam)
-			} else if modelConfig.WeightBytesPerParam == 0 {
-				// Warn if quantization_config detected but neither parser nor name yielded precision
-				if _, hasQC := hfConfig.Raw["quantization_config"]; hasQC {
-					logrus.Warnf("HuggingFace config has quantization_config but weight precision could not be determined")
-				} else if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
-					logrus.Warnf("model reports %.0f byte(s)/param (possible quantization); "+
-						"roofline step time estimates may be inaccurate for quantized models",
-						modelConfig.BytesPerParam)
-				}
-			}
 			// MoE informational note: roofline models per-routed-expert FLOPs (top_k active)
 			// and all-expert weight bandwidth (E experts loaded from HBM per step).
 			// Shared expert FLOPs/weights and gate/router weights are NOT modeled in
@@ -1265,7 +1239,6 @@ func init() {
 
 	// Workload generation flags (run-only)
 	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution)")
-
 
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
