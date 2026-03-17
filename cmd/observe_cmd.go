@@ -304,8 +304,10 @@ func runObserveOrchestrator(
 					followUpCh <- fu
 				}
 				// If session terminated (no follow-up and session request), decrement
+				// and send nil wakeup to unblock the main loop's select on followUpCh
 				if ce.req.SessionID != "" && len(followUps) == 0 {
 					atomic.AddInt64(&activeSessionCount, -1)
+					followUpCh <- nil // wakeup sentinel
 				}
 			}
 		}()
@@ -345,7 +347,9 @@ func runObserveOrchestrator(
 		for {
 			select {
 			case fu := <-followUpCh:
-				pendingFollowUps = append(pendingFollowUps, fu)
+				if fu != nil { // nil is a wakeup sentinel from the serializer
+					pendingFollowUps = append(pendingFollowUps, fu)
+				}
 			default:
 				return
 			}
@@ -440,10 +444,30 @@ drain:
 // adaptForSessionManager converts an HTTP response into a sim.Request suitable
 // for SessionManager.OnComplete. Only fields read by OnComplete are populated.
 func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.Request {
-	// placeholder — implemented in Task 4
-	_ = original
-	_ = record
-	return nil
+	adapted := &sim.Request{
+		ID:          original.ID,
+		SessionID:   original.SessionID,
+		RoundIndex:  original.RoundIndex,
+		InputTokens: original.InputTokens,
+	}
+
+	if record.Status == "ok" {
+		adapted.State = sim.StateCompleted
+	} else {
+		adapted.State = sim.StateTimedOut
+	}
+
+	outputCount := record.OutputTokens
+	adapted.ProgressIndex = int64(len(original.InputTokens) + outputCount)
+
+	if outputCount > 0 {
+		adapted.OutputTokens = make([]int, outputCount)
+		for i := range adapted.OutputTokens {
+			adapted.OutputTokens[i] = i + 1
+		}
+	}
+
+	return adapted
 }
 
 // requestToPending converts a sim.Request to a PendingRequest for HTTP dispatch.

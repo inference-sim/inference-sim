@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 func TestObserveCmd_MissingRequiredFlags_Errors(t *testing.T) {
@@ -159,6 +160,129 @@ func TestObserveOrchestrator_OpenLoop_ConservationAndConcurrency(t *testing.T) {
 	for i, r := range records {
 		if r.Status != "ok" {
 			t.Errorf("record %d: status %q, want %q", i, r.Status, "ok")
+		}
+	}
+}
+
+func TestObserveOrchestrator_SessionFollowUp_GeneratesRound2(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"text": "response"}},
+			"usage":   map[string]any{"prompt_tokens": 100, "completion_tokens": 50},
+		})
+	}))
+	defer server.Close()
+
+	spec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:           "session-client",
+				RateFraction: 1.0,
+				Arrival:      workload.ArrivalSpec{Process: "constant"},
+				InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+				Reasoning: &workload.ReasoningSpec{
+					MultiTurn: &workload.MultiTurnSpec{
+						MaxRounds:     2,
+						ThinkTimeUs:   10000,
+						ContextGrowth: "accumulate",
+						SingleSession: true,
+					},
+				},
+			},
+		},
+	}
+
+	wl, err := workload.GenerateWorkload(spec, 1_000_000, 1)
+	if err != nil {
+		t.Fatalf("GenerateWorkload: %v", err)
+	}
+	if len(wl.Sessions) == 0 {
+		t.Skip("WorkloadSpec did not produce sessions")
+	}
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	recorder := &Recorder{}
+	sessionMgr := workload.NewSessionManager(wl.Sessions)
+
+	ctx := context.Background()
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0)
+
+	records := recorder.Records()
+	if len(records) < 2 {
+		t.Errorf("expected at least 2 records (round-0 + round-1 follow-up), got %d", len(records))
+	}
+
+	hasRound0, hasRound1 := false, false
+	for _, r := range records {
+		if r.SessionID != "" && r.RoundIndex == 0 {
+			hasRound0 = true
+		}
+		if r.SessionID != "" && r.RoundIndex == 1 {
+			hasRound1 = true
+		}
+	}
+	if !hasRound0 {
+		t.Error("missing round-0 session record")
+	}
+	if !hasRound1 {
+		t.Error("missing round-1 session follow-up record")
+	}
+}
+
+func TestObserveOrchestrator_SessionError_CancelsSession(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(`{"error": "internal error"}`))
+	}))
+	defer server.Close()
+
+	spec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:           "session-client",
+				RateFraction: 1.0,
+				Arrival:      workload.ArrivalSpec{Process: "constant"},
+				InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+				Reasoning: &workload.ReasoningSpec{
+					MultiTurn: &workload.MultiTurnSpec{
+						MaxRounds:     3,
+						ThinkTimeUs:   1000,
+						ContextGrowth: "accumulate",
+						SingleSession: true,
+					},
+				},
+			},
+		},
+	}
+
+	wl, err := workload.GenerateWorkload(spec, 1_000_000, 1)
+	if err != nil {
+		t.Fatalf("GenerateWorkload: %v", err)
+	}
+	if len(wl.Sessions) == 0 {
+		t.Skip("No sessions generated")
+	}
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	recorder := &Recorder{}
+	sessionMgr := workload.NewSessionManager(wl.Sessions)
+
+	ctx := context.Background()
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0)
+
+	records := recorder.Records()
+	for _, r := range records {
+		if r.SessionID != "" && r.RoundIndex > 0 {
+			t.Errorf("BC-11 violated: found round-%d record after error — session should have been cancelled", r.RoundIndex)
 		}
 	}
 }
