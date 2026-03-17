@@ -245,3 +245,31 @@ A complete request lifecycle through the cluster pipeline:
 6. **Per-instance processing:** Request follows the single-instance lifecycle (see [Core Engine](core-engine.md))
 7. **Completion/Drop:** InFlightRequests decremented when request completes or is dropped as unservable
 8. **Metrics:** Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level
+
+## Observe / Replay / Calibrate Pipeline
+
+Alongside the DES simulation pipeline described above, BLIS provides an offline validation workflow for comparing simulator predictions against real server behavior. This pipeline has three stages, of which only **Replay** engages the DES event loop. **Observe** is an HTTP workload dispatcher that sends requests to a real inference server and records per-request timing. **Calibrate** is a statistical comparison tool that computes per-metric MAPE, Pearson R, and quality grades.
+
+```mermaid
+flowchart LR
+    WS["WorkloadSpec<br/>or --rate flags"] --> Obs
+    SU["Server URL"] --> Obs
+    Obs["blis observe<br/>(HTTP client)"] --> TV["TraceV2<br/>(YAML + CSV)"]
+
+    TV --> Rep
+    MC["--model + sim flags"] --> Rep
+    Rep["blis replay<br/>(DES engine)"] --> SR["SimResult JSON<br/>(--results-path)"]
+
+    TV --> Cal
+    SR --> Cal
+    Cal["blis calibrate<br/>(statistical comparison)"] --> Rpt["Calibration<br/>Report"]
+
+    style Obs fill:#a5d8ff
+    style Rep fill:#d0bfff
+    style Cal fill:#b2f2bb
+    style TV fill:#fff3e0
+    style SR fill:#fff3e0
+    style Rpt fill:#c8e6c9
+```
+
+For the full pipeline guide with worked examples, see [Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md). For flag details, see [Configuration Reference](../reference/configuration.md).
