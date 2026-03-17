@@ -25,6 +25,10 @@ FINDINGS.md files in individual hypothesis directories may reference old file pa
 - `sim/latency_model.go` → `sim/latency/latency.go` (PKG-2, #424)
 - `sim/roofline_step.go` → `sim/latency/roofline.go` (PKG-2, #424)
 
+## Staleness Caveat
+
+Experiment findings reflect simulator behavior at the time of execution. Subsequent bug fixes or feature changes may shift quantitative results (e.g., #502 shifted KV preemption counts, #574 required an H29 erratum). Check the PR that introduced the experiment (linked in each FINDINGS.md) and compare against recent changes to the relevant code paths before citing specific numbers.
+
 ## Validated Hypotheses
 
 | ID | Family | Hypothesis | Status | Key Finding |
