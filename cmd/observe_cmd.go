@@ -5,6 +5,8 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -244,18 +246,11 @@ func runObserve(cmd *cobra.Command, _ []string) {
 }
 
 // completionEvent carries HTTP completion info to the serializer goroutine.
-// Used by runObserveOrchestrator (Task 3).
-type completionEvent struct { //nolint:unused // fields used in Task 3
+type completionEvent struct {
 	req       *sim.Request
 	record    *RequestRecord
 	wallClock int64 // wall-clock microseconds at completion
 }
-
-// Compile-time usage assertions for stubs completed in later tasks.
-var (
-	_ = adaptForSessionManager
-	_ = requestToPending
-)
 
 // runObserveOrchestrator implements the dispatch loop with session support.
 // This is the core orchestration function, extracted for testability.
@@ -269,15 +264,177 @@ func runObserveOrchestrator(
 	maxConcurrency int,
 	warmupCount int,
 ) {
-	// placeholder — implemented in Task 3
-	_ = ctx
-	_ = client
-	_ = recorder
-	_ = sessionMgr
-	_ = requests
-	_ = streaming
-	_ = maxConcurrency
-	_ = warmupCount
+	if len(requests) == 0 {
+		return
+	}
+
+	semaphore := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+	startWall := time.Now()
+	dispatchIndex := 0
+
+	// Channel for session follow-ups (buffered to avoid blocking serializer)
+	followUpCh := make(chan *sim.Request, maxConcurrency)
+
+	// Completion channel for session serialization (BC-8, D7)
+	completionCh := make(chan completionEvent, maxConcurrency)
+
+	// Active session tracking for drain (count unique session IDs)
+	activeSessionCount := int64(0)
+	if sessionMgr != nil {
+		sessionIDs := make(map[string]bool)
+		for _, req := range requests {
+			if req.SessionID != "" && !sessionIDs[req.SessionID] {
+				sessionIDs[req.SessionID] = true
+				activeSessionCount++
+			}
+		}
+	}
+
+	// Session serializer goroutine (BC-8: single-threaded OnComplete)
+	var serializerDone chan struct{}
+	if sessionMgr != nil {
+		serializerDone = make(chan struct{})
+		go func() {
+			defer close(serializerDone)
+			for ce := range completionCh {
+				adapted := adaptForSessionManager(ce.req, ce.record)
+				followUps := sessionMgr.OnComplete(adapted, ce.wallClock)
+				for _, fu := range followUps {
+					followUpCh <- fu
+				}
+				// If session terminated (no follow-up and session request), decrement
+				if ce.req.SessionID != "" && len(followUps) == 0 {
+					atomic.AddInt64(&activeSessionCount, -1)
+				}
+			}
+		}()
+	}
+
+	// Dispatch function (shared between pre-generated and follow-up requests)
+	dispatch := func(req *sim.Request, idx int) {
+		defer wg.Done()
+		defer func() { <-semaphore }() // release concurrency slot
+
+		pending := requestToPending(req, idx, streaming)
+		record, _ := client.Send(ctx, pending)
+
+		// Record trace (skip warmup by index)
+		arrivalTimeUs := req.ArrivalTime
+		if idx >= warmupCount {
+			recorder.RecordRequest(pending, record, arrivalTimeUs, req.SessionID, req.RoundIndex)
+		}
+
+		// Session completion (BC-3)
+		if sessionMgr != nil && req.SessionID != "" {
+			completionCh <- completionEvent{
+				req:       req,
+				record:    record,
+				wallClock: time.Since(startWall).Microseconds(),
+			}
+		}
+	}
+
+	// Merge pre-generated requests and follow-ups, dispatch in arrival order.
+	// Follow-ups are buffered in a local slice and merged by arrival time
+	// with pre-generated requests (deterministic, no select/default race).
+	preGenIdx := 0
+	var pendingFollowUps []*sim.Request
+
+	drainFollowUps := func() {
+		for {
+			select {
+			case fu := <-followUpCh:
+				pendingFollowUps = append(pendingFollowUps, fu)
+			default:
+				return
+			}
+		}
+	}
+
+	for {
+		// Drain any buffered follow-ups
+		drainFollowUps()
+
+		// Determine next request: pick earliest arrival time between
+		// pre-generated and pending follow-ups
+		var nextReq *sim.Request
+		var isFollowUp bool
+
+		hasPreGen := preGenIdx < len(requests)
+		hasFollowUp := len(pendingFollowUps) > 0
+
+		if hasPreGen && hasFollowUp {
+			if pendingFollowUps[0].ArrivalTime <= requests[preGenIdx].ArrivalTime {
+				nextReq = pendingFollowUps[0]
+				pendingFollowUps = pendingFollowUps[1:]
+				isFollowUp = true
+			} else {
+				nextReq = requests[preGenIdx]
+				preGenIdx++
+			}
+		} else if hasPreGen {
+			nextReq = requests[preGenIdx]
+			preGenIdx++
+		} else if hasFollowUp {
+			nextReq = pendingFollowUps[0]
+			pendingFollowUps = pendingFollowUps[1:]
+			isFollowUp = true
+		} else if sessionMgr != nil && atomic.LoadInt64(&activeSessionCount) > 0 {
+			// No pre-generated or buffered follow-ups — wait for new follow-up or drain
+			select {
+			case fu, ok := <-followUpCh:
+				if !ok {
+					goto drain
+				}
+				nextReq = fu
+				isFollowUp = true
+			case <-ctx.Done():
+				goto drain
+			}
+		} else {
+			break // no more requests and no sessions
+		}
+
+		if nextReq == nil {
+			continue
+		}
+
+		// Rate-pace: sleep until target wall-clock time
+		targetWall := startWall.Add(time.Duration(nextReq.ArrivalTime) * time.Microsecond)
+		sleepDur := time.Until(targetWall)
+		if sleepDur > 0 {
+			select {
+			case <-time.After(sleepDur):
+			case <-ctx.Done():
+				goto drain
+			}
+		}
+
+		// Acquire concurrency slot (BC-7)
+		select {
+		case semaphore <- struct{}{}:
+		case <-ctx.Done():
+			goto drain
+		}
+
+		idx := dispatchIndex
+		dispatchIndex++
+		_ = isFollowUp // used for logging if needed
+
+		wg.Add(1)
+		go dispatch(nextReq, idx)
+	}
+
+drain:
+	// Wait for all in-flight requests
+	wg.Wait()
+
+	// Close session channels
+	if sessionMgr != nil {
+		close(completionCh)
+		<-serializerDone
+	}
 }
 
 // adaptForSessionManager converts an HTTP response into a sim.Request suitable
