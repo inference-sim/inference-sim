@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -231,6 +233,20 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 				weightBytesPerParam = float64(bits) / 8.0
 			} else if strings.EqualFold(quantMethod, "fp8") {
 				weightBytesPerParam = 1.0
+			} else if strings.EqualFold(quantMethod, "compressed-tensors") {
+				// compressed-tensors stores bits in config_groups.*.weights.num_bits
+				if cg, ok := qc["config_groups"].(map[string]any); ok {
+					for _, g := range cg {
+						if gm, ok := g.(map[string]any); ok {
+							if w, ok := gm["weights"].(map[string]any); ok {
+								if nb, ok := w["num_bits"].(float64); ok && nb > 0 {
+									weightBytesPerParam = nb / 8.0
+									break
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -251,6 +267,32 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		WeightBytesPerParam: weightBytesPerParam,
 	}
 	return modelConfig, nil
+}
+
+// Compiled regexes for model name quantization detection.
+var (
+	// Matches wXaY patterns (e.g. w4a16, W8A8) — X is weight bits.
+	reWxAy = regexp.MustCompile(`(?i)(?:^|[\.\-_/])w(\d+)a\d+(?:$|[\.\-_])`)
+	// Matches fp8 keyword (e.g. FP8-dynamic, fp8).
+	reFP8Name = regexp.MustCompile(`(?i)(?:^|[\.\-_/])fp8(?:$|[\.\-_])`)
+)
+
+// InferWeightBytesFromModelName attempts to infer quantized weight precision
+// from naming conventions in HuggingFace model identifiers (e.g. "w4a16" → 0.5,
+// "FP8" → 1.0). Returns 0 if no quantization pattern is detected.
+// Used as a fallback when quantization_config parsing does not yield a result.
+func InferWeightBytesFromModelName(name string) float64 {
+	// Explicit wXaY pattern — weight bits are unambiguous.
+	if m := reWxAy.FindStringSubmatch(name); m != nil {
+		if bits, err := strconv.Atoi(m[1]); err == nil && bits > 0 {
+			return float64(bits) / 8.0
+		}
+	}
+	// FP8 keyword — always 8-bit weights.
+	if reFP8Name.MatchString(name) {
+		return 1.0
+	}
+	return 0
 }
 
 // invalidPositiveFloat returns true if v is not a valid positive float64

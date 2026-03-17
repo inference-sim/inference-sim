@@ -16,7 +16,7 @@ type ModelConfig struct {
 	MoEExpertFFNDim     int     `json:"moe_intermediate_size"`            // Per-routed-expert FFN dim; 0 = use IntermediateDim (Mixtral convention)
 	SharedExpertFFNDim  int     `json:"shared_expert_intermediate_size"`  // Total shared-expert FFN dim; 0 = no shared experts
 	HiddenAct           string  `json:"hidden_act"`                       // Activation function (e.g. "silu", "gelu", "relu"); used by KV capacity (3-matrix SwiGLU detection), reserved for future roofline per-activation tuning
-	WeightBytesPerParam float64 `json:"weight_bytes_per_param,omitempty"` // Quantized weight precision (bytes/param); 0 = not set, use BytesPerParam. Parsed from quantization_config or --weight-bytes-per-param CLI flag.
+	WeightBytesPerParam float64 `json:"weight_bytes_per_param,omitempty"` // Quantized weight precision (bytes/param); 0 = not set, use BytesPerParam. Auto-detected from quantization_config or model name conventions.
 }
 
 // EffectiveWeightBytesPerParam returns the bytes-per-parameter to use for

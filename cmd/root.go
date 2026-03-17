@@ -51,8 +51,6 @@ var (
 	outputTokensMax           int       // Max Output Token Count
 	latencyModelBackend       string    // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
 	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
-	weightBytesPerParam       float64   // CLI --weight-bytes-per-param: override quantized weight precision
-
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
 	gpu               string // GPU type
@@ -229,7 +227,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, crossmodel, trained-roofline")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
-	cmd.Flags().Float64Var(&weightBytesPerParam, "weight-bytes-per-param", 0, "Override weight precision (bytes/param) for quantized models (e.g., 0.5 for W4A16, 1.0 for FP8). 0=auto-detect from config.json")
 
 	// Cluster config
 	cmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
@@ -595,13 +592,6 @@ var runCmd = &cobra.Command{
 				kvBlocksFromDefaults = true
 			}
 		}
-		// Validate --weight-bytes-per-param early, before backend-specific paths (R3).
-		// This prevents Fatalf from firing inside the best-effort blackbox block.
-		if cmd.Flags().Changed("weight-bytes-per-param") {
-			if weightBytesPerParam <= 0 || math.IsNaN(weightBytesPerParam) || math.IsInf(weightBytesPerParam, 0) {
-				logrus.Fatalf("--weight-bytes-per-param must be a finite positive number, got %v", weightBytesPerParam)
-			}
-		}
 		// Blackbox mode: auto-calculate KV blocks when neither CLI flag nor
 		// defaults.yaml provided a value. Uses cached model config (no HF fetch)
 		// and bundled hardware config. Best-effort — falls through silently if
@@ -615,16 +605,15 @@ var runCmd = &cobra.Command{
 					hfCfg, parseErr := latency.ParseHFConfig(hfPath)
 					if parseErr == nil {
 						mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
-						// Apply --weight-bytes-per-param override for blackbox KV auto-calc (R23: code path parity).
-						// Validation done earlier (line ~527); only assignment here to preserve best-effort semantics.
-						if mcErr == nil && cmd.Flags().Changed("weight-bytes-per-param") {
-							mc.WeightBytesPerParam = weightBytesPerParam
+						// Model name fallback: if quantization_config parsing didn't yield weight
+						// precision, try to infer from naming conventions (e.g. w4a16, FP8).
+						if mcErr == nil && mc.WeightBytesPerParam == 0 {
+							mc.WeightBytesPerParam = latency.InferWeightBytesFromModelName(model)
 						}
-						// Warn if quantization_config detected but couldn't extract weight precision
+						// Warn if quantization_config detected but neither parser nor name yielded precision
 						if mcErr == nil && mc.WeightBytesPerParam == 0 {
 							if _, hasQC := hfCfg.Raw["quantization_config"]; hasQC {
-								logrus.Warnf("HuggingFace config has quantization_config but weight precision could not be auto-detected. " +
-									"Consider using --weight-bytes-per-param to set weight precision explicitly")
+								logrus.Warnf("HuggingFace config has quantization_config but weight precision could not be determined")
 							}
 						}
 						resolvedHW, hwPathErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
@@ -671,31 +660,23 @@ var runCmd = &cobra.Command{
 			}
 			hwConfig = hc
 
-			// Apply --weight-bytes-per-param CLI override (R18: CLI flag precedence).
-			// Validation done earlier (line ~527); only assignment + logging here.
-			if cmd.Flags().Changed("weight-bytes-per-param") {
-				modelConfig.WeightBytesPerParam = weightBytesPerParam
-				if backend == "roofline" {
-					logrus.Infof("--weight-bytes-per-param: overriding weight precision to %.4f bytes/param", weightBytesPerParam)
-				} else {
-					logrus.Infof("--weight-bytes-per-param: overriding weight precision to %.4f bytes/param (affects KV capacity; %s step time is independent of weight precision)", weightBytesPerParam, backend)
-				}
+			// Model name fallback: if quantization_config parsing didn't yield weight
+			// precision, try to infer from naming conventions (e.g. w4a16, FP8).
+			if modelConfig.WeightBytesPerParam == 0 {
+				modelConfig.WeightBytesPerParam = latency.InferWeightBytesFromModelName(model)
 			}
 
 			// Log quantization info when weight precision differs from compute precision
 			if modelConfig.WeightBytesPerParam > 0 && modelConfig.WeightBytesPerParam != modelConfig.BytesPerParam {
-				logrus.Infof("--latency-model: quantized model detected — weight precision: %.2f bytes/param, compute/KV precision: %.1f bytes/param",
+				logrus.Infof("quantized model detected — weight precision: %.2f bytes/param, compute/KV precision: %.1f bytes/param",
 					modelConfig.WeightBytesPerParam, modelConfig.BytesPerParam)
 			} else if modelConfig.WeightBytesPerParam == 0 {
-				// Check if quantization_config was present but unrecognized
+				// Warn if quantization_config detected but neither parser nor name yielded precision
 				if _, hasQC := hfConfig.Raw["quantization_config"]; hasQC {
-					logrus.Warnf("--latency-model: HuggingFace config has quantization_config but weight precision could not be auto-detected. " +
-						"Consider using --weight-bytes-per-param to set weight precision explicitly")
+					logrus.Warnf("HuggingFace config has quantization_config but weight precision could not be determined")
 				} else if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
-					// Legacy warning for models where torch_dtype itself reports low precision
-					logrus.Warnf("--latency-model: model reports %.0f byte(s)/param (possible quantization). "+
-						"Roofline step time estimates may be inaccurate for quantized models. "+
-						"Consider using --weight-bytes-per-param to set weight precision explicitly",
+					logrus.Warnf("model reports %.0f byte(s)/param (possible quantization); "+
+						"roofline step time estimates may be inaccurate for quantized models",
 						modelConfig.BytesPerParam)
 				}
 			}
