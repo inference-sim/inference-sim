@@ -17,6 +17,9 @@ go build -o blis main.go
 # Run with default model
 ./blis run --model qwen/qwen3-14b
 
+# Run and export workload as TraceV2 (prefix auto-appends .yaml/.csv)
+./blis run --model qwen/qwen3-14b --trace-output traces/run1
+
 # Replay a captured TraceV2 file through the DES
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
 
@@ -29,12 +32,21 @@ go build -o blis main.go
   --api-format chat --rtt-ms 2.5 --workload-spec workload.yaml \
   --trace-header trace.yaml --trace-data trace.csv
 
+# Observe with rate-mode distribution synthesis and optional flags
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --api-format chat --rate 10 --num-requests 100 \
+  --prompt-tokens 512 --output-tokens 128 --prefix-tokens 64 \
+  --warmup-requests 5 --no-streaming --api-key $API_KEY \
+  --max-concurrency 32 --unconstrained-output \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Compare real observed latencies against simulator predictions
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
 
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 ./blis convert servegen --path data/
+./blis convert inference-perf --spec spec.yaml
 ./blis compose --from spec1.yaml --from spec2.yaml
 ```
 
