@@ -115,10 +115,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeTraceData == "" {
 		logrus.Fatalf("--trace-data is required")
 	}
-	if observeWorkloadSpec == "" && observeRate <= 0 {
-		if !cmd.Flags().Changed("rate") && observeWorkloadSpec == "" {
-			logrus.Fatalf("Either --workload-spec or --rate is required")
-		}
+	if observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") {
+		logrus.Fatalf("Either --workload-spec or --rate is required")
 	}
 
 	// BC-14: Numeric flag validation (R3)
@@ -232,6 +230,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			Type:  observeServerType,
 			Model: observeModel,
 		},
+		// TODO(#660): populate measured_rtt_ms via pre-flight ping or --rtt-ms flag
+		Network: &workload.TraceNetworkConfig{},
 	}
 	if observeWorkloadSpec != "" {
 		header.WorkloadSpec = observeWorkloadSpec
@@ -319,7 +319,10 @@ func runObserveOrchestrator(
 		defer func() { <-semaphore }() // release concurrency slot
 
 		pending := requestToPending(req, idx, streaming)
-		record, _ := client.Send(ctx, pending)
+		record, sendErr := client.Send(ctx, pending)
+		if sendErr != nil {
+			logrus.Warnf("request %d: Send returned error: %v", idx, sendErr)
+		}
 
 		// Record trace (skip warmup by index)
 		arrivalTimeUs := req.ArrivalTime
@@ -363,7 +366,6 @@ func runObserveOrchestrator(
 		// Determine next request: pick earliest arrival time between
 		// pre-generated and pending follow-ups
 		var nextReq *sim.Request
-		var isFollowUp bool
 
 		hasPreGen := preGenIdx < len(requests)
 		hasFollowUp := len(pendingFollowUps) > 0
@@ -372,7 +374,7 @@ func runObserveOrchestrator(
 			if pendingFollowUps[0].ArrivalTime <= requests[preGenIdx].ArrivalTime {
 				nextReq = pendingFollowUps[0]
 				pendingFollowUps = pendingFollowUps[1:]
-				isFollowUp = true
+	
 			} else {
 				nextReq = requests[preGenIdx]
 				preGenIdx++
@@ -383,7 +385,7 @@ func runObserveOrchestrator(
 		} else if hasFollowUp {
 			nextReq = pendingFollowUps[0]
 			pendingFollowUps = pendingFollowUps[1:]
-			isFollowUp = true
+
 		} else if sessionMgr != nil && atomic.LoadInt64(&activeSessionCount) > 0 {
 			// No pre-generated or buffered follow-ups — wait for new follow-up or drain
 			select {
@@ -392,7 +394,7 @@ func runObserveOrchestrator(
 					goto drain
 				}
 				nextReq = fu
-				isFollowUp = true
+	
 			case <-ctx.Done():
 				goto drain
 			}
@@ -424,8 +426,6 @@ func runObserveOrchestrator(
 
 		idx := dispatchIndex
 		dispatchIndex++
-		_ = isFollowUp // used for logging if needed
-
 		wg.Add(1)
 		go dispatch(nextReq, idx)
 	}
