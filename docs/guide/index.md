@@ -14,6 +14,7 @@ Task-oriented guides for using BLIS effectively. Each guide covers a specific fe
 | [Workload Specifications](workloads.md) | Defining multi-client traffic patterns with YAML |
 | [Cluster Simulation](cluster.md) | Running multi-instance simulations with the full pipeline |
 | [Metrics & Results](results.md) | Understanding JSON output, metrics, anomaly counters, and fitness scores |
+| [Observe / Replay / Calibrate](observe-replay-calibrate.md) | Validating simulator accuracy against real inference servers |
 | [Hypothesis Experimentation](experimentation.md) | Running rigorous, reproducible experiments with the `/hypothesis-experiment` skill |
 | [Skills & Plugins](skills-and-plugins.md) | Claude Code skills, plugin marketplaces, and workflow tooling |
 
@@ -26,5 +27,7 @@ Task-oriented guides for using BLIS effectively. Each guide covers a specific fe
 **Memory tuning:** [KV Cache & Memory](kv-cache.md) → [Metrics & Results](results.md)
 
 **New model evaluation:** [Latency Models](latency-models.md) → [Workload Specifications](workloads.md) → [Metrics & Results](results.md)
+
+**Calibration:** [Latency Models](latency-models.md) → [Workload Specifications](workloads.md) → [Observe / Replay / Calibrate](observe-replay-calibrate.md) → [Metrics & Results](results.md)
 
 **Research:** [Hypothesis Experimentation](experimentation.md) → [Metrics & Results](results.md)
