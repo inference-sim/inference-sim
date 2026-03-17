@@ -202,6 +202,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - `docs/contributing/standards/invariants.md`: **11 system invariants** (INV-1 through INV-11) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/contributing/convergence.md`), findings classification
+- `docs/contributing/standards/agent-trust.md`: **Agent trust boundaries** — three trust tiers (Trusted, Verify-after, Never-trust) for agent operations, with known failure modes
 
 ### Process (how to do each activity)
 
