@@ -1,6 +1,6 @@
 # PR Development Workflow
 
-**Status:** Active (v4.1 — updated 2026-03-17)
+**Status:** Active (v4.2 — updated 2026-03-17)
 
 This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.
 
@@ -30,11 +30,13 @@ flowchart TD
     style S475 fill:#ffecb3
 ```
 
+> **Note:** The diagram above shows the default (Medium/Large) path. Express Lane PRs follow an abbreviated path: implement → self-audit (3 dimensions) → commit. Small PRs follow the full path but skip the pre-pass in Steps 2.5 and 4.5. See [PR Size Tiers](#pr-size-tiers).
+
 **Key insights:**
 1. **Worktree isolation from start** (Step 1) — Create worktree BEFORE any work. Main worktree never touched. Enables parallel work on multiple PRs.
 2. **Three-stage quality assurance:**
-   - **Plan Review** (Step 2.5) — two-stage: holistic pre-pass, then 10 targeted perspectives. Catches design issues before implementation.
-   - **Code Review** (Step 4.5) — two-stage: holistic pre-pass, then 10 targeted perspectives. Catches implementation issues before PR creation.
+   - **Plan Review** (Step 2.5) — up to two stages depending on [PR size tier](#pr-size-tiers): holistic pre-pass (Medium/Large only), then 10 targeted perspectives. Catches design issues before implementation.
+   - **Code Review** (Step 4.5) — up to two stages depending on [PR size tier](#pr-size-tiers): holistic pre-pass (Medium/Large only), then 10 targeted perspectives. Catches implementation issues before PR creation.
    - **Self-Audit** (Step 4.75) — deliberate critical thinking across 10 dimensions. Catches substance bugs that pattern-matching agents miss.
 
 ---
@@ -100,15 +102,15 @@ The source of work can be a macro plan section, a design document, one or more G
 
 Review the plan from 10 targeted perspectives, applying the [convergence protocol](convergence.md): run all perspectives in parallel as one round; if zero CRITICAL and zero IMPORTANT across all reviewers, the round converged; otherwise fix and re-run the entire round. Max 10 rounds per gate. Hard gate — no exceptions. See [convergence.md](convergence.md) for full rules.
 
-**Two-stage review:**
+**Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see [PR Size Tiers](#pr-size-tiers)):**
 
-1. **Holistic pre-pass:** Do a single deep review to catch cross-cutting issues before the formal convergence protocol.
+1. **Holistic pre-pass (Medium/Large only):** Do a single deep review to catch cross-cutting issues before the formal convergence protocol.
 2. **Formal convergence:** Run all 10 perspectives below in parallel.
 
 !!! tip "Automation"
     Stage 1: `/pr-review-toolkit:review-pr`. Stage 2: `/convergence-review pr-plan docs/plans/<name>-plan.md`. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
-**Why two stages?** The holistic sweep catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed.
+**Why two stages?** The holistic sweep catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed. Small PRs skip the pre-pass because cross-cutting issues are unlikely with ≤3 files; perspectives 1 (Substance) and 2 (Cross-doc) cover the same ground.
 
 **Why rounds with multiple perspectives?** Generic "review everything" misses issues that targeted perspectives catch. Different lenses find different bugs: cross-doc consistency catches stale references, architecture catches boundary violations, substance catches design bugs. Running them in parallel maximizes coverage per round. The hypothesis process proved this model: 3 parallel reviewers with different foci caught issues that sequential single-reviewer rounds missed.
 
@@ -231,17 +233,17 @@ Execute all tasks sequentially. Stop only on test failure, lint failure, or buil
 
 ### Step 4.5: Review the Code
 
-Review the implementation from 10 targeted perspectives, applying the [convergence protocol](convergence.md): zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same two-stage structure as Step 2.5 (holistic pre-pass, then formal convergence), but the 10 perspectives differ: plan review checks design soundness; code review checks implementation quality.
+Review the implementation from 10 targeted perspectives, applying the [convergence protocol](convergence.md): zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same structure as Step 2.5 (two-stage for Medium/Large, convergence-only for Small), but the 10 perspectives differ: plan review checks design soundness; code review checks implementation quality.
 
-**Two-stage review:**
+**Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see [PR Size Tiers](#pr-size-tiers)):**
 
-1. **Holistic pre-pass:** Single deep review to catch cross-cutting issues.
+1. **Holistic pre-pass (Medium/Large only):** Single deep review to catch cross-cutting issues.
 2. **Formal convergence:** Run all 10 perspectives below in parallel.
 
 !!! tip "Automation"
     Stage 1: `/pr-review-toolkit:review-pr`. Stage 2: `/convergence-review pr-code`. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
-**Why two stages?** The holistic sweep catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds.
+**Why two stages?** The holistic sweep catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds. Small PRs skip the pre-pass for the same reason as Step 2.5.
 
 **Why 10 perspectives in parallel?** Each catches issues the others miss. In the standards-audit-hardening PR, Perspective 1 (substance) found a runtime-breaking regression, Perspective 3 (tests) found weakened coverage, Perspective 7 (vLLM expert) confirmed CLI validation matches real server semantics, and Perspective 10 (security) found pre-existing factory validation gaps. Domain-specific perspectives (DES, vLLM, distributed platform) catch issues that generic code-quality reviewers miss.
 
@@ -358,6 +360,8 @@ Report: build exit code, test pass/fail counts, lint issue count, working tree s
 
 Stop, think critically, and answer each question below from your own reasoning. Do not delegate to automated tools — review each dimension yourself using critical thinking. Report all issues found. If you find zero issues, explain why you're confident for each dimension.
 
+> **Express Lane PRs:** Check only dimensions 1 (logic bugs), 3 (determinism), and 4 (consistency). The full 10-dimension audit applies to Small and above.
+
 **Why this step exists:** In PR9, the 4-perspective automated code review (Step 4.5) found 0 new issues in the final perspective. Then the user asked "are you confident?" and Claude found 3 real bugs by thinking critically: a wrong reference scale for token throughput normalization, non-deterministic map iteration in output, and inconsistent comment patterns. Automated review perspectives check structure; this step checks substance.
 
 **Self-audit dimensions — think through each one:**
@@ -419,14 +423,16 @@ Not all PRs need the same level of review. Use these objective criteria:
 
 | Tier | Criteria | Plan Review (Step 2.5) | Code Review (Step 4.5) | Self-Audit (Step 4.75) |
 |------|----------|----------------------|----------------------|----------------------|
-| **Small** | Docs-only with no process/workflow semantic changes (typo fixes, formatting, comment updates, link fixes), OR ≤3 files changed AND only mechanical changes (renames, formatting) AND no behavioral logic changes AND no new interfaces/types AND no new CLI flags | Skip convergence review; single pre-pass sufficient | Skip convergence review; single pre-pass sufficient | Full (all 10 dimensions) |
+| **Express Lane** | ≤3 lines changed AND purely mechanical — limited to: typo fixes in prose/comments, whitespace/formatting, comment rewording, removal of commented-out code — AND no behavioral change AND not in any file from the [source-of-truth map](standards/principles.md#source-of-truth-map) | Skip | Skip | 3 dimensions (correctness, determinism, consistency) |
+| **Small** | Docs-only with no process/workflow semantic changes (typo fixes, formatting, comment updates, link fixes), OR ≤3 files changed AND only mechanical changes (renames, formatting) AND no behavioral logic changes AND no new interfaces/types AND no new CLI flags | Single convergence round (no pre-pass) | Single convergence round (no pre-pass) | Full (all 10 dimensions) |
 | **Medium** | 4–10 files changed, OR new policy template behind existing interface | Full two-stage (pre-pass + convergence) | Full two-stage (pre-pass + convergence) | Full (all 10 dimensions) |
 | **Large** | >10 files, OR new interfaces/modules, OR architecture changes | Full two-stage (pre-pass + convergence) | Full two-stage (pre-pass + convergence) | Full (all 10 dimensions) |
 
 **Rules:**
-- **Steps 1, 1.5, 2, 3, 4, 5 are always required** — worktree, source audit, plan, human review, execution, and commit apply to all tiers.
-- **Self-audit is always full** — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
-- **When in doubt, tier up** — if you're unsure whether a change is Small or Medium, use Medium.
+- **Express Lane process:** Implement → self-audit (3 dimensions: correctness, determinism, consistency) → commit. No worktree, plan, convergence review, or human gate required. If the change grows beyond 3 lines, touches a source-of-truth file, or introduces any behavioral change, stop and switch to Small tier.
+- **All other tiers require Steps 1–5** — worktree, source audit, plan, human review, execution, and commit apply to Small, Medium, and Large.
+- **Self-audit is always full for Small and above** — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
+- **When in doubt, tier up** — if you're unsure whether a change is Express Lane or Small, use Small. If unsure between Small and Medium, use Medium.
 - **Human reviewer can override** — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.
 
 !!! note "Compact Plan Format"
@@ -441,10 +447,10 @@ A typical PR from a macro plan section:
 1. **Create worktree:** `git worktree add .worktrees/pr8-routing -b pr8-routing && cd .worktrees/pr8-routing`
 2. **Audit source:** Scan source document for ambiguities, contradictions, missing info. Record clarifications.
 3. **Write plan:** Follow [micro-plan template](templates/micro-plan.md), save to `docs/plans/pr8-routing-plan.md`
-4. **Review plan:** Run all 10 perspectives (Stage 1 pre-pass, then Stage 2 convergence). Fix issues, re-run until converged.
+4. **Review plan:** For Medium/Large PRs, run holistic pre-pass first. Then run all 10 perspectives in convergence rounds. Fix issues, re-run until converged. (Small PRs skip the pre-pass.)
 5. **Human review:** Read plan — contracts, tasks, appendix. Approve to proceed.
 6. **Implement:** Execute TDD tasks: test → fail → implement → pass → lint → commit.
-7. **Review code:** Same two-stage review as plan. Fix issues, re-run until converged. Run verification gate.
+7. **Review code:** Same review structure as plan (two-stage for Medium/Large, convergence-only for Small). Fix issues, re-run until converged. Run verification gate.
 8. **Self-audit:** Think through all 10 dimensions. Fix issues.
 9. **Commit + PR:** Push branch, create PR with closing keywords.
 
@@ -541,5 +547,6 @@ When to use: When Step 2.5 or Step 4.5 hits context limits. Not needed for most 
 **v3.0 (2026-02-23):** Multi-perspective rounds replace sequential passes. External LLM review removed. Convergence redefined as property of a clean round.
 **v4.0 (2026-02-27):** Human-first rewrite (#464). Steps describe human actions; skills in admonition callouts. Manual path is primary; automation is additive. Templates split into human-readable format descriptions + agent prompt companions.
 **v4.1 (2026-03-17):** Added Step 1.5 (Source Document Audit) between Steps 1 and 2 — structured pre-audit of source documents for ambiguities, contradictions, and missing information before planning begins. Added `CLARIFICATION` as a Deviation Log reason (#664).
+**v4.2 (2026-03-17):** Added Express Lane tier for ≤3-line mechanical changes (implement → self-audit → commit, no plan/review/human gate). Eliminated pre-pass for Small PRs — single convergence round sufficient. Medium/Large unchanged (#673).
 
 </details>
