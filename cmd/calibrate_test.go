@@ -252,6 +252,58 @@ warm_up_requests: 3
 	}
 }
 
+func TestCalibrateCmd_UnmatchedRequests_ReportSucceeds(t *testing.T) {
+	// GIVEN a trace with IDs [0,1,2] and sim results with IDs [0,1,3]
+	// WHEN blis calibrate is run
+	// THEN it succeeds and the report shows 2 matched pairs (BC-5)
+	dir := t.TempDir()
+	headerPath, dataPath := writeTempTrace(t, dir, `trace_version: 2
+time_unit: microseconds
+mode: real
+warm_up_requests: 0
+`, [][4]int64{
+		{0, 1000, 5000, 10000},
+		{1, 101000, 105000, 110000},
+		{2, 201000, 205000, 210000},
+	})
+
+	simPath := filepath.Join(dir, "results.json")
+	// Sim has IDs 0, 1, 3 — ID 2 missing, extra ID 3
+	simResults := []workload.SimResult{
+		{RequestID: 0, TTFT: 4000, E2E: 9000, InputTokens: 10, OutputTokens: 5},
+		{RequestID: 1, TTFT: 4000, E2E: 9000, InputTokens: 10, OutputTokens: 5},
+		{RequestID: 3, TTFT: 4000, E2E: 9000, InputTokens: 10, OutputTokens: 5},
+	}
+	simData, _ := json.Marshal(simResults)
+	if err := os.WriteFile(simPath, simData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	reportPath := filepath.Join(dir, "report.json")
+	defer saveRestoreCalibrateFlags()()
+	calibrateTraceHeaderPath = headerPath
+	calibrateTraceDataPath = dataPath
+	calibrateSimResultsPath = simPath
+	calibrateReportPath = reportPath
+	calibrateWarmUpRequests = -1
+	calibrateNetworkRTTUs = -1
+	calibrateNetworkBandwidthMbps = 0
+
+	calibrateCmd.Run(calibrateCmd, []string{})
+
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("report not written: %v", err)
+	}
+	var report workload.CalibrationReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("report is not valid JSON: %v", err)
+	}
+	if report.TraceInfo.MatchedPairs != 2 {
+		t.Errorf("matched_pairs = %d, want 2", report.TraceInfo.MatchedPairs)
+	}
+}
+
 func TestCalibrateCmd_RTTFromHeader_AppliesCorrectly(t *testing.T) {
 	// GIVEN a trace header with network.measured_rtt_ms=2.0 and --network-rtt-us not set
 	// AND real TTFT = simTTFT + 2000µs (exactly what RTT=2ms should add)
