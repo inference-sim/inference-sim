@@ -105,6 +105,7 @@ nav:
       - Skills & Plugins: guide/skills-and-plugins.md
   - Reference:
       - reference/index.md
+      - Project Structure: reference/project-structure.md
       - Configuration: reference/configuration.md
       - Supported Models: reference/models.md
       - Workload Spec Schema: reference/workload-spec.md
@@ -121,8 +122,8 @@ nav:
       - Hypothesis Experiments: contributing/hypothesis.md
       - Convergence Protocol: contributing/convergence.md
       - Standards:
-          - "Antipattern Rules (R1-R20)": contributing/standards/rules.md
-          - "System Invariants (INV-1-8)": contributing/standards/invariants.md
+          - "Antipattern Rules (R1-R23)": contributing/standards/rules.md
+          - "System Invariants (INV-1-INV-11)": contributing/standards/invariants.md
           - Engineering Principles: contributing/standards/principles.md
           - Experiment Standards: contributing/standards/experiments.md
       - Templates:
