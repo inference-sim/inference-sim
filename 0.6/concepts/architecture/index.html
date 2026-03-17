@@ -1036,6 +1036,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#observe-replay-calibrate-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observe / Replay / Calibrate Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1119,6 +1130,8 @@
       
         
           
+        
+      
         
       
         
@@ -1428,6 +1441,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/observe-replay-calibrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observe / Replay / Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/experimentation/" class="md-nav__link">
         
   
@@ -1503,6 +1544,8 @@
       
         
       
+        
+      
     
     
     
@@ -1557,6 +1600,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -2117,7 +2188,7 @@
   <span class="md-ellipsis">
     
   
-    Antipattern Rules (R1-R20)
+    Antipattern Rules (R1-R23)
   
 
     
@@ -2145,7 +2216,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-8)
+    System Invariants (INV-1-INV-11)
   
 
     
@@ -2972,6 +3043,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#observe-replay-calibrate-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observe / Replay / Calibrate Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3292,6 +3374,28 @@
 <li><strong>Completion/Drop:</strong> InFlightRequests decremented when request completes or is dropped as unservable</li>
 <li><strong>Metrics:</strong> Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level</li>
 </ol>
+<h2 id="observe-replay-calibrate-pipeline">Observe / Replay / Calibrate Pipeline<a class="headerlink" href="#observe-replay-calibrate-pipeline" title="Permanent link">&para;</a></h2>
+<p>Alongside the DES simulation pipeline described above, BLIS provides an offline validation workflow for comparing simulator predictions against real server behavior. This pipeline has three stages, of which only <strong>Replay</strong> engages the DES event loop. <strong>Observe</strong> is an HTTP workload dispatcher that sends requests to a real inference server and records per-request timing. <strong>Calibrate</strong> is a statistical comparison tool that computes per-metric MAPE, Pearson R, and quality grades.</p>
+<pre class="mermaid"><code>flowchart LR
+    WS["WorkloadSpec&lt;br/&gt;or --rate flags"] --&gt; Obs
+    SU["Server URL"] --&gt; Obs
+    Obs["blis observe&lt;br/&gt;(HTTP client)"] --&gt; TV["TraceV2&lt;br/&gt;(YAML + CSV)"]
+
+    TV --&gt; Rep
+    MC["--model + sim flags"] --&gt; Rep
+    Rep["blis replay&lt;br/&gt;(DES engine)"] --&gt; SR["SimResult JSON&lt;br/&gt;(--results-path)"]
+
+    TV --&gt; Cal
+    SR --&gt; Cal
+    Cal["blis calibrate&lt;br/&gt;(statistical comparison)"] --&gt; Rpt["Calibration&lt;br/&gt;Report"]
+
+    style Obs fill:#a5d8ff
+    style Rep fill:#d0bfff
+    style Cal fill:#b2f2bb
+    style TV fill:#fff3e0
+    style SR fill:#fff3e0
+    style Rpt fill:#c8e6c9</code></pre>
+<p>For the full pipeline guide with worked examples, see <a href="../../guide/observe-replay-calibrate/">Observe / Replay / Calibrate</a>. For flag details, see <a href="../../reference/configuration/">Configuration Reference</a>.</p>
 
 
 

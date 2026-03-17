@@ -863,6 +863,8 @@
       
         
       
+        
+      
     
     
     
@@ -1150,6 +1152,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../guide/observe-replay-calibrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observe / Replay / Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../guide/experimentation/" class="md-nav__link">
         
   
@@ -1225,6 +1255,8 @@
       
         
       
+        
+      
     
     
     
@@ -1279,6 +1311,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1845,7 +1905,7 @@
   <span class="md-ellipsis">
     
   
-    Antipattern Rules (R1-R20)
+    Antipattern Rules (R1-R23)
   
 
     
@@ -1873,7 +1933,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-8)
+    System Invariants (INV-1-INV-11)
   
 
     
@@ -2139,6 +2199,17 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#compact-format-small-tier-prs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compact Format (Small Tier PRs)
+      
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#document-header" class="md-nav__link">
@@ -2717,6 +2788,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#compact-format-small-tier-prs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compact Format (Small Tier PRs)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#document-header" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2944,6 +3026,76 @@ The agent prompt version is at <a href="../micro-plan-prompt/"><code>micro-plan-
 <li>An implementer (human or agent) who executes the tasks (Part 2)</li>
 </ol>
 <hr />
+<h2 id="compact-format-small-tier-prs">Compact Format (Small Tier PRs)<a class="headerlink" href="#compact-format-small-tier-prs" title="Permanent link">&para;</a></h2>
+<p>For Small tier PRs (see <a href="../../pr-workflow/#pr-size-tiers">PR Size Tiers</a>), use this streamlined format instead of the full template below. The compact format retains behavioral rigor (contracts + TDD) while dropping sections that add no value for mechanical changes.</p>
+<p><strong>Criteria — use compact format when ALL of these apply:</strong></p>
+<ul>
+<li>Docs-only with no process/workflow semantic changes (typo fixes, formatting, comment updates, link fixes), OR</li>
+<li>≤3 files changed AND only mechanical changes (renames, formatting) AND no behavioral logic changes AND no new interfaces/types AND no new CLI flags</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Process/workflow semantic changes</p>
+<p>Changing how the PR workflow operates, adding new template sections, or modifying review criteria are semantic changes — use the full format even if the PR is docs-only.</p>
+</div>
+<p><strong>Compact plan structure:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a># [Title] Implementation Plan
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>**Goal:** One sentence a non-contributor could understand.
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>**Source:** Link to source of work.
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>**Closes:** GitHub issue numbers (e.g., `Fixes #123`).
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>## Behavioral Contracts
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>BC-1: &lt;Name&gt;
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>- GIVEN &lt;precondition&gt;
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>- WHEN &lt;action&gt;
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>- THEN &lt;observable outcome&gt;
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>[Repeat for each contract. Quality gate: every THEN clause must describe
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>observable behavior, not internal structure.]
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>## Tasks
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>### Task 1: &lt;Name&gt; (BC-1)
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>**Files:** create/modify `path/to/file`, test `path/to/test`
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>**Test:**
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>[Complete test code]
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>**Impl:**
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>[Complete implementation code]
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>**Verify:** `go test ./path/... -run TestName`
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>**Lint:** `golangci-lint run ./path/...`
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>**Commit:** `type(scope): description (BC-1)`
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>[Repeat for each task.]
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>## Sanity Checklist
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>[Same checklist as full format — antipattern rules still apply.]
+</code></pre></div>
+<p><strong>Sections omitted or streamlined in compact format</strong> (compared to full template):</p>
+<ul>
+<li>Document Header — streamlined to Goal/Source/Closes (drops: The problem today, What this PR adds, Why this matters, Architecture, Behavioral Contracts reference)</li>
+<li>Phase 0: Component Context</li>
+<li>Part 1 Section A: Executive Summary</li>
+<li>Part 1 Section C: Component Interaction</li>
+<li>Part 1 Section D: Deviation Log</li>
+<li>Part 1 Section E: Review Guide</li>
+<li>Part 2 Section F: Implementation Overview</li>
+<li>Part 2 Section H: Test Strategy</li>
+<li>Part 2 Section I: Risk Analysis</li>
+<li>Appendix: File-Level Implementation Details</li>
+</ul>
+<p><strong>What's kept and why:</strong></p>
+<ul>
+<li><strong>Behavioral contracts</strong> — the substance of what the PR guarantees (non-negotiable)</li>
+<li><strong>TDD tasks</strong> — executable implementation steps (non-negotiable)</li>
+<li><strong>Sanity checklist</strong> — quality gate (catches antipatterns regardless of PR size)</li>
+</ul>
+<hr />
 <h2 id="document-header">Document Header<a class="headerlink" href="#document-header" title="Permanent link">&para;</a></h2>
 <p>Every plan starts with this header:</p>
 <ul>
@@ -2971,11 +3123,11 @@ The agent prompt version is at <a href="../micro-plan-prompt/"><code>micro-plan-
 <p>5–10 lines describing what this PR builds (plain language), where it fits in the system, adjacent components it interacts with, and any deviation flags.</p>
 <h3 id="b-behavioral-contracts">B) Behavioral Contracts<a class="headerlink" href="#b-behavioral-contracts" title="Permanent link">&para;</a></h3>
 <p>3–15 named contracts defining what this PR guarantees:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>BC-N: &lt;Name&gt;
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>- GIVEN &lt;precondition&gt;
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>- WHEN &lt;action&gt;
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>- THEN &lt;observable outcome&gt;
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>- MECHANISM: &lt;one sentence explaining how&gt; (optional)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>BC-N: &lt;Name&gt;
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>- GIVEN &lt;precondition&gt;
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>- WHEN &lt;action&gt;
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>- THEN &lt;observable outcome&gt;
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>- MECHANISM: &lt;one sentence explaining how&gt; (optional)
 </code></pre></div>
 <p>Group into: positive contracts (what MUST happen), negative contracts (what MUST NOT happen), error handling contracts.</p>
 <p><strong>Quality gate:</strong> Every THEN clause must describe <strong>observable behavior</strong>, not internal structure. If a THEN clause contains a concrete type name or internal field name, rewrite it. The THEN clause drives the test assertion — a structural THEN produces a structural test.</p>
@@ -2995,7 +3147,7 @@ The agent prompt version is at <a href="../micro-plan-prompt/"><code>micro-plan-
 <tr>
 <td>...</td>
 <td>...</td>
-<td>SIMPLIFICATION / CORRECTION / DEFERRAL / ADDITION / SCOPE_CHANGE</td>
+<td>CLARIFICATION / SIMPLIFICATION / CORRECTION / DEFERRAL / ADDITION / SCOPE_CHANGE</td>
 </tr>
 </tbody>
 </table>

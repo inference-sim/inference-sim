@@ -865,6 +865,8 @@
       
         
       
+        
+      
     
     
     
@@ -1482,6 +1484,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../observe-replay-calibrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observe / Replay / Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../experimentation/" class="md-nav__link">
         
   
@@ -1557,6 +1587,8 @@
       
         
       
+        
+      
     
     
     
@@ -1611,6 +1643,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -2171,7 +2231,7 @@
   <span class="md-ellipsis">
     
   
-    Antipattern Rules (R1-R20)
+    Antipattern Rules (R1-R23)
   
 
     
@@ -2199,7 +2259,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-8)
+    System Invariants (INV-1-INV-11)
   
 
     
@@ -3107,7 +3167,7 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>examples/multiturn-chat-demo.yaml
 </code></pre></div>
 <h2 id="workload-modes">Workload Modes<a class="headerlink" href="#workload-modes" title="Permanent link">&para;</a></h2>
-<p>BLIS supports four modes, in order of precedence:</p>
+<p>BLIS supports three modes, in order of precedence:</p>
 <table>
 <thead>
 <tr>
@@ -3131,11 +3191,6 @@
 <td><strong>Named presets</strong></td>
 <td><code>--workload chatbot</code></td>
 <td>Standard workload profiles</td>
-</tr>
-<tr>
-<td><strong>CSV traces</strong></td>
-<td><code>--workload traces</code></td>
-<td>Replaying recorded production traffic</td>
 </tr>
 </tbody>
 </table>
@@ -3445,6 +3500,10 @@
 <div class="admonition warning">
 <p class="admonition-title">CLI mode and YAML mode have different defaults</p>
 <p>CLI mode uses <code>--prompt-tokens 512, --output-tokens 512</code> by default. With the default roofline latency model (Qwen3-14B / H100 / TP=1), a saturated single instance handles ~17 req/s. YAML workloads define their own distributions — a YAML with shorter sequences (e.g., mean=256/128) will have higher per-instance throughput. Don't reuse capacity estimates across modes or models.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Parameter resolution reference</p>
+<p>For the complete precedence chain of how CLI flags, workload-spec YAML, and <code>defaults.yaml</code> interact, see <a href="../../reference/configuration/#parameter-resolution-by-category">Parameter Resolution by Category</a> in the Configuration Reference. See also <a href="../../reference/configuration/#common-pitfalls">Common Pitfalls</a> for documented gotchas like <code>--rate</code> vs <code>aggregate_rate</code>.</p>
 </div>
 <h2 id="multi-client-composition">Multi-Client Composition<a class="headerlink" href="#multi-client-composition" title="Permanent link">&para;</a></h2>
 <p>Use <code>blis compose</code> to merge multiple workload specs into a single spec:</p>

@@ -863,6 +863,8 @@
       
         
       
+        
+      
     
     
     
@@ -1150,6 +1152,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/observe-replay-calibrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observe / Replay / Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/experimentation/" class="md-nav__link">
         
   
@@ -1225,6 +1255,8 @@
       
         
       
+        
+      
     
     
     
@@ -1279,6 +1311,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -2297,6 +2357,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#staleness-caveat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Staleness Caveat
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2436,7 +2507,7 @@
   <span class="md-ellipsis">
     
   
-    Antipattern Rules (R1-R20)
+    Antipattern Rules (R1-R23)
   
 
     
@@ -2464,7 +2535,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-8)
+    System Invariants (INV-1-INV-11)
   
 
     
@@ -3589,6 +3660,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#staleness-caveat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Staleness Caveat
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4487,6 +4569,9 @@
 </tbody>
 </table>
 <hr />
+<h2 id="staleness-caveat">Staleness Caveat<a class="headerlink" href="#staleness-caveat" title="Permanent link">&para;</a></h2>
+<p>Experiment findings reflect simulator behavior at the time of execution. Subsequent bug fixes or feature changes may shift quantitative results. Check the PR that introduced the experiment (linked in each FINDINGS.md) and compare against recent changes to the relevant code paths before citing specific numbers.</p>
+<p>When prior findings are known to be affected by a later change, an erratum is added to the FINDINGS.md (e.g., H29 erratum after #574). However, there is no automated mechanism to detect all affected findings — treat quantitative results as point-in-time measurements, not permanent truths.</p>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Standards: <a href="../standards/experiments/">docs/contributing/standards/experiments.md</a></li>

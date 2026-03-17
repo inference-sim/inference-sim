@@ -11,7 +11,7 @@
       
       
       
-        <link rel="prev" href="../">
+        <link rel="prev" href="../project-structure/">
       
       
         <link rel="next" href="../models/">
@@ -863,6 +863,8 @@
       
         
       
+        
+      
     
     
     
@@ -1150,6 +1152,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guide/observe-replay-calibrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observe / Replay / Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guide/experimentation/" class="md-nav__link">
         
   
@@ -1227,6 +1257,8 @@
       
         
       
+        
+      
     
     
     
@@ -1282,6 +1314,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1358,6 +1418,45 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Configuration Precedence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameter-resolution-by-category" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameter Resolution by Category
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#known-unit-gotchas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Unit Gotchas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-pitfalls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Pitfalls
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1654,6 +1753,178 @@
     <span class="md-ellipsis">
       
         CLI Flag Summary by Sub-Config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-observe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis observe
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis observe">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload Input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#distribution-synthesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Distribution Synthesis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-replay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis replay
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis replay">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#replay-specific-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replay-Specific Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-results-path-semantic-difference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        --results-path Semantic Difference
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis calibrate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-convert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis convert">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert preset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-servegen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert servegen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-infperf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert infperf
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis compose
       
     </span>
   </a>
@@ -2199,7 +2470,7 @@
   <span class="md-ellipsis">
     
   
-    Antipattern Rules (R1-R20)
+    Antipattern Rules (R1-R23)
   
 
     
@@ -2227,7 +2498,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-8)
+    System Invariants (INV-1-INV-11)
   
 
     
@@ -2835,6 +3106,45 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Configuration Precedence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameter-resolution-by-category" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameter Resolution by Category
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#known-unit-gotchas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Unit Gotchas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-pitfalls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Pitfalls
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3136,6 +3446,178 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#blis-observe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis observe
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis observe">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload Input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#distribution-synthesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Distribution Synthesis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-replay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis replay
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis replay">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#replay-specific-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replay-Specific Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-results-path-semantic-difference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        --results-path Semantic Difference
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis calibrate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-convert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis convert">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert preset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-servegen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert servegen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-infperf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert infperf
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis compose
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3167,6 +3649,109 @@
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>Hardcoded defaults (lowest priority)
 </code></pre></div>
 <p>CLI flags only override YAML values when explicitly set. BLIS checks whether each flag was provided by the user (not just whether it has a non-default value), so default flag values do not accidentally override YAML configuration.</p>
+<h3 id="parameter-resolution-by-category">Parameter Resolution by Category<a class="headerlink" href="#parameter-resolution-by-category" title="Permanent link">&para;</a></h3>
+<p>The general precedence (CLI → YAML → hardcoded) applies everywhere, but each parameter category has its own resolution layers. The chains below show highest-to-lowest priority for each category.</p>
+<p><strong>Latency coefficients</strong> (<code>--alpha-coeffs</code>, <code>--beta-coeffs</code>):</p>
+<ol>
+<li>Explicit CLI flags — if passed, used directly (no <code>defaults.yaml</code> lookup)</li>
+<li><code>defaults.yaml</code> <code>models[]</code> entry — matched by model/GPU/TP/vllm-version (blackbox mode)</li>
+<li>Analytical computation — roofline, crossmodel, or trained-roofline backends compute from architecture + hardware specs</li>
+<li>Error — blackbox mode with no matching entry exits with an error</li>
+</ol>
+<p><strong>Hardware and TP</strong> (<code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code>):</p>
+<ol>
+<li>Explicit CLI flags</li>
+<li><code>defaults.yaml</code> <code>defaults[]</code> entry — matched by <code>--model</code></li>
+<li>Error — roofline/crossmodel/trained-roofline require these values; blackbox fails at coefficient lookup</li>
+</ol>
+<p><strong>KV cache blocks</strong> (<code>--total-kv-blocks</code>): See the detailed <a href="#resolution-process">Resolution Process</a> below — four layers including auto-calculation from GPU memory.</p>
+<p><strong>Workload parameters</strong> (<code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens</code>, etc.):</p>
+<ol>
+<li><code>--workload-spec</code> YAML file — when set, all token distribution and arrival parameters come from the YAML; CLI distribution flags are ignored</li>
+<li>CLI distribution flags — when <code>--workload distribution</code> (default) and no <code>--workload-spec</code></li>
+<li>Named preset from <code>defaults.yaml</code> — when <code>--workload &lt;name&gt;</code> (e.g., <code>chatbot</code>)</li>
+<li>Hardcoded CLI flag defaults — (e.g., <code>--prompt-tokens 512</code>, <code>--output-tokens 512</code>)</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code>--seed</code>, <code>--horizon</code>, and <code>--num-requests</code> are exceptions — they override the workload-spec YAML values even when <code>--workload-spec</code> is set. <code>--rate</code> does NOT override <code>aggregate_rate</code> in the YAML (see <a href="#common-pitfalls">Common Pitfalls</a>).</p>
+</div>
+<p><strong>Routing, admission, and scheduling</strong> (<code>--routing-policy</code>, <code>--admission-policy</code>, <code>--scheduler</code>, etc.):</p>
+<ol>
+<li>Explicit CLI flags</li>
+<li><code>--policy-config</code> YAML bundle — loads all policy settings from one file</li>
+<li>Hardcoded defaults — <code>round-robin</code>, <code>always-admit</code>, <code>fcfs</code></li>
+</ol>
+<p><strong>Batch formation</strong> (<code>--max-num-running-reqs</code>, <code>--max-num-scheduled-tokens</code>, etc.):</p>
+<ol>
+<li>Explicit CLI flags</li>
+<li>Hardcoded defaults — 256 running reqs, 2048 scheduled tokens</li>
+</ol>
+<p>Batch formation has no YAML override path — <code>defaults.yaml</code> and <code>--policy-config</code> do not include batch settings.</p>
+<h3 id="known-unit-gotchas">Known Unit Gotchas<a class="headerlink" href="#known-unit-gotchas" title="Permanent link">&para;</a></h3>
+<p>All internal timestamps in the DES (arrival time, schedule time, completion time, clock) use <strong>ticks</strong>, where <strong>1 tick = 1 microsecond (μs)</strong>. Output metrics convert to milliseconds for human readability, but several fields and flags use different units:</p>
+<table>
+<thead>
+<tr>
+<th>Field / Flag</th>
+<th>Unit</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ttft_ms</code>, <code>e2e_ms</code>, <code>itl_ms</code> (per-request JSON)</td>
+<td>milliseconds</td>
+<td>Converted from ticks by dividing by 1,000</td>
+</tr>
+<tr>
+<td><code>scheduling_delay_ms</code> (per-request JSON)</td>
+<td>milliseconds</td>
+<td>Converted from ticks by dividing by 1,000. Historically was in ticks (μs) despite the <code>_ms</code> suffix — fixed by BC-14. Old hypothesis scripts (pre-fix) divide by 1,000 again unnecessarily.</td>
+</tr>
+<tr>
+<td><code>scheduling_delay_p99_ms</code> (aggregate)</td>
+<td>milliseconds</td>
+<td>Always was in milliseconds</td>
+</tr>
+<tr>
+<td><code>--horizon</code></td>
+<td>ticks (μs)</td>
+<td>Simulation time limit. 1,000,000 = 1 second</td>
+</tr>
+<tr>
+<td><code>--admission-latency</code>, <code>--routing-latency</code></td>
+<td>ticks (μs)</td>
+<td>Decision latency injected into the DES event queue</td>
+</tr>
+<tr>
+<td><code>think_time_us</code> (workload YAML)</td>
+<td>microseconds</td>
+<td>Inter-round delay in multi-turn sessions. 5,000,000 = 5 seconds</td>
+</tr>
+<tr>
+<td><code>aggregate_rate</code>, <code>--rate</code></td>
+<td>requests/second</td>
+<td>Not ticks — real-world time unit</td>
+</tr>
+<tr>
+<td><code>--kv-transfer-bandwidth</code></td>
+<td>blocks/tick</td>
+<td>Transfer rate between GPU and CPU KV tiers</td>
+</tr>
+<tr>
+<td><code>--kv-transfer-base-latency</code></td>
+<td>ticks (μs)</td>
+<td>Fixed per-transfer overhead</td>
+</tr>
+</tbody>
+</table>
+<h3 id="common-pitfalls">Common Pitfalls<a class="headerlink" href="#common-pitfalls" title="Permanent link">&para;</a></h3>
+<p><strong>Capacity estimate mismatch (issue #390).</strong> CLI distribution mode defaults to <code>--prompt-tokens 512, --output-tokens 512</code>. If you estimate per-instance capacity using CLI mode, then run a workload-spec YAML with shorter sequences (e.g., mean 256/128), the YAML workload will achieve ~1.5x higher throughput than the CLI estimate predicted. Always derive capacity estimates from the actual workload you plan to run, not from CLI defaults.</p>
+<p><strong><code>--rate</code> does NOT override workload-spec YAML.</strong> The <code>--rate</code> flag only applies in CLI distribution mode. When <code>--workload-spec</code> is set, request rate comes from <code>aggregate_rate</code> in the YAML file — the <code>--rate</code> flag is ignored. To change the rate for a YAML workload, edit the <code>aggregate_rate</code> field in the spec.</p>
+<p><strong><code>aggregate_rate</code> override for inference-perf specs.</strong> When converting inference-perf specs via <code>blis convert infperf</code>, per-stage rates in the spec override a user-specified <code>aggregate_rate</code>. If the sum of stage rates differs from <code>aggregate_rate</code>, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.</p>
+<p><strong><code>--total-kv-blocks</code> phantom default.</strong> The CLI default is 1,000,000 blocks, but this value almost never takes effect. In roofline/crossmodel mode, auto-calculation from GPU memory supersedes it. In blackbox mode, <code>defaults.yaml</code> provides a per-model value (e.g., 17,600 for qwen3-14b/H100/TP=1). The 1M default is a last-resort fallback — if your simulation uses it, check whether your model/hardware combination has a <code>defaults.yaml</code> entry or whether auto-calculation is failing.</p>
+<p><strong><code>enable_multi_turn_chat</code> semantic mismatch (issue #517).</strong> inference-perf's <code>enable_multi_turn_chat</code> creates one persistent session per virtual user. BLIS's closest equivalent is <code>multi_turn.single_session: true</code> in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.</p>
 <h2 id="simulation-control">Simulation Control<a class="headerlink" href="#simulation-control" title="Permanent link">&para;</a></h2>
 <p>Top-level settings that control the simulation run.</p>
 <table>
@@ -3534,7 +4119,7 @@
 <p>See <a href="../../concepts/core-engine/#scheduling-policies">Core Engine: Scheduling</a> for policy details.</p>
 <h2 id="workload-configuration">Workload Configuration<a class="headerlink" href="#workload-configuration" title="Permanent link">&para;</a></h2>
 <h3 id="workload-modes">Workload Modes<a class="headerlink" href="#workload-modes" title="Permanent link">&para;</a></h3>
-<p>BLIS supports four workload specification modes, in order of precedence:</p>
+<p>BLIS supports three workload specification modes, in order of precedence:</p>
 <table>
 <thead>
 <tr>
@@ -3558,11 +4143,6 @@
 <td><strong>Preset</strong></td>
 <td><code>--workload &lt;name&gt;</code></td>
 <td>Named preset from <code>defaults.yaml</code>: <code>chatbot</code>, <code>contentgen</code>, <code>summarization</code>, <code>multidoc</code>.</td>
-</tr>
-<tr>
-<td><strong>CSV traces</strong></td>
-<td><code>--workload traces</code></td>
-<td>Replay recorded traces from a CSV file.</td>
 </tr>
 </tbody>
 </table>
@@ -3711,12 +4291,6 @@
 <td>string</td>
 <td>""</td>
 <td>Path to workload-spec YAML.</td>
-</tr>
-<tr>
-<td><code>--workload-traces-filepath</code></td>
-<td>string</td>
-<td>""</td>
-<td>Path to CSV trace file (required when <code>--workload traces</code>).</td>
 </tr>
 <tr>
 <td><code>--defaults-filepath</code></td>
@@ -3900,7 +4474,7 @@
 </tr>
 <tr>
 <td><strong>WorkloadConfig</strong></td>
-<td><code>--workload</code>, <code>--workload-spec</code>, <code>--workload-traces-filepath</code>, <code>--defaults-filepath</code>, <code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens*</code>, <code>--output-tokens*</code>, <code>--prefix-tokens</code></td>
+<td><code>--workload</code>, <code>--workload-spec</code>, <code>--defaults-filepath</code>, <code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens*</code>, <code>--output-tokens*</code>, <code>--prefix-tokens</code></td>
 </tr>
 <tr>
 <td><strong>DeploymentConfig</strong></td>
@@ -3909,6 +4483,428 @@
 <tr>
 <td><strong>Top-level</strong></td>
 <td><code>--seed</code>, <code>--horizon</code>, <code>--log</code>, <code>--results-path</code>, <code>--policy-config</code>, <code>--fitness-weights</code>, <code>--summarize-trace</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="blis-observe">blis observe<a class="headerlink" href="#blis-observe" title="Permanent link">&para;</a></h2>
+<p>Dispatches a workload to a real inference server and records request-level timing into TraceV2 files for later replay and calibration.</p>
+<h3 id="required">Required<a class="headerlink" href="#required" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--server-url</code></td>
+<td>string</td>
+<td>""</td>
+<td>Inference server URL (required).</td>
+</tr>
+<tr>
+<td><code>--model</code></td>
+<td>string</td>
+<td>""</td>
+<td>Model name for API requests (required).</td>
+</tr>
+<tr>
+<td><code>--trace-header</code></td>
+<td>string</td>
+<td>""</td>
+<td>Output path for TraceV2 header YAML (required).</td>
+</tr>
+<tr>
+<td><code>--trace-data</code></td>
+<td>string</td>
+<td>""</td>
+<td>Output path for TraceV2 data CSV (required).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="workload-input">Workload Input<a class="headerlink" href="#workload-input" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--workload-spec</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to WorkloadSpec YAML (alternative to <code>--rate</code> + distribution flags).</td>
+</tr>
+<tr>
+<td><code>--rate</code></td>
+<td>float64</td>
+<td>0</td>
+<td>Requests per second for distribution synthesis.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="optional">Optional<a class="headerlink" href="#optional" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--api-key</code></td>
+<td>string</td>
+<td>""</td>
+<td>Bearer token for server authentication.</td>
+</tr>
+<tr>
+<td><code>--server-type</code></td>
+<td>string</td>
+<td>"vllm"</td>
+<td>Server type (<code>vllm</code>, <code>tgi</code>, etc.).</td>
+</tr>
+<tr>
+<td><code>--max-concurrency</code></td>
+<td>int</td>
+<td>256</td>
+<td>Maximum simultaneous in-flight requests.</td>
+</tr>
+<tr>
+<td><code>--warmup-requests</code></td>
+<td>int</td>
+<td>0</td>
+<td>Number of initial requests to exclude from trace.</td>
+</tr>
+<tr>
+<td><code>--no-streaming</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Disable streaming (use non-streaming HTTP).</td>
+</tr>
+<tr>
+<td><code>--seed</code></td>
+<td>int64</td>
+<td>42</td>
+<td>RNG seed for workload generation.</td>
+</tr>
+<tr>
+<td><code>--horizon</code></td>
+<td>int64</td>
+<td>0</td>
+<td>Observation horizon in microseconds (0 = from spec or unlimited).</td>
+</tr>
+<tr>
+<td><code>--num-requests</code></td>
+<td>int</td>
+<td>0</td>
+<td>Maximum requests to generate (0 = from spec or unlimited).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="distribution-synthesis">Distribution Synthesis<a class="headerlink" href="#distribution-synthesis" title="Permanent link">&para;</a></h3>
+<p>Used when <code>--rate</code> is set instead of <code>--workload-spec</code>. Same flag names as <code>blis run</code> but with different defaults tuned for observe workloads.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--prompt-tokens</code></td>
+<td>int</td>
+<td>512</td>
+<td>Average prompt token count.</td>
+</tr>
+<tr>
+<td><code>--prompt-tokens-stdev</code></td>
+<td>int</td>
+<td>50</td>
+<td>Prompt token standard deviation.</td>
+</tr>
+<tr>
+<td><code>--prompt-tokens-min</code></td>
+<td>int</td>
+<td>1</td>
+<td>Minimum prompt tokens.</td>
+</tr>
+<tr>
+<td><code>--prompt-tokens-max</code></td>
+<td>int</td>
+<td>2048</td>
+<td>Maximum prompt tokens.</td>
+</tr>
+<tr>
+<td><code>--output-tokens</code></td>
+<td>int</td>
+<td>512</td>
+<td>Average output token count.</td>
+</tr>
+<tr>
+<td><code>--output-tokens-stdev</code></td>
+<td>int</td>
+<td>50</td>
+<td>Output token standard deviation.</td>
+</tr>
+<tr>
+<td><code>--output-tokens-min</code></td>
+<td>int</td>
+<td>1</td>
+<td>Minimum output tokens.</td>
+</tr>
+<tr>
+<td><code>--output-tokens-max</code></td>
+<td>int</td>
+<td>2048</td>
+<td>Maximum output tokens.</td>
+</tr>
+<tr>
+<td><code>--prefix-tokens</code></td>
+<td>int</td>
+<td>0</td>
+<td>Shared prefix token count.</td>
+</tr>
+<tr>
+<td><code>--api-format</code></td>
+<td>string</td>
+<td>"completions"</td>
+<td>API format: <code>completions</code> (<code>/v1/completions</code>) or <code>chat</code> (<code>/v1/chat/completions</code>).</td>
+</tr>
+<tr>
+<td><code>--unconstrained-output</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Do not set <code>max_tokens</code> (let server decide output length).</td>
+</tr>
+<tr>
+<td><code>--rtt-ms</code></td>
+<td>float64</td>
+<td>0</td>
+<td>Measured network round-trip time in milliseconds (recorded in trace header for calibrate).</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="blis-replay">blis replay<a class="headerlink" href="#blis-replay" title="Permanent link">&para;</a></h2>
+<p>Replays a captured TraceV2 file through the discrete-event simulator. Replay reuses the full simulation engine, so it accepts the same sim-config flags as <code>blis run</code> — see the sections above for <a href="#simulation-control">Simulation Control</a>, <a href="#kv-cache-configuration">KV Cache Configuration</a>, <a href="#batch-formation">Batch Formation</a>, <a href="#latency-model">Latency Model</a>, <a href="#cluster-configuration">Cluster Configuration</a>, <a href="#admission-policy">Admission Policy</a>, <a href="#routing-policy">Routing Policy</a>, <a href="#scheduling-and-priority">Scheduling and Priority</a>, <a href="#decision-tracing">Decision Tracing</a>, and <a href="#fitness-evaluation">Fitness Evaluation</a>.</p>
+<h3 id="replay-specific-flags">Replay-Specific Flags<a class="headerlink" href="#replay-specific-flags" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--trace-header</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to TraceV2 header YAML file (required).</td>
+</tr>
+<tr>
+<td><code>--trace-data</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to TraceV2 data CSV file (required).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="-results-path-semantic-difference"><code>--results-path</code> Semantic Difference<a class="headerlink" href="#-results-path-semantic-difference" title="Permanent link">&para;</a></h3>
+<p>The <code>--results-path</code> flag is shared with <code>blis run</code> but writes a different schema:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Schema</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>blis run</code></td>
+<td><code>MetricsOutput</code> JSON</td>
+<td>Full simulation metrics (aggregated statistics, per-request details, fitness scores).</td>
+</tr>
+<tr>
+<td><code>blis replay</code></td>
+<td><code>[]SimResult</code> JSON</td>
+<td>Per-request array with fields: <code>request_id</code>, <code>ttft_us</code>, <code>e2e_us</code>, <code>input_tokens</code>, <code>output_tokens</code>. Designed for <code>blis calibrate</code> consumption.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="blis-calibrate">blis calibrate<a class="headerlink" href="#blis-calibrate" title="Permanent link">&para;</a></h2>
+<p>Compares real observed latencies (from <code>blis observe</code>) against simulator predictions (from <code>blis replay</code>) and produces a calibration report with per-metric MAPE, Pearson R, and quality grades.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--trace-header</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to TraceV2 header YAML file (from <code>blis observe</code>; required).</td>
+</tr>
+<tr>
+<td><code>--trace-data</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to TraceV2 data CSV file (from <code>blis observe</code>; required).</td>
+</tr>
+<tr>
+<td><code>--sim-results</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to SimResult JSON file (from <code>blis replay --results-path</code>; required).</td>
+</tr>
+<tr>
+<td><code>--report</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to write calibration report JSON (required).</td>
+</tr>
+<tr>
+<td><code>--warmup-requests</code></td>
+<td>int</td>
+<td>-1</td>
+<td>Number of initial requests to exclude. Default: from trace header <code>warm_up_requests</code>; pass 0 to include all.</td>
+</tr>
+<tr>
+<td><code>--network-rtt-us</code></td>
+<td>int64</td>
+<td>-1</td>
+<td>Network RTT in microseconds added to sim-side latencies. Default: from trace header <code>network.measured_rtt_ms</code>.</td>
+</tr>
+<tr>
+<td><code>--network-bandwidth-mbps</code></td>
+<td>float64</td>
+<td>0</td>
+<td>Network bandwidth in Mbps for upload/download delay calculation (0 = no delay).</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="blis-convert">blis convert<a class="headerlink" href="#blis-convert" title="Permanent link">&para;</a></h2>
+<p>Converts external workload formats into BLIS WorkloadSpec v2 YAML. Three subcommands are available.</p>
+<h3 id="blis-convert-preset"><code>blis convert preset</code><a class="headerlink" href="#blis-convert-preset" title="Permanent link">&para;</a></h3>
+<p>Generates a WorkloadSpec from a named preset in <code>defaults.yaml</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--name</code></td>
+<td>string</td>
+<td>""</td>
+<td>Preset name (e.g., <code>chatbot</code>, <code>summarization</code>, <code>contentgen</code>, <code>multidoc</code>).</td>
+</tr>
+<tr>
+<td><code>--rate</code></td>
+<td>float64</td>
+<td>1.0</td>
+<td>Request rate in requests/second.</td>
+</tr>
+<tr>
+<td><code>--num-requests</code></td>
+<td>int</td>
+<td>100</td>
+<td>Number of requests.</td>
+</tr>
+<tr>
+<td><code>--defaults-filepath</code></td>
+<td>string</td>
+<td>"defaults.yaml"</td>
+<td>Path to <code>defaults.yaml</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="blis-convert-servegen"><code>blis convert servegen</code><a class="headerlink" href="#blis-convert-servegen" title="Permanent link">&para;</a></h3>
+<p>Converts a ServeGen data directory into WorkloadSpec format.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--path</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to ServeGen data directory.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="blis-convert-infperf"><code>blis convert infperf</code><a class="headerlink" href="#blis-convert-infperf" title="Permanent link">&para;</a></h3>
+<p>Converts an inference-perf YAML specification into WorkloadSpec format.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--spec</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to inference-perf YAML spec.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="blis-compose">blis compose<a class="headerlink" href="#blis-compose" title="Permanent link">&para;</a></h2>
+<p>Merges multiple WorkloadSpec v2 YAML files into a single combined specification.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--from</code></td>
+<td>string (repeatable)</td>
+<td>(none)</td>
+<td>Path to v2 WorkloadSpec YAML file. Can be repeated to merge multiple specs.</td>
 </tr>
 </tbody>
 </table>
@@ -3947,7 +4943,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Reference">
+          <a href="../project-structure/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Project Structure">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3957,7 +4953,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Reference
+                Project Structure
               </div>
             </div>
           </a>
