@@ -70,6 +70,7 @@ type TraceRecord struct {
 	NumChunks         int
 	Status            string // "ok", "error", "timeout"
 	ErrorMessage      string
+	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -85,7 +86,7 @@ var traceV2Columns = []string{
 	"text_tokens", "image_tokens", "audio_tokens", "video_tokens", "reason_ratio",
 	"model", "deadline_us", "server_input_tokens",
 	"arrival_time_us", "send_time_us", "first_chunk_time_us", "last_chunk_time_us",
-	"num_chunks", "status", "error_message",
+	"num_chunks", "status", "error_message", "finish_reason",
 }
 
 // ExportTraceV2 writes trace header (YAML) and data (CSV) to separate files.
@@ -143,6 +144,7 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			strconv.Itoa(r.NumChunks),
 			r.Status,
 			r.ErrorMessage,
+			r.FinishReason,
 		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
@@ -173,6 +175,7 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	defer func() { _ = file.Close() }()
 
 	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1 // allow variable column count for backward compat
 
 	// Skip header row
 	if _, err := reader.Read(); err != nil {
@@ -188,12 +191,14 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
-		if len(row) < len(traceV2Columns) {
+		// Accept current column count or previous (finish_reason was added as column 26).
+		minColumns := len(traceV2Columns) - 1 // backward compat: 25-column traces (pre-finish_reason) accepted
+		if len(row) < minColumns {
 			hint := ""
 			if len(row) == 22 {
 				hint = " (22-column trace predates model/deadline_us/server_input_tokens fields; re-export to upgrade)"
 			}
-			return nil, fmt.Errorf("CSV row has %d columns, expected %d%s", len(row), len(traceV2Columns), hint)
+			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d%s", len(row), minColumns, hint)
 		}
 
 		r, err := parseTraceRecord(row)
@@ -313,6 +318,12 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
 		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
 	}
+	// finish_reason (column 25) — optional for backward compat with 25-column traces
+	var finishReason string
+	if len(row) >= 26 {
+		finishReason = strings.TrimSpace(row[25])
+	}
+
 	return &TraceRecord{
 		RequestID:         requestID,
 		ClientID:          row[1],
@@ -339,6 +350,7 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 		NumChunks:         numChunks,
 		Status:            row[23],
 		ErrorMessage:      strings.TrimSpace(row[24]),
+		FinishReason:      finishReason,
 	}, nil
 }
 

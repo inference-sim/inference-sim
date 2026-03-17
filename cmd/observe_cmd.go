@@ -2,9 +2,13 @@ package cmd
 
 import (
 	"context"
+	"encoding/binary"
+	"hash/fnv"
 	"math"
+	"math/rand"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -41,6 +45,9 @@ var (
 	observeOutputMin     int
 	observeOutputMax     int
 	observePrefixTokens  int
+	observeAPIFormat           string
+	observeUnconstrainedOutput bool
+	observeRttMs               float64
 )
 
 var observeCmd = &cobra.Command{
@@ -57,12 +64,23 @@ Supports both --workload-spec (YAML) and --rate (distribution synthesis) input p
 Closed-loop sessions with multi-turn follow-ups are supported when the WorkloadSpec
 contains session clients.
 
+API format: Use --api-format=chat for servers that expose /v1/chat/completions
+(most production vLLM/SGLang deployments). Default is --api-format=completions
+which uses /v1/completions with a "prompt" field.
+
+Output control: Use --unconstrained-output to let the server decide output length
+(omits max_tokens for chat, sends large value for completions). Default constrains
+output to the workload spec's sampled MaxOutputTokens.
+
+Network calibration: Use --rtt-ms to record measured network round-trip time
+in the trace header for calibration normalization.
+
 Example:
   blis observe --server-url http://localhost:8000 --model meta-llama/Llama-3.1-8B-Instruct \
     --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
 
   blis observe --server-url http://localhost:8000 --model meta-llama/Llama-3.1-8B-Instruct \
-    --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv`,
+    --api-format chat --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv`,
 	Run: runObserve,
 }
 
@@ -97,6 +115,9 @@ func init() {
 	observeCmd.Flags().IntVar(&observeOutputMin, "output-tokens-min", 1, "Minimum output tokens (distribution mode)")
 	observeCmd.Flags().IntVar(&observeOutputMax, "output-tokens-max", 2048, "Maximum output tokens (distribution mode)")
 	observeCmd.Flags().IntVar(&observePrefixTokens, "prefix-tokens", 0, "Shared prefix token count (distribution mode)")
+	observeCmd.Flags().StringVar(&observeAPIFormat, "api-format", "completions", "API format: 'completions' (/v1/completions) or 'chat' (/v1/chat/completions)")
+	observeCmd.Flags().BoolVar(&observeUnconstrainedOutput, "unconstrained-output", false, "Do not set max_tokens (let server decide output length)")
+	observeCmd.Flags().Float64Var(&observeRttMs, "rtt-ms", 0, "Measured network round-trip time in milliseconds (recorded in trace header)")
 
 	rootCmd.AddCommand(observeCmd)
 }
@@ -128,6 +149,12 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 	if cmd.Flags().Changed("rate") && (observeRate <= 0 || math.IsNaN(observeRate) || math.IsInf(observeRate, 0)) {
 		logrus.Fatalf("--rate must be a finite value > 0, got %v", observeRate)
+	}
+	if observeAPIFormat != "completions" && observeAPIFormat != "chat" {
+		logrus.Fatalf("--api-format must be 'completions' or 'chat', got %q", observeAPIFormat)
+	}
+	if observeRttMs < 0 || math.IsNaN(observeRttMs) || math.IsInf(observeRttMs, 0) {
+		logrus.Fatalf("--rtt-ms must be a finite value >= 0, got %v", observeRttMs)
 	}
 
 	// Generate workload
@@ -195,8 +222,28 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	// Setup
 	streaming := !observeNoStreaming
-	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType)
+	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType, WithAPIFormat(observeAPIFormat))
 	recorder := &Recorder{}
+
+	// Build prefix strings for prefix-group clients (BC-5)
+	var prefixes map[string]string
+	var prefixLengths map[string]int
+	if spec != nil {
+		groups := make(map[string]int)
+		for _, c := range spec.Clients {
+			if c.PrefixGroup != "" {
+				prefixLen := c.PrefixLength
+				if prefixLen <= 0 {
+					prefixLen = 50
+				}
+				groups[c.PrefixGroup] = prefixLen
+			}
+		}
+		if len(groups) > 0 {
+			prefixes, prefixLengths = buildPrefixStrings(groups, spec.Seed)
+			logrus.Infof("Built prefix strings for %d prefix groups", len(groups))
+		}
+	}
 
 	var sessionMgr *workload.SessionManager
 	if len(wl.Sessions) > 0 {
@@ -216,7 +263,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	// Run orchestrator
 	startTime := time.Now()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, streaming, observeMaxConcur, observeWarmup)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, streaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
 	// Export trace (BC-4)
@@ -230,8 +277,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			Type:  observeServerType,
 			Model: observeModel,
 		},
-		// TODO(#660): populate measured_rtt_ms via pre-flight ping or --rtt-ms flag
-		Network: &workload.TraceNetworkConfig{},
+		Network: &workload.TraceNetworkConfig{
+			MeasuredRTTMs: observeRttMs,
+		},
 	}
 	if observeWorkloadSpec != "" {
 		header.WorkloadSpec = observeWorkloadSpec
@@ -263,6 +311,9 @@ func runObserveOrchestrator(
 	streaming bool,
 	maxConcurrency int,
 	warmupCount int,
+	prefixes map[string]string,
+	prefixLengths map[string]int,
+	unconstrained bool,
 ) {
 	if len(requests) == 0 {
 		return
@@ -318,7 +369,7 @@ func runObserveOrchestrator(
 		defer wg.Done()
 		defer func() { <-semaphore }() // release concurrency slot
 
-		pending := requestToPending(req, idx, streaming)
+		pending := requestToPending(req, idx, streaming, unconstrained, prefixes, prefixLengths)
 		record, sendErr := client.Send(ctx, pending)
 		if sendErr != nil {
 			logrus.Warnf("request %d: Send returned error: %v", idx, sendErr)
@@ -471,7 +522,33 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 }
 
 // requestToPending converts a sim.Request to a PendingRequest for HTTP dispatch.
-func requestToPending(req *sim.Request, reqIndex int, streaming bool) *PendingRequest {
+// prefixes maps prefix-group name to a pre-built prefix string; prefixLengths maps
+// prefix-group name to the number of words in the prefix. Both may be nil if no
+// prefix groups exist.
+func requestToPending(req *sim.Request, reqIndex int, streaming, unconstrained bool, prefixes map[string]string, prefixLengths map[string]int) *PendingRequest {
+	// Generate proportional prompt: ~N words for N InputTokens.
+	// Actual token count varies by tokenizer; ServerInputTokens provides ground truth.
+	wordCount := len(req.InputTokens)
+	if wordCount <= 0 {
+		wordCount = 1
+	}
+
+	var prompt string
+	if req.PrefixGroup != "" && prefixes != nil {
+		if prefix, ok := prefixes[req.PrefixGroup]; ok {
+			prefixLen := prefixLengths[req.PrefixGroup]
+			suffixWords := wordCount - prefixLen
+			if suffixWords < 1 {
+				suffixWords = 1
+			}
+			prompt = prefix + strings.Repeat("hello ", suffixWords)
+		} else {
+			prompt = strings.Repeat("hello ", wordCount)
+		}
+	} else {
+		prompt = strings.Repeat("hello ", wordCount)
+	}
+
 	return &PendingRequest{
 		RequestID:       reqIndex,
 		InputTokens:     len(req.InputTokens),
@@ -481,5 +558,54 @@ func requestToPending(req *sim.Request, reqIndex int, streaming bool) *PendingRe
 		ClientID:        req.ClientID,
 		TenantID:        req.TenantID,
 		SLOClass:        req.SLOClass,
+		Prompt:          prompt,
+		Unconstrained:   unconstrained,
+		DeadlineUs:      req.Deadline,
 	}
+}
+
+// prefixVocabulary is a hardcoded 100-word vocabulary for generating deterministic
+// prefix strings. Using distinct words (rather than repeating "hello") ensures
+// that different prefix groups produce distinct token sequences, activating
+// the server's prefix cache for within-group requests.
+var prefixVocabulary = []string{
+	"alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
+	"kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango",
+	"uniform", "victor", "whiskey", "xray", "yankee", "zulu", "apple", "banana", "cherry", "date",
+	"elder", "fig", "grape", "hazel", "iris", "jasmine", "kiwi", "lemon", "mango", "nutmeg",
+	"olive", "peach", "quince", "rose", "sage", "thyme", "umber", "violet", "willow", "yarrow",
+	"acorn", "birch", "cedar", "daisy", "elm", "fern", "ginger", "holly", "ivy", "juniper",
+	"kelp", "laurel", "maple", "nettle", "oak", "pine", "quinoa", "reed", "spruce", "tulip",
+	"umbra", "vine", "walnut", "xylem", "yew", "zinnia", "alder", "basil", "clover", "dill",
+	"fennel", "garlic", "hemp", "indigo", "jade", "kumquat", "lily", "moss", "neem", "orchid",
+	"poppy", "rye", "saffron", "tea", "urchin", "verbena", "wheat", "xeris", "yucca", "zest",
+}
+
+// buildPrefixStrings generates deterministic prefix strings for each prefix group.
+// Each group gets a distinct sequence of words from the vocabulary, seeded by
+// FNV hash of (seed, group name) for cross-run reproducibility.
+func buildPrefixStrings(groups map[string]int, seed int64) (prefixes map[string]string, prefixLengths map[string]int) {
+	prefixes = make(map[string]string, len(groups))
+	prefixLengths = make(map[string]int, len(groups))
+	for group, length := range groups {
+		if length <= 0 {
+			length = 50 // default prefix length
+		}
+		// Derive per-group seed from FNV hash
+		h := fnv.New64a()
+		seedBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(seedBytes, uint64(seed))
+		_, _ = h.Write(seedBytes)
+		_, _ = h.Write([]byte(group))
+		groupSeed := int64(h.Sum64())
+
+		rng := rand.New(rand.NewSource(groupSeed)) //nolint:gosec // deterministic, not crypto
+		var words []string
+		for i := 0; i < length; i++ {
+			words = append(words, prefixVocabulary[rng.Intn(len(prefixVocabulary))])
+		}
+		prefixes[group] = strings.Join(words, " ") + " "
+		prefixLengths[group] = length
+	}
+	return prefixes, prefixLengths
 }
