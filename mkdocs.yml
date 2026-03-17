@@ -101,6 +101,7 @@ nav:
       - Workload Specifications: guide/workloads.md
       - Cluster Simulation: guide/cluster.md
       - Metrics & Results: guide/results.md
+      - Observe / Replay / Calibrate: guide/observe-replay-calibrate.md
       - Hypothesis Experimentation: guide/experimentation.md
       - Skills & Plugins: guide/skills-and-plugins.md
   - Reference:
