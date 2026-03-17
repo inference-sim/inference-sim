@@ -1755,6 +1755,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#step-15-audit-the-source-document" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1.5: Audit the Source Document
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#step-2-write-an-implementation-plan" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3118,6 +3129,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#step-15-audit-the-source-document" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1.5: Audit the Source Document
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#step-2-write-an-implementation-plan" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3635,12 +3657,13 @@
 
 
 <h1 id="pr-development-workflow">PR Development Workflow<a class="headerlink" href="#pr-development-workflow" title="Permanent link">&para;</a></h1>
-<p><strong>Status:</strong> Active (v4.0 — updated 2026-02-27)</p>
+<p><strong>Status:</strong> Active (v4.1 — updated 2026-03-17)</p>
 <p>This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.</p>
 <hr />
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <pre class="mermaid"><code>flowchart TD
     S1["Step 1: Create Isolated Workspace"]
+    S15["Step 1.5: Source Document Audit"]
     S2["Step 2: Write Implementation Plan"]
     S25["Step 2.5: Review the Plan&lt;br/&gt;(10 perspectives → convergence)"]
     S3["Step 3: Human Review&lt;br/&gt;(Approve plan)"]
@@ -3649,7 +3672,7 @@
     S475["Step 4.75: Pre-Commit Self-Audit&lt;br/&gt;(Critical thinking — no agent)"]
     S5["Step 5: Commit, Push, Create PR"]
 
-    S1 --&gt; S2 --&gt; S25 --&gt; S3 --&gt; S4 --&gt; S45 --&gt; S475 --&gt; S5
+    S1 --&gt; S15 --&gt; S2 --&gt; S25 --&gt; S3 --&gt; S4 --&gt; S45 --&gt; S475 --&gt; S5
     S25 --&gt;|convergence&lt;br/&gt;rounds| S25
     S45 --&gt;|convergence&lt;br/&gt;rounds| S45
 
@@ -3680,6 +3703,19 @@
 <p class="admonition-title">Automation</p>
 <p><code>/superpowers:using-git-worktrees pr&lt;N&gt;-&lt;feature-name&gt;</code> creates the worktree and switches your shell into it. Optional pre-cleanup: <code>/commit-commands:clean_gone</code> removes stale branches. See <a href="../../guide/skills-and-plugins/">Skills &amp; Plugins</a>.</p>
 </div>
+<hr />
+<h3 id="step-15-audit-the-source-document">Step 1.5: Audit the Source Document<a class="headerlink" href="#step-15-audit-the-source-document" title="Permanent link">&para;</a></h3>
+<p>Before writing the plan, scan the source document (design doc, macro plan section, GitHub issue, or feature request) for:</p>
+<ol>
+<li><strong>Ambiguous requirements</strong> — flag and resolve with the document author before planning</li>
+<li><strong>Contradictions with existing invariants or standards</strong> — check against <code>standards/invariants.md</code> and <code>standards/rules.md</code></li>
+<li><strong>Missing information needed for planning</strong> — which extension type? which invariants affected? which construction sites?</li>
+</ol>
+<p><strong>Output:</strong> A list of resolved clarifications, appended to the micro plan's Deviation Log with reason <code>CLARIFICATION</code>.</p>
+<blockquote>
+<p><strong>CLARIFICATION vs CORRECTION:</strong> Use <code>CLARIFICATION</code> when the source was ambiguous or incomplete and you chose an interpretation. Use <code>CORRECTION</code> when the source was factually wrong about existing code or behavior.</p>
+</blockquote>
+<p>If the source document is unambiguous and complete, skip this step — but note in the plan that no clarifications were needed.</p>
 <hr />
 <h3 id="step-2-write-an-implementation-plan">Step 2: Write an Implementation Plan<a class="headerlink" href="#step-2-write-an-implementation-plan" title="Permanent link">&para;</a></h3>
 <p>Write an implementation plan following the <a href="../templates/micro-plan/">micro-plan template</a>. The plan must include:</p>
@@ -3938,7 +3974,7 @@
 </tbody>
 </table>
 <p><strong>Rules:</strong>
-- <strong>Steps 1, 2, 3, 4, 5 are always required</strong> — worktree, plan, human review, execution, and commit apply to all tiers.
+- <strong>Steps 1, 1.5, 2, 3, 4, 5 are always required</strong> — worktree, source audit, plan, human review, execution, and commit apply to all tiers.
 - <strong>Self-audit is always full</strong> — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
 - <strong>When in doubt, tier up</strong> — if you're unsure whether a change is Small or Medium, use Medium.
 - <strong>Human reviewer can override</strong> — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.</p>
@@ -3951,6 +3987,7 @@
 <p>A typical PR from a macro plan section:</p>
 <ol>
 <li><strong>Create worktree:</strong> <code>git worktree add .worktrees/pr8-routing -b pr8-routing &amp;&amp; cd .worktrees/pr8-routing</code></li>
+<li><strong>Audit source:</strong> Scan source document for ambiguities, contradictions, missing info. Record clarifications.</li>
 <li><strong>Write plan:</strong> Follow <a href="../templates/micro-plan/">micro-plan template</a>, save to <code>docs/plans/pr8-routing-plan.md</code></li>
 <li><strong>Review plan:</strong> Run all 10 perspectives (Stage 1 pre-pass, then Stage 2 convergence). Fix issues, re-run until converged.</li>
 <li><strong>Human review:</strong> Read plan — contracts, tasks, appendix. Approve to proceed.</li>
@@ -4030,6 +4067,7 @@
 **v2.9 (2026-02-20):** Convergence re-run protocol for both Step 2.5 and Step 4.5.
 **v3.0 (2026-02-23):** Multi-perspective rounds replace sequential passes. External LLM review removed. Convergence redefined as property of a clean round.
 **v4.0 (2026-02-27):** Human-first rewrite (#464). Steps describe human actions; skills in admonition callouts. Manual path is primary; automation is additive. Templates split into human-readable format descriptions + agent prompt companions.
+**v4.1 (2026-03-17):** Added Step 1.5 (Source Document Audit) between Steps 1 and 2 — structured pre-audit of source documents for ambiguities, contradictions, and missing information before planning begins. Added `CLARIFICATION` as a Deviation Log reason (#664).
 
 </details>
 
