@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -144,7 +145,7 @@ func TestObserveOrchestrator_OpenLoop_ConservationAndConcurrency(t *testing.T) {
 
 	// WHEN dispatching with max-concurrency 2 and 0 warmup
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0)
+	runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false)
 
 	// THEN: BC-6 conservation: all 5 requests recorded
 	records := recorder.Records()
@@ -211,7 +212,7 @@ func TestObserveOrchestrator_SessionFollowUp_GeneratesRound2(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false)
 
 	records := recorder.Records()
 	if len(records) < 2 {
@@ -278,7 +279,7 @@ func TestObserveOrchestrator_SessionError_CancelsSession(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false)
 
 	records := recorder.Records()
 	for _, r := range records {
@@ -310,7 +311,7 @@ func TestObserveOrchestrator_WarmupExclusion(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 2)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 2, nil, nil, false)
 
 	records := recorder.Records()
 	if len(records) != 3 {
@@ -338,7 +339,7 @@ func TestObserveOrchestrator_WarmupExceedsTotal(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 5)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 5, nil, nil, false)
 
 	records := recorder.Records()
 	if len(records) != 0 {
@@ -366,7 +367,7 @@ func TestObserveOrchestrator_TimestampOrdering(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false)
 
 	records := recorder.Records()
 	if len(records) != 1 {
@@ -406,7 +407,7 @@ func TestObserveOrchestrator_TraceV2RoundTrip(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false)
 
 	headerPath := filepath.Join(t.TempDir(), "header.yaml")
 	dataPath := filepath.Join(t.TempDir(), "data.csv")
@@ -464,7 +465,7 @@ func TestObserveOrchestrator_ErrorStormDrain(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 5, 0)
+		runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 5, 0, nil, nil, false)
 		close(done)
 	}()
 
@@ -508,7 +509,7 @@ func TestObserveOrchestrator_ContextCancellation(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0)
+		runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false)
 		close(done)
 	}()
 
@@ -570,3 +571,97 @@ func TestObserveOrchestrator_PipelineParity_SameRequestSequence(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildPrefixStrings_DeterministicAndDistinct(t *testing.T) {
+	groups := map[string]int{"group-a": 20, "group-b": 30}
+
+	// Same seed produces same output
+	p1, l1 := buildPrefixStrings(groups, 42)
+	p2, l2 := buildPrefixStrings(groups, 42)
+	if p1["group-a"] != p2["group-a"] {
+		t.Error("same seed should produce identical prefix for group-a")
+	}
+	if p1["group-b"] != p2["group-b"] {
+		t.Error("same seed should produce identical prefix for group-b")
+	}
+	if l1["group-a"] != 20 || l1["group-b"] != 30 {
+		t.Errorf("prefix lengths: got %v, want {group-a:20, group-b:30}", l1)
+	}
+	_ = l2
+
+	// Different groups produce different prefixes
+	if p1["group-a"] == p1["group-b"] {
+		t.Error("different prefix groups should produce distinct prefix strings")
+	}
+
+	// Different seed produces different output
+	p3, _ := buildPrefixStrings(groups, 99)
+	if p3["group-a"] == p1["group-a"] {
+		t.Error("different seed should produce different prefix for group-a")
+	}
+}
+
+func TestRequestToPending_PrependsPrefixString(t *testing.T) {
+	prefixes := map[string]string{"shared": "alpha bravo charlie "}
+	prefixLengths := map[string]int{"shared": 3}
+
+	req := &sim.Request{
+		ID:          "test",
+		InputTokens: make([]int, 10),
+		PrefixGroup: "shared",
+	}
+
+	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths)
+
+	// Prompt should start with prefix
+	if !strings.HasPrefix(pending.Prompt, "alpha bravo charlie ") {
+		t.Errorf("prompt should start with prefix, got %q", pending.Prompt[:min(50, len(pending.Prompt))])
+	}
+	// Suffix should have 7 "hello " words (10 total - 3 prefix)
+	suffix := strings.TrimPrefix(pending.Prompt, "alpha bravo charlie ")
+	helloCount := strings.Count(suffix, "hello ")
+	if helloCount != 7 {
+		t.Errorf("suffix 'hello' count = %d, want 7 (10 - 3 prefix)", helloCount)
+	}
+
+	// Without prefix group: no prefix
+	reqNoPrefix := &sim.Request{
+		ID:          "test2",
+		InputTokens: make([]int, 10),
+	}
+	pendingNoPrefix := requestToPending(reqNoPrefix, 1, false, false, prefixes, prefixLengths)
+	if strings.HasPrefix(pendingNoPrefix.Prompt, "alpha") {
+		t.Error("request without prefix group should not have prefix")
+	}
+}
+
+func TestObserveCmd_RttMsFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("rtt-ms")
+	if f == nil {
+		t.Fatal("missing expected flag --rtt-ms")
+	}
+	if f.DefValue != "0" {
+		t.Errorf("--rtt-ms default: got %q, want %q", f.DefValue, "0")
+	}
+}
+
+func TestObserveCmd_APIFormatFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("api-format")
+	if f == nil {
+		t.Fatal("missing expected flag --api-format")
+	}
+	if f.DefValue != "completions" {
+		t.Errorf("--api-format default: got %q, want %q", f.DefValue, "completions")
+	}
+}
+
+func TestObserveCmd_UnconstrainedOutputFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("unconstrained-output")
+	if f == nil {
+		t.Fatal("missing expected flag --unconstrained-output")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--unconstrained-output default: got %q, want %q", f.DefValue, "false")
+	}
+}
+

@@ -24,6 +24,11 @@ go build -o blis main.go
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
 
+# Observe with chat completions endpoint and network RTT
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --api-format chat --rtt-ms 2.5 --workload-spec workload.yaml \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Compare real observed latencies against simulator predictions
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
 
@@ -138,7 +143,7 @@ Composable Scorer Framework completed: PR17 (scorer framework + stateless scorer
 
 Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + SLO tiers), W0-2 (binary rename + converters), W0-3 (cohort population dynamics), W0-4 (legacy retirement). All workload generation now flows through `sim/workload/GenerateRequests()`. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant. CLI binary renamed from `simulation_worker` to `blis`.
 
-Observe/replay/calibrate pipeline complete: `blis observe` (#659) dispatches workload to real servers with closed-loop session support, `blis replay` (#689) replays through DES, `blis calibrate` (#701) compares real vs simulated latencies.
+Observe/replay/calibrate pipeline complete: `blis observe` (#659) dispatches workload to real servers with closed-loop session support, `blis replay` (#689) replays through DES, `blis calibrate` (#701) compares real vs simulated latencies. Observe fidelity (#660): chat completions endpoint (`--api-format chat`), `stream_options` for streaming token counts, `finish_reason` extraction, configurable `max_tokens` (`--unconstrained-output`), deterministic prefix strings for KV cache activation, `--rtt-ms` for network RTT.
 
 Recent work: MkDocs documentation site (#450), roofline auto-fetch flag (#435), metrics substrate fixes (#458), cross-cutting documentation audit (#460).
 

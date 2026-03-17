@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"gopkg.in/yaml.v3"
 )
 
 func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
@@ -262,7 +263,7 @@ func TestLoadTraceV2_UnknownYAMLField_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_InvalidInteger_ReturnsError verifies BC-12: CSV error propagation.
 func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	// GIVEN a row with a non-numeric request_id
-	row := make([]string, 25) // must match new column count
+	row := make([]string, 26) // must match new column count
 	row[0] = "abc"             // request_id should be integer
 	for i := 1; i < len(row); i++ {
 		row[i] = "0"
@@ -282,7 +283,7 @@ func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_InvalidDeadlineUs_ReturnsError verifies BC-9.
 func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 25)
+	row := make([]string, 26)
 	for i := range row {
 		row[i] = "0"
 	}
@@ -300,7 +301,7 @@ func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_InvalidServerInputTokens_ReturnsError verifies BC-10.
 func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 25)
+	row := make([]string, 26)
 	for i := range row {
 		row[i] = "0"
 	}
@@ -318,7 +319,7 @@ func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_NegativeDeadlineUs_ReturnsError verifies R3 validation.
 func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 25)
+	row := make([]string, 26)
 	for i := range row {
 		row[i] = "0"
 	}
@@ -337,7 +338,7 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeInputTokens_ReturnsError verifies R3 for
 // input_tokens (prevents make([]int, negative) panic in replay).
 func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 25)
+	row := make([]string, 26)
 	for i := range row {
 		row[i] = "0"
 	}
@@ -356,7 +357,7 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeOutputTokens_ReturnsError verifies R3 for
 // output_tokens (prevents make([]int, negative) panic in replay).
 func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 25)
+	row := make([]string, 26)
 	for i := range row {
 		row[i] = "0"
 	}
@@ -375,7 +376,7 @@ func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeServerInputTokens_ReturnsError verifies R3
 // for server_input_tokens (consistent validation for all token count fields).
 func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 25)
+	row := make([]string, 26)
 	for i := range row {
 		row[i] = "0"
 	}
@@ -394,7 +395,7 @@ func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError verifies cross-field
 // validation: deadline_us must not precede arrival_time_us when both are nonzero.
 func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
-	row := make([]string, 25)
+	row := make([]string, 26)
 	for i := range row {
 		row[i] = "0"
 	}
@@ -424,7 +425,7 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		{"1.5"},
 	}
 	for _, tc := range cases {
-		row := make([]string, 25)
+		row := make([]string, 26)
 		for i := range row {
 			row[i] = "0"
 		}
@@ -439,6 +440,72 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		if !strings.Contains(err.Error(), "reason_ratio") {
 			t.Errorf("reason_ratio=%q: error should mention 'reason_ratio', got: %s", tc.value, err.Error())
 		}
+	}
+}
+
+func TestTraceV2_FinishReason_RoundTrip(t *testing.T) {
+	header := &TraceHeader{Version: 1, TimeUnit: "us", Mode: "real"}
+	records := []TraceRecord{{
+		RequestID:    1,
+		InputTokens:  10,
+		OutputTokens: 5,
+		ArrivalTimeUs: 1000,
+		SendTimeUs:    2000,
+		Status:        "ok",
+		FinishReason:  "stop",
+	}}
+
+	headerPath := filepath.Join(t.TempDir(), "h.yaml")
+	dataPath := filepath.Join(t.TempDir(), "d.csv")
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+
+	tv2, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tv2.Records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(tv2.Records))
+	}
+	if tv2.Records[0].FinishReason != "stop" {
+		t.Errorf("FinishReason: got %q, want %q", tv2.Records[0].FinishReason, "stop")
+	}
+}
+
+func TestTraceV2_BackwardCompat_25Columns(t *testing.T) {
+	// 25-column CSV (pre-finish_reason) should load with FinishReason defaulting to ""
+	header := &TraceHeader{Version: 1, TimeUnit: "us", Mode: "real"}
+	headerPath := filepath.Join(t.TempDir(), "h.yaml")
+	dataPath := filepath.Join(t.TempDir(), "d.csv")
+
+	headerData, err := yaml.Marshal(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(headerPath, headerData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write 25-column CSV (no finish_reason column)
+	csvContent := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message\n"
+	csvContent += "1,,,,,0,,false,10,5,0,0,0,0,0,,0,0,1000,2000,0,0,0,ok,\n"
+	if err := os.WriteFile(dataPath, []byte(csvContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tv2, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("25-column CSV should load successfully: %v", err)
+	}
+	if len(tv2.Records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(tv2.Records))
+	}
+	if tv2.Records[0].FinishReason != "" {
+		t.Errorf("FinishReason should default to empty for 25-column CSV, got %q", tv2.Records[0].FinishReason)
+	}
+	if tv2.Records[0].InputTokens != 10 {
+		t.Errorf("InputTokens: got %d, want 10", tv2.Records[0].InputTokens)
 	}
 }
 

@@ -10,7 +10,8 @@ inference-sim/
 │   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --trace-output)
 │   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags shared via registerSimConfigFlags(); --results-path writes []workload.SimResult (integer request_id, ttft_us/e2e_us in µs); SimResult type lives in sim/workload/calibrate.go
 │   ├── calibrate.go           # `blis calibrate` command: compares real observed latencies (TraceV2 from blis observe) against sim predictions ([]SimResult JSON from blis replay --results-path); flags: --trace-header, --trace-data, --sim-results, --report (required), --warmup-requests (default: from header, sentinel -1), --network-rtt-us (default: from header, sentinel -1), --network-bandwidth-mbps; writes CalibrationReport JSON with MAPE/PearsonR/percentiles per metric
-│   ├── observe.go             # Real mode HTTP client (OpenAI-compatible, streaming + non-streaming)
+│   ├── observe.go             # Real mode HTTP client (RealClient with functional options: WithAPIFormat for completions/chat, stream_options for streaming usage, finish_reason extraction, configurable max_tokens); Recorder for TraceV2 output
+│   ├── observe_cmd.go         # `blis observe` command: flags --server-url, --model, --api-format (completions/chat), --unconstrained-output, --rtt-ms, --workload-spec/--rate; prefix string generation (buildPrefixStrings with FNV-seeded vocabulary); dispatch orchestrator with session support
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
 │   ├── hfconfig.go            # HuggingFace config resolution chain (--latency-model auto-fetch, caching)
@@ -71,7 +72,7 @@ inference-sim/
 │   ├── client.go              # Rate normalization, prefix group management
 │   ├── generator.go           # GenerateRequests pipeline with client decomposition
 │   ├── servegen.go            # Native ServeGen data file loading (chunk-*-trace.csv + dataset.json)
-│   ├── tracev2.go             # Trace v2 format (YAML header + CSV data)
+│   ├── tracev2.go             # Trace v2 format (YAML header + CSV data); 26-column schema including finish_reason (backward-compat with 25-column pre-finish_reason traces)
 │   ├── replay.go              # Trace v2 → sim.Request with synthetic token IDs
 │   ├── calibrate.go           # CalibrationReport, PrepareCalibrationPairs, MAPE/Pearson r
 │   ├── multimodal.go          # Multimodal token generation (text+image+audio+video)

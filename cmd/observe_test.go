@@ -25,6 +25,7 @@ func TestRealClient_NonStreaming_RecordsTokenCounts(t *testing.T) {
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	record, err := client.Send(context.Background(), &PendingRequest{
 		RequestID: 0, InputTokens: 100, Streaming: false,
+		Prompt: strings.Repeat("hello ", 100),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,6 +69,7 @@ func TestRealClient_Streaming_RecordsFirstAndLastChunkTime(t *testing.T) {
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	record, err := client.Send(context.Background(), &PendingRequest{
 		RequestID: 1, InputTokens: 100, Streaming: true,
+		Prompt: strings.Repeat("hello ", 100),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +104,7 @@ func TestRealClient_ServerError_RecordsError(t *testing.T) {
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	record, err := client.Send(context.Background(), &PendingRequest{
 		RequestID: 2, InputTokens: 100, Streaming: false,
+		Prompt: strings.Repeat("hello ", 100),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -154,6 +157,7 @@ func TestRealClient_MaxOutputTokens_FlowsThrough(t *testing.T) {
 	// Explicit MaxOutputTokens
 	_, _ = client.Send(context.Background(), &PendingRequest{
 		RequestID: 0, InputTokens: 10, MaxOutputTokens: 512,
+		Prompt: strings.Repeat("hello ", 10),
 	})
 	if got := int(capturedBody["max_tokens"].(float64)); got != 512 {
 		t.Errorf("max_tokens = %d, want 512", got)
@@ -162,6 +166,7 @@ func TestRealClient_MaxOutputTokens_FlowsThrough(t *testing.T) {
 	// Zero MaxOutputTokens → default 2048
 	_, _ = client.Send(context.Background(), &PendingRequest{
 		RequestID: 1, InputTokens: 10, MaxOutputTokens: 0,
+		Prompt: strings.Repeat("hello ", 10),
 	})
 	if got := int(capturedBody["max_tokens"].(float64)); got != 2048 {
 		t.Errorf("max_tokens = %d, want 2048 (default)", got)
@@ -182,34 +187,29 @@ func TestRealClient_ProportionalPrompt(t *testing.T) {
 	defer server.Close()
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
+
+	// Send() passes through req.Prompt verbatim
+	expectedPrompt := strings.Repeat("hello ", 50)
 	_, _ = client.Send(context.Background(), &PendingRequest{
 		RequestID: 0, InputTokens: 50,
+		Prompt: expectedPrompt,
 	})
 	prompt, ok := capturedBody["prompt"].(string)
 	if !ok {
 		t.Fatal("prompt not found in request body")
 	}
-	count := strings.Count(prompt, "hello ")
-	if count != 50 {
-		t.Errorf("prompt contains %d 'hello ' repetitions, want 50", count)
+	if prompt != expectedPrompt {
+		t.Errorf("prompt not passed through: got length %d, want %d", len(prompt), len(expectedPrompt))
 	}
 
-	// BC-6: Zero InputTokens guard — prompt must not be empty
+	// Empty Prompt still works (server handles tokenization)
 	_, _ = client.Send(context.Background(), &PendingRequest{
 		RequestID: 1, InputTokens: 0,
+		Prompt: "hello ",
 	})
 	prompt, ok = capturedBody["prompt"].(string)
 	if !ok || !strings.Contains(prompt, "hello") {
-		t.Errorf("zero InputTokens should produce at least one 'hello', got %q", prompt)
-	}
-
-	// BC-6: Negative InputTokens — should also produce at least one "hello"
-	_, _ = client.Send(context.Background(), &PendingRequest{
-		RequestID: 2, InputTokens: -5,
-	})
-	prompt, ok = capturedBody["prompt"].(string)
-	if !ok || !strings.Contains(prompt, "hello") {
-		t.Errorf("negative InputTokens should produce at least one 'hello', got %q", prompt)
+		t.Errorf("expected prompt to contain 'hello', got %q", prompt)
 	}
 }
 
@@ -231,6 +231,7 @@ func TestRealClient_NonStreaming_TTFTBeforeE2E(t *testing.T) {
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	record, err := client.Send(context.Background(), &PendingRequest{
 		RequestID: 0, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -247,6 +248,290 @@ func TestRealClient_NonStreaming_TTFTBeforeE2E(t *testing.T) {
 	// With 50ms sleep, there should be measurable separation (10ms threshold = 5x margin)
 	if record.LastChunkTimeUs-record.FirstChunkTimeUs < 10_000 {
 		t.Errorf("expected >= 10ms separation, got %d us", record.LastChunkTimeUs-record.FirstChunkTimeUs)
+	}
+}
+
+func TestRealClient_NonStreaming_ExtractsFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"choices": []interface{}{map[string]interface{}{"text": "hello", "finish_reason": "stop"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 10.0, "completion_tokens": 5.0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", record.FinishReason, "stop")
+	}
+}
+
+func TestRealClient_Streaming_ExtractsFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Content chunk
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"tok\"}}]}\n\n")
+		flusher.Flush()
+		// Final content chunk with finish_reason
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
+		flusher.Flush()
+		// Usage-only chunk with empty choices (should not clear finish_reason)
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}\n\n")
+		flusher.Flush()
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: true,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", record.FinishReason, "stop")
+	}
+	if record.OutputTokens != 2 {
+		t.Errorf("OutputTokens = %d, want 2 (from usage-only chunk)", record.OutputTokens)
+	}
+}
+
+// TestRealClient_Streaming_NullFinishReason verifies that JSON null finish_reason
+// in intermediate SSE chunks (the standard vLLM format) does not clear finish_reason.
+func TestRealClient_Streaming_NullFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Intermediate chunk with explicit "finish_reason": null (JSON null → Go nil)
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"text\":\"tok\",\"finish_reason\":null}]}\n\n")
+		flusher.Flush()
+		// Final content chunk with actual finish_reason
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"text\":\"end\",\"finish_reason\":\"length\"}]}\n\n")
+		flusher.Flush()
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\n")
+		flusher.Flush()
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 5, Streaming: true,
+		Prompt: strings.Repeat("hello ", 5),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// JSON null must not overwrite: final chunk's "length" should be retained
+	if record.FinishReason != "length" {
+		t.Errorf("FinishReason = %q, want %q (null in intermediate chunk must not overwrite)", record.FinishReason, "length")
+	}
+}
+
+func TestRealClient_ChatFormat_UsesMessagesEndpoint(t *testing.T) {
+	var capturedBody map[string]interface{}
+	var capturedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		resp := map[string]interface{}{
+			"choices": []interface{}{map[string]interface{}{
+				"message":       map[string]interface{}{"role": "assistant", "content": "hi"},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]interface{}{"prompt_tokens": 10.0, "completion_tokens": 1.0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	record, _ := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: false,
+		Prompt: "Hello, world!",
+	})
+
+	// Endpoint must be /v1/chat/completions
+	if capturedPath != "/v1/chat/completions" {
+		t.Errorf("endpoint = %q, want /v1/chat/completions", capturedPath)
+	}
+	// Body must use messages array, not prompt
+	if _, ok := capturedBody["prompt"]; ok {
+		t.Error("chat format should not send 'prompt' key")
+	}
+	msgs, ok := capturedBody["messages"].([]interface{})
+	if !ok || len(msgs) == 0 {
+		t.Fatal("chat format should send 'messages' array")
+	}
+	msg0, ok := msgs[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("messages[0] should be an object")
+	}
+	if msg0["role"] != "user" || msg0["content"] != "Hello, world!" {
+		t.Errorf("messages[0] = %v, want role=user content='Hello, world!'", msg0)
+	}
+	if record.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want stop", record.FinishReason)
+	}
+}
+
+func TestRealClient_StreamingChat_ExtractsFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		flusher.Flush()
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}\n\n")
+		flusher.Flush()
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: true,
+		Prompt: "Hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want stop", record.FinishReason)
+	}
+}
+
+func TestRealClient_Unconstrained_Completions_SetsMaxInt32(t *testing.T) {
+	var capturedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody = nil
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		resp := map[string]interface{}{
+			"choices": []interface{}{map[string]interface{}{"text": "ok"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 10.0, "completion_tokens": 5.0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	// completions + unconstrained: max_tokens = MaxInt32
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	_, _ = client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Unconstrained: true,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	maxTokens, ok := capturedBody["max_tokens"].(float64)
+	if !ok {
+		t.Fatal("max_tokens not found for completions + unconstrained")
+	}
+	if int(maxTokens) != 2147483647 { // math.MaxInt32
+		t.Errorf("max_tokens = %v, want MaxInt32 (2147483647)", maxTokens)
+	}
+}
+
+func TestRealClient_Unconstrained_Chat_OmitsMaxTokens(t *testing.T) {
+	var capturedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody = nil
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		resp := map[string]interface{}{
+			"choices": []interface{}{map[string]interface{}{
+				"message": map[string]interface{}{"role": "assistant", "content": "ok"},
+			}},
+			"usage": map[string]interface{}{"prompt_tokens": 10.0, "completion_tokens": 5.0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	// chat + unconstrained: max_tokens omitted
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	_, _ = client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Unconstrained: true,
+		Prompt: "Hello",
+	})
+	if _, ok := capturedBody["max_tokens"]; ok {
+		t.Error("chat + unconstrained should omit max_tokens")
+	}
+}
+
+func TestRealClient_Streaming_SetsStreamOptions(t *testing.T) {
+	var capturedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody = nil
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		isStreaming := false
+		if s, ok := capturedBody["stream"].(bool); ok {
+			isStreaming = s
+		}
+		if isStreaming {
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Fatal("expected http.Flusher")
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"tok\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}\n\n")
+			flusher.Flush()
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+			flusher.Flush()
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"choices": []interface{}{map[string]interface{}{"text": "ok"}},
+				"usage":   map[string]interface{}{"prompt_tokens": 10.0, "completion_tokens": 1.0},
+			})
+		}
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+
+	// Streaming: stream_options present
+	_, _ = client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: true,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	streamOpts, ok := capturedBody["stream_options"].(map[string]interface{})
+	if !ok {
+		t.Fatal("stream_options not found in request body for streaming request")
+	}
+	if includeUsage, ok := streamOpts["include_usage"].(bool); !ok || !includeUsage {
+		t.Errorf("stream_options.include_usage = %v, want true", streamOpts["include_usage"])
+	}
+
+	// Non-streaming: stream_options absent
+	_, _ = client.Send(context.Background(), &PendingRequest{
+		RequestID: 1, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if _, ok := capturedBody["stream_options"]; ok {
+		t.Error("stream_options should not be present for non-streaming request")
 	}
 }
 
