@@ -830,6 +830,37 @@ func TestGetModelConfig_FP8_ParsesQuantizationConfig(t *testing.T) {
 	}
 }
 
+func TestGetModelConfig_FP8WithBits8_ParsesViaBitsPath(t *testing.T) {
+	// FP8 config that also includes bits=8: the bits-first path produces 8/8=1.0,
+	// same as the quant_method=="fp8" fallback. Verifies both paths agree.
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 128256,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "fp8",
+			"bits": 8
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 1.0 {
+		t.Errorf("expected WeightBytesPerParam=1.0 for FP8 with bits=8, got %v", cfg.WeightBytesPerParam)
+	}
+}
+
 func TestGetModelConfig_NoQuantizationConfig_ZeroWeightBytes(t *testing.T) {
 	// BC-3: GIVEN no quantization_config, THEN WeightBytesPerParam=0 (sentinel)
 	tmpDir := t.TempDir()

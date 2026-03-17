@@ -229,7 +229,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 			}
 			if bits > 0 {
 				weightBytesPerParam = float64(bits) / 8.0
-			} else if quantMethod == "fp8" {
+			} else if strings.EqualFold(quantMethod, "fp8") {
 				weightBytesPerParam = 1.0
 			}
 		}
@@ -327,7 +327,9 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 	}
 
 	// WeightBytesPerParam is optional (0 = not set, fall back to BytesPerParam).
-	// When set, it must be a valid positive number.
+	// When set, it must be a valid positive number. No upper-bound check is enforced:
+	// WeightBytesPerParam > BytesPerParam is unusual but not invalid (e.g., INT4 KV cache
+	// with FP32 weights). Callers should not assume weight precision <= compute precision.
 	if mc.WeightBytesPerParam != 0 {
 		if mc.WeightBytesPerParam < 0 || math.IsNaN(mc.WeightBytesPerParam) || math.IsInf(mc.WeightBytesPerParam, 0) {
 			problems = append(problems, fmt.Sprintf(
