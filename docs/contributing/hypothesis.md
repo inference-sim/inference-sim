@@ -680,6 +680,12 @@ H13 converged in Round 1 (deterministic = pass/fail). H5 converged in Round 3. H
 
 ---
 
+## Staleness Caveat
+
+Experiment findings reflect simulator behavior at the time of execution. Subsequent bug fixes or feature changes may shift quantitative results. Check the PR that introduced the experiment (linked in each FINDINGS.md) and compare against recent changes to the relevant code paths before citing specific numbers.
+
+When prior findings are known to be affected by a later change, an erratum is added to the FINDINGS.md (e.g., H29 erratum after #574). However, there is no automated mechanism to detect all affected findings — treat quantitative results as point-in-time measurements, not permanent truths.
+
 ## References
 
 - Standards: [docs/contributing/standards/experiments.md](standards/experiments.md)
