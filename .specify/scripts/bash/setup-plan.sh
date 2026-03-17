@@ -4,21 +4,26 @@ set -e
 
 # Parse command line arguments
 JSON_MODE=false
+FORCE=false
 ARGS=()
 
 for arg in "$@"; do
     case "$arg" in
-        --json) 
-            JSON_MODE=true 
+        --json)
+            JSON_MODE=true
             ;;
-        --help|-h) 
-            echo "Usage: $0 [--json]"
+        --force)
+            FORCE=true
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--json] [--force]"
             echo "  --json    Output results in JSON format"
+            echo "  --force   Overwrite existing plan.md"
             echo "  --help    Show this help message"
-            exit 0 
+            exit 0
             ;;
-        *) 
-            ARGS+=("$arg") 
+        *)
+            ARGS+=("$arg")
             ;;
     esac
 done
@@ -36,9 +41,13 @@ check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 # Ensure the feature directory exists
 mkdir -p "$FEATURE_DIR"
 
-# Copy plan template if it exists
+# Copy plan template if it exists (guard against overwriting existing work)
 TEMPLATE="$REPO_ROOT/.specify/templates/plan-template.md"
-if [[ -f "$TEMPLATE" ]]; then
+if [[ -f "$IMPL_PLAN" ]] && [[ -s "$IMPL_PLAN" ]] && [[ "$FORCE" != true ]]; then
+    echo "WARNING: $IMPL_PLAN already exists and is non-empty. Skipping template copy." >&2
+    echo "Use --force to overwrite." >&2
+    # Still continue to output paths below
+elif [[ -f "$TEMPLATE" ]]; then
     cp "$TEMPLATE" "$IMPL_PLAN"
     echo "Copied plan template to $IMPL_PLAN"
 else
@@ -50,7 +59,8 @@ fi
 # Output results
 if $JSON_MODE; then
     printf '{"FEATURE_SPEC":"%s","IMPL_PLAN":"%s","SPECS_DIR":"%s","BRANCH":"%s","HAS_GIT":"%s"}\n' \
-        "$FEATURE_SPEC" "$IMPL_PLAN" "$FEATURE_DIR" "$CURRENT_BRANCH" "$HAS_GIT"
+        "$(json_escape "$FEATURE_SPEC")" "$(json_escape "$IMPL_PLAN")" "$(json_escape "$FEATURE_DIR")" \
+        "$(json_escape "$CURRENT_BRANCH")" "$(json_escape "$HAS_GIT")"
 else
     echo "FEATURE_SPEC: $FEATURE_SPEC"
     echo "IMPL_PLAN: $IMPL_PLAN" 

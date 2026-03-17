@@ -137,7 +137,7 @@ These properties must hold at all times. Every subsystem that has golden tests m
 
 | ID | Invariant |
 |----|-----------|
-| **INV-1** | `injected_requests == completed + queued + running + dropped` at simulation end. Full pipeline: `num_requests == injected + rejected`. |
+| **INV-1** | `injected_requests == completed + queued + running + dropped + timed_out` at simulation end. Full pipeline: `num_requests == injected + rejected`. |
 | **INV-2** | Requests transition `queued → running → completed`. No invalid transitions. |
 | **INV-3** | Simulation clock never decreases. Every event timestamp ≥ previous event timestamp. |
 | **INV-4** | `allocated_blocks + free_blocks = total_blocks` at all times. |

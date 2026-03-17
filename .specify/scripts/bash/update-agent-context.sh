@@ -109,16 +109,28 @@ log_warning() {
     echo "WARNING: $1" >&2
 }
 
+# Track temp files for cleanup
+_TEMP_FILES=()
+
 # Cleanup function for temporary files
 cleanup() {
     local exit_code=$?
-    rm -f /tmp/agent_update_*_$$
-    rm -f /tmp/manual_additions_$$
+    for f in "${_TEMP_FILES[@]}"; do
+        rm -f "$f" "$f.bak" "$f.bak2"
+    done
     exit $exit_code
 }
 
 # Set up cleanup trap
 trap cleanup EXIT INT TERM
+
+# Wrapper around mktemp that registers the file for cleanup
+tracked_mktemp() {
+    local f
+    f=$(mktemp) || return 1
+    _TEMP_FILES+=("$f")
+    echo "$f"
+}
 
 #==============================================================================
 # Validation Functions
@@ -361,7 +373,7 @@ create_new_agent_file() {
     # Prepend Cursor frontmatter for .mdc files so rules are auto-included
     if [[ "$target_file" == *.mdc ]]; then
         local frontmatter_file
-        frontmatter_file=$(mktemp) || return 1
+        frontmatter_file=$(tracked_mktemp) || return 1
         printf '%s\n' "---" "description: Project Development Guidelines" "globs: [\"**/*\"]" "alwaysApply: true" "---" "" > "$frontmatter_file"
         cat "$temp_file" >> "$frontmatter_file"
         mv "$frontmatter_file" "$temp_file"
@@ -376,16 +388,24 @@ create_new_agent_file() {
 update_existing_agent_file() {
     local target_file="$1"
     local current_date="$2"
-    
+
+    # Guard: skip files not created by speckit to avoid corrupting
+    # hand-maintained agent context files (e.g., a project's existing CLAUDE.md).
+    # Speckit-created files contain the template marker comment.
+    if ! grep -q '<!-- MANUAL ADDITIONS START -->' "$target_file" 2>/dev/null; then
+        log_warning "Skipping $target_file — file was not created by speckit (missing template markers)"
+        return 0
+    fi
+
     log_info "Updating existing agent context file..."
     
     # Use a single temporary file for atomic update
     local temp_file
-    temp_file=$(mktemp) || {
+    temp_file=$(tracked_mktemp) || {
         log_error "Failed to create temporary file"
         return 1
     }
-    
+
     # Process the file in one pass
     local tech_stack=$(format_technology_stack "$NEW_LANG" "$NEW_FRAMEWORK")
     local new_tech_entries=()
@@ -508,7 +528,7 @@ update_existing_agent_file() {
     if [[ "$target_file" == *.mdc ]]; then
         if ! head -1 "$temp_file" | grep -q '^---'; then
             local frontmatter_file
-            frontmatter_file=$(mktemp) || { rm -f "$temp_file"; return 1; }
+            frontmatter_file=$(tracked_mktemp) || { rm -f "$temp_file"; return 1; }
             printf '%s\n' "---" "description: Project Development Guidelines" "globs: [\"**/*\"]" "alwaysApply: true" "---" "" > "$frontmatter_file"
             cat "$temp_file" >> "$frontmatter_file"
             mv "$frontmatter_file" "$temp_file"
@@ -557,7 +577,7 @@ update_agent_file() {
     if [[ ! -f "$target_file" ]]; then
         # Create new file from template
         local temp_file
-        temp_file=$(mktemp) || {
+        temp_file=$(tracked_mktemp) || {
             log_error "Failed to create temporary file"
             return 1
         }
