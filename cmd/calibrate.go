@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -93,6 +94,11 @@ Example:
 			networkRTTUs = calibrateNetworkRTTUs
 		}
 
+		// Validate bandwidth (R3, R20): NaN/Inf bypass computeUploadDelay's ≤0 guard
+		if math.IsNaN(calibrateNetworkBandwidthMbps) || math.IsInf(calibrateNetworkBandwidthMbps, 0) {
+			logrus.Fatalf("--network-bandwidth-mbps must be a finite number, got %v", calibrateNetworkBandwidthMbps)
+		}
+
 		config := workload.CalibrationConfig{
 			WarmUpRequests: warmUp,
 			NetworkRTTUs:   networkRTTUs,
@@ -107,6 +113,12 @@ Example:
 		// Guard against zero matched pairs (R1: no silent data loss, BC-10)
 		if pairs.MatchedCount == 0 {
 			logrus.Fatalf("No matching request IDs found between trace and sim results — check that both files use the same request ID numbering")
+		}
+		// Additional guard for corrupt-timestamp edge case (#700): MatchedCount can
+		// be non-zero while TTFT vectors are empty (all matched requests had negative
+		// real latencies). BuildCalibrationReport would silently produce an empty metrics map.
+		if len(pairs.TTFT.Real) == 0 {
+			logrus.Fatalf("No valid latency pairs after filtering — all matched requests may have corrupt timing data (negative latencies)")
 		}
 
 		// Step 6: Build report (empty ConfigMatchInfo — deferred, see TODO)
