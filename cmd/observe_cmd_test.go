@@ -4,6 +4,44 @@ import (
 	"testing"
 )
 
+func TestObserveCmd_MissingRequiredFlags_Errors(t *testing.T) {
+	cmd := observeCmd
+	if cmd == nil {
+		t.Fatal("observeCmd is nil — command not registered")
+	}
+	if cmd.Use != "observe" {
+		t.Errorf("Use: got %q, want %q", cmd.Use, "observe")
+	}
+
+	for _, name := range []string{"server-url", "model", "trace-header", "trace-data"} {
+		f := cmd.Flags().Lookup(name)
+		if f == nil {
+			t.Errorf("missing expected flag --%s", name)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		defValue string
+	}{
+		{"api-key", ""},
+		{"server-type", "vllm"},
+		{"max-concurrency", "256"},
+		{"warmup-requests", "0"},
+		{"no-streaming", "false"},
+	}
+	for _, tt := range tests {
+		f := cmd.Flags().Lookup(tt.name)
+		if f == nil {
+			t.Errorf("missing expected flag --%s", tt.name)
+			continue
+		}
+		if f.DefValue != tt.defValue {
+			t.Errorf("--%s default: got %q, want %q", tt.name, f.DefValue, tt.defValue)
+		}
+	}
+}
+
 func TestRecordRequest_PopulatesArrivalTimeAndSessionFields(t *testing.T) {
 	recorder := &Recorder{}
 	pending := &PendingRequest{
