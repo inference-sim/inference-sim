@@ -127,7 +127,7 @@ Perform these 4 checks directly (no agent needed):
 
 **Check 1: Task Dependencies** — For each task, verify it can actually start given what comes before it. Trace the dependency chain: what files does each task create/modify? Does any task require a file or type that hasn't been created yet? Flag tasks that modify the same file and could conflict.
 
-**Check 2: Template Completeness** — Verify all sections from the [micro-plan template](templates/micro-plan.md) are present and non-empty: Header, Part 1 (A–E), Part 2 (F–I), Part 3 (J), Appendix.
+**Check 2: Template Completeness** — Verify all sections from the [micro-plan template](templates/micro-plan.md) are present and non-empty: Header, Part 1 (A–E), Part 2 (F–I), Part 3 (J), Appendix. For compact-format plans (Small tier), verify the compact sections are present: Header (Goal/Source/Closes), Behavioral Contracts, Tasks, Sanity Checklist.
 
 **Check 3: Executive Summary Clarity** — Read the executive summary as if you're a new team member with no context. Is it clear what the PR does and why? Can you understand the scope without reading the rest of the plan?
 
@@ -171,11 +171,14 @@ Check for: input validation completeness (all CLI flags, YAML fields, config val
 
 Final human review of the plan (after automated review).
 
-**Focus areas:**
+**Focus areas** (full-format plans):
+
 1. **Part 1 (Design Validation)** — Review behavioral contracts, component interaction, risks
 2. **Part 2 (Executable Tasks)** — Verify task breakdown makes sense, no dead code
 3. **Deviation Log** — Check if deviations from source document are justified
 4. **Appendix** — Spot-check file-level details for accuracy
+
+For compact-format plans (Small tier): review only behavioral contracts (from item 1) and task completeness (from item 2). Skip component interaction, deviation log (item 3), and appendix (item 4). Also review the sanity checklist, which compact plans include directly.
 
 **Common issues to catch:**
 - Behavioral contracts too vague or missing edge cases
@@ -408,6 +411,9 @@ Not all PRs need the same level of review. Use these objective criteria:
 - **Self-audit is always full** — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
 - **When in doubt, tier up** — if you're unsure whether a change is Small or Medium, use Medium.
 - **Human reviewer can override** — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.
+
+!!! note "Compact Plan Format"
+    Small tier PRs may use the [compact plan format](templates/micro-plan.md#compact-format-small-tier-prs) instead of the full micro-plan template. The compact format retains behavioral contracts and TDD tasks but drops ceremony sections. See the template for criteria and structure.
 
 ---
 

@@ -15,6 +15,81 @@ The plan has **two audiences:**
 
 ---
 
+## Compact Format (Small Tier PRs)
+
+For Small tier PRs (see [PR Size Tiers](../pr-workflow.md#pr-size-tiers)), use this streamlined format instead of the full template below. The compact format retains behavioral rigor (contracts + TDD) while dropping sections that add no value for mechanical changes.
+
+**Criteria — use compact format when ALL of these apply:**
+
+- Docs-only with no process/workflow semantic changes (typo fixes, formatting, comment updates, link fixes), OR
+- ≤3 files changed AND only mechanical changes (renames, formatting) AND no behavioral logic changes AND no new interfaces/types AND no new CLI flags
+
+!!! note "Process/workflow semantic changes"
+    Changing how the PR workflow operates, adding new template sections, or modifying review criteria are semantic changes — use the full format even if the PR is docs-only.
+
+**Compact plan structure:**
+
+````
+# [Title] Implementation Plan
+
+**Goal:** One sentence a non-contributor could understand.
+**Source:** Link to source of work.
+**Closes:** GitHub issue numbers (e.g., `Fixes #123`).
+
+## Behavioral Contracts
+
+BC-1: <Name>
+- GIVEN <precondition>
+- WHEN <action>
+- THEN <observable outcome>
+
+[Repeat for each contract. Quality gate: every THEN clause must describe
+observable behavior, not internal structure.]
+
+## Tasks
+
+### Task 1: <Name> (BC-1)
+
+**Files:** create/modify `path/to/file`, test `path/to/test`
+
+**Test:**
+[Complete test code]
+
+**Impl:**
+[Complete implementation code]
+
+**Verify:** `go test ./path/... -run TestName`
+**Lint:** `golangci-lint run ./path/...`
+**Commit:** `type(scope): description (BC-1)`
+
+[Repeat for each task.]
+
+## Sanity Checklist
+
+[Same checklist as full format — antipattern rules still apply.]
+````
+
+**Sections omitted or streamlined in compact format** (compared to full template):
+
+- Document Header — streamlined to Goal/Source/Closes (drops: The problem today, What this PR adds, Why this matters, Architecture, Behavioral Contracts reference)
+- Phase 0: Component Context
+- Part 1 Section A: Executive Summary
+- Part 1 Section C: Component Interaction
+- Part 1 Section D: Deviation Log
+- Part 1 Section E: Review Guide
+- Part 2 Section F: Implementation Overview
+- Part 2 Section H: Test Strategy
+- Part 2 Section I: Risk Analysis
+- Appendix: File-Level Implementation Details
+
+**What's kept and why:**
+
+- **Behavioral contracts** — the substance of what the PR guarantees (non-negotiable)
+- **TDD tasks** — executable implementation steps (non-negotiable)
+- **Sanity checklist** — quality gate (catches antipatterns regardless of PR size)
+
+---
+
 ## Document Header
 
 Every plan starts with this header:
