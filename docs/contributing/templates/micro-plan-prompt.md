@@ -253,6 +253,7 @@ For each difference:
 |-------------|-----------------|--------|
 
 Categories of deviation:
+- CLARIFICATION: Ambiguity in source document resolved during Step 1.5 audit
 - SIMPLIFICATION: Source specified more than needed at this stage
 - CORRECTION: Source was wrong about existing code or behavior
 - DEFERRAL: Feature moved to a later PR (explain why)

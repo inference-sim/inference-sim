@@ -148,7 +148,7 @@ Table comparing the micro plan against the source document:
 
 | Source Says | Micro Plan Does | Reason |
 |-------------|-----------------|--------|
-| ... | ... | SIMPLIFICATION / CORRECTION / DEFERRAL / ADDITION / SCOPE_CHANGE |
+| ... | ... | CLARIFICATION / SIMPLIFICATION / CORRECTION / DEFERRAL / ADDITION / SCOPE_CHANGE |
 
 ### E) Review Guide
 
