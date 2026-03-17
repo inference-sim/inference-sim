@@ -24,6 +24,10 @@ Three regression coefficients `[beta0, beta1, beta2]` that predict GPU step time
 
 The unit of KV cache allocation. Each block holds a fixed number of tokens (default: 16). Requests are allocated blocks proportional to their token count. Blocks are reference-counted and can be shared across requests via prefix caching. See [Core Engine: KV Cache](core-engine.md#kv-cache-management).
 
+### Calibration Report
+
+The JSON output of `blis calibrate` comparing real observed latencies against simulator predictions. Contains per-request TTFT and E2E deltas, aggregate error metrics (MAPE, Pearson correlation, percentile comparisons), bias assessment, and a quality rating. See [Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md#blis-calibrate).
+
 ### Chunked Prefill
 
 A vLLM optimization where long prefill sequences are split into chunks that fit within the per-step token budget (`max-num-scheduled-tokens`). Controlled by `--long-prefill-token-threshold`. See [Core Engine: Batch Formation](core-engine.md#batch-formation).
@@ -43,6 +47,10 @@ The token generation phase where the model produces output tokens one at a time 
 ### Discrete Event Simulation (DES)
 
 A simulation paradigm where the system state changes only at discrete event times. BLIS maintains a priority queue of timestamped events and advances the simulation clock by jumping between events, rather than stepping through fixed time intervals. See [Core Engine: Event Queue](core-engine.md#event-queue).
+
+### Distribution Synthesis
+
+The `--rate` mode of `blis observe` that generates workload from statistical distributions (prompt/output token counts, arrival rate) instead of a workload spec YAML file. Useful for quick single-client experiments without crafting a full workload specification. See [Observe / Replay / Calibrate: Distribution Synthesis Flags](../guide/observe-replay-calibrate.md#distribution-synthesis-flags).
 
 ### E2E (End-to-End Latency)
 
@@ -75,6 +83,10 @@ The component that predicts GPU execution time for a batch step. Four modes: *Ro
 ### MaxModelLen
 
 Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len`. When set (> 0), requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. A three-part proactive cap matches vLLM `scheduler.py:773-774`: FormBatch clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, executeBatchStep skips decode when 0 tokens allocated, and processCompletions force-completes at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - 1 - inputLen`. Set to 0 for unlimited. Auto-derived from `max_position_embeddings` in roofline/crossmodel modes, with `rope_scaling` factor application and KV-feasible capping. See [Configuration Reference](../reference/configuration.md#simulation-control).
+
+### Observe / Replay / Calibrate Pipeline
+
+The end-to-end workflow of `blis observe` → `blis replay` → `blis calibrate` for validating simulator accuracy against real inference servers. Each stage is independently useful: observe collects latency baselines, replay tests simulator behavior on real traces, and calibrate compares results. See [Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md).
 
 ### Oracle Knowledge Boundary (INV-9)
 
@@ -140,14 +152,22 @@ The fundamental time unit in BLIS, representing one microsecond. All timestamps,
 
 An extension of the KV cache with GPU and CPU tiers. When GPU utilization exceeds a threshold, blocks are offloaded to CPU memory. On cache miss, blocks can be reloaded from CPU with a transfer latency penalty. See [Core Engine: KV Cache](core-engine.md#kv-cache-management).
 
+### TraceV2
+
+The trace format used by the observe/replay/calibrate pipeline, consisting of two files: a header YAML file (recording model, server config, and observation metadata) and a data CSV file (recording per-request timing: arrival time, TTFT, E2E latency, token counts). See [Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md).
+
 ### TTFT (Time To First Token)
 
 Time from request arrival to completion of the prefill phase (first output token ready). Includes queueing delay, prefill step times, and output processing overhead (alpha2). A key latency SLO metric for interactive applications. See [Core Engine: Metrics](core-engine.md#metrics).
 
-### Workload Specification
+### Warmup Requests
 
-A YAML file (`--workload-spec`) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports `poisson`, `gamma`, `weibull`, and `constant` arrival processes and `gaussian`, `exponential`, `pareto_lognormal`, `constant`, and `empirical` token distributions. See [Configuration Reference](../reference/configuration.md#workload-modes).
+Initial requests dispatched by `blis observe` that are excluded from trace output (`--warmup-requests N`). Warmup requests allow the server to populate its KV cache and reach steady-state scheduling before measurement begins, avoiding cold-start artifacts in the recorded trace. See [Observe / Replay / Calibrate: blis observe](../guide/observe-replay-calibrate.md#blis-observe).
 
 ### Work-Conserving
 
 The property that the simulator never idles while requests are waiting. After every step completion, if the wait queue is non-empty, a new `StepEvent` is scheduled immediately (INV-8). See [Core Engine: Event Queue](core-engine.md#event-queue).
+
+### Workload Specification
+
+A YAML file (`--workload-spec`) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports `poisson`, `gamma`, `weibull`, and `constant` arrival processes and `gaussian`, `exponential`, `pareto_lognormal`, `constant`, and `empirical` token distributions. See [Configuration Reference](../reference/configuration.md#workload-modes).
