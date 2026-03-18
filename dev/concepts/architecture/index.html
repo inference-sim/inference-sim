@@ -3130,7 +3130,7 @@
 <p><strong>Ordering rules:</strong>
 - Cluster events at time T are processed before instance events at time T (cluster-first priority)
 - When multiple instances have events at the same time, the instance with the lowest index goes first
-- Within a single instance, events are ordered by timestamp only</p>
+- Within a single instance, events are ordered by <code>(timestamp, priority, seqID)</code> — the same three-key scheme used at the cluster level</p>
 <p>The simulation terminates when the clock exceeds the configured horizon or no events remain.</p>
 <h2 id="admission-pipeline">Admission Pipeline<a class="headerlink" href="#admission-pipeline" title="Permanent link">&para;</a></h2>
 <p>Admission is the first gate in the online routing pipeline. Every incoming request is evaluated by the admission policy before being passed to routing.</p>
