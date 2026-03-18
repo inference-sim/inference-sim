@@ -3,6 +3,7 @@ package workload
 import (
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -1423,5 +1424,157 @@ func TestGenerateWorkload_SessionManager_Integration(t *testing.T) {
 			t.Errorf("follow-up Deadline = %d, want > 0", r1.Deadline)
 		}
 		break // test just one session
+	}
+}
+
+func TestGenerateRequests_MutualExclusion_ClientsAndServeGen_ReturnsError(t *testing.T) {
+	// BC-6: Clients + ServeGenData → error
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+		ServeGenData: &ServeGenDataSpec{Path: "data/"},
+	}
+	_, err := GenerateRequests(spec, 1_000_000, 100)
+	if err == nil {
+		t.Fatal("expected error for Clients + ServeGenData, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error should mention mutual exclusion: %v", err)
+	}
+}
+
+func TestGenerateRequests_MutualExclusion_ClientsAndInferencePerf_ReturnsError(t *testing.T) {
+	// BC-6: Clients + InferencePerf → error
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+		InferencePerf: &InferencePerfSpec{
+			Stages: []StageSpec{{Rate: 10, Duration: 60}},
+			SharedPrefix: &SharedPrefixSpec{
+				NumUniqueSystemPrompts: 1, NumUsersPerSystemPrompt: 1,
+				SystemPromptLen: 10, QuestionLen: 100, OutputLen: 50,
+			},
+		},
+	}
+	_, err := GenerateRequests(spec, 1_000_000, 100)
+	if err == nil {
+		t.Fatal("expected error for Clients + InferencePerf, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error should mention mutual exclusion: %v", err)
+	}
+}
+
+func TestGenerateRequests_MutualExclusion_ServeGenAndInferencePerf_ReturnsError(t *testing.T) {
+	// BC-6: ServeGenData + InferencePerf → error
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		ServeGenData: &ServeGenDataSpec{Path: "data/"},
+		InferencePerf: &InferencePerfSpec{
+			Stages: []StageSpec{{Rate: 10, Duration: 60}},
+			SharedPrefix: &SharedPrefixSpec{
+				NumUniqueSystemPrompts: 1, NumUsersPerSystemPrompt: 1,
+				SystemPromptLen: 10, QuestionLen: 100, OutputLen: 50,
+			},
+		},
+	}
+	_, err := GenerateRequests(spec, 1_000_000, 100)
+	if err == nil {
+		t.Fatal("expected error for ServeGenData + InferencePerf, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error should mention mutual exclusion: %v", err)
+	}
+}
+
+func TestGenerateRequests_MutualExclusion_AllThreeSources_ReturnsError(t *testing.T) {
+	// BC-6: All three sources set → error listing all three
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+		ServeGenData: &ServeGenDataSpec{Path: "data/"},
+		InferencePerf: &InferencePerfSpec{
+			Stages: []StageSpec{{Rate: 10, Duration: 60}},
+			SharedPrefix: &SharedPrefixSpec{
+				NumUniqueSystemPrompts: 1, NumUsersPerSystemPrompt: 1,
+				SystemPromptLen: 10, QuestionLen: 100, OutputLen: 50,
+			},
+		},
+	}
+	_, err := GenerateRequests(spec, 1_000_000, 100)
+	if err == nil {
+		t.Fatal("expected error for all three sources, got nil")
+	}
+	if !strings.Contains(err.Error(), "clients") || !strings.Contains(err.Error(), "servegen_data") || !strings.Contains(err.Error(), "inference_perf") {
+		t.Errorf("error should list all three conflicting sources: %v", err)
+	}
+}
+
+func TestGenerateRequests_MutualExclusion_CohortsWithClients_Allowed(t *testing.T) {
+	// BC-7: Cohorts + Clients is intentional composition, not a conflict
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 0.5,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+		Cohorts: []CohortSpec{{
+			ID: "cohort1", Population: 2, RateFraction: 0.5,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	reqs, err := GenerateRequests(spec, 1_000_000, 10)
+	if err != nil {
+		t.Fatalf("unexpected error for Clients + Cohorts: %v", err)
+	}
+	if len(reqs) == 0 {
+		t.Error("expected requests from Clients + Cohorts composition")
+	}
+}
+
+func TestGenerateRequests_MutualExclusion_CohortsWithInferencePerf_Allowed(t *testing.T) {
+	// BC-7: Cohorts + InferencePerf (no explicit Clients) is allowed composition.
+	// InferencePerf expands into Clients, then Cohorts compose with them.
+	spec := &WorkloadSpec{
+		AggregateRate: 100.0,
+		Cohorts: []CohortSpec{{
+			ID: "cohort1", Population: 1, RateFraction: 0.5,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+		InferencePerf: &InferencePerfSpec{
+			Stages: []StageSpec{{Rate: 10, Duration: 60}},
+			SharedPrefix: &SharedPrefixSpec{
+				NumUniqueSystemPrompts: 1, NumUsersPerSystemPrompt: 1,
+				SystemPromptLen: 10, QuestionLen: 100, OutputLen: 50,
+			},
+		},
+	}
+	reqs, err := GenerateRequests(spec, 1_000_000, 10)
+	if err != nil {
+		t.Fatalf("unexpected error for Cohorts + InferencePerf: %v", err)
+	}
+	if len(reqs) == 0 {
+		t.Error("expected requests from Cohorts + InferencePerf composition")
 	}
 }

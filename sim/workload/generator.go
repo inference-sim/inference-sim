@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
@@ -20,6 +21,22 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	}
 	if maxRequests < 0 {
 		return nil, fmt.Errorf("maxRequests must be non-negative, got %d", maxRequests)
+	}
+	// Mutual exclusion: at most one primary workload source allowed (R1).
+	// Clients+Cohorts compose (cohorts expand into clients), but
+	// InferencePerf and ServeGenData are exclusive alternatives.
+	var sourceNames []string
+	if len(spec.Clients) > 0 {
+		sourceNames = append(sourceNames, "clients")
+	}
+	if spec.ServeGenData != nil {
+		sourceNames = append(sourceNames, "servegen_data")
+	}
+	if spec.InferencePerf != nil {
+		sourceNames = append(sourceNames, "inference_perf")
+	}
+	if len(sourceNames) > 1 {
+		return nil, fmt.Errorf("workload sources {%s} are mutually exclusive; specify exactly one of: clients, servegen_data, inference_perf", strings.Join(sourceNames, ", "))
 	}
 	// Expand inference-perf spec if specified (populates spec.Clients)
 	if spec.InferencePerf != nil && len(spec.Clients) == 0 {
