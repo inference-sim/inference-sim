@@ -196,6 +196,17 @@ When using Task agents: 1) Do NOT poll TaskList repeatedly — check at reasonab
 
 When asked to update the macro implementation plan, directly edit the document. Do NOT spend time re-reading all source documents or dispatching sub-agents to gather information you already have in context. Start writing immediately.
 
+## Speckit Feature-Development Toolkit
+
+`.specify/` and `.claude/commands/` contain the speckit tooling for structured feature development:
+
+- **Slash commands**: `/speckit.specify`, `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.implement`, `/speckit.checklist`, `/speckit.analyze`, `/speckit.constitution`, `/speckit.taskstoissues`
+- **Constitution**: `.specify/memory/constitution.md` — project principles, invariants, and rules distilled for AI agents
+- **Templates**: `.specify/templates/` — spec, plan, tasks, checklist, and agent-file templates
+- **Scripts**: `.specify/scripts/bash/` — feature branch creation, plan setup, and agent context update automation
+
+Speckit does not affect Go build, test, or lint. All `.specify/` artifacts are opt-in for AI-assisted workflows.
+
 ## File Organization
 
 For the full annotated file tree, see [`docs/reference/project-structure.md`](docs/reference/project-structure.md).
