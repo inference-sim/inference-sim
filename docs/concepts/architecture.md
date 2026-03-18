@@ -62,7 +62,7 @@ The cluster simulator maintains a single global clock shared across all instance
 **Ordering rules:**
 - Cluster events at time T are processed before instance events at time T (cluster-first priority)
 - When multiple instances have events at the same time, the instance with the lowest index goes first
-- Within a single instance, events are ordered by timestamp only
+- Within a single instance, events are ordered by `(timestamp, priority, seqID)` — the same three-key scheme used at the cluster level
 
 The simulation terminates when the clock exceeds the configured horizon or no events remain.
 
