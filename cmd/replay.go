@@ -355,6 +355,12 @@ Example:
 
 			applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
 
+			if backend == "trained-roofline" && modelConfig.WeightBytesPerParam > 0 {
+				logrus.Warnf("trained-roofline uses FP16 weight bandwidth (matching training data); "+
+					"quantized weight precision (%.2f bytes/param) affects KV capacity but not step time",
+					modelConfig.WeightBytesPerParam)
+			}
+
 			if backend == "roofline" && modelConfig.NumLocalExperts > 1 {
 				logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). Roofline models per-expert FLOPs and active weights; dispatch overhead is not modeled",
 					modelConfig.NumLocalExperts, modelConfig.NumExpertsPerTok)
