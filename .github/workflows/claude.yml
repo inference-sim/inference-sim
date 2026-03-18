@@ -102,6 +102,7 @@ jobs:
             code-review@claude-plugins-official
             code-simplifier@claude-plugins-official
             frontend-design@claude-plugins-official
+            pr-review-toolkit@claude-plugins-official
             superpowers@superpowers-marketplace
 
   report-status:
