@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -82,6 +83,12 @@ func TestNewKVCacheConfig_PanicsOnInvalid(t *testing.T) {
 		{"negative_total_kv_blocks", -1, 16, 0, 0, 0, 0, "TotalKVBlocks"},
 		{"zero_block_size", 100, 0, 0, 0, 0, 0, "BlockSizeTokens"},
 		{"negative_block_size", 100, -1, 0, 0, 0, 0, "BlockSizeTokens"},
+		{"negative_cpu_blocks", 100, 16, -1, 0, 0, 0, "KVCPUBlocks"},
+		{"tiered_bandwidth_zero", 100, 16, 10, 0.5, 0, 0, "KVTransferBandwidth"},
+		{"tiered_bandwidth_negative", 100, 16, 10, 0.5, -1.0, 0, "KVTransferBandwidth"},
+		{"tiered_bandwidth_nan", 100, 16, 10, 0.5, math.NaN(), 0, "KVTransferBandwidth"},
+		{"tiered_bandwidth_inf", 100, 16, 10, 0.5, math.Inf(1), 0, "KVTransferBandwidth"},
+		{"tiered_base_latency_negative", 100, 16, 10, 0.5, 100.0, -1, "KVTransferBaseLatency"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -101,6 +108,29 @@ func TestNewKVCacheConfig_PanicsOnInvalid(t *testing.T) {
 			NewKVCacheConfig(tc.totalKVBlocks, tc.blockSizeTokens, tc.kvCPUBlocks,
 				tc.threshold, tc.bandwidth, tc.baseLatency)
 		})
+	}
+}
+
+func TestNewKVCacheConfig_SingleTier_SkipsTieredValidation(t *testing.T) {
+	// BC-4: Single-tier mode (KVCPUBlocks=0) accepts any threshold/bandwidth/latency
+	// without panicking. These fields are meaningless in single-tier mode.
+	cfg := NewKVCacheConfig(100, 16, 0, -999.0, -999.0, -999)
+	if cfg.TotalKVBlocks != 100 {
+		t.Errorf("TotalKVBlocks = %d, want 100", cfg.TotalKVBlocks)
+	}
+	if cfg.KVOffloadThreshold != -999.0 {
+		t.Errorf("KVOffloadThreshold = %f, want -999.0 (passed through)", cfg.KVOffloadThreshold)
+	}
+}
+
+func TestNewKVCacheConfig_ValidTiered_ReturnsConfig(t *testing.T) {
+	// BC-5: Valid tiered-mode parameters accepted
+	cfg := NewKVCacheConfig(100, 16, 50, 0.9, 100.0, 500)
+	if cfg.KVCPUBlocks != 50 {
+		t.Errorf("KVCPUBlocks = %d, want 50", cfg.KVCPUBlocks)
+	}
+	if cfg.KVOffloadThreshold != 0.9 {
+		t.Errorf("KVOffloadThreshold = %f, want 0.9", cfg.KVOffloadThreshold)
 	}
 }
 
