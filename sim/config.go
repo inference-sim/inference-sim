@@ -1,6 +1,9 @@
 package sim
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // KVCacheConfig groups KV cache parameters for KV store construction.
 type KVCacheConfig struct {
@@ -18,6 +21,26 @@ type KVCacheConfig struct {
 func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 	kvOffloadThreshold, kvTransferBandwidth float64,
 	kvTransferBaseLatency int64) KVCacheConfig {
+	if totalKVBlocks <= 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: TotalKVBlocks must be > 0, got %d", totalKVBlocks))
+	}
+	if blockSizeTokens <= 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: BlockSizeTokens must be > 0, got %d", blockSizeTokens))
+	}
+	if kvCPUBlocks < 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: KVCPUBlocks must be >= 0, got %d", kvCPUBlocks))
+	}
+	if kvCPUBlocks > 0 {
+		// Note: KVOffloadThreshold is NOT validated here — it is deprecated and
+		// ignored in the vLLM v1 mirror model. NewKVStore validates it for legacy
+		// reasons, but the constructor should not tighten a deprecated contract.
+		if kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0) {
+			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBandwidth must be finite and > 0 when KVCPUBlocks > 0, got %v", kvTransferBandwidth))
+		}
+		if kvTransferBaseLatency < 0 {
+			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBaseLatency must be >= 0 when KVCPUBlocks > 0, got %d", kvTransferBaseLatency))
+		}
+	}
 	return KVCacheConfig{
 		TotalKVBlocks:         totalKVBlocks,
 		BlockSizeTokens:       blockSizeTokens,
