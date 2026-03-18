@@ -702,7 +702,20 @@ update_specific_agent() {
 
 update_all_existing_agents() {
     local found_agent=false
-    
+    # Track processed paths to avoid updating the same file multiple times
+    # (several agent vars share the same path, e.g. AGENTS_FILE/KIRO_FILE/BOB_FILE → AGENTS.md)
+    local _seen_paths=()
+    _update_agent_once() {
+        local file="$1" label="$2"
+        [[ -f "$file" ]] || return 0
+        local p; p=$(realpath "$file" 2>/dev/null || echo "$file")
+        local seen
+        for seen in "${_seen_paths[@]:-}"; do [[ "$seen" == "$p" ]] && return 0; done
+        _seen_paths+=("$p")
+        update_agent_file "$file" "$label"
+        found_agent=true
+    }
+
     # Check each possible agent file and update if it exists
     if [[ -f "$CLAUDE_FILE" ]]; then
         update_agent_file "$CLAUDE_FILE" "Claude Code"
@@ -729,10 +742,7 @@ update_all_existing_agents() {
         found_agent=true
     fi
     
-    if [[ -f "$AGENTS_FILE" ]]; then
-        update_agent_file "$AGENTS_FILE" "Codex/opencode"
-        found_agent=true
-    fi
+    _update_agent_once "$AGENTS_FILE" "Codex/opencode"
     
     if [[ -f "$WINDSURF_FILE" ]]; then
         update_agent_file "$WINDSURF_FILE" "Windsurf"
@@ -774,19 +784,13 @@ update_all_existing_agents() {
         found_agent=true
     fi
 
-    if [[ -f "$KIRO_FILE" ]]; then
-        update_agent_file "$KIRO_FILE" "Kiro CLI"
-        found_agent=true
-    fi
+    _update_agent_once "$KIRO_FILE" "Kiro CLI"
 
     if [[ -f "$AGY_FILE" ]]; then
         update_agent_file "$AGY_FILE" "Antigravity"
         found_agent=true
     fi
-    if [[ -f "$BOB_FILE" ]]; then
-        update_agent_file "$BOB_FILE" "IBM Bob"
-        found_agent=true
-    fi
+    _update_agent_once "$BOB_FILE" "IBM Bob"
 
     if [[ -f "$VIBE_FILE" ]]; then
         update_agent_file "$VIBE_FILE" "Mistral Vibe"

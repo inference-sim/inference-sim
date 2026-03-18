@@ -37,6 +37,8 @@ Non-negotiable rules:
 - Domain modules MUST NOT manage the event queue or clock directly.
 - Package dependency direction MUST be strictly unidirectional:
   `cmd/ → sim/cluster/ → sim/` and `cmd/ → sim/cluster/ → sim/trace/`.
+- `sim/` MUST NEVER import its own subpackages (`sim/kv/`, `sim/latency/`, etc.).
+  Subpackages register into `sim/` via `init()` hooks.
 - `sim/` is a library; it MUST never call `os.Exit`, `logrus.Fatalf`, or terminate
   the process. It MUST return errors to callers.
 - `cmd/` is the only layer permitted to terminate the process.
@@ -97,9 +99,12 @@ Non-negotiable rules:
 5. Apply the **refactor survival test**: "Would this test still pass if the
    implementation were completely rewritten but the behavior preserved?" If no,
    rewrite the test.
-6. No single test MUST exceed 5 seconds without a `testing.Short()` fast-path skip.
-7. Total `go test ./...` MUST complete under 60 seconds.
-8. Benchmarks MUST run only with `go test -bench=.`, never in the default test path.
+6. **THEN clauses drive test quality**: a structural THEN clause (concrete type name,
+   internal field name) produces a structural test. Rewrite the THEN clause to describe
+   observable behavior before writing the test.
+7. No single test MUST exceed 5 seconds without a `testing.Short()` fast-path skip.
+8. Total `go test ./...` MUST complete under 60 seconds.
+9. Benchmarks MUST run only with `go test -bench=.`, never in the default test path.
 
 Prohibited assertion patterns (structural — break on refactor):
 - Type assertions: `policy.(*ConcreteType)`
@@ -174,6 +179,8 @@ have invariant tests verifying them.
 | **INV-7** | Routing snapshot signals have tiered freshness: `InFlightRequests` is synchronous; `QueueDepth`, `BatchSize`, `KVUtilization` are Immediate (interval=0) or Periodic (interval>0). |
 | **INV-8** | After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator MUST NOT idle while work is waiting. |
 | **INV-9** | Servability decisions (enqueue guard, admission, routing, priority) MUST NOT read `Request.OutputTokens`. Only the execution engine may access it. |
+| **INV-10** | Session causality: for all rounds N in a closed-loop session, `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. |
+| **INV-11** | Session completeness: every session reaches exactly one terminal state (completed, cancelled, or horizon-interrupted). No session is silently abandoned. |
 
 *Rationale*: Invariants are the ground truth for correctness. Golden tests verify
 output stability; invariant tests verify semantic correctness.
