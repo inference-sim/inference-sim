@@ -87,7 +87,8 @@ func TestNewKVCacheConfig_PanicsOnInvalid(t *testing.T) {
 		{"tiered_bandwidth_zero", 100, 16, 10, 0.5, 0, 0, "KVTransferBandwidth"},
 		{"tiered_bandwidth_negative", 100, 16, 10, 0.5, -1.0, 0, "KVTransferBandwidth"},
 		{"tiered_bandwidth_nan", 100, 16, 10, 0.5, math.NaN(), 0, "KVTransferBandwidth"},
-		{"tiered_bandwidth_inf", 100, 16, 10, 0.5, math.Inf(1), 0, "KVTransferBandwidth"},
+		{"tiered_bandwidth_pos_inf", 100, 16, 10, 0.5, math.Inf(1), 0, "KVTransferBandwidth"},
+		{"tiered_bandwidth_neg_inf", 100, 16, 10, 0.5, math.Inf(-1), 0, "KVTransferBandwidth"},
 		{"tiered_base_latency_negative", 100, 16, 10, 0.5, 100.0, -1, "KVTransferBaseLatency"},
 	}
 	for _, tc := range tests {
