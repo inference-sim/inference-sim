@@ -427,7 +427,12 @@ func (sim *Simulator) recordKVUsageMetrics(stepDuration int64) {
 // response serialization) is non-blocking but still contributes to client-perceived latency.
 // For trained-roofline, PostDecodeFixedOverhead adds ~1.85ms to E2E; for other backends it's 0.
 func (sim *Simulator) recordRequestCompletion(req *Request) {
-	sim.Metrics.CompletedRequests++
+	// INV-1 conservation: Skip incrementing CompletedRequests for redirected requests
+	// to prevent double-counting. Redirected requests were already counted when they
+	// first entered the system before being re-injected by DrainRedirect policy.
+	if !req.Redirected {
+		sim.Metrics.CompletedRequests++
+	}
 
 	var itlSum int64
 	for _, v := range req.ITL {

@@ -74,6 +74,12 @@ type Request struct {
 	// Client timeout: absolute tick by which request must complete (0 = no timeout).
 	// Computed during workload generation as ArrivalTime + timeout.
 	Deadline int64
+
+	// Redirected marks requests that were re-injected due to drain redirect policy.
+	// When true, completion accounting is skipped to prevent double-counting in
+	// CompletedRequests (INV-1 conservation). The request was already counted when
+	// it first entered the system.
+	Redirected bool
 }
 
 // This method returns a human-readable string representation of a Request.

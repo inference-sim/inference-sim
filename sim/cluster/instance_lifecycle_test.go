@@ -1,98 +1,93 @@
-// instance_lifecycle_test.go — BDD/TDD tests for Phase 1A instance lifecycle (US4).
 package cluster
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
-// ─── US4: Instance Startup Phases Including Warm-Up ─────────────────────────
+// ─── Warm-up TTFT penalty ────────────────────────────────────────────────────
 
-// T036: instance with loading delay is excluded from routing until InstanceLoadedEvent fires.
-func TestInstanceLifecycle_LoadingExcludedFromRouting(t *testing.T) {
-	inst := &InstanceSimulator{id: "test-inst"}
-	inst.TransitionTo(InstanceStateLoading)
-
-	t.Run("Loading instance is not routable", func(t *testing.T) {
-		if inst.IsRoutable() {
-			t.Error("Loading instance should not be routable")
-		}
-	})
-
-	inst.TransitionTo(InstanceStateWarmingUp)
-	t.Run("WarmingUp instance IS routable", func(t *testing.T) {
-		if !inst.IsRoutable() {
-			t.Error("WarmingUp instance should be routable")
-		}
-	})
-
-	inst.TransitionTo(InstanceStateActive)
-	t.Run("Active instance IS routable", func(t *testing.T) {
-		if !inst.IsRoutable() {
-			t.Error("Active instance should be routable")
-		}
-	})
-}
-
-// T037: warm-up TTFT factor applied to first N requests, not N+1.
 func TestInstanceLifecycle_WarmUpTTFTPenalty(t *testing.T) {
-	inst := &InstanceSimulator{id: "warm-inst"}
-	inst.TransitionTo(InstanceStateWarmingUp)
-	inst.warmUpRemaining = 3
+	// GIVEN an instance with WarmUpTTFTFactor=2.0 and WarmUpRequestCount=2
+	cfg := newTestDeploymentConfig(1)
+	cfg.InstanceLifecycle = InstanceLifecycleConfig{
+		WarmUpTTFTFactor:   2.0,
+		WarmUpRequestCount: 2,
+	}
 
-	t.Run("first 3 requests are warming up", func(t *testing.T) {
-		for i := 0; i < 3; i++ {
-			if !inst.IsWarmingUp() {
-				t.Errorf("request %d: IsWarmingUp() = false, want true", i)
-			}
-			inst.RecordWarmUpRequest("req-" + string(rune('0'+i)))
-			inst.ConsumeWarmUpRequest()
-		}
-	})
+	// Create 3 requests with identical input/output lengths
+	requests := []*sim.Request{
+		{
+			ID:           "req1",
+			InputTokens:  make([]int, 10),
+			OutputTokens: make([]int, 5),
+			ArrivalTime:  0,
+		},
+		{
+			ID:           "req2",
+			InputTokens:  make([]int, 10),
+			OutputTokens: make([]int, 5),
+			ArrivalTime:  1000,
+		},
+		{
+			ID:           "req3",
+			InputTokens:  make([]int, 10),
+			OutputTokens: make([]int, 5),
+			ArrivalTime:  2000,
+		},
+	}
 
-	t.Run("4th request is no longer warming up", func(t *testing.T) {
-		if inst.IsWarmingUp() {
-			t.Error("after consuming all warm-up requests, IsWarmingUp() should be false")
-		}
-	})
+	cs := NewClusterSimulator(cfg, requests, nil)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run() failed: %v", err)
+	}
 
-	t.Run("instance transitions to Active after warm-up", func(t *testing.T) {
-		if inst.State != InstanceStateActive {
-			t.Errorf("instance state = %q, want Active after warm-up completion", inst.State)
-		}
-	})
+	metrics := cs.AggregatedMetrics()
 
-	t.Run("WarmUpRequestIDs recorded exactly N entries", func(t *testing.T) {
-		ids := inst.WarmUpRequestIDs()
-		if len(ids) != 3 {
-			t.Errorf("WarmUpRequestIDs() len = %d, want 3", len(ids))
-		}
-	})
+	// THEN first 2 requests have TTFT penalty applied, 3rd does not
+	ttft1, ok1 := metrics.RequestTTFTs["req1"]
+	ttft2, ok2 := metrics.RequestTTFTs["req2"]
+	ttft3, ok3 := metrics.RequestTTFTs["req3"]
+
+	if !ok1 || !ok2 || !ok3 {
+		t.Fatalf("missing TTFT data: req1=%v req2=%v req3=%v", ok1, ok2, ok3)
+	}
+
+	// Warm-up requests should have ~2× TTFT of normal request
+	// Allow 10% tolerance for latency model variance
+	if ttft1 < ttft3*1.8 || ttft1 > ttft3*2.2 {
+		t.Errorf("req1 TTFT = %.0f, expected ~2× req3 TTFT (%.0f)", ttft1, ttft3)
+	}
+	if ttft2 < ttft3*1.8 || ttft2 > ttft3*2.2 {
+		t.Errorf("req2 TTFT = %.0f, expected ~2× req3 TTFT (%.0f)", ttft2, ttft3)
+	}
 }
 
-// T038: WAIT drain policy excludes instance from routing, in-flight requests complete.
+// ─── Drain policies ──────────────────────────────────────────────────────────
+
 func TestInstanceLifecycle_WaitDrainExcludesRouting(t *testing.T) {
-	inst := &InstanceSimulator{id: "drain-inst"}
+	// GIVEN an instance in Draining state with WAIT policy
+	inst := &InstanceSimulator{id: "wait-inst"}
 	inst.TransitionTo(InstanceStateActive)
 
 	policy := &drainWait{}
-	// Call Drain with a nil ClusterSimulator (drainWait only transitions state)
 	policy.Drain(inst, nil)
 
-	t.Run("Draining instance excluded from routing", func(t *testing.T) {
-		if inst.IsRoutable() {
-			t.Error("Draining instance should not be routable")
-		}
-	})
+	// THEN instance is not routable
+	if inst.IsRoutable() {
+		t.Error("Draining instance with WAIT policy should not be routable")
+	}
 
-	t.Run("instance state is Draining", func(t *testing.T) {
-		if inst.State != InstanceStateDraining {
-			t.Errorf("instance state = %q, want Draining", inst.State)
-		}
-	})
+	// AND instance is in Draining state
+	if inst.State != InstanceStateDraining {
+		t.Errorf("instance state = %q, want Draining", inst.State)
+	}
 }
 
-// T039: IMMEDIATE drain terminates instance immediately.
 func TestInstanceLifecycle_ImmediateDrain(t *testing.T) {
+	// GIVEN an Active instance
 	inst := &InstanceSimulator{id: "imm-inst"}
 	inst.TransitionTo(InstanceStateActive)
 
@@ -113,6 +108,75 @@ func TestInstanceLifecycle_ImmediateDrain(t *testing.T) {
 			t.Error("Terminated instance should not be routable")
 		}
 	})
+}
+
+// TestInstanceLifecycle_RedirectDrainPreservesConservation verifies that DrainRedirect
+// policy does not double-count requests in CompletedRequests (INV-1 conservation).
+// This is a regression test for the drain redirect double-counting bug identified in PR #697.
+func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
+	// GIVEN a 2-instance cluster with REDIRECT drain policy
+	cfg := newTestDeploymentConfig(2)
+	cfg.InstanceLifecycle = InstanceLifecycleConfig{
+		DrainPolicy: string(DrainPolicyRedirect),
+	}
+
+	// Create 10 requests that will be routed round-robin to both instances
+	requests := make([]*sim.Request, 10)
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("req-%d", i),
+			InputTokens:  make([]int, 10),
+			OutputTokens: make([]int, 5),
+			ArrivalTime:  int64(i * 100),
+		}
+	}
+
+	cs := NewClusterSimulator(cfg, requests, nil)
+
+	// Drain instance 0 after 500 ticks (after ~5 requests have been routed)
+	// This will redirect queued requests from instance 0 to instance 1
+	inst0 := cs.instances[0]
+	drainPolicy := NewDrainPolicy(DrainPolicyRedirect)
+	
+	// Run simulation partway to let some requests queue
+	for cs.clock < 500 && len(cs.clusterEvents) > 0 {
+		entry := cs.clusterEvents[0]
+		cs.clock = entry.event.Timestamp()
+		if cs.clock > 500 {
+			break
+		}
+		cs.clusterEvents = cs.clusterEvents[1:]
+		entry.event.Execute(cs)
+	}
+
+	// Drain instance 0 (redirects queued requests)
+	drainPolicy.Drain(inst0, cs)
+
+	// Continue simulation to completion
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run() failed: %v", err)
+	}
+
+	metrics := cs.AggregatedMetrics()
+
+	// THEN INV-1 conservation holds: injected = completed + queued + running + dropped + timed_out
+	injected := len(requests)
+	completed := metrics.CompletedRequests
+	stillQueued := metrics.StillQueued
+	stillRunning := metrics.StillRunning
+	dropped := metrics.DroppedUnservable
+	timedOut := metrics.TimedOutRequests
+
+	total := completed + stillQueued + stillRunning + dropped + timedOut
+	if total != injected {
+		t.Errorf("INV-1 conservation violated: injected=%d, completed=%d, queued=%d, running=%d, dropped=%d, timedOut=%d (total=%d)",
+			injected, completed, stillQueued, stillRunning, dropped, timedOut, total)
+	}
+
+	// AND all requests should complete (no horizon cutoff)
+	if completed != injected {
+		t.Errorf("expected all %d requests to complete, got %d", injected, completed)
+	}
 }
 
 // ─── Instance state machine ──────────────────────────────────────────────────

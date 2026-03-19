@@ -237,6 +237,8 @@ func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	// This is deliberate — re-validates capacity after the drain event rather than
 	// assuming the cluster can absorb the redirected load.
 	for _, req := range queued {
+		// Mark request as redirected to prevent double-counting in CompletedRequests (INV-1).
+		req.Redirected = true
 		heap.Push(&cs.clusterEvents, clusterEventEntry{
 			event: &ClusterArrivalEvent{time: cs.clock, request: req},
 			seqID: cs.nextSeqID(),
