@@ -1,24 +1,35 @@
 {
     "H100": {
 		"TFlopsPeak":  989.5,
+		"TFlopsFP8":   1979.0,
 		"BwPeakTBs":   3.35,
-		"mfuPrefill":  0.45,
-		"mfuDecode":   0.30,
+		"mfuPrefill":  0.60,
+		"mfuDecode":   0.45,
 		"MemoryGiB":   80.0
 	},
 	"A100-SXM": {
 		"TFlopsPeak":  312,
+		"TFlopsFP8":   0,
 		"BwPeakTBs":   2.039,
-		"mfuPrefill":  0.45,
-		"mfuDecode":   0.30,
+		"mfuPrefill":  0.5,
+		"mfuDecode":   0.25,
 		"MemoryGiB":   80.0
 	},
 	"A100-80": {
 		"_comment":    "Alias for A100-SXM — defaults.yaml uses A100-80 for all A100 model entries (BC-14)",
 		"TFlopsPeak":  312,
+		"TFlopsFP8":   0,
 		"BwPeakTBs":   2.039,
-		"mfuPrefill":  0.45,
-		"mfuDecode":   0.30,
+		"mfuPrefill":  0.5,
+		"mfuDecode":   0.25,
 		"MemoryGiB":   80.0
+	},
+	"L40S": {
+		"TFlopsPeak":  362.05,
+		"TFlopsFP8":   0,
+		"BwPeakTBs":   0.864,
+		"mfuPrefill":  0.4,
+		"mfuDecode":   0.1,
+		"MemoryGiB":   48.0
 	}
 }
