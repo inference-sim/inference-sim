@@ -35,12 +35,12 @@ func NewKVCapacityParams(isMoE bool, numLocalExperts int, tieWordEmbeddings bool
 
 // Constants matching the llm-d-benchmark capacity_planner.py reference.
 const (
-	gpuMemUtil                 = 0.9
-	activationMemoryDenseGiB   = 5.5
-	activationMemoryMoEGiB     = 8.0
-	nonTorchMemoryTP1GiB       = 0.15
-	nonTorchMemoryTPMultiGiB   = 0.6
-	gibToBytes                 = 1 << 30
+	gpuMemUtil               = 0.9
+	activationMemoryDenseGiB = 5.5
+	activationMemoryMoEGiB   = 8.0
+	nonTorchMemoryTP1GiB     = 0.15
+	nonTorchMemoryTPMultiGiB = 0.6
+	gibToBytes               = 1 << 30
 )
 
 // swiGLUActivations is the set of activation functions that use the SwiGLU
@@ -95,6 +95,13 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 	}
 	if hc.MemoryGiB <= 0 || math.IsNaN(hc.MemoryGiB) || math.IsInf(hc.MemoryGiB, 0) {
 		return 0, fmt.Errorf("CalculateKVBlocks: GPU memory (MemoryGiB) must be a valid positive number, got %v", hc.MemoryGiB)
+	}
+	// WeightBytesPerParam is optional (0 = not set, fall back to BytesPerParam).
+	// When set, it must be a valid positive number.
+	if mc.WeightBytesPerParam != 0 {
+		if mc.WeightBytesPerParam < 0 || math.IsNaN(mc.WeightBytesPerParam) || math.IsInf(mc.WeightBytesPerParam, 0) {
+			return 0, fmt.Errorf("CalculateKVBlocks: WeightBytesPerParam must be positive when set, got %v", mc.WeightBytesPerParam)
+		}
 	}
 
 	// Head dimension must be evenly divisible.
@@ -255,7 +262,7 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	finalNorm := hiddenDim
 
 	totalParams := embeddings + numLayers*perLayerParams + lmHead + finalNorm
-	return int64(float64(totalParams) * mc.BytesPerParam)
+	return int64(float64(totalParams) * mc.EffectiveWeightBytesPerParam())
 }
 
 // ExtractKVCapacityParamsFromFile reads a HuggingFace config.json file and

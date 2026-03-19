@@ -135,6 +135,33 @@ func TestNewKVCacheConfig_ValidTiered_ReturnsConfig(t *testing.T) {
 	}
 }
 
+func TestEffectiveWeightBytesPerParam_WhenSet_ReturnsWeightValue(t *testing.T) {
+	// BC-4: GIVEN WeightBytesPerParam > 0, THEN returns WeightBytesPerParam
+	mc := ModelConfig{BytesPerParam: 2.0, WeightBytesPerParam: 0.5}
+	got := mc.EffectiveWeightBytesPerParam()
+	if got != 0.5 {
+		t.Errorf("expected 0.5 when WeightBytesPerParam set, got %v", got)
+	}
+}
+
+func TestEffectiveWeightBytesPerParam_WhenZero_ReturnsBytesPerParam(t *testing.T) {
+	// BC-5: GIVEN WeightBytesPerParam == 0 (sentinel), THEN returns BytesPerParam
+	mc := ModelConfig{BytesPerParam: 2.0, WeightBytesPerParam: 0}
+	got := mc.EffectiveWeightBytesPerParam()
+	if got != 2.0 {
+		t.Errorf("expected 2.0 (fallback to BytesPerParam), got %v", got)
+	}
+}
+
+func TestEffectiveWeightBytesPerParam_BothZero_ReturnsZero(t *testing.T) {
+	// Edge case: both zero → 0 (no panic, downstream validation catches it)
+	mc := ModelConfig{BytesPerParam: 0, WeightBytesPerParam: 0}
+	got := mc.EffectiveWeightBytesPerParam()
+	if got != 0 {
+		t.Errorf("expected 0 when both zero, got %v", got)
+	}
+}
+
 func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 	tests := []struct {
 		name          string

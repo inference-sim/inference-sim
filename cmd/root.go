@@ -49,9 +49,8 @@ var (
 	outputTokensStdev         int       // Stdev Output Token Count
 	outputTokensMin           int       // Min Output Token Count
 	outputTokensMax           int       // Max Output Token Count
-	latencyModelBackend string // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
-	maxModelLen         int64  // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
-
+	latencyModelBackend       string    // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
+	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
 	gpu               string // GPU type
@@ -574,7 +573,7 @@ var runCmd = &cobra.Command{
 			}
 			// Warn if alpha coefficients are zero (user provided --beta-coeffs but not --alpha-coeffs)
 			if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
-				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; "+
+				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; " +
 					"QueueingTime, PostDecodeFixedOverhead, and OutputTokenProcessingTime will use zero alpha (may underestimate TTFT/E2E)")
 			}
 		}
@@ -606,6 +605,9 @@ var runCmd = &cobra.Command{
 					hfCfg, parseErr := latency.ParseHFConfig(hfPath)
 					if parseErr == nil {
 						mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
+						if mcErr == nil {
+							applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
+						}
 						resolvedHW, hwPathErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
 						if mcErr == nil && hwPathErr == nil {
 							hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
@@ -650,12 +652,14 @@ var runCmd = &cobra.Command{
 			}
 			hwConfig = hc
 
-			// Warn about known roofline estimation limitations
-			if modelConfig.BytesPerParam > 0 && modelConfig.BytesPerParam <= 1 {
-				logrus.Warnf("--latency-model: model reports %.0f byte(s)/param (possible quantization). "+
-					"Roofline step time estimates may be inaccurate for quantized models",
-					modelConfig.BytesPerParam)
+			applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
+
+			// Trained-roofline uses hardcoded FP16 bytesPerElement (matching its training
+			// pipeline); quantized weight precision is not applied to step time estimates.
+			if backend == "trained-roofline" {
+				warnTrainedRooflineQuantization(&modelConfig)
 			}
+
 			// MoE informational note: roofline models per-routed-expert FLOPs (top_k active)
 			// and all-expert weight bandwidth (E experts loaded from HBM per step).
 			// Shared expert FLOPs/weights and gate/router weights are NOT modeled in
@@ -847,7 +851,7 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Undefined workload %q. Use one among (chatbot, summarization, contentgen, multidoc) or --workload-spec", workloadType)
 			}
 			spec = workload.SynthesizeFromPreset(workloadType, workload.PresetConfig{
-				PrefixTokens: wl.PrefixTokens,
+				PrefixTokens:     wl.PrefixTokens,
 				PromptTokensMean: wl.PromptTokensMean, PromptTokensStdev: wl.PromptTokensStdev,
 				PromptTokensMin: wl.PromptTokensMin, PromptTokensMax: wl.PromptTokensMax,
 				OutputTokensMean: wl.OutputTokensMean, OutputTokensStdev: wl.OutputTokensStdev,
@@ -1241,6 +1245,7 @@ func init() {
 
 	// Workload generation flags (run-only)
 	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution)")
+
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
 	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")

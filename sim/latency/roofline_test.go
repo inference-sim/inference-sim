@@ -599,3 +599,112 @@ func TestRooflineStepTime_Dense_PositiveAndTPScaling(t *testing.T) {
 	}
 	t.Logf("Dense regression: TP=1=%d µs, TP=2=%d µs", tp1, tp2)
 }
+
+// --- Quantized model tests (BC-6, BC-8) ---
+
+func testW4A16Config() sim.ModelConfig {
+	mc := testModelConfig()
+	mc.WeightBytesPerParam = 0.5 // W4A16: 4-bit weights
+	// BytesPerParam stays at 2.0 (bfloat16 compute dtype)
+	return mc
+}
+
+func TestCalculateMemoryAccessBytes_W4A16_WeightsReduced_KVUnchanged(t *testing.T) {
+	// BC-6: W4A16 model_weights use 0.5 bytes/param, KV cache uses 2.0
+	fp16 := testModelConfig()
+	w4a16 := testW4A16Config()
+
+	fp16Mem := calculateMemoryAccessBytes(fp16, 512, 64, true)
+	w4a16Mem := calculateMemoryAccessBytes(w4a16, 512, 64, true)
+
+	// model_weights should be 1/4 of FP16 (0.5/2.0)
+	ratio := w4a16Mem["model_weights"] / fp16Mem["model_weights"]
+	if math.Abs(ratio-0.25) > 1e-10 {
+		t.Errorf("W4A16 model_weights should be 0.25x FP16, got ratio=%v (fp16=%g, w4a16=%g)",
+			ratio, fp16Mem["model_weights"], w4a16Mem["model_weights"])
+	}
+
+	// KV cache components should be identical (both use BytesPerParam=2.0)
+	if w4a16Mem["kv_cache_growth"] != fp16Mem["kv_cache_growth"] {
+		t.Errorf("KV cache growth should be identical: fp16=%g, w4a16=%g",
+			fp16Mem["kv_cache_growth"], w4a16Mem["kv_cache_growth"])
+	}
+	if w4a16Mem["kv_cache_access"] != fp16Mem["kv_cache_access"] {
+		t.Errorf("KV cache access should be identical: fp16=%g, w4a16=%g",
+			fp16Mem["kv_cache_access"], w4a16Mem["kv_cache_access"])
+	}
+
+	// Activations should be identical (both use BytesPerParam=2.0)
+	if w4a16Mem["activations_tokens"] != fp16Mem["activations_tokens"] {
+		t.Errorf("Activations should be identical: fp16=%g, w4a16=%g",
+			fp16Mem["activations_tokens"], w4a16Mem["activations_tokens"])
+	}
+}
+
+func TestCalculateMemoryAccessBytes_NonQuantized_IdenticalToBaseline(t *testing.T) {
+	// BC-8: non-quantized model (WeightBytesPerParam=0) produces identical results
+	baseline := testModelConfig()
+	baselineMem := calculateMemoryAccessBytes(baseline, 512, 64, true)
+
+	// WeightBytesPerParam=0 (sentinel) — should fall back to BytesPerParam
+	withSentinel := testModelConfig()
+	withSentinel.WeightBytesPerParam = 0
+	sentinelMem := calculateMemoryAccessBytes(withSentinel, 512, 64, true)
+
+	if baselineMem["model_weights"] != sentinelMem["model_weights"] {
+		t.Errorf("non-quantized should be identical: baseline=%g, sentinel=%g",
+			baselineMem["model_weights"], sentinelMem["model_weights"])
+	}
+	if baselineMem["total"] != sentinelMem["total"] {
+		t.Errorf("non-quantized total should be identical: baseline=%g, sentinel=%g",
+			baselineMem["total"], sentinelMem["total"])
+	}
+}
+
+func TestCalculateMemoryAccessBytes_W4A16_Conservation(t *testing.T) {
+	// Conservation: total == sum(components) for quantized model
+	mc := testW4A16Config()
+	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
+
+	keys := make([]string, 0, len(mem))
+	for k := range mem {
+		if k != "total" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	var sum float64
+	for _, k := range keys {
+		sum += mem[k]
+	}
+	if math.Abs(mem["total"]-sum) > 1e-6 {
+		t.Errorf("conservation violation: total=%g, sum=%g", mem["total"], sum)
+	}
+}
+
+func TestRooflineStepTime_W4A16_LowerThanFP16_MemoryBoundDecode(t *testing.T) {
+	// BC-6 end-to-end: W4A16 model should produce lower (or equal) decode step time
+	// than FP16 because decode is memory-bound and W4A16 has 4x less weight bandwidth.
+	fp16 := testModelConfig()
+	w4a16 := testW4A16Config()
+	hc := testHardwareCalib()
+
+	// Pure decode step: single token with long sequence history (memory-bound regime)
+	decodeStep := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 2048, NumNewDecodeTokens: 1},
+		},
+	}
+
+	fp16Time := rooflineStepTime(fp16, hc, decodeStep, 1)
+	w4a16Time := rooflineStepTime(w4a16, hc, decodeStep, 1)
+
+	if fp16Time <= 0 || w4a16Time <= 0 {
+		t.Fatalf("expected positive step times: fp16=%d, w4a16=%d", fp16Time, w4a16Time)
+	}
+	if w4a16Time > fp16Time {
+		t.Errorf("W4A16 decode step time (%d µs) should be <= FP16 (%d µs) in memory-bound regime",
+			w4a16Time, fp16Time)
+	}
+	t.Logf("Decode step: FP16=%d µs, W4A16=%d µs (ratio=%.2f)", fp16Time, w4a16Time, float64(w4a16Time)/float64(fp16Time))
+}

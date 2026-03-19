@@ -6,8 +6,8 @@ This document describes the analytical approach used to estimate the GPU latency
     For higher accuracy (7% MAPE GPU combined), use `--latency-model trained-roofline` which applies learned correction factors to these roofline basis functions. See [Trained-Roofline Mode](../guide/latency-models.md#trained-roofline-mode-recommended-for-new-models). For legacy MoE workflows, `--latency-model crossmodel` is also available — see [Cross-Model Mode](../guide/latency-models.md#cross-model-mode-physics-informed).
 
 
-!!! note "Scope: TP-only, FP16/BF16"
-    The roofline model currently accounts for tensor parallelism (TP) but does not model data parallelism (DP), expert parallelism (EP), or quantization effects (FP8, W4A16, W8A8). Incorporating DP/EP scheduling overhead and quantized compute/memory throughput is under active development.
+!!! note "Scope: TP-only, quantized weight memory supported"
+    The roofline model accounts for tensor parallelism (TP) but does not model data parallelism (DP) or expert parallelism (EP) scheduling overhead. Quantized weight precision is auto-detected from HuggingFace `quantization_config` (GPTQ, AWQ, FP8, compressed-tensors), model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. KV cache and activation memory continue to use the compute dtype (`BytesPerParam` from `torch_dtype`).
 
 ## 1. Why Roofline?
 
