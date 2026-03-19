@@ -93,3 +93,6 @@ actions-runner/
 
 # Convergence review state (session-local, not committed)
 .claude/convergence-state/
+
+# Agent instruction files (generated, not committed)
+AGENTS.md
