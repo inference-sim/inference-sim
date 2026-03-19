@@ -198,10 +198,11 @@ func calculateMemoryAccessBytes(
 // reflecting that prefill is compute-bound (large GEMMs) while decode is memory-bound.
 //
 // Known approximation: MFU values were calibrated against FP16 (bfloat16) hardware
-// measurements. For quantized models (e.g. W4A16), reduced weight bandwidth shifts the
-// roofline crossover — decode steps that were memory-bound under FP16 may become
-// compute-bound, producing a conservative (pessimistic) estimate. This is safe for
-// capacity planning but may overestimate step time for memory-bound quantized workloads.
+// measurements. For quantized models (e.g., INT4 with 4× lower weight bandwidth), the
+// roofline crossover shifts: decode steps that were memory-bound under FP16 may become
+// compute-bound. This produces a conservative (pessimistic) estimate — actual step time
+// may be up to ~2× faster for memory-bound quantized workloads. Safe for capacity planning
+// but may overestimate latency. See hypothesis h-quantized-roofline for empirical validation.
 //
 // Precondition: ValidateRooflineConfig(modelConfig, hwConfig) must return nil
 // and tp must be > 0. Callers must validate before first call.

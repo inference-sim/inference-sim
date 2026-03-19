@@ -13,6 +13,8 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+const bitsPerByte = 8.0
+
 // HFConfig represents a flexible JSON object with dynamic fields.
 type HFConfig struct {
 	// Raw holds the entire JSON as a dynamic map.
@@ -234,7 +236,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 				}
 			}
 			if bits > 0 {
-				weightBytesPerParam = float64(bits) / 8.0
+				weightBytesPerParam = float64(bits) / bitsPerByte
 			} else if strings.EqualFold(quantMethod, "fp8") {
 				weightBytesPerParam = 1.0
 			} else if strings.EqualFold(quantMethod, "compressed-tensors") {
@@ -250,7 +252,7 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 						if gm, ok := cg[k].(map[string]any); ok {
 							if w, ok := gm["weights"].(map[string]any); ok {
 								if nb, ok := w["num_bits"].(float64); ok && nb > 0 {
-									weightBytesPerParam = nb / 8.0
+									weightBytesPerParam = nb / bitsPerByte
 									break
 								}
 							}
@@ -295,7 +297,7 @@ func InferWeightBytesFromModelName(name string) float64 {
 	// Explicit wXaY pattern — weight bits are unambiguous.
 	if m := reWxAy.FindStringSubmatch(name); m != nil {
 		if bits, err := strconv.Atoi(m[1]); err == nil && bits > 0 {
-			return float64(bits) / 8.0
+			return float64(bits) / bitsPerByte
 		}
 	}
 	// FP8 keyword — always 8-bit weights.
