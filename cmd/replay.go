@@ -355,10 +355,8 @@ Example:
 
 			applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
 
-			if backend == "trained-roofline" && modelConfig.WeightBytesPerParam > 0 {
-				logrus.Warnf("trained-roofline uses FP16 weight bandwidth (matching training data); "+
-					"quantized weight precision (%.2f bytes/param) affects KV capacity but not step time",
-					modelConfig.WeightBytesPerParam)
+			if backend == "trained-roofline" {
+				warnTrainedRooflineQuantization(&modelConfig)
 			}
 
 			if backend == "roofline" && modelConfig.NumLocalExperts > 1 {

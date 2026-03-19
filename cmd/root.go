@@ -656,10 +656,8 @@ var runCmd = &cobra.Command{
 
 			// Trained-roofline uses hardcoded FP16 bytesPerElement (matching its training
 			// pipeline); quantized weight precision is not applied to step time estimates.
-			if backend == "trained-roofline" && modelConfig.WeightBytesPerParam > 0 {
-				logrus.Warnf("trained-roofline uses FP16 weight bandwidth (matching training data); "+
-					"quantized weight precision (%.2f bytes/param) affects KV capacity but not step time",
-					modelConfig.WeightBytesPerParam)
+			if backend == "trained-roofline" {
+				warnTrainedRooflineQuantization(&modelConfig)
 			}
 
 			// MoE informational note: roofline models per-routed-expert FLOPs (top_k active)

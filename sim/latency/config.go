@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 const bitsPerByte = 8.0
@@ -129,6 +130,61 @@ func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
 	return GetModelConfigFromHF(hf)
 }
 
+// parseQuantizationConfig extracts quantized weight precision from quantization_config.
+// Returns 0 if no quantization is detected or if parsing fails.
+// torch_dtype reports the compute/activation dtype (e.g. bfloat16=2 bytes), but
+// quantized models store weights at lower precision (e.g. W4A16=0.5 bytes/param).
+func parseQuantizationConfig(qc map[string]any) float64 {
+	quantMethod, _ := qc["quant_method"].(string)
+	bits := 0
+
+	// Try to extract bits from quantization_config.bits (float64 or string)
+	if bitsRaw, ok := qc["bits"].(float64); ok {
+		bits = int(bitsRaw)
+	} else if bitsStr, ok := qc["bits"].(string); ok {
+		if parsed, err := strconv.Atoi(bitsStr); err == nil {
+			bits = parsed
+		} else {
+			logrus.Debugf("quantization_config.bits: invalid string value %q (expected integer)", bitsStr)
+		}
+	}
+
+	if bits > 0 {
+		return float64(bits) / bitsPerByte
+	}
+
+	// FP8 quantization
+	if strings.EqualFold(quantMethod, "fp8") {
+		return 1.0
+	}
+
+	// compressed-tensors: extract from config_groups.*.weights.num_bits
+	if strings.EqualFold(quantMethod, "compressed-tensors") {
+		// Keys are sorted for deterministic iteration (INV-6).
+		// First-match semantics: the first valid num_bits found (in sorted key order) is used.
+		if cg, ok := qc["config_groups"].(map[string]any); ok {
+			keys := make([]string, 0, len(cg))
+			for k := range cg {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				if gm, ok := cg[k].(map[string]any); ok {
+					if w, ok := gm["weights"].(map[string]any); ok {
+						if nb, ok := w["num_bits"].(float64); ok && nb > 0 {
+							return nb / bitsPerByte
+						}
+					}
+				}
+			}
+		} else {
+			logrus.Debugf("compressed-tensors: config_groups structure does not match expected schema (expected map[string]any)")
+		}
+	}
+
+	return 0
+}
+
 // GetModelConfigFromHF extracts model parameters from a pre-parsed HFConfig.
 // Use this when you already have a parsed HFConfig to avoid re-reading the file.
 func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
@@ -220,46 +276,11 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	hiddenAct := hf.MustGetString("hidden_act", "")
 
 	// Extract quantized weight precision from quantization_config (if present).
-	// torch_dtype reports the compute/activation dtype (e.g. bfloat16=2 bytes), but
-	// quantized models store weights at lower precision (e.g. W4A16=0.5 bytes/param).
 	// WeightBytesPerParam=0 means "not quantized, use BytesPerParam".
 	var weightBytesPerParam float64
 	if qcRaw, ok := hf.Raw["quantization_config"]; ok {
 		if qc, ok := qcRaw.(map[string]any); ok {
-			quantMethod, _ := qc["quant_method"].(string)
-			bits := 0
-			if bitsRaw, ok := qc["bits"].(float64); ok {
-				bits = int(bitsRaw)
-			} else if bitsStr, ok := qc["bits"].(string); ok {
-				if parsed, err := strconv.Atoi(bitsStr); err == nil {
-					bits = parsed
-				}
-			}
-			if bits > 0 {
-				weightBytesPerParam = float64(bits) / bitsPerByte
-			} else if strings.EqualFold(quantMethod, "fp8") {
-				weightBytesPerParam = 1.0
-			} else if strings.EqualFold(quantMethod, "compressed-tensors") {
-				// compressed-tensors stores bits in config_groups.*.weights.num_bits.
-				// Keys are sorted for deterministic iteration (INV-6).
-				if cg, ok := qc["config_groups"].(map[string]any); ok {
-					keys := make([]string, 0, len(cg))
-					for k := range cg {
-						keys = append(keys, k)
-					}
-					sort.Strings(keys)
-					for _, k := range keys {
-						if gm, ok := cg[k].(map[string]any); ok {
-							if w, ok := gm["weights"].(map[string]any); ok {
-								if nb, ok := w["num_bits"].(float64); ok && nb > 0 {
-									weightBytesPerParam = nb / bitsPerByte
-									break
-								}
-							}
-						}
-					}
-				}
-			}
+			weightBytesPerParam = parseQuantizationConfig(qc)
 		}
 	}
 
@@ -389,6 +410,11 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 			problems = append(problems, fmt.Sprintf(
 				"ModelConfig.WeightBytesPerParam must be positive when set, got %v",
 				mc.WeightBytesPerParam))
+		}
+		// Warn if weight precision exceeds compute precision (unusual but valid)
+		if mc.WeightBytesPerParam > mc.BytesPerParam {
+			logrus.Warnf("WeightBytesPerParam (%.2f) > BytesPerParam (%.2f): weight precision exceeds compute precision (unusual but valid, e.g., FP32 weights with INT4 KV cache)",
+				mc.WeightBytesPerParam, mc.BytesPerParam)
 		}
 	}
 

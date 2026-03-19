@@ -261,6 +261,16 @@ func applyWeightPrecisionFallback(mc *sim.ModelConfig, model string, hfRaw map[s
 	}
 }
 
+// warnTrainedRooflineQuantization logs a warning when trained-roofline is used with
+// quantized weights, explaining that weight precision affects KV capacity but not step time.
+func warnTrainedRooflineQuantization(mc *sim.ModelConfig) {
+	if mc.WeightBytesPerParam > 0 {
+		logrus.Warnf("trained-roofline uses FP16 weight bandwidth (matching training data); "+
+			"quantized weight precision (%.2f bytes/param) affects KV capacity but not step time",
+			mc.WeightBytesPerParam)
+	}
+}
+
 // bundledModelConfigDir returns the expected path for bundled model configs.
 // Model names like "meta-llama/llama-3.1-8b-instruct" map to "<baseDir>/model_configs/llama-3.1-8b-instruct/".
 // When baseDir is empty, returns a relative path (resolved relative to CWD).
