@@ -655,6 +655,57 @@ func TestGetModelConfig_Qwen2MoEStyle_SharedExpertDimExplicit(t *testing.T) {
 
 // --- MoE validation tests (BC-12, BC-13, BC-14) ---
 
+func TestValidateRooflineConfig_NegativeWeightBytesPerParam_ReturnsError(t *testing.T) {
+	// WeightBytesPerParam must be positive when set
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2, WeightBytesPerParam: -0.5}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err == nil {
+		t.Fatal("expected error for negative WeightBytesPerParam")
+	}
+	if !strings.Contains(err.Error(), "WeightBytesPerParam") {
+		t.Errorf("error should mention WeightBytesPerParam, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_NaNWeightBytesPerParam_ReturnsError(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2, WeightBytesPerParam: math.NaN()}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err == nil {
+		t.Fatal("expected error for NaN WeightBytesPerParam")
+	}
+	if !strings.Contains(err.Error(), "WeightBytesPerParam") {
+		t.Errorf("error should mention WeightBytesPerParam, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_InfWeightBytesPerParam_ReturnsError(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2, WeightBytesPerParam: math.Inf(1)}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err == nil {
+		t.Fatal("expected error for Inf WeightBytesPerParam, got nil")
+	}
+	if !strings.Contains(err.Error(), "WeightBytesPerParam") {
+		t.Errorf("error should mention WeightBytesPerParam: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_ValidWeightBytesPerParam_ReturnsNil(t *testing.T) {
+	// Valid WeightBytesPerParam should not cause an error
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2, WeightBytesPerParam: 0.5}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+	if err != nil {
+		t.Errorf("expected nil error for valid WeightBytesPerParam=0.5, got: %v", err)
+	}
+}
+
 func TestValidateRooflineConfig_MoE_ExpertsWithoutActive_ReturnsError(t *testing.T) {
 	// BC-12: experts > 0, active = 0
 	mc := sim.ModelConfig{
@@ -723,6 +774,371 @@ func TestValidateRooflineConfig_MoE_NegativeDimensions_ReturnsError(t *testing.T
 				t.Fatal("expected error for negative MoE dimension")
 			}
 		})
+	}
+}
+
+// --- Quantization config parsing tests (BC-1 through BC-3, BC-8) ---
+
+func TestGetModelConfig_GPTQ4Bit_ParsesQuantizationConfig(t *testing.T) {
+	// BC-1: GIVEN HF config with quantization_config.bits=4 and torch_dtype="bfloat16"
+	// THEN WeightBytesPerParam=0.5 and BytesPerParam=2.0
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 128256,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "gptq",
+			"bits": 4
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.BytesPerParam != 2.0 {
+		t.Errorf("expected BytesPerParam=2.0 (compute dtype bfloat16), got %v", cfg.BytesPerParam)
+	}
+	if cfg.WeightBytesPerParam != 0.5 {
+		t.Errorf("expected WeightBytesPerParam=0.5 (4 bits / 8), got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+func TestGetModelConfig_FP8_ParsesQuantizationConfig(t *testing.T) {
+	// BC-2: GIVEN quantization_config.quant_method="fp8" with no bits field
+	// THEN WeightBytesPerParam=1.0
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 128256,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "fp8"
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 1.0 {
+		t.Errorf("expected WeightBytesPerParam=1.0 for FP8 (no bits field), got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+func TestGetModelConfig_FP8WithBits8_ParsesViaBitsPath(t *testing.T) {
+	// FP8 config that also includes bits=8: the bits-first path produces 8/8=1.0,
+	// same as the quant_method=="fp8" fallback. Verifies both paths agree.
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 128256,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "fp8",
+			"bits": 8
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 1.0 {
+		t.Errorf("expected WeightBytesPerParam=1.0 for FP8 with bits=8, got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+func TestGetModelConfig_NoQuantizationConfig_ZeroWeightBytes(t *testing.T) {
+	// BC-3: GIVEN no quantization_config, THEN WeightBytesPerParam=0 (sentinel)
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 128256,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 0 {
+		t.Errorf("expected WeightBytesPerParam=0 (sentinel) for non-quantized model, got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+func TestGetModelConfig_AWQ4Bit_ParsesQuantizationConfig(t *testing.T) {
+	// AWQ variant: same bits-based parsing as GPTQ
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "awq",
+			"bits": 4
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 0.5 {
+		t.Errorf("expected WeightBytesPerParam=0.5 for AWQ 4-bit, got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+func TestGetModelConfig_QuantBitsZero_ZeroWeightBytes(t *testing.T) {
+	// Degenerate: bits=0 should not produce a WeightBytesPerParam
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "gptq",
+			"bits": 0
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 0 {
+		t.Errorf("expected WeightBytesPerParam=0 for bits=0 degenerate, got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+func TestGetModelConfig_BitsAsString_CoercesToInt(t *testing.T) {
+	// I2: Some HF configs encode bits as a JSON string (e.g. "4" instead of 4).
+	// The parser should coerce string to int.
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "gptq",
+			"bits": "4"
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 0.5 {
+		t.Errorf("expected WeightBytesPerParam=0.5 for bits=\"4\" (string coercion), got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+func TestGetModelConfig_CompressedTensorsW8A8_ParsesConfigGroups(t *testing.T) {
+	// BC-9: GIVEN quantization_config with quant_method="compressed-tensors" and
+	// config_groups.group_0.weights.num_bits=8, THEN WeightBytesPerParam=1.0
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 128256,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "compressed-tensors",
+			"config_groups": {
+				"group_0": {
+					"weights": {
+						"num_bits": 8,
+						"type": "int",
+						"strategy": "tensor"
+					}
+				}
+			}
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 1.0 {
+		t.Errorf("expected WeightBytesPerParam=1.0 for compressed-tensors 8-bit, got %v", cfg.WeightBytesPerParam)
+	}
+	if cfg.BytesPerParam != 2.0 {
+		t.Errorf("expected BytesPerParam=2.0 (compute dtype bfloat16), got %v", cfg.BytesPerParam)
+	}
+}
+
+func TestGetModelConfig_CompressedTensorsW4_ParsesConfigGroups(t *testing.T) {
+	// compressed-tensors with 4-bit weights
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "compressed-tensors",
+			"config_groups": {
+				"group_0": {
+					"weights": {
+						"num_bits": 4
+					}
+				}
+			}
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 0.5 {
+		t.Errorf("expected WeightBytesPerParam=0.5 for compressed-tensors 4-bit, got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+func TestGetModelConfig_CompressedTensorsNoConfigGroups_ZeroWeightBytes(t *testing.T) {
+	// compressed-tensors with missing config_groups → should not crash, WeightBytesPerParam=0
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"torch_dtype": "bfloat16",
+		"quantization_config": {
+			"quant_method": "compressed-tensors"
+		}
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WeightBytesPerParam != 0 {
+		t.Errorf("expected WeightBytesPerParam=0 for compressed-tensors without config_groups, got %v", cfg.WeightBytesPerParam)
+	}
+}
+
+// --- Model name detection tests ---
+
+func TestInferWeightBytesFromModelName(t *testing.T) {
+	tests := []struct {
+		name   string
+		model  string
+		expect float64
+	}{
+		{"w4a16 suffix", "redhatai/llama-3.3-70b-instruct-quantized.w4a16", 0.5},
+		{"w8a8 suffix", "redhatai/llama-3.3-70b-instruct-quantized.w8a8", 1.0},
+		{"W4A16 uppercase", "RedHatAI/Llama-3.3-70B-Instruct-quantized.W4A16", 0.5},
+		{"FP8-dynamic hyphen", "redhatai/phi-4-FP8-dynamic", 1.0},
+		{"fp8 lowercase", "redhatai/phi-4-fp8-dynamic", 1.0},
+		{"FP8 end of string", "meta-llama/llama-4-maverick-17b-128e-instruct-fp8", 1.0},
+		{"FP8 slash-separated", "neuralmagic/Meta-Llama-3.1-70B-Instruct-FP8", 1.0},
+		{"no quantization", "qwen/qwen3-14b", 0},
+		{"unquantized llama", "meta-llama/Llama-3.1-8B-Instruct", 0},
+		{"w2a16 two-bit", "org/model-quantized.w2a16", 0.25},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := latency.InferWeightBytesFromModelName(tt.model)
+			if got != tt.expect {
+				t.Errorf("InferWeightBytesFromModelName(%q) = %v, want %v", tt.model, got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestGetModelConfig_NonQuantized_BytesPerParamUnchanged(t *testing.T) {
+	// BC-8: Non-quantized regression anchor — BytesPerParam unchanged
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"num_hidden_layers": 32,
+		"hidden_size": 4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"vocab_size": 128256,
+		"intermediate_size": 14336,
+		"torch_dtype": "bfloat16"
+	}`
+	if err := os.WriteFile(configFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg, err := latency.GetModelConfig(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.BytesPerParam != 2.0 {
+		t.Errorf("expected BytesPerParam=2.0 for bfloat16, got %v", cfg.BytesPerParam)
+	}
+	// EffectiveWeightBytesPerParam should fall back to BytesPerParam
+	if cfg.EffectiveWeightBytesPerParam() != 2.0 {
+		t.Errorf("expected EffectiveWeightBytesPerParam=2.0 for non-quantized, got %v", cfg.EffectiveWeightBytesPerParam())
 	}
 }
 

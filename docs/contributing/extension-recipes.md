@@ -122,6 +122,29 @@ Examples:
 - See `VLLMBatchFormation` in `sim/batch_formation.go` for the vLLM FCFS + chunked-prefill + preemption strategy
 - See `preemptForTokens` for the KV allocation + eviction loop pattern
 
+## Adding New Quantization Formats
+
+To add support for a new quantization format (e.g., GGUF, HQQ, Marlin):
+
+1. **Add `quantization_config` parsing** in `sim/latency/config.go` inside `ParseHuggingFaceConfig()`. The three-tier detection order:
+   - **Tier 1 — `quantization_config`**: Add a new `else if` branch after the existing `compressed-tensors` case (~line 240). Extract the weight bit-width from the format's config structure and set `weightBytesPerParam = bits / 8.0`. Use case-insensitive matching for `quant_method` (`strings.EqualFold`).
+   - **Tier 2 — Model name conventions**: If the format has recognizable naming patterns (like `w4a16` or `FP8`), add a regex to the compiled patterns (`reWxAy`, `reFP8Name`) or add a new pattern near line 283. Update `InferWeightBytesFromModelName()` accordingly.
+   - **Tier 3 — `torch_dtype` fallback**: No changes needed — this is automatic via `BytesPerParam`.
+
+2. **Add tests** in `sim/latency/config_test.go`:
+   - A `TestParseHuggingFaceConfig_YourFormat_*` test with a synthetic `config.json` containing the new `quantization_config` structure
+   - Verify `WeightBytesPerParam` is set correctly
+   - If adding name-based detection, add cases to `TestInferWeightBytesFromModelName`
+
+3. **No changes needed to roofline/KV capacity code** — they already use `EffectiveWeightBytesPerParam()` which automatically picks up the new format's weight precision.
+
+4. Extension friction: **1-2 touch points** (config parsing + optional name regex)
+
+Examples:
+- See the GPTQ/AWQ `bits` extraction (~line 229) for formats with a top-level `bits` field
+- See the `compressed-tensors` branch (~line 240) for formats with nested config structures
+- See `InferWeightBytesFromModelName()` for regex-based name pattern detection
+
 ## Adding New Per-Request Metric Fields
 
 To add a new field to per-request JSON output (appears in `--results-path` output):

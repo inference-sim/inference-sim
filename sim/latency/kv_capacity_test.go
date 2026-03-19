@@ -158,6 +158,33 @@ func TestCalculateKVBlocks_ZeroDenominators_ReturnError(t *testing.T) {
 			},
 			errWant: "num_kv_heads",
 		},
+		{
+			name: "negative WeightBytesPerParam",
+			setup: func() (sim.ModelConfig, sim.HardwareCalib, int, int64, latency.KVCapacityParams) {
+				m := mc
+				m.WeightBytesPerParam = -0.5
+				return m, hc, tp, blockSize, params
+			},
+			errWant: "WeightBytesPerParam",
+		},
+		{
+			name: "NaN WeightBytesPerParam",
+			setup: func() (sim.ModelConfig, sim.HardwareCalib, int, int64, latency.KVCapacityParams) {
+				m := mc
+				m.WeightBytesPerParam = math.NaN()
+				return m, hc, tp, blockSize, params
+			},
+			errWant: "WeightBytesPerParam",
+		},
+		{
+			name: "Inf WeightBytesPerParam",
+			setup: func() (sim.ModelConfig, sim.HardwareCalib, int, int64, latency.KVCapacityParams) {
+				m := mc
+				m.WeightBytesPerParam = math.Inf(1)
+				return m, hc, tp, blockSize, params
+			},
+			errWant: "WeightBytesPerParam",
+		},
 	}
 
 	for _, tt := range tests {
@@ -558,15 +585,15 @@ func writeTempConfigJSON(t *testing.T, data map[string]any) string {
 
 func TestExtractKVCapacityParams_DenseModel(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":           "silu",
-		"num_hidden_layers":    32,
-		"hidden_size":          4096,
-		"num_attention_heads":  32,
-		"num_key_value_heads":  8,
-		"intermediate_size":    14336,
-		"vocab_size":           128256,
-		"torch_dtype":          "bfloat16",
-		"tie_word_embeddings":  false,
+		"hidden_act":          "silu",
+		"num_hidden_layers":   32,
+		"hidden_size":         4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"intermediate_size":   14336,
+		"vocab_size":          128256,
+		"torch_dtype":         "bfloat16",
+		"tie_word_embeddings": false,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -587,16 +614,16 @@ func TestExtractKVCapacityParams_DenseModel(t *testing.T) {
 
 func TestExtractKVCapacityParams_MoEModel(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":           "silu",
-		"num_hidden_layers":    32,
-		"hidden_size":          4096,
-		"num_attention_heads":  32,
-		"num_key_value_heads":  8,
-		"intermediate_size":    14336,
-		"vocab_size":           32000,
-		"torch_dtype":          "bfloat16",
-		"num_local_experts":    8,
-		"num_experts_per_tok":  2,
+		"hidden_act":          "silu",
+		"num_hidden_layers":   32,
+		"hidden_size":         4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"intermediate_size":   14336,
+		"vocab_size":          32000,
+		"torch_dtype":         "bfloat16",
+		"num_local_experts":   8,
+		"num_experts_per_tok": 2,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -614,15 +641,15 @@ func TestExtractKVCapacityParams_MoEModel(t *testing.T) {
 
 func TestExtractKVCapacityParams_SingleExpert_ClassifiedAsDense(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":           "silu",
-		"num_hidden_layers":    32,
-		"hidden_size":          4096,
-		"num_attention_heads":  32,
-		"num_key_value_heads":  8,
-		"intermediate_size":    14336,
-		"vocab_size":           32000,
-		"torch_dtype":          "bfloat16",
-		"num_local_experts":    1,
+		"hidden_act":          "silu",
+		"num_hidden_layers":   32,
+		"hidden_size":         4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"intermediate_size":   14336,
+		"vocab_size":          32000,
+		"torch_dtype":         "bfloat16",
+		"num_local_experts":   1,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -688,8 +715,8 @@ func TestCalculateKVBlocks_NumKVHeadsLessThanTP_Succeeds(t *testing.T) {
 func TestExtractKVCapacityParams_MoEFallback_NRoutedExperts(t *testing.T) {
 	// DeepSeek-style: uses n_routed_experts instead of num_local_experts
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":          "silu",
-		"n_routed_experts":    64,
+		"hidden_act":       "silu",
+		"n_routed_experts": 64,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -707,8 +734,8 @@ func TestExtractKVCapacityParams_MoEFallback_NRoutedExperts(t *testing.T) {
 func TestExtractKVCapacityParams_MoEFallback_NumExperts(t *testing.T) {
 	// DBRX-style: uses num_experts
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":   "silu",
-		"num_experts":  16,
+		"hidden_act":  "silu",
+		"num_experts": 16,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -757,15 +784,15 @@ func TestExtractKVCapacityParams_MoEFallback_NumExpertsPerTokOnly_ReturnsError(t
 
 func TestExtractKVCapacityParams_TiedEmbeddings(t *testing.T) {
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":           "silu",
-		"num_hidden_layers":    32,
-		"hidden_size":          4096,
-		"num_attention_heads":  32,
-		"num_key_value_heads":  8,
-		"intermediate_size":    14336,
-		"vocab_size":           128256,
-		"torch_dtype":          "bfloat16",
-		"tie_word_embeddings":  true,
+		"hidden_act":          "silu",
+		"num_hidden_layers":   32,
+		"hidden_size":         4096,
+		"num_attention_heads": 32,
+		"num_key_value_heads": 8,
+		"intermediate_size":   14336,
+		"vocab_size":          128256,
+		"torch_dtype":         "bfloat16",
+		"tie_word_embeddings": true,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -915,10 +942,10 @@ func TestExtractKVCapacityParams_DeepSeekV3_PerExpertDim(t *testing.T) {
 func TestExtractKVCapacityParams_Qwen2MoE_ExplicitSharedDim(t *testing.T) {
 	// shared_expert_intermediate_size takes precedence over n_shared_experts × per-expert
 	path := writeTempConfigJSON(t, map[string]any{
-		"hidden_act":                       "silu",
-		"num_local_experts":                60,
-		"moe_intermediate_size":            2560,
-		"shared_expert_intermediate_size":  5632,
+		"hidden_act":                      "silu",
+		"num_local_experts":               60,
+		"moe_intermediate_size":           2560,
+		"shared_expert_intermediate_size": 5632,
 	})
 
 	params, err := latency.ExtractKVCapacityParamsFromFile(path)
@@ -931,5 +958,103 @@ func TestExtractKVCapacityParams_Qwen2MoE_ExplicitSharedDim(t *testing.T) {
 	}
 	if params.SharedExpertFFNDim != 5632 {
 		t.Errorf("expected SharedExpertFFNDim=5632 (explicit field), got %d", params.SharedExpertFFNDim)
+	}
+}
+
+// --- Quantized model KV capacity tests (BC-7, BC-10) ---
+
+func TestCalculateKVBlocks_W4A16_MoreBlocksThanFP16(t *testing.T) {
+	// BC-10: W4A16 model produces more KV blocks (smaller weight footprint)
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	// FP16 baseline
+	blocksFP16, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("FP16 error: %v", err)
+	}
+
+	// W4A16: weight precision is 0.5, compute dtype stays at 2.0
+	mcW4 := mc
+	mcW4.WeightBytesPerParam = 0.5
+	blocksW4, err := latency.CalculateKVBlocks(mcW4, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("W4A16 error: %v", err)
+	}
+
+	t.Logf("FP16 blocks=%d, W4A16 blocks=%d", blocksFP16, blocksW4)
+
+	if blocksW4 <= blocksFP16 {
+		t.Errorf("W4A16 should produce more blocks than FP16 (smaller weights): W4=%d <= FP16=%d",
+			blocksW4, blocksFP16)
+	}
+}
+
+func TestCalculateKVBlocks_W4A16_PerTokenKVBytesUnchanged(t *testing.T) {
+	// BC-7: Per-token KV bytes use BytesPerParam (compute dtype), NOT WeightBytesPerParam
+	// We verify this indirectly: changing WeightBytesPerParam should only affect
+	// weight memory, not per-block KV bytes. Two models with same BytesPerParam
+	// but different WeightBytesPerParam should produce different total blocks but
+	// the difference should come from weight memory only.
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	// FP16 baseline
+	blocksFP16, err := latency.CalculateKVBlocks(mc, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("FP16 error: %v", err)
+	}
+
+	// FP8 weights (1.0 bytes/param) — intermediate between FP16 and W4A16
+	mcFP8 := mc
+	mcFP8.WeightBytesPerParam = 1.0
+	blocksFP8, err := latency.CalculateKVBlocks(mcFP8, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("FP8 error: %v", err)
+	}
+
+	// W4A16 (0.5 bytes/param)
+	mcW4 := mc
+	mcW4.WeightBytesPerParam = 0.5
+	blocksW4, err := latency.CalculateKVBlocks(mcW4, hc, 1, 16, params)
+	if err != nil {
+		t.Fatalf("W4A16 error: %v", err)
+	}
+
+	t.Logf("FP16=%d blocks, FP8=%d blocks, W4A16=%d blocks", blocksFP16, blocksFP8, blocksW4)
+
+	// Monotonicity: smaller weight precision → more blocks
+	if blocksFP8 <= blocksFP16 {
+		t.Errorf("FP8 should have more blocks than FP16: %d <= %d", blocksFP8, blocksFP16)
+	}
+	if blocksW4 <= blocksFP8 {
+		t.Errorf("W4A16 should have more blocks than FP8: %d <= %d", blocksW4, blocksFP8)
+	}
+}
+
+func TestCalculateKVBlocks_NonQuantized_UnchangedByWeightField(t *testing.T) {
+	// BC-8 regression anchor: WeightBytesPerParam=0 (sentinel) behaves identically
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	blocksBaseline, err := latency.CalculateKVBlocks(mc, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("baseline error: %v", err)
+	}
+
+	// Explicitly set WeightBytesPerParam=0 (sentinel)
+	mcExplicit := mc
+	mcExplicit.WeightBytesPerParam = 0
+	blocksExplicit, err := latency.CalculateKVBlocks(mcExplicit, hc, 2, 16, params)
+	if err != nil {
+		t.Fatalf("explicit sentinel error: %v", err)
+	}
+
+	if blocksBaseline != blocksExplicit {
+		t.Errorf("sentinel (WeightBytesPerParam=0) should match baseline: %d vs %d",
+			blocksBaseline, blocksExplicit)
 	}
 }

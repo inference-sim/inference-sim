@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
+	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // validHFRepoPattern matches valid HuggingFace repo paths (e.g., "meta-llama/Llama-3.1-8B-Instruct").
@@ -229,6 +232,43 @@ func isHFConfig(data []byte) bool {
 	_, hasLayers := m["num_hidden_layers"]
 	_, hasHidden := m["hidden_size"]
 	return hasLayers || hasHidden
+}
+
+// applyWeightPrecisionFallback applies model-name-based weight precision detection
+// when quantization_config parsing didn't yield a result, and logs diagnostic messages.
+// mc is modified in place. hfRaw is the parsed HFConfig.Raw map used for the
+// quantization_config presence check.
+func applyWeightPrecisionFallback(mc *sim.ModelConfig, model string, hfRaw map[string]any) {
+	// Model name fallback: if quantization_config parsing didn't yield weight
+	// precision, try to infer from naming conventions (e.g. w4a16, FP8).
+	if mc.WeightBytesPerParam == 0 {
+		mc.WeightBytesPerParam = latency.InferWeightBytesFromModelName(model)
+	}
+
+	// Log quantization info when weight precision differs from compute precision
+	if mc.WeightBytesPerParam > 0 && mc.WeightBytesPerParam != mc.BytesPerParam {
+		logrus.Infof("quantized model detected — weight precision: %.2f bytes/param, compute/KV precision: %.1f bytes/param",
+			mc.WeightBytesPerParam, mc.BytesPerParam)
+	} else if mc.WeightBytesPerParam == 0 {
+		// Warn if quantization_config detected but neither parser nor name yielded precision
+		if _, hasQC := hfRaw["quantization_config"]; hasQC {
+			logrus.Warnf("HuggingFace config has quantization_config but weight precision could not be determined")
+		} else if mc.BytesPerParam > 0 && mc.BytesPerParam <= 1 {
+			logrus.Warnf("model reports %.0f byte(s)/param (possible quantization); "+
+				"step time estimates may be inaccurate for quantized models",
+				mc.BytesPerParam)
+		}
+	}
+}
+
+// warnTrainedRooflineQuantization logs a warning when trained-roofline is used with
+// quantized weights, explaining that weight precision affects KV capacity but not step time.
+func warnTrainedRooflineQuantization(mc *sim.ModelConfig) {
+	if mc.WeightBytesPerParam > 0 {
+		logrus.Warnf("trained-roofline uses FP16 weight bandwidth (matching training data); "+
+			"quantized weight precision (%.2f bytes/param) affects KV capacity but not step time",
+			mc.WeightBytesPerParam)
+	}
 }
 
 // bundledModelConfigDir returns the expected path for bundled model configs.

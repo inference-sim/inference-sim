@@ -5,11 +5,16 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
+
+const bitsPerByte = 8.0
 
 // HFConfig represents a flexible JSON object with dynamic fields.
 type HFConfig struct {
@@ -125,6 +130,61 @@ func GetModelConfig(hfConfigPath string) (*sim.ModelConfig, error) {
 	return GetModelConfigFromHF(hf)
 }
 
+// parseQuantizationConfig extracts quantized weight precision from quantization_config.
+// Returns 0 if no quantization is detected or if parsing fails.
+// torch_dtype reports the compute/activation dtype (e.g. bfloat16=2 bytes), but
+// quantized models store weights at lower precision (e.g. W4A16=0.5 bytes/param).
+func parseQuantizationConfig(qc map[string]any) float64 {
+	quantMethod, _ := qc["quant_method"].(string)
+	bits := 0
+
+	// Try to extract bits from quantization_config.bits (float64 or string)
+	if bitsRaw, ok := qc["bits"].(float64); ok {
+		bits = int(bitsRaw)
+	} else if bitsStr, ok := qc["bits"].(string); ok {
+		if parsed, err := strconv.Atoi(bitsStr); err == nil {
+			bits = parsed
+		} else {
+			logrus.Debugf("quantization_config.bits: invalid string value %q (expected integer)", bitsStr)
+		}
+	}
+
+	if bits > 0 {
+		return float64(bits) / bitsPerByte
+	}
+
+	// FP8 quantization
+	if strings.EqualFold(quantMethod, "fp8") {
+		return 1.0
+	}
+
+	// compressed-tensors: extract from config_groups.*.weights.num_bits
+	if strings.EqualFold(quantMethod, "compressed-tensors") {
+		// Keys are sorted for deterministic iteration (INV-6).
+		// First-match semantics: the first valid num_bits found (in sorted key order) is used.
+		if cg, ok := qc["config_groups"].(map[string]any); ok {
+			keys := make([]string, 0, len(cg))
+			for k := range cg {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				if gm, ok := cg[k].(map[string]any); ok {
+					if w, ok := gm["weights"].(map[string]any); ok {
+						if nb, ok := w["num_bits"].(float64); ok && nb > 0 {
+							return nb / bitsPerByte
+						}
+					}
+				}
+			}
+		} else {
+			logrus.Debugf("compressed-tensors: config_groups structure does not match expected schema (expected map[string]any)")
+		}
+	}
+
+	return 0
+}
+
 // GetModelConfigFromHF extracts model parameters from a pre-parsed HFConfig.
 // Use this when you already have a parsed HFConfig to avoid re-reading the file.
 func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
@@ -215,21 +275,57 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// Roofline step time currently uses 2-matrix for all activations (see mlpMatrixCount).
 	hiddenAct := hf.MustGetString("hidden_act", "")
 
+	// Extract quantized weight precision from quantization_config (if present).
+	// WeightBytesPerParam=0 means "not quantized, use BytesPerParam".
+	var weightBytesPerParam float64
+	if qcRaw, ok := hf.Raw["quantization_config"]; ok {
+		if qc, ok := qcRaw.(map[string]any); ok {
+			weightBytesPerParam = parseQuantizationConfig(qc)
+		}
+	}
+
 	modelConfig := &sim.ModelConfig{
-		NumLayers:          getInt("num_hidden_layers"),
-		HiddenDim:          getInt("hidden_size"),
-		VocabSize:          getInt("vocab_size"),
-		IntermediateDim:    intermediateDim,
-		NumHeads:           numHeads,
-		NumKVHeads:         numKVHeads,
-		BytesPerParam:      float64(bytesPerParam),
-		NumLocalExperts:    numLocalExperts,
-		NumExpertsPerTok:   numExpertsPerTok,
-		MoEExpertFFNDim:    moeExpertFFNDim,
-		SharedExpertFFNDim: sharedExpertFFNDim,
-		HiddenAct:          hiddenAct,
+		NumLayers:           getInt("num_hidden_layers"),
+		HiddenDim:           getInt("hidden_size"),
+		VocabSize:           getInt("vocab_size"),
+		IntermediateDim:     intermediateDim,
+		NumHeads:            numHeads,
+		NumKVHeads:          numKVHeads,
+		BytesPerParam:       float64(bytesPerParam),
+		NumLocalExperts:     numLocalExperts,
+		NumExpertsPerTok:    numExpertsPerTok,
+		MoEExpertFFNDim:     moeExpertFFNDim,
+		SharedExpertFFNDim:  sharedExpertFFNDim,
+		HiddenAct:           hiddenAct,
+		WeightBytesPerParam: weightBytesPerParam,
 	}
 	return modelConfig, nil
+}
+
+// Compiled regexes for model name quantization detection.
+var (
+	// Matches wXaY patterns (e.g. w4a16, W8A8) — X is weight bits.
+	reWxAy = regexp.MustCompile(`(?i)(?:^|[\.\-_/])w(\d+)a\d+(?:$|[\.\-_])`)
+	// Matches fp8 keyword (e.g. FP8-dynamic, fp8).
+	reFP8Name = regexp.MustCompile(`(?i)(?:^|[\.\-_/])fp8(?:$|[\.\-_])`)
+)
+
+// InferWeightBytesFromModelName attempts to infer quantized weight precision
+// from naming conventions in HuggingFace model identifiers (e.g. "w4a16" → 0.5,
+// "FP8" → 1.0). Returns 0 if no quantization pattern is detected.
+// Used as a fallback when quantization_config parsing does not yield a result.
+func InferWeightBytesFromModelName(name string) float64 {
+	// Explicit wXaY pattern — weight bits are unambiguous.
+	if m := reWxAy.FindStringSubmatch(name); m != nil {
+		if bits, err := strconv.Atoi(m[1]); err == nil && bits > 0 {
+			return float64(bits) / bitsPerByte
+		}
+	}
+	// FP8 keyword — always 8-bit weights.
+	if reFP8Name.MatchString(name) {
+		return 1.0
+	}
+	return 0
 }
 
 // invalidPositiveFloat returns true if v is not a valid positive float64
@@ -302,6 +398,23 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 	if hc.MemoryGiB != 0 {
 		if math.IsNaN(hc.MemoryGiB) || math.IsInf(hc.MemoryGiB, 0) || hc.MemoryGiB < 0 {
 			problems = append(problems, fmt.Sprintf("HardwareCalib.MemoryGiB must be > 0 and finite when set, got %v", hc.MemoryGiB))
+		}
+	}
+
+	// WeightBytesPerParam is optional (0 = not set, fall back to BytesPerParam).
+	// When set, it must be a valid positive number. No upper-bound check is enforced:
+	// WeightBytesPerParam > BytesPerParam is unusual but not invalid (e.g., INT4 KV cache
+	// with FP32 weights). Callers should not assume weight precision <= compute precision.
+	if mc.WeightBytesPerParam != 0 {
+		if mc.WeightBytesPerParam < 0 || math.IsNaN(mc.WeightBytesPerParam) || math.IsInf(mc.WeightBytesPerParam, 0) {
+			problems = append(problems, fmt.Sprintf(
+				"ModelConfig.WeightBytesPerParam must be positive when set, got %v",
+				mc.WeightBytesPerParam))
+		}
+		// Warn if weight precision exceeds compute precision (unusual but valid)
+		if mc.WeightBytesPerParam > mc.BytesPerParam {
+			logrus.Warnf("WeightBytesPerParam (%.2f) > BytesPerParam (%.2f): weight precision exceeds compute precision (unusual but valid, e.g., FP32 weights with INT4 KV cache)",
+				mc.WeightBytesPerParam, mc.BytesPerParam)
 		}
 	}
 
