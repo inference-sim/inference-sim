@@ -1789,6 +1789,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#adding-new-quantization-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Quantization Formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#adding-new-per-request-metric-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2726,6 +2737,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#adding-new-quantization-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding New Quantization Formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#adding-new-per-request-metric-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2873,6 +2895,34 @@
 <p>Examples:
 - See <code>VLLMBatchFormation</code> in <code>sim/batch_formation.go</code> for the vLLM FCFS + chunked-prefill + preemption strategy
 - See <code>preemptForTokens</code> for the KV allocation + eviction loop pattern</p>
+<h2 id="adding-new-quantization-formats">Adding New Quantization Formats<a class="headerlink" href="#adding-new-quantization-formats" title="Permanent link">&para;</a></h2>
+<p>To add support for a new quantization format (e.g., GGUF, HQQ, Marlin):</p>
+<ol>
+<li><strong>Add <code>quantization_config</code> parsing</strong> in <code>sim/latency/config.go</code> inside <code>ParseHuggingFaceConfig()</code>. The three-tier detection order:</li>
+<li><strong>Tier 1 — <code>quantization_config</code></strong>: Add a new <code>else if</code> branch after the existing <code>compressed-tensors</code> case (~line 240). Extract the weight bit-width from the format's config structure and set <code>weightBytesPerParam = bits / 8.0</code>. Use case-insensitive matching for <code>quant_method</code> (<code>strings.EqualFold</code>).</li>
+<li><strong>Tier 2 — Model name conventions</strong>: If the format has recognizable naming patterns (like <code>w4a16</code> or <code>FP8</code>), add a regex to the compiled patterns (<code>reWxAy</code>, <code>reFP8Name</code>) or add a new pattern near line 283. Update <code>InferWeightBytesFromModelName()</code> accordingly.</li>
+<li>
+<p><strong>Tier 3 — <code>torch_dtype</code> fallback</strong>: No changes needed — this is automatic via <code>BytesPerParam</code>.</p>
+</li>
+<li>
+<p><strong>Add tests</strong> in <code>sim/latency/config_test.go</code>:</p>
+</li>
+<li>A <code>TestParseHuggingFaceConfig_YourFormat_*</code> test with a synthetic <code>config.json</code> containing the new <code>quantization_config</code> structure</li>
+<li>Verify <code>WeightBytesPerParam</code> is set correctly</li>
+<li>
+<p>If adding name-based detection, add cases to <code>TestInferWeightBytesFromModelName</code></p>
+</li>
+<li>
+<p><strong>No changes needed to roofline/KV capacity code</strong> — they already use <code>EffectiveWeightBytesPerParam()</code> which automatically picks up the new format's weight precision.</p>
+</li>
+<li>
+<p>Extension friction: <strong>1-2 touch points</strong> (config parsing + optional name regex)</p>
+</li>
+</ol>
+<p>Examples:
+- See the GPTQ/AWQ <code>bits</code> extraction (~line 229) for formats with a top-level <code>bits</code> field
+- See the <code>compressed-tensors</code> branch (~line 240) for formats with nested config structures
+- See <code>InferWeightBytesFromModelName()</code> for regex-based name pattern detection</p>
 <h2 id="adding-new-per-request-metric-fields">Adding New Per-Request Metric Fields<a class="headerlink" href="#adding-new-per-request-metric-fields" title="Permanent link">&para;</a></h2>
 <p>To add a new field to per-request JSON output (appears in <code>--results-path</code> output):</p>
 <ol>

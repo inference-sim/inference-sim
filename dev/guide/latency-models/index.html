@@ -3066,7 +3066,7 @@
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Current limitations</p>
-<p>All latency models currently assume single-GPU tensor parallelism (TP). Data parallelism (DP), expert parallelism (EP), and quantization effects (FP8, W4A16, W8A8) are not yet modeled in the analytical backends. These are under active development. For quantized deployments, blackbox mode with calibrated coefficients provides the most accurate results today.</p>
+<p>All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from <code>quantization_config</code>, model name conventions (e.g., <code>w4a16</code>, <code>FP8</code>), or <code>torch_dtype</code> fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.</p>
 </div>
 <h2 id="pluggable-architecture">Pluggable Architecture<a class="headerlink" href="#pluggable-architecture" title="Permanent link">&para;</a></h2>
 <p>The <code>LatencyModel</code> interface (defined in <code>sim/latency_model.go</code>) has four methods:</p>
