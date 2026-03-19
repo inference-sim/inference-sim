@@ -302,6 +302,7 @@ func (pm *PlacementManager) DrainNode(nodeID string, callback func()) error {
 
 // MarkNodeTerminated transitions a node from Draining → Terminated
 // and defensively frees any remaining GPU allocations.
+// Also invokes and clears any pending drain callback to prevent memory leaks.
 func (pm *PlacementManager) MarkNodeTerminated(nodeID string) error {
 	node, ok := pm.nodesByID[nodeID]
 	if !ok {
@@ -310,6 +311,13 @@ func (pm *PlacementManager) MarkNodeTerminated(nodeID string) error {
 	transitionNode(node, NodeStateTerminated)
 	for _, gpu := range node.GPUs {
 		gpu.AllocatedTo = ""
+	}
+	// Clear drain callback if present to prevent memory leak when node is
+	// terminated through a different path than normal drain completion.
+	if node.drainCallback != nil {
+		cb := node.drainCallback
+		node.drainCallback = nil
+		cb()
 	}
 	return nil
 }
@@ -343,10 +351,13 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 		nodeID, gpuIDs, err := pm.PlaceInstance(p.id, p.model, p.gpuType, p.tpDegree)
 		if err == nil {
 			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs})
-			// Remove from pending: swap with last and shrink (R21)
+			// Remove from pending: swap with last and shrink (R21).
+			// Swap-remove pattern: move last element to position i, then truncate.
+			// This is O(1) removal vs O(N) for shifting all elements left.
 			pm.pendingInsts[i] = pm.pendingInsts[len(pm.pendingInsts)-1]
 			pm.pendingInsts = pm.pendingInsts[:len(pm.pendingInsts)-1]
-			// Do NOT increment i — recheck the swapped-in element
+			// Do NOT increment i — the element now at position i (previously last)
+			// needs to be checked in the next iteration.
 		} else {
 			i++
 		}

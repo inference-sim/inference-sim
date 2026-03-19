@@ -8,18 +8,24 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Event priority constants for lifecycle events.
+// Lifecycle events process before request events (Arrival=0, Admission=1, Routing=2)
+// at the same timestamp to ensure infrastructure state updates complete first (I6).
+const (
+	priorityNodeLifecycle     = -2 // Node provisioning/draining events
+	priorityInstanceLifecycle = -1 // Instance loading/warm-up events
+)
+
 // ─── Node lifecycle events ──────────────────────────────────────────────────
 
 // NodeReadyEvent fires when a provisioning delay elapses and a node becomes Ready.
-// Priority -2: lifecycle events process before request events (Arrival=0, Admission=1, Routing=2)
-// at the same timestamp (I6).
 type NodeReadyEvent struct {
 	timestamp int64
 	nodeID    string
 }
 
 func (e *NodeReadyEvent) Timestamp() int64 { return e.timestamp }
-func (e *NodeReadyEvent) Priority() int    { return -2 }
+func (e *NodeReadyEvent) Priority() int    { return priorityNodeLifecycle }
 
 // Execute transitions the node Provisioning → Ready and retries any pending instances.
 func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
@@ -59,7 +65,7 @@ type NodeDrainedEvent struct {
 }
 
 func (e *NodeDrainedEvent) Timestamp() int64 { return e.timestamp }
-func (e *NodeDrainedEvent) Priority() int    { return -2 }
+func (e *NodeDrainedEvent) Priority() int    { return priorityNodeLifecycle }
 
 // Execute transitions the node Draining → Terminated and releases GPU inventory.
 func (e *NodeDrainedEvent) Execute(cs *ClusterSimulator) {
@@ -82,7 +88,7 @@ type InstanceLoadedEvent struct {
 }
 
 func (e *InstanceLoadedEvent) Timestamp() int64 { return e.timestamp }
-func (e *InstanceLoadedEvent) Priority() int    { return -1 }
+func (e *InstanceLoadedEvent) Priority() int    { return priorityInstanceLifecycle }
 
 // Execute transitions the instance Loading → WarmingUp (or Active if no warm-up configured).
 func (e *InstanceLoadedEvent) Execute(cs *ClusterSimulator) {
@@ -135,6 +141,10 @@ func (cs *ClusterSimulator) scheduleInstanceLoadedEvent(inst *InstanceSimulator)
 // ─── DrainPolicy interface and implementations ──────────────────────────────
 
 // DrainPolicy defines the behavior when an instance is drained. (R13: ≥2 implementations)
+//
+// Phase 1A Note: DrainPolicy implementations are infrastructure for Phase 1C (autoscaler).
+// They are tested in instance_lifecycle_test.go but not yet wired into the simulation event
+// loop. The autoscaler (Phase 1C) will call these policies when scaling down instances.
 //
 // Extension recipe — adding a new drain policy:
 //  1. Add a new DrainPolicyName constant in infra_config.go (e.g. DrainPolicyGraceful).
@@ -200,8 +210,9 @@ func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	// Routing exclusion handled by buildRouterState() via inst.IsRoutable().
 
 	// I3: If the instance is already idle (no queued or running requests), transition
-	// immediately to Terminated. Otherwise the drain completion check in the main event
-	// loop (QueueDepth==0 && BatchSize==0) handles the transition when work finishes.
+	// immediately to Terminated and release GPUs. Otherwise the drain completion check
+	// in the main event loop (cluster.go:264, T042 marker) handles the transition when
+	// work finishes. This ensures GPUs are always released (INV-4 conservation).
 	if cs != nil && inst.HasSim() && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 		inst.TransitionTo(InstanceStateTerminated)
 		cs.releaseInstanceGPUs(inst)

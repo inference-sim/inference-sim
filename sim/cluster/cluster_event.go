@@ -207,14 +207,13 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 			// Increment in-flight AFTER target validation — gives next routing decision
 			// visibility into this routing decision (#170)
 			cs.inFlightRequests[decision.TargetInstance]++
-			// T042: record warm-up requests for TTFT factor application (Phase 1A).
-			// I9: Cap recording to WarmUpRequestCount to avoid overcounting when
-			// multiple requests are routed before completions decrement warmUpRemaining.
-			warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
-			if inst.IsWarmingUp() && len(inst.WarmUpRequestIDs()) < warmUpCount {
-				inst.RecordWarmUpRequest(e.request.ID)
-			}
-			inst.InjectRequestOnline(e.request, e.time)
+					// T042: record warm-up requests for TTFT factor application (Phase 1A).
+					// I9: Check warmUpRemaining (not len(WarmUpRequestIDs)) to avoid overcounting
+					// when multiple requests are routed before completions decrement warmUpRemaining.
+					// This ensures only requests that will actually consume a warm-up slot are recorded.
+					if inst.IsWarmingUp() && inst.WarmUpRemaining() > 0 {
+						inst.RecordWarmUpRequest(e.request.ID)
+					}			inst.InjectRequestOnline(e.request, e.time)
 			return
 		}
 	}
