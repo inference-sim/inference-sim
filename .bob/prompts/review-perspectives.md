@@ -1,0 +1,537 @@
+# Review Perspective Prompts for Quick-Review Command
+
+This file contains all 43 perspective prompts used by the `/quick-review` Bob command. These prompts are organized by gate type and are executed sequentially during reviews.
+
+---
+
+## PR Plan Review Perspectives (10 perspectives)
+
+### PP-1: Substance & Design
+
+```
+Review this implementation plan for substance: Are the behavioral contracts logically sound? Are there mathematical errors, scale mismatches, or unit confusions? Could the design actually achieve what the contracts promise? Check formulas, thresholds, and edge cases from first principles — not just structural completeness.
+
+PLAN CONTENTS:
+<paste plan file>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PP-2: Cross-Document Consistency
+
+```
+Does this micro plan's scope match the source document? Are file paths consistent with the actual codebase? Does the deviation log account for all differences between what the source says and what the micro plan does? Check for stale references to completed PRs or removed files.
+
+PLAN CONTENTS:
+<paste plan file>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PP-3: Architecture Boundary Verification
+
+```
+Does this plan maintain architectural boundaries? Check:
+(1) Individual instances don't access cluster-level state
+(2) Types are in the right packages (sim/ vs sim/cluster/ vs cmd/)
+(3) No import cycles introduced
+(4) Does the plan introduce multiple construction sites for the same type?
+(5) Does adding one field to a new type require >3 files?
+(6) Does library code (sim/) call logrus.Fatalf anywhere in new code?
+(7) Dependency direction: cmd/ → sim/cluster/ → sim/ (never reversed)
+
+PLAN CONTENTS:
+<paste plan file>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PP-4: Codebase Readiness
+
+```
+We're about to implement this PR. Review the codebase for readiness. Check each file the plan will modify for:
+- Stale comments ("planned for PR N" where N is completed)
+- Pre-existing bugs that would complicate implementation
+- Missing dependencies
+- Unclear insertion points
+- TODO/FIXME items in the modification zone
+
+PLAN CONTENTS:
+<paste plan file>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PP-5: Structural Validation
+
+**Note:** This perspective should be performed directly by Bob, not delegated to a sub-agent.
+
+Perform these 4 checks:
+
+**Check 1 — Task Dependencies:**
+For each task, verify it can actually start given what comes before it. Trace the dependency chain: what files does each task create/modify? Does any task require a file or type that hasn't been created yet?
+
+**Check 2 — Template Completeness:**
+Verify all sections from the micro-plan template are present and non-empty: Header, Part 1 (A-E), Part 2 (F-I), Part 3 (J), Appendix.
+
+**Check 3 — Executive Summary Clarity:**
+Read the executive summary as if you're a new team member. Is the scope clear without reading the rest?
+
+**Check 4 — Under-specified Tasks:**
+For each task, verify it has complete code. Flag any step an executing agent would need to figure out on its own.
+
+### PP-6: DES Expert
+
+```
+Review this plan as a discrete-event simulation expert. Check for:
+- Event ordering bugs in the proposed design
+- Clock monotonicity violations (INV-3)
+- Stale signal propagation between event types (INV-7)
+- Heap priority errors (cluster uses (timestamp, priority, seqID))
+- Event-driven race conditions
+- Work-conserving property violations (INV-8)
+- Incorrect assumptions about DES event processing semantics
+
+PLAN CONTENTS:
+<paste plan file>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PP-7: vLLM/SGLang Expert
+
+```
+Review this plan as a vLLM/SGLang inference serving expert. Check for:
+- Batching semantics that don't match real continuous-batching servers
+- KV cache eviction policies that differ from vLLM's implementation
+- Chunked prefill behavior mismatches
+- Preemption policy differences from vLLM
+- Missing scheduling features that real servers have
+- Flag any assumption about LLM serving that this plan gets wrong
+
+PLAN CONTENTS:
+<paste plan file>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PP-8: Distributed Inference Platform Expert
+
+```
+Review this plan as a distributed inference platform expert (llm-d, KServe, vLLM multi-node). Check for:
+- Multi-instance coordination bugs
+- Routing load imbalance under high request rates
+- Stale snapshot propagation between instances
+- Admission control edge cases at scale
+- Horizontal scaling assumption violations
+- Prefix-affinity routing correctness across instances
+
+PLAN CONTENTS:
+<paste plan file>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PP-9: Performance & Scalability
+
+```
+Review this plan as a performance and scalability analyst. Check for:
+- Algorithmic complexity issues (O(n^2) where O(n) suffices)
+- Unnecessary allocations in hot paths (event loop, batch formation)
+- Map iteration in O(n) loops that could grow
+- Benchmark-sensitive changes
+- Memory growth patterns
+- Changes that would degrade performance at 1000+ requests or 10+ instances
+
+PLAN CONTENTS:
+<paste plan file>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PP-10: Security & Robustness
+
+```
+Review this plan as a security and robustness reviewer. Check for:
+- Input validation completeness (all CLI flags, YAML fields, config values)
+- Panic paths reachable from user input (R3, R6)
+- Resource exhaustion vectors (unbounded loops, unlimited memory growth) (R19)
+- Degenerate input handling (empty, zero, negative, NaN, Inf) (R3, R20)
+- Configuration injection risks
+- Silent data loss paths (R1)
+
+PLAN CONTENTS:
+<paste plan file>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+---
+
+## PR Code Review Perspectives (10 perspectives)
+
+### PC-1: Substance & Design
+
+```
+Review this diff for substance: Are there logic bugs, design mismatches between contracts and implementation, mathematical errors, or silent regressions? Check from first principles — not just structural patterns. Does the implementation actually achieve what the behavioral contracts promise?
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PC-2: Code Quality + Antipattern Check
+
+```
+Review this diff for code quality. Check all of these:
+(1) Any new error paths that use `continue` or early `return` — do they clean up partial state? (R1, R5)
+(2) Any map iteration that accumulates floats — are keys sorted? (R2)
+(3) Any struct field added — are all construction sites updated? (R4)
+(4) Does library code (sim/) call logrus.Fatalf anywhere in new code? (R6)
+(5) Any exported mutable maps — should they be unexported with IsValid*() accessors? (R8)
+(6) Any YAML config fields using float64 instead of *float64 where zero is valid? (R9)
+(7) Any division where the denominator derives from runtime state without a zero guard? (R11)
+(8) Any new interface with methods only meaningful for one implementation? (R13)
+(9) Any method >50 lines spanning multiple concerns (scheduling + latency + metrics)? (R14)
+(10) Any changes to docs/contributing/standards/ files — are CLAUDE.md working copies updated? (DRY)
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PC-3: Test Behavioral Quality
+
+```
+Review the tests in this diff. For each test, rate as Behavioral, Mixed, or Structural:
+- Behavioral: tests observable behavior (GIVEN/WHEN/THEN), survives refactoring
+- Mixed: some behavioral assertions, some structural coupling
+- Structural: asserts internal structure (field access, type assertions), breaks on refactor
+
+Also check:
+- Are there golden dataset tests that lack companion invariant tests? (R7)
+- Do tests verify laws (conservation, monotonicity, causality) not just values?
+- Would each test still pass if the implementation were completely rewritten?
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PC-4: Getting-Started Experience
+
+```
+Review this diff for user and contributor experience. Simulate both journeys:
+(1) A user doing capacity planning with the CLI — would they find everything they need?
+(2) A contributor adding a new algorithm — would they know how to extend this?
+
+Check:
+- Missing example files or CLI documentation
+- Undocumented output metrics
+- Incomplete contributor guide updates
+- Unclear extension points
+- README not updated for new features
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PC-5: Automated Reviewer Simulation
+
+```
+The upstream community uses GitHub Copilot, Claude, and Codex to review PRs. Do a rigorous check so this will pass their review. Look for:
+- Exported mutable globals
+- User-controlled panic paths
+- YAML typo acceptance (should use KnownFields(true))
+- NaN/Inf validation gaps
+- Redundant or dead code
+- Style inconsistencies
+- Missing error returns
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PC-6: DES Expert
+
+```
+Review this diff as a discrete-event simulation expert. Check for:
+- Event ordering bugs in the implementation
+- Clock monotonicity violations (INV-3)
+- Stale signal propagation between event types (INV-7)
+- Heap priority errors
+- Work-conserving property violations (INV-8)
+- Event-driven race conditions
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PC-7: vLLM/SGLang Expert
+
+```
+Review this diff as a vLLM/SGLang inference serving expert. Check for:
+- Batching semantics that don't match real continuous-batching servers
+- KV cache eviction mismatches with vLLM
+- Chunked prefill behavior errors
+- Preemption policy differences
+- Missing scheduling features
+- Flag any assumption about LLM serving that this code gets wrong
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PC-8: Distributed Inference Platform Expert
+
+```
+Review this diff as a distributed inference platform expert (llm-d, KServe, vLLM multi-node). Check for:
+- Multi-instance coordination bugs
+- Routing load imbalance
+- Stale snapshot propagation
+- Admission control edge cases
+- Horizontal scaling assumption violations
+- Prefix-affinity routing correctness
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PC-9: Performance & Scalability
+
+```
+Review this diff as a performance and scalability analyst. Check for:
+- Algorithmic complexity regressions (O(n^2) where O(n) suffices)
+- Unnecessary allocations in hot paths
+- Map iteration in O(n) loops
+- Benchmark-sensitive changes
+- Memory growth patterns
+- Changes degrading performance at 1000+ requests or 10+ instances
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PC-10: Security & Robustness
+
+```
+Review this diff as a security and robustness reviewer. Check for:
+- Input validation completeness (CLI flags, YAML fields, config values)
+- Panic paths reachable from user input
+- Resource exhaustion vectors (unbounded loops, unlimited memory growth)
+- Degenerate input handling (empty, zero, NaN, Inf)
+- Configuration injection risks
+- Silent data loss in error paths
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+---
+
+## Design Review Perspectives (8 perspectives)
+
+### DD-1 through DD-8
+
+**Note:** Design review perspectives follow the same pattern as PR plan perspectives but focus on design documents. They check for design soundness, cross-document consistency, architecture boundaries, codebase readiness, and domain expert perspectives (DES, vLLM, distributed platform, performance).
+
+---
+
+## Macro Plan Review Perspectives (8 perspectives)
+
+### MP-1 through MP-8
+
+**Note:** Macro plan perspectives follow the same pattern as design perspectives but focus on high-level planning documents.
+
+---
+
+## Hypothesis Design Review Perspectives (5 perspectives)
+
+### DR-1 through DR-5
+
+**Note:** Hypothesis design perspectives focus on experimental design quality: hypothesis clarity, experimental design, measurement strategy, validity threats, and reproducibility.
+
+---
+
+## Hypothesis Code Review Perspectives (5 perspectives)
+
+### CR-1 through CR-5
+
+**Note:** Hypothesis code perspectives focus on experiment implementation: script correctness, data collection, analysis quality, reproducibility, and documentation.
+
+---
+
+## Hypothesis Findings Review Perspectives (10 perspectives)
+
+### FR-1 through FR-10
+
+**Note:** Hypothesis findings perspectives focus on research quality: claim-evidence alignment, statistical rigor, visualization quality, alternative explanations, generalizability, reproducibility, documentation, cross-references, actionability, and presentation.
