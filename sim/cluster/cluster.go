@@ -97,6 +97,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}
 
+	// Initialize warmUpRemaining and state for all instances (Phase 1A).
+	// Must happen before placement logic to ensure backward-compat mode (no NodePools) also gets warm-up.
+	for _, inst := range cs.instances {
+		inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
+		if inst.warmUpRemaining > 0 {
+			inst.TransitionTo(InstanceStateWarmingUp)
+		} else {
+			inst.TransitionTo(InstanceStateActive)
+		}
+	}
+
 	// Phase 1A: initialize PlacementManager when node pools are configured.
 	// When NodePools is empty, placement is a no-op (backward-compat).
 	if len(config.NodePools) > 0 {
