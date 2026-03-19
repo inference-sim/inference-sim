@@ -50,7 +50,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 1. Parse arguments (`$1` for gate-type, `$2` for artifact-path)
 2. Normalize gate type (aliases + fuzzy matching)
 3. Load artifact (with default search if path not provided)
-4. Read perspective prompts from `.claude/skills/convergence-review/*.md` files
+4. Read perspective prompts from `.bob/prompts/review-perspectives.md`
 5. Execute each perspective sequentially
 6. Extract and accumulate findings
 7. Report via `submit_review_findings`
@@ -76,7 +76,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### PR Plan Review (10 perspectives)
 
-**Source:** `.claude/skills/convergence-review/pr-prompts.md` Section A
+**Source:** `.bob/prompts/review-perspectives.md` (Section: PR Plan Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -93,7 +93,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### PR Code Review (10 perspectives)
 
-**Source:** `.claude/skills/convergence-review/pr-prompts.md` Section B
+**Source:** `.bob/prompts/review-perspectives.md` (Section: PR Code Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -110,7 +110,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### Design Review (8 perspectives)
 
-**Source:** `.claude/skills/convergence-review/design-prompts.md` Section A
+**Source:** `.bob/prompts/review-perspectives.md` (Section: Design Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -125,7 +125,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### Macro Plan Review (8 perspectives)
 
-**Source:** `.claude/skills/convergence-review/design-prompts.md` Section B
+**Source:** `.bob/prompts/review-perspectives.md` (Section: Macro Plan Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -140,7 +140,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### Hypothesis Design Review (5 perspectives)
 
-**Source:** `.claude/skills/hypothesis-experiment/review-prompts.md` Section A
+**Source:** `.bob/prompts/review-perspectives.md` (Section: Hypothesis Design Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -152,7 +152,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### Hypothesis Code Review (5 perspectives)
 
-**Source:** `.claude/skills/hypothesis-experiment/review-prompts.md` Section B
+**Source:** `.bob/prompts/review-perspectives.md` (Section: Hypothesis Code Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -292,7 +292,7 @@ function read_perspective_prompts(gate):
     }
     
     file, section = source_map[gate]
-    content = read_file(".claude/skills/convergence-review/" + file)
+    content = read_file(".bob/prompts/review-perspectives.md")
     
     # Extract prompts from markdown code blocks
     prompts = []
@@ -502,7 +502,7 @@ def extract_prompts(file_content):
 
 To add a new perspective to an existing gate:
 
-1. Add the perspective prompt to the appropriate source file (`.claude/skills/convergence-review/*.md`)
+1. Add the perspective prompt to `.bob/prompts/review-perspectives.md` in the appropriate section
 2. Update the perspective count in this document
 3. No changes needed to the Bob command file (it reads prompts dynamically)
 
@@ -527,5 +527,5 @@ To add a new gate type:
 
 - [PR Workflow](../contributing/pr-workflow.md) - Full PR development process
 - [Convergence Protocol](../contributing/convergence.md) - Convergence rules and invariants
-- [Convergence Review Skill](../../.claude/skills/convergence-review/SKILL.md) - Source of perspective prompts
+- Convergence Review Skill - Original source of perspective prompts (now self-contained in `.bob/prompts/review-perspectives.md`)
 - [Bob Command Documentation](https://internal.bob.ibm.com/docs/ide/basic-usage/slash-commands) - Bob's command system

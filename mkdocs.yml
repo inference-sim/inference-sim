@@ -8,6 +8,7 @@ repo_name: inference-sim/inference-sim
 # applies. Only plans/ needs explicit exclusion (internal implementation plans).
 exclude_docs: |
   plans/
+  bob-commands/
 
 theme:
   name: material
