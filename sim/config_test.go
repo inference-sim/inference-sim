@@ -192,3 +192,140 @@ func TestNewBatchConfig_PanicsOnInvalid(t *testing.T) {
 		})
 	}
 }
+
+func TestHardwareCalib_MFUValidation(t *testing.T) {
+	// BC-15: MFU values must be in valid ranges for capacity planning
+	tests := []struct {
+		name         string
+		hw           HardwareCalib
+		wantValid    bool
+		wantContains string
+	}{
+		{
+			name: "valid_h100_mfu",
+			hw: HardwareCalib{
+				TFlopsPeak: 989.5,
+				TFlopsFP8:  1979.0,
+				BwPeakTBs:  3.35,
+				MfuPrefill: 0.45,
+				MfuDecode:  0.30,
+				MemoryGiB:  80.0,
+			},
+			wantValid: true,
+		},
+		{
+			name: "valid_a100_mfu",
+			hw: HardwareCalib{
+				TFlopsPeak: 312,
+				BwPeakTBs:  2.039,
+				MfuPrefill: 0.38,
+				MfuDecode:  0.18,
+				MemoryGiB:  80.0,
+			},
+			wantValid: true,
+		},
+		{
+			name: "valid_l40s_mfu",
+			hw: HardwareCalib{
+				TFlopsPeak: 362.05,
+				BwPeakTBs:  0.864,
+				MfuPrefill: 0.32,
+				MfuDecode:  0.08,
+				MemoryGiB:  48.0,
+			},
+			wantValid: true,
+		},
+		{
+			name: "mfu_prefill_exceeds_one",
+			hw: HardwareCalib{
+				TFlopsPeak: 989.5,
+				BwPeakTBs:  3.35,
+				MfuPrefill: 1.1,
+				MfuDecode:  0.30,
+				MemoryGiB:  80.0,
+			},
+			wantValid:    false,
+			wantContains: "MfuPrefill",
+		},
+		{
+			name: "mfu_decode_exceeds_one",
+			hw: HardwareCalib{
+				TFlopsPeak: 989.5,
+				BwPeakTBs:  3.35,
+				MfuPrefill: 0.45,
+				MfuDecode:  1.5,
+				MemoryGiB:  80.0,
+			},
+			wantValid:    false,
+			wantContains: "MfuDecode",
+		},
+		{
+			name: "mfu_prefill_negative",
+			hw: HardwareCalib{
+				TFlopsPeak: 989.5,
+				BwPeakTBs:  3.35,
+				MfuPrefill: -0.1,
+				MfuDecode:  0.30,
+				MemoryGiB:  80.0,
+			},
+			wantValid:    false,
+			wantContains: "MfuPrefill",
+		},
+		{
+			name: "mfu_decode_negative",
+			hw: HardwareCalib{
+				TFlopsPeak: 989.5,
+				BwPeakTBs:  3.35,
+				MfuPrefill: 0.45,
+				MfuDecode:  -0.1,
+				MemoryGiB:  80.0,
+			},
+			wantValid:    false,
+			wantContains: "MfuDecode",
+		},
+		{
+			name: "mfu_decode_exceeds_prefill",
+			hw: HardwareCalib{
+				TFlopsPeak: 989.5,
+				BwPeakTBs:  3.35,
+				MfuPrefill: 0.30,
+				MfuDecode:  0.45,
+				MemoryGiB:  80.0,
+			},
+			wantValid:    false,
+			wantContains: "MfuDecode",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateHardwareCalib(tc.hw)
+			if tc.wantValid {
+				if err != nil {
+					t.Errorf("expected valid, got error: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tc.wantContains)
+				} else if !strings.Contains(err.Error(), tc.wantContains) {
+					t.Errorf("error %q should contain %q", err.Error(), tc.wantContains)
+				}
+			}
+		})
+	}
+}
+
+// validateHardwareCalib checks MFU value constraints for capacity planning.
+// Returns error if values are outside physically plausible bounds.
+func validateHardwareCalib(hw HardwareCalib) error {
+	if hw.MfuPrefill < 0 || hw.MfuPrefill > 1 {
+		return fmt.Errorf("MfuPrefill must be in [0,1], got %v", hw.MfuPrefill)
+	}
+	if hw.MfuDecode < 0 || hw.MfuDecode > 1 {
+		return fmt.Errorf("MfuDecode must be in [0,1], got %v", hw.MfuDecode)
+	}
+	if hw.MfuDecode > hw.MfuPrefill {
+		return fmt.Errorf("MfuDecode (%v) should not exceed MfuPrefill (%v) - decode is typically more memory-bound", hw.MfuDecode, hw.MfuPrefill)
+	}
+	return nil
+}
