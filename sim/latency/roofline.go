@@ -147,8 +147,20 @@ func calculateMemoryAccessBytes(
 	}
 	mlpWeightsPerLayer := nMat * dModel * dExpert
 	if config.NumLocalExperts > 1 {
-		// MoE: all E expert weights loaded from HBM per step
-		mlpWeightsPerLayer *= float64(config.NumLocalExperts)
+		// MoE: only activated experts loaded from HBM per step.
+		// Expected unique experts with uniform random top-k routing.
+		// Models probabilistic uniqueness: small batches have overlap,
+		// large batches approach N. Conservative assumption (uniform routing)
+		// overestimates when tokens are similar (same experts reused).
+		// See issue #789 for future non-uniform routing research.
+		N := float64(config.NumLocalExperts)
+		k := float64(config.NumExpertsPerTok)
+		B := float64(newTokens)
+
+		probNotSelected := (N - k) / N
+		nEff := N * (1.0 - math.Pow(probNotSelected, B))
+
+		mlpWeightsPerLayer *= nEff
 	}
 
 	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer
