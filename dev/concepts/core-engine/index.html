@@ -3343,7 +3343,7 @@
 <h1 id="core-engine">Core Engine<a class="headerlink" href="#core-engine" title="Permanent link">&para;</a></h1>
 <p>This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see <a href="../architecture/">Cluster Architecture</a>.</p>
 <blockquote>
-<p><strong>Canonical sources:</strong> System invariants (INV-1 through INV-9) are defined in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a>. If invariant descriptions here diverge, <code>invariants.md</code> is authoritative.</p>
+<p><strong>Canonical sources:</strong> System invariants (INV-1 through INV-11) are defined in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a>. If invariant descriptions here diverge, <code>invariants.md</code> is authoritative.</p>
 </blockquote>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>Each BLIS instance is a self-contained discrete event simulator. The engine maintains an event queue (min-heap), processes events in timestamp order, and advances a simulation clock. The core loop is:</p>
