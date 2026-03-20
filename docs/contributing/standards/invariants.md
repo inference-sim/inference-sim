@@ -145,3 +145,39 @@ Invariants are properties that must hold at all times during and after simulatio
 **Evidence:** Design doc INV-11 definition. The `SessionManager.OnComplete` method transitions sessions to exactly one terminal state before returning nil.
 
 **Hypothesis family:** Structural model — session lifecycle completeness.
+
+---
+
+## PD Disaggregation Invariants
+
+### INV-PD-1: KV Completeness
+
+**Statement:** For every disaggregated request, `decode_enqueue_time >= kv_transfer_completion_time`. A decode sub-request must not be enqueued before its KV transfer completes.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_RequestCompletesFullPath` checks DecodeEnqueueTime >= TransferCompleteTime for every parent request. Runtime defensive check in `DecodeRoutingEvent.Execute()`.
+
+**Evidence:** By event priority ordering: KVTransferCompletedEvent (priority 6) schedules DecodeRoutingEvent (priority 7) at the same timestamp. DecodeEnqueueTime is set in DecodeRoutingEvent which fires after transfer completion.
+
+### INV-PD-2: Pool Exclusivity
+
+**Statement:** Prefill sub-requests route only to prefill pool instances; decode sub-requests route only to decode pool instances.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PrefillRoutedToPrefillPool` and `TestDisaggregation_DecodeRoutedToDecodePool` verify pool role for every parent request's prefill and decode instance assignments.
+
+**Evidence:** `buildPoolFilteredSnapshots(role)` filters routing snapshots to only include instances of the specified pool role before passing to the routing policy.
+
+### INV-PD-3: Transfer Conservation
+
+**Statement:** `initiated_transfers == completed_transfers` at simulation end.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_TransferConservation` asserts equality and expected count.
+
+**Evidence:** `transfersInitiated` incremented in `KVTransferStartedEvent.Execute()`, `transfersCompleted` incremented in `KVTransferCompletedEvent.Execute()`. Every started event schedules exactly one completed event.
+
+### INV-PD-4: Phase Causality
+
+**Statement:** For every disaggregated request: `arrival <= prefill_enqueue <= prefill_complete <= transfer_start <= transfer_complete <= decode_enqueue <= completion`.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PhaseCausality` checks the full causal chain for every parent request.
+
+**Evidence:** Each phase transition is enforced by DES event ordering: earlier phases schedule later-phase events at `time >= current_time`.

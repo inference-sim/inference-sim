@@ -138,6 +138,25 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	for len(result.RunningBatch.Requests) < int(ctx.MaxRunningReqs) && ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
 		next := ctx.WaitQ.Peek()
 
+		// Handle decode-only requests (PD disaggregation: KV pre-allocated by transfer).
+		// When ProgressIndex >= inputLen, the request skips prefill and starts in decode phase.
+		inputLen := util.Len64(next.InputTokens)
+		if next.ProgressIndex >= inputLen && len(next.OutputTokens) > 0 {
+			decodeTokens := int64(1)
+			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {
+				break
+			}
+			ctx.WaitQ.DequeueBatch()
+			result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
+			next.ScheduledStepIdx = ctx.StepCount
+			result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{Request: next})
+			tokenBudget -= decodeTokens
+			next.State = StateRunning
+			next.NumNewTokens = 1
+			ctx.ComputedTokens[next.ID] = next.ProgressIndex + decodeTokens
+			continue
+		}
+
 		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.InputTokens)
 		numNewTokens := util.Len64(next.InputTokens) - util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
 
