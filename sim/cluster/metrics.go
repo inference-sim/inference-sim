@@ -118,16 +118,13 @@ type RawMetrics struct {
 // when "constant" or "" (both map to ConstantPriority), inversions are
 // suppressed (always 0) since all requests share the same priority and
 // E2E differences reflect workload variance, not unfairness.
-func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, priorityPolicy string, routingRejections ...int) *RawMetrics {
+func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, priorityPolicy string, routingRejections int) *RawMetrics {
 	raw := &RawMetrics{
 		RejectedRequests:     rejectedRequests,
+		RoutingRejections:    routingRejections,
 		DroppedUnservable:    aggregated.DroppedUnservable,
 		LengthCappedRequests: aggregated.LengthCappedRequests,
 		TimedOutRequests:     aggregated.TimedOutRequests,
-	}
-	// I13: Optional routing rejections parameter for backward compatibility.
-	if len(routingRejections) > 0 {
-		raw.RoutingRejections = routingRejections[0]
 	}
 
 	// Latency distributions
