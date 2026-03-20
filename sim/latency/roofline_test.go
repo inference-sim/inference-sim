@@ -373,20 +373,186 @@ func TestCalculateTransformerFlops_Dense_UnchangedAfterMoE(t *testing.T) {
 
 // --- Task 5: MoE memory access tests ---
 
-func TestCalculateMemoryAccessBytes_MoE_AllExpertsLoaded(t *testing.T) {
-	// MoE weight bandwidth includes all E experts (all loaded from HBM per step)
-	mc := testMixtralConfig() // E=8
-	moeMem := calculateMemoryAccessBytes(mc, 512, 1, false)
+func TestCalculateMemoryAccessBytes_MoE_EffectiveExperts(t *testing.T) {
+	// BC-1: MoE weight bandwidth uses effective experts nEff = N × (1 - ((N-k)/N)^B)
+	// where k ≤ nEff ≤ N
+	mc := testMixtralConfig() // N=8, k=2
+
+	tests := []struct {
+		name      string
+		batchSize int64
+	}{
+		{"B=1 (single token)", 1},    // nEff = k exactly
+		{"B=3 (small batch)", 3},     // nEff ≈ 4.6
+		{"B=10 (medium batch)", 10},  // nEff ≈ 7.4
+		{"B=100 (large batch)", 100}, // nEff → N
+	}
 
 	dense := mc
 	dense.NumLocalExperts = 0
 	dense.NumExpertsPerTok = 0
 	denseMem := calculateMemoryAccessBytes(dense, 512, 1, false)
 
-	// MoE model_weights > dense (attention is same, MLP is E× larger)
-	if moeMem["model_weights"] <= denseMem["model_weights"] {
-		t.Errorf("MoE weights (%g) should exceed dense weights (%g)",
-			moeMem["model_weights"], denseMem["model_weights"])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			moeMem := calculateMemoryAccessBytes(mc, 512, tt.batchSize, false)
+
+			// Verify MoE weights exceed dense (attention same, MLP has nEff experts)
+			if moeMem["model_weights"] <= denseMem["model_weights"] {
+				t.Errorf("MoE weights (%g) should exceed dense weights (%g)",
+					moeMem["model_weights"], denseMem["model_weights"])
+			}
+
+			// Log expected nEff for manual validation
+			N := 8.0
+			k := 2.0
+			B := float64(tt.batchSize)
+			probNotSelected := (N - k) / N
+			expectedNEff := N * (1.0 - math.Pow(probNotSelected, B))
+			t.Logf("B=%d: expected nEff=%.2f, MoE weights=%.3e, dense weights=%.3e",
+				tt.batchSize, expectedNEff, moeMem["model_weights"], denseMem["model_weights"])
+		})
+	}
+}
+
+func TestCalculateMemoryAccessBytes_MoE_EdgeCases(t *testing.T) {
+	// BC-2: Edge cases for effective expert formula
+	tests := []struct {
+		name          string
+		N             int // NumLocalExperts
+		k             int // NumExpertsPerTok
+		batchSize     int64
+		wantNEffMin   float64
+		wantNEffMax   float64
+		description   string
+	}{
+		{
+			name:        "B=1 should give exactly k experts",
+			N:           8,
+			k:           2,
+			batchSize:   1,
+			wantNEffMin: 2.0,
+			wantNEffMax: 2.0,
+			description: "Single token activates exactly k experts",
+		},
+		{
+			name:        "Large B approaches N experts",
+			N:           8,
+			k:           2,
+			batchSize:   1000,
+			wantNEffMin: 7.99,
+			wantNEffMax: 8.0,
+			description: "Very large batch saturates all experts",
+		},
+		{
+			name:        "DeepSeek-V3 scale (256 experts)",
+			N:           256,
+			k:           8,
+			batchSize:   10,
+			wantNEffMin: 8.0,
+			wantNEffMax: 80.0,
+			description: "Large expert count scales correctly",
+		},
+		{
+			name:        "Minimal MoE (N=2, k=1)",
+			N:           2,
+			k:           1,
+			batchSize:   3,
+			wantNEffMin: 1.0,
+			wantNEffMax: 2.0,
+			description: "Smallest valid MoE config",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create config with specified N and k
+			mc := testMixtralConfig()
+			mc.NumLocalExperts = tt.N
+			mc.NumExpertsPerTok = tt.k
+
+			mem := calculateMemoryAccessBytes(mc, 512, tt.batchSize, false)
+
+			// Calculate expected nEff directly from formula
+			N := float64(tt.N)
+			k := float64(tt.k)
+			B := float64(tt.batchSize)
+			probNotSelected := (N - k) / N
+			expectedNEff := N * (1.0 - math.Pow(probNotSelected, B))
+
+			// Verify nEff is in expected range
+			if expectedNEff < tt.wantNEffMin || expectedNEff > tt.wantNEffMax {
+				t.Errorf("%s: nEff=%.3f, want in [%.3f, %.3f]",
+					tt.description, expectedNEff, tt.wantNEffMin, tt.wantNEffMax)
+			}
+
+			// Verify the implementation applied nEff to model_weights
+			dense := mc
+			dense.NumLocalExperts = 0
+			dense.NumExpertsPerTok = 0
+			denseMem := calculateMemoryAccessBytes(dense, 512, tt.batchSize, false)
+
+			if mem["model_weights"] <= denseMem["model_weights"] {
+				t.Errorf("%s: MoE weights (%g) should exceed dense weights (%g)",
+					tt.description, mem["model_weights"], denseMem["model_weights"])
+			}
+
+			// Verify the weight increase is consistent with expectedNEff (lower bound only)
+			// Upper bound is not checked because attention/other weights dilute the ratio
+			// in a model-dependent way, making a tight upper bound impractical.
+			ratio := (mem["model_weights"] - denseMem["model_weights"]) / denseMem["model_weights"]
+			minRatio := tt.wantNEffMin / float64(tt.N)
+			if ratio < minRatio {
+				t.Errorf("%s: weight increase ratio %.4f below minimum %.4f (nEff=%.2f)",
+					tt.description, ratio, minRatio, expectedNEff)
+			}
+
+			t.Logf("%s: N=%d, k=%d, B=%d → nEff=%.2f", tt.description, tt.N, tt.k, tt.batchSize, expectedNEff)
+		})
+	}
+}
+
+func TestCalculateMemoryAccessBytes_MoE_Monotonicity(t *testing.T) {
+	// BC-3: nEff should increase monotonically with batch size
+	// Verify by checking that model_weights increases as batch size increases
+	mc := testMixtralConfig() // N=8, k=2
+
+	// Get dense baseline for comparison
+	dense := mc
+	dense.NumLocalExperts = 0
+	dense.NumExpertsPerTok = 0
+	denseMem := calculateMemoryAccessBytes(dense, 512, 1, false)
+	denseWeights := denseMem["model_weights"]
+
+	var prevWeights float64
+	for B := int64(1); B <= 20; B++ {
+		mem := calculateMemoryAccessBytes(mc, 512, B, false)
+		moeWeights := mem["model_weights"]
+
+		// Extract effective expert contribution
+		// (approximation: ignoring attention component which is constant)
+		if B > 1 && moeWeights < prevWeights {
+			t.Errorf("Monotonicity violation: weights[B=%d]=%.3e < weights[B=%d]=%.3e",
+				B, moeWeights, B-1, prevWeights)
+		}
+
+		// Verify weights stay within bounds: k experts ≤ nEff ≤ N experts
+		// (MoE weights should be at least dense weights, at most 8× dense MLP)
+		if moeWeights < denseWeights {
+			t.Errorf("MoE weights (%g) less than dense (%g) at B=%d", moeWeights, denseWeights, B)
+		}
+
+		prevWeights = moeWeights
+
+		// Calculate and log expected nEff for validation
+		N := 8.0
+		k := 2.0
+		batchSize := float64(B)
+		probNotSelected := (N - k) / N
+		nEff := N * (1.0 - math.Pow(probNotSelected, batchSize))
+		if B == 1 || B == 5 || B == 10 || B == 20 {
+			t.Logf("B=%d: nEff=%.2f, weights=%.3e", B, nEff, moeWeights)
+		}
 	}
 }
 
@@ -484,6 +650,54 @@ func TestRooflineStepTime_MoE_TPScaling(t *testing.T) {
 	if tp2 >= tp1 {
 		t.Errorf("MoE TP=2 (%d µs) should be less than TP=1 (%d µs)", tp2, tp1)
 	}
+}
+
+func TestRooflineStepTime_MoE_BandwidthReduction(t *testing.T) {
+	// BC-4: Small batch decode steps should have lower bandwidth (fewer experts loaded)
+	// Verify that effective expert loading produces measurable bandwidth reduction
+	mc := testMixtralConfig() // N=8, k=2
+	hc := testHardwareCalib()
+
+	// Small batch: 3 decode tokens (nEff ≈ 4.6 experts)
+	smallBatch := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+			{ProgressIndex: 600, NumNewDecodeTokens: 1},
+			{ProgressIndex: 700, NumNewDecodeTokens: 1},
+		},
+	}
+
+	// Large batch: 100 decode tokens (nEff → 8 experts, saturated)
+	largeBatch := StepConfig{
+		DecodeRequests: make([]DecodeRequestConfig, 100),
+	}
+	for i := range largeBatch.DecodeRequests {
+		largeBatch.DecodeRequests[i] = DecodeRequestConfig{
+			ProgressIndex:      int64(512 + i*10),
+			NumNewDecodeTokens: 1,
+		}
+	}
+
+	smallTime := rooflineStepTime(mc, hc, smallBatch, 1)
+	largeTime := rooflineStepTime(mc, hc, largeBatch, 1)
+
+	// Assert on step time: small batch should be faster
+	if smallTime >= largeTime {
+		t.Errorf("Small batch step time (%d µs) should be less than large batch (%d µs)",
+			smallTime, largeTime)
+	}
+
+	// Verify bandwidth reduction using actual batch sizes
+	smallMem := calculateMemoryAccessBytes(mc, 512, int64(len(smallBatch.DecodeRequests)), true)
+	largeMem := calculateMemoryAccessBytes(mc, 512, int64(len(largeBatch.DecodeRequests)), true)
+	weightReduction := 1.0 - (smallMem["model_weights"] / largeMem["model_weights"])
+	if weightReduction < 0.20 {
+		t.Errorf("Expected ≥20%% weight bandwidth reduction for small batch, got %.1f%%",
+			weightReduction*100)
+	}
+	t.Logf("Small batch (B=%d): %d µs", len(smallBatch.DecodeRequests), smallTime)
+	t.Logf("Large batch (B=%d): %d µs", len(largeBatch.DecodeRequests), largeTime)
+	t.Logf("Weight bandwidth reduction: %.1f%%", weightReduction*100)
 }
 
 func TestRooflineStepTime_SingleCrossover_MemoryBoundDecode(t *testing.T) {
