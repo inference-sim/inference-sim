@@ -211,8 +211,8 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	tpFactor := float64(tp)
 
 	// Select compute throughput based on weight precision and hardware capability.
-	// For FP8 weights (1 byte/param) on GPUs with native FP8 tensor cores (TFlopsFP8 > 0),
-	// use the higher FP8 compute rate. Otherwise, use FP16 rate.
+	// FP8 models (exactly 1 byte/param) on GPUs with native FP8 tensor cores use the FP8 rate.
+	// Sub-FP8 formats (e.g., W4A16 at 0.5 bytes/param) dequantize to FP16 during GEMM, using FP16 rate.
 	// This reflects that H100 has native FP8 tensor cores (~1979 TFLOPS, 2× FP16),
 	// while A100/L40S use W8A16 via Marlin kernels (weights dequantized to FP16 during GEMM, preserving the FP16 compute rate).
 	peakFlops := hwConfig.TFlopsPeak * 1e12
