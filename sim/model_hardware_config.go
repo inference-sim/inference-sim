@@ -35,7 +35,8 @@ func (mc ModelConfig) EffectiveWeightBytesPerParam() float64 {
 // Used by the roofline latency model for compute/memory bandwidth estimation.
 // Parsing functions are in sim/latency/config.go.
 type HardwareCalib struct {
-	TFlopsPeak float64 `json:"TFlopsPeak"` // Tera (10^12) FLOP/s
+	TFlopsPeak float64 `json:"TFlopsPeak"` // Tera (10^12) FLOP/s for FP16/BF16 compute
+	TFlopsFP8  float64 `json:"TFlopsFP8"`  // Tera (10^12) FLOP/s for FP8 compute; 0 = no native FP8 support
 	BwPeakTBs  float64 `json:"BwPeakTBs"`  // in TB/s
 	MfuPrefill float64 `json:"mfuPrefill"`
 	MfuDecode  float64 `json:"mfuDecode"`

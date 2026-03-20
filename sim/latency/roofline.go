@@ -209,7 +209,17 @@ func calculateMemoryAccessBytes(
 func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, stepConfig StepConfig, tp int) int64 {
 
 	tpFactor := float64(tp)
+
+	// Select compute throughput based on weight precision and hardware capability.
+	// FP8 models (exactly 1 byte/param) on GPUs with native FP8 tensor cores use the FP8 rate.
+	// Sub-FP8 formats (e.g., W4A16 at 0.5 bytes/param) dequantize to FP16 during GEMM, using FP16 rate.
+	// This reflects that H100 has native FP8 tensor cores (~1979 TFLOPS, 2× FP16),
+	// while A100/L40S use W8A16 via Marlin kernels (weights dequantized to FP16 during GEMM, preserving the FP16 compute rate).
 	peakFlops := hwConfig.TFlopsPeak * 1e12
+	if modelConfig.EffectiveWeightBytesPerParam() == 1.0 && hwConfig.TFlopsFP8 > 0 {
+		peakFlops = hwConfig.TFlopsFP8 * 1e12
+	}
+
 	peakBW := hwConfig.BwPeakTBs * 1e12
 
 	if len(stepConfig.PrefillRequests) == 0 && len(stepConfig.DecodeRequests) == 0 {

@@ -708,3 +708,203 @@ func TestRooflineStepTime_W4A16_LowerThanFP16_MemoryBoundDecode(t *testing.T) {
 	}
 	t.Logf("Decode step: FP16=%d µs, W4A16=%d µs (ratio=%.2f)", fp16Time, w4a16Time, float64(w4a16Time)/float64(fp16Time))
 }
+
+// TestRooflineStepTime_FP8ComputeSelection_H100UsesFP8Rate tests that H100
+// with FP8 weights (1 byte/param) uses the higher TFlopsFP8 rate.
+func TestRooflineStepTime_FP8ComputeSelection_H100UsesFP8Rate(t *testing.T) {
+	// GIVEN an FP8 model (WeightBytesPerParam = 1.0)
+	mcFP8 := testModelConfig()
+	mcFP8.WeightBytesPerParam = 1.0
+
+	// AND an H100 with native FP8 support (TFlopsFP8 = 1979.0, 2× FP16)
+	hwH100 := sim.HardwareCalib{
+		TFlopsPeak: 989.5,
+		TFlopsFP8:  1979.0,
+		BwPeakTBs:  3.35,
+		MfuPrefill: 0.60,
+		MfuDecode:  0.45,
+		MemoryGiB:  80.0,
+	}
+
+	// AND a compute-bound prefill step
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 512},
+		},
+	}
+
+	// WHEN rooflineStepTime is called
+	latencyFP8 := rooflineStepTime(mcFP8, hwH100, step, 1)
+
+	// THEN latency should be positive and finite
+	if latencyFP8 <= 0 {
+		t.Errorf("FP8 latency should be positive, got %d µs", latencyFP8)
+	}
+
+	// AND should be faster than FP16 (since FP8 uses 2× compute rate)
+	mcFP16 := testModelConfig()
+	mcFP16.WeightBytesPerParam = 2.0
+	latencyFP16 := rooflineStepTime(mcFP16, hwH100, step, 1)
+
+	if latencyFP8 >= latencyFP16 {
+		t.Errorf("FP8 latency (%d µs) should be less than FP16 (%d µs) on H100", latencyFP8, latencyFP16)
+	}
+}
+
+// TestRooflineStepTime_FP8ComputeSelection_A100UsesFP16Rate tests that A100
+// with FP8 weights still uses FP16 compute rate (W8A16 via Marlin kernels).
+func TestRooflineStepTime_FP8ComputeSelection_A100UsesFP16Rate(t *testing.T) {
+	// GIVEN an FP8 model (WeightBytesPerParam = 1.0)
+	mcFP8 := testModelConfig()
+	mcFP8.WeightBytesPerParam = 1.0
+
+	// AND an A100 with no native FP8 support (TFlopsFP8 = 0)
+	hwA100 := sim.HardwareCalib{
+		TFlopsPeak: 312.0,
+		TFlopsFP8:  0, // No native FP8 tensor cores
+		BwPeakTBs:  2.039,
+		MfuPrefill: 0.45,
+		MfuDecode:  0.30,
+		MemoryGiB:  80.0,
+	}
+
+	// AND a compute-bound prefill step
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 512},
+		},
+	}
+
+	// WHEN rooflineStepTime is called
+	latencyFP8 := rooflineStepTime(mcFP8, hwA100, step, 1)
+
+	// THEN latency should be positive
+	if latencyFP8 <= 0 {
+		t.Errorf("FP8 latency should be positive, got %d µs", latencyFP8)
+	}
+
+	// AND should be similar to FP16 compute time (no FP8 speedup on A100)
+	// The only difference is weight bandwidth (2× faster for FP8)
+	mcFP16 := testModelConfig()
+	mcFP16.WeightBytesPerParam = 2.0
+	latencyFP16 := rooflineStepTime(mcFP16, hwA100, step, 1)
+
+	// For compute-bound prefill, latencies should be close (within 20%)
+	// since compute rate is the same, only weight bandwidth differs
+	ratio := float64(latencyFP8) / float64(latencyFP16)
+	if ratio < 0.8 || ratio > 1.0 {
+		t.Errorf("FP8/FP16 latency ratio on A100 should be 0.8-1.0 (compute-bound), got %.2f (%d µs / %d µs)",
+			ratio, latencyFP8, latencyFP16)
+	}
+}
+
+// TestRooflineStepTime_FP8ComputeSelection_L40SBehavior tests L40S behavior
+// with FP8 weights (should use FP16 compute rate like A100).
+func TestRooflineStepTime_FP8ComputeSelection_L40SBehavior(t *testing.T) {
+	// GIVEN an FP8 model
+	mcFP8 := testModelConfig()
+	mcFP8.WeightBytesPerParam = 1.0
+
+	// AND an L40S with no native FP8 support
+	hwL40S := sim.HardwareCalib{
+		TFlopsPeak: 362.05,
+		TFlopsFP8:  0,
+		BwPeakTBs:  0.864,
+		MfuPrefill: 0.45,
+		MfuDecode:  0.30,
+		MemoryGiB:  48.0,
+	}
+
+	// AND a mixed step
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 128},
+		},
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 256, NumNewDecodeTokens: 1},
+		},
+	}
+
+	// WHEN rooflineStepTime is called
+	latency := rooflineStepTime(mcFP8, hwL40S, step, 1)
+
+	// THEN latency should be positive and finite
+	if latency <= 0 {
+		t.Errorf("L40S latency should be positive, got %d µs", latency)
+	}
+}
+
+// TestRooflineStepTime_FP8ComputeSelection_EdgeCases tests edge cases for
+// FP8 compute selection logic.
+func TestRooflineStepTime_FP8ComputeSelection_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name                string
+		weightBytesPerParam float64
+		tflopsFP8           float64
+		expectFP8Rate       bool
+	}{
+		{
+			name:                "FP8 weights + FP8 hardware → use FP8 rate",
+			weightBytesPerParam: 1.0,
+			tflopsFP8:           1979.0,
+			expectFP8Rate:       true,
+		},
+		{
+			name:                "FP8 weights + no FP8 hardware → use FP16 rate",
+			weightBytesPerParam: 1.0,
+			tflopsFP8:           0,
+			expectFP8Rate:       false,
+		},
+		{
+			name:                "FP16 weights + FP8 hardware → use FP16 rate",
+			weightBytesPerParam: 2.0,
+			tflopsFP8:           1979.0,
+			expectFP8Rate:       false,
+		},
+		{
+			name:                "FP4 weights + FP8 hardware → use FP16 rate",
+			weightBytesPerParam: 0.5,
+			tflopsFP8:           1979.0,
+			expectFP8Rate:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := testModelConfig()
+			mc.WeightBytesPerParam = tt.weightBytesPerParam
+
+			hw := sim.HardwareCalib{
+				TFlopsPeak: 989.5,
+				TFlopsFP8:  tt.tflopsFP8,
+				BwPeakTBs:  3.35,
+				MfuPrefill: 0.60,
+				MfuDecode:  0.45,
+				MemoryGiB:  80.0,
+			}
+
+			step := StepConfig{
+				PrefillRequests: []PrefillRequestConfig{
+					{ProgressIndex: 0, NumNewPrefillTokens: 256},
+				},
+			}
+
+			latency := rooflineStepTime(mc, hw, step, 1)
+
+			// Verify latency is positive
+			if latency <= 0 {
+				t.Errorf("latency should be positive, got %d µs", latency)
+			}
+
+			// For FP8 rate cases, verify it's faster than baseline FP16
+			if tt.expectFP8Rate {
+				mcBaseline := testModelConfig()
+				mcBaseline.WeightBytesPerParam = 2.0
+				latencyBaseline := rooflineStepTime(mcBaseline, hw, step, 1)
+				if latency >= latencyBaseline {
+					t.Errorf("FP8 rate should be faster: got %d µs vs baseline %d µs", latency, latencyBaseline)
+				}
+			}
+		})
+	}
+}
