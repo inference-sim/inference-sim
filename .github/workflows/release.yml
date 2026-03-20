@@ -41,8 +41,8 @@ jobs:
           # Uses github.repository_owner so the reference stays correct after an org rename.
           images: ghcr.io/${{ github.repository_owner }}/blis
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
             # Only advance 'latest' on stable releases (tags without a pre-release suffix
             # such as -rc.1, -alpha, -beta). Pre-release tags produce version/minor tags only.
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
