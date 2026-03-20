@@ -257,7 +257,7 @@ func TestDisaggregation_BackwardCompatibility(t *testing.T) {
 	mustRun(t, cs)
 
 	// No parent requests when pools not configured
-	if cs.parentRequests != nil && len(cs.parentRequests) > 0 {
+	if len(cs.parentRequests) > 0 {
 		t.Errorf("parentRequests should be empty when pools not configured, got %d", len(cs.parentRequests))
 	}
 
