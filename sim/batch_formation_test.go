@@ -569,7 +569,7 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 	wlRng := rng.ForSubsystem(SubsystemWorkload)
 	arrivalTime := int64(0)
 	for i := 0; i < 30; i++ {
-		inputLen := 200 + wlRng.Intn(201)   // 200-400
+		inputLen := 200 + wlRng.Intn(201)  // 200-400
 		outputLen := 3200 + wlRng.Intn(397) // 3200-3596
 		req := &Request{
 			ID:           fmt.Sprintf("req_%d", i),
@@ -626,16 +626,16 @@ func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Decode(t *testing.T) {
 	}
 
 	ctx := BatchContext{
-		RunningBatch:          &Batch{Requests: []*Request{req}},
-		WaitQ:                 &WaitQueue{},
-		KVCache:               kvStore,
-		MaxScheduledTokens:    2048,
-		MaxRunningReqs:        256,
+		RunningBatch:       &Batch{Requests: []*Request{req}},
+		WaitQ:              &WaitQueue{},
+		KVCache:            kvStore,
+		MaxScheduledTokens: 2048,
+		MaxRunningReqs:     256,
 		PrefillTokenThreshold: 0,
-		MaxModelLen:           100,
-		Now:                   0,
-		StepCount:             0,
-		ComputedTokens:        make(map[string]int64),
+		MaxModelLen:        100,
+		Now:                0,
+		StepCount:          0,
+		ComputedTokens:     make(map[string]int64),
 	}
 	bf.FormBatch(ctx)
 
@@ -662,16 +662,16 @@ func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Phase2(t *testing.T) {
 	wq.Enqueue(req)
 
 	ctx := BatchContext{
-		RunningBatch:          &Batch{},
-		WaitQ:                 wq,
-		KVCache:               kvStore,
-		MaxScheduledTokens:    2048,
-		MaxRunningReqs:        256,
+		RunningBatch:       &Batch{},
+		WaitQ:              wq,
+		KVCache:            kvStore,
+		MaxScheduledTokens: 2048,
+		MaxRunningReqs:     256,
 		PrefillTokenThreshold: 0,
-		MaxModelLen:           50,
-		Now:                   0,
-		StepCount:             0,
-		ComputedTokens:        make(map[string]int64),
+		MaxModelLen:        50,
+		Now:                0,
+		StepCount:          0,
+		ComputedTokens:     make(map[string]int64),
 	}
 	bf.FormBatch(ctx)
 
@@ -696,16 +696,16 @@ func TestVLLMBatchFormation_MaxModelLen_Zero_NoClamp(t *testing.T) {
 	wq.Enqueue(req)
 
 	ctx := BatchContext{
-		RunningBatch:          &Batch{},
-		WaitQ:                 wq,
-		KVCache:               kvStore,
-		MaxScheduledTokens:    10000,
-		MaxRunningReqs:        256,
+		RunningBatch:       &Batch{},
+		WaitQ:              wq,
+		KVCache:            kvStore,
+		MaxScheduledTokens: 10000,
+		MaxRunningReqs:     256,
 		PrefillTokenThreshold: 0,
-		MaxModelLen:           0, // unlimited
-		Now:                   0,
-		StepCount:             0,
-		ComputedTokens:        make(map[string]int64),
+		MaxModelLen:        0, // unlimited
+		Now:                0,
+		StepCount:          0,
+		ComputedTokens:     make(map[string]int64),
 	}
 	bf.FormBatch(ctx)
 
