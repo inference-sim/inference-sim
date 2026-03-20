@@ -405,21 +405,14 @@ func TestCalculateMemoryAccessBytes_MoE_EffectiveExperts(t *testing.T) {
 					moeMem["model_weights"], denseMem["model_weights"])
 			}
 
-			// Verify nEff is within [k, N] by checking weight ratio bounds
-			// weight_ratio = nEff / N (approximately, ignoring attention)
-			weightRatio := (moeMem["model_weights"] - denseMem["model_weights"]) / (denseMem["model_weights"] * (8.0 - 1.0)) // rough approximation
-			if weightRatio < tt.wantMinRatio || weightRatio > tt.wantMaxRatio {
-				t.Logf("MoE weights: %g, dense weights: %g", moeMem["model_weights"], denseMem["model_weights"])
-				t.Logf("Estimated nEff ratio: %g, want in [%g, %g]", weightRatio, tt.wantMinRatio, tt.wantMaxRatio)
-			}
-
-			// Log the actual effective expert count (for manual validation)
+			// Log expected nEff for manual validation
 			N := 8.0
 			k := 2.0
 			B := float64(tt.batchSize)
 			probNotSelected := (N - k) / N
 			expectedNEff := N * (1.0 - math.Pow(probNotSelected, B))
-			t.Logf("B=%d: expected nEff=%.2f (ratio %.2f)", tt.batchSize, expectedNEff, expectedNEff/N)
+			t.Logf("B=%d: expected nEff=%.2f, MoE weights=%.3e, dense weights=%.3e",
+				tt.batchSize, expectedNEff, moeMem["model_weights"], denseMem["model_weights"])
 		})
 	}
 }
@@ -495,9 +488,25 @@ func TestCalculateMemoryAccessBytes_MoE_EdgeCases(t *testing.T) {
 					tt.description, expectedNEff, tt.wantNEffMin, tt.wantNEffMax)
 			}
 
-			// Verify weights are positive and finite
-			if mem["model_weights"] <= 0 || math.IsInf(mem["model_weights"], 0) || math.IsNaN(mem["model_weights"]) {
-				t.Errorf("model_weights=%g, expected positive finite value", mem["model_weights"])
+			// Verify the implementation applied nEff to model_weights
+			dense := mc
+			dense.NumLocalExperts = 0
+			dense.NumExpertsPerTok = 0
+			denseMem := calculateMemoryAccessBytes(dense, 512, tt.batchSize, false)
+
+			if mem["model_weights"] <= denseMem["model_weights"] {
+				t.Errorf("%s: MoE weights (%g) should exceed dense weights (%g)",
+					tt.description, mem["model_weights"], denseMem["model_weights"])
+			}
+
+			// Verify the weight increase is consistent with expectedNEff (lower bound only)
+			// Upper bound is not checked because attention/other weights dilute the ratio
+			// in a model-dependent way, making a tight upper bound impractical.
+			ratio := (mem["model_weights"] - denseMem["model_weights"]) / denseMem["model_weights"]
+			minRatio := tt.wantNEffMin / float64(tt.N)
+			if ratio < minRatio {
+				t.Errorf("%s: weight increase ratio %.4f below minimum %.4f (nEff=%.2f)",
+					tt.description, ratio, minRatio, expectedNEff)
 			}
 
 			t.Logf("%s: N=%d, k=%d, B=%d → nEff=%.2f", tt.description, tt.N, tt.k, tt.batchSize, expectedNEff)
@@ -674,36 +683,23 @@ func TestRooflineStepTime_MoE_BandwidthReduction(t *testing.T) {
 	smallTime := rooflineStepTime(mc, hc, smallBatch, 1)
 	largeTime := rooflineStepTime(mc, hc, largeBatch, 1)
 
-	// Calculate expected memory bytes to verify bandwidth difference
-	smallMem := calculateMemoryAccessBytes(mc, 512, 3, true)
-	largeMem := calculateMemoryAccessBytes(mc, 512, 100, true)
-
-	// Small batch should load fewer expert weights than large batch
-	if smallMem["model_weights"] >= largeMem["model_weights"] {
-		t.Errorf("Small batch weights (%g) should be less than large batch weights (%g)",
-			smallMem["model_weights"], largeMem["model_weights"])
+	// Assert on step time: small batch should be faster
+	if smallTime >= largeTime {
+		t.Errorf("Small batch step time (%d µs) should be less than large batch (%d µs)",
+			smallTime, largeTime)
 	}
 
-	// Per-token time should be different due to different nEff
-	// (Note: large batch has more parallelism, so absolute time comparison is not meaningful)
-	// Instead, verify weight bandwidth difference is significant
+	// Verify bandwidth reduction using actual batch sizes
+	smallMem := calculateMemoryAccessBytes(mc, 512, int64(len(smallBatch.DecodeRequests)), true)
+	largeMem := calculateMemoryAccessBytes(mc, 512, int64(len(largeBatch.DecodeRequests)), true)
 	weightReduction := 1.0 - (smallMem["model_weights"] / largeMem["model_weights"])
 	if weightReduction < 0.20 {
 		t.Errorf("Expected ≥20%% weight bandwidth reduction for small batch, got %.1f%%",
 			weightReduction*100)
 	}
-
-	t.Logf("Small batch (B=3): %d µs, weights=%.2e bytes", smallTime, smallMem["model_weights"])
-	t.Logf("Large batch (B=100): %d µs, weights=%.2e bytes", largeTime, largeMem["model_weights"])
+	t.Logf("Small batch (B=%d): %d µs", len(smallBatch.DecodeRequests), smallTime)
+	t.Logf("Large batch (B=%d): %d µs", len(largeBatch.DecodeRequests), largeTime)
 	t.Logf("Weight bandwidth reduction: %.1f%%", weightReduction*100)
-
-	// Verify nEff calculations
-	N := 8.0
-	k := 2.0
-	probNotSel := (N - k) / N
-	smallNEff := N * (1.0 - probNotSel*probNotSel*probNotSel) // B=3
-	largeNEff := N * (1.0 - math.Pow(probNotSel, 100))
-	t.Logf("Expected nEff: small=%.2f, large=%.2f", smallNEff, largeNEff)
 }
 
 func TestRooflineStepTime_SingleCrossover_MemoryBoundDecode(t *testing.T) {

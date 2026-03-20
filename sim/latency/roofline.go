@@ -111,6 +111,8 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 
 // Precondition: same as calculateTransformerFlops — config must pass
 // ValidateRooflineConfig. NumHeads > 0 required (division at dHead).
+// For MoE configs (NumLocalExperts > 1), NumExpertsPerTok must be > 0;
+// otherwise nEff=0 and MLP bandwidth is silently zeroed.
 func calculateMemoryAccessBytes(
 	config sim.ModelConfig,
 	sequenceLength int64,
@@ -147,12 +149,16 @@ func calculateMemoryAccessBytes(
 	}
 	mlpWeightsPerLayer := nMat * dModel * dExpert
 	if config.NumLocalExperts > 1 {
-		// MoE: only activated experts loaded from HBM per step.
-		// Expected unique experts with uniform random top-k routing.
-		// Models probabilistic uniqueness: small batches have overlap,
-		// large batches approach N. Conservative assumption (uniform routing)
-		// overestimates when tokens are similar (same experts reused).
-		// See issue #789 for future non-uniform routing research.
+		// MoE: only the expected unique experts are loaded from HBM per step.
+		// Formula: nEff = N * (1 - ((N-k)/N)^B)
+		//   N = total experts, k = active experts per token, B = tokens in this step.
+		// Derivation: P(expert i not selected by any token) = ((N-k)/N)^B, so
+		//   E[unique experts loaded] = N * (1 - ((N-k)/N)^B).
+		// Assumes uniform random routing, which maximizes nEff and overestimates weight
+		// bandwidth. In practice tokens tend to activate the same experts (correlated
+		// routing), so actual nEff ≤ formula — making this a conservative (pessimistic)
+		// upper bound for capacity planning.
+		// See issue #789 for non-uniform routing research.
 		N := float64(config.NumLocalExperts)
 		k := float64(config.NumExpertsPerTok)
 		B := float64(newTokens)
