@@ -95,6 +95,7 @@ var (
 	kvTransferBandwidth     float64
 	kvTransferBaseLatency   int64
 	snapshotRefreshInterval int64
+	gpuMemoryUtilization    float64
 
 	// results file path
 	resultsPath string // File to save BLIS results to
@@ -263,6 +264,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
 	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
+	cmd.Flags().Float64Var(&gpuMemoryUtilization, "gpu-memory-utilization", 0.9, "Fraction of GPU memory to use for KV cache, in the range (0, 1.0]. Default: 0.9 (90%)")
 
 	// Results path
 	cmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
@@ -614,7 +616,7 @@ var runCmd = &cobra.Command{
 							if hcErr == nil && hc.MemoryGiB > 0 {
 								kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
 								if kvErr == nil {
-									autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tensorParallelism, blockSizeTokens, kvParams)
+									autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams)
 									if calcErr == nil {
 										totalKVBlocks = autoBlocks
 										logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d from cached model config", totalKVBlocks)
@@ -686,12 +688,13 @@ var runCmd = &cobra.Command{
 					if kvParams.HiddenAct == "" {
 						logrus.Infof("--latency-model: hidden_act not set in config.json; assuming SwiGLU (3-matrix MLP) for weight estimation")
 					}
-					autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, kvParams)
+					autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams)
 					if calcErr != nil {
 						logrus.Warnf("--latency-model: KV capacity auto-calculation failed: %v. "+
 							"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", calcErr, totalKVBlocks)
 					} else {
 						totalKVBlocks = autoBlocks
+						logrus.Infof("--gpu-memory-utilization: %.2f used for KV block auto-calculation", gpuMemoryUtilization)
 						logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, block_size=%d, MoE=%v)",
 							totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, blockSizeTokens, kvParams.IsMoE)
 					}
@@ -985,6 +988,9 @@ var runCmd = &cobra.Command{
 		}
 		if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
 			logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
+		}
+		if gpuMemoryUtilization <= 0 || gpuMemoryUtilization > 1.0 || math.IsNaN(gpuMemoryUtilization) || math.IsInf(gpuMemoryUtilization, 0) {
+			logrus.Fatalf("--gpu-memory-utilization must be a finite value in (0, 1.0], got %f", gpuMemoryUtilization)
 		}
 		if kvCPUBlocks > 0 && (kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0)) {
 			logrus.Fatalf("--kv-transfer-bandwidth must be a finite value > 0 when --kv-cpu-blocks > 0, got %f", kvTransferBandwidth)
