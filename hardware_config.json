@@ -5,7 +5,7 @@
 		"TFlopsFP8":   1979.0,
 		"BwPeakTBs":   3.35,
 		"mfuPrefill":  0.45,
-		"mfuDecode":   0.3,
+		"mfuDecode":   0.30,
 		"MemoryGiB":   80.0
 	},
 	"A100-SXM": {
