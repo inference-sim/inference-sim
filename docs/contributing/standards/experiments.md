@@ -413,7 +413,7 @@ This audit is what makes experiments a feedback loop into the standards. Example
 
 ## Experiment Artifacts
 
-Each hypothesis experiment lives in `hypotheses/<name>/` with:
+Each hypothesis experiment lives in `hypotheses/<name>/` within its feature branch with:
 
 | File | Purpose |
 |------|---------|
@@ -423,3 +423,5 @@ Each hypothesis experiment lives in `hypotheses/<name>/` with:
 | `*.yaml` (optional) | Custom workload specs for this experiment |
 
 Scripts must be reproducible — running `./run.sh` on the same commit produces deterministic output.
+
+**Artifact lifecycle:** Experiment artifacts are not merged to `main`. They stay in the feature branch; the PR itself is the permanent, linkable record. Completed experiments are collected in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive).

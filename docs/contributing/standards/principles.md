@@ -97,9 +97,8 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | Design process | `docs/contributing/design-process.md` | CONTRIBUTING.md (summary) |
 | Macro-plan process | `docs/contributing/macro-planning.md` | CONTRIBUTING.md (summary) |
 | File organization and architecture | `docs/reference/project-structure.md` | CLAUDE.md (pointer), README.md (Project Structure tree) |
-| Hypothesis catalog and specifications | `docs/plans/research.md` | — |
-| Experiment status and coverage | `hypotheses/README.md` | — |
+| Completed experiments and coverage catalog | [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | — (not on `main`) |
 | Experiment standards | `docs/contributing/standards/experiments.md` | — (note: review protocol subsection references `docs/contributing/convergence.md` as canonical) |
 | Convergence protocol | `docs/contributing/convergence.md` | `docs/contributing/hypothesis.md` (summary), `docs/contributing/pr-workflow.md` (summary), `docs/contributing/standards/experiments.md` (review protocol summary), `.claude/skills/convergence-review/SKILL.md` (protocol copy) |
-| Hypothesis experiment workflow | `docs/contributing/hypothesis.md` | CONTRIBUTING.md (summary), hypotheses/README.md (step list), `.claude/skills/hypothesis-experiment/SKILL.md` (workflow steps), `.claude/skills/hypothesis-experiment/review-prompts.md` (perspective prompts) |
+| Hypothesis experiment workflow | `docs/contributing/hypothesis.md` | CONTRIBUTING.md (summary), `.claude/skills/hypothesis-experiment/SKILL.md` (workflow steps), `.claude/skills/hypothesis-experiment/review-prompts.md` (perspective prompts) |
 | PR workflow | `docs/contributing/pr-workflow.md` | CONTRIBUTING.md (summary), `.claude/skills/convergence-review/pr-prompts.md` (perspective prompts) |

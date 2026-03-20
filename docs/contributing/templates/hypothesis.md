@@ -13,7 +13,7 @@ Every experiment's `FINDINGS.md` MUST contain these sections:
 **Resolution:** <one of: Clean confirmation | Confirmation with wrong mechanism | Confirmation with bug discovery | Partial confirmation with surprise | Refuted — mechanism not plausible | Refuted — system design flaw | Refuted — wrong mental model | Inconclusive — parameter-dependent | Converged to open question>
 **Family:** <one of: Workload/arrival | Scheduler invariants | Performance-regime | Structural model | Robustness/failure-mode | Cross-policy comparative>
 **VV&UQ:** <one of: Verification | Validation | UQ>
-**Tier:** <tier number — see hypotheses/README.md for definitions>
+**Tier:** <tier number — see hypothesis-archive branch for definitions>
 **Type:** Deterministic | Statistical (<subtype>)
 **Date:** YYYY-MM-DD
 **Rounds:** <number of experiment-review rounds to convergence>

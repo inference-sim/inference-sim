@@ -97,7 +97,6 @@ inference-sim/
 ├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 ├── hardware_config.json       # GPU specifications
 ├── examples/                  # Example configuration files
-├── hypotheses/                # Hypothesis experiment artifacts (run.sh, analyze.py, FINDINGS.md)
 ├── testdata/goldendataset.json # Golden dataset for regression tests
 ├── docs/
 │   ├── getting-started/       # New user onboarding

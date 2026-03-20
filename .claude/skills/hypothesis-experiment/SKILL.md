@@ -54,7 +54,7 @@ All subsequent steps happen in the worktree. Set your working directory there.
 
 ## Step 1: Select and Classify
 
-1. **Check coverage gaps**: Read `hypotheses/README.md` for the coverage table
+1. **Check coverage gaps**: Browse the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) for the coverage catalog
 2. **Classify the hypothesis**:
    - **Family**: Which of the 6 families? (See `docs/contributing/standards/experiments.md`)
    - **VV&UQ**: Verification, Validation, or UQ?
@@ -122,7 +122,15 @@ Options: "Approve — proceed to implementation", "Revise — I have feedback"
 
 ## Step 4: Implement
 
-Create `hypotheses/h-$ARGUMENTS/run.sh` and `hypotheses/h-$ARGUMENTS/analyze.py`.
+First, copy the shared harness from the archive branch:
+
+```bash
+mkdir -p hypotheses/lib
+git show hypothesis-archive:hypotheses/lib/harness.sh > hypotheses/lib/harness.sh
+git show hypothesis-archive:hypotheses/lib/analyze_helpers.py > hypotheses/lib/analyze_helpers.py
+```
+
+Then create `hypotheses/h-$ARGUMENTS/run.sh` and `hypotheses/h-$ARGUMENTS/analyze.py`.
 
 ### Mandatory harness requirements
 
@@ -191,7 +199,6 @@ After Code Review converges:
 3. **Compute expected values from first principles** for any "surprises" (RCV-2)
 4. **Check mechanism AND direction** (RCV-3)
 5. **Write FINDINGS.md** using `docs/contributing/templates/hypothesis.md` — ALL sections must be non-empty
-6. **Update `hypotheses/README.md`** — add row to the validated hypotheses table
 
 ---
 
