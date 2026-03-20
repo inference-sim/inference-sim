@@ -13,7 +13,7 @@ func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			Horizon:       1000000,
 			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
@@ -40,7 +40,7 @@ func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			Horizon:       10000000,
 			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
@@ -82,7 +82,7 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			Horizon:       10000000,
 			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
@@ -121,7 +121,7 @@ func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			Horizon:       5000000,
 			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},

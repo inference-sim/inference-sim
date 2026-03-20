@@ -20,7 +20,7 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
@@ -57,7 +57,7 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			Horizon:             999,
 			Seed:                7,
-			KVCacheConfig:       sim.NewKVCacheConfig(500, 32, 0, nil, 0, 0, 42),
+			KVCacheConfig:       sim.NewKVCacheConfig(500, 32, 0, 0, 0, 42),
 			BatchConfig:         sim.NewBatchConfig(128, 4096, 512),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 2, "roofline", 0),
@@ -135,7 +135,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 				SimConfig: sim.SimConfig{
 					Horizon:             math.MaxInt64,
 					Seed:                tc.Seed,
-					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, nil, 0, 0, 0),
+					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, "blackbox", 0),
@@ -185,7 +185,7 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 				SimConfig: sim.SimConfig{
 					Horizon:             math.MaxInt64,
 					Seed:                tc.Seed,
-					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, nil, 0, 0, 0),
+					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
 					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, "blackbox", 0),
@@ -1566,7 +1566,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			Horizon:             10_000_000,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}), // zero alpha
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", maxModelLen),

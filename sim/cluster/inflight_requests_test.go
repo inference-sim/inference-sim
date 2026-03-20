@@ -24,7 +24,7 @@ func TestClusterSimulator_InFlightRequests_VisibleInRoutingState(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			Horizon:       10000000,
 			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
@@ -93,7 +93,7 @@ func TestClusterSimulator_InFlightRequests_CounterfactualIncludesInFlight(t *tes
 		SimConfig: sim.SimConfig{
 			Horizon:       10000000,
 			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
@@ -155,7 +155,7 @@ func TestClusterSimulator_InFlightRequests_DrainsToZeroAfterCompletion(t *testin
 		SimConfig: sim.SimConfig{
 			Horizon:       10000000,
 			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
@@ -191,7 +191,7 @@ func TestClusterSimulator_InFlightRequests_DroppedUnservable_Decrements(t *testi
 		SimConfig: sim.SimConfig{
 			Horizon:       10000000,
 			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(5, 16, 0, nil, 0, 0, 0), // Very small — will force drops
+			KVCacheConfig: sim.NewKVCacheConfig(5, 16, 0, 0, 0, 0), // Very small — will force drops
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
@@ -241,7 +241,7 @@ func TestClusterSimulator_InFlightRequests_CompletionBasedDecrement(t *testing.T
 		SimConfig: sim.SimConfig{
 			Horizon:       10000000,
 			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, nil, 0, 0, 0),
+			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},

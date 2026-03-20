@@ -10,7 +10,7 @@ import (
 )
 
 func TestNewKVCacheConfig_FieldEquivalence(t *testing.T) {
-	got := NewKVCacheConfig(100, 16, 50, nil, 0.9, 100.0, 500)
+	got := NewKVCacheConfig(100, 16, 50, 0.9, 100.0, 500)
 	want := KVCacheConfig{
 		TotalKVBlocks:         100,
 		BlockSizeTokens:       16,
@@ -106,7 +106,7 @@ func TestNewKVCacheConfig_PanicsOnInvalid(t *testing.T) {
 					t.Errorf("panic message %q should contain constructor name", msg)
 				}
 			}()
-			NewKVCacheConfig(tc.totalKVBlocks, tc.blockSizeTokens, tc.kvCPUBlocks, nil,
+			NewKVCacheConfig(tc.totalKVBlocks, tc.blockSizeTokens, tc.kvCPUBlocks,
 				tc.threshold, tc.bandwidth, tc.baseLatency)
 		})
 	}
@@ -115,7 +115,7 @@ func TestNewKVCacheConfig_PanicsOnInvalid(t *testing.T) {
 func TestNewKVCacheConfig_SingleTier_SkipsTieredValidation(t *testing.T) {
 	// BC-4: Single-tier mode (KVCPUBlocks=0) accepts any threshold/bandwidth/latency
 	// without panicking. These fields are meaningless in single-tier mode.
-	cfg := NewKVCacheConfig(100, 16, 0, nil, -999.0, -999.0, -999)
+	cfg := NewKVCacheConfig(100, 16, 0, -999.0, -999.0, -999)
 	if cfg.TotalKVBlocks != 100 {
 		t.Errorf("TotalKVBlocks = %d, want 100", cfg.TotalKVBlocks)
 	}
@@ -126,7 +126,7 @@ func TestNewKVCacheConfig_SingleTier_SkipsTieredValidation(t *testing.T) {
 
 func TestNewKVCacheConfig_ValidTiered_ReturnsConfig(t *testing.T) {
 	// BC-5: Valid tiered-mode parameters accepted
-	cfg := NewKVCacheConfig(100, 16, 50, nil, 0.9, 100.0, 500)
+	cfg := NewKVCacheConfig(100, 16, 50, 0.9, 100.0, 500)
 	if cfg.KVCPUBlocks != 50 {
 		t.Errorf("KVCPUBlocks = %d, want 50", cfg.KVCPUBlocks)
 	}

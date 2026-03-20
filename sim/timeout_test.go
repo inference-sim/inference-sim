@@ -65,7 +65,7 @@ func TestTimeout_QueuedRequest_TimesOut(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             1_000_000,
 		Seed:                42,
-		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, nil, 0, 0, 0),
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // max 1 running request — forces queuing
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}), // zero alpha = no queueing delay
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
@@ -99,7 +99,7 @@ func TestTimeout_CompletedRequest_NoOp(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             1_000_000,
 		Seed:                42,
-		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, nil, 0, 0, 0),
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
@@ -130,7 +130,7 @@ func TestTimeout_CompletionWinsAtEqualTimestamp(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             1_000_000,
 		Seed:                42,
-		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, nil, 0, 0, 0),
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 0, 0}, []float64{0, 0, 0}), // step time = beta0 = 1000µs, no per-token cost
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
@@ -198,7 +198,7 @@ func TestTimeout_RunningRequest_StateAndBatchCleanup(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             1_000_000,
 		Seed:                42,
-		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, nil, 0, 0, 0),
+		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
@@ -237,7 +237,7 @@ func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             1_000_000,
 		Seed:                42,
-		KVCacheConfig:       NewKVCacheConfig(5, 16, 0, nil, 0, 0, 0), // tiny KV: 5 blocks = 80 tokens
+		KVCacheConfig:       NewKVCacheConfig(5, 16, 0, 0, 0, 0), // tiny KV: 5 blocks = 80 tokens
 		BatchConfig:         NewBatchConfig(2, 2048, 0),            // batch size 2
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
