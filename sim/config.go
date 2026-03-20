@@ -7,18 +7,20 @@ import (
 
 // KVCacheConfig groups KV cache parameters for KV store construction.
 type KVCacheConfig struct {
-	TotalKVBlocks         int64   // GPU tier capacity in blocks (must be > 0)
-	BlockSizeTokens       int64   // tokens per block (must be > 0)
-	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
-	KVOffloadThreshold    float64 // DEPRECATED: Ignored in vLLM v1 mirror model. Was: GPU utilization threshold for offload. (CLI default: 0.9, zero-value: 0)
-	KVTransferBandwidth   float64 // blocks/tick transfer rate (CLI default: 100.0, zero-value: 0)
-	KVTransferBaseLatency int64   // fixed cost per transfer (ticks, default 0)
+	TotalKVBlocks         int64    // GPU tier capacity in blocks (must be > 0)
+	BlockSizeTokens       int64    // tokens per block (must be > 0)
+	KVCPUBlocks           int64    // CPU tier capacity (0 = single-tier, default)
+	GpuMemoryUtilization  *float64 // GPU memory utilization (0.5-1.0, default 0.9 when nil)
+	KVOffloadThreshold    float64  // DEPRECATED: Ignored in vLLM v1 mirror model. Was: GPU utilization threshold for offload. (CLI default: 0.9, zero-value: 0)
+	KVTransferBandwidth   float64  // blocks/tick transfer rate (CLI default: 100.0, zero-value: 0)
+	KVTransferBaseLatency int64    // fixed cost per transfer (ticks, default 0)
 }
 
 // NewKVCacheConfig creates a KVCacheConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
 // Parameter order matches struct field order.
 func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
+	gpuMemoryUtilization *float64,
 	kvOffloadThreshold, kvTransferBandwidth float64,
 	kvTransferBaseLatency int64) KVCacheConfig {
 	if totalKVBlocks <= 0 {
@@ -29,6 +31,13 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 	}
 	if kvCPUBlocks < 0 {
 		panic(fmt.Sprintf("NewKVCacheConfig: KVCPUBlocks must be >= 0, got %d", kvCPUBlocks))
+	}
+	// Validate GpuMemoryUtilization when non-nil (R3, R9)
+	if gpuMemoryUtilization != nil {
+		util := *gpuMemoryUtilization
+		if util < 0.5 || util > 1.0 || math.IsNaN(util) || math.IsInf(util, 0) {
+			panic(fmt.Sprintf("NewKVCacheConfig: GpuMemoryUtilization must be in [0.5, 1.0], got %v", util))
+		}
 	}
 	if kvCPUBlocks > 0 {
 		// Note: KVOffloadThreshold is NOT validated here — it is deprecated and
@@ -45,6 +54,7 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 		TotalKVBlocks:         totalKVBlocks,
 		BlockSizeTokens:       blockSizeTokens,
 		KVCPUBlocks:           kvCPUBlocks,
+		GpuMemoryUtilization:  gpuMemoryUtilization,
 		KVOffloadThreshold:    kvOffloadThreshold,
 		KVTransferBandwidth:   kvTransferBandwidth,
 		KVTransferBaseLatency: kvTransferBaseLatency,

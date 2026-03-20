@@ -60,7 +60,7 @@ func baseDeploymentConfig(numInstances int) DeploymentConfig {
 		SimConfig: sim.SimConfig{
 			Horizon:             50000000, // 50 seconds
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(2000, 16, 0, 0, 0, 0),
+			KVCacheConfig:       sim.NewKVCacheConfig(2000, 16, 0, nil, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(64, 65536, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "", 0, "blackbox", 0),

@@ -591,7 +591,7 @@ Example:
 				Horizon: replayHorizon,
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
-					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
+					nil, kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend, maxModelLen),
