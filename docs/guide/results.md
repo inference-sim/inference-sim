@@ -41,7 +41,8 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
 |---------|--------------|--------|
 | **Priority Inversions** | A lower-priority request was scheduled before a higher-priority one | Check scheduler choice — use `priority-fcfs` for SLO workloads |
 | **HOL Blocking Events** | A long prefill blocked shorter requests | Enable chunked prefill: `--long-prefill-token-threshold 256` |
-| **Rejected Requests** | Admission policy rejected the request | Check token bucket capacity or admission policy |
+| **Rejected Requests (Admission)** | Admission policy rejected the request | Check token bucket capacity or admission policy |
+| **Rejected Requests (Routing)** | No routable instances for the request's model — all instances are `Loading` or `Draining` | Increase `initial_nodes`, reduce `loading_delay.mean`, or stagger drain operations |
 | **Dropped Unservable** | Request exceeds `--max-model-len` context window or needs more KV blocks than exist | Check `--max-model-len` setting; increase `--total-kv-blocks` or reduce max input tokens |
 
 ## KV Cache Metrics
@@ -65,10 +66,21 @@ When instances serve different models (multi-model deployment), BLIS prints per-
 ```
 === Per-Model Metrics ===
   qwen/qwen3-14b:
-    TTFT: mean=1234.56 p99=5678.90 (n=250)
-    E2E:  mean=9876.54 p99=12345.67 (n=250)
-    Throughput: 50.00 req/s
+    TTFT: p50=1234.56 p99=5678.90 (n=250)
+    E2E:  p50=9876.54 p99=12345.67 (n=250)
+    Throughput: 50.00 req/s, 6400.00 tok/s
 ```
+
+When `--results-path` is set, the JSON output includes a `per_model` key (omitted when no requests carry model tags). Each entry has:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model` | string | Model name |
+| `ttft` | Distribution | TTFT distribution (p50, p99, mean, count) |
+| `e2e` | Distribution | E2E latency distribution |
+| `throughput_rps` | float64 | Requests per second for this model |
+| `tokens_per_sec` | float64 | Output tokens per second for this model |
+| `total_requests` | int | Number of completed requests for this model |
 
 ## Fitness Evaluation
 

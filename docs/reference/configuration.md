@@ -342,9 +342,34 @@ priority:
   policy: "constant"
 
 scheduler: "fcfs"
+
+# Node pool infrastructure (Phase 1A — optional; omit for backward-compatible single-pool mode)
+node_pools:
+  - name: "gpu-pool-1"
+    gpu_type: "H100"
+    gpus_per_node: 8
+    gpu_memory_gib: 80.0
+    initial_nodes: 2
+    min_nodes: 1
+    max_nodes: 4
+    provisioning_delay:
+      mean: 30.0   # seconds
+      stddev: 5.0  # 0 = constant delay
+
+# Instance lifecycle (Phase 1A — all zero/empty = backward-compatible defaults)
+instance_lifecycle:
+  loading_delay:
+    mean: 10.0    # seconds to load model weights onto GPU
+    stddev: 1.0   # 0 = constant delay
+  warm_up_request_count: 5    # requests served before leaving WarmingUp state
+  warm_up_ttft_factor: 2.0    # TTFT multiplier applied to warm-up requests (≥ 1.0)
+  drain_policy: "WAIT"        # IMMEDIATE | WAIT | REDIRECT
 ```
 
 CLI flags override policy bundle values when explicitly set. For example, `--routing-policy least-loaded` overrides the bundle's `routing.policy` setting.
+
+!!! note "Node pools and instance lifecycle are YAML-only"
+    `node_pools` and `instance_lifecycle` have no corresponding CLI flags. They must be set via `--policy-config`. Omitting them is safe — the simulator falls back to single-pool, no-lifecycle mode for full backward compatibility.
 
 ## Decision Tracing
 
@@ -452,7 +477,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
-| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` |
+| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--results-path`, `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---
