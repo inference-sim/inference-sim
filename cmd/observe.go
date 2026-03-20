@@ -191,8 +191,14 @@ func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *Req
 		record.ErrorMessage = fmt.Sprintf("read error: %v", err)
 		return record, nil
 	}
-	record.FirstChunkTimeUs = fbr.firstReadTime
-	record.LastChunkTimeUs = time.Now().UnixMicro()
+	now := time.Now().UnixMicro()
+	if fbr.firstReadTime != 0 {
+		record.FirstChunkTimeUs = fbr.firstReadTime
+	} else {
+		// Empty body (e.g. error response) — use current time as fallback
+		record.FirstChunkTimeUs = now
+	}
+	record.LastChunkTimeUs = now
 	record.NumChunks = 1
 
 	var result map[string]interface{}

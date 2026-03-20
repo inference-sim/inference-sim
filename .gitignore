@@ -94,3 +94,9 @@ actions-runner/
 
 # Convergence review state (session-local, not committed)
 .claude/convergence-state/
+
+# Bob-Shell notes (session-local, not committed)
+.bob/notes
+
+# Agent instruction files (generated, not committed)
+AGENTS.md

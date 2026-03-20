@@ -18,7 +18,8 @@ type RoutingSnapshot struct {
 	KVUtilization    float64
 	FreeKVBlocks     int64
 	CacheHitRate     float64
-	InFlightRequests int // Requests dispatched to this instance but not yet completed
+	InFlightRequests int    // Requests dispatched to this instance but not yet completed
+	Model            string // Model served by this instance; used by buildRouterState() for per-model filtering
 }
 
 // EffectiveLoad returns the total effective load on this instance:

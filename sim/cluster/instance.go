@@ -24,6 +24,15 @@ type InstanceSimulator struct {
 	id     InstanceID
 	sim    *sim.Simulator
 	hasRun bool
+
+	// Phase 1A: lifecycle and placement fields.
+	// All zero-value safe (backward-compatible with no-node-pool mode).
+	Model            string        // target model identifier (empty = default/single-model)
+	State            InstanceState // lifecycle state; empty = untracked (backward-compat)
+	warmUpRemaining  int           // requests remaining in warm-up phase; 0 = no warm-up
+	warmUpRequestIDs []string      // IDs of requests served during warm-up (for TTFT factor)
+	nodeID           string        // node this instance is placed on (empty = unplaced)
+	allocatedGPUIDs  []string      // GPU IDs allocated to this instance
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
@@ -141,4 +150,95 @@ func (i *InstanceSimulator) CacheHitRate() float64 {
 // Unlike InjectRequest, this does NOT check hasRun, allowing injection during simulation.
 func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int64) {
 	i.sim.InjectArrivalAt(req, eventTime)
+}
+
+// IsRoutable returns true if this instance should appear in routing snapshots.
+// Active and WarmingUp instances are routable.
+// When State is empty (no lifecycle tracking), all instances are treated as routable
+// for backward compatibility with pre-Phase-1A cluster tests.
+func (i *InstanceSimulator) IsRoutable() bool {
+	switch i.State {
+	case InstanceStateActive, InstanceStateWarmingUp:
+		return true
+	case "": // untracked — backward-compat
+		return true
+	default:
+		return false
+	}
+}
+
+// HasSim returns true if the instance has an underlying simulator (false in test-only scenarios).
+func (i *InstanceSimulator) HasSim() bool {
+	return i.sim != nil
+}
+
+// IsWarmingUp returns true if the warm-up TTFT penalty should be applied.
+func (i *InstanceSimulator) IsWarmingUp() bool {
+	return i.State == InstanceStateWarmingUp && i.warmUpRemaining > 0
+}
+
+// RecordWarmUpRequest marks a request ID as having been served during warm-up.
+// Called at routing time when the instance IsWarmingUp(). The TTFT for these
+// requests will be multiplied by WarmUpTTFTFactor in aggregateMetrics().
+func (i *InstanceSimulator) RecordWarmUpRequest(reqID string) {
+	i.warmUpRequestIDs = append(i.warmUpRequestIDs, reqID)
+}
+
+// WarmUpRequestIDs returns the IDs of requests that were routed during warm-up.
+func (i *InstanceSimulator) WarmUpRequestIDs() []string {
+	return i.warmUpRequestIDs
+}
+
+// clearWarmUpRequestIDs frees the warm-up request ID slice after the TTFT factor
+// has been applied in aggregateMetrics(), preventing unbounded memory growth.
+func (i *InstanceSimulator) clearWarmUpRequestIDs() {
+	i.warmUpRequestIDs = nil
+}
+
+// ConsumeWarmUpRequest decrements the warm-up counter.
+// When it reaches zero, automatically transitions WarmingUp → Active.
+func (i *InstanceSimulator) ConsumeWarmUpRequest() {
+	if i.warmUpRemaining <= 0 {
+		return
+	}
+	i.warmUpRemaining--
+	if i.warmUpRemaining == 0 && i.State == InstanceStateWarmingUp {
+		i.TransitionTo(InstanceStateActive)
+	}
+}
+
+// validInstanceTransitions maps valid source → target pairs for instance lifecycle.
+var validInstanceTransitions = map[InstanceState]map[InstanceState]struct{}{
+	InstanceStateScheduling: {InstanceStateLoading: {}, InstanceStateTerminated: {}},
+	InstanceStateLoading:    {InstanceStateWarmingUp: {}, InstanceStateActive: {}, InstanceStateTerminated: {}},
+	InstanceStateWarmingUp:  {InstanceStateActive: {}, InstanceStateDraining: {}, InstanceStateTerminated: {}},
+	InstanceStateActive:     {InstanceStateDraining: {}, InstanceStateTerminated: {}},
+	InstanceStateDraining:   {InstanceStateTerminated: {}},
+	InstanceStateTerminated: {},
+}
+
+// TransitionTo validates and applies an instance state transition.
+// Panics on invalid transition (invariant violation per Principle V).
+// No-op when State is empty (backward-compat: lifecycle not tracked).
+func (i *InstanceSimulator) TransitionTo(state InstanceState) {
+	if i.State == "" {
+		// Lifecycle tracking not enabled — silently accept transition to initialize state.
+		i.State = state
+		return
+	}
+	targets, ok := validInstanceTransitions[i.State]
+	if !ok {
+		panic(fmt.Sprintf("TransitionTo %s: unknown source state %q", i.id, i.State))
+	}
+	if _, valid := targets[state]; !valid {
+		panic(fmt.Sprintf("TransitionTo %s: invalid transition %q → %q", i.id, i.State, state))
+	}
+	i.State = state
+}
+
+// DrainWaitQueue extracts all pending (queued but not yet scheduled) requests
+// from the instance's wait queue and returns them.
+// Used by DrainRedirect to re-inject requests elsewhere.
+func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
+	return i.sim.DrainWaitQueue()
 }
