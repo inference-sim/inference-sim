@@ -401,6 +401,14 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 		}
 	}
 
+	// TFlopsFP8 is optional (0 = no native FP8 support).
+	// When set, it must be a valid positive number.
+	if hc.TFlopsFP8 != 0 {
+		if math.IsNaN(hc.TFlopsFP8) || math.IsInf(hc.TFlopsFP8, 0) || hc.TFlopsFP8 < 0 {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.TFlopsFP8 must be > 0 and finite when set, got %v", hc.TFlopsFP8))
+		}
+	}
+
 	// WeightBytesPerParam is optional (0 = not set, fall back to BytesPerParam).
 	// When set, it must be a valid positive number. No upper-bound check is enforced:
 	// WeightBytesPerParam > BytesPerParam is unusual but not invalid (e.g., INT4 KV cache

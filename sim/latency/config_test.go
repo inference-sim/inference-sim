@@ -438,6 +438,37 @@ func TestValidateRooflineConfig_NegativeMemoryGiB_ReturnsError(t *testing.T) {
 		t.Errorf("error should mention MemoryGiB, got: %v", err)
 	}
 }
+func TestValidateRooflineConfig_NaNTFlopsFP8_ReturnsError(t *testing.T) {
+	// NaN != 0 is true in IEEE 754, so NaN passes the outer guard and must
+	// be caught by the inner math.IsNaN check. This test covers that path.
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, TFlopsFP8: math.NaN()}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for NaN TFlopsFP8, got nil")
+	}
+	if !strings.Contains(err.Error(), "TFlopsFP8") {
+		t.Errorf("error should mention TFlopsFP8, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_NegativeTFlopsFP8_ReturnsError(t *testing.T) {
+	// A plain negative value (not -Inf) exercises the hc.TFlopsFP8 < 0 branch,
+	// which is distinct from the math.IsInf path tested by NaNInfFields.
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, TFlopsFP8: -1979.0}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for negative TFlopsFP8, got nil")
+	}
+	if !strings.Contains(err.Error(), "TFlopsFP8") {
+		t.Errorf("error should mention TFlopsFP8, got: %v", err)
+	}
+}
 
 func TestValidateRooflineConfig_ValidConfig_ReturnsNil(t *testing.T) {
 	// GIVEN valid ModelConfig and HardwareCalib

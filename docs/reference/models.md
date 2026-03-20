@@ -47,6 +47,9 @@ The analytical modes (roofline, cross-model, trained-roofline) have been validat
 !!! note "Parallelism and quantization"
     The analytical latency models (roofline, cross-model, trained-roofline) model tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) are not yet modeled. Quantized weight precision is auto-detected and used for weight bandwidth and KV capacity calculations in all analytical backends. Supported formats: GPTQ, AWQ, FP8, and compressed-tensors (via `quantization_config`), plus model name conventions (e.g., `w4a16`, `FP8`).
 
+!!! info "MFU Calibration (Updated March 2026)"
+    Hardware MFU (Model FLOPs Utilization) values in `hardware_config.json` were recalibrated based on empirical measurements and roofline theory. The updated values (H100: prefill=0.45/decode=0.30, A100: prefill=0.38/decode=0.18, L40S: prefill=0.32/decode=0.08) reflect conservative estimates for capacity planning. For detailed justification including evidence from FlashAttention-3, NVIDIA MLPerf, and production deployments, see [Discussion #589](https://github.com/inference-sim/inference-sim/discussions/589). If you have existing capacity planning results, consider re-running simulations with the updated values for more accurate estimates.
+
 ## Adding Blackbox Coefficients
 
 To calibrate blackbox coefficients for a new model:
