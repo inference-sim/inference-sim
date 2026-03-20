@@ -248,7 +248,12 @@ func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	// This is deliberate — re-validates capacity after the drain event rather than
 	// assuming the cluster can absorb the redirected load.
 	for _, req := range queued {
-		// Mark request as redirected to prevent double-counting in CompletedRequests (INV-1).
+		// Remove from source Metrics.Requests so aggregateMetrics() does not log
+		// a false-alarm "duplicate request ID" warning. The destination re-registers
+		// the entry when the request is enqueued there.
+		if inst.sim != nil {
+			delete(inst.sim.Metrics.Requests, req.ID)
+		}
 		req.Redirected = true
 		heap.Push(&cs.clusterEvents, clusterEventEntry{
 			event: &ClusterArrivalEvent{time: cs.clock, request: req},

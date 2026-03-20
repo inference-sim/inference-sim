@@ -75,10 +75,11 @@ type Request struct {
 	// Computed during workload generation as ArrivalTime + timeout.
 	Deadline int64
 
-	// Redirected marks requests that were re-injected due to drain redirect policy.
-	// When true, completion accounting is skipped to prevent double-counting in
-	// CompletedRequests (INV-1 conservation). The request was already counted when
-	// it first entered the system.
+	// Redirected marks a request that was re-injected by the REDIRECT drain policy.
+	// The source instance never completes it (the request was in WaitQ at drain time,
+	// so it never ran on the source). The destination instance is the sole completion
+	// site and increments CompletedRequests normally.
+	// Do NOT skip completion accounting for redirected requests.
 	Redirected bool
 }
 

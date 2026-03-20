@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -123,71 +122,74 @@ func TestInstanceLifecycle_ImmediateDrain(t *testing.T) {
 }
 
 // TestInstanceLifecycle_RedirectDrainPreservesConservation verifies that DrainRedirect
-// policy does not double-count requests in CompletedRequests (INV-1 conservation).
-// This is a regression test for the drain redirect double-counting bug identified in PR #697.
+// policy preserves INV-1 (request conservation) when requests are actually in the
+// source WaitQ at drain time.
+//
+// The previous version of this test was a no-op: it relied on a manual event loop that
+// never ran (clusterEvents is empty before Run()), so DrainWaitQueue returned [] and
+// no redirection occurred. This version seeds requests directly into inst0's WaitQ
+// using InjectRequestOnline — the same path RoutingDecisionEvent uses — so the drain
+// genuinely redirects work.
 func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
-	// GIVEN a 2-instance cluster with REDIRECT drain policy
+	// GIVEN a 2-instance cluster with no workload (empty request list — we seed manually)
 	cfg := newTestDeploymentConfig(2)
 	cfg.InstanceLifecycle = InstanceLifecycleConfig{
 		DrainPolicy: string(DrainPolicyRedirect),
 	}
 
-	// Create 10 requests that will be routed round-robin to both instances
-	requests := make([]*sim.Request, 10)
-	for i := range requests {
-		requests[i] = &sim.Request{
-			ID:           fmt.Sprintf("req-%d", i),
-			InputTokens:  make([]int, 10),
-			OutputTokens: make([]int, 5),
-			ArrivalTime:  int64(i * 100),
-		}
-	}
+	// Build 3 requests using the shared helper so they have valid token IDs.
+	// Pass an empty workload to the cluster so Run() does not push duplicate
+	// ClusterArrivalEvents for these requests (we seed them directly into WaitQ).
+	const numSeeded = 3
+	seeded := newTestRequests(numSeeded)
 
-	cs := NewClusterSimulator(cfg, requests, nil)
-
-	// Drain instance 0 after 500 ticks (after ~5 requests have been routed)
-	// This will redirect queued requests from instance 0 to instance 1
+	cs := NewClusterSimulator(cfg, []*sim.Request{}, nil)
 	inst0 := cs.instances[0]
-	drainPolicy := NewDrainPolicy(DrainPolicyRedirect)
-	
-	// Run simulation partway to let some requests queue
-	for cs.clock < 500 && len(cs.clusterEvents) > 0 {
-		entry := cs.clusterEvents[0]
-		cs.clock = entry.event.Timestamp()
-		if cs.clock > 500 {
-			break
-		}
-		cs.clusterEvents = cs.clusterEvents[1:]
-		entry.event.Execute(cs)
+
+	// Seed requests directly into inst0's WaitQ (bypassing admission/routing),
+	// mirroring what RoutingDecisionEvent does, so they are present at drain time.
+	// EnqueueRequest puts the request in WaitQ immediately (unlike InjectArrivalAt
+	// which schedules an ArrivalEvent that would only fire during Run()).
+	for _, req := range seeded {
+		inst0.sim.EnqueueRequest(req)
+		cs.inFlightRequests[string(inst0.ID())]++
 	}
 
-	// Drain instance 0 (redirects queued requests)
-	drainPolicy.Drain(inst0, cs)
+	// Precondition: inst0 must have work to redirect.
+	if inst0.QueueDepth() == 0 {
+		t.Fatal("precondition failed: expected seeded requests in inst0 WaitQ before drain")
+	}
 
-	// Continue simulation to completion
+	// WHEN drain with REDIRECT fires
+	NewDrainPolicy(DrainPolicyRedirect).Drain(inst0, cs)
+
+	// THEN inst0 WaitQ is empty and inFlightRequests decremented (C1 fix)
+	if inst0.QueueDepth() != 0 {
+		t.Errorf("expected inst0 WaitQ empty after redirect drain, got %d", inst0.QueueDepth())
+	}
+	if got := cs.inFlightRequests[string(inst0.ID())]; got != 0 {
+		t.Errorf("C1: inFlightRequests[inst0] = %d after redirect drain, want 0", got)
+	}
+	// AND the redirected requests are now pending as ClusterArrivalEvents
+	if len(cs.clusterEvents) == 0 {
+		t.Error("expected redirected requests in clusterEvents after drain")
+	}
+
+	// Run to completion (processes the redirected ClusterArrivalEvents via inst1)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
 
-	metrics := cs.AggregatedMetrics()
-
-	// THEN INV-1 conservation holds: injected = completed + queued + running + dropped + timed_out
-	injected := len(requests)
-	completed := metrics.CompletedRequests
-	stillQueued := metrics.StillQueued
-	stillRunning := metrics.StillRunning
-	dropped := metrics.DroppedUnservable
-	timedOut := metrics.TimedOutRequests
-
-	total := completed + stillQueued + stillRunning + dropped + timedOut
+	// INV-1: injected = completed + queued + running + dropped + timed_out
+	m := cs.AggregatedMetrics()
+	injected := numSeeded
+	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
 	if total != injected {
-		t.Errorf("INV-1 conservation violated: injected=%d, completed=%d, queued=%d, running=%d, dropped=%d, timedOut=%d (total=%d)",
-			injected, completed, stillQueued, stillRunning, dropped, timedOut, total)
+		t.Errorf("INV-1 violated: injected=%d total=%d (completed=%d queued=%d running=%d dropped=%d timedOut=%d)",
+			injected, total, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, m.TimedOutRequests)
 	}
-
-	// AND all requests should complete (no horizon cutoff)
-	if completed != injected {
-		t.Errorf("expected all %d requests to complete, got %d", injected, completed)
+	if m.CompletedRequests != injected {
+		t.Errorf("expected all %d redirected requests to complete, got %d", injected, m.CompletedRequests)
 	}
 }
 
