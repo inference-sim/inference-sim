@@ -1136,6 +1136,7 @@ var runCmd = &cobra.Command{
 			cs.PerInstanceMetrics(),
 			cs.RejectedRequests(),
 			priorityPolicy,
+			cs.RoutingRejections(),
 		)
 
 		if fitnessWeights != "" {
@@ -1161,11 +1162,12 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
-			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
+			fmt.Printf("Rejected Requests (Admission): %d\n", rawMetrics.RejectedRequests)
+			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 		}
@@ -1176,6 +1178,10 @@ var runCmd = &cobra.Command{
 		// Print per-SLO metrics if multiple SLO classes present (BC-3, BC-4, BC-10)
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
 		printPerSLOMetrics(os.Stdout, sloDistributions)
+
+		// Print per-model metrics if requests carry model tags (Phase 1A, FR-011)
+		perModelMetrics := cluster.ComputePerModelMetrics(cs.AggregatedMetrics())
+		printPerModelMetrics(os.Stdout, perModelMetrics)
 
 		// Build and print trace summary if requested (BC-9)
 		if cs.Trace() != nil && summarizeTrace {
@@ -1235,6 +1241,31 @@ func printPerSLOMetrics(w io.Writer, sloMetrics map[string]*cluster.SLOMetrics) 
 		_, _ = fmt.Fprintf(w, "  %s:\n", cls)
 		_, _ = fmt.Fprintf(w, "    TTFT: mean=%.2f p99=%.2f (n=%d)\n", m.TTFT.Mean, m.TTFT.P99, m.TTFT.Count)
 		_, _ = fmt.Fprintf(w, "    E2E:  mean=%.2f p99=%.2f (n=%d)\n", m.E2E.Mean, m.E2E.P99, m.E2E.Count)
+	}
+}
+
+// printPerModelMetrics prints per-model TTFT, E2E, and throughput.
+// Follows the same pattern as printPerSLOMetrics (R2: sorted keys).
+// No-op when perModelMetrics is nil or empty.
+func printPerModelMetrics(w io.Writer, perModelMetrics map[string]*cluster.ModelMetrics) {
+	if len(perModelMetrics) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== Per-Model Metrics ===")
+	keys := make([]string, 0, len(perModelMetrics))
+	for k := range perModelMetrics {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, model := range keys {
+		m := perModelMetrics[model]
+		if m == nil {
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "  %s:\n", model)
+		_, _ = fmt.Fprintf(w, "    TTFT: p50=%.2f p99=%.2f (n=%d)\n", m.TTFT.P50, m.TTFT.P99, m.TTFT.Count)
+		_, _ = fmt.Fprintf(w, "    E2E:  p50=%.2f p99=%.2f (n=%d)\n", m.E2E.P50, m.E2E.P99, m.E2E.Count)
+		_, _ = fmt.Fprintf(w, "    Throughput: %.2f req/s, %.2f tok/s\n", m.ThroughputRPS, m.ThroughputTokenSec)
 	}
 }
 

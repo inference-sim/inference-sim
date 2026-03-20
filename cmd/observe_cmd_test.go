@@ -664,4 +664,3 @@ func TestObserveCmd_UnconstrainedOutputFlag_Exists(t *testing.T) {
 		t.Errorf("--unconstrained-output default: got %q, want %q", f.DefValue, "false")
 	}
 }
-

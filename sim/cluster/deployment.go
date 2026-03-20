@@ -28,6 +28,14 @@ type DeploymentConfig struct {
 	// When > 0, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization)
 	// use Periodic refresh with this interval (microseconds). 0 = Immediate (default).
 	SnapshotRefreshInterval int64
+
+	// Phase 1A: Node pool infrastructure (optional — empty = backward-compatible mode).
+	// When non-empty, activates PlacementManager for GPU inventory tracking.
+	NodePools []NodePoolConfig
+
+	// Phase 1A: Instance lifecycle configuration (loading delay, warm-up, drain policy).
+	// Zero value is safe: no loading delay, no warm-up, WAIT drain policy.
+	InstanceLifecycle InstanceLifecycleConfig
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.

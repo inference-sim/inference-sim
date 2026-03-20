@@ -18,6 +18,9 @@ BLIS supports three modes, in order of precedence:
 | **CLI distribution** | `--rate`, `--num-requests`, `--prompt-tokens` | Quick single-client experiments |
 | **Named presets** | `--workload chatbot` | Standard workload profiles |
 
+!!! note "Migration: `--workload traces` removed"
+    The `--workload traces` and `--workload-traces-filepath` flags have been removed. They performed lossy statistical approximation (averaged token lengths, constant arrival) rather than faithful replay. For trace replay, use `--workload-spec` with a [TraceV2 YAML file](../reference/workload-spec.md) instead. To export simulation results as TraceV2, use `--trace-output <prefix>`.
+
 ## Modeling Real Workloads
 
 This section maps common traffic patterns to YAML workload spec configurations. For schema details, see the [Workload Spec Schema](../reference/workload-spec.md).

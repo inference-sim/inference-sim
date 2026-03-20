@@ -256,6 +256,15 @@ func (sim *Simulator) Run() {
 // QueueDepth returns the number of requests in the wait queue.
 func (sim *Simulator) QueueDepth() int { return sim.WaitQ.Len() }
 
+// DrainWaitQueue removes and returns all requests currently in the wait queue.
+// Used by DrainRedirect policy to re-inject queued requests into the cluster router.
+// After this call, WaitQ.Len() == 0.
+func (sim *Simulator) DrainWaitQueue() []*Request {
+	items := sim.WaitQ.Items()
+	sim.WaitQ = &WaitQueue{}
+	return items
+}
+
 // BatchSize returns the number of requests in the running batch, or 0 if nil.
 func (sim *Simulator) BatchSize() int {
 	if sim.RunningBatch == nil {
@@ -418,6 +427,11 @@ func (sim *Simulator) recordKVUsageMetrics(stepDuration int64) {
 // response serialization) is non-blocking but still contributes to client-perceived latency.
 // For trained-roofline, PostDecodeFixedOverhead adds ~1.85ms to E2E; for other backends it's 0.
 func (sim *Simulator) recordRequestCompletion(req *Request) {
+	// INV-1 conservation: Always increment CompletedRequests.
+	// For redirected requests: the source instance drained the request from its WaitQ
+	// (StillQueued=0 at end), so source contributes 0 to InjectedRequests.
+	// The destination is the sole completion site. Skipping CompletedRequests++ here
+	// would cause the request to vanish from conservation accounting entirely.
 	sim.Metrics.CompletedRequests++
 
 	var itlSum int64
