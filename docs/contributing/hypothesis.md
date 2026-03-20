@@ -7,7 +7,7 @@ This document describes the end-to-end process for running a hypothesis-driven e
 !!! note "Experiment archive"
     All completed experiment scripts (`run.sh`, `analyze.py`, `hypotheses/lib/`) are preserved in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at commit `cad4191`. Runnable experiment artifacts are intentionally not kept on `main` — CLI output format changes can silently break analysis scripts, and completed findings are already documented in `docs/plans/research.md`. New experiment branches are created from `main` per Step 0; scripts stay in the feature branch and are not merged back.
 
-**For external contributors:** Submit your experiment artifacts via PR. Maintainers will run the review protocols on your behalf. You can also conduct reviews manually using the perspective checklists documented in each gate.
+**For external contributors:** Submit your `FINDINGS.md` and `docs/plans/research.md` update via PR — keep experiment scripts (`run.sh`, `analyze.py`) in your feature branch. Maintainers will review the scripts there and run the review protocols on your behalf. You can also conduct reviews manually using the perspective checklists documented in each gate.
 
 ---
 
@@ -55,7 +55,7 @@ flowchart TD
 | **1. Classify** | Choose family, VV&UQ category, type from [experiments.md](standards/experiments.md) |
 | **2. Design** | ED-1–ED-6 compliance, then 5-perspective Design Review |
 | **3. Human gate** | Present design for approval — pause until approved |
-| **4. Implement** | `run.sh` + `analyze.py` in your experiment branch (not merged to `main`) |
+| **4. Implement** | `run.sh` + `analyze.py` using `hypotheses/lib/` harness (in experiment branch, not merged to `main`) |
 | **5. Code Review** | 5-perspective code review → convergence |
 | **6. Run** | Execute `./run.sh` across required seeds |
 | **7. Document** | Write FINDINGS.md using [template](templates/hypothesis.md) |
@@ -182,7 +182,7 @@ Create `hypotheses/<name>/run.sh` and `hypotheses/<name>/analyze.py` inside your
 - If using `--total-kv-blocks`, call `preflight_kv_check` with max expected input tokens
 - `analyze.py` MUST import `analyze_helpers` and use `parse_blis_output` (handles timeouts gracefully)
 
-**Reference comment:** If reusing calibration from a prior experiment, include `# Reference: hypotheses/<name>/run.sh` with the file path.
+**Reference comment:** If reusing calibration from a prior experiment, include `# Reference: hypotheses/<name>/run.sh` with the branch and file path (e.g., `# Reference: hypothesis-archive:hypotheses/h12-conservation/run.sh` for archived experiments, or the feature branch name for recent ones).
 
 ---
 
@@ -387,7 +387,7 @@ git push -u origin <branch-name>
 gh pr create --title "experiment: <name>" --body "<hypothesis, findings, closing keywords>"
 ```
 
-The PR merges **only `FINDINGS.md` and `docs/plans/research.md`** to `main`. The experiment scripts (`run.sh`, `analyze.py`, `hypotheses/lib/`) remain in the feature branch as the reproducible archive — do not include them in the PR. The branch itself is the artifact.
+The PR merges **only `FINDINGS.md` and `docs/plans/research.md`** to `main`. `FINDINGS.md` intentionally lands under `hypotheses/<name>/FINDINGS.md` on `main` — this is the findings-only artifact for the experiment. The experiment scripts (`run.sh`, `analyze.py`, `hypotheses/lib/`) remain in the feature branch and are NOT staged; the branch itself is the reproducible archive for those.
 
 The PR description should include:
 - Hypothesis sentence and status
@@ -426,7 +426,7 @@ The #385/#390 pattern: run N hypothesis experiments simultaneously with a team l
 ### Coordination Rules
 
 - Each agent creates files ONLY in its own `hypotheses/<name>/` directory — no file conflicts
-- **README.md updates are deferred** to the team lead's consolidation step (not done by individual agents)
+- **`docs/plans/research.md` updates are deferred** to the team lead's consolidation step (not done by individual agents)
 - **Team lead MUST independently run convergence review** for each experiment. Do NOT delegate convergence assessment to the same agent that ran the experiment. Evidence from #390: agents self-reported "Round 1 convergence" but actual independent review found 3 CRITICAL + 18 IMPORTANT issues.
 - **Step 3 is a synchronization point.** All agents pause at Step 3 until the human has reviewed and approved each design independently. The team lead should batch-present all designs for human review to minimize idle time.
 - Solo mode is the degenerate case (team size = 1)
@@ -470,6 +470,9 @@ See [Issue Taxonomy](#issue-taxonomy-after-convergence) for the complete filing 
 ## Quality Gates
 
 ### Pre-Execution Gates (check BEFORE running experiments — Step 5)
+
+Note: `hypotheses/lib/harness.sh` and `analyze_helpers.py` are not on `main`. Obtain them from the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses/lib) per Step 4. Verify the harness functions produce output that matches the current CLI format before use — the archive is pinned at `cad4191` and the harness may need adaptation for newer CLI output.
+
 - [ ] `run.sh` sources `hypotheses/lib/harness.sh` and uses `blis_run` for every simulation call
 - [ ] Every `blis_run` call has an appropriate timeout tier (`TIMEOUT_QUICK`/`TIMEOUT_STANDARD`/`TIMEOUT_EXTENDED`)
 - [ ] KV safety pre-flight: if experiment uses `--total-kv-blocks`, call `preflight_kv_check` with max expected input tokens
@@ -639,7 +642,7 @@ After convergence, assess whether any confirmed findings should be promoted from
 
 ```go
 // TestClusterConservation_AcrossPolicyCombinations tests INV-1 at cluster level.
-// Promoted from hypothesis H12 (hypotheses/h12-conservation/).
+// Promoted from hypothesis H12 (hypothesis-archive branch: hypotheses/h12-conservation/).
 func TestClusterConservation_AcrossPolicyCombinations(t *testing.T) {
     configs := []struct{ routing, scheduler, admission string }{
         {"round-robin", "fcfs", "always-admit"},
@@ -707,3 +710,4 @@ When prior findings are known to be affected by a later change, an erratum is ad
 **v1.0 (PR #310):** Three external LLM reviews per round, no design gate, no code review gate, ad-hoc git commands.
 **v2.0 (2026-02-23, #392):** Three review gates (Design 5, Code 5, FINDINGS 10) with universal convergence protocol, human approval gate, self-audit, verification gate, parallel execution, two-track issue filing, explicit worktree/commit skill integration. Structural alignment with PR workflow v3.0.
 **v2.1 (2026-02-27, #464):** Human-first rewrite. Manual steps primary; skills in admonition callouts. Prerequisites table removed (skills referenced inline per step). "For Claude" directives rewritten as universal process guidance.
+**v2.2 (2026-03-20, #773):** Experiment scripts removed from `main`; all completed artifacts archived to `hypothesis-archive` branch at `cad4191`. `hypotheses/README.md` references migrated to `docs/plans/research.md`. New merge policy: only `FINDINGS.md` and `docs/plans/research.md` updates merge to `main`; `run.sh`, `analyze.py`, and `hypotheses/lib/` stay in feature branches.
