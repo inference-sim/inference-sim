@@ -1069,11 +1069,13 @@ func TestCalculateKVBlocks_GpuMemoryUtilization_Validation(t *testing.T) {
 		gpuUtil float64
 		wantErr bool
 	}{
+		{"valid 0.3", 0.3, false},
 		{"valid 0.5", 0.5, false},
 		{"valid 0.7", 0.7, false},
 		{"valid 0.9", 0.9, false},
 		{"valid 1.0", 1.0, false},
-		{"below range", 0.4, true},
+		{"below range", 0.0, true},
+		{"negative", -0.1, true},
 		{"above range", 1.1, true},
 		{"NaN", math.NaN(), true},
 		{"positive infinity", math.Inf(1), true},

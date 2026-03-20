@@ -68,8 +68,8 @@ var swiGLUActivations = map[string]bool{
 // budget is insufficient.
 func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSize int64, gpuMemoryUtilization float64, params KVCapacityParams) (int64, error) {
 	// --- Input validation (R3, R11) ---
-	if gpuMemoryUtilization < 0.5 || gpuMemoryUtilization > 1.0 || math.IsNaN(gpuMemoryUtilization) || math.IsInf(gpuMemoryUtilization, 0) {
-		return 0, fmt.Errorf("CalculateKVBlocks: gpuMemoryUtilization must be in [0.5, 1.0], got %v", gpuMemoryUtilization)
+	if gpuMemoryUtilization <= 0 || gpuMemoryUtilization > 1.0 || math.IsNaN(gpuMemoryUtilization) || math.IsInf(gpuMemoryUtilization, 0) {
+		return 0, fmt.Errorf("CalculateKVBlocks: gpuMemoryUtilization must be in (0, 1.0], got %v", gpuMemoryUtilization)
 	}
 	if tp <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: TP must be > 0, got %d", tp)
