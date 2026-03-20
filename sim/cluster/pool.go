@@ -59,6 +59,10 @@ func ValidatePoolTopology(prefill, decode, total int) error {
 // Instances 0..prefill-1 are assigned PoolRolePrefill, prefill..prefill+decode-1 are PoolRoleDecode.
 // Caller must validate prefill+decode <= len(instances) before calling.
 func BuildPoolMembership(instances []*InstanceSimulator, prefill, decode int) map[string]PoolRole {
+	if prefill+decode > len(instances) {
+		panic(fmt.Sprintf("BuildPoolMembership: prefill(%d)+decode(%d)=%d exceeds len(instances)=%d",
+			prefill, decode, prefill+decode, len(instances)))
+	}
 	membership := make(map[string]PoolRole, prefill+decode)
 	for i := 0; i < prefill; i++ {
 		membership[string(instances[i].ID())] = PoolRolePrefill
@@ -75,6 +79,10 @@ func BuildPoolMembership(instances []*InstanceSimulator, prefill, decode int) ma
 // computation before instance construction (needed for per-pool config resolution).
 // Caller must validate prefill+decode <= total before calling.
 func BuildPoolMembershipFromIndices(total, prefill, decode int) map[string]PoolRole {
+	if prefill+decode > total {
+		panic(fmt.Sprintf("BuildPoolMembershipFromIndices: prefill(%d)+decode(%d)=%d exceeds total(%d)",
+			prefill, decode, prefill+decode, total))
+	}
 	membership := make(map[string]PoolRole, prefill+decode)
 	for i := 0; i < prefill; i++ {
 		membership[fmt.Sprintf("instance_%d", i)] = PoolRolePrefill

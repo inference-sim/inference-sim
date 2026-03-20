@@ -1,7 +1,6 @@
 package sim
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -37,25 +36,28 @@ func TestDisaggregationDecider_Interface(t *testing.T) {
 	var _ DisaggregationDecider = &AlwaysDisaggregate{}
 }
 
-// TestNewDisaggregationDecider_Factory verifies factory dispatches correctly.
+// TestNewDisaggregationDecider_Factory verifies factory dispatches correctly
+// by asserting observable behavior (Decide output), not concrete type names.
 func TestNewDisaggregationDecider_Factory(t *testing.T) {
+	req := &Request{ID: "req-1", InputTokens: make([]int, 10)}
 	tests := []struct {
-		name     string
-		wantType string
+		name             string
+		wantDisaggregate bool
 	}{
-		{"", "*sim.NeverDisaggregate"},
-		{"never", "*sim.NeverDisaggregate"},
-		{"always", "*sim.AlwaysDisaggregate"},
+		{"", false},
+		{"never", false},
+		{"always", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			decider := NewDisaggregationDecider(tc.name)
-			if decider == nil {
+			d := NewDisaggregationDecider(tc.name)
+			if d == nil {
 				t.Fatal("NewDisaggregationDecider returned nil")
 			}
-			gotType := fmt.Sprintf("%T", decider)
-			if gotType != tc.wantType {
-				t.Errorf("NewDisaggregationDecider(%q) type = %s, want %s", tc.name, gotType, tc.wantType)
+			got := d.Decide(req).Disaggregate
+			if got != tc.wantDisaggregate {
+				t.Errorf("NewDisaggregationDecider(%q).Decide().Disaggregate = %v, want %v",
+					tc.name, got, tc.wantDisaggregate)
 			}
 		})
 	}

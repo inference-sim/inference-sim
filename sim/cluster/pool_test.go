@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -159,24 +160,7 @@ func TestBuildPoolMembershipFromIndices(t *testing.T) {
 
 // instanceName returns the instance ID string for index i, mirroring NewClusterSimulator convention.
 func instanceName(i int) string {
-	return "instance_" + itoa(i)
-}
-
-// itoa converts an int to a decimal string without importing strconv.
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	buf := make([]byte, 0, 10)
-	for i > 0 {
-		buf = append(buf, byte('0'+i%10))
-		i /= 10
-	}
-	// reverse
-	for l, r := 0, len(buf)-1; l < r; l, r = l+1, r-1 {
-		buf[l], buf[r] = buf[r], buf[l]
-	}
-	return string(buf)
+	return "instance_" + strconv.Itoa(i)
 }
 
 // TestFilterSnapshotsByPool verifies snapshot filtering by pool role.

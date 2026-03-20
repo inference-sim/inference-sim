@@ -55,6 +55,9 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 	case "direct-to-decode":
 		panic("use NewDirectToDecodeDecider(threshold) to construct direct-to-decode decider")
 	default:
-		panic(fmt.Sprintf("unhandled disaggregation decider %q", name))
+		panic(fmt.Sprintf(
+			"disaggregation decider %q is registered in validDisaggregationDeciders (bundle.go) "+
+				"but has no case in NewDisaggregationDecider; add a case here",
+			name))
 	}
 }

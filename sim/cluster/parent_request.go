@@ -27,8 +27,8 @@ type ParentRequest struct {
 	CompletionTime int64
 
 	// Instance assignment
-	PrefillInstanceID string
-	DecodeInstanceID  string
+	PrefillInstanceID InstanceID
+	DecodeInstanceID  InstanceID
 }
 
 // NewParentRequest creates a ParentRequest from the original request.
