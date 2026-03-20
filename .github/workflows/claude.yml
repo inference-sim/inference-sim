@@ -83,7 +83,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: ${{ steps.pr-info.outputs.pr_head_repo || github.repository }}
           ref: ${{ steps.pr-info.outputs.pr_head_sha || github.sha }}
