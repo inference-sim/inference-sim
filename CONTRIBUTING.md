@@ -372,7 +372,7 @@ Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key 
 |---|---|---|
 | `CLAUDE.md` | Code architecture, file organization, CLI flags, compact rule/invariant tables | Always — authoritative for current codebase state |
 | `docs/contributing/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
-| `docs/contributing/standards/invariants.md` | 9 system invariants (INV-1 through INV-9) with verification strategies | When touching request lifecycle, KV cache, or metrics |
+| `docs/contributing/standards/invariants.md` | 11 system invariants (INV-1 through INV-11) with verification strategies | When touching request lifecycle, KV cache, or metrics |
 | `docs/contributing/standards/experiments.md` | Experiment taxonomy, rigor requirements, findings classification | When running hypothesis experiments |
 | `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
 | `docs/concepts/` | System architecture, core engine, concepts glossary, roofline estimation | When learning how BLIS works before contributing |
