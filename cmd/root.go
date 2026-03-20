@@ -614,7 +614,7 @@ var runCmd = &cobra.Command{
 							if hcErr == nil && hc.MemoryGiB > 0 {
 								kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
 								if kvErr == nil {
-									autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tensorParallelism, blockSizeTokens, kvParams)
+									autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tensorParallelism, blockSizeTokens, 0.9, kvParams)
 									if calcErr == nil {
 										totalKVBlocks = autoBlocks
 										logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d from cached model config", totalKVBlocks)
@@ -686,7 +686,7 @@ var runCmd = &cobra.Command{
 					if kvParams.HiddenAct == "" {
 						logrus.Infof("--latency-model: hidden_act not set in config.json; assuming SwiGLU (3-matrix MLP) for weight estimation")
 					}
-					autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, kvParams)
+					autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, 0.9, kvParams)
 					if calcErr != nil {
 						logrus.Warnf("--latency-model: KV capacity auto-calculation failed: %v. "+
 							"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", calcErr, totalKVBlocks)

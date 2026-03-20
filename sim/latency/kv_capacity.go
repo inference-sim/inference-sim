@@ -35,7 +35,6 @@ func NewKVCapacityParams(isMoE bool, numLocalExperts int, tieWordEmbeddings bool
 
 // Constants matching the llm-d-benchmark capacity_planner.py reference.
 const (
-	gpuMemUtil               = 0.9
 	activationMemoryDenseGiB = 5.5
 	activationMemoryMoEGiB   = 8.0
 	nonTorchMemoryTP1GiB     = 0.15
@@ -67,8 +66,11 @@ var swiGLUActivations = map[string]bool{
 //
 // Returns the number of blocks, or an error if inputs are invalid or memory
 // budget is insufficient.
-func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSize int64, params KVCapacityParams) (int64, error) {
+func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSize int64, gpuMemoryUtilization float64, params KVCapacityParams) (int64, error) {
 	// --- Input validation (R3, R11) ---
+	if gpuMemoryUtilization < 0.5 || gpuMemoryUtilization > 1.0 || math.IsNaN(gpuMemoryUtilization) || math.IsInf(gpuMemoryUtilization, 0) {
+		return 0, fmt.Errorf("CalculateKVBlocks: gpuMemoryUtilization must be in [0.5, 1.0], got %v", gpuMemoryUtilization)
+	}
 	if tp <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: TP must be > 0, got %d", tp)
 	}
@@ -152,7 +154,7 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 
 	// --- Step 4: Available memory budget (total across all TP GPUs) ---
 	// Reference: available_memory = gpu_mem * gpu_mem_util * gpu_count
-	totalAvailableGiB := hc.MemoryGiB * gpuMemUtil * float64(tp)
+	totalAvailableGiB := hc.MemoryGiB * gpuMemoryUtilization * float64(tp)
 
 	// Model weights: total model size (distributed across TP GPUs, but sum = total)
 	modelWeightBytes := computeModelWeightBytes(mc, params)
@@ -181,7 +183,7 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 			"CalculateKVBlocks: model overhead (%.2f GiB = %.2f weights + %.2f activation + %.2f non-torch) "+
 				"exceeds available GPU memory (%.2f GiB = %.1f GiB × %.0f%% util × %d GPUs)",
 			overheadGiB, modelWeightGiB, activationGiB, nonTorchGiB,
-			totalAvailableGiB, hc.MemoryGiB, gpuMemUtil*100, tp)
+			totalAvailableGiB, hc.MemoryGiB, gpuMemoryUtilization*100, tp)
 	}
 
 	allocatableGiB := totalAvailableGiB - overheadGiB
