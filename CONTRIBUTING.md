@@ -333,31 +333,26 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 
 BLIS uses hypothesis-driven experimentation to validate system behavior, surface bugs, and document design tradeoffs. Experiments are organized into 6 families (workload/arrival, scheduler invariants, performance-regime, structural model, robustness, cross-policy comparative).
 
-**To run existing experiments:**
-```bash
-cd hypotheses/h13-determinism
-./run.sh
-```
-See `hypotheses/README.md` for the full list and coverage gaps.
+**To run existing experiments:** Experiment scripts (`run.sh`, `analyze.py`) are not on `main` — they live in experiment feature branches and are archived in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at commit `cad4191`. Check out the relevant branch and run `./run.sh` from the experiment directory.
 
 **To propose a new hypothesis:**
 File a GitHub issue using the "Hypothesis Proposal" template. Include: the hypothesis sentence, family, diagnostic value, and rough experiment design.
 
 **To implement and run a new experiment:**
 Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key phases:
-1. Create worktree, classify hypothesis, design experiment
+1. Create worktree from `main`, classify hypothesis, design experiment
 2. **Design Review** (5 perspectives) → convergence → **human approval**
-3. Implement `run.sh` and `analyze.py` using shared harness (`hypotheses/lib/`)
+3. Implement `run.sh` and `analyze.py` using shared harness (copy from `hypothesis-archive` branch)
 4. **Code Review** (5 perspectives) → convergence
 5. Run experiments, document FINDINGS.md
 6. **FINDINGS Review** (10 perspectives) → convergence
-7. Self-audit (6 dimensions), verification gate, commit and PR
+7. Self-audit (6 dimensions), verification gate, create PR (branch not merged to `main`)
 
 **Review protocol:** Three review gates at different lifecycle stages, each using the universal convergence protocol (zero CRITICAL + zero IMPORTANT from all reviewers). External contributors without AI review infrastructure should submit their artifacts via PR — maintainers will run the review protocols. Only standard-library Python packages are needed (json, math, re, sys, pathlib).
 
 | Document | Purpose |
 |---|---|
-| `hypotheses/README.md` | Existing experiments, coverage gaps |
+| [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | Completed experiments, FINDINGS.md catalog, coverage gaps |
 | `docs/contributing/hypothesis.md` | Full process (Steps 0-10, three review gates) |
 | `docs/contributing/convergence.md` | Universal Convergence Protocol (used by all review gates) |
 | `docs/contributing/standards/experiments.md` | Rigor requirements (families, types, VV&UQ, RCV rules) |

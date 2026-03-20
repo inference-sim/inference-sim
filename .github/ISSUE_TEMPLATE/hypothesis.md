@@ -35,5 +35,5 @@ assignees: ''
 
 ## Coverage
 
-- **Does this fill a family gap?** <!-- Check hypotheses/README.md coverage table -->
+- **Does this fill a family gap?** <!-- Check hypothesis-archive branch coverage catalog -->
 - **Related hypotheses:** <!-- Any existing H1-H26 or filed issues this builds on? -->
