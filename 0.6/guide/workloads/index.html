@@ -3194,6 +3194,10 @@
 </tr>
 </tbody>
 </table>
+<div class="admonition note">
+<p class="admonition-title">Migration: <code>--workload traces</code> removed</p>
+<p>The <code>--workload traces</code> and <code>--workload-traces-filepath</code> flags have been removed. They performed lossy statistical approximation (averaged token lengths, constant arrival) rather than faithful replay. For trace replay, use <code>--workload-spec</code> with a <a href="../../reference/workload-spec/">TraceV2 YAML file</a> instead. To export simulation results as TraceV2, use <code>--trace-output &lt;prefix&gt;</code>.</p>
+</div>
 <h2 id="modeling-real-workloads">Modeling Real Workloads<a class="headerlink" href="#modeling-real-workloads" title="Permanent link">&para;</a></h2>
 <p>This section maps common traffic patterns to YAML workload spec configurations. For schema details, see the <a href="../../reference/workload-spec/">Workload Spec Schema</a>.</p>
 <h3 id="interactive-chat">Interactive Chat<a class="headerlink" href="#interactive-chat" title="Permanent link">&para;</a></h3>

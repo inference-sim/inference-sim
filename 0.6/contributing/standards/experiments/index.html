@@ -4286,7 +4286,7 @@
 <p>This audit is what makes experiments a feedback loop into the standards. Example: H3 confirmed that the llm-d default config is robust (confirmation) AND revealed that KV utilization is stale at high rates (design limitation -&gt; new rule R17 + new invariant INV-7 + 3 issues).</p>
 <hr />
 <h2 id="experiment-artifacts">Experiment Artifacts<a class="headerlink" href="#experiment-artifacts" title="Permanent link">&para;</a></h2>
-<p>Each hypothesis experiment lives in <code>hypotheses/&lt;name&gt;/</code> with:</p>
+<p>Each hypothesis experiment lives in <code>hypotheses/&lt;name&gt;/</code> within its feature branch with:</p>
 <table>
 <thead>
 <tr>
@@ -4314,6 +4314,7 @@
 </tbody>
 </table>
 <p>Scripts must be reproducible — running <code>./run.sh</code> on the same commit produces deterministic output.</p>
+<p><strong>Artifact lifecycle:</strong> Experiment artifacts are not merged to <code>main</code>. They stay in the feature branch; the PR itself is the permanent, linkable record. Completed experiments are collected in the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive"><code>hypothesis-archive</code> branch</a>.</p>
 
 
 

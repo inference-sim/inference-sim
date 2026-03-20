@@ -3713,9 +3713,13 @@
 
 
 <h1 id="hypothesis-experiment-process">Hypothesis Experiment Process<a class="headerlink" href="#hypothesis-experiment-process" title="Permanent link">&para;</a></h1>
-<p><strong>Status:</strong> Active (v2.1 — updated 2026-02-27)</p>
-<p>This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see <a href="../standards/experiments/">docs/contributing/standards/experiments.md</a>. For the FINDINGS.md template, see <a href="../templates/hypothesis/">docs/contributing/templates/hypothesis.md</a>. For experiment status and coverage gaps, see <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">hypotheses/README.md</a>.</p>
-<p><strong>For external contributors:</strong> Submit your experiment artifacts via PR. Maintainers will run the review protocols on your behalf. You can also conduct reviews manually using the perspective checklists documented in each gate.</p>
+<p><strong>Status:</strong> Active (v2.2 — updated 2026-03-20)</p>
+<p>This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see <a href="../standards/experiments/">docs/contributing/standards/experiments.md</a>. For the FINDINGS.md template, see <a href="../templates/hypothesis/">docs/contributing/templates/hypothesis.md</a>. For completed experiment status and coverage gaps, see the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive"><code>hypothesis-archive</code> branch</a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Experiment archive</p>
+<p>All completed experiment artifacts (<code>run.sh</code>, <code>analyze.py</code>, <code>FINDINGS.md</code>, <code>hypotheses/lib/</code>) and the research catalog (<code>docs/plans/research.md</code>) are preserved in the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive"><code>hypothesis-archive</code> branch</a> at commit <code>cad4191</code> (the last <code>main</code> commit before this separation). None of these are kept on <code>main</code> — CLI output format changes can silently break analysis scripts, and a single findings catalog on <code>main</code> would drift out of sync with experiments that live in feature branches. New experiment branches are created from <code>main</code> per Step 0; all experiment artifacts stay in the feature branch and are not merged back.</p>
+</div>
+<p><strong>For external contributors:</strong> Submit your <code>FINDINGS.md</code> via PR from your feature branch — keep experiment scripts (<code>run.sh</code>, <code>analyze.py</code>) in that same branch. Maintainers will review the scripts there and run the review protocols on your behalf. You can also conduct reviews manually using the perspective checklists documented in each gate.</p>
 <hr />
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <pre class="mermaid"><code>flowchart TD
@@ -3774,7 +3778,7 @@
 </tr>
 <tr>
 <td><strong>4. Implement</strong></td>
-<td><code>run.sh</code> + <code>analyze.py</code> using <code>hypotheses/lib/</code> harness</td>
+<td>Copy harness from <code>hypothesis-archive</code> branch, then write <code>run.sh</code> + <code>analyze.py</code> (stay in experiment branch)</td>
 </tr>
 <tr>
 <td><strong>5. Code Review</strong></td>
@@ -3819,7 +3823,7 @@
 <h3 id="step-1-select-and-classify-hypothesis">Step 1: Select and Classify Hypothesis<a class="headerlink" href="#step-1-select-and-classify-hypothesis" title="Permanent link">&para;</a></h3>
 <p><strong>Context:</strong> Worktree</p>
 <ol>
-<li><strong>Select hypothesis</strong> — from <code>docs/plans/research.md</code>, coverage gaps in <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">hypotheses/README.md</a>, or a new observation</li>
+<li><strong>Select hypothesis</strong> — from coverage gaps documented in the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive"><code>hypothesis-archive</code> branch</a> research catalog, or a new observation from simulator behavior</li>
 <li><strong>Classify:</strong></li>
 <li>(a) Which <strong>family</strong>? (See <a href="../standards/experiments/">experiments.md</a> for the 6 families and sentence patterns)</li>
 <li>(b) <strong>Verification</strong>, <strong>Validation</strong>, or <strong>UQ</strong>? (Determines evidence requirements)</li>
@@ -3882,13 +3886,19 @@
 <hr />
 <h3 id="step-4-implement-experiment-code">Step 4: Implement Experiment Code<a class="headerlink" href="#step-4-implement-experiment-code" title="Permanent link">&para;</a></h3>
 <p><strong>Context:</strong> Worktree (after human approval)</p>
-<p>Create <code>hypotheses/&lt;name&gt;/run.sh</code> and <code>hypotheses/&lt;name&gt;/analyze.py</code>.</p>
+<p>Create <code>hypotheses/&lt;name&gt;/run.sh</code> and <code>hypotheses/&lt;name&gt;/analyze.py</code> inside your experiment branch. These files are <strong>not merged to <code>main</code></strong> — they stay in the feature branch as the reproducible artifact.</p>
+<p><strong>First, copy the shared harness from the archive branch:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>hypotheses/lib
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>show<span class="w"> </span>hypothesis-archive:hypotheses/lib/harness.sh<span class="w"> </span>&gt;<span class="w"> </span>hypotheses/lib/harness.sh
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>git<span class="w"> </span>show<span class="w"> </span>hypothesis-archive:hypotheses/lib/analyze_helpers.py<span class="w"> </span>&gt;<span class="w"> </span>hypotheses/lib/analyze_helpers.py
+</code></pre></div>
+<p>Then verify the harness output format matches the current CLI before use — the archive is pinned at <code>cad4191</code> and the harness may need adaptation for newer CLI output (see <a href="#quality-gates">Quality Gates</a> for the checklist).</p>
 <p><strong>Harness requirements (mandatory):</strong>
 - <code>run.sh</code> MUST source <code>hypotheses/lib/harness.sh</code> and use <code>blis_run</code> for every simulation call
 - Every <code>blis_run</code> call MUST have an appropriate timeout tier (<code>TIMEOUT_QUICK</code>/<code>TIMEOUT_STANDARD</code>/<code>TIMEOUT_EXTENDED</code>)
 - If using <code>--total-kv-blocks</code>, call <code>preflight_kv_check</code> with max expected input tokens
 - <code>analyze.py</code> MUST import <code>analyze_helpers</code> and use <code>parse_blis_output</code> (handles timeouts gracefully)</p>
-<p><strong>Reference comment:</strong> If reusing calibration from a prior experiment, include <code># Reference: hypotheses/&lt;name&gt;/run.sh</code> with the file path.</p>
+<p><strong>Reference comment:</strong> If reusing calibration from a prior experiment, include <code># Reference: hypotheses/&lt;name&gt;/run.sh</code> with the branch and file path (e.g., <code># Reference: hypothesis-archive:hypotheses/h12-conservation/run.sh</code> for archived experiments, or the feature branch name for recent ones).</p>
 <hr />
 <h3 id="step-5-code-review-5-perspectives">Step 5: Code Review (5 perspectives)<a class="headerlink" href="#step-5-code-review-5-perspectives" title="Permanent link">&para;</a></h3>
 <p><strong>Context:</strong> Worktree (after implementation, BEFORE running experiments)</p>
@@ -3967,7 +3977,6 @@
 <li><strong>Analyze</strong> — produce comparison tables, compute effect sizes</li>
 <li><strong>Verify root cause</strong> — trace every causal claim through code (RCV-1, RCV-2, RCV-3)</li>
 <li><strong>Document FINDINGS.md</strong> — use the <a href="../templates/hypothesis/">template</a>. All sections must be present and non-empty.</li>
-<li><strong>Update <code>hypotheses/README.md</code></strong> — add a row to the "Validated Hypotheses" table and update "Coverage by Family" if needed</li>
 </ol>
 <hr />
 <h3 id="step-8-findings-review-10-perspectives">Step 8: FINDINGS Review (10 perspectives)<a class="headerlink" href="#step-8-findings-review-10-perspectives" title="Permanent link">&para;</a></h3>
@@ -4057,16 +4066,16 @@
 <h3 id="step-10-verification-gate-commit-pr">Step 10: Verification Gate + Commit + PR<a class="headerlink" href="#step-10-verification-gate-commit-pr" title="Permanent link">&para;</a></h3>
 <p><strong>Context:</strong> Worktree (after self-audit)</p>
 <p><strong>If the experiment discovered code fixes</strong> (e.g., #386 KV livelock, #387 conservation test update), run the verification gate before committing:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>go<span class="w"> </span>build<span class="w"> </span>./...<span class="w">          </span><span class="c1"># Build passes</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...<span class="w"> </span>-count<span class="o">=</span><span class="m">1</span><span class="w">  </span><span class="c1"># All tests pass</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...<span class="w"> </span><span class="c1"># Zero lint issues</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>go<span class="w"> </span>build<span class="w"> </span>./...<span class="w">          </span><span class="c1"># Build passes</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...<span class="w"> </span>-count<span class="o">=</span><span class="m">1</span><span class="w">  </span><span class="c1"># All tests pass</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...<span class="w"> </span><span class="c1"># Zero lint issues</span>
 </code></pre></div>
 <p><strong>Commit and PR:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>add<span class="w"> </span>hypotheses/&lt;name&gt;/
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;experiment(&lt;name&gt;): &lt;hypothesis sentence&gt; — &lt;status&gt;&quot;</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>&lt;branch-name&gt;
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;experiment: &lt;name&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;hypothesis, findings, closing keywords&gt;&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;experiment(&lt;name&gt;): &lt;hypothesis sentence&gt; — &lt;status&gt;&quot;</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>&lt;branch-name&gt;
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;experiment: &lt;name&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;hypothesis, findings, closing keywords&gt;&quot;</span>
 </code></pre></div>
+<p><strong>Nothing from the experiment merges to <code>main</code>.</strong> The entire branch — <code>FINDINGS.md</code>, <code>run.sh</code>, <code>analyze.py</code>, <code>hypotheses/lib/</code>, workload YAMLs — stays in the feature branch. The PR is the permanent, reviewable, linkable record of the experiment. This avoids split-brain between findings on <code>main</code> and scripts that only exist in the branch.</p>
 <p>The PR description should include:
 - Hypothesis sentence and status
 - Key findings (1-3 bullet points)
@@ -4099,7 +4108,6 @@
 <h3 id="coordination-rules">Coordination Rules<a class="headerlink" href="#coordination-rules" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Each agent creates files ONLY in its own <code>hypotheses/&lt;name&gt;/</code> directory — no file conflicts</li>
-<li><strong>README.md updates are deferred</strong> to the team lead's consolidation step (not done by individual agents)</li>
 <li><strong>Team lead MUST independently run convergence review</strong> for each experiment. Do NOT delegate convergence assessment to the same agent that ran the experiment. Evidence from #390: agents self-reported "Round 1 convergence" but actual independent review found 3 CRITICAL + 18 IMPORTANT issues.</li>
 <li><strong>Step 3 is a synchronization point.</strong> All agents pause at Step 3 until the human has reviewed and approved each design independently. The team lead should batch-present all designs for human review to minimize idle time.</li>
 <li>Solo mode is the degenerate case (team size = 1)</li>
@@ -4107,9 +4115,8 @@
 <h3 id="consolidation">Consolidation<a class="headerlink" href="#consolidation" title="Permanent link">&para;</a></h3>
 <p>After all agents complete:
 1. Team lead reviews all proposed issues for deduplication
-2. Team lead updates <code>hypotheses/README.md</code> with all new experiments
-3. Cross-experiment consistency check across all N experiments
-4. Single PR via <code>commit-push-pr</code> skill</p>
+2. Cross-experiment consistency check across all N experiments
+3. Each experiment branch creates its own PR (or team lead creates one batch PR per branch)</p>
 <hr />
 <h2 id="two-track-issue-filing">Two-Track Issue Filing<a class="headerlink" href="#two-track-issue-filing" title="Permanent link">&para;</a></h2>
 <h3 id="immediate-track-file-as-soon-as-discovered">Immediate Track (file as soon as discovered)<a class="headerlink" href="#immediate-track-file-as-soon-as-discovered" title="Permanent link">&para;</a></h3>
@@ -4130,6 +4137,7 @@
 <hr />
 <h2 id="quality-gates">Quality Gates<a class="headerlink" href="#quality-gates" title="Permanent link">&para;</a></h2>
 <h3 id="pre-execution-gates-check-before-running-experiments-step-5">Pre-Execution Gates (check BEFORE running experiments — Step 5)<a class="headerlink" href="#pre-execution-gates-check-before-running-experiments-step-5" title="Permanent link">&para;</a></h3>
+<p>Note: <code>hypotheses/lib/harness.sh</code> and <code>analyze_helpers.py</code> are not on <code>main</code>. Obtain them from the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses/lib"><code>hypothesis-archive</code> branch</a> per Step 4. Verify the harness functions produce output that matches the current CLI format before use — the archive is pinned at <code>cad4191</code> and the harness may need adaptation for newer CLI output.</p>
 <ul class="task-list">
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>run.sh</code> sources <code>hypotheses/lib/harness.sh</code> and uses <code>blis_run</code> for every simulation call</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every <code>blis_run</code> call has an appropriate timeout tier (<code>TIMEOUT_QUICK</code>/<code>TIMEOUT_STANDARD</code>/<code>TIMEOUT_EXTENDED</code>)</li>
@@ -4160,7 +4168,6 @@
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Findings classified per the findings table (including resolution type)</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Standards audit completed</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Promotion assessment completed (see <a href="#promotion-of-confirmed-hypotheses">Promotion of Confirmed Hypotheses</a>)</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>hypotheses/README.md</code> updated with new experiment row(s) and coverage changes</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> If code fixes involved: <code>go build</code>, <code>go test</code>, <code>golangci-lint</code> all pass</li>
 </ul>
 <h3 id="post-pr-gates-check-after-pr-creation-step-10">Post-PR Gates (check after PR creation — Step 10)<a class="headerlink" href="#post-pr-gates-check-after-pr-creation-step-10" title="Permanent link">&para;</a></h3>
@@ -4174,10 +4181,10 @@
 <h2 id="when-to-run-experiments">When to Run Experiments<a class="headerlink" href="#when-to-run-experiments" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Validating that a new feature works as designed (post-PR confirmation)</li>
-<li>Testing intuitive claims about system behavior (from <code>docs/plans/research.md</code>)</li>
+<li>Testing intuitive claims about system behavior</li>
 <li>Investigating unexpected behavior observed during development</li>
 <li>Exploring design tradeoffs between configurations</li>
-<li>Filling coverage gaps identified in the <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">family coverage table</a></li>
+<li>Filling coverage gaps identified in the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive"><code>hypothesis-archive</code> branch</a></li>
 </ul>
 <hr />
 <h2 id="generating-hypotheses">Generating Hypotheses<a class="headerlink" href="#generating-hypotheses" title="Permanent link">&para;</a></h2>
@@ -4199,7 +4206,7 @@
 </tr>
 <tr>
 <td><strong>Coverage gaps</strong></td>
-<td>Check the <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">family coverage table</a> for untested families</td>
+<td>Check the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive"><code>hypothesis-archive</code> branch</a> for untested families</td>
 <td>Workload/arrival family has 0 experiments → "Gamma sampler should match theoretical CV"</td>
 </tr>
 <tr>
@@ -4311,11 +4318,11 @@
 </table>
 <h3 id="how-to-propose-a-new-hypothesis">How to propose a new hypothesis<a class="headerlink" href="#how-to-propose-a-new-hypothesis" title="Permanent link">&para;</a></h3>
 <ol>
-<li><strong>Check coverage</strong>: Read the <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">family coverage table</a>. Prioritize families with low coverage.</li>
+<li><strong>Check coverage</strong>: Browse the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive"><code>hypothesis-archive</code> branch</a>. Prioritize families with low coverage.</li>
 <li><strong>Choose a family</strong>: Which domain does your claim target? (See <a href="../standards/experiments/">experiments.md</a> for the 6 families.)</li>
 <li><strong>Write the sentence</strong>: Use the family-specific pattern from experiments.md.</li>
 <li><strong>Add the diagnostic clause</strong>: "If this fails, it would indicate..."</li>
-<li><strong>Check for redundancy</strong>: Search existing hypotheses in <code>docs/plans/research.md</code> and on GitHub: <a href="https://github.com/inference-sim/inference-sim/labels/hypothesis">issues labeled <code>hypothesis</code></a>.</li>
+<li><strong>Check for redundancy</strong>: Browse existing experiments in the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses"><code>hypothesis-archive</code> branch</a> and on GitHub: <a href="https://github.com/inference-sim/inference-sim/labels/hypothesis">issues labeled <code>hypothesis</code></a>.</li>
 <li><strong>File as a GitHub issue</strong>: Use the <a href="https://github.com/inference-sim/inference-sim/issues/new?template=hypothesis.md">Hypothesis Proposal issue template</a> on GitHub (click "New Issue" → "Hypothesis Proposal"). This template has fields for family, VV&amp;UQ category, diagnostic value, and experiment design.</li>
 </ol>
 <p>External contributors should file a GitHub issue using the Hypothesis Proposal template. Maintainers will triage, prioritize, and run the review protocol.</p>
@@ -4426,17 +4433,17 @@
 </tbody>
 </table>
 <p><strong>Issue body template:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="gu">## Context</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>Discovered in hypothesis experiment &lt;name&gt; (PR <span class="ni">#NNN</span>).
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="gu">## Finding</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>&lt;One-paragraph description from FINDINGS.md&gt;
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="gu">## Evidence</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>&lt;Key data point or code reference&gt;
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="gu">## Proposed action</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>&lt;What should be done — fix, new experiment, documentation update&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="gu">## Context</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>Discovered in hypothesis experiment &lt;name&gt; (PR <span class="ni">#NNN</span>).
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="gu">## Finding</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>&lt;One-paragraph description from FINDINGS.md&gt;
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="gu">## Evidence</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>&lt;Key data point or code reference&gt;
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="gu">## Proposed action</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>&lt;What should be done — fix, new experiment, documentation update&gt;
 </code></pre></div>
 <p><strong>What NOT to file:</strong>
 - Issues for findings that are "documented here" with no action needed
@@ -4478,22 +4485,22 @@
 </tbody>
 </table>
 <h3 id="what-a-promoted-test-looks-like">What a promoted test looks like<a class="headerlink" href="#what-a-promoted-test-looks-like" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// TestClusterConservation_AcrossPolicyCombinations tests INV-1 at cluster level.</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1">// Promoted from hypothesis H12 (hypotheses/h12-conservation/).</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestClusterConservation_AcrossPolicyCombinations</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nx">configs</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="p">[]</span><span class="kd">struct</span><span class="p">{</span><span class="w"> </span><span class="nx">routing</span><span class="p">,</span><span class="w"> </span><span class="nx">scheduler</span><span class="p">,</span><span class="w"> </span><span class="nx">admission</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">}{</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;round-robin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;fcfs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;always-admit&quot;</span><span class="p">},</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;least-loaded&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;fcfs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;always-admit&quot;</span><span class="p">},</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;weighted&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;priority-fcfs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;token-bucket&quot;</span><span class="p">},</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">        </span><span class="c1">// ... all 10 H12 configurations</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">cfg</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">configs</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Run</span><span class="p">(</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">routing</span><span class="o">+</span><span class="s">&quot;/&quot;</span><span class="o">+</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">scheduler</span><span class="o">+</span><span class="s">&quot;/&quot;</span><span class="o">+</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">admission</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">            </span><span class="c1">// Run cluster simulation</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">            </span><span class="c1">// Assert: injected == completed + still_queued + still_running</span>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">        </span><span class="p">})</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1">// TestClusterConservation_AcrossPolicyCombinations tests INV-1 at cluster level.</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1">// Promoted from hypothesis H12 (hypothesis-archive branch: hypotheses/h12-conservation/).</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestClusterConservation_AcrossPolicyCombinations</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nx">configs</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="p">[]</span><span class="kd">struct</span><span class="p">{</span><span class="w"> </span><span class="nx">routing</span><span class="p">,</span><span class="w"> </span><span class="nx">scheduler</span><span class="p">,</span><span class="w"> </span><span class="nx">admission</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">}{</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;round-robin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;fcfs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;always-admit&quot;</span><span class="p">},</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;least-loaded&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;fcfs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;always-admit&quot;</span><span class="p">},</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">        </span><span class="p">{</span><span class="s">&quot;weighted&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;priority-fcfs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;token-bucket&quot;</span><span class="p">},</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">        </span><span class="c1">// ... all 10 H12 configurations</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">cfg</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">configs</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">        </span><span class="nx">t</span><span class="p">.</span><span class="nx">Run</span><span class="p">(</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">routing</span><span class="o">+</span><span class="s">&quot;/&quot;</span><span class="o">+</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">scheduler</span><span class="o">+</span><span class="s">&quot;/&quot;</span><span class="o">+</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">admission</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">            </span><span class="c1">// Run cluster simulation</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">            </span><span class="c1">// Assert: injected == completed + still_queued + still_running</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">        </span><span class="p">})</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="p">}</span>
 </code></pre></div>
 <p>The bash experiment remains as the full reproducible artifact with analysis. The Go test is the CI-integrated regression guard.</p>
 <hr />
@@ -4576,15 +4583,15 @@
 <ul>
 <li>Standards: <a href="../standards/experiments/">docs/contributing/standards/experiments.md</a></li>
 <li>Template: <a href="../templates/hypothesis/">docs/contributing/templates/hypothesis.md</a></li>
-<li>Hypothesis catalog: <a href="../../plans/research/">docs/plans/research.md</a></li>
-<li>Validated experiments: <a href="https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md">hypotheses/README.md</a></li>
+<li>Completed experiments and coverage catalog: <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive"><code>hypothesis-archive</code> branch</a> at <code>cad4191</code></li>
 <li>PR workflow (structural inspiration): <a href="../pr-workflow/">docs/contributing/pr-workflow.md</a></li>
 </ul>
 <hr />
 <h2 id="appendix-workflow-evolution">Appendix: Workflow Evolution<a class="headerlink" href="#appendix-workflow-evolution" title="Permanent link">&para;</a></h2>
 <p><strong>v1.0 (PR #310):</strong> Three external LLM reviews per round, no design gate, no code review gate, ad-hoc git commands.
 <strong>v2.0 (2026-02-23, #392):</strong> Three review gates (Design 5, Code 5, FINDINGS 10) with universal convergence protocol, human approval gate, self-audit, verification gate, parallel execution, two-track issue filing, explicit worktree/commit skill integration. Structural alignment with PR workflow v3.0.
-<strong>v2.1 (2026-02-27, #464):</strong> Human-first rewrite. Manual steps primary; skills in admonition callouts. Prerequisites table removed (skills referenced inline per step). "For Claude" directives rewritten as universal process guidance.</p>
+<strong>v2.1 (2026-02-27, #464):</strong> Human-first rewrite. Manual steps primary; skills in admonition callouts. Prerequisites table removed (skills referenced inline per step). "For Claude" directives rewritten as universal process guidance.
+<strong>v2.2 (2026-03-20, #773):</strong> Full separation — no hypothesis artifacts merge to <code>main</code>. All completed artifacts (<code>run.sh</code>, <code>analyze.py</code>, <code>FINDINGS.md</code>, <code>hypotheses/lib/</code>, <code>docs/plans/research.md</code>) archived to <code>hypothesis-archive</code> branch at <code>cad4191</code>. Experiment feature branches are the permanent record; the branch content (scripts, findings) does not merge to <code>main</code> — the PR itself is the permanent, reviewable artifact.</p>
 
 
 

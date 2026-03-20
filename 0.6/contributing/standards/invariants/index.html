@@ -2934,7 +2934,7 @@
 </table>
 <p><strong>Design implication:</strong> When <code>--snapshot-refresh-interval &gt; 0</code>, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same <code>/metrics</code> endpoint. <code>InFlightRequests</code> remains synchronous (gateway-local counter, not Prometheus-sourced).</p>
 <p><code>EffectiveLoad()</code> = <code>QueueDepth + BatchSize + InFlightRequests</code>. The synchronous <code>InFlightRequests</code> term compensates for Periodic staleness in the other two terms.</p>
-<p><strong>Verification:</strong> H3 hypothesis experiment (<code>hypotheses/h3-signal-freshness/</code>), H29 (<code>hypotheses/h29-snapshot-staleness/</code>).</p>
+<p><strong>Verification:</strong> H3 hypothesis experiment, H29 snapshot-staleness experiment (see <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses"><code>hypothesis-archive</code> branch</a>).</p>
 <p><strong>Evidence:</strong> Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth. Issue #463: unified Prometheus staleness model.</p>
 <hr />
 <h2 id="inv-8-work-conserving-property">INV-8: Work-Conserving Property<a class="headerlink" href="#inv-8-work-conserving-property" title="Permanent link">&para;</a></h2>
