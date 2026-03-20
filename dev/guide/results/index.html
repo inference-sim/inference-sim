@@ -1248,6 +1248,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-model-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Model Metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#fitness-evaluation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2821,6 +2832,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-model-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Model Metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#fitness-evaluation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3056,9 +3078,14 @@
 <td>Enable chunked prefill: <code>--long-prefill-token-threshold 256</code></td>
 </tr>
 <tr>
-<td><strong>Rejected Requests</strong></td>
+<td><strong>Rejected Requests (Admission)</strong></td>
 <td>Admission policy rejected the request</td>
 <td>Check token bucket capacity or admission policy</td>
+</tr>
+<tr>
+<td><strong>Rejected Requests (Routing)</strong></td>
+<td>No routable instances for the request's model — all instances are <code>Loading</code> or <code>Draining</code></td>
+<td>Increase <code>initial_nodes</code>, reduce <code>loading_delay.mean</code>, or stagger drain operations</td>
 </tr>
 <tr>
 <td><strong>Dropped Unservable</strong></td>
@@ -3097,9 +3124,59 @@
 </table>
 <h2 id="per-slo-class-metrics">Per-SLO-Class Metrics<a class="headerlink" href="#per-slo-class-metrics" title="Permanent link">&para;</a></h2>
 <p>When multiple SLO classes are present in the workload, BLIS prints per-class TTFT and E2E distributions. This lets you verify that <code>critical</code> requests meet SLOs even when <code>batch</code> traffic is heavy.</p>
+<h2 id="per-model-metrics">Per-Model Metrics<a class="headerlink" href="#per-model-metrics" title="Permanent link">&para;</a></h2>
+<p>When instances serve different models (multi-model deployment), BLIS prints per-model TTFT mean/p99, E2E mean/p99, and throughput (req/s). This appears automatically when requests carry model tags. Output format:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>=== Per-Model Metrics ===
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  qwen/qwen3-14b:
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    TTFT: p50=1234.56 p99=5678.90 (n=250)
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    E2E:  p50=9876.54 p99=12345.67 (n=250)
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    Throughput: 50.00 req/s, 6400.00 tok/s
+</code></pre></div>
+<p>When <code>--results-path</code> is set, the JSON output includes a <code>per_model</code> key (omitted when no requests carry model tags). Each entry has:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td>string</td>
+<td>Model name</td>
+</tr>
+<tr>
+<td><code>ttft</code></td>
+<td>Distribution</td>
+<td>TTFT distribution (p50, p99, mean, count)</td>
+</tr>
+<tr>
+<td><code>e2e</code></td>
+<td>Distribution</td>
+<td>E2E latency distribution</td>
+</tr>
+<tr>
+<td><code>throughput_rps</code></td>
+<td>float64</td>
+<td>Requests per second for this model</td>
+</tr>
+<tr>
+<td><code>tokens_per_sec</code></td>
+<td>float64</td>
+<td>Output tokens per second for this model</td>
+</tr>
+<tr>
+<td><code>total_requests</code></td>
+<td>int</td>
+<td>Number of completed requests for this model</td>
+</tr>
+</tbody>
+</table>
 <h2 id="fitness-evaluation">Fitness Evaluation<a class="headerlink" href="#fitness-evaluation" title="Permanent link">&para;</a></h2>
 <p>For automated multi-configuration comparison:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>--fitness-weights<span class="w"> </span><span class="s2">&quot;p99_ttft:3,mean_e2e:1,throughput:2&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>--fitness-weights<span class="w"> </span><span class="s2">&quot;p99_ttft:3,mean_e2e:1,throughput:2&quot;</span>
 </code></pre></div>
 <p>Valid metric keys: <code>throughput</code>, <code>tokens_per_sec</code>, <code>p99_ttft</code>, <code>p50_ttft</code>, <code>mean_ttft</code>, <code>p99_e2e</code>, <code>p50_e2e</code>, <code>mean_e2e</code>.</p>
 <h3 id="how-normalization-works">How Normalization Works<a class="headerlink" href="#how-normalization-works" title="Permanent link">&para;</a></h3>
@@ -3129,8 +3206,8 @@
 </ul>
 <h2 id="per-request-results">Per-Request Results<a class="headerlink" href="#per-request-results" title="Permanent link">&para;</a></h2>
 <p>For detailed analysis, save per-request data:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--results-path<span class="w"> </span>results.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--results-path<span class="w"> </span>results.json
 </code></pre></div>
 <p>Each request record includes TTFT, E2E, scheduling delay, and completion status.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
