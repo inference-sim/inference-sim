@@ -1,8 +1,11 @@
 # Hypothesis Experiment Process
 
-**Status:** Active (v2.1 — updated 2026-02-27)
+**Status:** Active (v2.2 — updated 2026-03-20)
 
-This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/contributing/standards/experiments.md](standards/experiments.md). For the FINDINGS.md template, see [docs/contributing/templates/hypothesis.md](templates/hypothesis.md). For experiment status and coverage gaps, see [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md).
+This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/contributing/standards/experiments.md](standards/experiments.md). For the FINDINGS.md template, see [docs/contributing/templates/hypothesis.md](templates/hypothesis.md). For experiment status and coverage gaps, see [docs/plans/research.md](../plans/research.md).
+
+!!! note "Experiment archive"
+    All completed experiment scripts (`run.sh`, `analyze.py`, `hypotheses/lib/`) are preserved in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at commit `cad4191`. Runnable experiment artifacts are intentionally not kept on `main` — CLI output format changes can silently break analysis scripts, and completed findings are already documented in `docs/plans/research.md`. New experiment branches are created from `main` per Step 0; scripts stay in the feature branch and are not merged back.
 
 **For external contributors:** Submit your experiment artifacts via PR. Maintainers will run the review protocols on your behalf. You can also conduct reviews manually using the perspective checklists documented in each gate.
 
@@ -52,7 +55,7 @@ flowchart TD
 | **1. Classify** | Choose family, VV&UQ category, type from [experiments.md](standards/experiments.md) |
 | **2. Design** | ED-1–ED-6 compliance, then 5-perspective Design Review |
 | **3. Human gate** | Present design for approval — pause until approved |
-| **4. Implement** | `run.sh` + `analyze.py` using `hypotheses/lib/` harness |
+| **4. Implement** | `run.sh` + `analyze.py` in your experiment branch (not merged to `main`) |
 | **5. Code Review** | 5-perspective code review → convergence |
 | **6. Run** | Execute `./run.sh` across required seeds |
 | **7. Document** | Write FINDINGS.md using [template](templates/hypothesis.md) |
@@ -86,7 +89,7 @@ This creates `.worktrees/h-<name>/` with a new branch. All subsequent steps happ
 
 **Context:** Worktree
 
-1. **Select hypothesis** — from `docs/plans/research.md`, coverage gaps in [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md), or a new observation
+1. **Select hypothesis** — from `docs/plans/research.md`, coverage gaps in the [research catalog](../plans/research.md), or a new observation
 2. **Classify:**
    - (a) Which **family**? (See [experiments.md](standards/experiments.md) for the 6 families and sentence patterns)
    - (b) **Verification**, **Validation**, or **UQ**? (Determines evidence requirements)
@@ -171,7 +174,7 @@ Present the experiment design for human approval. The human reviews:
 
 **Context:** Worktree (after human approval)
 
-Create `hypotheses/<name>/run.sh` and `hypotheses/<name>/analyze.py`.
+Create `hypotheses/<name>/run.sh` and `hypotheses/<name>/analyze.py` inside your experiment branch. These files are **not merged to `main`** — they stay in the feature branch as the reproducible artifact. The shared harness (`hypotheses/lib/`) is available in your branch after cherry-picking or copying from the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses/lib).
 
 **Harness requirements (mandatory):**
 - `run.sh` MUST source `hypotheses/lib/harness.sh` and use `blis_run` for every simulation call
@@ -253,7 +256,7 @@ Execute experiments across required seeds:
 1. **Analyze** — produce comparison tables, compute effect sizes
 2. **Verify root cause** — trace every causal claim through code (RCV-1, RCV-2, RCV-3)
 3. **Document FINDINGS.md** — use the [template](templates/hypothesis.md). All sections must be present and non-empty.
-4. **Update `hypotheses/README.md`** — add a row to the "Validated Hypotheses" table and update "Coverage by Family" if needed
+4. **Update `docs/plans/research.md`** — add a row to the "Validated Hypotheses" table and update "Coverage by Family" if needed
 
 ---
 
@@ -378,11 +381,13 @@ golangci-lint run ./... # Zero lint issues
 **Commit and PR:**
 
 ```bash
-git add hypotheses/<name>/
+git add hypotheses/<name>/FINDINGS.md docs/plans/research.md
 git commit -m "experiment(<name>): <hypothesis sentence> — <status>"
 git push -u origin <branch-name>
 gh pr create --title "experiment: <name>" --body "<hypothesis, findings, closing keywords>"
 ```
+
+The PR merges **only `FINDINGS.md` and `docs/plans/research.md`** to `main`. The experiment scripts (`run.sh`, `analyze.py`, `hypotheses/lib/`) remain in the feature branch as the reproducible archive — do not include them in the PR. The branch itself is the artifact.
 
 The PR description should include:
 - Hypothesis sentence and status
@@ -430,7 +435,7 @@ The #385/#390 pattern: run N hypothesis experiments simultaneously with a team l
 
 After all agents complete:
 1. Team lead reviews all proposed issues for deduplication
-2. Team lead updates `hypotheses/README.md` with all new experiments
+2. Team lead updates `docs/plans/research.md` with all new experiments
 3. Cross-experiment consistency check across all N experiments
 4. Single PR via `commit-push-pr` skill
 
@@ -492,7 +497,7 @@ See [Issue Taxonomy](#issue-taxonomy-after-convergence) for the complete filing 
 - [ ] Findings classified per the findings table (including resolution type)
 - [ ] Standards audit completed
 - [ ] Promotion assessment completed (see [Promotion of Confirmed Hypotheses](#promotion-of-confirmed-hypotheses))
-- [ ] `hypotheses/README.md` updated with new experiment row(s) and coverage changes
+- [ ] `docs/plans/research.md` updated with new experiment row(s) and coverage changes
 - [ ] If code fixes involved: `go build`, `go test`, `golangci-lint` all pass
 
 ### Post-PR Gates (check after PR creation — Step 10)
@@ -509,7 +514,7 @@ See [Issue Taxonomy](#issue-taxonomy-after-convergence) for the complete filing 
 - Testing intuitive claims about system behavior (from `docs/plans/research.md`)
 - Investigating unexpected behavior observed during development
 - Exploring design tradeoffs between configurations
-- Filling coverage gaps identified in the [family coverage table](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md)
+- Filling coverage gaps identified in the [research catalog](../plans/research.md)
 
 ---
 
@@ -522,7 +527,7 @@ Hypotheses can come from **internal** sources (your own experiments and developm
 | Source | How it works | Example |
 |--------|-------------|---------|
 | **User intuition** | "I think X should be better than Y because of Z" | "SJF should reduce TTFT for mixed workloads because short jobs finish first" |
-| **Coverage gaps** | Check the [family coverage table](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md) for untested families | Workload/arrival family has 0 experiments → "Gamma sampler should match theoretical CV" |
+| **Coverage gaps** | Check the [research catalog](../plans/research.md) for untested families | Workload/arrival family has 0 experiments → "Gamma sampler should match theoretical CV" |
 | **Experiment findings** | Surprises and open questions from completed experiments spawn follow-up hypotheses | H10's maybeOffload finding → "test at GPU=1500 for preemption-path offload" |
 | **Bug reports** | "This behavior seems wrong" → formalize as a testable claim | H12: preemption panic → "conservation should hold even under preemption pressure" |
 | **Analytical models** | Divergence between theory and simulation → "does the DES match M/M/k under matching assumptions?" | "Under Poisson arrivals, queue length should match M/M/k within 5%" |
@@ -554,7 +559,7 @@ A good hypothesis is **behavioral** (about observable system behavior), **testab
 
 ### How to propose a new hypothesis
 
-1. **Check coverage**: Read the [family coverage table](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md). Prioritize families with low coverage.
+1. **Check coverage**: Read the [research catalog](../plans/research.md). Prioritize families with low coverage.
 2. **Choose a family**: Which domain does your claim target? (See [experiments.md](standards/experiments.md) for the 6 families.)
 3. **Write the sentence**: Use the family-specific pattern from experiments.md.
 4. **Add the diagnostic clause**: "If this fails, it would indicate..."
@@ -691,7 +696,8 @@ When prior findings are known to be affected by a later change, an erratum is ad
 - Standards: [docs/contributing/standards/experiments.md](standards/experiments.md)
 - Template: [docs/contributing/templates/hypothesis.md](templates/hypothesis.md)
 - Hypothesis catalog: [docs/plans/research.md](../plans/research.md)
-- Validated experiments: [hypotheses/README.md](https://github.com/inference-sim/inference-sim/blob/main/hypotheses/README.md)
+- Validated experiments: [docs/plans/research.md](../plans/research.md)
+- Archived experiment scripts: [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at `cad4191`
 - PR workflow (structural inspiration): [docs/contributing/pr-workflow.md](pr-workflow.md)
 
 ---
