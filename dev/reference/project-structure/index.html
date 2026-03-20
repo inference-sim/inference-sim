@@ -2647,63 +2647,62 @@
 <a id="__codelineno-0-92" name="__codelineno-0-92" href="#__codelineno-0-92"></a>├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
 <a id="__codelineno-0-93" name="__codelineno-0-93" href="#__codelineno-0-93"></a>├── hardware_config.json       # GPU specifications
 <a id="__codelineno-0-94" name="__codelineno-0-94" href="#__codelineno-0-94"></a>├── examples/                  # Example configuration files
-<a id="__codelineno-0-95" name="__codelineno-0-95" href="#__codelineno-0-95"></a>├── hypotheses/                # Hypothesis experiment artifacts (run.sh, analyze.py, FINDINGS.md)
-<a id="__codelineno-0-96" name="__codelineno-0-96" href="#__codelineno-0-96"></a>├── testdata/goldendataset.json # Golden dataset for regression tests
-<a id="__codelineno-0-97" name="__codelineno-0-97" href="#__codelineno-0-97"></a>├── docs/
-<a id="__codelineno-0-98" name="__codelineno-0-98" href="#__codelineno-0-98"></a>│   ├── getting-started/       # New user onboarding
-<a id="__codelineno-0-99" name="__codelineno-0-99" href="#__codelineno-0-99"></a>│   │   ├── index.md           # What is BLIS?
-<a id="__codelineno-0-100" name="__codelineno-0-100" href="#__codelineno-0-100"></a>│   │   ├── installation.md    # Build from source
-<a id="__codelineno-0-101" name="__codelineno-0-101" href="#__codelineno-0-101"></a>│   │   ├── quickstart.md      # First simulation
-<a id="__codelineno-0-102" name="__codelineno-0-102" href="#__codelineno-0-102"></a>│   │   └── tutorial.md        # Capacity planning walkthrough
-<a id="__codelineno-0-103" name="__codelineno-0-103" href="#__codelineno-0-103"></a>│   ├── guide/                 # Task-oriented user guides
-<a id="__codelineno-0-104" name="__codelineno-0-104" href="#__codelineno-0-104"></a>│   │   ├── index.md           # Guide overview
-<a id="__codelineno-0-105" name="__codelineno-0-105" href="#__codelineno-0-105"></a>│   │   ├── routing.md         # Routing policies
-<a id="__codelineno-0-106" name="__codelineno-0-106" href="#__codelineno-0-106"></a>│   │   ├── admission.md       # Admission control
-<a id="__codelineno-0-107" name="__codelineno-0-107" href="#__codelineno-0-107"></a>│   │   ├── scheduling.md      # Scheduling &amp; priority
-<a id="__codelineno-0-108" name="__codelineno-0-108" href="#__codelineno-0-108"></a>│   │   ├── latency-models.md  # Latency models (roofline + blackbox)
-<a id="__codelineno-0-109" name="__codelineno-0-109" href="#__codelineno-0-109"></a>│   │   ├── kv-cache.md        # KV cache &amp; memory management
-<a id="__codelineno-0-110" name="__codelineno-0-110" href="#__codelineno-0-110"></a>│   │   ├── workloads.md       # Workload specifications
-<a id="__codelineno-0-111" name="__codelineno-0-111" href="#__codelineno-0-111"></a>│   │   ├── cluster.md         # Cluster simulation
-<a id="__codelineno-0-112" name="__codelineno-0-112" href="#__codelineno-0-112"></a>│   │   ├── results.md         # Metrics &amp; results
-<a id="__codelineno-0-113" name="__codelineno-0-113" href="#__codelineno-0-113"></a>│   │   ├── experimentation.md # Hypothesis-driven experimentation
-<a id="__codelineno-0-114" name="__codelineno-0-114" href="#__codelineno-0-114"></a>│   │   └── skills-and-plugins.md # Claude Code skills &amp; plugins
-<a id="__codelineno-0-115" name="__codelineno-0-115" href="#__codelineno-0-115"></a>│   ├── concepts/              # Architecture and design documentation
-<a id="__codelineno-0-116" name="__codelineno-0-116" href="#__codelineno-0-116"></a>│   │   ├── index.md           # Concepts overview
-<a id="__codelineno-0-117" name="__codelineno-0-117" href="#__codelineno-0-117"></a>│   │   ├── glossary.md        # Concepts glossary
-<a id="__codelineno-0-118" name="__codelineno-0-118" href="#__codelineno-0-118"></a>│   │   ├── architecture.md    # Cluster architecture
-<a id="__codelineno-0-119" name="__codelineno-0-119" href="#__codelineno-0-119"></a>│   │   ├── core-engine.md     # Core DES engine
-<a id="__codelineno-0-120" name="__codelineno-0-120" href="#__codelineno-0-120"></a>│   │   └── roofline.md        # Roofline step time estimation
-<a id="__codelineno-0-121" name="__codelineno-0-121" href="#__codelineno-0-121"></a>│   ├── reference/             # Configuration and model reference
-<a id="__codelineno-0-122" name="__codelineno-0-122" href="#__codelineno-0-122"></a>│   │   ├── index.md           # Reference overview
-<a id="__codelineno-0-123" name="__codelineno-0-123" href="#__codelineno-0-123"></a>│   │   ├── project-structure.md # Project file organization (this file)
-<a id="__codelineno-0-124" name="__codelineno-0-124" href="#__codelineno-0-124"></a>│   │   ├── configuration.md   # Configuration reference
-<a id="__codelineno-0-125" name="__codelineno-0-125" href="#__codelineno-0-125"></a>│   │   ├── models.md          # Supported models catalog
-<a id="__codelineno-0-126" name="__codelineno-0-126" href="#__codelineno-0-126"></a>│   │   └── workload-spec.md   # Workload spec YAML schema
-<a id="__codelineno-0-127" name="__codelineno-0-127" href="#__codelineno-0-127"></a>│   ├── methodology/           # Research methodology documentation
-<a id="__codelineno-0-128" name="__codelineno-0-128" href="#__codelineno-0-128"></a>│   │   ├── index.md           # Methodology overview
-<a id="__codelineno-0-129" name="__codelineno-0-129" href="#__codelineno-0-129"></a>│   │   ├── strategy-evolution.md # Strategy Evolution methodology guide
-<a id="__codelineno-0-130" name="__codelineno-0-130" href="#__codelineno-0-130"></a>│   │   ├── hypothesis-bundles.md # Hypothesis bundle examples and writing guide
-<a id="__codelineno-0-131" name="__codelineno-0-131" href="#__codelineno-0-131"></a>│   │   └── principles.md     # Discovered principles catalog (30 principles)
-<a id="__codelineno-0-132" name="__codelineno-0-132" href="#__codelineno-0-132"></a>│   ├── contributing/          # Contributor documentation
-<a id="__codelineno-0-133" name="__codelineno-0-133" href="#__codelineno-0-133"></a>│   │   ├── index.md           # Contributing landing page
-<a id="__codelineno-0-134" name="__codelineno-0-134" href="#__codelineno-0-134"></a>│   │   ├── extension-recipes.md # Step-by-step extension guides
-<a id="__codelineno-0-135" name="__codelineno-0-135" href="#__codelineno-0-135"></a>│   │   ├── pr-workflow.md     # PR development workflow
-<a id="__codelineno-0-136" name="__codelineno-0-136" href="#__codelineno-0-136"></a>│   │   ├── design-process.md  # Design document process
-<a id="__codelineno-0-137" name="__codelineno-0-137" href="#__codelineno-0-137"></a>│   │   ├── macro-planning.md  # Macro-level planning process
-<a id="__codelineno-0-138" name="__codelineno-0-138" href="#__codelineno-0-138"></a>│   │   ├── hypothesis.md      # Hypothesis experiment process
-<a id="__codelineno-0-139" name="__codelineno-0-139" href="#__codelineno-0-139"></a>│   │   ├── convergence.md     # Universal Convergence Protocol
-<a id="__codelineno-0-140" name="__codelineno-0-140" href="#__codelineno-0-140"></a>│   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
-<a id="__codelineno-0-141" name="__codelineno-0-141" href="#__codelineno-0-141"></a>│   │   └── templates/         # Artifact templates + agent prompts
-<a id="__codelineno-0-142" name="__codelineno-0-142" href="#__codelineno-0-142"></a>│   │       ├── design-guidelines.md  # DES foundations, module architecture
-<a id="__codelineno-0-143" name="__codelineno-0-143" href="#__codelineno-0-143"></a>│   │       ├── macro-plan.md         # Multi-PR template (human-readable)
-<a id="__codelineno-0-144" name="__codelineno-0-144" href="#__codelineno-0-144"></a>│   │       ├── macro-plan-prompt.md  # Agent preamble for macro planning
-<a id="__codelineno-0-145" name="__codelineno-0-145" href="#__codelineno-0-145"></a>│   │       ├── micro-plan.md         # Single-PR template (human-readable)
-<a id="__codelineno-0-146" name="__codelineno-0-146" href="#__codelineno-0-146"></a>│   │       ├── micro-plan-prompt.md  # Agent preamble for writing-plans skill
-<a id="__codelineno-0-147" name="__codelineno-0-147" href="#__codelineno-0-147"></a>│   │       └── hypothesis.md         # Experiment FINDINGS.md template
-<a id="__codelineno-0-148" name="__codelineno-0-148" href="#__codelineno-0-148"></a>│   └── plans/                 # Active implementation plans (excluded from MkDocs)
-<a id="__codelineno-0-149" name="__codelineno-0-149" href="#__codelineno-0-149"></a>│       └── archive/           # Completed design docs (architectural reference)
-<a id="__codelineno-0-150" name="__codelineno-0-150" href="#__codelineno-0-150"></a>├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
-<a id="__codelineno-0-151" name="__codelineno-0-151" href="#__codelineno-0-151"></a>└── mkdocs.yml                 # MkDocs Material site configuration
+<a id="__codelineno-0-95" name="__codelineno-0-95" href="#__codelineno-0-95"></a>├── testdata/goldendataset.json # Golden dataset for regression tests
+<a id="__codelineno-0-96" name="__codelineno-0-96" href="#__codelineno-0-96"></a>├── docs/
+<a id="__codelineno-0-97" name="__codelineno-0-97" href="#__codelineno-0-97"></a>│   ├── getting-started/       # New user onboarding
+<a id="__codelineno-0-98" name="__codelineno-0-98" href="#__codelineno-0-98"></a>│   │   ├── index.md           # What is BLIS?
+<a id="__codelineno-0-99" name="__codelineno-0-99" href="#__codelineno-0-99"></a>│   │   ├── installation.md    # Build from source
+<a id="__codelineno-0-100" name="__codelineno-0-100" href="#__codelineno-0-100"></a>│   │   ├── quickstart.md      # First simulation
+<a id="__codelineno-0-101" name="__codelineno-0-101" href="#__codelineno-0-101"></a>│   │   └── tutorial.md        # Capacity planning walkthrough
+<a id="__codelineno-0-102" name="__codelineno-0-102" href="#__codelineno-0-102"></a>│   ├── guide/                 # Task-oriented user guides
+<a id="__codelineno-0-103" name="__codelineno-0-103" href="#__codelineno-0-103"></a>│   │   ├── index.md           # Guide overview
+<a id="__codelineno-0-104" name="__codelineno-0-104" href="#__codelineno-0-104"></a>│   │   ├── routing.md         # Routing policies
+<a id="__codelineno-0-105" name="__codelineno-0-105" href="#__codelineno-0-105"></a>│   │   ├── admission.md       # Admission control
+<a id="__codelineno-0-106" name="__codelineno-0-106" href="#__codelineno-0-106"></a>│   │   ├── scheduling.md      # Scheduling &amp; priority
+<a id="__codelineno-0-107" name="__codelineno-0-107" href="#__codelineno-0-107"></a>│   │   ├── latency-models.md  # Latency models (roofline + blackbox)
+<a id="__codelineno-0-108" name="__codelineno-0-108" href="#__codelineno-0-108"></a>│   │   ├── kv-cache.md        # KV cache &amp; memory management
+<a id="__codelineno-0-109" name="__codelineno-0-109" href="#__codelineno-0-109"></a>│   │   ├── workloads.md       # Workload specifications
+<a id="__codelineno-0-110" name="__codelineno-0-110" href="#__codelineno-0-110"></a>│   │   ├── cluster.md         # Cluster simulation
+<a id="__codelineno-0-111" name="__codelineno-0-111" href="#__codelineno-0-111"></a>│   │   ├── results.md         # Metrics &amp; results
+<a id="__codelineno-0-112" name="__codelineno-0-112" href="#__codelineno-0-112"></a>│   │   ├── experimentation.md # Hypothesis-driven experimentation
+<a id="__codelineno-0-113" name="__codelineno-0-113" href="#__codelineno-0-113"></a>│   │   └── skills-and-plugins.md # Claude Code skills &amp; plugins
+<a id="__codelineno-0-114" name="__codelineno-0-114" href="#__codelineno-0-114"></a>│   ├── concepts/              # Architecture and design documentation
+<a id="__codelineno-0-115" name="__codelineno-0-115" href="#__codelineno-0-115"></a>│   │   ├── index.md           # Concepts overview
+<a id="__codelineno-0-116" name="__codelineno-0-116" href="#__codelineno-0-116"></a>│   │   ├── glossary.md        # Concepts glossary
+<a id="__codelineno-0-117" name="__codelineno-0-117" href="#__codelineno-0-117"></a>│   │   ├── architecture.md    # Cluster architecture
+<a id="__codelineno-0-118" name="__codelineno-0-118" href="#__codelineno-0-118"></a>│   │   ├── core-engine.md     # Core DES engine
+<a id="__codelineno-0-119" name="__codelineno-0-119" href="#__codelineno-0-119"></a>│   │   └── roofline.md        # Roofline step time estimation
+<a id="__codelineno-0-120" name="__codelineno-0-120" href="#__codelineno-0-120"></a>│   ├── reference/             # Configuration and model reference
+<a id="__codelineno-0-121" name="__codelineno-0-121" href="#__codelineno-0-121"></a>│   │   ├── index.md           # Reference overview
+<a id="__codelineno-0-122" name="__codelineno-0-122" href="#__codelineno-0-122"></a>│   │   ├── project-structure.md # Project file organization (this file)
+<a id="__codelineno-0-123" name="__codelineno-0-123" href="#__codelineno-0-123"></a>│   │   ├── configuration.md   # Configuration reference
+<a id="__codelineno-0-124" name="__codelineno-0-124" href="#__codelineno-0-124"></a>│   │   ├── models.md          # Supported models catalog
+<a id="__codelineno-0-125" name="__codelineno-0-125" href="#__codelineno-0-125"></a>│   │   └── workload-spec.md   # Workload spec YAML schema
+<a id="__codelineno-0-126" name="__codelineno-0-126" href="#__codelineno-0-126"></a>│   ├── methodology/           # Research methodology documentation
+<a id="__codelineno-0-127" name="__codelineno-0-127" href="#__codelineno-0-127"></a>│   │   ├── index.md           # Methodology overview
+<a id="__codelineno-0-128" name="__codelineno-0-128" href="#__codelineno-0-128"></a>│   │   ├── strategy-evolution.md # Strategy Evolution methodology guide
+<a id="__codelineno-0-129" name="__codelineno-0-129" href="#__codelineno-0-129"></a>│   │   ├── hypothesis-bundles.md # Hypothesis bundle examples and writing guide
+<a id="__codelineno-0-130" name="__codelineno-0-130" href="#__codelineno-0-130"></a>│   │   └── principles.md     # Discovered principles catalog (30 principles)
+<a id="__codelineno-0-131" name="__codelineno-0-131" href="#__codelineno-0-131"></a>│   ├── contributing/          # Contributor documentation
+<a id="__codelineno-0-132" name="__codelineno-0-132" href="#__codelineno-0-132"></a>│   │   ├── index.md           # Contributing landing page
+<a id="__codelineno-0-133" name="__codelineno-0-133" href="#__codelineno-0-133"></a>│   │   ├── extension-recipes.md # Step-by-step extension guides
+<a id="__codelineno-0-134" name="__codelineno-0-134" href="#__codelineno-0-134"></a>│   │   ├── pr-workflow.md     # PR development workflow
+<a id="__codelineno-0-135" name="__codelineno-0-135" href="#__codelineno-0-135"></a>│   │   ├── design-process.md  # Design document process
+<a id="__codelineno-0-136" name="__codelineno-0-136" href="#__codelineno-0-136"></a>│   │   ├── macro-planning.md  # Macro-level planning process
+<a id="__codelineno-0-137" name="__codelineno-0-137" href="#__codelineno-0-137"></a>│   │   ├── hypothesis.md      # Hypothesis experiment process
+<a id="__codelineno-0-138" name="__codelineno-0-138" href="#__codelineno-0-138"></a>│   │   ├── convergence.md     # Universal Convergence Protocol
+<a id="__codelineno-0-139" name="__codelineno-0-139" href="#__codelineno-0-139"></a>│   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
+<a id="__codelineno-0-140" name="__codelineno-0-140" href="#__codelineno-0-140"></a>│   │   └── templates/         # Artifact templates + agent prompts
+<a id="__codelineno-0-141" name="__codelineno-0-141" href="#__codelineno-0-141"></a>│   │       ├── design-guidelines.md  # DES foundations, module architecture
+<a id="__codelineno-0-142" name="__codelineno-0-142" href="#__codelineno-0-142"></a>│   │       ├── macro-plan.md         # Multi-PR template (human-readable)
+<a id="__codelineno-0-143" name="__codelineno-0-143" href="#__codelineno-0-143"></a>│   │       ├── macro-plan-prompt.md  # Agent preamble for macro planning
+<a id="__codelineno-0-144" name="__codelineno-0-144" href="#__codelineno-0-144"></a>│   │       ├── micro-plan.md         # Single-PR template (human-readable)
+<a id="__codelineno-0-145" name="__codelineno-0-145" href="#__codelineno-0-145"></a>│   │       ├── micro-plan-prompt.md  # Agent preamble for writing-plans skill
+<a id="__codelineno-0-146" name="__codelineno-0-146" href="#__codelineno-0-146"></a>│   │       └── hypothesis.md         # Experiment FINDINGS.md template
+<a id="__codelineno-0-147" name="__codelineno-0-147" href="#__codelineno-0-147"></a>│   └── plans/                 # Active implementation plans (excluded from MkDocs)
+<a id="__codelineno-0-148" name="__codelineno-0-148" href="#__codelineno-0-148"></a>│       └── archive/           # Completed design docs (architectural reference)
+<a id="__codelineno-0-149" name="__codelineno-0-149" href="#__codelineno-0-149"></a>├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
+<a id="__codelineno-0-150" name="__codelineno-0-150" href="#__codelineno-0-150"></a>└── mkdocs.yml                 # MkDocs Material site configuration
 </code></pre></div>
 
 

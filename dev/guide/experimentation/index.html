@@ -2796,19 +2796,26 @@
 <li><strong>Document</strong> — write FINDINGS.md with conclusions and evidence</li>
 </ol>
 <h2 id="the-experiment-harness">The Experiment Harness<a class="headerlink" href="#the-experiment-harness" title="Permanent link">&para;</a></h2>
-<p>All experiments use a shared harness (<code>hypotheses/lib/</code>) for consistency:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">source</span><span class="w"> </span>hypotheses/lib/harness.sh
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># Run a simulation with standard setup</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>blis_run<span class="w"> </span><span class="m">60</span><span class="w"> </span>results/baseline.json<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<p>All experiments use a shared harness for consistency. The harness lives in the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses/lib"><code>hypothesis-archive</code> branch</a> — copy it into your experiment branch at Step 4:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Copy harness from archive branch into your experiment branch</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>show<span class="w"> </span>hypothesis-archive:hypotheses/lib/harness.sh<span class="w"> </span>&gt;<span class="w"> </span>hypotheses/lib/harness.sh
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>git<span class="w"> </span>show<span class="w"> </span>hypothesis-archive:hypotheses/lib/analyze_helpers.py<span class="w"> </span>&gt;<span class="w"> </span>hypotheses/lib/analyze_helpers.py
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nb">source</span><span class="w"> </span>hypotheses/lib/harness.sh
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Run a simulation with standard setup</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>blis_run<span class="w"> </span><span class="m">60</span><span class="w"> </span>results/baseline.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <p>The harness provides:
 - <code>blis_run()</code> — wrapper around the simulation binary
 - <code>setup_experiment()</code> — create output directories
 - <code>preflight_kv_check()</code> — verify KV configuration
 - <code>hypotheses/lib/analyze_helpers.py</code> — common analysis functions (<code>parse_blis_output()</code>, etc.)</p>
+<blockquote>
+<p><strong>Note:</strong> The archive is pinned at commit <code>cad4191</code>. Verify harness output format matches the current CLI before use — see Step 4 in <a href="../../contributing/hypothesis/">Hypothesis Process</a>.</p>
+</blockquote>
 <h2 id="case-studies">Case Studies<a class="headerlink" href="#case-studies" title="Permanent link">&para;</a></h2>
 <p>Completed experiments demonstrate the power of hypothesis-driven analysis:</p>
 <table>
@@ -2842,7 +2849,7 @@
 </tr>
 </tbody>
 </table>
-<p>All findings are documented in <code>hypotheses/*/FINDINGS.md</code>.</p>
+<p>All findings are documented in <code>hypotheses/*/FINDINGS.md</code> in their respective experiment branches. Completed experiments are also collected in the <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses"><code>hypothesis-archive</code> branch</a>.</p>
 <h2 id="convergence-review">Convergence Review<a class="headerlink" href="#convergence-review" title="Permanent link">&para;</a></h2>
 <p>Experiments go through a multi-perspective review process to ensure rigor:</p>
 <ol>
