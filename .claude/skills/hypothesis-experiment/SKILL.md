@@ -122,7 +122,15 @@ Options: "Approve — proceed to implementation", "Revise — I have feedback"
 
 ## Step 4: Implement
 
-Create `hypotheses/h-$ARGUMENTS/run.sh` and `hypotheses/h-$ARGUMENTS/analyze.py`.
+First, copy the shared harness from the archive branch:
+
+```bash
+mkdir -p hypotheses/lib
+git show hypothesis-archive:hypotheses/lib/harness.sh > hypotheses/lib/harness.sh
+git show hypothesis-archive:hypotheses/lib/analyze_helpers.py > hypotheses/lib/analyze_helpers.py
+```
+
+Then create `hypotheses/h-$ARGUMENTS/run.sh` and `hypotheses/h-$ARGUMENTS/analyze.py`.
 
 ### Mandatory harness requirements
 

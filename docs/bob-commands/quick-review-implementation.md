@@ -67,8 +67,8 @@ The command prompt contains instructions for Bob to execute the workflow:
 | `design` | 8 | Design doc | - | `docs/plans/*-design.md` |
 | `macro-plan` | 8 | Macro plan | - | `docs/plans/*-plan.md` (non-PR) |
 | `h-design` | 5 | Conversation context | - | Conversation context |
-| `h-code` | 5 | Experiment scripts | - | Current directory if in `hypotheses/h-*/` |
-| `h-findings` | 10 | FINDINGS.md | `findings`, `discovery` | `FINDINGS.md` in current/hypothesis dir |
+| `h-code` | 5 | Experiment scripts | - | Current directory if in `hypotheses/h-*/` (runs inside experiment branch) |
+| `h-findings` | 10 | FINDINGS.md | `findings`, `discovery` | `FINDINGS.md` in current/hypothesis dir (runs inside experiment branch) |
 
 ---
 
@@ -373,11 +373,11 @@ Optional fields:
 # Review macro plan (8 perspectives)
 /quick-review macro-plan docs/plans/2026-03-15-convergence-review-redesign-plan.md
 
-# Review hypothesis findings (10 perspectives)
-/quick-review h-findings hypotheses/h-reasoning-kv/FINDINGS.md
+# Review hypothesis findings (10 perspectives) — run inside experiment branch
+/quick-review h-findings hypotheses/h-<name>/FINDINGS.md
 
-# Review hypothesis code (5 perspectives)
-/quick-review h-code hypotheses/h-reasoning-kv/
+# Review hypothesis code (5 perspectives) — run inside experiment branch
+/quick-review h-code hypotheses/h-<name>/
 ```
 
 ### Fuzzy Matching Examples

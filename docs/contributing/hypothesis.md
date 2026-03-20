@@ -5,7 +5,7 @@
 This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/contributing/standards/experiments.md](standards/experiments.md). For the FINDINGS.md template, see [docs/contributing/templates/hypothesis.md](templates/hypothesis.md). For completed experiment status and coverage gaps, see the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive).
 
 !!! note "Experiment archive"
-    All completed experiment artifacts (`run.sh`, `analyze.py`, `FINDINGS.md`, `hypotheses/lib/`, `docs/plans/research.md`) are preserved in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at commit `cad4191`. None of these are kept on `main` — CLI output format changes can silently break analysis scripts, and a single findings catalog on `main` would drift out of sync with experiments that live in feature branches. New experiment branches are created from `main` per Step 0; all experiment artifacts stay in the feature branch and are not merged back.
+    All completed experiment artifacts (`run.sh`, `analyze.py`, `FINDINGS.md`, `hypotheses/lib/`) and the research catalog (`docs/plans/research.md`) are preserved in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at commit `cad4191` (the last `main` commit before this separation). None of these are kept on `main` — CLI output format changes can silently break analysis scripts, and a single findings catalog on `main` would drift out of sync with experiments that live in feature branches. New experiment branches are created from `main` per Step 0; all experiment artifacts stay in the feature branch and are not merged back.
 
 **For external contributors:** Submit your `FINDINGS.md` via PR from your feature branch — keep experiment scripts (`run.sh`, `analyze.py`) in that same branch. Maintainers will review the scripts there and run the review protocols on your behalf. You can also conduct reviews manually using the perspective checklists documented in each gate.
 
@@ -55,7 +55,7 @@ flowchart TD
 | **1. Classify** | Choose family, VV&UQ category, type from [experiments.md](standards/experiments.md) |
 | **2. Design** | ED-1–ED-6 compliance, then 5-perspective Design Review |
 | **3. Human gate** | Present design for approval — pause until approved |
-| **4. Implement** | `run.sh` + `analyze.py` using `hypotheses/lib/` harness (in experiment branch, not merged to `main`) |
+| **4. Implement** | Copy harness from `hypothesis-archive` branch, then write `run.sh` + `analyze.py` (stay in experiment branch) |
 | **5. Code Review** | 5-perspective code review → convergence |
 | **6. Run** | Execute `./run.sh` across required seeds |
 | **7. Document** | Write FINDINGS.md using [template](templates/hypothesis.md) |
@@ -174,7 +174,17 @@ Present the experiment design for human approval. The human reviews:
 
 **Context:** Worktree (after human approval)
 
-Create `hypotheses/<name>/run.sh` and `hypotheses/<name>/analyze.py` inside your experiment branch. These files are **not merged to `main`** — they stay in the feature branch as the reproducible artifact. The shared harness (`hypotheses/lib/`) is available in your branch after cherry-picking or copying from the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses/lib).
+Create `hypotheses/<name>/run.sh` and `hypotheses/<name>/analyze.py` inside your experiment branch. These files are **not merged to `main`** — they stay in the feature branch as the reproducible artifact.
+
+**First, copy the shared harness from the archive branch:**
+
+```bash
+mkdir -p hypotheses/lib
+git show hypothesis-archive:hypotheses/lib/harness.sh > hypotheses/lib/harness.sh
+git show hypothesis-archive:hypotheses/lib/analyze_helpers.py > hypotheses/lib/analyze_helpers.py
+```
+
+Then verify the harness output format matches the current CLI before use — the archive is pinned at `cad4191` and the harness may need adaptation for newer CLI output (see [Quality Gates](#quality-gates) for the checklist).
 
 **Harness requirements (mandatory):**
 - `run.sh` MUST source `hypotheses/lib/harness.sh` and use `blis_run` for every simulation call
@@ -703,4 +713,4 @@ When prior findings are known to be affected by a later change, an erratum is ad
 **v1.0 (PR #310):** Three external LLM reviews per round, no design gate, no code review gate, ad-hoc git commands.
 **v2.0 (2026-02-23, #392):** Three review gates (Design 5, Code 5, FINDINGS 10) with universal convergence protocol, human approval gate, self-audit, verification gate, parallel execution, two-track issue filing, explicit worktree/commit skill integration. Structural alignment with PR workflow v3.0.
 **v2.1 (2026-02-27, #464):** Human-first rewrite. Manual steps primary; skills in admonition callouts. Prerequisites table removed (skills referenced inline per step). "For Claude" directives rewritten as universal process guidance.
-**v2.2 (2026-03-20, #773):** Full separation — no hypothesis artifacts merge to `main`. All completed artifacts (`run.sh`, `analyze.py`, `FINDINGS.md`, `hypotheses/lib/`, `docs/plans/research.md`) archived to `hypothesis-archive` branch at `cad4191`. Experiment feature branches are the permanent record; PRs are not merged to `main`.
+**v2.2 (2026-03-20, #773):** Full separation — no hypothesis artifacts merge to `main`. All completed artifacts (`run.sh`, `analyze.py`, `FINDINGS.md`, `hypotheses/lib/`, `docs/plans/research.md`) archived to `hypothesis-archive` branch at `cad4191`. Experiment feature branches are the permanent record; the branch content (scripts, findings) does not merge to `main` — the PR itself is the permanent, reviewable artifact.
