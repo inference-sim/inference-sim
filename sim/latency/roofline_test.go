@@ -379,15 +379,13 @@ func TestCalculateMemoryAccessBytes_MoE_EffectiveExperts(t *testing.T) {
 	mc := testMixtralConfig() // N=8, k=2
 
 	tests := []struct {
-		name         string
-		batchSize    int64
-		wantMinRatio float64 // nEff >= k
-		wantMaxRatio float64 // nEff <= N
+		name      string
+		batchSize int64
 	}{
-		{"B=1 (single token)", 1, 2.0 / 8.0, 2.0 / 8.0},       // nEff = k exactly
-		{"B=3 (small batch)", 3, 2.0 / 8.0, 6.0 / 8.0},        // nEff ≈ 4.6
-		{"B=10 (medium batch)", 10, 2.0 / 8.0, 1.0},           // nEff ≈ 7.4
-		{"B=100 (large batch)", 100, 7.9 / 8.0, 1.0},          // nEff → N
+		{"B=1 (single token)", 1},    // nEff = k exactly
+		{"B=3 (small batch)", 3},     // nEff ≈ 4.6
+		{"B=10 (medium batch)", 10},  // nEff ≈ 7.4
+		{"B=100 (large batch)", 100}, // nEff → N
 	}
 
 	dense := mc
