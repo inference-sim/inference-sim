@@ -62,6 +62,7 @@ var swiGLUActivations = map[string]bool{
 //   - hc: GPU hardware calibration (must include MemoryGiB)
 //   - tp: tensor parallelism degree (must be > 0)
 //   - blockSize: tokens per KV cache block (must be > 0)
+//   - gpuMemoryUtilization: fraction of GPU HBM available for KV cache (must be in (0, 1.0])
 //   - params: MoE indicators, activation type, embedding tying
 //
 // Returns the number of blocks, or an error if inputs are invalid or memory

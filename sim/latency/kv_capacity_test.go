@@ -1074,9 +1074,9 @@ func TestCalculateKVBlocks_GpuMemoryUtilization_Validation(t *testing.T) {
 		{"valid 0.7", 0.7, false},
 		{"valid 0.9", 0.9, false},
 		{"valid 1.0", 1.0, false},
-		{"below range", 0.0, true},
+		{"zero is invalid", 0.0, true},
 		{"negative", -0.1, true},
-		{"above range", 1.1, true},
+		{"above 1.0 is invalid", 1.1, true},
 		{"NaN", math.NaN(), true},
 		{"positive infinity", math.Inf(1), true},
 		{"negative infinity", math.Inf(-1), true},
@@ -1089,5 +1089,28 @@ func TestCalculateKVBlocks_GpuMemoryUtilization_Validation(t *testing.T) {
 				t.Errorf("gpuMemoryUtilization=%v: got error=%v, wantErr=%v", tt.gpuUtil, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestCalculateKVBlocks_GpuMemoryUtilization_HigherUtilProducesMoreBlocks(t *testing.T) {
+	// BC: higher GPU memory utilization leaves more memory for KV cache
+	// GIVEN the same model and hardware
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	params := validDenseKVParams()
+
+	// WHEN computed at 90% vs 95% utilization
+	blocks90, err := latency.CalculateKVBlocks(mc, hc, 1, 16, 0.90, params)
+	if err != nil {
+		t.Fatalf("util=0.90: unexpected error: %v", err)
+	}
+	blocks95, err := latency.CalculateKVBlocks(mc, hc, 1, 16, 0.95, params)
+	if err != nil {
+		t.Fatalf("util=0.95: unexpected error: %v", err)
+	}
+
+	// THEN higher utilization must produce strictly more blocks
+	if blocks95 <= blocks90 {
+		t.Errorf("util=0.95 should yield more blocks than util=0.90: got %d <= %d", blocks95, blocks90)
 	}
 }
