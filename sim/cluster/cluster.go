@@ -43,6 +43,7 @@ type ClusterSimulator struct {
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID
 	transfersInitiated        int
 	transfersCompleted        int
+	pdPrefillCompletedCount   int                       // prefill sub-requests that completed (for INV-1 correction)
 	droppedAtDecodeKV         int                       // requests dropped due to insufficient KV at decode
 	prefillRoutingPolicy      sim.RoutingPolicy         // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy         // nil = use main routingPolicy
@@ -347,7 +348,17 @@ func (c *ClusterSimulator) Run() error {
 
 	c.aggregatedMetrics = c.aggregateMetrics()
 
-	// R1/INV-1: Add decode-KV drops to DroppedUnservable for conservation.
+	// R1/INV-1: PD disaggregation conservation correction.
+	// Each disaggregated request generates two sub-requests (prefill + decode) that
+	// complete on separate instances. aggregateMetrics() naively sums CompletedRequests
+	// across all instances, double-counting: prefill completion + decode completion = 2
+	// for each original request. Subtract prefill completions to restore correct count.
+	if c.pdPrefillCompletedCount > 0 {
+		c.aggregatedMetrics.CompletedRequests -= c.pdPrefillCompletedCount
+	}
+	// Requests dropped at decode KV allocation: the prefill sub-request already
+	// completed (counted above and subtracted), but the original request is lost.
+	// Count as DroppedUnservable for INV-1 conservation.
 	if c.droppedAtDecodeKV > 0 {
 		c.aggregatedMetrics.DroppedUnservable += c.droppedAtDecodeKV
 	}
@@ -394,10 +405,17 @@ func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
 	return result
 }
 
-// ParentRequests returns the parent request tracking map.
+// ParentRequests returns a copy of the parent request tracking map (R8: no exported mutable maps).
 // Returns nil when disaggregation is disabled.
 func (c *ClusterSimulator) ParentRequests() map[string]*ParentRequest {
-	return c.parentRequests
+	if c.parentRequests == nil {
+		return nil
+	}
+	result := make(map[string]*ParentRequest, len(c.parentRequests))
+	for k, v := range c.parentRequests {
+		result[k] = v
+	}
+	return result
 }
 
 // buildPoolFilteredSnapshots constructs routing snapshots filtered to a specific pool role.
@@ -425,6 +443,7 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
 			parent.PrefillCompleteTime = c.clock
 			delete(c.pendingPrefillCompletions, subReqID)
+			c.pdPrefillCompletedCount++
 
 			// Schedule KV transfer
 			heap.Push(&c.clusterEvents, clusterEventEntry{

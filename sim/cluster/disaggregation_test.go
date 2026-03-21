@@ -156,6 +156,27 @@ func TestDisaggregation_TransferConservation(t *testing.T) {
 	}
 }
 
+func TestDisaggregation_INV1Conservation(t *testing.T) {
+	// INV-1: CompletedRequests + StillQueued + StillRunning + DroppedUnservable == N
+	// in disaggregated mode (must not double-count prefill + decode sub-requests)
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	if metrics.CompletedRequests != 5 {
+		t.Errorf("INV-1: CompletedRequests = %d, want 5 (possible double-counting of sub-requests)",
+			metrics.CompletedRequests)
+	}
+	injected := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
+	if injected != 5 {
+		t.Errorf("INV-1 conservation violated in disaggregated mode: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 5",
+			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, injected)
+	}
+}
+
 func TestDisaggregation_PhaseCausality(t *testing.T) {
 	// BC-PD-9 / INV-PD-4: Full causal chain for every disaggregated request
 	config := newTestDisaggDeploymentConfig(4, 2, 2)

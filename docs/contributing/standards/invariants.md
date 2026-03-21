@@ -181,3 +181,11 @@ Invariants are properties that must hold at all times during and after simulatio
 **Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PhaseCausality` checks the full causal chain for every parent request.
 
 **Evidence:** Each phase transition is enforced by DES event ordering: earlier phases schedule later-phase events at `time >= current_time`.
+
+### INV-PD-5: Pool Stability
+
+**Statement:** Pool membership is fixed at construction time and never changes during simulation.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PoolStability` compares `PoolMembership()` before and after `Run()`.
+
+**Evidence:** `BuildPoolMembership` is called once in `NewClusterSimulator` and stored in `cs.poolMembership`. No code path in `Run()` modifies this map.

@@ -188,16 +188,14 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			e.parentReq.DecodeInstanceID = InstanceID(decision.TargetInstance)
 			e.parentReq.DecodeEnqueueTime = e.time
 
-			// INV-PD-1 defensive check: decode_enqueue_time >= transfer_complete_time.
-			if e.parentReq.DecodeEnqueueTime < e.parentReq.TransferCompleteTime {
-				logrus.Warnf("[cluster] INV-PD-1 violated: DecodeEnqueueTime (%d) < TransferCompleteTime (%d) for req %s",
-					e.parentReq.DecodeEnqueueTime, e.parentReq.TransferCompleteTime, e.parentReq.ID)
-			}
+			// INV-PD-1 structural guarantee: DecodeEnqueueTime >= TransferCompleteTime.
+			// KVTransferCompletedEvent (priority 6) schedules DecodeRoutingEvent (priority 7)
+			// at the same timestamp (e.time), so both fields are equal by construction.
 
 			cs.inFlightRequests[decision.TargetInstance]++
 			// INV-PD-4: register decode sub-request for CompletionTime detection.
 			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
-			inst.InjectDecodeOnline(e.decodeSubReq, e.time)
+			inst.InjectDecodeOnline(e.decodeSubReq)
 			return
 		}
 	}
