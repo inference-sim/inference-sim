@@ -370,11 +370,14 @@ func (c *ClusterSimulator) Run() error {
 	// but don't appear in any instance's StillQueued/StillRunning/DroppedUnservable.
 	// Count them as StillRunning for conservation.
 	//
-	// Distinguish two sub-states:
+	// Distinguish three sub-states of "prefill completed but decode not done":
 	// - pendingDecodeCompletions: decode sub-requests already injected into instances
 	//   (appear in instance StillQueued/StillRunning via Finalize — do NOT add again)
 	// - pdInTransfer: requests still in KV transfer or cluster event queue
 	//   (not on any instance — must be added to StillRunning)
+	// - timed-out prefills: entries may remain in pendingPrefillCompletions but
+	//   pdPrefillCompletedCount was NOT incremented; the timeout is already counted
+	//   in instance TimedOutRequests → aggregated via aggregateMetrics(). No correction needed.
 	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.droppedAtDecodeKV - len(c.pendingDecodeCompletions)
 	if pdInTransfer > 0 {
 		c.aggregatedMetrics.StillRunning += pdInTransfer
@@ -443,6 +446,8 @@ func (c *ClusterSimulator) ParentRequests() map[string]*ParentRequest {
 
 // buildPoolFilteredSnapshots constructs routing snapshots filtered to a specific pool role.
 // Filters by IsRoutable() for parity with buildRouterState (R23), then by pool role.
+// Model filter is intentionally omitted: all instances in a DeploymentConfig share config.Model,
+// so pool-role filtering is sufficient. If multi-model PD clusters are added, add model filtering here.
 // Preserves instance order from c.instances for determinism (R2).
 func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
 	allSnapshots := make([]sim.RoutingSnapshot, 0, len(c.instances))

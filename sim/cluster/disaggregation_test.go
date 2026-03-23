@@ -157,8 +157,20 @@ func TestDisaggregation_TransferConservation(t *testing.T) {
 	}
 }
 
+// assertINV1Conservation checks the full INV-1 conservation equation including TimedOutRequests.
+func assertINV1Conservation(t *testing.T, metrics *sim.Metrics, expected int, label string) {
+	t.Helper()
+	sum := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning +
+		metrics.DroppedUnservable + metrics.TimedOutRequests
+	if sum != expected {
+		t.Errorf("INV-1 conservation violated (%s): completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, want %d",
+			label, metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning,
+			metrics.DroppedUnservable, metrics.TimedOutRequests, sum, expected)
+	}
+}
+
 func TestDisaggregation_INV1Conservation(t *testing.T) {
-	// INV-1: CompletedRequests + StillQueued + StillRunning + DroppedUnservable == N
+	// INV-1: CompletedRequests + StillQueued + StillRunning + DroppedUnservable + TimedOutRequests == N
 	// in disaggregated mode (must not double-count prefill + decode sub-requests)
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
@@ -171,11 +183,7 @@ func TestDisaggregation_INV1Conservation(t *testing.T) {
 		t.Errorf("INV-1: CompletedRequests = %d, want 5 (possible double-counting of sub-requests)",
 			metrics.CompletedRequests)
 	}
-	injected := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
-	if injected != 5 {
-		t.Errorf("INV-1 conservation violated in disaggregated mode: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 5",
-			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, injected)
-	}
+	assertINV1Conservation(t, metrics, 5, "disaggregated mode")
 }
 
 func TestDisaggregation_INV1Conservation_BoundedHorizon(t *testing.T) {
@@ -192,13 +200,8 @@ func TestDisaggregation_INV1Conservation_BoundedHorizon(t *testing.T) {
 
 	metrics := cs.AggregatedMetrics()
 	// All 10 requests should have arrived within the horizon (last arrives at ~900000 μs).
-	// Conservation: completed + queued + running + dropped == 10
-	// The pdInFlight correction ensures requests mid-transfer are counted in StillRunning.
-	sum := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
-	if sum != 10 {
-		t.Errorf("INV-1 conservation violated at bounded horizon: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 10",
-			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, sum)
-	}
+	// The pdInTransfer correction ensures requests mid-transfer are counted in StillRunning.
+	assertINV1Conservation(t, metrics, 10, "bounded horizon")
 	// Verify pdInTransfer accounting is non-negative (no over-subtraction)
 	pdInTransfer := cs.pdPrefillCompletedCount - cs.pdDecodeCompletedCount - cs.droppedAtDecodeKV - len(cs.pendingDecodeCompletions)
 	if pdInTransfer < 0 {
@@ -220,11 +223,7 @@ func TestDisaggregation_DecodeOnlyBatchKVPressure(t *testing.T) {
 
 	metrics := cs.AggregatedMetrics()
 	// Under tight KV pressure, some requests may be dropped — conservation must hold
-	sum := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
-	if sum != 5 {
-		t.Errorf("INV-1 conservation violated under KV pressure: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 5",
-			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, sum)
-	}
+	assertINV1Conservation(t, metrics, 5, "KV pressure")
 }
 
 func newShortRequests(n int) []*sim.Request {
@@ -263,11 +262,7 @@ func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 
 	metrics := cs.AggregatedMetrics()
 	// INV-1 conservation must hold even when decode drops occur
-	sum := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
-	if sum != 4 {
-		t.Errorf("INV-1 conservation violated with decode KV drops: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 4",
-			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, sum)
-	}
+	assertINV1Conservation(t, metrics, 4, "decode KV drops")
 }
 
 func TestDisaggregation_PhaseCausality(t *testing.T) {
@@ -385,11 +380,7 @@ func TestDisaggregation_BackwardCompatibility(t *testing.T) {
 	}
 
 	// INV-1: Conservation
-	injected := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
-	if injected != 10 {
-		t.Errorf("conservation violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 10",
-			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, injected)
-	}
+	assertINV1Conservation(t, metrics, 10, "non-disaggregated backward compat")
 }
 
 func TestDisaggregation_PerPoolScorerConfigs(t *testing.T) {
