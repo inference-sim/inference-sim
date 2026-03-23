@@ -634,13 +634,15 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// Zero-output requests complete at prefill end with no decode phase.
 			// The final-token KV allocation only applies to requests that have
 			// output tokens AND whose ProgressIndex still points to a valid
-			// output token. In PD disaggregation mode, a 1-output-token request
-			// has its only decode token allocated by FormBatch Phase 2 (the
-			// decode-only dequeue path in batch_formation.go). After executeBatchStep
-			// increments ProgressIndex to inputLen+1, the guard below evaluates to
-			// inputLen+1 < inputLen+1 = false, so no additional allocation is attempted.
-			// For multi-output-token requests, ProgressIndex = inputLen+outputLen-1 on
-			// the final step, so the guard passes and the last token is allocated here.
+			// output token. For PD decode sub-requests, FormBatch Phase 2 (the
+			// decode-only dequeue path in batch_formation.go) already allocated
+			// the first decode token's KV block. After executeBatchStep runs,
+			// ProgressIndex = inputLen+1 for a 1-output-token request, so the
+			// guard (ProgressIndex < inputLen+outputLen = inputLen+1) evaluates
+			// to false — no duplicate allocation is attempted. For requests with
+			// 2+ output tokens (PD or non-PD), the final step has
+			// ProgressIndex = inputLen+outputLen-1, the guard passes, and the
+			// last token is allocated here.
 			// ITL is NOT appended here — executeBatchStep already recorded it
 			// for this decode step (fix for #524 phantom ITL entry).
 			if len(req.OutputTokens) > 0 && req.ProgressIndex < util.Len64(req.InputTokens)+util.Len64(req.OutputTokens) {

@@ -751,9 +751,16 @@ func TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath(t *testing.T) {
 	}
 	bf.FormBatch(ctx)
 
-	// The request must not be scheduled via the decode-only fast-path.
-	// If it were, ComputedTokens would be set to ProgressIndex+1 = 1,
-	// producing a phantom token count for a zero-input request.
+	// The request must be dequeued and scheduled via the normal prefill path,
+	// not the decode-only fast-path. Two observable consequences:
+	//
+	// 1. wq must be empty: the request was dequeued (not left stuck in the queue).
+	// 2. ComputedTokens must be 0: the normal path sets numNewTokens=0 for
+	//    zero-input requests. The decode-only fast-path would set it to
+	//    ProgressIndex+decodeTokens = 0+1 = 1 (the bug).
+	if wq.Len() != 0 {
+		t.Errorf("WaitQueue.Len() = %d, want 0: zero-input request was not dequeued", wq.Len())
+	}
 	if computedTokens[req.ID] != 0 {
 		t.Errorf("ComputedTokens[%q] = %d, want 0: zero-input request must not take the decode-only fast-path (ProgressIndex > 0 guard violated)",
 			req.ID, computedTokens[req.ID])
