@@ -168,9 +168,9 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ### INV-PD-3: Transfer Conservation
 
-**Statement:** `initiated_transfers == completed_transfers` at simulation end.
+**Statement:** `initiated_transfers == completed_transfers` at simulation end, provided all transfers complete within the simulation horizon. At bounded horizons, the difference (`initiated - completed`) represents in-flight transfers accounted for in the `pdInTransfer` conservation correction (see INV-1 PD correction in `cluster.go`).
 
-**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_TransferConservation` asserts equality and expected count.
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_TransferConservation` asserts equality and expected count (uses unbounded horizon).
 
 **Evidence:** `transfersInitiated` incremented in `KVTransferStartedEvent.Execute()`, `transfersCompleted` incremented in `KVTransferCompletedEvent.Execute()`. Every started event schedules exactly one completed event.
 

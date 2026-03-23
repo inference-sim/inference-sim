@@ -407,6 +407,12 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 func (sim *Simulator) EnqueueDecodeSubRequest(r *Request) {
 	sim.WaitQ.Enqueue(r)
 	// Do NOT add len(r.InputTokens) to TotalInputTokens — already counted by prefill sub-request.
+
+	// Schedule timeout for decode sub-request (R23: parity with EnqueueRequest)
+	if r.Deadline > 0 && r.Deadline <= sim.Horizon {
+		sim.Schedule(&TimeoutEvent{time: r.Deadline, Request: r})
+	}
+
 	// Trigger StepEvent if idle (work-conserving: INV-8)
 	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) && sim.stepEvent == nil {
 		step := &StepEvent{time: sim.Clock}

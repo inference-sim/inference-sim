@@ -378,6 +378,9 @@ func (c *ClusterSimulator) Run() error {
 	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.droppedAtDecodeKV - len(c.pendingDecodeCompletions)
 	if pdInTransfer > 0 {
 		c.aggregatedMetrics.StillRunning += pdInTransfer
+	} else if pdInTransfer < 0 {
+		logrus.Warnf("[cluster] pdInTransfer = %d (negative): prefillCompleted=%d, decodeCompleted=%d, droppedAtDecodeKV=%d, pendingDecode=%d — bookkeeping bug in PD disaggregation accounting",
+			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.droppedAtDecodeKV, len(c.pendingDecodeCompletions))
 	}
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
@@ -439,13 +442,17 @@ func (c *ClusterSimulator) ParentRequests() map[string]*ParentRequest {
 }
 
 // buildPoolFilteredSnapshots constructs routing snapshots filtered to a specific pool role.
+// Filters by IsRoutable() for parity with buildRouterState (R23), then by pool role.
 // Preserves instance order from c.instances for determinism (R2).
 func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
-	allSnapshots := make([]sim.RoutingSnapshot, len(c.instances))
-	for i, inst := range c.instances {
+	allSnapshots := make([]sim.RoutingSnapshot, 0, len(c.instances))
+	for _, inst := range c.instances {
+		if !inst.IsRoutable() {
+			continue
+		}
 		snap := c.snapshotProvider.Snapshot(inst.ID(), c.clock)
 		snap.InFlightRequests = c.inFlightRequests[string(inst.ID())]
-		allSnapshots[i] = snap
+		allSnapshots = append(allSnapshots, snap)
 	}
 	return FilterSnapshotsByPool(allSnapshots, c.poolMembership, role)
 }

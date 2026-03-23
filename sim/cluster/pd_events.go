@@ -25,7 +25,9 @@ func (e *PrefillRoutingEvent) Priority() int     { return 4 }
 func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRolePrefill)
 	if len(filteredSnapshots) == 0 {
-		panic(fmt.Sprintf("PrefillRoutingEvent: no instances in prefill pool (poolMembership has %d entries)", len(cs.poolMembership)))
+		logrus.Warnf("[cluster] prefill req %s: no routable instances in prefill pool — request rejected at routing", e.request.ID)
+		cs.routingRejections++
+		return
 	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
 
@@ -124,6 +126,8 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		InputTokens:  orig.InputTokens,
 		OutputTokens: orig.OutputTokens,
 		MaxOutputLen: orig.MaxOutputLen,
+		Deadline:     orig.Deadline,
+		PrefixGroup:  orig.PrefixGroup,
 		State:        sim.StateQueued,
 		ArrivalTime:  orig.ArrivalTime,
 		TenantID:     orig.TenantID,
@@ -158,7 +162,10 @@ func (e *DecodeRoutingEvent) Priority() int     { return 7 }
 func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleDecode)
 	if len(filteredSnapshots) == 0 {
-		panic(fmt.Sprintf("DecodeRoutingEvent: no instances in decode pool (poolMembership has %d entries)", len(cs.poolMembership)))
+		logrus.Warnf("[cluster] decode req %s: no routable instances in decode pool — request dropped", e.parentReq.ID)
+		cs.droppedAtDecodeKV++
+		e.parentReq.CompletionTime = e.time
+		return
 	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
 
