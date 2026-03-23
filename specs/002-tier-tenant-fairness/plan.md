@@ -50,7 +50,7 @@ specs/002-tier-tenant-fairness/
 
 ```text
 sim/
-├── admission.go          PR-1: add sloTierPriority(), TierShedAdmission
+├── admission.go          PR-1: add SLOTierPriority(), TierShedAdmission
 └── bundle.go             PR-1: register "tier-shed" policy name
 
 sim/cluster/
@@ -59,7 +59,8 @@ sim/cluster/
 ├── cluster_event.go      PR-1: per-tier shed counter
 │                         PR-2: Batch/Background pre-admission intercept
 │                         PR-3: tenant budget override after admission
-├── deployment.go         PR-3: TenantBudgets config field
+├── deployment.go         PR-1: TierShedThreshold, TierShedMinPriority config fields
+│                         PR-3: TenantBudgets config field
 ├── metrics.go            PR-2: DeferredHorizonInterrupted in RawMetrics
 │                         PR-4: ComputePerTenantMetrics() + TenantMetrics struct
 └── tenant.go             PR-3: TenantTracker (new file)
@@ -78,10 +79,11 @@ cmd/root.go               PR-4: call ComputePerTenantMetrics + printPerTenantMet
 #### `sim/admission.go` (~40 lines added)
 
 ```go
-// sloTierPriority maps SLOClass string to an integer priority.
+// SLOTierPriority maps SLOClass string to an integer priority.
 // Higher = more important. Background=0 … Critical=4.
-// Empty string maps to Standard (2) for backward compatibility.
-func sloTierPriority(class string) int {
+// Empty string maps to Standard (3) for backward compatibility.
+// Exported so sim/cluster/ can call it without a circular import.
+func SLOTierPriority(class string) int {
     switch class {
     case "critical":   return 4
     case "standard":   return 3
@@ -119,19 +121,40 @@ func (t *TierShedAdmission) Admit(req *sim.Request, state *sim.RouterState) (boo
         return true, ""  // under threshold: admit all
     }
     // Under overload: reject tiers below MinAdmitPriority.
-    if sloTierPriority(class) < t.MinAdmitPriority {
+    if SLOTierPriority(class) < t.MinAdmitPriority {
         return false, fmt.Sprintf("tier-shed: tier=%s priority=%d < min=%d",
-            class, sloTierPriority(class), t.MinAdmitPriority)
+            class, SLOTierPriority(class), t.MinAdmitPriority)
     }
     return true, ""
 }
 ```
 
-#### `sim/bundle.go` (~6 lines changed)
+#### `sim/bundle.go` (~2 lines changed)
 
-- Add `"tier-shed": true` to `validAdmissionPolicies`
-- Add `TierShedThreshold int` and `TierShedMinPriority int` to `AdmissionConfig`
-- Add `case "tier-shed":` in `NewAdmissionPolicy()`
+- Add `"tier-shed": true` to `validAdmissionPolicies` (validation only)
+- Do NOT add a `case "tier-shed":` to `NewAdmissionPolicy()` — the factory signature `(name string, capacity, refillRate float64)` cannot carry the int parameters needed by `TierShedAdmission`. The policy is constructed directly in `cluster.go` instead (see below).
+
+#### `sim/cluster/deployment.go` (~8 lines changed)
+
+```go
+// Phase 1B: tier-ordered admission shedding config.
+TierShedThreshold    int `yaml:"tier_shed_threshold,omitempty"`    // default 0
+TierShedMinPriority  int `yaml:"tier_shed_min_priority,omitempty"` // default 3 (Standard)
+```
+
+#### `sim/cluster/cluster.go` (PR-1 addition, ~8 lines in `NewClusterSimulator()`)
+
+```go
+// Bypass the generic factory for tier-shed: it needs int params the factory doesn't carry.
+if config.AdmissionPolicy == "tier-shed" {
+    cs.admissionPolicy = &sim.TierShedAdmission{
+        OverloadThreshold: config.TierShedThreshold,
+        MinAdmitPriority:  config.TierShedMinPriority,
+    }
+}
+```
+
+This block runs after the existing `sim.NewAdmissionPolicy(...)` call and overwrites the result when the policy is `"tier-shed"`.
 
 #### `sim/cluster/cluster_event.go` (~12 lines changed)
 
@@ -173,9 +196,10 @@ deferredQueue []*sim.Request  // Batch/Background requests awaiting idle capacit
 
 // New method:
 // isBusy returns true when any instance has non-zero effective load.
+// Matches the three-component definition: QueueDepth + BatchSize + InFlightRequests > 0.
 func (c *ClusterSimulator) isBusy() bool {
     for _, inst := range c.instances {
-        if inst.QueueDepth() > 0 || inst.BatchSize() > 0 {
+        if inst.QueueDepth()+inst.BatchSize()+c.inFlightRequests[string(inst.ID())] > 0 {
             return true
         }
     }
@@ -230,6 +254,7 @@ Add invariant comment:
 | Deferred request NOT promoted while queues non-empty | Behavior | |
 | INV-1 holds with non-empty deferred queue at horizon | Invariant | Conservation |
 | No deferred logic when SLOClass != batch/background | Behavior | Zero-value safe |
+| INV-8 preserved: promoting deferred doesn't stall running work | Invariant | Work-conserving |
 
 ---
 
@@ -288,7 +313,7 @@ TenantBudgets map[string]float64 `yaml:"tenant_budgets,omitempty"`
 In `AdmissionDecisionEvent.Execute()`, after admission policy returns `admitted=true`:
 ```go
 if cs.tenantTracker != nil && cs.tenantTracker.IsOverBudget(e.request.TenantID) {
-    tier := sloTierPriority(e.request.SLOClass)
+    tier := sim.SLOTierPriority(e.request.SLOClass)
     if tier < 3 {  // below Standard
         admitted = false
         reason = "tenant-budget-exceeded"

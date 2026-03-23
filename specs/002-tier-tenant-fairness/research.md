@@ -38,6 +38,7 @@
 **D-5: Tenant budget window**
 - Decision: Instantaneous in-flight count (`inFlight map[string]int`) only — no time window, no token tracking.
 - Rationale: In-flight count is already maintained by `cs.inFlightRequests`; per-tenant variant is straightforward. Token tracking adds complexity without changing correctness for the Phase 1B invariant test.
+- Cross-ref FR-012: spec.md FR-012 requires that per-tenant accounting "MUST reset or decay between observation windows." Instantaneous in-flight count satisfies this — the count drops to zero naturally as requests complete, so no explicit window reset is needed. Each measurement reflects only requests actively in flight at that moment.
 
 **D-6: Per-tenant metrics source**
 - Decision: Walk `aggregated.Requests` (the `map[string]RequestMetrics`) and group by `TenantID`. Already contains `NumDecodeTokens` for token totals. Matches how `ComputePerSLODistributions` works.

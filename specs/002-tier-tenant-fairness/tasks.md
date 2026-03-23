@@ -17,7 +17,7 @@
 
 **Purpose**: Add the `sloTierPriority()` helper that US1 and US3 both depend on. Unblocks all subsequent phases.
 
-- [ ] T001 Add `sloTierPriority(class string) int` function (Background=0 … Critical=4; empty→3) to `sim/admission.go`
+- [ ] T001 Add `SLOTierPriority(class string) int` function (exported; Background=0 … Critical=4; empty→3) to `sim/admission.go` — exported so `sim/cluster/` can call it without a circular import
 - [ ] T002 Add `shedByTier map[string]int` field to `ClusterSimulator` struct and initialize to `make(map[string]int)` in `NewClusterSimulator()` in `sim/cluster/cluster.go`
 
 **Checkpoint**: `go build ./...` passes. Foundation ready for all user stories.
@@ -102,9 +102,9 @@ No additional foundational work — T001 and T002 are sufficient. User story pha
 ### Implementation for User Story 3
 
 - [ ] T021 [P] [US3] Implement `TenantTracker` struct + `NewTenantTracker()` + `IsOverBudget()` + `OnStart()` + `OnComplete()` — `sim/cluster/tenant.go` (new file; depends on T017 failing first)
-- [ ] T022 [P] [US3] Add `TenantBudgets map[string]float64 \`yaml:"tenant_budgets,omitempty"\`` to `DeploymentConfig` — `sim/cluster/deployment.go`
+- [ ] T022 [P] [US3] Add `TenantBudgets map[string]float64 \`yaml:"tenant_budgets,omitempty"\`` to `DeploymentConfig` — `sim/cluster/deployment.go` (R8 note: this exported map field is config-time only and never mutated after `NewClusterSimulator()` reads it, satisfying R8's intent — no runtime mutation through the exported field)
 - [ ] T023 [US3] Add `tenantTracker *TenantTracker` field to `ClusterSimulator`; initialize in `NewClusterSimulator()` when `config.TenantBudgets != nil`; call `OnStart`/`OnComplete` at request dispatch and terminal state — `sim/cluster/cluster.go` (depends on T021, T022)
-- [ ] T024 [US3] Add tenant budget override in `AdmissionDecisionEvent.Execute()`: after admission policy returns `admitted=true`, if `cs.tenantTracker.IsOverBudget(req.TenantID)` and `sloTierPriority(req.SLOClass) < 3`, override to rejected — `sim/cluster/cluster_event.go` (depends on T023)
+- [ ] T024 [US3] Add tenant budget override in `AdmissionDecisionEvent.Execute()`: after admission policy returns `admitted=true`, if `cs.tenantTracker.IsOverBudget(req.TenantID)` and `sim.SLOTierPriority(req.SLOClass) < 3`, override to rejected — `sim/cluster/cluster_event.go` (depends on T023)
 
 **Checkpoint**: `go test ./sim/cluster/...` passes. T017–T020 now pass. PR #811 is ready.
 

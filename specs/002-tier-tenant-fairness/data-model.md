@@ -4,7 +4,7 @@
 
 ### SLO Tier Priority (existing, extended)
 
-Canonical mapping from `Request.SLOClass` string to integer priority. Defined in `sim/admission.go`.
+Canonical mapping from `Request.SLOClass` string to integer priority. Defined as `SLOTierPriority(class string) int` (exported) in `sim/admission.go` so `sim/cluster/` can call it without a circular import.
 
 | SLOClass string | Priority int | Admission behavior |
 |----------------|-------------|-------------------|
@@ -16,7 +16,7 @@ Canonical mapping from `Request.SLOClass` string to integer priority. Defined in
 | `""` (empty)   | 3 | Treated as Standard (backward compatibility) |
 
 **Invariants:**
-- `sloTierPriority()` never reads `req.OutputTokens` (INV-9)
+- `SLOTierPriority()` never reads `req.OutputTokens` (INV-9)
 - Result is a pure function of the class string — no side effects
 
 ---
@@ -46,6 +46,8 @@ A slice of `*sim.Request` holding Batch and Background requests awaiting idle ca
 | Capacity | Unbounded (simulation horizon terminates growth) |
 | Promotion trigger | `isBusy() == false` after any cluster event is processed |
 | Terminal accounting | Requests in queue at horizon counted as `DeferredHorizonInterrupted` |
+
+**Note on tenant budgets and the deferred queue**: Budget enforcement (PR-3) only applies at synchronous admission. Requests that are intercepted into the deferred queue before the admission check (i.e., Batch/Background when the cluster is busy) bypass tenant budget enforcement at enqueue time. Over-budget tenants can therefore accumulate Batch/Background requests in the deferred queue without limit. Budget enforcement applies again when a deferred request is promoted and re-enters the normal admission path.
 
 **State transitions for a deferred request:**
 
