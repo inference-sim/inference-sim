@@ -2106,6 +2106,78 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#pd-disaggregation-invariants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PD Disaggregation Invariants
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PD Disaggregation Invariants">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-1-kv-completeness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-1: KV Completeness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-2-pool-exclusivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-2: Pool Exclusivity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-3-transfer-conservation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-3: Transfer Conservation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-4-phase-causality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-4: Phase Causality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-5-pool-stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-5: Pool Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2824,6 +2896,78 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#pd-disaggregation-invariants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PD Disaggregation Invariants
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PD Disaggregation Invariants">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-1-kv-completeness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-1: KV Completeness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-2-pool-exclusivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-2: Pool Exclusivity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-3-transfer-conservation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-3: Transfer Conservation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-4-phase-causality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-4: Phase Causality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-5-pool-stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-5: Pool Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2964,6 +3108,28 @@
 <p><strong>Verification:</strong> <code>sim/workload/session_test.go</code> — tests cover all terminal paths: <code>TestSession_TimeoutCancels_NoMoreRounds</code> (cancelled), <code>TestSession_FinalRound_Completes</code> (completed), <code>TestSession_BeyondHorizon_NotGenerated</code> (horizon-interrupted), <code>TestSession_DroppedFollowUp_CancelsSession</code> (cancelled via drop).</p>
 <p><strong>Evidence:</strong> Design doc INV-11 definition. The <code>SessionManager.OnComplete</code> method transitions sessions to exactly one terminal state before returning nil.</p>
 <p><strong>Hypothesis family:</strong> Structural model — session lifecycle completeness.</p>
+<hr />
+<h2 id="pd-disaggregation-invariants">PD Disaggregation Invariants<a class="headerlink" href="#pd-disaggregation-invariants" title="Permanent link">&para;</a></h2>
+<h3 id="inv-pd-1-kv-completeness">INV-PD-1: KV Completeness<a class="headerlink" href="#inv-pd-1-kv-completeness" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> For every disaggregated request, <code>decode_enqueue_time &gt;= kv_transfer_completion_time</code>. A decode sub-request must not be enqueued before its KV transfer completes.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_RequestCompletesFullPath</code> checks DecodeEnqueueTime &gt;= TransferCompleteTime for every parent request. Runtime defensive check in <code>DecodeRoutingEvent.Execute()</code>.</p>
+<p><strong>Evidence:</strong> By event priority ordering: KVTransferCompletedEvent (priority 6) schedules DecodeRoutingEvent (priority 7) at the same timestamp. DecodeEnqueueTime is set in DecodeRoutingEvent which fires after transfer completion.</p>
+<h3 id="inv-pd-2-pool-exclusivity">INV-PD-2: Pool Exclusivity<a class="headerlink" href="#inv-pd-2-pool-exclusivity" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> Prefill sub-requests route only to prefill pool instances; decode sub-requests route only to decode pool instances.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_PrefillRoutedToPrefillPool</code> and <code>TestDisaggregation_DecodeRoutedToDecodePool</code> verify pool role for every parent request's prefill and decode instance assignments.</p>
+<p><strong>Evidence:</strong> <code>buildPoolFilteredSnapshots(role)</code> filters routing snapshots to only include instances of the specified pool role before passing to the routing policy.</p>
+<h3 id="inv-pd-3-transfer-conservation">INV-PD-3: Transfer Conservation<a class="headerlink" href="#inv-pd-3-transfer-conservation" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> <code>initiated_transfers == completed_transfers</code> at simulation end, provided all transfers complete within the simulation horizon. At bounded horizons, the difference (<code>initiated - completed</code>) represents in-flight transfers accounted for in the <code>pdInTransfer</code> conservation correction (see INV-1 PD correction in <code>cluster.go</code>).</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_TransferConservation</code> asserts equality and expected count (uses unbounded horizon).</p>
+<p><strong>Evidence:</strong> <code>transfersInitiated</code> incremented in <code>KVTransferStartedEvent.Execute()</code>, <code>transfersCompleted</code> incremented in <code>KVTransferCompletedEvent.Execute()</code>. Every started event schedules exactly one completed event.</p>
+<h3 id="inv-pd-4-phase-causality">INV-PD-4: Phase Causality<a class="headerlink" href="#inv-pd-4-phase-causality" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> For every disaggregated request: <code>arrival &lt;= prefill_enqueue &lt;= prefill_complete &lt;= transfer_start &lt;= transfer_complete &lt;= decode_enqueue &lt;= completion</code>.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_PhaseCausality</code> checks the full causal chain for every parent request.</p>
+<p><strong>Evidence:</strong> Each phase transition is enforced by DES event ordering: earlier phases schedule later-phase events at <code>time &gt;= current_time</code>.</p>
+<h3 id="inv-pd-5-pool-stability">INV-PD-5: Pool Stability<a class="headerlink" href="#inv-pd-5-pool-stability" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> Pool membership is fixed at construction time and never changes during simulation.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_PoolStability</code> compares <code>PoolMembership()</code> before and after <code>Run()</code>.</p>
+<p><strong>Evidence:</strong> <code>BuildPoolMembership</code> is called once in <code>NewClusterSimulator</code> and stored in <code>cs.poolMembership</code>. No code path in <code>Run()</code> modifies this map.</p>
 
 
 
