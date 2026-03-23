@@ -628,14 +628,19 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
-		if req.ProgressIndex == util.Len64(req.InputTokens)+max(util.Len64(req.OutputTokens), 1)-1 {
+		if req.ProgressIndex >= util.Len64(req.InputTokens)+max(util.Len64(req.OutputTokens), 1)-1 {
 			// State transitions
 			req.State = StateCompleted
 			// Zero-output requests complete at prefill end with no decode phase.
 			// The final-token KV allocation only applies to requests that have
-			// output tokens. ITL is NOT appended here — executeBatchStep already
-			// recorded it for this decode step (fix for #524 phantom ITL entry).
-			if len(req.OutputTokens) > 0 {
+			// output tokens AND whose ProgressIndex still points to a valid
+			// output token. In PD disaggregation mode, a 1-output-token request
+			// has its only decode token allocated by FormBatch Phase 2; after
+			// executeBatchStep increments ProgressIndex past the last valid index,
+			// there is no remaining token to allocate here.
+			// ITL is NOT appended here — executeBatchStep already recorded it
+			// for this decode step (fix for #524 phantom ITL entry).
+			if len(req.OutputTokens) > 0 && req.ProgressIndex < util.Len64(req.InputTokens)+util.Len64(req.OutputTokens) {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s (request will still complete) — this indicates a cache accounting bug", now, req.ID)

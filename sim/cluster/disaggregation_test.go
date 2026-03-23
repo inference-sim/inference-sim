@@ -458,3 +458,40 @@ func TestAllocateTransferredKV_InsufficientCapacity(t *testing.T) {
 		t.Error("AllocateTransferredKV returned true with insufficient capacity, want false")
 	}
 }
+
+// TestPDDisagg_OneOutputToken_NoPanic is a regression test for the off-by-one
+// bug in processCompletions that caused an index-out-of-range panic when a
+// disaggregated request had exactly 1 output token.
+//
+// Root cause: completion check used == instead of >=. In PD mode, the decode
+// sub-request enters with ProgressIndex == inputLen; after one decode step
+// ProgressIndex becomes inputLen+1, which failed the == check and allowed a
+// second decode step to call AllocateKVBlocks with out-of-bounds index.
+func TestPDDisagg_OneOutputToken_NoPanic(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	input := make([]int, 20)
+	for i := range input {
+		input[i] = i + 1
+	}
+	output := []int{42} // exactly 1 output token
+
+	requests := []*sim.Request{
+		{
+			ID:           "req-1output",
+			ArrivalTime:  0,
+			InputTokens:  input,
+			OutputTokens: output,
+			State:        sim.StateQueued,
+		},
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs) // must not panic
+
+	metrics := cs.AggregatedMetrics()
+	// The request must complete — not hang or get dropped.
+	if metrics.CompletedRequests == 0 {
+		t.Errorf("expected completed requests > 0, got %d (request did not complete)", metrics.CompletedRequests)
+	}
+}
