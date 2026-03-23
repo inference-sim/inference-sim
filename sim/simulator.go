@@ -636,12 +636,14 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			//
 			// 1-output-token PD decode sub-requests: FormBatch Phase 2 already
 			// allocated the single decode token's KV block. After executeBatchStep
-			// runs, ProgressIndex = inputLen+1, so the guard evaluates to
-			// inputLen+1 < inputLen+1 = false — preventing a duplicate allocation.
+			// runs, ProgressIndex = inputLen+1, so the guard
+			// (req.ProgressIndex < inputLen+outputLen) evaluates to
+			// (inputLen+1) < (inputLen+1) = false — preventing a duplicate allocation.
 			//
-			// Requests with 2+ output tokens (PD or non-PD): the final decode step
-			// has ProgressIndex = inputLen+outputLen-1, so the guard evaluates to
-			// true — this is the first and only allocation for the final token.
+			// Requests with 2+ output tokens (PD or non-PD): after executeBatchStep
+			// runs, ProgressIndex = inputLen+outputLen-1 on the final decode step,
+			// so the guard evaluates to true — this is the first and only allocation
+			// for the final token.
 			// ITL is NOT appended here — executeBatchStep already recorded it
 			// for this decode step (fix for #524 phantom ITL entry).
 			if len(req.OutputTokens) > 0 && req.ProgressIndex < util.Len64(req.InputTokens)+util.Len64(req.OutputTokens) {
