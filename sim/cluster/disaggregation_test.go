@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -151,8 +152,8 @@ func TestDisaggregation_TransferConservation(t *testing.T) {
 		t.Errorf("transfer conservation violated: initiated=%d, completed=%d",
 			cs.transfersInitiated, cs.transfersCompleted)
 	}
-	if cs.transfersInitiated != 5 {
-		t.Errorf("transfersInitiated = %d, want 5", cs.transfersInitiated)
+	if cs.transfersInitiated != len(requests) {
+		t.Errorf("transfersInitiated = %d, want %d", cs.transfersInitiated, len(requests))
 	}
 }
 
@@ -198,11 +199,11 @@ func TestDisaggregation_INV1Conservation_BoundedHorizon(t *testing.T) {
 		t.Errorf("INV-1 conservation violated at bounded horizon: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 10",
 			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, sum)
 	}
-	// Verify pdInFlight accounting is non-negative (no over-subtraction)
-	pdInFlight := cs.pdPrefillCompletedCount - cs.pdDecodeCompletedCount - cs.droppedAtDecodeKV
-	if pdInFlight < 0 {
-		t.Errorf("pdInFlight = %d, must be >= 0 (prefillCompleted=%d, decodeCompleted=%d, droppedAtDecodeKV=%d)",
-			pdInFlight, cs.pdPrefillCompletedCount, cs.pdDecodeCompletedCount, cs.droppedAtDecodeKV)
+	// Verify pdInTransfer accounting is non-negative (no over-subtraction)
+	pdInTransfer := cs.pdPrefillCompletedCount - cs.pdDecodeCompletedCount - cs.droppedAtDecodeKV - len(cs.pendingDecodeCompletions)
+	if pdInTransfer < 0 {
+		t.Errorf("pdInTransfer = %d, must be >= 0 (prefillCompleted=%d, decodeCompleted=%d, droppedAtDecodeKV=%d, pendingDecode=%d)",
+			pdInTransfer, cs.pdPrefillCompletedCount, cs.pdDecodeCompletedCount, cs.droppedAtDecodeKV, len(cs.pendingDecodeCompletions))
 	}
 }
 
@@ -222,6 +223,49 @@ func TestDisaggregation_DecodeOnlyBatchKVPressure(t *testing.T) {
 	sum := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
 	if sum != 5 {
 		t.Errorf("INV-1 conservation violated under KV pressure: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 5",
+			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, sum)
+	}
+}
+
+func newShortRequests(n int) []*sim.Request {
+	// Create requests with short input (20 tokens = 2 blocks at blockSize=16) and
+	// short output (5 tokens) to complete quickly. Spaced 1000μs apart so multiple
+	// prefills complete and transfers land on the decode instance concurrently.
+	requests := make([]*sim.Request, n)
+	for i := 0; i < n; i++ {
+		requests[i] = &sim.Request{
+			ID:          fmt.Sprintf("request_%d", i),
+			InputTokens: make([]int, 20), // 2 blocks at blockSize=16
+			OutputTokens: make([]int, 5),
+			State:       sim.StateQueued,
+			ArrivalTime: int64(i * 1000), // 1000μs apart
+		}
+	}
+	return requests
+}
+
+func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
+	// Verify that droppedAtDecodeKV is triggered and counted in DroppedUnservable
+	// when decode instances have insufficient KV capacity for transferred input.
+	// Strategy: 1 decode instance with only 3 blocks (48 tokens). Each request needs
+	// 2 blocks (20 tokens). First request fills 2/3 blocks, second request tries to
+	// allocate 2 more but only 1 free → AllocateTransferredKV fails.
+	config := newTestDisaggDeploymentConfig(3, 2, 1) // 2 prefill, 1 decode
+	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0) // 3 blocks = 48 tokens
+
+	requests := newShortRequests(4)
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if cs.droppedAtDecodeKV == 0 {
+		t.Error("droppedAtDecodeKV = 0, expected > 0 with 1 decode instance and tight KV")
+	}
+
+	metrics := cs.AggregatedMetrics()
+	// INV-1 conservation must hold even when decode drops occur
+	sum := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
+	if sum != 4 {
+		t.Errorf("INV-1 conservation violated with decode KV drops: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 4",
 			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, sum)
 	}
 }
@@ -246,6 +290,10 @@ func TestDisaggregation_PhaseCausality(t *testing.T) {
 			{"TransferCompleteTime", parent.TransferCompleteTime},
 			{"DecodeEnqueueTime", parent.DecodeEnqueueTime},
 		}
+		// Note: CompletionTime is not included in the chain because it is set by
+		// detectDecodeCompletions using c.clock at detection time, which may differ
+		// from the actual decode completion instant. A dedicated CompletionTime test
+		// would need to use instance-level RequestCompletionTimes directly.
 
 		for i := 1; i < len(chain); i++ {
 			if chain[i].value < chain[i-1].value {

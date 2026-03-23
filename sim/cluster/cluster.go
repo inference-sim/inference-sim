@@ -369,9 +369,15 @@ func (c *ClusterSimulator) Run() error {
 	// KV transfer was in progress). These requests were subtracted from CompletedRequests
 	// but don't appear in any instance's StillQueued/StillRunning/DroppedUnservable.
 	// Count them as StillRunning for conservation.
-	pdInFlight := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.droppedAtDecodeKV
-	if pdInFlight > 0 {
-		c.aggregatedMetrics.StillRunning += pdInFlight
+	//
+	// Distinguish two sub-states:
+	// - pendingDecodeCompletions: decode sub-requests already injected into instances
+	//   (appear in instance StillQueued/StillRunning via Finalize — do NOT add again)
+	// - pdInTransfer: requests still in KV transfer or cluster event queue
+	//   (not on any instance — must be added to StillRunning)
+	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.droppedAtDecodeKV - len(c.pendingDecodeCompletions)
+	if pdInTransfer > 0 {
+		c.aggregatedMetrics.StillRunning += pdInTransfer
 	}
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
@@ -416,8 +422,9 @@ func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
 	return result
 }
 
-// ParentRequests returns a deep copy of the parent request tracking map
-// (R8: no exported mutable maps or mutable pointers to internal state).
+// ParentRequests returns a copy of the parent request tracking map (R8: no exported mutable maps).
+// Each ParentRequest struct is copied by value so callers cannot mutate lifecycle timestamps.
+// Note: OriginalRequest is a shared *sim.Request pointer — callers must not mutate via it.
 // Returns nil when disaggregation is disabled.
 func (c *ClusterSimulator) ParentRequests() map[string]*ParentRequest {
 	if c.parentRequests == nil {
