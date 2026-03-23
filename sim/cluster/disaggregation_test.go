@@ -177,6 +177,55 @@ func TestDisaggregation_INV1Conservation(t *testing.T) {
 	}
 }
 
+func TestDisaggregation_INV1Conservation_BoundedHorizon(t *testing.T) {
+	// INV-1 at bounded horizon: requests with completed prefills but in-flight KV
+	// transfers must be accounted for (counted in StillRunning, not lost).
+	// Use a horizon long enough for all requests to arrive and enter PD pipeline,
+	// but verify that pdInFlight accounting prevents conservation gaps.
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.Horizon = 5000000 // 5 seconds — all requests arrive, most but maybe not all complete
+	requests := newTestRequests(10)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	// All 10 requests should have arrived within the horizon (last arrives at ~900000 μs).
+	// Conservation: completed + queued + running + dropped == 10
+	// The pdInFlight correction ensures requests mid-transfer are counted in StillRunning.
+	sum := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
+	if sum != 10 {
+		t.Errorf("INV-1 conservation violated at bounded horizon: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 10",
+			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, sum)
+	}
+	// Verify pdInFlight accounting is non-negative (no over-subtraction)
+	pdInFlight := cs.pdPrefillCompletedCount - cs.pdDecodeCompletedCount - cs.droppedAtDecodeKV
+	if pdInFlight < 0 {
+		t.Errorf("pdInFlight = %d, must be >= 0 (prefillCompleted=%d, decodeCompleted=%d, droppedAtDecodeKV=%d)",
+			pdInFlight, cs.pdPrefillCompletedCount, cs.pdDecodeCompletedCount, cs.droppedAtDecodeKV)
+	}
+}
+
+func TestDisaggregation_DecodeOnlyBatchKVPressure(t *testing.T) {
+	// Verify that the decode-only batch path handles KV pressure correctly:
+	// when KV cache is nearly full, the decode-only path breaks (does not crash)
+	// and the request stays in the wait queue.
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.KVCacheConfig = sim.NewKVCacheConfig(50, 16, 0, 0, 0, 0) // small KV cache
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	// Under tight KV pressure, some requests may be dropped — conservation must hold
+	sum := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning + metrics.DroppedUnservable
+	if sum != 5 {
+		t.Errorf("INV-1 conservation violated under KV pressure: completed(%d) + queued(%d) + running(%d) + dropped(%d) = %d, want 5",
+			metrics.CompletedRequests, metrics.StillQueued, metrics.StillRunning, metrics.DroppedUnservable, sum)
+	}
+}
+
 func TestDisaggregation_PhaseCausality(t *testing.T) {
 	// BC-PD-9 / INV-PD-4: Full causal chain for every disaggregated request
 	config := newTestDisaggDeploymentConfig(4, 2, 2)

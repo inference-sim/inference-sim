@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -44,6 +45,7 @@ type ClusterSimulator struct {
 	transfersInitiated        int
 	transfersCompleted        int
 	pdPrefillCompletedCount   int                       // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount    int                       // decode sub-requests that completed (for INV-1 in-flight tracking)
 	droppedAtDecodeKV         int                       // requests dropped due to insufficient KV at decode
 	prefillRoutingPolicy      sim.RoutingPolicy         // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy         // nil = use main routingPolicy
@@ -362,6 +364,15 @@ func (c *ClusterSimulator) Run() error {
 	if c.droppedAtDecodeKV > 0 {
 		c.aggregatedMetrics.DroppedUnservable += c.droppedAtDecodeKV
 	}
+	// In-flight PD transfers: requests whose prefill completed but decode hasn't
+	// finished or been dropped yet (e.g., simulation ended at bounded horizon while
+	// KV transfer was in progress). These requests were subtracted from CompletedRequests
+	// but don't appear in any instance's StillQueued/StillRunning/DroppedUnservable.
+	// Count them as StillRunning for conservation.
+	pdInFlight := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.droppedAtDecodeKV
+	if pdInFlight > 0 {
+		c.aggregatedMetrics.StillRunning += pdInFlight
+	}
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {
@@ -405,7 +416,8 @@ func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
 	return result
 }
 
-// ParentRequests returns a copy of the parent request tracking map (R8: no exported mutable maps).
+// ParentRequests returns a deep copy of the parent request tracking map
+// (R8: no exported mutable maps or mutable pointers to internal state).
 // Returns nil when disaggregation is disabled.
 func (c *ClusterSimulator) ParentRequests() map[string]*ParentRequest {
 	if c.parentRequests == nil {
@@ -413,7 +425,8 @@ func (c *ClusterSimulator) ParentRequests() map[string]*ParentRequest {
 	}
 	result := make(map[string]*ParentRequest, len(c.parentRequests))
 	for k, v := range c.parentRequests {
-		result[k] = v
+		cp := *v
+		result[k] = &cp
 	}
 	return result
 }
@@ -432,44 +445,66 @@ func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.Routi
 
 // detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance
 // and schedules KV transfer events for each.
+// R2/INV-6: Collects completed IDs into a sorted slice before processing to ensure
+// deterministic nextSeqID() assignment regardless of Go's random map iteration order.
 func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 	instID := string(inst.ID())
+	// Phase 1: collect completed sub-request IDs (sorted for determinism)
+	var completedIDs []string
 	for subReqID, parentID := range c.pendingPrefillCompletions {
-		// Only check requests assigned to this instance
 		parent := c.parentRequests[parentID]
 		if parent == nil || string(parent.PrefillInstanceID) != instID {
 			continue
 		}
 		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
-			parent.PrefillCompleteTime = c.clock
-			delete(c.pendingPrefillCompletions, subReqID)
-			c.pdPrefillCompletedCount++
-
-			// Schedule KV transfer
-			heap.Push(&c.clusterEvents, clusterEventEntry{
-				event: &KVTransferStartedEvent{
-					time:      c.clock,
-					parentReq: parent,
-				},
-				seqID: c.nextSeqID(),
-			})
+			completedIDs = append(completedIDs, subReqID)
 		}
+	}
+	sort.Strings(completedIDs)
+
+	// Phase 2: process in deterministic order
+	for _, subReqID := range completedIDs {
+		parentID := c.pendingPrefillCompletions[subReqID]
+		parent := c.parentRequests[parentID]
+		parent.PrefillCompleteTime = c.clock
+		delete(c.pendingPrefillCompletions, subReqID)
+		c.pdPrefillCompletedCount++
+
+		// Schedule KV transfer
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &KVTransferStartedEvent{
+				time:      c.clock,
+				parentReq: parent,
+			},
+			seqID: c.nextSeqID(),
+		})
 	}
 }
 
 // detectDecodeCompletions checks for newly completed decode sub-requests on the given instance
 // and sets the parent request's CompletionTime.
+// R2/INV-6: Collects completed IDs into a sorted slice before processing for determinism.
 func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 	instID := string(inst.ID())
+	// Phase 1: collect completed sub-request IDs (sorted for determinism)
+	var completedIDs []string
 	for subReqID, parentID := range c.pendingDecodeCompletions {
 		parent := c.parentRequests[parentID]
 		if parent == nil || string(parent.DecodeInstanceID) != instID {
 			continue
 		}
 		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
-			parent.CompletionTime = c.clock
-			delete(c.pendingDecodeCompletions, subReqID)
+			completedIDs = append(completedIDs, subReqID)
 		}
+	}
+	sort.Strings(completedIDs)
+
+	// Phase 2: process in deterministic order
+	for _, subReqID := range completedIDs {
+		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
+		parent.CompletionTime = c.clock
+		delete(c.pendingDecodeCompletions, subReqID)
+		c.pdDecodeCompletedCount++
 	}
 }
 

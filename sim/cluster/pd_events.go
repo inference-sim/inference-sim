@@ -123,6 +123,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		ID:           e.parentReq.DecodeSubReqID,
 		InputTokens:  orig.InputTokens,
 		OutputTokens: orig.OutputTokens,
+		MaxOutputLen: orig.MaxOutputLen,
 		State:        sim.StateQueued,
 		ArrivalTime:  orig.ArrivalTime,
 		TenantID:     orig.TenantID,
