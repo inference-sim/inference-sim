@@ -399,6 +399,28 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	}
 }
 
+// EnqueueDecodeSubRequest enqueues a decode sub-request that already has KV blocks
+// pre-allocated (via PD disaggregation transfer). Bypasses the oversized-request guard
+// (blocks already allocated, guard would leak them) and does NOT increment TotalInputTokens
+// (input tokens were already counted by the prefill sub-request).
+// Triggers StepEvent if the instance is idle (INV-8: work-conserving).
+func (sim *Simulator) EnqueueDecodeSubRequest(r *Request) {
+	sim.WaitQ.Enqueue(r)
+	// Do NOT add len(r.InputTokens) to TotalInputTokens — already counted by prefill sub-request.
+
+	// Schedule timeout for decode sub-request (R23: parity with EnqueueRequest)
+	if r.Deadline > 0 && r.Deadline <= sim.Horizon {
+		sim.Schedule(&TimeoutEvent{time: r.Deadline, Request: r})
+	}
+
+	// Trigger StepEvent if idle (work-conserving: INV-8)
+	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) && sim.stepEvent == nil {
+		step := &StepEvent{time: sim.Clock}
+		sim.stepEvent = step
+		sim.Schedule(step)
+	}
+}
+
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
 // Called after batch formation, before execution.
 func (sim *Simulator) recordQueueSnapshots() {
