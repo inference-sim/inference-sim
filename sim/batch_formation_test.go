@@ -713,3 +713,49 @@ func TestVLLMBatchFormation_MaxModelLen_Zero_NoClamp(t *testing.T) {
 		t.Errorf("NumNewTokens = %d, want 500 (MaxModelLen=0 = no clamp)", req.NumNewTokens)
 	}
 }
+
+// TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath is a regression
+// test for the guard `ProgressIndex > 0` added to the Phase 2 decode-only
+// fast-path in FormBatch. Without the guard, a non-PD request with zero input
+// tokens would satisfy ProgressIndex(0) >= inputLen(0) and incorrectly enter
+// the PD decode-only path, skipping prefill KV allocation and producing a
+// phantom output token in ComputedTokens.
+func TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath(t *testing.T) {
+	kvStore := MustNewKVCacheState(10000, 16)
+	bf := NewBatchFormation()
+
+	// A non-PD request: ProgressIndex stays 0 (never set by AllocateTransferredKV).
+	req := &Request{
+		ID:           "zero-input",
+		InputTokens:  nil, // inputLen == 0
+		OutputTokens: make([]int, 5),
+		State:        StateQueued,
+		// ProgressIndex defaults to 0
+	}
+
+	wq := &WaitQueue{}
+	wq.Enqueue(req)
+
+	computedTokens := make(map[string]int64)
+	ctx := BatchContext{
+		RunningBatch:          &Batch{},
+		WaitQ:                 wq,
+		KVCache:               kvStore,
+		MaxScheduledTokens:    10000,
+		MaxRunningReqs:        10,
+		PrefillTokenThreshold: 0,
+		MaxModelLen:           0,
+		Now:                   0,
+		StepCount:             0,
+		ComputedTokens:        computedTokens,
+	}
+	bf.FormBatch(ctx)
+
+	// The request must not be scheduled via the decode-only fast-path.
+	// If it were, ComputedTokens would be set to ProgressIndex+1 = 1,
+	// producing a phantom token count for a zero-input request.
+	if computedTokens[req.ID] != 0 {
+		t.Errorf("ComputedTokens[%q] = %d, want 0: zero-input request must not take the decode-only fast-path (ProgressIndex > 0 guard violated)",
+			req.ID, computedTokens[req.ID])
+	}
+}

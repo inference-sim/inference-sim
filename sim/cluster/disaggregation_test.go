@@ -459,39 +459,42 @@ func TestAllocateTransferredKV_InsufficientCapacity(t *testing.T) {
 	}
 }
 
-// TestPDDisagg_OneOutputToken_NoPanic is a regression test for the off-by-one
-// bug in processCompletions that caused an index-out-of-range panic when a
-// disaggregated request had exactly 1 output token.
+// TestPDDisagg_OneOutputToken_NoPanic is a regression test for two edge-case
+// bugs discovered during PD disaggregation development:
 //
-// Root cause: completion check used == instead of >=. In PD mode, the decode
-// sub-request enters with ProgressIndex == inputLen; after one decode step
-// ProgressIndex becomes inputLen+1, which failed the == check and allowed a
-// second decode step to call AllocateKVBlocks with out-of-bounds index.
+//  1. processCompletions used == instead of >= for the completion check. In PD
+//     mode, a 1-output-token decode sub-request enters with ProgressIndex ==
+//     inputLen; after one decode step ProgressIndex becomes inputLen+1, which
+//     failed the == check and triggered a second decode step, calling
+//     AllocateKVBlocks with an out-of-bounds index and producing a phantom
+//     output token.
+//
+//  2. FormBatch Phase 2 used ProgressIndex >= inputLen without a ProgressIndex >
+//     0 guard. A zero-input non-PD request (inputLen == 0) would satisfy 0 >= 0
+//     and incorrectly take the PD decode-only fast-path.
 func TestPDDisagg_OneOutputToken_NoPanic(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
-
-	input := make([]int, 20)
-	for i := range input {
-		input[i] = i + 1
-	}
-	output := []int{42} // exactly 1 output token
 
 	requests := []*sim.Request{
 		{
 			ID:           "req-1output",
 			ArrivalTime:  0,
-			InputTokens:  input,
-			OutputTokens: output,
+			InputTokens:  make([]int, 20),
+			OutputTokens: []int{42}, // exactly 1 output token
 			State:        sim.StateQueued,
 		},
 	}
 
 	cs := NewClusterSimulator(config, requests, nil)
-	mustRun(t, cs) // must not panic
+	if err := cs.Run(); err != nil {
+		t.Fatalf("ClusterSimulator.Run: %v", err)
+	}
 
 	metrics := cs.AggregatedMetrics()
-	// The request must complete — not hang or get dropped.
-	if metrics.CompletedRequests == 0 {
-		t.Errorf("expected completed requests > 0, got %d (request did not complete)", metrics.CompletedRequests)
+	// INV-1: all requests accounted for.
+	assertINV1Conservation(t, metrics, 1, "1-output PD request")
+	// The request must produce exactly 1 output token — not 0 (hung) or 2+ (phantom decode step).
+	if metrics.TotalOutputTokens != 1 {
+		t.Errorf("TotalOutputTokens = %d, want 1 (off-by-one would produce 2)", metrics.TotalOutputTokens)
 	}
 }
