@@ -122,17 +122,18 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 
 	orig := e.parentReq.OriginalRequest
 	decodeSubReq := &sim.Request{
-		ID:           e.parentReq.DecodeSubReqID,
-		InputTokens:  orig.InputTokens,
-		OutputTokens: orig.OutputTokens,
-		MaxOutputLen: orig.MaxOutputLen,
-		Deadline:     orig.Deadline,
-		PrefixGroup:  orig.PrefixGroup,
-		State:        sim.StateQueued,
-		ArrivalTime:  orig.ArrivalTime,
-		TenantID:     orig.TenantID,
-		SLOClass:     orig.SLOClass,
-		Model:        orig.Model,
+		ID:                 e.parentReq.DecodeSubReqID,
+		InputTokens:        orig.InputTokens,
+		OutputTokens:       orig.OutputTokens,
+		MaxOutputLen:       orig.MaxOutputLen,
+		Deadline:           orig.Deadline,
+		PrefixGroup:        orig.PrefixGroup,
+		State:              sim.StateQueued,
+		ArrivalTime:        orig.ArrivalTime,
+		TenantID:           orig.TenantID,
+		SLOClass:           orig.SLOClass,
+		Model:              orig.Model,
+		IsDecodeSubRequest: true,
 	}
 
 	logrus.Debugf("[cluster] KV transfer completed for %s, scheduling decode routing", e.parentReq.ID)

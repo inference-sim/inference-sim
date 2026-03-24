@@ -81,6 +81,12 @@ type Request struct {
 	// site and increments CompletedRequests normally.
 	// Do NOT skip completion accounting for redirected requests.
 	Redirected bool
+
+	// IsDecodeSubRequest is true when this request was created by PD disaggregation
+	// after KV transfer from a prefill instance. It enters the decode instance with
+	// ProgressIndex already set to len(InputTokens) and KV blocks pre-allocated.
+	// Set by KVTransferCompletedEvent before the request is routed and enqueued.
+	IsDecodeSubRequest bool
 }
 
 // This method returns a human-readable string representation of a Request.

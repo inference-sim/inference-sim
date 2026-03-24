@@ -458,3 +458,46 @@ func TestAllocateTransferredKV_InsufficientCapacity(t *testing.T) {
 		t.Error("AllocateTransferredKV returned true with insufficient capacity, want false")
 	}
 }
+
+// TestPDDisagg_OneOutputToken_CompletesWith1Token is a regression test for two edge-case
+// bugs discovered during PD disaggregation development:
+//
+//  1. processCompletions used == instead of >= for the completion check. In PD
+//     mode, a 1-output-token decode sub-request enters with ProgressIndex ==
+//     inputLen; after one decode step ProgressIndex becomes inputLen+1, which
+//     missed the == threshold, triggered a second decode step, and called
+//     AllocateKVBlocks with an out-of-bounds index, producing a phantom token.
+//     Fixed by changing == to >= and adding a ProgressIndex < inputLen+outputLen
+//     bounds guard on the AllocateKVBlocks call.
+//
+//  2. FormBatch Phase 2 used a ProgressIndex >= inputLen heuristic to detect PD
+//     decode sub-requests. A zero-input non-PD request satisfied this vacuously
+//     (0 >= 0) and incorrectly took the decode-only fast-path. Fixed by
+//     replacing the heuristic with an explicit IsDecodeSubRequest flag set only
+//     by KVTransferCompletedEvent.
+func TestPDDisagg_OneOutputToken_CompletesWith1Token(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	requests := []*sim.Request{
+		{
+			ID:           "req-1output",
+			ArrivalTime:  0,
+			InputTokens:  make([]int, 20),
+			OutputTokens: []int{42}, // exactly 1 output token
+			State:        sim.StateQueued,
+		},
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("ClusterSimulator.Run: %v", err)
+	}
+
+	metrics := cs.AggregatedMetrics()
+	// INV-1: all requests accounted for.
+	assertINV1Conservation(t, metrics, 1, "1-output PD request")
+	// The request must produce exactly 1 output token — not 0 (hung) or 2+ (phantom decode step).
+	if metrics.TotalOutputTokens != 1 {
+		t.Errorf("TotalOutputTokens = %d, want 1 (off-by-one would produce 2)", metrics.TotalOutputTokens)
+	}
+}

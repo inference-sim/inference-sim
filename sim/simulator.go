@@ -628,14 +628,25 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
-		if req.ProgressIndex == util.Len64(req.InputTokens)+max(util.Len64(req.OutputTokens), 1)-1 {
+		if req.ProgressIndex >= util.Len64(req.InputTokens)+max(util.Len64(req.OutputTokens), 1)-1 {
 			// State transitions
 			req.State = StateCompleted
 			// Zero-output requests complete at prefill end with no decode phase.
-			// The final-token KV allocation only applies to requests that have
-			// output tokens. ITL is NOT appended here — executeBatchStep already
-			// recorded it for this decode step (fix for #524 phantom ITL entry).
-			if len(req.OutputTokens) > 0 {
+			// The guard below has two distinct roles depending on output length:
+			//
+			// 1-output-token PD decode sub-requests: FormBatch Phase 2 already
+			// allocated the single decode token's KV block. After executeBatchStep
+			// runs, ProgressIndex = inputLen+1, so the guard
+			// (req.ProgressIndex < inputLen+outputLen) evaluates to
+			// (inputLen+1) < (inputLen+1) = false — preventing a duplicate allocation.
+			//
+			// Requests with 2+ output tokens (PD or non-PD): after executeBatchStep
+			// runs, ProgressIndex = inputLen+outputLen-1 on the final decode step,
+			// so the guard evaluates to true — this is the first and only allocation
+			// for the final token.
+			// ITL is NOT appended here — executeBatchStep already recorded it
+			// for this decode step (fix for #524 phantom ITL entry).
+			if len(req.OutputTokens) > 0 && req.ProgressIndex < util.Len64(req.InputTokens)+util.Len64(req.OutputTokens) {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s (request will still complete) — this indicates a cache accounting bug", now, req.ID)
