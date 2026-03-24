@@ -146,6 +146,7 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 	deciders := []DisaggregationDecider{
 		&NeverDisaggregate{},
 		&AlwaysDisaggregate{},
+		NewPrefixThresholdDecider(512, 16),
 	}
 	for _, d := range deciders {
 		d1 := d.Decide(req1)
@@ -292,6 +293,47 @@ func TestPrefixThresholdDecider_CacheAware(t *testing.T) {
 
 	if decision.Disaggregate {
 		t.Errorf("BC-PD-24: with 640 tokens cached (40 blocks), 200 non-cached tokens should not disaggregate (threshold=%d)", threshold)
+	}
+}
+
+// TestPrefixThresholdDecider_CacheAware_SubRequestIDMismatch verifies BC-PD-24 via the
+// disaggregated pipeline path: ObserveRouting is called with a sub-request whose ID
+// differs from the parent request passed to Decide (e.g., "<parent>_prefill" vs "<parent>").
+// ObserveRouting must recompute hashes and still correctly populate the cache.
+func TestPrefixThresholdDecider_CacheAware_SubRequestIDMismatch(t *testing.T) {
+	const blockSize = 16
+	const threshold = 512
+	decider := NewPrefixThresholdDecider(threshold, blockSize)
+
+	// Shared prefix: 40 blocks (640 tokens), unique token values.
+	prefix := make([]int, 640)
+	for i := range prefix {
+		prefix[i] = i + 1
+	}
+
+	// Step 1: Decide is called with the parent request.
+	parentReq := &Request{ID: "req-parent", InputTokens: prefix}
+	decider.Decide(parentReq)
+
+	// Step 2: ObserveRouting is called with a sub-request (different ID, same InputTokens).
+	// This simulates the disaggregated path where the prefill sub-request ID differs.
+	subReq := &Request{ID: "req-parent_prefill", InputTokens: prefix}
+	decider.ObserveRouting(subReq, "prefill_0") // ID mismatch → must recompute + record
+
+	// Step 3: New request with same prefix + 200 unique tokens = 840 total.
+	// Cached: 40 blocks * 16 = 640 tokens. Non-cached: 200 <= 512 → should NOT disaggregate.
+	extended := make([]int, len(prefix)+200)
+	copy(extended, prefix)
+	for i := len(prefix); i < len(extended); i++ {
+		extended[i] = 10000 + i
+	}
+	req := &Request{ID: "req-follow", InputTokens: extended}
+
+	decision := decider.Decide(req)
+
+	if decision.Disaggregate {
+		t.Errorf("CacheAware/SubRequestIDMismatch: ObserveRouting with mismatched ID should still "+
+			"populate the cache; 200 non-cached tokens should not disaggregate (threshold=%d)", threshold)
 	}
 }
 

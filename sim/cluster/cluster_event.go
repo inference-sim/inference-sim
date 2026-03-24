@@ -231,7 +231,8 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 					}
 			
 					inst.InjectRequestOnline(e.request, e.time)
-					// BC-PD-28: Notify observer after routing so decider can learn prefix (R17, INV-7)
+					// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
+					// from this routing decision (R17, INV-7 signal freshness).
 					cs.notifyDisaggregationObserver(e.request, decision.TargetInstance)
 					return		}
 	}

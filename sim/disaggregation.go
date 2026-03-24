@@ -15,6 +15,9 @@ type DisaggregationDecision struct {
 // use len(req.InputTokens) and req.MaxOutputLen only.
 //
 // req is guaranteed non-nil; implementations may assume a non-nil pointer.
+//
+// Stateful implementations may additionally implement DisaggregationObserver to
+// learn from routing outcomes (e.g., PrefixThresholdDecider).
 type DisaggregationDecider interface {
 	Decide(req *Request) DisaggregationDecision
 }
@@ -65,17 +68,25 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 // globalVirtualInstance is the single key used in PrefixThresholdDecider's PrefixCacheIndex
 // to represent cluster-wide prefix knowledge. All requests update the same virtual instance
 // so the decider tracks the global set of recently-seen prefixes.
+// Using a single virtual key repurposes the per-instance PrefixCacheIndex structure to
+// maintain one aggregate view of cluster-wide prefix state without modifying its interface.
+// Collision with real instance IDs is not a risk: instance IDs are pool-prefixed (e.g.,
+// "prefill_0"), whereas this sentinel uses the "__" prefix convention.
 const globalVirtualInstance = "__global__"
 
 // DisaggregationObserver is an optional interface for stateful DisaggregationDeciders that need
 // to learn from routing decisions. ClusterSimulator calls ObserveRouting after each routing
-// decision: after standard (non-disaggregated) routing in cluster_event.go, and after prefill
-// routing in the disaggregated path in pd_events.go. It is not called for decode routing.
+// decision that assigns a request to an instance: after standard routing (RoutingDecisionEvent
+// in cluster_event.go) and after prefill routing (PrefillRoutingEvent in pd_events.go).
+// It is not called for decode routing, because the decider's prefix knowledge is based on
+// input tokens, which are identical between prefill and decode sub-requests.
 //
 // Signal freshness (R17): ObserveRouting is called synchronously within the event loop,
 // so the cache state is always current at decision time.
 //
 // req is guaranteed non-nil. Implementations must treat req as read-only.
+// instanceID is the routing target; implementations maintaining per-instance state should
+// record it; implementations with global state (like PrefixThresholdDecider) may ignore it.
 type DisaggregationObserver interface {
 	ObserveRouting(req *Request, instanceID string)
 }
@@ -84,11 +95,18 @@ type DisaggregationObserver interface {
 // the configured threshold. Maintains a router-side prefix cache (globalVirtualInstance)
 // to estimate how many input tokens are already cached cluster-wide.
 //
-// Non-cached token count: len(req.InputTokens) - cachedBlocks * blockSize.
+// Non-cached token count: len(req.InputTokens) - cachedBlocks * blockSize (always >= 0,
+// because ComputeBlockHashes only produces complete-block hashes so cachedBlocks*blockSize
+// never exceeds len(InputTokens)). threshold and blockSize are in token counts, not bytes.
 // Decision: Disaggregate = (nonCachedTokens > threshold).
 //
 // Signal freshness (R17, INV-7): Uses router-side PrefixCacheIndex updated synchronously
 // via ObserveRouting after each routing decision -- always fresh.
+//
+// Threading: cachedHashes and cachedReqID are a single-use scratchpad — Decide() writes
+// them and ObserveRouting() consumes them. This is safe only because the DES event loop
+// is single-threaded: no Decide() can interleave between a Decide() call and its paired
+// ObserveRouting() call.
 type PrefixThresholdDecider struct {
 	threshold    int
 	blockSize    int
@@ -129,7 +147,9 @@ func (p *PrefixThresholdDecider) Decide(req *Request) DisaggregationDecision {
 
 // ObserveRouting updates the prefix cache after a routing decision, recording the request's
 // block hashes under globalVirtualInstance. Reuses hashes from Decide when the request ID
-// matches; otherwise recomputes (e.g., disaggregated path where sub-request ID differs).
+// matches; otherwise recomputes. The ID mismatch case is expected in the disaggregated path:
+// notifyDisaggregationObserver is called with the prefill sub-request (ID "<parent>_prefill"),
+// which differs from the parent request evaluated by Decide.
 func (p *PrefixThresholdDecider) ObserveRouting(req *Request, _ string) {
 	if req == nil || len(req.InputTokens) == 0 {
 		return
