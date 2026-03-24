@@ -29,6 +29,35 @@ func buildParentRequest(id string, prefillSubReqID string, transferStart, transf
 	}
 }
 
+// ---- Panic-path tests ----
+
+// CollectPDMetrics panics when aggregated is nil with non-empty parents (programming error guard).
+func TestCollectPDMetrics_PanicsOnNilAggregated(t *testing.T) {
+	parents := []*ParentRequest{
+		buildParentRequest("req-1", "req-1_prefill", 100, 200),
+	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Errorf("expected panic for nil aggregated with non-empty parents, got none")
+		}
+	}()
+	CollectPDMetrics(parents, nil, nil, nil)
+}
+
+// collectPoolThroughput panics when metricsByID contains a nil *sim.Metrics entry (programming error guard).
+func TestCollectPoolThroughput_PanicsOnNilMetricsEntry(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Errorf("expected panic for nil *sim.Metrics entry in metricsByID, got none")
+		}
+	}()
+	poolMembership := map[string]PoolRole{"instance_0": PoolRolePrefill}
+	metricsByID := map[string]*sim.Metrics{"instance_0": nil} // nil pointer — programming error
+	collectPoolThroughput(poolMembership, metricsByID, 1_000_000)
+}
+
 // ---- Task 1: Unit tests (BC-1, BC-2, BC-6, BC-7, BC-11) ----
 
 // BC-7: nil return when no parents.
