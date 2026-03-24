@@ -240,6 +240,93 @@ func TestPDTrace_DisaggMode_DisaggDecisionRecorded(t *testing.T) {
 	}
 }
 
+// TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords verifies that when AllocateTransferredKV
+// fails (decode instance KV OOM), no KVTransferRecord or DecodeRoutingRecord is emitted
+// for the dropped request. DisaggregationRecord and PrefillRoutingRecord are still present.
+// This exercises the "placement after AllocateTransferredKV" invariant for trace records.
+func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
+	// GIVEN tight KV capacity on the decode instance (same setup as TestDisaggregation_DroppedAtDecodeKV)
+	// 2 prefill, 1 decode instance with only 3 blocks (48 tokens).
+	// newShortRequests produces requests needing ~2 blocks each; the decode instance fills up
+	// and subsequent AllocateTransferredKV calls fail → droppedAtDecodeKV > 0.
+	config := newTestDisaggDeploymentConfig(3, 2, 1)
+	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+	config.TraceLevel = "decisions"
+	requests := newShortRequests(4)
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// WHEN run
+	mustRun(t, cs)
+
+	// THEN at least one request was dropped at decode KV allocation
+	if cs.droppedAtDecodeKV == 0 {
+		t.Skip("no drops occurred — test precondition not met (timing-dependent)")
+	}
+
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace with trace-level decisions")
+	}
+
+	// The cardinality law under drops: KVTransfers == DecodeRoutings (they are always co-recorded)
+	// and KVTransfers < DisaggregatedCount (dropped requests have no KV record).
+	if len(tr.KVTransfers) != len(tr.DecodeRoutings) {
+		t.Errorf("KVTransfers=%d != DecodeRoutings=%d (must be co-recorded)", len(tr.KVTransfers), len(tr.DecodeRoutings))
+	}
+	if len(tr.KVTransfers) >= len(tr.Disaggregations) {
+		t.Errorf("KVTransfers=%d >= Disaggregations=%d under drops (drops must reduce KV record count)", len(tr.KVTransfers), len(tr.Disaggregations))
+	}
+	// PrefillRoutings == Disaggregations (prefill routing succeeds before the drop)
+	if len(tr.PrefillRoutings) != len(tr.Disaggregations) {
+		t.Errorf("PrefillRoutings=%d != Disaggregations=%d (prefill routing unaffected by decode KV drop)", len(tr.PrefillRoutings), len(tr.Disaggregations))
+	}
+}
+
+// TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords verifies that when PDDecider="never"
+// is configured alongside pool topology, DisaggregationDecisionEvent still fires and records
+// decisions, but all Disaggregate=false so no PrefillRouting, KVTransfer, or DecodeRouting
+// records are emitted.
+func TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords(t *testing.T) {
+	// GIVEN pools configured but disaggregation decider set to "never"
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.PDDecider = "never"
+	config.TraceLevel = "decisions"
+	const numRequests = 4
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// WHEN run
+	mustRun(t, cs)
+
+	// THEN DisaggregationDecisionEvent fires for every request
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace with trace-level decisions")
+	}
+	if len(tr.Disaggregations) != numRequests {
+		t.Errorf("expected %d disaggregation records, got %d", numRequests, len(tr.Disaggregations))
+	}
+	// All decisions are false
+	for i, r := range tr.Disaggregations {
+		if r.Disaggregate {
+			t.Errorf("Disaggregations[%d]: Disaggregate=true, want false (NeverDisaggregate)", i)
+		}
+		if r.RequestID == "" {
+			t.Errorf("Disaggregations[%d]: RequestID empty", i)
+		}
+	}
+	// No downstream PD records emitted
+	if len(tr.PrefillRoutings) != 0 {
+		t.Errorf("expected 0 PrefillRoutings with NeverDisaggregate, got %d", len(tr.PrefillRoutings))
+	}
+	if len(tr.KVTransfers) != 0 {
+		t.Errorf("expected 0 KVTransfers with NeverDisaggregate, got %d", len(tr.KVTransfers))
+	}
+	if len(tr.DecodeRoutings) != 0 {
+		t.Errorf("expected 0 DecodeRoutings with NeverDisaggregate, got %d", len(tr.DecodeRoutings))
+	}
+}
+
 // TestPDTrace_NormalMode_NoDroppedUnservable verifies R1 invariant:
 // under normal conditions (sufficient KV capacity) no decode sub-requests are
 // dropped due to KV OOM. Dropped decode KV allocations are folded into

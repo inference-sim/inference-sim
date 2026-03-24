@@ -33,9 +33,18 @@ type RoutingRecord struct {
 }
 
 // DisaggregationRecord captures a PD disaggregation decision.
-// When Disaggregate=true, the request follows the disaggregated path and a paired
-// PrefillRoutingRecord, KVTransferRecord, and DecodeRoutingRecord are guaranteed to exist
-// for the same ParentRequestID (unless the decode KV allocation fails).
+// When Disaggregate=true, the request follows the disaggregated path. Paired
+// PrefillRoutingRecord, KVTransferRecord, and DecodeRoutingRecord are recorded
+// for the same RequestID except in three drop scenarios:
+//
+//  1. No routable prefill pool instances (routingRejections++): no downstream records.
+//  2. No routable decode pool instances (droppedAtDecodeKV++): PrefillRoutingRecord
+//     exists but KVTransferRecord and DecodeRoutingRecord are absent.
+//  3. AllocateTransferredKV fails on the decode instance (droppedAtDecodeKV++):
+//     same as case 2.
+//
+// Check droppedAtDecodeKV in AggregatedMetrics or the absence of KVTransferRecord
+// to detect cases 2 and 3.
 type DisaggregationRecord struct {
 	RequestID    string
 	Clock        int64
@@ -43,6 +52,7 @@ type DisaggregationRecord struct {
 }
 
 // PrefillRoutingRecord captures a prefill pool routing decision with optional counterfactual analysis.
+// ParentRequestID equals the RequestID in the corresponding DisaggregationRecord for this request.
 type PrefillRoutingRecord struct {
 	ParentRequestID string
 	Clock           int64
@@ -55,6 +65,7 @@ type PrefillRoutingRecord struct {
 }
 
 // DecodeRoutingRecord captures a decode pool routing decision with optional counterfactual analysis.
+// ParentRequestID equals the RequestID in the corresponding DisaggregationRecord for this request.
 type DecodeRoutingRecord struct {
 	ParentRequestID string
 	Clock           int64

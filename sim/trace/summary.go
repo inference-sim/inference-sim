@@ -8,13 +8,13 @@ type TraceSummary struct {
 	MeanRegret         float64
 	MaxRegret          float64
 	UniqueTargets      int
-	TargetDistribution map[string]int // instance ID → count of requests routed via standard routing only (not PD pool routing)
+	TargetDistribution map[string]int // instance ID → count of requests routed via standard routing only (not PD pool routing); use PrefillRoutings/DecodeRoutings for per-pool counts
 
 	// PD disaggregation summary (zero when disaggregation is not configured)
-	DisaggregationCount  int     // number of disaggregation decisions recorded
-	DisaggregatedCount   int     // number of requests routed to prefill pool (Disaggregate=true)
-	KVTransferCount      int     // number of completed KV transfers
-	MeanTransferDuration float64 // mean KV transfer duration in microseconds
+	DisaggregationCount  int     // number of disaggregation decisions recorded (true and false combined)
+	DisaggregatedCount   int     // number of requests for which disaggregation was decided (Disaggregate=true); prefill routing happens in a subsequent event
+	KVTransferCount      int     // number of KV transfers that completed with successful decode KV allocation
+	MeanTransferDuration float64 // mean KV transfer duration in microseconds; zero when KVTransferCount == 0
 }
 
 // Summarize computes aggregate statistics from a SimulationTrace.
@@ -48,6 +48,7 @@ func Summarize(st *SimulationTrace) *TraceSummary {
 		summary.MeanRegret = totalRegret / float64(len(st.Routings))
 	}
 
+	// UniqueTargets counts distinct instances in TargetDistribution (standard routing only, not PD pool routing).
 	summary.UniqueTargets = len(summary.TargetDistribution)
 
 	// PD disaggregation summary
@@ -60,11 +61,13 @@ func Summarize(st *SimulationTrace) *TraceSummary {
 
 	summary.KVTransferCount = len(st.KVTransfers)
 	if len(st.KVTransfers) > 0 {
-		totalDuration := int64(0)
+		// Accumulate in float64 to avoid int64 overflow for large simulations with many
+		// long-duration transfers (int64 max ~2.9×10^11 seconds; float64 is safe to ~10^15 µs).
+		totalDuration := 0.0
 		for _, kv := range st.KVTransfers {
-			totalDuration += kv.TransferDuration
+			totalDuration += float64(kv.TransferDuration)
 		}
-		summary.MeanTransferDuration = float64(totalDuration) / float64(len(st.KVTransfers))
+		summary.MeanTransferDuration = totalDuration / float64(len(st.KVTransfers))
 	}
 
 	return summary
