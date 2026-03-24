@@ -428,19 +428,21 @@ func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
 	return result
 }
 
-// ParentRequests returns a copy of the parent request tracking map (R8: no exported mutable maps).
-// Each ParentRequest struct is copied by value so callers cannot mutate lifecycle timestamps.
+// ParentRequests returns a sorted slice of defensive copies of parent request tracking records.
+// Each ParentRequest struct is copied by value so callers cannot mutate lifecycle timestamps (R8).
 // Note: OriginalRequest is a shared *sim.Request pointer — callers must not mutate via it.
-// Returns nil when disaggregation is disabled.
-func (c *ClusterSimulator) ParentRequests() map[string]*ParentRequest {
-	if c.parentRequests == nil {
-		return nil
+// Panics if called before Run() completes. Returns an empty (non-nil) slice when disaggregation is disabled,
+// allowing callers to range over the result without a nil check.
+func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
+	if !c.hasRun {
+		panic("ClusterSimulator.ParentRequests() called before Run()")
 	}
-	result := make(map[string]*ParentRequest, len(c.parentRequests))
-	for k, v := range c.parentRequests {
-		cp := *v
-		result[k] = &cp
+	result := make([]*ParentRequest, 0, len(c.parentRequests))
+	for _, pr := range c.parentRequests {
+		cp := *pr
+		result = append(result, &cp)
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
 }
 
@@ -575,6 +577,21 @@ func (c *ClusterSimulator) PerInstanceMetrics() []*sim.Metrics {
 		metrics[i] = inst.Metrics()
 	}
 	return metrics
+}
+
+// PerInstanceMetricsByID returns a map of instance ID → *sim.Metrics.
+// Panics if called before Run() completes (R1).
+// The returned map is a new map (R8), but the *sim.Metrics values are live pointers to
+// instance-owned structs — callers must not mutate fields through them.
+func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
+	if !c.hasRun {
+		panic("ClusterSimulator.PerInstanceMetricsByID() called before Run()")
+	}
+	result := make(map[string]*sim.Metrics, len(c.instances))
+	for _, inst := range c.instances {
+		result[string(inst.ID())] = inst.Metrics()
+	}
+	return result
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.

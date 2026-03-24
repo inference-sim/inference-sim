@@ -1208,6 +1208,13 @@ var runCmd = &cobra.Command{
 			cs.RoutingRejections(),
 		)
 
+		rawMetrics.PD = cluster.CollectPDMetrics(
+			cs.ParentRequests(),
+			cs.AggregatedMetrics(),
+			cs.PoolMembership(),
+			cs.PerInstanceMetricsByID(),
+		)
+
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
 			if err != nil {
@@ -1251,6 +1258,9 @@ var runCmd = &cobra.Command{
 		// Print per-model metrics if requests carry model tags (Phase 1A, FR-011)
 		perModelMetrics := cluster.ComputePerModelMetrics(cs.AggregatedMetrics())
 		printPerModelMetrics(os.Stdout, perModelMetrics)
+
+		// Print PD disaggregation metrics if disaggregation was active (PR4)
+		printPDMetrics(os.Stdout, rawMetrics.PD)
 
 		// Build and print trace summary if requested (BC-9)
 		if cs.Trace() != nil && summarizeTrace {
@@ -1335,6 +1345,32 @@ func printPerModelMetrics(w io.Writer, perModelMetrics map[string]*cluster.Model
 		_, _ = fmt.Fprintf(w, "    TTFT: p50=%.2f p99=%.2f (n=%d)\n", m.TTFT.P50, m.TTFT.P99, m.TTFT.Count)
 		_, _ = fmt.Fprintf(w, "    E2E:  p50=%.2f p99=%.2f (n=%d)\n", m.E2E.P50, m.E2E.P99, m.E2E.Count)
 		_, _ = fmt.Fprintf(w, "    Throughput: %.2f req/s, %.2f tok/s\n", m.ThroughputRPS, m.ThroughputTokenSec)
+	}
+}
+
+// printPDMetrics prints the PD disaggregation metrics section when disaggregation was active.
+// No-op when pd is nil (disaggregation inactive).
+func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
+	if pd == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== PD Metrics ===")
+	_, _ = fmt.Fprintf(w, "Disaggregated Requests: %d\n", pd.DisaggregatedCount)
+	_, _ = fmt.Fprintf(w, "Dropped at Decode KV: %d\n", pd.DroppedAtDecodeKV)
+	_, _ = fmt.Fprintf(w, "Prefill Throughput: %.4f sub-req/s\n", pd.PrefillThroughput)
+	_, _ = fmt.Fprintf(w, "Decode Throughput: %.4f sub-req/s\n", pd.DecodeThroughput)
+	if pd.LoadImbalanceRatio == math.MaxFloat64 {
+		_, _ = fmt.Fprintf(w, "Load Imbalance Ratio: inf (one pool idle)\n")
+	} else {
+		_, _ = fmt.Fprintf(w, "Load Imbalance Ratio: %.4f\n", pd.LoadImbalanceRatio)
+	}
+	if pd.ParentTTFT.Count > 0 {
+		_, _ = fmt.Fprintf(w, "Parent TTFT (us): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
+			pd.ParentTTFT.Mean, pd.ParentTTFT.P50, pd.ParentTTFT.P95, pd.ParentTTFT.P99)
+	}
+	if pd.TransferDuration.Count > 0 {
+		_, _ = fmt.Fprintf(w, "KV Transfer Duration (us): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
+			pd.TransferDuration.Mean, pd.TransferDuration.P50, pd.TransferDuration.P95, pd.TransferDuration.P99)
 	}
 }
 
