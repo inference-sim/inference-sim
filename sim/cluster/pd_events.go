@@ -69,6 +69,8 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 		if string(inst.ID()) == decision.TargetInstance {
 			cs.inFlightRequests[decision.TargetInstance]++
 			inst.InjectRequestOnline(e.request, e.time)
+			// BC-PD-28: Notify observer after prefill routing so decider can learn prefix (R17, INV-7)
+			cs.notifyDisaggregationObserver(e.request, decision.TargetInstance)
 			return
 		}
 	}

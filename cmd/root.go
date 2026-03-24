@@ -104,6 +104,7 @@ var (
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
 	pdKVBytesPerToken     int     // KV cache bytes per token for transfer duration
+	pdPrefixThreshold     int     // Non-cached token threshold for prefix-threshold decider
 	prefillRoutingScorers string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
@@ -283,6 +284,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	cmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
+	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
@@ -1046,6 +1048,12 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("--pd-kv-bytes-per-token must be > 0, got %d", pdKVBytesPerToken)
 			}
 		}
+		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
+			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
+		}
+		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
+			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
+		}
 		if admissionLatency < 0 {
 			logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
 		}
@@ -1136,6 +1144,7 @@ var runCmd = &cobra.Command{
 			PrefillInstances:        prefillInstances,
 			DecodeInstances:         decodeInstances,
 			PDDecider:               pdDecider,
+			PDPrefixThreshold:       pdPrefixThreshold,
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
